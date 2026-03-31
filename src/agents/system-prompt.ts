@@ -173,6 +173,36 @@ function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readT
   ];
 }
 
+function buildWebPageReadSection(params: { availableTools: Set<string>; isMinimal: boolean }) {
+  if (params.isMinimal) {
+    return [];
+  }
+  const hasBrowser = params.availableTools.has("browser");
+  const hasWebFetch = params.availableTools.has("web_fetch");
+  if (!hasBrowser && !hasWebFetch) {
+    return [];
+  }
+  const lines = ["## Web Page Reading"];
+  if (hasBrowser) {
+    lines.push(
+      "For explicit external URL/page-read tasks asking for visible page facts, prefer `browser` first when rendered-page visibility may matter.",
+      "Examples: visible counts, totals, headings, dates, version numbers, dashboard values, or anything the user says is shown on the page.",
+    );
+  }
+  if (hasWebFetch) {
+    lines.push(
+      "Use `web_fetch` for lightweight/static pages or as a fallback when rendered-page visibility is not important.",
+    );
+  }
+  if (hasBrowser && hasWebFetch) {
+    lines.push(
+      "Heuristic: if the task is 'read this page' and asks for exact visible fields, choose `browser` before `web_fetch`.",
+    );
+  }
+  lines.push("");
+  return lines;
+}
+
 export function buildAgentSystemPrompt(params: {
   workspaceDir: string;
   defaultThinkLevel?: ThinkLevel;
@@ -398,6 +428,10 @@ export function buildAgentSystemPrompt(params: {
     isMinimal,
     readToolName,
   });
+  const webPageReadSection = buildWebPageReadSection({
+    availableTools,
+    isMinimal,
+  });
   const workspaceNotes = (params.workspaceNotes ?? []).map((note) => note.trim()).filter(Boolean);
 
   // For "none" mode, return just the basic identity line
@@ -455,6 +489,7 @@ export function buildAgentSystemPrompt(params: {
     "Treat allow-once as single-command only: if another elevated command needs approval, request a fresh /approve and do not claim prior approval covered it.",
     "When approvals are required, preserve and show the full command/script exactly as provided (including chained operators like &&, ||, |, ;, or multiline shells) so the user can approve what will actually run.",
     "",
+    ...webPageReadSection,
     ...safetySection,
     "## OpenClaw CLI Quick Reference",
     "OpenClaw is controlled via subcommands. Do not invent commands.",
