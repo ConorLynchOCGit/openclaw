@@ -65,6 +65,47 @@ describe("resolveSessionKeyForRequest", () => {
     expect(result.sessionKey).toBe("agent:main:main");
   });
 
+  it("keeps plain --agent main on the canonical main session key", async () => {
+    mocks.resolveStorePath.mockReturnValue(MAIN_STORE_PATH);
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:main:main": { sessionId: "sess-1", updatedAt: 0 },
+    });
+
+    const result = resolveSessionKeyForRequest({
+      cfg: baseCfg,
+      agentId: "main",
+    });
+    expect(result.sessionKey).toBe("agent:main:main");
+  });
+
+  it("does not force canonical main when --agent main is paired with --session-id", async () => {
+    mocks.resolveStorePath.mockReturnValue(MAIN_STORE_PATH);
+    mocks.loadSessionStore.mockReturnValue({});
+
+    const result = resolveSessionKeyForRequest({
+      cfg: baseCfg,
+      agentId: "main",
+      sessionId: "w17w-explicit-main",
+    });
+    expect(result.sessionKey).toBeUndefined();
+  });
+
+  it("derives a non-canonical direct session key when --agent main is paired with --to", async () => {
+    mocks.resolveStorePath.mockReturnValue(MAIN_STORE_PATH);
+    mocks.loadSessionStore.mockReturnValue({});
+
+    const result = resolveSessionKeyForRequest({
+      cfg: {
+        session: {
+          dmScope: "per-channel-peer",
+        },
+      },
+      agentId: "main",
+      to: "+15551234567",
+    });
+    expect(result.sessionKey).toBe("agent:main:unknown:direct:+15551234567");
+  });
+
   it("finds session by sessionId via reverse lookup in primary store", async () => {
     mocks.resolveStorePath.mockReturnValue(MAIN_STORE_PATH);
     mocks.loadSessionStore.mockReturnValue({

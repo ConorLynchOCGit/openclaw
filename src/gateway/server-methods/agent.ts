@@ -455,12 +455,15 @@ export const agentHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+    const hasMoreSpecificSessionSelector = Boolean(request.sessionId?.trim() || request.to?.trim());
     let requestedSessionKey =
       requestedSessionKeyRaw ??
-      resolveExplicitAgentSessionKey({
-        cfg,
-        agentId,
-      });
+      (!hasMoreSpecificSessionSelector
+        ? resolveExplicitAgentSessionKey({
+            cfg,
+            agentId,
+          })
+        : undefined);
     if (agentId && requestedSessionKeyRaw) {
       const sessionAgentId = resolveAgentIdFromSessionKey(requestedSessionKeyRaw);
       if (sessionAgentId !== agentId) {

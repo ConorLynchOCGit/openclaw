@@ -19,8 +19,9 @@ import {
   resolveStorePath,
   type SessionEntry,
 } from "../../config/sessions.js";
-import { normalizeMainKey } from "../../routing/session-key.js";
+import { buildAgentPeerSessionKey, normalizeMainKey } from "../../routing/session-key.js";
 import { resolvePreferredSessionKeyForSessionIdMatches } from "../../sessions/session-id-resolution.js";
+import { normalizeE164 } from "../../utils.js";
 import { listAgentIds } from "../agent-scope.js";
 import { clearBootstrapSnapshotOnSessionRollover } from "../bootstrap-cache.js";
 
@@ -51,12 +52,15 @@ export function resolveSessionKeyForRequest(opts: {
   const sessionCfg = opts.cfg.session;
   const scope = sessionCfg?.scope ?? "per-sender";
   const mainKey = normalizeMainKey(sessionCfg?.mainKey);
+  const hasMoreSpecificSelector = Boolean(opts.to?.trim() || opts.sessionId?.trim());
   const explicitSessionKey =
     opts.sessionKey?.trim() ||
-    resolveExplicitAgentSessionKey({
-      cfg: opts.cfg,
-      agentId: opts.agentId,
-    });
+    (!hasMoreSpecificSelector
+      ? resolveExplicitAgentSessionKey({
+          cfg: opts.cfg,
+          agentId: opts.agentId,
+        })
+      : undefined);
   const storeAgentId = resolveAgentIdFromSessionKey(explicitSessionKey);
   const storePath = resolveStorePath(sessionCfg?.store, {
     agentId: storeAgentId,
@@ -64,8 +68,22 @@ export function resolveSessionKeyForRequest(opts: {
   const sessionStore = loadSessionStore(storePath);
 
   const ctx: MsgContext | undefined = opts.to?.trim() ? { From: opts.to } : undefined;
+  const derivedAgentDirectSessionKey =
+    !explicitSessionKey && opts.to?.trim() && opts.agentId?.trim()
+      ? buildAgentPeerSessionKey({
+          agentId: opts.agentId,
+          mainKey,
+          channel: "unknown",
+          peerKind: "direct",
+          peerId: normalizeE164(opts.to) || opts.to.trim(),
+          dmScope: sessionCfg?.dmScope ?? "main",
+          identityLinks: sessionCfg?.identityLinks,
+        })
+      : undefined;
   let sessionKey: string | undefined =
-    explicitSessionKey ?? (ctx ? resolveSessionKey(scope, ctx, mainKey) : undefined);
+    explicitSessionKey ??
+    derivedAgentDirectSessionKey ??
+    (ctx ? resolveSessionKey(scope, ctx, mainKey) : undefined);
 
   // If a session id was provided, prefer to re-use its entry (by id) even when no key was derived.
   // When duplicates exist across agent stores, pick the same deterministic best match used by the
