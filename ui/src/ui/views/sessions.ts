@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { isDefaultHiddenUiSessionKey } from "../../../../src/sessions/session-key-utils.js";
 import { formatRelativeTimestamp } from "../format.ts";
 import { icons } from "../icons.ts";
 import { pathForTab } from "../navigation.ts";
@@ -131,11 +132,12 @@ function resolveThinkLevelPatchValue(value: string, isBinary: boolean): string |
 }
 
 function filterRows(rows: GatewaySessionRow[], query: string): GatewaySessionRow[] {
+  const visibleRows = rows.filter((row) => !isDefaultHiddenUiSessionKey(row.key));
   const q = query.trim().toLowerCase();
   if (!q) {
-    return rows;
+    return visibleRows;
   }
-  return rows.filter((row) => {
+  return visibleRows.filter((row) => {
     const key = (row.key ?? "").toLowerCase();
     const label = (row.label ?? "").toLowerCase();
     const kind = (row.kind ?? "").toLowerCase();

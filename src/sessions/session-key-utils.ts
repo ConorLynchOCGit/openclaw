@@ -74,6 +74,52 @@ export function isCronSessionKey(sessionKey: string | undefined | null): boolean
   return parsed.rest.toLowerCase().startsWith("cron:");
 }
 
+const DEFAULT_VISIBLE_SESSION_KEYS = new Set([
+  "agent:main:main",
+  "agent:chief:main",
+  "agent:chief:telegram:direct:7756506076",
+  "agent:builder:main",
+  "agent:x-manager:main",
+  "agent:web-researcher:main",
+  "agent:writer:main",
+]);
+
+const DEFAULT_HIDDEN_SESSION_PATTERNS = [
+  /:proof-[^:]+/i,
+  /:dashboard:w[0-9a-z-]*(?:[:.-]|$)/i,
+  /(^|[:.-])w(?:5|6|6d|8|9|10|11|14|15|16)[0-9a-z-]*(?:[:.-]|$)/i,
+  /:delegate(?:[:.-]|$)/i,
+  /:main-smoke:/i,
+  /:xmanager-smoke:/i,
+  /:fresh(?:[:.-]|$)/i,
+  /:(?:example|clawhub|react|docs)(?:[:.-]|$)/i,
+  /:routing-verification(?:[:.-]|$)/i,
+  /^webchat:g-agent-[a-z0-9-]+-w[0-9a-z-]+/i,
+  /^webchat:g-agent-[a-z0-9-]+-main$/i,
+  /:g-agent-[^:]*-w[0-9a-z-]+/i,
+];
+
+export function isDefaultVisibleOperationalSessionKey(
+  sessionKey: string | undefined | null,
+): boolean {
+  const normalized = (sessionKey ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return DEFAULT_VISIBLE_SESSION_KEYS.has(normalized);
+}
+
+export function isDefaultHiddenUiSessionKey(sessionKey: string | undefined | null): boolean {
+  const normalized = (sessionKey ?? "").trim().toLowerCase();
+  if (!normalized || isDefaultVisibleOperationalSessionKey(normalized)) {
+    return false;
+  }
+  if (isCronSessionKey(normalized)) {
+    return true;
+  }
+  return DEFAULT_HIDDEN_SESSION_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 export function isSubagentSessionKey(sessionKey: string | undefined | null): boolean {
   const raw = (sessionKey ?? "").trim();
   if (!raw) {
