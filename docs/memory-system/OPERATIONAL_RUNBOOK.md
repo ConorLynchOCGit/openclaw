@@ -1,0 +1,360 @@
+# Memory Middleware Operational Runbook
+
+## Purpose
+
+This runbook covers the currently enabled real non-production
+`memory-middleware` posture.
+
+It is for operators who need to:
+
+- confirm what is enabled or disabled
+- inspect current state
+- inspect queued or completed background jobs
+- inspect recent bounded writes
+- verify retrieval health
+- verify runner ownership behavior
+- disable the current posture quickly
+- decide whether the system is stable enough to continue soaking
+
+This runbook does not enable any new automation.
+
+## Current enabled posture
+
+Current target:
+
+- persistent local non-production Docker Postgres
+- container `memory-middleware-readonly-rollout-pg`
+- database `memory_middleware_rollout`
+
+Current live posture:
+
+- `candidateIngress.mode = submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install`
+- `memoryObjectQuery.mode = read-only`
+- `backgroundJobs.inspectionMode = enabled`
+- `backgroundJobs.advisorySchedulingMode = enabled`
+- `backgroundJobs.advisoryJobClasses = [proactive_plan, consolidation_plan]`
+- `backgroundJobs.executeSchedulingMode = enabled`
+- `backgroundJobs.executeJobClasses = [proactive_execute_run_drift_check, consolidation_execute]`
+- `backgroundJobs.runnerOwnerId = rollout-runner-1`
+
+Enabled maintenance classes:
+
+- advisory:
+  - `proactive_plan`
+  - `consolidation_plan`
+- execute-class:
+  - `proactive_execute_run_drift_check`
+  - bounded safe `consolidation_execute`
+
+## Current disabled posture
+
+The following remain disabled:
+
+- direct proactive execution outside the scheduler
+- consolidation-driven `contradiction_review`
+- consolidation-driven `drift_check_review`
+- any additional advisory job classes
+- any additional execute-class job classes
+- procurement or install automation
+- automatic Skill Vetter invocation
+- self-improving capture
+- actual installation
+- memory-slot takeover
+
+## Primary inspection surfaces
+
+Use these middleware tools first:
+
+- `memory_object_list`
+- `memory_background_job_list`
+- `memory_background_job_get`
+- `memory_background_job_enqueue`
+- `memory_background_job_run_next`
+
+Use SQL inspection second, when you need direct table-level confirmation.
+
+## Retrieval health check
+
+Use:
+
+- `memory_object_list`
+
+Expected result:
+
+- `status = ok`
+- approved-memory records are returned
+- no requirement to enable writes or scheduling
+
+If retrieval health is in doubt, confirm the current write posture remains
+unchanged before investigating automation state.
+
+## Background-job inspection
+
+### List current jobs
+
+Use:
+
+- `memory_background_job_list`
+
+Expected operator checks:
+
+- queued jobs belong only to:
+  - `proactive_plan`
+  - `consolidation_plan`
+  - `proactive_execute_run_drift_check`
+  - `consolidation_execute`
+- unexpected job classes do not appear
+- `status` is one of:
+  - `queued`
+  - `running`
+  - `succeeded`
+  - `failed`
+- `attempts` stays bounded
+
+### Inspect one job
+
+Use:
+
+- `memory_background_job_get`
+
+Expected operator checks:
+
+- `jobClass` matches an allowlisted class
+- `execution_metadata.runnerId` matches `rollout-runner-1` for executed jobs
+- advisory jobs show planner-only outputs
+- execute-class jobs show bounded execution metadata only
+
+### Inspect by SQL when needed
+
+Example query:
+
+```sql
+select
+  id,
+  status,
+  payload ->> 'jobClass' as job_class,
+  attempts,
+  created_at,
+  started_at,
+  completed_at
+from memory_middleware.background_jobs
+where job_kind = 'maintenance'
+order by created_at desc
+limit 25;
+```
+
+Execution metadata query:
+
+```sql
+select
+  id,
+  payload ->> 'jobClass' as job_class,
+  status,
+  execution_metadata
+from memory_middleware.background_jobs
+where job_kind = 'maintenance'
+order by created_at desc
+limit 10;
+```
+
+## Recent bounded-write inspection
+
+Use SQL to confirm recent writes stayed inside the intended table families.
+
+Table-count snapshot query:
+
+```sql
+select 'memory_events' as table_name, count(*) as row_count from memory_middleware.memory_events
+union all
+select 'memory_objects', count(*) from memory_middleware.memory_objects
+union all
+select 'memory_reviews', count(*) from memory_middleware.memory_reviews
+union all
+select 'memory_links', count(*) from memory_middleware.memory_links
+union all
+select 'procedures', count(*) from memory_middleware.procedures
+union all
+select 'procedure_runs', count(*) from memory_middleware.procedure_runs
+union all
+select 'skill_candidates', count(*) from memory_middleware.skill_candidates
+union all
+select 'background_jobs', count(*) from memory_middleware.background_jobs
+union all
+select 'agent_state', count(*) from memory_middleware.agent_state
+union all
+select 'tool_results', count(*) from memory_middleware.tool_results
+union all
+select 'compaction_events', count(*) from memory_middleware.compaction_events
+order by table_name;
+```
+
+Recent durable review and lineage writes:
+
+```sql
+select
+  id,
+  action,
+  created_at
+from memory_middleware.memory_reviews
+order by created_at desc
+limit 10;
+```
+
+```sql
+select
+  id,
+  link_kind,
+  created_at
+from memory_middleware.memory_links
+order by created_at desc
+limit 10;
+```
+
+Expected current maintenance behavior:
+
+- `proactive_plan` and `consolidation_plan` should not create durable memory
+  writes outside `background_jobs`
+- `proactive_execute_run_drift_check` should write bounded `memory_events`
+  only
+- bounded `consolidation_execute` should write only:
+  - `memory_reviews`
+  - `memory_links`
+
+## Runner ownership and lock behavior
+
+Use:
+
+- `memory_background_job_run_next`
+
+Expected checks:
+
+- a wrong `runnerId` returns:
+  - `status = disabled`
+- the configured `runnerId = rollout-runner-1` can claim the next queued job
+- after a successful run, `memory_background_job_get` shows the same
+  configured runner id in execution metadata
+
+Lock-safety query:
+
+```sql
+select
+  payload ->> 'jobClass' as job_class,
+  status,
+  count(*) as job_count
+from memory_middleware.background_jobs
+where job_kind = 'maintenance'
+group by 1, 2
+order by 1, 2;
+```
+
+Unexpected condition:
+
+- more than one long-running `running` row for the same low-volume local
+  maintenance class without an operator explanation
+
+## Quick disablement steps
+
+Preferred order:
+
+1. stop calling `memory_background_job_run_next`
+2. remove the affected job class from the allowlist if only one class must be
+   stopped
+3. set `backgroundJobs.executeSchedulingMode = disabled` if execute-class
+   work must stop immediately
+4. set `backgroundJobs.advisorySchedulingMode = disabled` if advisory
+   scheduling must also stop
+5. keep `memoryObjectQuery.mode = read-only` unchanged unless retrieval itself
+   is the problem
+
+Single-class disablement examples:
+
+- remove `consolidation_execute` from
+  `backgroundJobs.executeJobClasses`
+- narrow `backgroundJobs.advisoryJobClasses` back to
+  `[proactive_plan]` if `consolidation_plan` must stop
+
+## Rollback posture
+
+Rollback should prefer operational disablement over schema rollback.
+
+Current rollback order:
+
+1. stop manual `run_next` invocation
+2. disable execute-class scheduling if execute work is the concern
+3. disable advisory scheduling if advisory work is also the concern
+4. disable the plugin only if the issue is broader than maintenance
+5. preserve the database for inspection
+6. restore from backup only if a database-level rollback is required
+
+## Soak checklist
+
+Use this checklist during the current single-runner soak period:
+
+- retrieval remains `ok` through `memory_object_list`
+- passive startup remains write-free
+- only allowlisted maintenance job classes appear in `background_jobs`
+- wrong-runner `run_next` remains blocked
+- `rollout-runner-1` remains the only executing runner
+- advisory jobs remain write-free outside `background_jobs`
+- drift-check execute writes remain bounded to expected `memory_events`
+- bounded `consolidation_execute` writes remain bounded to:
+  - `memory_reviews`
+  - `memory_links`
+- no unexpected changes appear in:
+  - `agent_state`
+  - `tool_results`
+  - `compaction_events`
+- no unexpected procurement, approval, install, or external automation occurs
+
+Suggested soak cadence:
+
+- inspect queued and succeeded jobs daily while the posture is active
+- snapshot table-family counts before and after any manual maintenance session
+- record any failed job plus its `execution_metadata` immediately
+
+Rollback triggers during soak:
+
+- repeated unexplained job failure for one allowlisted class
+- unexpected writes outside the bounded table families
+- runner ownership mismatch
+- any evidence of contradiction or drift consolidation actions attempting to
+  execute
+- any evidence of procurement, install, or external side effects
+
+## Shared-environment readiness checklist
+
+Before moving this same posture to any shared environment:
+
+- name the shared runner owner explicitly
+- document the operator responsible for disabling one job class or all
+  scheduling
+- document the database backup owner and restore procedure
+- define the canonical inspection query or script for:
+  - oldest queued job
+  - failed jobs by `jobClass`
+  - most recent `execution_metadata` by `jobClass`
+- confirm the shared environment can preserve the current allowlists exactly:
+  - `advisoryJobClasses = [proactive_plan, consolidation_plan]`
+  - `executeJobClasses = [proactive_execute_run_drift_check, consolidation_execute]`
+- confirm contradiction and drift consolidation actions remain disabled
+- confirm the shared rehearsal will not add new automation classes
+
+Shared-environment stop conditions:
+
+- missing named runner owner
+- no quick disablement path
+- no inspection path for recent `execution_metadata`
+- pressure to broaden job allowlists during the rehearsal
+
+Current reconciliation note:
+
+- this checklist remains preparatory only
+- the current repo and host context still do not expose a real shared
+  non-production target for replaying the approved posture
+
+## Recommended next step
+
+After this hardening slice, the recommended next step is:
+
+- keep the automation boundary as-is and continue bounded soak or prepare a
+  shared-environment rehearsal with the same allowlists unchanged

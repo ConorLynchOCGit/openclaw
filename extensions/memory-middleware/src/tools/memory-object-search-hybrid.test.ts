@@ -1,0 +1,113 @@
+import { describe, expect, it, vi } from "vitest";
+import type { MemoryObjectSearchHybridResult } from "../db/runtime.js";
+import type { MemoryMiddlewareRuntime } from "../runtime.js";
+import {
+  createMemoryObjectSearchHybridTool,
+  normalizeMemoryObjectSearchHybridInput,
+} from "./memory-object-search-hybrid.js";
+
+function createAcceptedSearchResult(): MemoryObjectSearchHybridResult {
+  return {
+    accepted: true,
+    status: "ok",
+    scope: "include_validated_procedures",
+    query: "deploy agent",
+    records: [
+      {
+        objectType: "procedure",
+        readSurface: "validated_procedure_read_model",
+        id: "procedure-1",
+        status: "validated",
+        title: "Deploy agent update",
+        body: "Deploy the agent update in a bounded way.",
+        latestValidationRunOutcome: "passed",
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+        score: 110,
+        matchedFields: ["title_prefix", "body_substring"],
+      },
+    ],
+  };
+}
+
+function createRuntime() {
+  return {
+    memoryObjectQuery: {
+      get: vi.fn(),
+      list: vi.fn(),
+      searchBasic: vi.fn(),
+      searchHybrid: vi.fn(async () => createAcceptedSearchResult()),
+    },
+  } as unknown as MemoryMiddlewareRuntime;
+}
+
+describe("memory object hybrid search tool", () => {
+  it("normalizes a hybrid search payload", () => {
+    expect(
+      normalizeMemoryObjectSearchHybridInput({
+        query: " deploy agent ",
+        scope: "include_validated_procedures",
+        kind: "procedure",
+        projectId: " project-1 ",
+        limit: "6",
+      }),
+    ).toEqual({
+      query: "deploy agent",
+      scope: "include_validated_procedures",
+      kind: "procedure",
+      projectId: "project-1",
+      limit: 6,
+    });
+  });
+
+  it("routes ranked search through the object query seam", async () => {
+    const runtime = createRuntime();
+    const tool = createMemoryObjectSearchHybridTool({ runtime });
+
+    const result = await tool.execute("call-1", {
+      query: "deploy agent",
+      scope: "include_validated_procedures",
+      kind: "procedure",
+    });
+
+    expect(runtime.memoryObjectQuery.searchHybrid).toHaveBeenCalledWith({
+      query: "deploy agent",
+      scope: "include_validated_procedures",
+      kind: "procedure",
+    });
+    expect(result.details).toEqual(createAcceptedSearchResult());
+  });
+
+  it("surfaces empty ranked results without writes", async () => {
+    const runtime = createRuntime();
+    runtime.memoryObjectQuery.searchHybrid = vi.fn(async () => ({
+      accepted: true as const,
+      status: "ok" as const,
+      scope: "approved_only" as const,
+      query: "missing",
+      records: [],
+    }));
+    const tool = createMemoryObjectSearchHybridTool({ runtime });
+
+    const result = await tool.execute("call-2", {
+      query: "missing",
+    });
+
+    expect(result.details).toEqual({
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+      query: "missing",
+      records: [],
+    });
+  });
+
+  it("rejects unsupported ranked-search payloads", () => {
+    expect(() =>
+      normalizeMemoryObjectSearchHybridInput({
+        query: "deploy agent",
+        kind: "memory",
+      }),
+    ).toThrow("kind must be one of");
+  });
+});

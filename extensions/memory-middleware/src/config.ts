@@ -1,0 +1,222 @@
+import type { OpenClawPluginConfigSchema } from "../api.js";
+
+export type MemoryMiddlewareDbConfig = {
+  driver: "postgres";
+  url?: string;
+  schema?: string;
+};
+
+export type MemoryMiddlewareCandidateIngressConfig = {
+  mode:
+    | "disabled"
+    | "submit-only"
+    | "submit-review-only"
+    | "submit-review-promote-memory"
+    | "submit-review-promote-memory-procedure"
+    | "submit-review-promote-memory-procedure-validate"
+    | "submit-review-promote-memory-procedure-validate-skill"
+    | "submit-review-promote-memory-procedure-validate-skill-procurement"
+    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
+    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
+    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
+    | "candidate-only";
+};
+
+export type MemoryMiddlewareMemoryObjectQueryConfig = {
+  mode: "disabled" | "read-only" | "candidate-only";
+};
+
+export type MemoryMiddlewareBackgroundJobConfig = {
+  inspectionMode: "disabled" | "enabled";
+  advisorySchedulingMode: "disabled" | "enabled";
+  executeSchedulingMode: "disabled" | "enabled";
+  advisoryJobClasses: Array<"proactive_plan" | "consolidation_plan">;
+  executeJobClasses: Array<"proactive_execute_run_drift_check" | "consolidation_execute">;
+  runnerOwnerId?: string;
+};
+
+export type MemoryMiddlewareConfig = {
+  database: MemoryMiddlewareDbConfig;
+  candidateIngress: MemoryMiddlewareCandidateIngressConfig;
+  memoryObjectQuery: MemoryMiddlewareMemoryObjectQueryConfig;
+  backgroundJobs: MemoryMiddlewareBackgroundJobConfig;
+};
+
+export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
+  jsonSchema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      database: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          driver: { type: "string", enum: ["postgres"] },
+          url: { type: "string" },
+          schema: { type: "string" },
+        },
+      },
+      candidateIngress: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          mode: {
+            type: "string",
+            enum: [
+              "disabled",
+              "submit-only",
+              "submit-review-only",
+              "submit-review-promote-memory",
+              "submit-review-promote-memory-procedure",
+              "submit-review-promote-memory-procedure-validate",
+              "submit-review-promote-memory-procedure-validate-skill",
+              "submit-review-promote-memory-procedure-validate-skill-procurement",
+              "submit-review-promote-memory-procedure-validate-skill-procurement-vetting",
+              "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval",
+              "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install",
+              "candidate-only",
+            ],
+          },
+        },
+      },
+      memoryObjectQuery: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          mode: { type: "string", enum: ["disabled", "read-only", "candidate-only"] },
+        },
+      },
+      backgroundJobs: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          inspectionMode: { type: "string", enum: ["disabled", "enabled"] },
+          advisorySchedulingMode: { type: "string", enum: ["disabled", "enabled"] },
+          executeSchedulingMode: { type: "string", enum: ["disabled", "enabled"] },
+          advisoryJobClasses: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: ["proactive_plan", "consolidation_plan"],
+            },
+          },
+          executeJobClasses: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: ["proactive_execute_run_drift_check", "consolidation_execute"],
+            },
+          },
+          runnerOwnerId: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareConfig {
+  const root = asRecord(input);
+  const database = asRecord(root.database);
+  const candidateIngress = asRecord(root.candidateIngress);
+  const memoryObjectQuery = asRecord(root.memoryObjectQuery);
+  const backgroundJobs = asRecord(root.backgroundJobs);
+
+  const driver = database.driver === "postgres" ? "postgres" : "postgres";
+  const url =
+    typeof database.url === "string" && database.url.trim() ? database.url.trim() : undefined;
+  const schema =
+    typeof database.schema === "string" && database.schema.trim()
+      ? database.schema.trim()
+      : "memory_middleware";
+  const candidateIngressMode =
+    candidateIngress.mode === "candidate-only"
+      ? "candidate-only"
+      : candidateIngress.mode ===
+          "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
+        ? "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
+        : candidateIngress.mode ===
+            "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
+          ? "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
+          : candidateIngress.mode ===
+              "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
+            ? "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
+            : candidateIngress.mode ===
+                "submit-review-promote-memory-procedure-validate-skill-procurement"
+              ? "submit-review-promote-memory-procedure-validate-skill-procurement"
+              : candidateIngress.mode === "submit-review-promote-memory-procedure-validate-skill"
+                ? "submit-review-promote-memory-procedure-validate-skill"
+                : candidateIngress.mode === "submit-review-promote-memory-procedure-validate"
+                  ? "submit-review-promote-memory-procedure-validate"
+                  : candidateIngress.mode === "submit-review-promote-memory-procedure"
+                    ? "submit-review-promote-memory-procedure"
+                    : candidateIngress.mode === "submit-review-promote-memory"
+                      ? "submit-review-promote-memory"
+                      : candidateIngress.mode === "submit-review-only"
+                        ? "submit-review-only"
+                        : candidateIngress.mode === "submit-only"
+                          ? "submit-only"
+                          : "disabled";
+  const memoryObjectQueryMode =
+    memoryObjectQuery.mode === "read-only"
+      ? "read-only"
+      : memoryObjectQuery.mode === "candidate-only"
+        ? "candidate-only"
+        : candidateIngressMode === "candidate-only"
+          ? "candidate-only"
+          : "disabled";
+  const inspectionMode = backgroundJobs.inspectionMode === "enabled" ? "enabled" : "disabled";
+  const advisorySchedulingMode =
+    backgroundJobs.advisorySchedulingMode === "enabled" ? "enabled" : "disabled";
+  const executeSchedulingMode =
+    backgroundJobs.executeSchedulingMode === "enabled" ? "enabled" : "disabled";
+  const advisoryJobClasses = Array.isArray(backgroundJobs.advisoryJobClasses)
+    ? [
+        ...new Set(
+          backgroundJobs.advisoryJobClasses.filter(
+            (value): value is "proactive_plan" | "consolidation_plan" =>
+              value === "proactive_plan" || value === "consolidation_plan",
+          ),
+        ),
+      ].sort((left, right) => left.localeCompare(right))
+    : ["proactive_plan"];
+  const executeJobClasses = Array.isArray(backgroundJobs.executeJobClasses)
+    ? [
+        ...new Set(
+          backgroundJobs.executeJobClasses.filter(
+            (value): value is "proactive_execute_run_drift_check" | "consolidation_execute" =>
+              value === "proactive_execute_run_drift_check" || value === "consolidation_execute",
+          ),
+        ),
+      ].sort((left, right) => left.localeCompare(right))
+    : ["proactive_execute_run_drift_check"];
+  const runnerOwnerId =
+    typeof backgroundJobs.runnerOwnerId === "string" && backgroundJobs.runnerOwnerId.trim()
+      ? backgroundJobs.runnerOwnerId.trim()
+      : undefined;
+
+  return {
+    database: {
+      driver,
+      ...(url ? { url } : {}),
+      schema,
+    },
+    candidateIngress: {
+      mode: candidateIngressMode,
+    },
+    memoryObjectQuery: {
+      mode: memoryObjectQueryMode,
+    },
+    backgroundJobs: {
+      inspectionMode,
+      advisorySchedulingMode,
+      executeSchedulingMode,
+      advisoryJobClasses,
+      executeJobClasses,
+      ...(runnerOwnerId ? { runnerOwnerId } : {}),
+    },
+  };
+}

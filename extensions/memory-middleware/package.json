@@ -1,0 +1,19 @@
+{
+  "name": "@openclaw/memory-middleware",
+  "version": "2026.3.30",
+  "private": true,
+  "description": "OpenClaw memory middleware scaffold",
+  "type": "module",
+  "dependencies": {
+    "@sinclair/typebox": "0.34.49",
+    "pg": "8.20.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.20.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

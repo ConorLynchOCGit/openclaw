@@ -1,0 +1,38 @@
+{
+  "id": "memory-middleware",
+  "name": "Memory Middleware",
+  "description": "Native base scaffold for future candidate-only memory middleware work.",
+  "skills": ["./skills"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "database": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "driver": {
+            "type": "string",
+            "enum": ["postgres"]
+          },
+          "url": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "string"
+          }
+        }
+      },
+      "candidateIngress": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["disabled", "candidate-only"]
+          }
+        }
+      }
+    }
+  }
+}
