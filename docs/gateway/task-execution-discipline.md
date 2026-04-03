@@ -55,6 +55,20 @@ Interpretation:
 
 If a required evidence item remains `partial` or `blocked`, do not claim the task is complete.
 
+## Tool-surface escalation before blocked
+
+For evidence-dependent tasks, do not treat the first blocked path as the final answer if a stronger relevant tool surface still exists.
+
+Examples:
+
+- if the ambient shell cannot reach the runtime, but a stronger operator tool surface can, try that stronger path first
+- if one read path is capped or incomplete, continue with paging or use `document_read` when that is the correct higher-assurance tool
+
+The rule is simple:
+
+- before declaring a task `blocked`, first try the best available tool surface for the evidence the task requires
+- do not confuse a shell limitation with a global inability to verify the task
+
 ## Reading rule
 
 - Prefer `read` for workspace-visible files that fit under the adaptive ceiling.
@@ -74,12 +88,17 @@ If any required item is still missing, say so explicitly.
 
 Do not smooth over incomplete work with confident prose.
 
+If the user asked for proof or live verification, prose summary alone is not enough. The final answer must say whether the required fresh evidence was actually gathered, only partially gathered, or blocked.
+
 ## Operator-visible reporting
 
 For structured tasks, the final response should make these visible:
 
 - what was required
-- what evidence was gathered
+- fresh evidence gathered now
+- prior recorded evidence referenced
+- blocked checks
+- what evidence was gathered overall
 - what was completed
 - what remains uncertain, unmet, or blocked
 

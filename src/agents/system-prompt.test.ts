@@ -173,6 +173,14 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("required evidence or reading");
     expect(prompt).toContain("required deliverables");
     expect(prompt).toContain("complete, partial, blocked");
+    expect(prompt).toContain("strongest available relevant tool surface");
+    expect(prompt).toContain("ambient shell limitation");
+    expect(prompt).toContain(
+      "fresh evidence gathered now, prior recorded evidence, and blocked checks",
+    );
+    expect(prompt).toContain(
+      "do not imply success unless the required fresh evidence was actually gathered",
+    );
     expect(prompt).toContain("Do not smooth over incomplete work with fluent prose");
   });
 
