@@ -2,6 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  MAX_ADAPTIVE_READ_MAX_BYTES,
+  TRUSTED_WORKSPACE_DOCUMENT_READ_CHUNK_BYTES,
+  TRUSTED_WORKSPACE_DOCUMENT_READ_CHUNK_LINES,
+} from "../document-ingestion-policy.js";
 import { createDocumentReadTool } from "./document-read-tool.js";
 
 const tempDirs: string[] = [];
@@ -40,6 +45,8 @@ describe("document_read tool", () => {
     expect(startDetails.sessionId).toBeTruthy();
     expect(startDetails.expectedChunkCount).toBe(3);
     expect(startDetails.authoritativeState).toBe("started");
+    expect(startDetails.readPreferredForThisFile).toBe(true);
+    expect(startDetails.documentReadReason).toBe("proof_required");
 
     const sessionId = String(startDetails.sessionId);
     const firstChunk = await tool.execute("call-next", {
@@ -93,6 +100,32 @@ describe("document_read tool", () => {
         complete: true,
         verifiedFullHash: true,
         fileStillMatchesFingerprint: true,
+      },
+    });
+  });
+
+  it("reports larger trusted-workspace defaults for oversized files", async () => {
+    const workspace = await makeWorkspace();
+    await fs.writeFile(
+      path.join(workspace, "docs", "large.md"),
+      "line\n".repeat(Math.ceil(MAX_ADAPTIVE_READ_MAX_BYTES / 5) + 100),
+      "utf8",
+    );
+    const tool = createDocumentReadTool(workspace);
+
+    const started = await tool.execute("call-start-large", {
+      action: "start",
+      path: "docs/large.md",
+    });
+
+    expect(started.details).toMatchObject({
+      adaptiveReadCeilingBytes: MAX_ADAPTIVE_READ_MAX_BYTES,
+      readPreferredForThisFile: false,
+      documentReadProfile: "trusted_workspace_large_file",
+      documentReadReason: "proof_required",
+      chunkDefaults: {
+        lines: TRUSTED_WORKSPACE_DOCUMENT_READ_CHUNK_LINES,
+        bytes: TRUSTED_WORKSPACE_DOCUMENT_READ_CHUNK_BYTES,
       },
     });
   });

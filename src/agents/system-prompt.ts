@@ -203,6 +203,34 @@ function buildWebPageReadSection(params: { availableTools: Set<string>; isMinima
   return lines;
 }
 
+function buildLongFileReadSection(params: { availableTools: Set<string>; isMinimal: boolean }) {
+  if (params.isMinimal) {
+    return [];
+  }
+  const hasDocumentRead = params.availableTools.has("document_read");
+  const hasRead = params.availableTools.has("read");
+  if (!hasDocumentRead && !hasRead) {
+    return [];
+  }
+  const lines = ["## Long File Reading"];
+  if (hasDocumentRead) {
+    lines.push(
+      "Use `document_read` when a workspace-visible file exceeds the adaptive `read` ceiling, when `read` returns capped/truncated output and full coverage matters, or when proof-grade verification is required.",
+      "Golden rule: a long document is not fully ingested until `document_read(action=verify)` reports complete coverage.",
+      "If `document_read` reports incomplete coverage, stale file fingerprint, or missing chunks, do not claim the file was fully read.",
+    );
+  }
+  if (hasRead) {
+    lines.push(
+      "Use `read` by default for workspace-visible files that fit under the adaptive ceiling, and for short files or targeted sections.",
+      "If `read` says the result was capped or truncated, continue with offset/limit or switch to `document_read` when deterministic coverage is required.",
+      "Do not rely on one oversized read call, terminal preview, or UI scrolling to prove full coverage.",
+    );
+  }
+  lines.push("");
+  return lines;
+}
+
 export function buildAgentSystemPrompt(params: {
   workspaceDir: string;
   defaultThinkLevel?: ThinkLevel;
@@ -265,6 +293,7 @@ export function buildAgentSystemPrompt(params: {
     process: "Manage background exec sessions",
     web_search: "Search the web",
     web_fetch: "Fetch and extract readable content from a URL",
+    document_read: "Deterministically ingest long workspace files with chunk coverage verification",
     // Channel docking: add login tools here when a channel needs interactive linking.
     browser: "Control web browser",
     canvas: "Present/eval/snapshot the Canvas",
@@ -301,6 +330,7 @@ export function buildAgentSystemPrompt(params: {
     "code_execution",
     "web_search",
     "web_fetch",
+    "document_read",
     "browser",
     "canvas",
     "nodes",
@@ -432,6 +462,10 @@ export function buildAgentSystemPrompt(params: {
     availableTools,
     isMinimal,
   });
+  const longFileReadSection = buildLongFileReadSection({
+    availableTools,
+    isMinimal,
+  });
   const workspaceNotes = (params.workspaceNotes ?? []).map((note) => note.trim()).filter(Boolean);
 
   // For "none" mode, return just the basic identity line
@@ -490,6 +524,7 @@ export function buildAgentSystemPrompt(params: {
     "When approvals are required, preserve and show the full command/script exactly as provided (including chained operators like &&, ||, |, ;, or multiline shells) so the user can approve what will actually run.",
     "",
     ...webPageReadSection,
+    ...longFileReadSection,
     ...safetySection,
     "## OpenClaw CLI Quick Reference",
     "OpenClaw is controlled via subcommands. Do not invent commands.",

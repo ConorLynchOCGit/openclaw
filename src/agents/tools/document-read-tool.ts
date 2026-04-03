@@ -1,9 +1,12 @@
 import path from "node:path";
 import { Type } from "@sinclair/typebox";
 import {
-  cleanupDocumentReadSession,
   DEFAULT_DOCUMENT_READ_CHUNK_BYTES,
   DEFAULT_DOCUMENT_READ_CHUNK_LINES,
+  recommendDocumentIngestion,
+} from "../document-ingestion-policy.js";
+import {
+  cleanupDocumentReadSession,
   DEFAULT_DOCUMENT_READ_MAX_LINE_BYTES,
   getDocumentReadSession,
   readDocumentChunk,
@@ -99,6 +102,15 @@ export function createDocumentReadTool(workspaceDir: string): AnyAgentTool {
           chunkBytes: readNumberParam(args, "chunkBytes", { integer: true }),
           maxLineBytes: readNumberParam(args, "maxLineBytes", { integer: true }),
         });
+        const baseRecommendation = recommendDocumentIngestion({
+          workspaceVisible: true,
+          fileBytes: session.fingerprint.bytes,
+        });
+        const proofRecommendation = recommendDocumentIngestion({
+          workspaceVisible: true,
+          fileBytes: session.fingerprint.bytes,
+          proofRequired: true,
+        });
         return payloadTextResult({
           status: "started",
           authoritativeState: session.status,
@@ -113,6 +125,10 @@ export function createDocumentReadTool(workspaceDir: string): AnyAgentTool {
           expectedChunkCount: session.fingerprint.expectedChunkCount,
           lineEnding: session.fingerprint.lineEnding,
           chunkDefaults: session.chunkDefaults,
+          adaptiveReadCeilingBytes: baseRecommendation.adaptiveReadCeilingBytes,
+          readPreferredForThisFile: baseRecommendation.preferredTool === "read",
+          documentReadProfile: proofRecommendation.documentReadDefaults.profile,
+          documentReadReason: proofRecommendation.useDocumentReadReason,
           planPath: path.relative(
             workspaceDir,
             path.join(".openclaw", "document-read", session.sessionId, "plan.json"),

@@ -12,6 +12,10 @@ import {
 import { trySafeFileURLToPath } from "../infra/local-file-access.js";
 import { detectMime } from "../media/mime.js";
 import { sniffMimeFromBase64 } from "../media/sniff-mime-from-base64.js";
+import {
+  DEFAULT_READ_PAGE_MAX_BYTES,
+  MAX_ADAPTIVE_READ_MAX_BYTES,
+} from "./document-ingestion-policy.js";
 import type { ImageSanitizationLimits } from "./image-sanitization.js";
 import { toRelativeWorkspacePath } from "./path-policy.js";
 import { wrapEditToolWithRecovery } from "./pi-tools.host-edit.js";
@@ -41,8 +45,6 @@ type ToolContentBlock = AgentToolResult<unknown>["content"][number];
 type ImageContentBlock = Extract<ToolContentBlock, { type: "image" }>;
 type TextContentBlock = Extract<ToolContentBlock, { type: "text" }>;
 
-const DEFAULT_READ_PAGE_MAX_BYTES = 50 * 1024;
-const MAX_ADAPTIVE_READ_MAX_BYTES = 512 * 1024;
 const ADAPTIVE_READ_CONTEXT_SHARE = 0.2;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 const MAX_ADAPTIVE_READ_PAGES = 8;
@@ -56,6 +58,15 @@ type ReadTruncationDetails = {
   truncated: boolean;
   outputLines: number;
   firstLineExceedsLimit: boolean;
+};
+
+type ReadPagingDetails = {
+  mode: "explicit_limit" | "adaptive";
+  autoPaged: boolean;
+  pagesRead: number;
+  completed: boolean;
+  nextOffset?: number;
+  cappedAtBytes?: number;
 };
 
 const READ_CONTINUATION_NOTICE_RE =
@@ -205,6 +216,39 @@ function stripReadTruncationContentDetails(
   };
 }
 
+function countRenderedLines(text: string): number {
+  if (!text) {
+    return 0;
+  }
+  return text.split(/\r?\n/).length;
+}
+
+function withReadPagingDetails(
+  result: AgentToolResult<unknown>,
+  paging: ReadPagingDetails,
+): AgentToolResult<unknown> {
+  const details = (result as { details?: unknown }).details;
+  const detailsRecord =
+    details && typeof details === "object" ? (details as Record<string, unknown>) : {};
+  return {
+    ...result,
+    details: {
+      ...detailsRecord,
+      readPaging: paging,
+    },
+  };
+}
+
+function describeReadTool(baseDescription: string): string {
+  const guidance =
+    " For long files or documentation, keep reading in chunks until the requested coverage is complete. " +
+    `Use offset/limit to continue when a result is capped or truncated, prefer read for workspace-visible files that fit within the adaptive ceiling (${formatBytes(MAX_ADAPTIVE_READ_MAX_BYTES)}), do not assume the terminal preview is the full file, and prefer document_read only when you need deterministic full-document coverage or the file exceeds that ceiling.`;
+  if (baseDescription.includes("Use offset/limit")) {
+    return baseDescription;
+  }
+  return `${baseDescription}${guidance}`;
+}
+
 async function executeReadWithAdaptivePaging(params: {
   base: AnyAgentTool;
   toolCallId: string;
@@ -216,7 +260,29 @@ async function executeReadWithAdaptivePaging(params: {
   const hasExplicitLimit =
     typeof userLimit === "number" && Number.isFinite(userLimit) && userLimit > 0;
   if (hasExplicitLimit) {
-    return await params.base.execute(params.toolCallId, params.args, params.signal);
+    const explicitResult = await params.base.execute(params.toolCallId, params.args, params.signal);
+    const explicitTruncation = extractReadTruncationDetails(explicitResult);
+    const offsetRaw = params.args.offset;
+    const currentOffset =
+      typeof offsetRaw === "number" && Number.isFinite(offsetRaw) && offsetRaw > 0
+        ? Math.floor(offsetRaw)
+        : 1;
+    const explicitText = getToolResultText(explicitResult) ?? "";
+    const explicitLineCount =
+      explicitTruncation && explicitTruncation.outputLines > 0
+        ? explicitTruncation.outputLines
+        : countRenderedLines(explicitText);
+    const nextOffset =
+      explicitLineCount > 0 && explicitLineCount >= Math.floor(userLimit)
+        ? currentOffset + explicitLineCount
+        : undefined;
+    return withReadPagingDetails(explicitResult, {
+      mode: "explicit_limit",
+      autoPaged: false,
+      pagesRead: 1,
+      completed: nextOffset === undefined,
+      nextOffset,
+    });
   }
 
   const offsetRaw = params.args.offset;
@@ -260,7 +326,12 @@ async function executeReadWithAdaptivePaging(params: {
     aggregatedBytes += nextBytes;
 
     if (!canContinue || !truncation) {
-      return withToolResultText(pageResult, aggregatedText);
+      return withReadPagingDetails(withToolResultText(pageResult, aggregatedText), {
+        mode: "adaptive",
+        autoPaged: page > 0,
+        pagesRead: page + 1,
+        completed: true,
+      });
     }
 
     nextOffset += truncation.outputLines;
@@ -280,7 +351,14 @@ async function executeReadWithAdaptivePaging(params: {
   if (capped && continuationOffset) {
     finalText += `\n\n[Read output capped at ${formatBytes(params.maxBytes)} for this call. Use offset=${continuationOffset} to continue.]`;
   }
-  return withToolResultText(firstResult, finalText);
+  return withReadPagingDetails(withToolResultText(firstResult, finalText), {
+    mode: "adaptive",
+    autoPaged: true,
+    pagesRead: MAX_ADAPTIVE_READ_PAGES,
+    completed: false,
+    nextOffset: continuationOffset,
+    cappedAtBytes: params.maxBytes,
+  });
 }
 
 function rewriteReadImageHeader(text: string, mimeType: string): string {
@@ -640,6 +718,7 @@ export function createOpenClawReadTool(
   const patched = patchToolSchemaForClaudeCompatibility(base);
   return {
     ...patched,
+    description: describeReadTool(patched.description),
     execute: async (toolCallId, params, signal) => {
       const normalized = normalizeToolParams(params);
       const record =

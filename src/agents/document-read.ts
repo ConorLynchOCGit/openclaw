@@ -3,10 +3,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { openFileWithinRoot, SafeOpenError } from "../infra/fs-safe.js";
 import { detectMime } from "../media/mime.js";
+import { recommendDocumentIngestion } from "./document-ingestion-policy.js";
 
 export const DOCUMENT_READ_STATE_VERSION = 1;
-export const DEFAULT_DOCUMENT_READ_CHUNK_LINES = 200;
-export const DEFAULT_DOCUMENT_READ_CHUNK_BYTES = 16 * 1024;
 export const DEFAULT_DOCUMENT_READ_MAX_LINE_BYTES = 8 * 1024;
 export const MAX_DOCUMENT_READ_FILE_BYTES = 128 * 1024 * 1024;
 
@@ -357,23 +356,26 @@ async function readWorkspaceFileBuffer(params: { rootDir: string; relativePath: 
 
 async function buildDocumentPlan(options: DocumentReadStartOptions) {
   const normalizedRelativePath = normalizeRelativeWorkspacePath(options.relativePath);
+  const { buffer, realPath, stat } = await readWorkspaceFileBuffer({
+    rootDir: options.rootDir,
+    relativePath: normalizedRelativePath,
+  });
+  const recommendation = recommendDocumentIngestion({
+    workspaceVisible: true,
+    fileBytes: buffer.byteLength,
+  });
   const chunkLines = Math.max(
     1,
-    Math.trunc(options.chunkLines ?? DEFAULT_DOCUMENT_READ_CHUNK_LINES),
+    Math.trunc(options.chunkLines ?? recommendation.documentReadDefaults.chunkLines),
   );
   const chunkBytes = Math.max(
     1,
-    Math.trunc(options.chunkBytes ?? DEFAULT_DOCUMENT_READ_CHUNK_BYTES),
+    Math.trunc(options.chunkBytes ?? recommendation.documentReadDefaults.chunkBytes),
   );
   const maxLineBytes = Math.max(
     1,
     Math.trunc(options.maxLineBytes ?? DEFAULT_DOCUMENT_READ_MAX_LINE_BYTES),
   );
-
-  const { buffer, realPath, stat } = await readWorkspaceFileBuffer({
-    rootDir: options.rootDir,
-    relativePath: normalizedRelativePath,
-  });
   const {
     lines,
     maxLineBytes: observedMaxLineBytes,

@@ -149,6 +149,19 @@ describe("buildAgentSystemPrompt", () => {
     );
   });
 
+  it("includes deterministic long-file reading guidance when read tools are available", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      toolNames: ["read", "document_read"],
+    });
+
+    expect(prompt).toContain("## Long File Reading");
+    expect(prompt).toContain("document_read");
+    expect(prompt).toContain("action=verify");
+    expect(prompt).toContain("fit under the adaptive ceiling");
+    expect(prompt).toContain("capped or truncated");
+  });
+
   it("tells the agent not to execute /approve through exec", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",

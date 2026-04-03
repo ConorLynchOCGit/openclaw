@@ -65,6 +65,15 @@ Authoritative acceptance rule:
 - Visibility is not ingestion.
 - All chunks acquired is not yet verified completeness.
 
+## Read policy
+
+- Prefer `read` for workspace-visible files that fit under the adaptive ceiling.
+- If `read` is capped or truncated, continue with paging or use `document_read` when deterministic coverage is required.
+- Use `document_read` for files that exceed the adaptive ceiling or when proof-grade coverage is required.
+- Do not use `exec` as the primary doc-ingestion path when a workspace file path exists.
+- The small `150`-line chunk setting from the acceptance fixture is not the general production chunk size.
+- Larger workspace `document_read` chunks are acceptable, but they should still stay materially below the adaptive `read` ceiling.
+
 ## Accepted state model
 
 - `in_progress`

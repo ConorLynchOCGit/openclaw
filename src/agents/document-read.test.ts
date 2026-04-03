@@ -3,6 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  MAX_ADAPTIVE_READ_MAX_BYTES,
+  TRUSTED_WORKSPACE_DOCUMENT_READ_CHUNK_BYTES,
+  TRUSTED_WORKSPACE_DOCUMENT_READ_CHUNK_LINES,
+} from "./document-ingestion-policy.js";
+import {
   getDocumentReadSession,
   readDocumentChunk,
   startDocumentReadSession,
@@ -236,5 +241,25 @@ describe("document read", () => {
       nextMissing: true,
     });
     expect(chunk.lossyUtf8).toBe(true);
+  });
+
+  it("uses larger default chunk sizing for oversized trusted workspace files", async () => {
+    const workspace = await makeWorkspace();
+    const relativePath = "docs/large.md";
+    await fs.mkdir(path.join(workspace, "docs"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspace, relativePath),
+      "section\n".repeat(Math.ceil(MAX_ADAPTIVE_READ_MAX_BYTES / 8) + 1),
+      "utf8",
+    );
+
+    const session = await startDocumentReadSession({
+      rootDir: workspace,
+      relativePath,
+    });
+
+    expect(session.fingerprint.bytes).toBeGreaterThan(MAX_ADAPTIVE_READ_MAX_BYTES);
+    expect(session.chunkDefaults.lines).toBe(TRUSTED_WORKSPACE_DOCUMENT_READ_CHUNK_LINES);
+    expect(session.chunkDefaults.bytes).toBe(TRUSTED_WORKSPACE_DOCUMENT_READ_CHUNK_BYTES);
   });
 });

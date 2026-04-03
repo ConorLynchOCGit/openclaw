@@ -15,6 +15,14 @@ This design adds two explicit layers:
 1. Narrow read-only imports for selected host-side document roots.
 2. A deterministic `document_read` tool that fingerprints, chunks, verifies, and reports coverage before a document can be treated as fully read.
 
+Read policy:
+
+- Workspace visibility does not by itself guarantee one-call full ingestion.
+- Prefer `read` for workspace-visible files that fit under the adaptive ceiling.
+- If `read` is capped or truncated, continue with paging or switch to `document_read` when deterministic coverage matters.
+- Use `document_read` when the file exceeds the adaptive ceiling or when proof-grade coverage is required.
+- Do not use `exec` as the primary ingestion path when a workspace file path exists.
+
 Golden rule:
 
 - Long docs are not considered ingested until `document_read(action=verify)` reports complete coverage.
@@ -76,6 +84,7 @@ For each file:
 2. Chunk plan
    - line-based chunks by default for text-like files
    - byte-based fallback for non-UTF8 data or pathological line lengths
+   - oversized trusted workspace files use materially larger default chunk sizing than the small proof-only settings
    - deterministic indexes with no gaps and no overlap
 3. Read
    - bounded chunk acquisition only
@@ -131,6 +140,8 @@ Chosen design:
 - explicit manifest and health verification for auditability
 
 ## Coverage model
+
+The small `150`-line chunk setting used in acceptance proof runs is not the production default. It is only a conservative proof fixture. Real workspace-visible files should use `read` first when they fit under the adaptive ceiling, and `document_read` should use larger chunk sizing only when it is actually needed.
 
 `document_read` exposes:
 
