@@ -47,6 +47,13 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     profiles: ["coding"],
   },
   {
+    id: "document_read",
+    label: "document_read",
+    description: "Deterministically ingest long files with chunk coverage verification",
+    sectionId: "fs",
+    profiles: ["coding"],
+  },
+  {
     id: "write",
     label: "write",
     description: "Create or overwrite files",

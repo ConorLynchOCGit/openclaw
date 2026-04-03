@@ -13,6 +13,10 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - ${OPENCLAW_IMPORTED_REPO_DOCS_DIR}:/home/node/.openclaw/workspace/imports/system_docs/repo-docs:ro
+      - ${OPENCLAW_IMPORTED_REPO_AGENTS_FILE}:/home/node/.openclaw/workspace/imports/system_docs/repo-root/AGENTS.md:ro
+      - ${OPENCLAW_IMPORTED_REPO_README_FILE}:/home/node/.openclaw/workspace/imports/system_docs/repo-root/README.md:ro
+      - ${OPENCLAW_IMPORTED_DOC_PROBE_DIR}:/home/node/.openclaw/workspace/imports/system_docs/_probes:ro
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image
       ## (build with --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1) or use
@@ -70,6 +74,10 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - ${OPENCLAW_IMPORTED_REPO_DOCS_DIR}:/home/node/.openclaw/workspace/imports/system_docs/repo-docs:ro
+      - ${OPENCLAW_IMPORTED_REPO_AGENTS_FILE}:/home/node/.openclaw/workspace/imports/system_docs/repo-root/AGENTS.md:ro
+      - ${OPENCLAW_IMPORTED_REPO_README_FILE}:/home/node/.openclaw/workspace/imports/system_docs/repo-root/README.md:ro
+      - ${OPENCLAW_IMPORTED_DOC_PROBE_DIR}:/home/node/.openclaw/workspace/imports/system_docs/_probes:ro
     stdin_open: true
     tty: true
     init: true

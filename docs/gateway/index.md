@@ -16,6 +16,9 @@ Use this page for day-1 startup and day-2 operations of the Gateway service.
   <Card title="Configuration" icon="sliders" href="/gateway/configuration">
     Task-oriented setup guide + full configuration reference.
   </Card>
+  <Card title="Document ingestion" icon="file-search" href="/gateway/document-ingestion">
+    Read-only imported roots plus deterministic long-document coverage verification.
+  </Card>
   <Card title="Secrets management" icon="key-round" href="/gateway/secrets">
     SecretRef contract, runtime snapshot behavior, and migrate/reload operations.
   </Card>
