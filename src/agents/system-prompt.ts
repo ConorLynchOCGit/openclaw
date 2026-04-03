@@ -8,6 +8,7 @@ import type { ResolvedTimeFormat } from "./date-time.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
 import type { EmbeddedSandboxInfo } from "./pi-embedded-runner/types.js";
 import { sanitizeForPromptLiteral } from "./sanitize-for-prompt.js";
+import { buildTaskExecutionDisciplineSection } from "./task-execution-discipline.js";
 
 /**
  * Controls which hardcoded sections are included in the system prompt.
@@ -229,6 +230,13 @@ function buildLongFileReadSection(params: { availableTools: Set<string>; isMinim
   }
   lines.push("");
   return lines;
+}
+
+function buildTaskExecutionSection(isMinimal: boolean) {
+  if (isMinimal) {
+    return [];
+  }
+  return buildTaskExecutionDisciplineSection();
 }
 
 export function buildAgentSystemPrompt(params: {
@@ -466,6 +474,7 @@ export function buildAgentSystemPrompt(params: {
     availableTools,
     isMinimal,
   });
+  const taskExecutionSection = buildTaskExecutionSection(isMinimal);
   const workspaceNotes = (params.workspaceNotes ?? []).map((note) => note.trim()).filter(Boolean);
 
   // For "none" mode, return just the basic identity line
@@ -525,6 +534,7 @@ export function buildAgentSystemPrompt(params: {
     "",
     ...webPageReadSection,
     ...longFileReadSection,
+    ...taskExecutionSection,
     ...safetySection,
     "## OpenClaw CLI Quick Reference",
     "OpenClaw is controlled via subcommands. Do not invent commands.",

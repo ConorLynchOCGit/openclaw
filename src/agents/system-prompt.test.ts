@@ -162,6 +162,20 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("capped or truncated");
   });
 
+  it("includes general task-execution discipline for structured work", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      toolNames: ["read", "document_read"],
+    });
+
+    expect(prompt).toContain("## Task Execution Discipline");
+    expect(prompt).toContain("hard requirements");
+    expect(prompt).toContain("required evidence or reading");
+    expect(prompt).toContain("required deliverables");
+    expect(prompt).toContain("complete, partial, blocked");
+    expect(prompt).toContain("Do not smooth over incomplete work with fluent prose");
+  });
+
   it("tells the agent not to execute /approve through exec", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",
