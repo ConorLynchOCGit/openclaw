@@ -10,6 +10,10 @@ describe("resolveMemoryMiddlewareConfig", () => {
         profile: "disabled",
         allowedAgents: ["chief", "main"],
       },
+      autoPromotion: {
+        profile: "disabled",
+        allowedAgents: ["chief", "main"],
+      },
       backgroundJobs: {
         inspectionMode: "disabled",
         advisorySchedulingMode: "disabled",
@@ -43,6 +47,10 @@ describe("resolveMemoryMiddlewareConfig", () => {
         profile: "disabled",
         allowedAgents: ["chief", "main"],
       },
+      autoPromotion: {
+        profile: "disabled",
+        allowedAgents: ["chief", "main"],
+      },
     });
   });
 
@@ -57,6 +65,30 @@ describe("resolveMemoryMiddlewareConfig", () => {
     ).toMatchObject({
       autoCapture: {
         profile: "user-preference-v1",
+        allowedAgents: ["chief", "main"],
+      },
+    });
+  });
+
+  it("normalizes the broader ordinary-turn auto-capture and auto-promotion profiles", () => {
+    expect(
+      resolveMemoryMiddlewareConfig({
+        autoCapture: {
+          profile: "user-preference-v2",
+          allowedAgents: [" main ", "chief", "main"],
+        },
+        autoPromotion: {
+          profile: "explicit-user-preference-v1",
+          allowedAgents: [" chief ", "main", "chief"],
+        },
+      }),
+    ).toMatchObject({
+      autoCapture: {
+        profile: "user-preference-v2",
+        allowedAgents: ["chief", "main"],
+      },
+      autoPromotion: {
+        profile: "explicit-user-preference-v1",
         allowedAgents: ["chief", "main"],
       },
     });

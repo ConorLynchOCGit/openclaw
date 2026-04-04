@@ -1140,9 +1140,17 @@ function buildFullCompactionFallbackPayload(params: {
 }
 
 function mapCandidateKindToMemoryKind(
-  kind: CandidateSubmissionKind,
+  input: CandidateSubmissionInput,
 ): CandidatePersistencePlan["memoryObject"]["memoryKind"] {
-  switch (kind) {
+  if (
+    input.kind === "learning" &&
+    input.metadata &&
+    typeof input.metadata === "object" &&
+    input.metadata.category === "user_preference"
+  ) {
+    return "feedback";
+  }
+  switch (input.kind) {
     case "correction":
       return "feedback";
     case "procedure":
@@ -1678,7 +1686,7 @@ export function createCandidateSubmissionPersistencePlan(params: {
       ...(input.projectId ? { projectId: input.projectId } : {}),
       ...(input.agentId ? { agentId: input.agentId } : {}),
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-      memoryKind: mapCandidateKindToMemoryKind(input.kind),
+      memoryKind: mapCandidateKindToMemoryKind(input),
       reviewState: "candidate",
       content: input.content,
       metadata: {

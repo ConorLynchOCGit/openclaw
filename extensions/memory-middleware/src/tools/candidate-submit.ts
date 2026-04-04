@@ -1,13 +1,17 @@
 import { Type } from "@sinclair/typebox";
 import { Client } from "pg";
 import type { AnyAgentTool, OpenClawPluginToolContext } from "../../api.js";
+import { DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG } from "../config.js";
 import {
   CANDIDATE_SUBMISSION_KINDS,
   type CandidateSubmissionInput,
   type CandidateSubmissionKind,
   type CandidateSubmissionResult,
 } from "../db/runtime.js";
-import { parseAutoCaptureManagedCandidateContent } from "../ordinary-turn-auto-capture.js";
+import {
+  parseAutoCaptureManagedCandidateContent,
+  parseOrdinaryTurnAutoCapturePreference,
+} from "../ordinary-turn-auto-capture.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   asJsonToolResult as asJsonToolResultBase,
@@ -111,16 +115,115 @@ export async function submitCandidateFromTool(params: {
       };
     }
   }
+  let result: CandidateSubmissionResult;
   switch (params.input.kind) {
     case "learning":
-      return params.runtime.candidateIngress.submitLearning(params.input);
+      result = await params.runtime.candidateIngress.submitLearning(params.input);
+      break;
     case "correction":
-      return params.runtime.candidateIngress.submitCorrectionSuggestion(params.input);
+      result = await params.runtime.candidateIngress.submitCorrectionSuggestion(params.input);
+      break;
     case "procedure":
-      return params.runtime.candidateIngress.submitProcedureSuggestion(params.input);
+      result = await params.runtime.candidateIngress.submitProcedureSuggestion(params.input);
+      break;
     case "improvement":
-      return params.runtime.candidateIngress.submitImprovementNote(params.input);
+      result = await params.runtime.candidateIngress.submitImprovementNote(params.input);
+      break;
   }
+  result = await maybeAutoPromoteToolSubmittedPreference({
+    runtime: params.runtime,
+    input: params.input,
+    result,
+  });
+  return result;
+}
+
+function resolveExplicitUserPreferenceSubmission(
+  input: CandidateSubmissionInput,
+): ReturnType<typeof parseAutoCaptureManagedCandidateContent> | null {
+  if (input.kind !== "learning") {
+    return null;
+  }
+  const metadata = input.metadata ?? {};
+  if (metadata.category !== "user_preference") {
+    return null;
+  }
+  if (metadata.source !== "explicit_user_statement" && metadata.source !== "user_explicit") {
+    return null;
+  }
+  const parsedFromContent = parseAutoCaptureManagedCandidateContent(input.content);
+  if (parsedFromContent) {
+    return parsedFromContent;
+  }
+  if (typeof metadata.raw === "string") {
+    const rawCandidates = [
+      metadata.raw,
+      metadata.raw.replace(/^(?:going forward|from now on),\s*/i, ""),
+    ];
+    for (const rawCandidate of rawCandidates) {
+      const parsedFromRaw = parseOrdinaryTurnAutoCapturePreference(
+        rawCandidate,
+        "user-preference-v2",
+      );
+      if (parsedFromRaw) {
+        return parsedFromRaw;
+      }
+    }
+  }
+  return null;
+}
+
+async function maybeAutoPromoteToolSubmittedPreference(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: CandidateSubmissionInput;
+  result: CandidateSubmissionResult;
+}): Promise<CandidateSubmissionResult> {
+  const autoPromotion =
+    params.runtime.config.autoPromotion ?? DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG;
+  if (
+    autoPromotion.profile !== "explicit-user-preference-v1" ||
+    !params.result.accepted ||
+    !params.result.memoryObjectId
+  ) {
+    return params.result;
+  }
+  const parsed = resolveExplicitUserPreferenceSubmission(params.input);
+  if (!parsed) {
+    return params.result;
+  }
+  const autoPromotionMetadata = {
+    autoPromotion: {
+      source: "candidate_submit_auto_promotion",
+      profile: autoPromotion.profile,
+      captureProfile: "tool-submitted",
+      captureClass: "explicit_preference",
+      reasonCode: "explicit_user_statement",
+      key: parsed.key,
+      subjectKey: parsed.subjectKey,
+      subject: parsed.subject,
+      value: parsed.value,
+      toolName: "memory_candidate_submit",
+    },
+  };
+  const reviewResult = await params.runtime.candidateReview.review({
+    candidateId: params.result.memoryObjectId,
+    outcome: "accepted",
+    metadata: autoPromotionMetadata,
+  });
+  if (!reviewResult.accepted) {
+    return params.result;
+  }
+  const promotionResult = await params.runtime.candidatePromotion.promoteToMemory({
+    candidateId: params.result.memoryObjectId,
+    metadata: autoPromotionMetadata,
+  });
+  if (!promotionResult.accepted) {
+    return params.result;
+  }
+  return {
+    ...params.result,
+    reviewState: "approved",
+  };
 }
 
 async function findExistingAutoCaptureManagedDuplicate(params: {

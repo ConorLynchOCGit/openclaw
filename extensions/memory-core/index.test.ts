@@ -63,11 +63,13 @@ describe("buildPromptSection", () => {
 
     expect(result[0]).toBe("## Durable Memory");
     expect(result[1]).toContain("inspect existing approved memory");
-    expect(result[2]).toContain("memory_candidate_submit");
-    expect(result[3]).toContain("store, remember, or save");
-    expect(result[4]).toContain("plain favorite/preferred preference");
-    expect(result[5]).toContain("review and promotion stay manual");
-    expect(result[6]).toContain("memory_session_get and memory_session_update");
+    expect(result[2]).toContain("search approved durable memory before answering");
+    expect(result[3]).toContain("directly answers the question");
+    expect(result[4]).toContain("memory_candidate_submit");
+    expect(result[5]).toContain("store, remember, or save");
+    expect(result[6]).toContain("plain favorite/preferred preference");
+    expect(result[7]).toContain("some low-risk classes auto-promote");
+    expect(result[8]).toContain("memory_session_get and memory_session_update");
     expect(result.at(-1)).toBe("");
   });
 

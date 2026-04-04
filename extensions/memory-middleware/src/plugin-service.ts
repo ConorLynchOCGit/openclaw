@@ -26,6 +26,10 @@ export function createMemoryMiddlewarePluginService(
         logger: ctx.logger,
         candidateIngress: runtime.candidateIngress,
         subscribe: subscribeToTranscriptUpdates,
+        deps: {
+          reviewCandidate: (input) => runtime.candidateReview.review(input),
+          promoteToMemory: (input) => runtime.candidatePromotion.promoteToMemory(input),
+        },
       });
       ordinaryTurnAutoCapture.start();
     },

@@ -62,7 +62,23 @@
         "properties": {
           "profile": {
             "type": "string",
-            "enum": ["disabled", "user-preference-v1"]
+            "enum": ["disabled", "user-preference-v1", "user-preference-v2"]
+          },
+          "allowedAgents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "autoPromotion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "type": "string",
+            "enum": ["disabled", "explicit-user-preference-v1"]
           },
           "allowedAgents": {
             "type": "array",

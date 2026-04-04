@@ -36,7 +36,12 @@ export type MemoryMiddlewareBackgroundJobConfig = {
 };
 
 export type MemoryMiddlewareAutoCaptureConfig = {
-  profile: "disabled" | "user-preference-v1";
+  profile: "disabled" | "user-preference-v1" | "user-preference-v2";
+  allowedAgents: string[];
+};
+
+export type MemoryMiddlewareAutoPromotionConfig = {
+  profile: "disabled" | "explicit-user-preference-v1";
   allowedAgents: string[];
 };
 
@@ -46,12 +51,19 @@ export type MemoryMiddlewareConfig = {
   memoryObjectQuery: MemoryMiddlewareMemoryObjectQueryConfig;
   backgroundJobs: MemoryMiddlewareBackgroundJobConfig;
   autoCapture?: MemoryMiddlewareAutoCaptureConfig;
+  autoPromotion?: MemoryMiddlewareAutoPromotionConfig;
 };
 
 export const DEFAULT_MEMORY_MIDDLEWARE_AUTO_CAPTURE_CONFIG: MemoryMiddlewareAutoCaptureConfig = {
   profile: "disabled",
   allowedAgents: ["chief", "main"],
 };
+
+export const DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG: MemoryMiddlewareAutoPromotionConfig =
+  {
+    profile: "disabled",
+    allowedAgents: ["chief", "main"],
+  };
 
 export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
   jsonSchema: {
@@ -125,7 +137,21 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
         type: "object",
         additionalProperties: false,
         properties: {
-          profile: { type: "string", enum: ["disabled", "user-preference-v1"] },
+          profile: {
+            type: "string",
+            enum: ["disabled", "user-preference-v1", "user-preference-v2"],
+          },
+          allowedAgents: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+      },
+      autoPromotion: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          profile: { type: "string", enum: ["disabled", "explicit-user-preference-v1"] },
           allowedAgents: {
             type: "array",
             items: { type: "string" },
@@ -147,6 +173,7 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
   const memoryObjectQuery = asRecord(root.memoryObjectQuery);
   const backgroundJobs = asRecord(root.backgroundJobs);
   const autoCapture = asRecord(root.autoCapture);
+  const autoPromotion = asRecord(root.autoPromotion);
 
   const driver = database.driver === "postgres" ? "postgres" : "postgres";
   const url =
@@ -225,11 +252,29 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
       ? backgroundJobs.runnerOwnerId.trim()
       : undefined;
   const autoCaptureProfile =
-    autoCapture.profile === "user-preference-v1" ? "user-preference-v1" : "disabled";
-  const allowedAgents = Array.isArray(autoCapture.allowedAgents)
+    autoCapture.profile === "user-preference-v1"
+      ? "user-preference-v1"
+      : autoCapture.profile === "user-preference-v2"
+        ? "user-preference-v2"
+        : "disabled";
+  const autoCaptureAllowedAgents = Array.isArray(autoCapture.allowedAgents)
     ? [
         ...new Set(
           autoCapture.allowedAgents
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim())
+            .filter(Boolean),
+        ),
+      ].sort((left, right) => left.localeCompare(right))
+    : ["chief", "main"];
+  const autoPromotionProfile =
+    autoPromotion.profile === "explicit-user-preference-v1"
+      ? "explicit-user-preference-v1"
+      : "disabled";
+  const autoPromotionAllowedAgents = Array.isArray(autoPromotion.allowedAgents)
+    ? [
+        ...new Set(
+          autoPromotion.allowedAgents
             .filter((value): value is string => typeof value === "string")
             .map((value) => value.trim())
             .filter(Boolean),
@@ -260,9 +305,16 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
     autoCapture: {
       profile: autoCaptureProfile,
       allowedAgents:
-        allowedAgents.length > 0
-          ? [...allowedAgents]
+        autoCaptureAllowedAgents.length > 0
+          ? [...autoCaptureAllowedAgents]
           : [...DEFAULT_MEMORY_MIDDLEWARE_AUTO_CAPTURE_CONFIG.allowedAgents],
+    },
+    autoPromotion: {
+      profile: autoPromotionProfile,
+      allowedAgents:
+        autoPromotionAllowedAgents.length > 0
+          ? [...autoPromotionAllowedAgents]
+          : [...DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG.allowedAgents],
     },
   };
 }

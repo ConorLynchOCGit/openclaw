@@ -16,7 +16,7 @@ export type CandidateSubmissionAcceptedResult = {
   status: "accepted";
   kind: CandidateSubmissionKind;
   storage: "database";
-  reviewState: "candidate";
+  reviewState: "candidate" | "approved";
   eventId: string;
   memoryObjectId: string;
 };

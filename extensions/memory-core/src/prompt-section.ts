@@ -63,6 +63,12 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
       lines.push(
         "Before claiming durable long-term memory about a project, preference, decision, correction, or procedure, inspect existing approved memory with the memory_object search/list/get tools when that helps avoid duplicates or contradictions.",
       );
+      lines.push(
+        "When the user asks about their own preferences, defaults, recurring requirements, or prior corrections, search approved durable memory before answering instead of relying on unstated recollection. Candidate backlog is not durable memory unless you are explicitly reviewing candidates.",
+      );
+      lines.push(
+        "If an approved durable memory result directly answers the question, use it in the normal reply without asking the user to restate it. If no approved result exists, answer normally and say you did not find stored memory only when that context matters.",
+      );
     }
 
     if (hasCandidateSubmit) {
@@ -76,7 +82,7 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
         "Do not call memory_candidate_submit just because the user naturally states a plain favorite/preferred preference in ordinary conversation; that narrow low-risk preference class may be auto-captured already.",
       );
       lines.push(
-        "Do not submit transient chatter, one-off logistics, secrets, credentials, or anything the user asked not to retain. Candidate submission is bounded: review and promotion stay manual.",
+        "Do not submit transient chatter, one-off logistics, secrets, credentials, or anything the user asked not to retain. Candidate submission stays bounded even when some low-risk classes auto-promote.",
       );
     }
 

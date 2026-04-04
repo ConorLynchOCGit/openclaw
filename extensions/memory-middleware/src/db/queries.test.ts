@@ -1406,4 +1406,57 @@ describe("memory middleware query layer", () => {
       },
     });
   });
+
+  it("stores explicit user preference learning candidates as feedback memory", () => {
+    expect(
+      createCandidateSubmissionPersistencePlan({
+        schema: "memory_middleware",
+        input: {
+          kind: "learning",
+          content: "User preference: preferred atlas bloom is amber cedar dusk.",
+          metadata: {
+            category: "user_preference",
+            source: "explicit_user_statement",
+          },
+        },
+      }),
+    ).toEqual({
+      schema: "memory_middleware",
+      event: {
+        eventKind: "candidate_submission",
+        eventName: "candidate_submission.learning",
+        payload: {
+          submissionKind: "learning",
+          content: "User preference: preferred atlas bloom is amber cedar dusk.",
+          candidateMetadata: {
+            category: "user_preference",
+            source: "explicit_user_statement",
+          },
+        },
+        metadata: {
+          source: "candidate-only-ingress",
+        },
+      },
+      memoryObject: {
+        memoryKind: "feedback",
+        reviewState: "candidate",
+        content: "User preference: preferred atlas bloom is amber cedar dusk.",
+        metadata: {
+          submissionKind: "learning",
+          candidateMetadata: {
+            category: "user_preference",
+            source: "explicit_user_statement",
+          },
+        },
+      },
+      memorySource: {
+        sourceKind: "event",
+        sourceTable: "memory_middleware.memory_events",
+        metadata: {
+          source: "candidate-only-ingress",
+          submissionKind: "learning",
+        },
+      },
+    });
+  });
 });
