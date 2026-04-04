@@ -1146,7 +1146,8 @@ function mapCandidateKindToMemoryKind(
     input.kind === "learning" &&
     input.metadata &&
     typeof input.metadata === "object" &&
-    input.metadata.category === "user_preference"
+    (input.metadata.category === "user_preference" ||
+      input.metadata.category === "user_requirement")
   ) {
     return "feedback";
   }
@@ -11133,6 +11134,59 @@ async function createSkillCandidateProcurementRecordInConfiguredDatabase(params:
   }
 }
 
+function readNestedMetadataString(
+  metadata: Record<string, unknown> | undefined,
+  path: string[],
+): string | undefined {
+  let cursor: unknown = metadata;
+  for (const segment of path) {
+    if (!cursor || typeof cursor !== "object") {
+      return undefined;
+    }
+    cursor = (cursor as Record<string, unknown>)[segment];
+  }
+  return typeof cursor === "string" && cursor.trim().length > 0 ? cursor.trim() : undefined;
+}
+
+function resolveCorrectionSupersedeSubjectKey(
+  metadata: Record<string, unknown> | undefined,
+): string | undefined {
+  return (
+    readNestedMetadataString(metadata, ["autoCapture", "subjectKey"]) ??
+    readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "subjectKey"]) ??
+    normalizeMetadataString(metadata, "preference_key")
+  );
+}
+
+async function selectApprovedSupersedeTargetsBySubjectKey(params: {
+  client: Client;
+  schema: string;
+  subjectKey: string;
+  promotedMemoryObjectId: string;
+}): Promise<Array<{ id: string }>> {
+  const memoryObjectsTable = quoteQualifiedTable({
+    schema: params.schema,
+    table: "memory_objects",
+  });
+  const result = await params.client.query<{ id: string }>(
+    `
+      select id::text as id
+      from ${memoryObjectsTable}
+      where review_state = 'approved'
+        and id <> $2::uuid
+        and (
+          metadata->'candidateMetadata'->'autoCapture'->>'subjectKey' = $1
+          or metadata->'promotionMetadata'->'autoPromotion'->>'subjectKey' = $1
+          or metadata->'autoPromotion'->>'subjectKey' = $1
+          or metadata->>'preference_key' = $1
+        )
+      order by created_at desc, id desc
+    `,
+    [params.subjectKey, params.promotedMemoryObjectId],
+  );
+  return result.rows;
+}
+
 async function promoteCandidateToMemoryInConfiguredDatabase(params: {
   config: MemoryMiddlewareDbConfig;
   input: CandidateMemoryPromotionInput;
@@ -11346,6 +11400,59 @@ async function promoteCandidateToMemoryInConfiguredDatabase(params: {
         }),
       ],
     );
+
+    const correctionSubjectKey =
+      kind === "correction"
+        ? resolveCorrectionSupersedeSubjectKey(target.candidate_metadata ?? undefined)
+        : undefined;
+    if (correctionSubjectKey) {
+      const supersedeTargets = await selectApprovedSupersedeTargetsBySubjectKey({
+        client,
+        schema: params.schema,
+        subjectKey: correctionSubjectKey,
+        promotedMemoryObjectId,
+      });
+      const supersededAt = new Date().toISOString();
+      for (const supersedeTarget of supersedeTargets) {
+        await insertConsolidationSupersedeReview({
+          client,
+          schema: params.schema,
+          memoryObjectId: supersedeTarget.id,
+          reviewerAgentId: params.input.promoterAgentId ?? target.agent_id ?? undefined,
+          rationale:
+            "older approved memory was superseded by a reviewed correction promotion for the same bounded subject",
+          metadata: {
+            source: "candidate-memory-correction-supersede",
+            supersededByObjectId: promotedMemoryObjectId,
+            promotedFromCandidateId: params.input.candidateId,
+            subjectKey: correctionSubjectKey,
+          },
+        });
+        await updateMemoryObjectToSuperseded({
+          client,
+          schema: params.schema,
+          memoryObjectId: supersedeTarget.id,
+          supersededAt,
+          metadata: {
+            supersededByObjectId: promotedMemoryObjectId,
+            lifecycleHint: "superseded",
+            supersededReason: "candidate_correction_promotion",
+            subjectKey: correctionSubjectKey,
+          },
+        });
+        await ensureConsolidationSupersedesLink({
+          client,
+          schema: params.schema,
+          sourceMemoryObjectId: supersedeTarget.id,
+          targetMemoryObjectId: promotedMemoryObjectId,
+          metadata: {
+            source: "candidate-memory-correction-supersede",
+            promotedFromCandidateId: params.input.candidateId,
+            subjectKey: correctionSubjectKey,
+          },
+        });
+      }
+    }
 
     await client.query("commit");
 

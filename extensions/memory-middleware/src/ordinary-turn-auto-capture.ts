@@ -32,14 +32,47 @@ const PREFERENCE_CORRECTION_PATTERNS = [
   {
     template: "my_preferred_is" as const,
     pattern:
-      /^(?:actually,?|correction:|no,)\s*my preferred ([a-z0-9][a-z0-9 -]{0,47}) is ([a-z0-9][a-z0-9 '&/().,-]{0,63})[.!?]?$/i,
+      /^(?:actually,?|correction:|no,|i meant,?|that(?:'|’)s not right,?|sorry,)\s*my preferred ([a-z0-9][a-z0-9 -]{0,47}) is ([a-z0-9][a-z0-9 '&/().,-]{0,63})[.!?]?$/i,
     subjectPrefix: "preferred",
   },
   {
     template: "my_favorite_is" as const,
     pattern:
-      /^(?:actually,?|correction:|no,)\s*my favorite ([a-z0-9][a-z0-9 -]{0,47}) is ([a-z0-9][a-z0-9 '&/().,-]{0,63})[.!?]?$/i,
+      /^(?:actually,?|correction:|no,|i meant,?|that(?:'|’)s not right,?|sorry,)\s*my favorite ([a-z0-9][a-z0-9 -]{0,47}) is ([a-z0-9][a-z0-9 '&/().,-]{0,63})[.!?]?$/i,
     subjectPrefix: "favorite",
+  },
+] as const;
+const REQUIREMENT_PATTERNS = [
+  {
+    template: "responses_concise" as const,
+    pattern:
+      /^(?:please\s+|always\s+)?(?:keep|make) (?:your |the )?(?:responses|reply|replies|answers) (?:concise|brief|short)[.!?]?$/i,
+    subject: "response style",
+    value: "keep responses concise",
+    content: "User requirement: keep responses concise.",
+  },
+  {
+    template: "responses_bullets" as const,
+    pattern:
+      /^(?:please\s+)?(?:use bullet points|write (?:your )?(?:responses|reply|replies|answers) in bullet points)(?: when listing items)?[.!?]?$/i,
+    subject: "response format",
+    value: "use bullet points when listing items",
+    content: "User requirement: use bullet points when listing items.",
+  },
+  {
+    template: "responses_plain_english" as const,
+    pattern:
+      /^(?:please\s+)?(?:use plain english|write (?:your )?(?:responses|reply|replies|answers) in plain english)[.!?]?$/i,
+    subject: "response language",
+    value: "use plain English",
+    content: "User requirement: use plain English.",
+  },
+  {
+    template: "responses_no_tables" as const,
+    pattern: /^(?:please\s+)?do not use tables(?: unless i ask)?[.!?]?$/i,
+    subject: "response format",
+    value: "do not use tables unless the user asks",
+    content: "User requirement: do not use tables unless the user asks.",
   },
 ] as const;
 const PREFERENCE_CANDIDATE_CONTENT_PATTERNS = [
@@ -53,6 +86,92 @@ const PREFERENCE_CANDIDATE_CONTENT_PATTERNS = [
     template: "my_favorite_is" as const,
     pattern:
       /^user(?: preference(?::| stated explicitly:)|['’]s)? favorite ([a-z0-9][a-z0-9 -]{0,47}) is ["']?([a-z0-9][a-z0-9 '&/().,-]{0,63})["']?[.!?]?$/i,
+    subjectPrefix: "favorite",
+  },
+] as const;
+const REQUIREMENT_CANDIDATE_CONTENT_PATTERNS = [
+  {
+    template: "responses_concise" as const,
+    pattern: /^user requirement(?::| stated explicitly:)? keep responses concise[.!?]?$/i,
+    subject: "response style",
+    value: "keep responses concise",
+    content: "User requirement: keep responses concise.",
+  },
+  {
+    template: "responses_concise" as const,
+    pattern: /^user prefers concise responses[.!?]?$/i,
+    subject: "response style",
+    value: "keep responses concise",
+    content: "User requirement: keep responses concise.",
+  },
+  {
+    template: "responses_bullets" as const,
+    pattern:
+      /^user requirement(?::| stated explicitly:)? use bullet points when listing items[.!?]?$/i,
+    subject: "response format",
+    value: "use bullet points when listing items",
+    content: "User requirement: use bullet points when listing items.",
+  },
+  {
+    template: "responses_bullets" as const,
+    pattern: /^user prefers bullet(?:-point)? responses[.!?]?$/i,
+    subject: "response format",
+    value: "use bullet points when listing items",
+    content: "User requirement: use bullet points when listing items.",
+  },
+  {
+    template: "responses_plain_english" as const,
+    pattern: /^user requirement(?::| stated explicitly:)? use plain english[.!?]?$/i,
+    subject: "response language",
+    value: "use plain English",
+    content: "User requirement: use plain English.",
+  },
+  {
+    template: "responses_plain_english" as const,
+    pattern: /^user prefers plain english responses[.!?]?$/i,
+    subject: "response language",
+    value: "use plain English",
+    content: "User requirement: use plain English.",
+  },
+  {
+    template: "responses_no_tables" as const,
+    pattern:
+      /^user requirement(?::| stated explicitly:)? do not use tables unless (?:the )?user asks[.!?]?$/i,
+    subject: "response format",
+    value: "do not use tables unless the user asks",
+    content: "User requirement: do not use tables unless the user asks.",
+  },
+  {
+    template: "responses_no_tables" as const,
+    pattern: /^user prefers no tables unless asked[.!?]?$/i,
+    subject: "response format",
+    value: "do not use tables unless the user asks",
+    content: "User requirement: do not use tables unless the user asks.",
+  },
+] as const;
+const PREFERENCE_CORRECTION_CANDIDATE_CONTENT_PATTERNS = [
+  {
+    template: "my_preferred_is" as const,
+    pattern:
+      /^user correction: preferred ([a-z0-9][a-z0-9 -]{0,47}) is ["']?([a-z0-9][a-z0-9 '&/().,-]{0,63})["']?[.!?]?$/i,
+    subjectPrefix: "preferred",
+  },
+  {
+    template: "my_preferred_is" as const,
+    pattern:
+      /^user corrected a durable preference: preferred ([a-z0-9][a-z0-9 -]{0,47}) is ["']?([a-z0-9][a-z0-9 '&/().,-]{0,63})["']?[.!?]?$/i,
+    subjectPrefix: "preferred",
+  },
+  {
+    template: "my_favorite_is" as const,
+    pattern:
+      /^user correction: favorite ([a-z0-9][a-z0-9 -]{0,47}) is ["']?([a-z0-9][a-z0-9 '&/().,-]{0,63})["']?[.!?]?$/i,
+    subjectPrefix: "favorite",
+  },
+  {
+    template: "my_favorite_is" as const,
+    pattern:
+      /^user corrected a durable preference: favorite ([a-z0-9][a-z0-9 -]{0,47}) is ["']?([a-z0-9][a-z0-9 '&/().,-]{0,63})["']?[.!?]?$/i,
     subjectPrefix: "favorite",
   },
 ] as const;
@@ -120,10 +239,19 @@ type TranscriptUserMessage = {
 
 export type OrdinaryTurnAutoCaptureMatch = {
   profile: "user-preference-v1" | "user-preference-v2";
-  captureClass: "explicit_preference" | "preference_correction";
+  captureClass: "explicit_preference" | "preference_correction" | "explicit_requirement";
   candidateKind: "learning" | "correction";
-  reasonCode: "explicit_preference_statement" | "explicit_preference_correction";
-  template: "my_preferred_is" | "my_favorite_is";
+  reasonCode:
+    | "explicit_preference_statement"
+    | "explicit_preference_correction"
+    | "explicit_requirement_statement";
+  template:
+    | "my_preferred_is"
+    | "my_favorite_is"
+    | "responses_concise"
+    | "responses_bullets"
+    | "responses_plain_english"
+    | "responses_no_tables";
   subject: string;
   value: string;
   normalizedSubject: string;
@@ -430,7 +558,54 @@ function buildPreferenceMatch(params: {
     value,
     normalizedSubject,
     normalizedValue,
-    content: `User preference: ${params.subjectPrefix} ${subject} is ${value}.`,
+    content:
+      params.captureClass === "preference_correction"
+        ? `User correction: ${params.subjectPrefix} ${subject} is ${value}.`
+        : `User preference: ${params.subjectPrefix} ${subject} is ${value}.`,
+    subjectKey,
+    key: buildAutoCaptureKey({
+      template: params.template,
+      normalizedSubject,
+      normalizedValue,
+    }),
+  };
+}
+
+function buildRequirementMatch(params: {
+  profile: "user-preference-v1" | "user-preference-v2";
+  normalized: string;
+  template:
+    | "responses_concise"
+    | "responses_bullets"
+    | "responses_plain_english"
+    | "responses_no_tables";
+  pattern: RegExp;
+  subject: string;
+  value: string;
+  content: string;
+}): OrdinaryTurnAutoCaptureMatch | null {
+  if (!params.pattern.test(params.normalized)) {
+    return null;
+  }
+  const subject = normalizeText(params.subject);
+  const value = normalizeText(params.value);
+  const normalizedSubject = normalizeLower(subject);
+  const normalizedValue = normalizeLower(value);
+  const subjectKey = buildAutoCaptureSubjectKey({
+    template: params.template,
+    normalizedSubject,
+  });
+  return {
+    profile: params.profile,
+    captureClass: "explicit_requirement",
+    candidateKind: "learning",
+    reasonCode: "explicit_requirement_statement",
+    template: params.template,
+    subject,
+    value,
+    normalizedSubject,
+    normalizedValue,
+    content: params.content,
     subjectKey,
     key: buildAutoCaptureKey({
       template: params.template,
@@ -477,6 +652,21 @@ export function parseOrdinaryTurnAutoCapturePreference(
         return match;
       }
     }
+
+    for (const { pattern, template, subject, value, content } of REQUIREMENT_PATTERNS) {
+      const match = buildRequirementMatch({
+        profile,
+        normalized,
+        pattern,
+        template,
+        subject,
+        value,
+        content,
+      });
+      if (match) {
+        return match;
+      }
+    }
   }
 
   for (const { pattern, template, subjectPrefix } of PREFERENCE_PATTERNS) {
@@ -512,6 +702,58 @@ export function parseAutoCaptureManagedCandidateContent(
       captureClass: "explicit_preference",
       candidateKind: "learning",
       reasonCode: "explicit_preference_statement",
+      normalized,
+      pattern,
+      template,
+      subjectPrefix,
+    });
+    if (match) {
+      return match;
+    }
+  }
+
+  for (const {
+    pattern,
+    template,
+    subject,
+    value,
+    content: requirementContent,
+  } of REQUIREMENT_CANDIDATE_CONTENT_PATTERNS) {
+    const match = buildRequirementMatch({
+      profile: "user-preference-v2",
+      normalized,
+      pattern,
+      template,
+      subject,
+      value,
+      content: requirementContent,
+    });
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
+}
+
+export function parseManagedCorrectionCandidateContent(
+  content: string,
+): OrdinaryTurnAutoCaptureMatch | null {
+  const normalized = normalizeText(content);
+  if (!normalized || normalized.length < 12 || normalized.length > 140) {
+    return null;
+  }
+
+  for (const {
+    pattern,
+    template,
+    subjectPrefix,
+  } of PREFERENCE_CORRECTION_CANDIDATE_CONTENT_PATTERNS) {
+    const match = buildPreferenceMatch({
+      profile: "user-preference-v2",
+      captureClass: "preference_correction",
+      candidateKind: "correction",
+      reasonCode: "explicit_preference_correction",
       normalized,
       pattern,
       template,
@@ -766,6 +1008,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       const candidateMetadata = {
         autoCapture: {
           source: AUTO_CAPTURE_SOURCE,
+          captureSeam: "transcript_subscriber_fallback",
           profile: match.profile,
           captureClass: match.captureClass,
           reasonCode: match.reasonCode,
@@ -803,12 +1046,14 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       if (
         autoPromotion.profile === "explicit-user-preference-v1" &&
         autoPromotionAgents.has(agentExternalKey) &&
-        match.captureClass === "explicit_preference" &&
+        (match.captureClass === "explicit_preference" ||
+          match.captureClass === "explicit_requirement") &&
         result.memoryObjectId
       ) {
         const autoPromotionMetadata = {
           autoPromotion: {
             source: AUTO_PROMOTION_SOURCE,
+            captureSeam: "transcript_subscriber_fallback",
             profile: autoPromotion.profile,
             captureProfile: match.profile,
             captureClass: match.captureClass,

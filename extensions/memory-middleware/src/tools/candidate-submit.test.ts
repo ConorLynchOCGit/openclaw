@@ -335,6 +335,195 @@ describe("memory candidate submit tool", () => {
     );
   });
 
+  it("normalizes managed conversational corrections from the tool path without auto-promotion", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-6", {
+      kind: "correction",
+      content: "User correction: favorite proof seed is 'fennel aurora'.",
+      metadata: {
+        raw: "Actually, my favorite proof seed is fennel aurora.",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("correction"),
+    });
+    expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "user_preference_correction",
+          source: "conversational_user_correction",
+          preference_key: expect.any(String),
+          autoCapture: expect.objectContaining({
+            captureClass: "preference_correction",
+            captureSeam: "model_tool_primary",
+            subject: "proof seed",
+            value: "fennel aurora",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateReview.review).not.toHaveBeenCalled();
+    expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
+  });
+
+  it("normalizes the live conversational correction payload shape without auto-promotion", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-6b", {
+      kind: "correction",
+      content:
+        "User corrected a durable preference: preferred slice four lantern reed is moon amber pearl.",
+      metadata: {
+        domain: "user_preference",
+        preferenceKey: "slice four lantern reed",
+        value: "moon amber pearl",
+        source: "user_correction",
+        timestamp: "2026-04-04T19:32:00Z",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("correction"),
+    });
+    expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "user_preference_correction",
+          source: "conversational_user_correction",
+          preference_key: expect.any(String),
+          autoCapture: expect.objectContaining({
+            captureClass: "preference_correction",
+            captureSeam: "model_tool_primary",
+            subject: "slice four lantern reed",
+            value: "moon amber pearl",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateReview.review).not.toHaveBeenCalled();
+    expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
+  });
+
+  it("auto-promotes bounded recurring response requirements from the tool path", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-7", {
+      kind: "learning",
+      content: "User requirement stated explicitly: keep responses concise.",
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              ...createAcceptedResult("learning"),
+              reviewState: "approved",
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+      details: {
+        ...createAcceptedResult("learning"),
+        reviewState: "approved",
+      },
+    });
+    expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "user_requirement",
+          source: "explicit_user_requirement",
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_requirement",
+            captureSeam: "model_tool_primary",
+            subject: "response style",
+            value: "keep responses concise",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateReview.review).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          autoPromotion: expect.objectContaining({
+            captureClass: "explicit_requirement",
+            reasonCode: "explicit_requirement_statement",
+            toolName: "memory_candidate_submit",
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("auto-promotes the live concise-requirement tool payload shape", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-7b", {
+      kind: "learning",
+      content: "User prefers concise responses.",
+      metadata: {
+        source: "explicit_user_preference",
+        channel: "webchat",
+        date: "2026-04-04",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              ...createAcceptedResult("learning"),
+              reviewState: "approved",
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+      details: {
+        ...createAcceptedResult("learning"),
+        reviewState: "approved",
+      },
+    });
+    expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "user_requirement",
+          source: "explicit_user_requirement",
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_requirement",
+            captureSeam: "model_tool_primary",
+            subject: "response style",
+            value: "keep responses concise",
+          }),
+        }),
+      }),
+    );
+  });
+
   it("rejects unsupported candidate payload shapes", () => {
     expect(() =>
       normalizeCandidateSubmissionInput({

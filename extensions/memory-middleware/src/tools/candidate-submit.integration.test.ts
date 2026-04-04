@@ -2349,6 +2349,115 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
+  it("supersedes older approved feedback when a reviewed correction promotion targets the same bounded subject", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+
+    const originalSubjectKey = "bounded-subject-proof-key";
+    const firstSubmit = await submitTool.execute("call-16m-s4", {
+      kind: "learning",
+      content: "User preference: preferred proof lantern is ember tide.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "user_preference",
+        source: "explicit_user_statement",
+        autoCapture: {
+          subjectKey: originalSubjectKey,
+          key: "bounded-preference-original",
+        },
+      },
+    });
+    const firstCandidateId = (firstSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    await reviewTool.execute("call-16n-s4", {
+      candidateId: firstCandidateId,
+      outcome: "accepted",
+      rationale: "Accept original preference for bounded proof.",
+    });
+    const firstPromotion = await promoteTool.execute("call-16o-s4", {
+      candidateId: firstCandidateId,
+    });
+    const firstApprovedId = (firstPromotion.details as { promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const correctionSubmit = await submitTool.execute("call-16p-s4", {
+      kind: "correction",
+      content: "User correction: preferred proof lantern is moon ash glow.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "user_preference_correction",
+        source: "conversational_user_correction",
+        autoCapture: {
+          subjectKey: originalSubjectKey,
+          key: "bounded-preference-correction",
+        },
+      },
+    });
+    const correctionCandidateId = (correctionSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await reviewTool.execute("call-16q-s4", {
+      candidateId: correctionCandidateId,
+      outcome: "accepted",
+      rationale: "Accept corrected preference for bounded proof.",
+    });
+    const correctionPromotion = await promoteTool.execute("call-16r-s4", {
+      candidateId: correctionCandidateId,
+    });
+    const correctedApprovedId = (correctionPromotion.details as { promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const supersession = await querySingleRow<{
+      original_review_state: string;
+      original_superseded_by: string | null;
+      corrected_review_state: string;
+      supersedes_link_count: string;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select review_state::text from memory_middleware.memory_objects where id = $1::uuid) as original_review_state,
+          (select metadata->>'supersededByObjectId' from memory_middleware.memory_objects where id = $1::uuid) as original_superseded_by,
+          (select review_state::text from memory_middleware.memory_objects where id = $2::uuid) as corrected_review_state,
+          (
+            select count(*)::text
+            from memory_middleware.memory_links
+            where source_memory_object_id = $1::uuid
+              and target_memory_object_id = $2::uuid
+              and link_kind = 'supersedes'
+          ) as supersedes_link_count
+      `,
+      [firstApprovedId, correctedApprovedId],
+    );
+
+    expect(supersession).toEqual({
+      original_review_state: "superseded",
+      original_superseded_by: correctedApprovedId,
+      corrected_review_state: "approved",
+      supersedes_link_count: "1",
+    });
+  });
+
   it("rejects bounded memory promotion for accepted procedure candidates", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

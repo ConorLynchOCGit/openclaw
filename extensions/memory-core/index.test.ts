@@ -64,12 +64,15 @@ describe("buildPromptSection", () => {
     expect(result[0]).toBe("## Durable Memory");
     expect(result[1]).toContain("inspect existing approved memory");
     expect(result[2]).toContain("search approved durable memory before answering");
-    expect(result[3]).toContain("directly answers the question");
-    expect(result[4]).toContain("memory_candidate_submit");
-    expect(result[5]).toContain("store, remember, or save");
-    expect(result[6]).toContain("plain favorite/preferred preference");
-    expect(result[7]).toContain("some low-risk classes auto-promote");
-    expect(result[8]).toContain("memory_session_get and memory_session_update");
+    expect(result[3]).toContain("memory_object_search_hybrid");
+    expect(result[4]).toContain("directly answers the question");
+    expect(result[5]).toContain("memory_candidate_submit");
+    expect(result[6]).toContain("Actually, No, I meant");
+    expect(result[7]).toContain("keep replies concise");
+    expect(result[8]).toContain("store, remember, or save");
+    expect(result[9]).toContain("plain favorite/preferred preference");
+    expect(result[10]).toContain("some low-risk classes auto-promote");
+    expect(result[11]).toContain("memory_session_get and memory_session_update");
     expect(result.at(-1)).toBe("");
   });
 
@@ -87,6 +90,12 @@ describe("buildPromptSection", () => {
     expect(result).toContain("## Durable Memory");
     expect(result).toContain(
       "When the user shares a recurring requirement, important correction, reusable procedure, or project improvement that should survive beyond the current turn, submit a concise candidate with memory_candidate_submit.",
+    );
+    expect(result).toContain(
+      "Natural correction phrasing still counts: if the user says things like Actually, No, I meant, or That's not right to correct a durable preference, default, or recurring requirement, submit it as kind=correction even without an explicit save request.",
+    );
+    expect(result).toContain(
+      "If the user states a bounded recurring response requirement in plain language, such as keep replies concise, use bullet points when listing items, use plain English, or do not use tables unless asked, submit it as a learning candidate.",
     );
     expect(result).toContain(
       "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",

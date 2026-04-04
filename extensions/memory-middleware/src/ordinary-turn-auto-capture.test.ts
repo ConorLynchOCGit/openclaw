@@ -7,6 +7,7 @@ import {
   createOrdinaryTurnAutoCaptureController,
   createOrdinaryTurnAutoCaptureHandler,
   parseAutoCaptureManagedCandidateContent,
+  parseManagedCorrectionCandidateContent,
   parseOrdinaryTurnAutoCapturePreference,
 } from "./ordinary-turn-auto-capture.js";
 
@@ -146,6 +147,37 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
     ).toBeNull();
   });
 
+  it("matches an I meant correction form in the broader profile", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "I meant, my preferred proof lantern is amber rain.",
+        "user-preference-v2",
+      ),
+    ).toMatchObject({
+      captureClass: "preference_correction",
+      candidateKind: "correction",
+      template: "my_preferred_is",
+      subject: "proof lantern",
+      value: "amber rain",
+    });
+  });
+
+  it("matches a bounded recurring response requirement in the broader profile", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "Please keep your responses concise.",
+        "user-preference-v2",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_requirement",
+      candidateKind: "learning",
+      template: "responses_concise",
+      subject: "response style",
+      value: "keep responses concise",
+      content: "User requirement: keep responses concise.",
+    });
+  });
+
   it("rejects explicit memory requests", () => {
     expect(
       parseOrdinaryTurnAutoCapturePreference("Remember that my preferred tea is jasmine."),
@@ -199,6 +231,58 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
       template: "my_preferred_is",
       subject: "slice three silver compass",
       value: "cypress ember rain",
+    });
+  });
+
+  it("parses the managed recurring requirement content", () => {
+    expect(
+      parseAutoCaptureManagedCandidateContent(
+        "User requirement stated explicitly: use bullet points when listing items.",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_requirement",
+      template: "responses_bullets",
+      subject: "response format",
+      value: "use bullet points when listing items",
+    });
+  });
+
+  it("parses the live managed concise-requirement phrasing", () => {
+    expect(
+      parseAutoCaptureManagedCandidateContent("User prefers concise responses."),
+    ).toMatchObject({
+      captureClass: "explicit_requirement",
+      template: "responses_concise",
+      subject: "response style",
+      value: "keep responses concise",
+    });
+  });
+
+  it("parses managed correction candidate content", () => {
+    expect(
+      parseManagedCorrectionCandidateContent(
+        "User correction: favorite proof seed is 'fennel aurora'.",
+      ),
+    ).toMatchObject({
+      captureClass: "preference_correction",
+      candidateKind: "correction",
+      template: "my_favorite_is",
+      subject: "proof seed",
+      value: "fennel aurora",
+    });
+  });
+
+  it("parses the live managed correction phrasing", () => {
+    expect(
+      parseManagedCorrectionCandidateContent(
+        "User corrected a durable preference: preferred slice four lantern reed is moon amber pearl.",
+      ),
+    ).toMatchObject({
+      captureClass: "preference_correction",
+      candidateKind: "correction",
+      template: "my_preferred_is",
+      subject: "slice four lantern reed",
+      value: "moon amber pearl",
     });
   });
 });
@@ -384,18 +468,90 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
 
     expect(submitCorrectionSuggestion).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: "User preference: favorite proof seed is fennel aurora.",
+        content: "User correction: favorite proof seed is fennel aurora.",
         metadata: expect.objectContaining({
           autoCapture: expect.objectContaining({
             profile: "user-preference-v2",
             captureClass: "preference_correction",
             reasonCode: "explicit_preference_correction",
+            captureSeam: "transcript_subscriber_fallback",
           }),
         }),
       }),
     );
     expect(reviewCandidate).not.toHaveBeenCalled();
     expect(promoteToMemory).not.toHaveBeenCalled();
+  });
+
+  it("routes bounded recurring response requirements through learning submission and auto-promotion", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-requirement-1",
+      memoryObjectId: "memory-requirement-1",
+    }));
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "memory-requirement-1",
+      outcome: "accepted" as const,
+      reviewId: "review-requirement-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "memory-requirement-1",
+      promotedMemoryObjectId: "approved-requirement-1",
+      promotedMemoryKind: "feedback" as const,
+      promotedReviewState: "approved" as const,
+      sourceEventId: "event-requirement-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "Please keep your responses concise.",
+        timestamp: Date.parse("2026-04-04T12:06:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "User requirement: keep responses concise.",
+        metadata: expect.objectContaining({
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_requirement",
+            template: "responses_concise",
+            captureSeam: "transcript_subscriber_fallback",
+          }),
+        }),
+      }),
+    );
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(promoteToMemory).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to the transcript file when the update omits message and sessionKey", async () => {

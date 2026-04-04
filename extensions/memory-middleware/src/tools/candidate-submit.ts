@@ -10,6 +10,7 @@ import {
 } from "../db/runtime.js";
 import {
   parseAutoCaptureManagedCandidateContent,
+  parseManagedCorrectionCandidateContent,
   parseOrdinaryTurnAutoCapturePreference,
 } from "../ordinary-turn-auto-capture.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
@@ -101,10 +102,11 @@ export async function submitCandidateFromTool(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
 }): Promise<CandidateSubmissionResult> {
-  if (params.input.kind === "learning") {
+  const normalizedInput = normalizeManagedToolCandidateInput(params.input);
+  if (normalizedInput.kind === "learning") {
     const duplicate = await findExistingAutoCaptureManagedDuplicate({
       runtime: params.runtime,
-      content: params.input.content,
+      content: normalizedInput.content,
     });
     if (duplicate) {
       return {
@@ -116,39 +118,40 @@ export async function submitCandidateFromTool(params: {
     }
   }
   let result: CandidateSubmissionResult;
-  switch (params.input.kind) {
+  switch (normalizedInput.kind) {
     case "learning":
-      result = await params.runtime.candidateIngress.submitLearning(params.input);
+      result = await params.runtime.candidateIngress.submitLearning(normalizedInput);
       break;
     case "correction":
-      result = await params.runtime.candidateIngress.submitCorrectionSuggestion(params.input);
+      result = await params.runtime.candidateIngress.submitCorrectionSuggestion(normalizedInput);
       break;
     case "procedure":
-      result = await params.runtime.candidateIngress.submitProcedureSuggestion(params.input);
+      result = await params.runtime.candidateIngress.submitProcedureSuggestion(normalizedInput);
       break;
     case "improvement":
-      result = await params.runtime.candidateIngress.submitImprovementNote(params.input);
+      result = await params.runtime.candidateIngress.submitImprovementNote(normalizedInput);
       break;
   }
   result = await maybeAutoPromoteToolSubmittedPreference({
     runtime: params.runtime,
-    input: params.input,
+    input: normalizedInput,
     result,
   });
   return result;
 }
 
-function resolveExplicitUserPreferenceSubmission(
+function resolveAutoPromotableFeedbackSubmission(
   input: CandidateSubmissionInput,
 ): ReturnType<typeof parseAutoCaptureManagedCandidateContent> | null {
   if (input.kind !== "learning") {
     return null;
   }
   const metadata = input.metadata ?? {};
-  if (metadata.category !== "user_preference") {
-    return null;
-  }
-  if (metadata.source !== "explicit_user_statement" && metadata.source !== "user_explicit") {
+  if (
+    metadata.category &&
+    metadata.category !== "user_preference" &&
+    metadata.category !== "user_requirement"
+  ) {
     return null;
   }
   const parsedFromContent = parseAutoCaptureManagedCandidateContent(input.content);
@@ -165,12 +168,115 @@ function resolveExplicitUserPreferenceSubmission(
         rawCandidate,
         "user-preference-v2",
       );
-      if (parsedFromRaw) {
+      if (
+        parsedFromRaw &&
+        (parsedFromRaw.captureClass === "explicit_preference" ||
+          parsedFromRaw.captureClass === "explicit_requirement")
+      ) {
         return parsedFromRaw;
       }
     }
   }
   return null;
+}
+
+function mergeCandidateMetadata(
+  input: CandidateSubmissionInput,
+  patch: Record<string, unknown>,
+): CandidateSubmissionInput {
+  return {
+    ...input,
+    metadata: {
+      ...(input.metadata ?? {}),
+      ...patch,
+    },
+  };
+}
+
+function normalizeCorrectionPreferenceKey(raw: unknown): string | null {
+  if (typeof raw !== "string") {
+    return null;
+  }
+  const normalized = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) {
+    return null;
+  }
+  return normalized;
+}
+
+function normalizeManagedToolCandidateInput(
+  input: CandidateSubmissionInput,
+): CandidateSubmissionInput {
+  if (input.kind === "learning") {
+    const parsed =
+      resolveAutoPromotableFeedbackSubmission(input) ??
+      (typeof input.metadata?.raw === "string"
+        ? parseOrdinaryTurnAutoCapturePreference(input.metadata.raw, "user-preference-v2")
+        : null);
+    if (!parsed) {
+      return input;
+    }
+    return mergeCandidateMetadata(input, {
+      category:
+        parsed.captureClass === "explicit_requirement" ? "user_requirement" : "user_preference",
+      source:
+        parsed.captureClass === "explicit_requirement"
+          ? "explicit_user_requirement"
+          : "explicit_user_statement",
+      autoCapture: {
+        source: "model_tool_candidate_submit",
+        captureSeam: "model_tool_primary",
+        profile: parsed.profile,
+        captureClass: parsed.captureClass,
+        reasonCode: parsed.reasonCode,
+        template: parsed.template,
+        key: parsed.key,
+        subjectKey: parsed.subjectKey,
+        subject: parsed.subject,
+        value: parsed.value,
+        toolName: "memory_candidate_submit",
+      },
+    });
+  }
+
+  if (input.kind === "correction") {
+    const normalizedPreferenceKey = normalizeCorrectionPreferenceKey(input.metadata?.preferenceKey);
+    const normalizedValue =
+      typeof input.metadata?.value === "string" ? input.metadata.value.trim().toLowerCase() : null;
+    const parsed =
+      parseManagedCorrectionCandidateContent(input.content) ??
+      (normalizedPreferenceKey && normalizedValue
+        ? parseManagedCorrectionCandidateContent(
+            `User correction: preferred ${normalizedPreferenceKey} is ${normalizedValue}.`,
+          )
+        : null) ??
+      (typeof input.metadata?.raw === "string"
+        ? parseOrdinaryTurnAutoCapturePreference(input.metadata.raw, "user-preference-v2")
+        : null);
+    if (!parsed || parsed.captureClass !== "preference_correction") {
+      return input;
+    }
+    return mergeCandidateMetadata(input, {
+      category: "user_preference_correction",
+      source: "conversational_user_correction",
+      preference_key: parsed.subjectKey,
+      autoCapture: {
+        source: "model_tool_candidate_submit",
+        captureSeam: "model_tool_primary",
+        profile: parsed.profile,
+        captureClass: parsed.captureClass,
+        reasonCode: parsed.reasonCode,
+        template: parsed.template,
+        key: parsed.key,
+        subjectKey: parsed.subjectKey,
+        subject: parsed.subject,
+        value: parsed.value,
+        toolName: "memory_candidate_submit",
+      },
+    });
+  }
+
+  return input;
 }
 
 async function maybeAutoPromoteToolSubmittedPreference(params: {
@@ -187,17 +293,18 @@ async function maybeAutoPromoteToolSubmittedPreference(params: {
   ) {
     return params.result;
   }
-  const parsed = resolveExplicitUserPreferenceSubmission(params.input);
+  const parsed = resolveAutoPromotableFeedbackSubmission(params.input);
   if (!parsed) {
     return params.result;
   }
   const autoPromotionMetadata = {
     autoPromotion: {
       source: "candidate_submit_auto_promotion",
+      captureSeam: "model_tool_primary",
       profile: autoPromotion.profile,
       captureProfile: "tool-submitted",
-      captureClass: "explicit_preference",
-      reasonCode: "explicit_user_statement",
+      captureClass: parsed.captureClass,
+      reasonCode: parsed.reasonCode,
       key: parsed.key,
       subjectKey: parsed.subjectKey,
       subject: parsed.subject,
