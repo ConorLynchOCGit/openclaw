@@ -67,10 +67,13 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
 
     if (hasCandidateSubmit) {
       lines.push(
-        "When the user shares a stable preference, recurring requirement, important correction, reusable procedure, or project improvement that should survive beyond the current turn, submit a concise candidate with memory_candidate_submit.",
+        "When the user shares a recurring requirement, important correction, reusable procedure, or project improvement that should survive beyond the current turn, submit a concise candidate with memory_candidate_submit.",
       );
       lines.push(
         "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",
+      );
+      lines.push(
+        "Do not call memory_candidate_submit just because the user naturally states a plain favorite/preferred preference in ordinary conversation; that narrow low-risk preference class may be auto-captured already.",
       );
       lines.push(
         "Do not submit transient chatter, one-off logistics, secrets, credentials, or anything the user asked not to retain. Candidate submission is bounded: review and promotion stay manual.",

@@ -1,4 +1,5 @@
 import { Type } from "@sinclair/typebox";
+import { Client } from "pg";
 import type { AnyAgentTool, OpenClawPluginToolContext } from "../../api.js";
 import {
   CANDIDATE_SUBMISSION_KINDS,
@@ -6,6 +7,7 @@ import {
   type CandidateSubmissionKind,
   type CandidateSubmissionResult,
 } from "../db/runtime.js";
+import { parseAutoCaptureManagedCandidateContent } from "../ordinary-turn-auto-capture.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   asJsonToolResult as asJsonToolResultBase,
@@ -95,6 +97,20 @@ export async function submitCandidateFromTool(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
 }): Promise<CandidateSubmissionResult> {
+  if (params.input.kind === "learning") {
+    const duplicate = await findExistingAutoCaptureManagedDuplicate({
+      runtime: params.runtime,
+      content: params.input.content,
+    });
+    if (duplicate) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: "learning",
+        reason: `ordinary-turn auto-capture already created ${duplicate.reviewState} candidate ${duplicate.id}`,
+      };
+    }
+  }
   switch (params.input.kind) {
     case "learning":
       return params.runtime.candidateIngress.submitLearning(params.input);
@@ -104,6 +120,43 @@ export async function submitCandidateFromTool(params: {
       return params.runtime.candidateIngress.submitProcedureSuggestion(params.input);
     case "improvement":
       return params.runtime.candidateIngress.submitImprovementNote(params.input);
+  }
+}
+
+async function findExistingAutoCaptureManagedDuplicate(params: {
+  runtime: MemoryMiddlewareRuntime;
+  content: string;
+}): Promise<{ id: string; reviewState: string } | null> {
+  const parsed = parseAutoCaptureManagedCandidateContent(params.content);
+  const databaseUrl = params.runtime.config.database.url;
+  if (!parsed || !databaseUrl) {
+    return null;
+  }
+
+  const schema = params.runtime.config.database.schema ?? "memory_middleware";
+  const client = new Client({ connectionString: databaseUrl });
+  try {
+    await client.connect();
+    const result = await client.query<{ id: string; review_state: string }>(
+      `
+        select id::text as id, review_state::text as review_state
+        from "${schema}"."memory_objects"
+        where (
+          metadata->'candidateMetadata'->'autoCapture'->>'key' = $1
+          or metadata->'autoCapture'->>'key' = $1
+        )
+          and review_state in ('candidate', 'approved', 'corrected')
+        order by created_at desc
+        limit 1
+      `,
+      [parsed.key],
+    );
+    const row = result.rows[0];
+    return row ? { id: row.id, reviewState: row.review_state } : null;
+  } catch {
+    return null;
+  } finally {
+    await client.end().catch(() => {});
   }
 }
 

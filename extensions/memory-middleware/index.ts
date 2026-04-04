@@ -16,6 +16,11 @@ export default definePluginEntry({
     const runtime = createMemoryMiddlewareRuntime(api);
 
     registerMemoryMiddlewareTools(api, runtime);
-    api.registerService(createMemoryMiddlewarePluginService(runtime));
+    api.registerService(
+      createMemoryMiddlewarePluginService(
+        runtime,
+        api.runtime?.events?.onSessionTranscriptUpdate?.bind(api.runtime.events),
+      ),
+    );
   },
 });

@@ -35,11 +35,22 @@ export type MemoryMiddlewareBackgroundJobConfig = {
   runnerOwnerId?: string;
 };
 
+export type MemoryMiddlewareAutoCaptureConfig = {
+  profile: "disabled" | "user-preference-v1";
+  allowedAgents: string[];
+};
+
 export type MemoryMiddlewareConfig = {
   database: MemoryMiddlewareDbConfig;
   candidateIngress: MemoryMiddlewareCandidateIngressConfig;
   memoryObjectQuery: MemoryMiddlewareMemoryObjectQueryConfig;
   backgroundJobs: MemoryMiddlewareBackgroundJobConfig;
+  autoCapture?: MemoryMiddlewareAutoCaptureConfig;
+};
+
+export const DEFAULT_MEMORY_MIDDLEWARE_AUTO_CAPTURE_CONFIG: MemoryMiddlewareAutoCaptureConfig = {
+  profile: "disabled",
+  allowedAgents: ["chief", "main"],
 };
 
 export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
@@ -110,6 +121,17 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
           runnerOwnerId: { type: "string" },
         },
       },
+      autoCapture: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          profile: { type: "string", enum: ["disabled", "user-preference-v1"] },
+          allowedAgents: {
+            type: "array",
+            items: { type: "string" },
+          },
+        },
+      },
     },
   },
 };
@@ -124,6 +146,7 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
   const candidateIngress = asRecord(root.candidateIngress);
   const memoryObjectQuery = asRecord(root.memoryObjectQuery);
   const backgroundJobs = asRecord(root.backgroundJobs);
+  const autoCapture = asRecord(root.autoCapture);
 
   const driver = database.driver === "postgres" ? "postgres" : "postgres";
   const url =
@@ -174,29 +197,45 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
   const executeSchedulingMode =
     backgroundJobs.executeSchedulingMode === "enabled" ? "enabled" : "disabled";
   const advisoryJobClasses = Array.isArray(backgroundJobs.advisoryJobClasses)
-    ? [
+    ? ([
         ...new Set(
           backgroundJobs.advisoryJobClasses.filter(
             (value): value is "proactive_plan" | "consolidation_plan" =>
               value === "proactive_plan" || value === "consolidation_plan",
           ),
         ),
-      ].sort((left, right) => left.localeCompare(right))
+      ].sort((left, right) => left.localeCompare(right)) as Array<
+        "proactive_plan" | "consolidation_plan"
+      >)
     : ["proactive_plan"];
   const executeJobClasses = Array.isArray(backgroundJobs.executeJobClasses)
-    ? [
+    ? ([
         ...new Set(
           backgroundJobs.executeJobClasses.filter(
             (value): value is "proactive_execute_run_drift_check" | "consolidation_execute" =>
               value === "proactive_execute_run_drift_check" || value === "consolidation_execute",
           ),
         ),
-      ].sort((left, right) => left.localeCompare(right))
+      ].sort((left, right) => left.localeCompare(right)) as Array<
+        "proactive_execute_run_drift_check" | "consolidation_execute"
+      >)
     : ["proactive_execute_run_drift_check"];
   const runnerOwnerId =
     typeof backgroundJobs.runnerOwnerId === "string" && backgroundJobs.runnerOwnerId.trim()
       ? backgroundJobs.runnerOwnerId.trim()
       : undefined;
+  const autoCaptureProfile =
+    autoCapture.profile === "user-preference-v1" ? "user-preference-v1" : "disabled";
+  const allowedAgents = Array.isArray(autoCapture.allowedAgents)
+    ? [
+        ...new Set(
+          autoCapture.allowedAgents
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim())
+            .filter(Boolean),
+        ),
+      ].sort((left, right) => left.localeCompare(right))
+    : ["chief", "main"];
 
   return {
     database: {
@@ -217,6 +256,13 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
       advisoryJobClasses,
       executeJobClasses,
       ...(runnerOwnerId ? { runnerOwnerId } : {}),
+    },
+    autoCapture: {
+      profile: autoCaptureProfile,
+      allowedAgents:
+        allowedAgents.length > 0
+          ? [...allowedAgents]
+          : [...DEFAULT_MEMORY_MIDDLEWARE_AUTO_CAPTURE_CONFIG.allowedAgents],
     },
   };
 }

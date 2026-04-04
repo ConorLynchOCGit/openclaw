@@ -6,6 +6,10 @@ describe("resolveMemoryMiddlewareConfig", () => {
     expect(resolveMemoryMiddlewareConfig({})).toMatchObject({
       candidateIngress: { mode: "disabled" },
       memoryObjectQuery: { mode: "disabled" },
+      autoCapture: {
+        profile: "disabled",
+        allowedAgents: ["chief", "main"],
+      },
       backgroundJobs: {
         inspectionMode: "disabled",
         advisorySchedulingMode: "disabled",
@@ -29,6 +33,31 @@ describe("resolveMemoryMiddlewareConfig", () => {
         executeSchedulingMode: "disabled",
         advisoryJobClasses: ["proactive_plan"],
         executeJobClasses: ["proactive_execute_run_drift_check"],
+      },
+    });
+  });
+
+  it("keeps ordinary-turn auto-capture disabled by default", () => {
+    expect(resolveMemoryMiddlewareConfig({})).toMatchObject({
+      autoCapture: {
+        profile: "disabled",
+        allowedAgents: ["chief", "main"],
+      },
+    });
+  });
+
+  it("normalizes the narrow ordinary-turn auto-capture profile", () => {
+    expect(
+      resolveMemoryMiddlewareConfig({
+        autoCapture: {
+          profile: "user-preference-v1",
+          allowedAgents: [" chief ", "main", "chief"],
+        },
+      }),
+    ).toMatchObject({
+      autoCapture: {
+        profile: "user-preference-v1",
+        allowedAgents: ["chief", "main"],
       },
     });
   });

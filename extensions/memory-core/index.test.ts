@@ -65,8 +65,9 @@ describe("buildPromptSection", () => {
     expect(result[1]).toContain("inspect existing approved memory");
     expect(result[2]).toContain("memory_candidate_submit");
     expect(result[3]).toContain("store, remember, or save");
-    expect(result[4]).toContain("review and promotion stay manual");
-    expect(result[5]).toContain("memory_session_get and memory_session_update");
+    expect(result[4]).toContain("plain favorite/preferred preference");
+    expect(result[5]).toContain("review and promotion stay manual");
+    expect(result[6]).toContain("memory_session_get and memory_session_update");
     expect(result.at(-1)).toBe("");
   });
 
@@ -83,10 +84,13 @@ describe("buildPromptSection", () => {
     expect(result[0]).toBe("## Memory Recall");
     expect(result).toContain("## Durable Memory");
     expect(result).toContain(
-      "When the user shares a stable preference, recurring requirement, important correction, reusable procedure, or project improvement that should survive beyond the current turn, submit a concise candidate with memory_candidate_submit.",
+      "When the user shares a recurring requirement, important correction, reusable procedure, or project improvement that should survive beyond the current turn, submit a concise candidate with memory_candidate_submit.",
     );
     expect(result).toContain(
       "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",
+    );
+    expect(result).toContain(
+      "Do not call memory_candidate_submit just because the user naturally states a plain favorite/preferred preference in ordinary conversation; that narrow low-risk preference class may be auto-captured already.",
     );
   });
 });
