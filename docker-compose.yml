@@ -1,5 +1,6 @@
 services:
   openclaw-gateway:
+    container_name: openclaw
     image: ${OPENCLAW_IMAGE:-openclaw:local}
     environment:
       HOME: /home/node
@@ -54,6 +55,7 @@ services:
       start_period: 20s
 
   openclaw-cli:
+    container_name: openclaw-cli
     image: ${OPENCLAW_IMAGE:-openclaw:local}
     network_mode: "service:openclaw-gateway"
     cap_drop:
