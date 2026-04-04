@@ -26,6 +26,18 @@ Current state:
   - timestamp: `2026-04-04T02:43:36.765Z`
   - `eventId = c3c336fa-baac-4886-b8b1-a78a1e7abac4`
   - `memoryObjectId = 98833f6a-4305-48bf-8492-31f7b95f987d`
+- initial soak expansion proof:
+  - `chief` fresh session:
+    - `eventId = b8e63c36-b2eb-4c97-b988-8b67b83d99c1`
+    - `memoryObjectId = 57f45b20-84ac-4ca4-890d-e01456c41dff`
+  - `main` fresh session:
+    - `eventId = c9f3424a-33a9-422b-9326-318341180b0a`
+    - `memoryObjectId = d0e3bb7d-c0ef-4524-bf9d-3cfbed55a6de`
+- initial bounded soak behavior:
+  - `memory_events +2`
+  - `memory_objects +2`
+  - `memory_reviews +0`
+  - `background_jobs +0`
 - current live focus:
   - bounded live interaction -> candidate capture soak and expansion
 - broader automation still deferred:

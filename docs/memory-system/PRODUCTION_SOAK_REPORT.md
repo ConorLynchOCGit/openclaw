@@ -252,5 +252,44 @@ candidate capture on the approved production boundary:
   - `background_jobs +0`
 
 That proof closes the binary pathway question and moves the active follow-on
-from soak closeout to bounded live interaction capture soak and expansion. 3. tighten the plugin secret contract so `.env` can become the single DB URL
-source instead of maintaining a duplicate literal `database.url`
+from soak closeout to bounded live interaction capture soak and expansion.
+
+## Follow-on bounded live interaction soak start — 2026-04-04
+
+The next bounded live slice has now started without broadening the production
+boundary.
+
+Fresh production-soak evidence from real fresh sessions:
+
+- `chief` fresh session:
+  - user intent:
+    - explicit stable preference with "please remember"
+  - accepted candidate result:
+    - `eventId = b8e63c36-b2eb-4c97-b988-8b67b83d99c1`
+    - `memoryObjectId = 57f45b20-84ac-4ca4-890d-e01456c41dff`
+  - write timestamp:
+    - `2026-04-04T03:00:00.831Z`
+- `main` fresh session:
+  - user intent:
+    - softer "for future reference" standing preference
+  - accepted candidate result:
+    - `eventId = c9f3424a-33a9-422b-9326-318341180b0a`
+    - `memoryObjectId = d0e3bb7d-c0ef-4524-bf9d-3cfbed55a6de`
+  - write timestamp:
+    - `2026-04-04T03:00:03.241Z`
+
+Observed delta for that initial soak window:
+
+- `memory_events +2`
+- `memory_objects +2`
+- `memory_reviews +0`
+- `background_jobs +0`
+
+Interpretation:
+
+- bounded live interaction -> candidate capture is now working on both
+  `main` and `chief`
+- the current slice can now shift from binary pathway proof to bounded live
+  soak under real interaction volume
+- review and promotion remain manual
+- no broader automation was introduced to produce these rows

@@ -197,6 +197,23 @@ Current compact state:
   - `memory_objects +1`
   - `memory_reviews +0`
   - `background_jobs +0`
+- initial bounded live interaction capture soak evidence now exists from two
+  additional fresh production sessions:
+  - `chief` at `2026-04-04T03:00:00.831Z`
+    - `eventId = b8e63c36-b2eb-4c97-b988-8b67b83d99c1`
+    - `memoryObjectId = 57f45b20-84ac-4ca4-890d-e01456c41dff`
+  - `main` at `2026-04-04T03:00:03.241Z`
+    - `eventId = c9f3424a-33a9-422b-9326-318341180b0a`
+    - `memoryObjectId = d0e3bb7d-c0ef-4524-bf9d-3cfbed55a6de`
+- cumulative delta from that initial bounded live-interaction soak window:
+  - `memory_events +2`
+  - `memory_objects +2`
+  - `memory_reviews +0`
+  - `background_jobs +0`
+- observed behavior of those fresh sessions:
+  - `main` captured a softer "for future reference" standing preference
+  - `chief` captured an explicit "please remember" stable preference
+  - both stayed within bounded candidate-only writes
 - current active slice:
   - bounded live interaction -> candidate capture soak and expansion
 - still intentionally disabled:

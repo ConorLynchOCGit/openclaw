@@ -21,6 +21,16 @@ This slice is about:
 - deciding what larger bounded live chunk should move next only after this
   path proves stable enough under real interaction volume
 
+Initial live-soak evidence already exists:
+
+- fresh `chief` production session created one candidate submission event plus
+  one matching candidate object from an explicit "please remember" stable
+  preference
+- fresh `main` production session created one candidate submission event plus
+  one matching candidate object from a softer "for future reference" standing
+  preference
+- neither session created `memory_reviews` rows or `background_jobs` rows
+
 The current approved live baseline is:
 
 - read-only retrieval enabled
@@ -69,6 +79,7 @@ The current approved live baseline is:
   intended scope
 - ordinary live turns are proven to create bounded candidate memory through
   the approved live path
+- initial fresh-session soak evidence exists for both `main` and `chief`
 - the new live interaction capture behavior is concrete enough to soak with
   real usage
 - the next bounded expansion recommendation is explicit
