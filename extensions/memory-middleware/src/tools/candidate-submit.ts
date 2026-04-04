@@ -9,6 +9,7 @@ import {
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   asJsonToolResult as asJsonToolResultBase,
+  readContextUuid,
   readCandidateKind as readCandidateKindBase,
   readOptionalObject,
   readOptionalString as readOptionalStringBase,
@@ -36,14 +37,14 @@ const CandidateSubmitToolSchema = Type.Object(
     sessionId: Type.Optional(
       Type.String({
         description:
-          "Optional explicit session id. Defaults to the trusted tool context session when present.",
+          "Optional explicit memory-middleware session UUID. Omit for ordinary live submissions unless you know the backing memory session row exists.",
       }),
     ),
     projectId: Type.Optional(Type.String({ description: "Optional project id." })),
     agentId: Type.Optional(
       Type.String({
         description:
-          "Optional explicit agent id. Defaults to the trusted tool context agent when present.",
+          "Optional explicit memory-middleware agent UUID. Omit for ordinary live submissions unless you know the backing memory agent row exists.",
       }),
     ),
     metadata: Type.Optional(
@@ -75,9 +76,9 @@ export function normalizeCandidateSubmissionInput(params: {
   rawParams: CandidateSubmitRawParams;
   context?: OpenClawPluginToolContext;
 }): CandidateSubmissionInput {
-  const sessionId = readOptionalString(params.rawParams, "sessionId") ?? params.context?.sessionId;
-  const projectId = readOptionalString(params.rawParams, "projectId");
-  const agentId = readOptionalString(params.rawParams, "agentId") ?? params.context?.agentId;
+  const sessionId = readContextUuid(readOptionalString(params.rawParams, "sessionId"));
+  const projectId = readContextUuid(readOptionalString(params.rawParams, "projectId"));
+  const agentId = readContextUuid(readOptionalString(params.rawParams, "agentId"));
   const metadata = readOptionalMetadata(params.rawParams);
 
   return {

@@ -31,7 +31,7 @@ function createRuntime() {
 }
 
 describe("memory candidate submit tool", () => {
-  it("normalizes a candidate payload with trusted context fallbacks", () => {
+  it("normalizes a candidate payload without inheriting live context identifiers", () => {
     const normalized = normalizeCandidateSubmissionInput({
       rawParams: {
         kind: "learning",
@@ -39,17 +39,50 @@ describe("memory candidate submit tool", () => {
         metadata: { source: "test" },
       },
       context: {
-        sessionId: "session-from-context",
-        agentId: "agent-from-context",
+        sessionId: "077d919e-1ea8-49ab-b316-4e7e611add6b",
+        agentId: "7dc823b4-8835-46df-80a1-9d873f2d60ea",
       } as OpenClawPluginToolContext,
     });
 
     expect(normalized).toEqual({
       kind: "learning",
       content: "keep this learning",
-      sessionId: "session-from-context",
-      agentId: "agent-from-context",
       metadata: { source: "test" },
+    });
+  });
+
+  it("ignores trusted context identifiers even when they are valid UUIDs", () => {
+    const normalized = normalizeCandidateSubmissionInput({
+      rawParams: {
+        kind: "learning",
+        content: "keep this learning",
+      },
+      context: {
+        sessionId: "077d919e-1ea8-49ab-b316-4e7e611add6b",
+        agentId: "chief",
+      } as OpenClawPluginToolContext,
+    });
+
+    expect(normalized).toEqual({
+      kind: "learning",
+      content: "keep this learning",
+    });
+  });
+
+  it("accepts only valid explicit UUID identifiers in tool args", () => {
+    const normalized = normalizeCandidateSubmissionInput({
+      rawParams: {
+        kind: "learning",
+        content: "keep this learning",
+        sessionId: "not-a-uuid",
+        agentId: "chief",
+        projectId: "project-1",
+      },
+    });
+
+    expect(normalized).toEqual({
+      kind: "learning",
+      content: "keep this learning",
     });
   });
 
@@ -58,24 +91,22 @@ describe("memory candidate submit tool", () => {
     const tool = createCandidateSubmitTool({
       runtime,
       context: {
-        sessionId: "session-ctx",
-        agentId: "agent-ctx",
+        sessionId: "077d919e-1ea8-49ab-b316-4e7e611add6b",
+        agentId: "7dc823b4-8835-46df-80a1-9d873f2d60ea",
       },
     });
 
     const result = await tool.execute("call-1", {
       kind: "procedure",
       content: "Turn this into a bounded procedure draft.",
-      projectId: "project-1",
+      projectId: "3b2307bd-6880-4b77-a1a3-64a8a4ddf544",
       metadata: { source: "unit-test" },
     });
 
     expect(runtime.candidateIngress.submitProcedureSuggestion).toHaveBeenCalledWith({
       kind: "procedure",
       content: "Turn this into a bounded procedure draft.",
-      projectId: "project-1",
-      sessionId: "session-ctx",
-      agentId: "agent-ctx",
+      projectId: "3b2307bd-6880-4b77-a1a3-64a8a4ddf544",
       metadata: { source: "unit-test" },
     });
     expect(result).toEqual({

@@ -51,6 +51,44 @@ describe("buildPromptSection", () => {
       "Citations are disabled: do not mention file paths or line numbers in replies unless the user explicitly asks.",
     );
   });
+
+  it("adds durable memory guidance when middleware tools are available", () => {
+    const result = buildPromptSection({
+      availableTools: new Set([
+        "memory_candidate_submit",
+        "memory_object_search_hybrid",
+        "memory_session_update",
+      ]),
+    });
+
+    expect(result[0]).toBe("## Durable Memory");
+    expect(result[1]).toContain("inspect existing approved memory");
+    expect(result[2]).toContain("memory_candidate_submit");
+    expect(result[3]).toContain("store, remember, or save");
+    expect(result[4]).toContain("review and promotion stay manual");
+    expect(result[5]).toContain("memory_session_get and memory_session_update");
+    expect(result.at(-1)).toBe("");
+  });
+
+  it("combines recall and durable memory guidance when both surfaces are available", () => {
+    const result = buildPromptSection({
+      availableTools: new Set([
+        "memory_search",
+        "memory_get",
+        "memory_candidate_submit",
+        "memory_object_list",
+      ]),
+    });
+
+    expect(result[0]).toBe("## Memory Recall");
+    expect(result).toContain("## Durable Memory");
+    expect(result).toContain(
+      "When the user shares a stable preference, recurring requirement, important correction, reusable procedure, or project improvement that should survive beyond the current turn, submit a concise candidate with memory_candidate_submit.",
+    );
+    expect(result).toContain(
+      "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",
+    );
+  });
 });
 
 describe("plugin registration", () => {

@@ -14,6 +14,8 @@ export class CandidateToolInputError extends Error {
   }
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export function asJsonToolResult<T>(result: T) {
   return {
     content: [
@@ -44,6 +46,14 @@ export function readOptionalString(params: ToolRawParams, key: string): string |
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export function readContextUuid(value: string | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return UUID_PATTERN.test(trimmed) ? trimmed : undefined;
 }
 
 export function readOptionalStringArray(params: ToolRawParams, key: string): string[] | undefined {

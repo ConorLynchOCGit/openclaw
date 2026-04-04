@@ -2,15 +2,26 @@
 
 ## Active slice
 
-Shared-environment rehearsal for the current memory-middleware posture
+Bounded live interaction -> candidate capture soak and expansion for the
+current approved `memory-middleware` posture
 
 ## Objective
 
-Reconcile the current approved posture with the actual shared non-production
-environment available now, and rehearse that exact posture only if a real
-shared target exists.
+Keep the approved production boundary intact, carry forward the passed bounded
+production soak, and use the now-proven ordinary live interaction ->
+candidate-capture path as the basis for the next bounded soak.
 
-The current proven live baseline is:
+This slice is about:
+
+- keeping ordinary live interactions able to create bounded candidate memory
+- verifying that the produced rows stay correct and interpretable under real
+  use
+- compacting the memory build state so future re-entry does not require a
+  full doc-pack reread
+- deciding what larger bounded live chunk should move next only after this
+  path proves stable enough under real interaction volume
+
+The current approved live baseline is:
 
 - read-only retrieval enabled
 - bounded candidate, procedure, skill-candidate, procurement, vetting,
@@ -25,38 +36,27 @@ The current proven live baseline is:
 
 ## Required work
 
-1. Create or update a concrete operator runbook for the current enabled
-   posture with the actual shared non-production environment available now.
-2. Rehearse the exact currently approved posture only if that shared target
-   exists, including:
-   - passive runtime plus read-only retrieval
-   - bounded governance writes
-   - the current background-job modes and allowlists
-   - runner ownership enforcement
-3. If no shared target exists, record that failure accurately in a report and
-   do not invent a rollout.
-4. Update:
+1. Keep the current approved production boundary unchanged while ordinary live
+   interactions are allowed to create bounded candidate submissions.
+2. Prove and monitor that real live turns create the expected candidate,
+   event, and object rows.
+3. Check whether volume and row quality remain in line with the intended lean
+   rollout.
+4. Keep review and promotion manual while the new capture path soaks.
+5. Update:
 
 - `docs/memory-system/STATUS.md`
 - `docs/memory-system/DECISIONS.md`
 - `docs/memory-system/OPEN_QUESTIONS.md`
 - `docs/memory-system/CURRENT_SLICE.md`
 - `docs/memory-system/PRODUCTION_ADOPTION_PLAN.md`
-- `docs/memory-system/PRODUCTION_READINESS_REVIEW.md`
-- `docs/memory-system/AUTOMATION_READINESS_REVIEW.md`
 - `docs/memory-system/OPERATIONAL_RUNBOOK.md`
-- `docs/memory-system/SHARED_ENV_REHEARSAL_REPORT.md`
-- `docs/memory-system/PLUGIN_CONTRACT.md` if needed
-- `docs/memory-system/SECURITY_AND_RETRIEVAL.md` if needed
-- `docs/memory-system/SKILL_PROCUREMENT.md` if needed
-- `extensions/memory-middleware/db/README.md` if needed
+- `docs/memory-system/PRODUCTION_SOAK_REPORT.md`
 
 ## Out of scope
 
 - claiming the exclusive `memory` plugin slot
 - taking over `memory-core` or `memory-lancedb`
-- touching production when the target is not an explicitly approved
-  real non-production environment
 - enabling any new automation class
 - enabling self-improving capture
 - enabling actual installation
@@ -65,17 +65,14 @@ The current proven live baseline is:
 
 ## Acceptance criteria
 
-- the docs clearly identify whether a real shared non-production target was
-  available
-- if unavailable, the report clearly states that the shared rehearsal did not
-  execute and why
-- if available, the report documents the exact shared-environment posture and
-  pass or fail results without expanding automation
-- status, decisions, open questions, current slice, and adoption or review
-  docs are updated to match that recommendation
+- the previous bounded production soak is explicitly treated as passed for its
+  intended scope
+- ordinary live turns are proven to create bounded candidate memory through
+  the approved live path
+- the new live interaction capture behavior is concrete enough to soak with
+  real usage
+- the next bounded expansion recommendation is explicit
 
 ## Notes
 
-This slice should stay truthful to the actual environment. If no shared
-non-production target is available, the correct outcome is a documented
-reconciliation failure, not a fabricated rehearsal.
+This slice does not broaden into full autonomous memory behavior.

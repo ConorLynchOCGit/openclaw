@@ -131,6 +131,92 @@ target.
 Shared-environment rehearsal reconciliation completed for the current
 approved memory-middleware posture, and no actual shared non-production
 target was available from the current repo or host context.
+Shared non-production target discovery completed for the current approved
+memory-middleware posture, and the smallest viable next step is explicit
+provisioning of a dedicated shared runtime plus dedicated shared Postgres
+target because no repo-wired shared target exists today.
+Concrete provisioning planning completed for the missing shared
+non-production memory-middleware rehearsal target, including the proposed
+shared runtime shape, dedicated shared Postgres shape, exact config posture,
+ownership model, validation checklist, and rollback checklist.
+Shared non-production target wiring completed using the already-installed
+Supabase project on the server as the dedicated middleware Postgres target,
+with the shared Dockerized OpenClaw runtime restarted on the unchanged
+approved posture after both existing middleware migrations were applied.
+Shared non-production rehearsal completed for the current approved
+memory-middleware posture, including passive startup, bounded governance
+flows, bounded advisory and execute-class background-job scheduling, runner
+ownership enforcement, and rollback checks.
+Production-surface inventory, backup, and exact rollout-diff planning
+completed for the live Docker Compose OpenClaw runtime on this VPS, without
+applying the production rollout.
+Production-runtime designation completed for the live Docker Compose OpenClaw
+runtime on this VPS, and the exact minimal production rollout patch is now
+resolved without being applied.
+First production rollout completed for `memory-middleware` on the confirmed
+live Docker Compose OpenClaw runtime on this VPS, using only the approved
+runner-owner plus DB-secret parity patch and the already-rehearsed bounded
+feature boundary.
+Production rollout validation completed on the live Docker Compose OpenClaw
+runtime on this VPS, including runtime health, passive startup, retrieval,
+bounded candidate submit, approved advisory and execute-class background-job
+execution, wrong-runner blocking, and bounded disablement plus restore checks.
+First production soak review completed for the approved live
+`memory-middleware` boundary on the VPS Docker Compose runtime, with no
+rollback or disablement required and no unexpected durable write growth
+outside one bounded advisory job-row idempotence probe.
+Bounded ordinary live interaction -> candidate capture is now proven on the
+approved live production boundary via one fresh `chief` session that created
+one candidate submission event plus one matching candidate memory object in
+Postgres while leaving review and promotion manual.
+
+## Compact checkpoint
+
+If you need to rebuild memory context quickly after switching to another
+project, start with this checkpoint instead of rereading the full doc pack.
+
+Current compact state:
+
+- the first bounded production soak is closed as passed for its intended scope
+- that soak proved:
+  - read-only retrieval
+  - bounded governance writes
+  - bounded scheduler classes
+  - runner ownership enforcement
+  - bounded durable-growth behavior
+- ordinary live agent-turn capture was not the original soak target
+- bounded ordinary live interaction -> candidate capture is now separately
+  proven on the approved live production boundary
+- fresh proof timestamp:
+  - `2026-04-04T02:43:36.765Z`
+- fresh proof artifacts:
+  - `eventId = c3c336fa-baac-4886-b8b1-a78a1e7abac4`
+  - `memoryObjectId = 98833f6a-4305-48bf-8492-31f7b95f987d`
+- fresh proof delta:
+  - `memory_events +1`
+  - `memory_objects +1`
+  - `memory_reviews +0`
+  - `background_jobs +0`
+- current active slice:
+  - bounded live interaction -> candidate capture soak and expansion
+- still intentionally disabled:
+  - self-improving capture in production
+  - automatic Skill Vetter invocation
+  - procurement or install automation
+  - actual installation
+  - contradiction execution
+  - consolidation-driven drift remediation
+  - memory-slot takeover
+  - broader proactive classes beyond the current bounded live set
+
+Fast re-entry reading order:
+
+1. `docs/memory-system/STATUS.md`
+2. `docs/memory-system/CURRENT_SLICE.md`
+3. `docs/memory-system/PRODUCTION_SOAK_REPORT.md`
+4. `docs/memory-system/memory-roadmap.md`
+5. `docs/memory-system/DECISIONS.md`
+6. `docs/memory-system/OPEN_QUESTIONS.md`
 
 ## Completed so far
 
@@ -210,6 +296,85 @@ target was available from the current repo or host context.
   - required runtime configuration posture
   - staged rollout phases
   - rollback order
+- the first real shared non-production target now exists and is wired as:
+  - shared runtime:
+    - Docker service `openclaw-upgrade-2026324-openclaw-gateway-1`
+    - image `openclaw:local`
+    - host ports `28789` and `28790`
+  - shared Postgres target:
+    - existing Supabase project `wvfcvuwsnhupalpxfttc`
+    - database `postgres`
+    - schema `memory_middleware`
+    - required extensions confirmed:
+      - `pgcrypto`
+      - `pg_trgm`
+      - `vector`
+- the shared runtime now mounts the unchanged approved middleware posture:
+  - `candidateIngress.mode = submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install`
+  - `memoryObjectQuery.mode = read-only`
+  - `backgroundJobs.inspectionMode = enabled`
+  - `backgroundJobs.advisorySchedulingMode = enabled`
+  - `backgroundJobs.advisoryJobClasses = [proactive_plan, consolidation_plan]`
+  - `backgroundJobs.executeSchedulingMode = enabled`
+  - `backgroundJobs.executeJobClasses = [proactive_execute_run_drift_check, consolidation_execute]`
+  - `backgroundJobs.runnerOwnerId = shared-nonprod-runner-1`
+- both middleware migrations have now been applied successfully to the shared
+  Supabase target:
+  - `extensions/memory-middleware/db/migrations/20260401_000001_memory_middleware_schema_v1.sql`
+  - `extensions/memory-middleware/db/migrations/20260401_000002_memory_middleware_security_retrieval.sql`
+- the shared runtime now starts healthy on the rebuilt image that includes the
+  current middleware plugin manifest schema
+- the shared non-production rehearsal has now passed for the approved
+  middleware boundary after one shared-target DB URL compatibility correction:
+  - `uselibpqcompat=true&sslmode=require`
+- passive startup in the shared target remained write-free
+- shared retrieval remained healthy through the repo-native runtime against
+  the shared Supabase target
+- the shared bounded governance flow succeeded for:
+  - submit
+  - review
+  - candidate promotion planning
+  - bounded memory promotion
+  - bounded procedure promotion
+  - bounded procedure validation
+  - bounded skill-candidate planning and creation
+  - bounded procurement planning and record creation
+  - bounded manual Skill Vetter handoff
+  - bounded manual vetting-result recording
+  - bounded approval planning and approval-state write
+  - bounded manual install handoff
+  - bounded install-record creation
+- shared background-job inspection, enqueue, run-next, and get checks now
+  pass for:
+  - `proactive_plan`
+  - `proactive_execute_run_drift_check`
+  - `consolidation_plan`
+  - `consolidation_execute`
+- wrong-runner execution remains blocked in the shared target for:
+  - `shared-nonprod-runner-wrong`
+- shared disablement rollback was verified by:
+  - setting `backgroundJobs.executeSchedulingMode = disabled`
+  - narrowing `backgroundJobs.advisoryJobClasses` to `[proactive_plan]`
+  - confirming blocked enqueue for
+    `proactive_execute_run_drift_check` and `consolidation_plan`
+  - restoring the approved posture successfully
+- shared-target operational differences from the earlier local lane are now
+  explicit:
+  - bearer-auth HTTP `/tools/invoke` is not usable for this rehearsal
+  - repo-native runtime plus gateway health checks were used instead
+  - optional project, session, and agent ids must be omitted unless they map
+    to real shared-environment references
+  - `memory_procedure_validate_plan` remains disabled even while
+    `memory_procedure_validate` is enabled
+- the only configuration deviation from the earlier provisioning plan is:
+  - `MEMORY_MIDDLEWARE_DATABASE_URL` was placed successfully in
+    `~/.openclaw/.env`
+  - the current middleware checkpoint still requires
+    `plugins.entries.memory-middleware.config.database.url` to be a literal
+    string
+  - the shared runtime therefore currently stores the DB URL literal in
+    `~/.openclaw/openclaw.json` as an operator-managed non-production secret
+    copy instead of an env-backed SecretRef
   - default-disabled features
   - recommended first-enable bounded features
   - observability and validation checkpoints
@@ -1337,17 +1502,63 @@ target was available from the current repo or host context.
     - a shared-environment readiness checklist
       This does not expand automation authority. It hardens operator confidence
       in the already-enabled posture only.
-50. The attempted shared-environment rehearsal now confirms that the current
-    approved boundary is still not proven in a real shared non-production
-    target because no such target is currently wired from the repo or host
-    context. The correct next step is to provision or name that shared target
-    and rerun the same posture unchanged.
+50. The earlier shared-environment rehearsal reconciliation showed the
+    approved boundary was not yet proven in a real shared non-production
+    target at that point in the rollout sequence. That gap was later closed by
+    the shared provisioning and rehearsal slices.
+51. The earlier attempted first production rollout did not execute because the
+    production runtime identity was not yet resolved from this session.
+52. The live VPS runtime surface has now been inventoried and backed up before
+    any production rollout patch is applied. The confirmed active surface is:
+    - Docker Compose project `openclaw-upgrade-2026324`
+    - config file `docker-compose.yml`
+    - container `openclaw-upgrade-2026324-openclaw-gateway-1`
+    - host config root `~/.openclaw`
+      The current live middleware posture is already on the approved feature
+      boundary. The remaining rollout diff is narrow:
+    - replace `shared-nonprod-runner-1` with `production-runner-1`
+    - normalize the `.env` DB URL copy so it matches the proven live URL
+      shape including `uselibpqcompat=true`
+53. Runtime designation is now resolved. The actual production runtime on this
+    VPS is:
+    - container `openclaw-upgrade-2026324-openclaw-gateway-1`
+      Evidence:
+    - it is the only active OpenClaw Compose project on the host
+    - it owns the canonical OpenClaw host ports `28789` and `28790`
+    - it uses the canonical host state tree `~/.openclaw`
+    - the older `/root/services/openclaw` Compose stack is not running
+54. The exact minimal production rollout patch is now reduced to two config
+    edits only:
+    - `/root/.openclaw/openclaw.json`
+      `backgroundJobs.runnerOwnerId: shared-nonprod-runner-1 -> production-runner-1`
+    - `/root/.openclaw/.env`
+      `MEMORY_MIDDLEWARE_DATABASE_URL`
+      `?sslmode=require -> ?uselibpqcompat=true&sslmode=require`
+55. The pre-rollout backup artifact for that live surface now exists at:
+    - `/root/backups/memory-middleware-production-surface-inventory-20260403T004555Z`
+      with a restorable config archive, copied compose file, rendered compose
+      config, container inspect output, runtime inventory text files, and
+      checksums.
+56. The first production rollout has now been applied on
+    `openclaw-upgrade-2026324-openclaw-gateway-1` using only:
+    - `backgroundJobs.runnerOwnerId: shared-nonprod-runner-1 -> production-runner-1`
+    - `.env` DB URL normalization to
+      `uselibpqcompat=true&sslmode=require`
+57. The production rollout validation has now passed:
+    - runtime health after restart
+    - passive startup remained bounded
+    - retrieval remained healthy
+    - bounded candidate submit succeeded
+    - approved advisory and execute-class jobs queued and ran successfully
+    - wrong-runner claims stayed blocked
+    - bounded disablement and restore checks succeeded
+58. The approved production boundary is now live on the confirmed VPS runtime
+    with no feature-boundary expansion.
 
 ## Next expected action
 
 Choose the next bounded implementation slice for the memory middleware backend:
-either a continued single-runner soak period for the current maintenance
-allowlists, provisioning or naming of a real shared non-production target so
-the same posture can be rehearsed there unchanged, or a narrow follow-up that
-turns the runbook queries into a canonical operator script without expanding
-automation authority.
+continue the current production soak and rollback-drill posture without
+changing the feature boundary, or tighten the operator path and secret
+contract so production validation no longer depends on direct in-container
+middleware invocation plus duplicated DB URL placement.

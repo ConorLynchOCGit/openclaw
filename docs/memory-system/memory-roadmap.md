@@ -4,6 +4,48 @@
 
 Build the memory middleware system in controlled, reviewable slices.
 
+## Current compact checkpoint
+
+Use this section first when returning to the memory build after working on
+other projects.
+
+Current state:
+
+- the first bounded production soak is complete and passed for its intended
+  scope
+- that soak proved:
+  - read-only retrieval
+  - bounded governance writes
+  - bounded scheduler classes
+  - runner ownership enforcement
+  - bounded durable-growth behavior
+- ordinary live-turn candidate capture was not the original soak target
+- bounded ordinary live interaction -> candidate capture is now separately
+  proven in production
+- fresh production proof:
+  - timestamp: `2026-04-04T02:43:36.765Z`
+  - `eventId = c3c336fa-baac-4886-b8b1-a78a1e7abac4`
+  - `memoryObjectId = 98833f6a-4305-48bf-8492-31f7b95f987d`
+- current live focus:
+  - bounded live interaction -> candidate capture soak and expansion
+- broader automation still deferred:
+  - self-improving capture
+  - automatic Skill Vetter invocation
+  - procurement or install automation
+  - actual installation
+  - contradiction execution
+  - richer drift-remediation execution
+  - memory-slot takeover
+
+Fast re-entry reading order:
+
+1. `docs/memory-system/STATUS.md`
+2. `docs/memory-system/CURRENT_SLICE.md`
+3. `docs/memory-system/PRODUCTION_SOAK_REPORT.md`
+4. `docs/memory-system/memory-roadmap.md`
+5. `docs/memory-system/DECISIONS.md`
+6. `docs/memory-system/OPEN_QUESTIONS.md`
+
 ## Phase 0 — repo reconciliation and architecture grounding
 
 ### Goal
@@ -219,6 +261,71 @@ Carefully add vetted third-party capabilities.
 ### Exit criteria
 
 - no third-party skill bypasses policy and vetting
+
+---
+
+## Phase 10.5 — production soak closeout and bounded live interaction capture
+
+### Goal
+
+Close the first bounded production soak as passed for its intended scope,
+compact the validated state, and move to the next slice:
+live interaction -> bounded candidate capture.
+
+### Deliverables
+
+- compact soak closeout summary
+- explicit statement that the first bounded production soak passed for:
+  - read-only retrieval
+  - bounded governance writes
+  - bounded scheduler classes
+  - runner ownership enforcement
+  - bounded durable-growth observation
+- explicit statement that ordinary live agent-turn capture was not the target of
+  the completed soak
+- next active slice definition for ordinary live interaction ->
+  bounded candidate capture
+- proof plan requiring one real live turn to create the expected candidate,
+  event, and object rows while review and promotion remain manual
+
+### Exit criteria
+
+- the first bounded production soak is recorded as passed for its intended
+  scope
+- the compacted state preserves the current approved live boundary without
+  broadening automation
+- the next active slice is live interaction -> bounded candidate capture
+- reduced-profile self-improving capture and broader automation expansion stay
+  deferred until after that slice
+
+---
+
+## Phase 10.6 — bounded live interaction capture soak and next-slice selection
+
+### Goal
+
+Use the now-proven ordinary live interaction -> candidate-capture path as the
+basis for the next bounded production soak, then choose the next coherent live
+memory chunk without jumping to broad autonomous behavior.
+
+### Deliverables
+
+- repeated live proofs that ordinary real interactions create bounded
+  candidate, event, and object rows
+- row-quality review for the new live interaction-derived entries
+- observed volume review against actual live interaction volume
+- compact state updates that keep re-entry context cheap
+- recommendation for the next coherent bounded live chunk after candidate
+  capture proves stable enough
+
+### Exit criteria
+
+- ordinary live interactions repeatedly create the expected candidate memory
+  rows on the approved live boundary
+- the produced rows look structurally correct and interpretable
+- review and promotion remain manual throughout the soak
+- the next larger bounded live slice is chosen explicitly
+- broader automation expansion remains deferred until this slice is stable
 
 ---
 

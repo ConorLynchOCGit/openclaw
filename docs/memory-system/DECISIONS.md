@@ -3194,6 +3194,76 @@ governance posture.
 
 ### 16BZ. A shared-environment rehearsal must use a real shared non-production target or be reported as unavailable
 
+No simulated or local-only environment may be described as the shared
+rehearsal target.
+
+Reason:
+The repo and operator docs must stay truthful about which rollout evidence is
+actually shared and which evidence is still single-host only.
+
+---
+
+### 16CA. No shared rehearsal target exists yet
+
+No existing shared non-production target is available from the current repo
+or host context for `memory-middleware`.
+
+Reason:
+The repo exposes only:
+
+- a disposable local validation lane
+- a persistent local non-production Docker rollout lane
+- generic repo deployment artifacts that do not by themselves prove a shared
+  live runtime surface
+
+None of those is already a shared rehearsal target for the current
+memory-middleware posture.
+
+---
+
+### 16CB. The smallest viable shared rehearsal target is dedicated and isolated
+
+The smallest viable shared rehearsal target is a dedicated shared
+non-production OpenClaw runtime paired with a dedicated shared Postgres
+database for `memory-middleware`, with the current approved middleware
+allowlists replayed unchanged.
+
+Reason:
+This is the minimum shape that is:
+
+- actually shared beyond one host
+- still isolated from production
+- compatible with the current runbook's runner-owner and disablement model
+- small enough to provision without expanding the automation boundary
+
+---
+
+### 16CC. Shared-runtime planning should follow the actual server-hosted runtime surface, not repo-only deployment artifacts
+
+The default shared runtime plan for the first real shared non-production
+rehearsal should follow the actual server-hosted OpenClaw runtime surface on
+the VPS.
+
+Reason:
+Diagnosis later confirmed the live runtime is Docker Compose plus the
+operator-managed `~/.openclaw` config tree. Repo-only deployment artifacts can
+exist without being the real operator path, so future rehearsal and production
+planning should trace the live runtime first and only then document rollout
+steps.
+
+---
+
+### 16CD. Shared rehearsal secrets should live in plugin config through an env-backed DB URL
+
+The shared middleware DB connection should be supplied through
+`plugins.entries.memory-middleware.config.database.url` using an env-backed
+SecretRef, not committed plaintext config.
+
+Reason:
+The middleware config already exposes `database.url` as the canonical DB
+connection path, and shared-environment rehearsal should keep credentials out
+of checked-in config while still using the real plugin-owned surface.
+
 If a later slice is asked to rehearse the current approved posture in a shared
 environment, it must:
 
@@ -3205,6 +3275,296 @@ Reason:
 The current repo and host context still prove only the disposable local lane
 and the persistent local non-production lane. A fabricated shared rehearsal
 would weaken the operational record instead of strengthening it.
+
+---
+
+### 16CE. The first shared non-production Postgres target reuses the existing server Supabase project
+
+The first shared non-production Postgres target for `memory-middleware` is the
+already-installed Supabase project on the server:
+
+- project ref: `wvfcvuwsnhupalpxfttc`
+- database: `postgres`
+- middleware schema: `memory_middleware`
+- required extensions confirmed:
+  - `pgcrypto`
+  - `pg_trgm`
+  - `vector`
+
+Reason:
+This avoids provisioning a second database surface when the existing shared
+Supabase installation already satisfies the middleware requirements and is
+reachable from the shared runtime host.
+
+---
+
+### 16CF. The first shared non-production runtime reuses the existing shared Dockerized OpenClaw gateway on the server
+
+The first shared non-production OpenClaw runtime for `memory-middleware`
+rehearsal is the existing Dockerized gateway on the server:
+
+- container: `openclaw-upgrade-2026324-openclaw-gateway-1`
+- image: `openclaw:local`
+- ports: `28789` and `28790`
+
+Reason:
+This is already a shared server-hosted runtime, it avoids inventing a second
+deployment surface before the first shared rehearsal, and it is sufficient for
+replaying the currently approved boundary unchanged.
+
+---
+
+### 16CG. The current middleware checkpoint still requires a literal database URL in live config
+
+For the first shared non-production wiring slice, the DB secret may be placed
+in `~/.openclaw/.env` as `MEMORY_MIDDLEWARE_DATABASE_URL`, but the running
+middleware config must still carry a literal
+`plugins.entries.memory-middleware.config.database.url` string.
+
+Reason:
+The current middleware checkpoint accepts a string `database.url` and the live
+plugin manifest now matches the rollout-era config surface, but this checkpoint
+does not yet support an env-backed SecretRef object for that field. The shared
+runtime therefore uses an operator-managed literal copy in non-production until
+that contract changes explicitly in a later slice.
+
+---
+
+### 16CH. The shared Supabase pooler target currently requires libpq-compatible SSL semantics
+
+The current shared non-production middleware DB URL must include:
+
+- `uselibpqcompat=true&sslmode=require`
+
+Reason:
+Without that compatibility flag, the current Node `pg` connection path in both
+the shared runtime and repo-native rehearsal failed with
+`self-signed certificate in certificate chain`.
+
+---
+
+### 16CI. Shared rehearsal uses the repo-native runtime plus gateway health checks
+
+The current shared-environment rehearsal path is:
+
+- repo-native runtime against the shared DB
+- gateway health checks against the shared runtime
+
+It is not:
+
+- bearer-auth HTTP tool invocation over `/tools/invoke`
+
+Reason:
+The shared gateway currently rejects bearer-auth HTTP tool invocation for this
+operator workflow, so the repo-native runtime is the reliable bounded
+inspection and rehearsal path.
+
+---
+
+### 16CJ. Shared approved posture keeps procedure validation planning disabled
+
+The approved shared posture keeps:
+
+- `memory_procedure_validate` enabled
+
+while keeping:
+
+- `memory_procedure_validate_plan` disabled
+
+Reason:
+That is the actual live bounded surface proven in the shared environment, and
+the runbook plus reports should reflect the real enabled and disabled seams.
+
+---
+
+### 16CK. Production rollout requires an actual writable production deployment surface
+
+No first production rollout may be reported as complete unless this session can
+reach and modify the real production deployment surface.
+
+Reason:
+The current host and repo context do not expose production deployment tooling,
+production auth, or production DB connectivity, so claiming production success
+without that access would weaken the rollout record.
+
+---
+
+### 16CL. Missing production deployment access is a rollout blocker, not a doc-only inconvenience
+
+The following are explicit blockers for the first production rollout from this
+session:
+
+- no distinct production-scoped OpenClaw runtime surface was identified for
+  this session beyond the shared non-production Docker Compose project
+- no production-scoped `openclaw.json` or `.env` path was provided to this
+  session
+- no production DB or deployment secrets were exposed to this session
+
+Reason:
+Without those surfaces, the actual VPS-hosted production runtime cannot be
+restarted, reconfigured, or validated from this environment.
+
+---
+
+### 16CM. Production rollout planning must inventory and back up the live VPS runtime before applying the first patch
+
+Before the first production rollout patch is applied for `memory-middleware`,
+operators must inventory the actual live OpenClaw runtime on the VPS and take
+an explicit backup of the mounted config and Compose surfaces.
+
+Reason:
+The live runtime is server-hosted Docker Compose with `~/.openclaw` bind
+mounts. That is the real rollback surface, and the first production patch
+must be tied to a concrete restore artifact instead of an assumed deployment
+platform.
+
+---
+
+### 16CN. The current live runtime already matches the approved feature boundary; the remaining production diff is operational
+
+The currently inventoried live VPS runtime already matches the approved
+feature boundary for `memory-middleware`.
+
+The remaining production rollout diff is limited to:
+
+- choosing the production runner owner id
+- replacing `shared-nonprod-runner-1` with that production runner id
+- normalizing the `.env` DB URL copy so it matches the proven live URL shape
+- explicitly confirming whether the inventoried runtime is the production
+  surface or identifying the separate production-scoped runtime first
+
+Reason:
+The live `openclaw.json` already carries the approved bounded candidate,
+retrieval, advisory scheduling, and execute-class allowlists. No broader
+feature enablement is required to reach the already-rehearsed boundary.
+
+---
+
+### 16CO. The actual production runtime on this VPS is the live upgrade Compose container
+
+The actual production runtime on this VPS is:
+
+- Docker Compose project `openclaw-upgrade-2026324`
+- service `openclaw-gateway`
+- container `openclaw-upgrade-2026324-openclaw-gateway-1`
+
+Reason:
+It is the only active OpenClaw runtime on the host, it owns the canonical
+OpenClaw ports `28789` and `28790`, it uses the canonical persisted state tree
+`~/.openclaw`, and the older `/root/services/openclaw` Compose stack is no
+longer running.
+
+---
+
+### 16CP. The first production rollout patch is limited to runner-owner and DB-secret parity only
+
+The exact minimal production rollout patch is:
+
+- in `~/.openclaw/openclaw.json`
+  - set `plugins.entries.memory-middleware.config.backgroundJobs.runnerOwnerId`
+    to `production-runner-1`
+- in `~/.openclaw/.env`
+  - normalize `MEMORY_MIDDLEWARE_DATABASE_URL` so it includes
+    `uselibpqcompat=true&sslmode=require`
+
+Reason:
+The live production runtime already matches the approved feature boundary.
+Only the production runner identity and secret parity still need to be aligned
+before restart and validation.
+
+---
+
+### 16CQ. The first production rollout is now live on the confirmed Docker Compose runtime with no feature-boundary expansion
+
+The first production rollout is complete on:
+
+- Docker Compose project `openclaw-upgrade-2026324`
+- service `openclaw-gateway`
+- container `openclaw-upgrade-2026324-openclaw-gateway-1`
+
+using only:
+
+- `backgroundJobs.runnerOwnerId = production-runner-1`
+- DB URL parity including `uselibpqcompat=true&sslmode=require`
+
+Reason:
+The runtime restarted cleanly, retrieval remained healthy, the bounded
+governance path remained healthy, approved advisory and execute classes ran
+successfully, wrong-runner claims stayed blocked, and temporary disablement
+checks succeeded before the approved posture was restored.
+
+---
+
+### 16CR. Production validation uses gateway health checks plus direct in-container middleware runtime invocation
+
+The current production validation seam is:
+
+- gateway health checks against the live container
+- direct in-container `memory-middleware` runtime and tool invocation using
+  the running container's built `dist` output
+
+and not:
+
+- bearer-auth HTTP `/tools/invoke`
+
+Reason:
+The current gateway bearer-auth HTTP surface blocks tool invocation, while
+the direct in-container runtime seam provides truthful bounded middleware
+validation against the live production config and database posture.
+
+---
+
+### 16CS. The approved production boundary remains stable after the first soak review and should remain unchanged
+
+The first production soak review found the current approved
+`memory-middleware` boundary stable enough to keep unchanged.
+
+Reason:
+Health stayed green, retrieval stayed healthy, recent maintenance jobs stayed
+within the approved allowlists, wrong-runner blocking still worked, advisory
+enqueue dedupe still worked, and the only observed durable growth from the
+soak probe was one additional `background_jobs` row with no broader table
+family drift.
+
+---
+
+### 16CT. No rollback or disablement is needed after the first production soak review
+
+Rollback or disablement is not required after the first production soak
+review.
+
+Reason:
+No middleware-specific anomaly required emergency narrowing, the runtime
+remained healthy, and the current boundary stayed within the already-rehearsed
+production posture.
+
+---
+
+### 16CU. The first bounded production soak is passed for its intended scope, not as proof of ordinary live-turn capture
+
+The first bounded production soak is treated as passed for its intended
+scope, but not as proof that ordinary live agent turns already create
+candidate memory.
+
+Reason:
+The soak was designed to validate the bounded production posture:
+retrieval, bounded governance writes, bounded scheduler classes, runner
+ownership, and bounded durable-growth behavior. Ordinary live-turn capture was
+a follow-on question, not the original soak target.
+
+---
+
+### 16CV. The next active live memory slice is bounded ordinary live interaction -> candidate capture
+
+The next active live memory slice is bounded ordinary live interaction ->
+candidate capture, while review and promotion remain manual and broader
+automation stays deferred.
+
+Reason:
+The current live memory system is now proven to accept bounded candidate
+submissions from a fresh-session production interaction without requiring
+broader automation expansion. The next step is to soak and expand that slice
+carefully before reopening self-improving capture or wider scheduler classes.
 
 ## Provisional decisions pending implementation
 
