@@ -27,6 +27,18 @@ import {
   type ProjectFactSemanticConfidence,
 } from "../project-fact-semantic.js";
 import {
+  inspectRecurringProcedureLifecycle,
+  isExpiredPendingRecurringProcedureCandidate,
+  supersedeValidatedProceduresBySubjectKey,
+} from "../recurring-procedure-lifecycle.js";
+import {
+  detectRecurringProcedureSemanticDecision,
+  getRecurringProcedureTitle,
+  isSupportedRecurringProcedureKey,
+  type RecurringProcedureKey,
+  type RecurringProcedureSemanticConfidence,
+} from "../recurring-procedure-semantic.js";
+import {
   inspectResponseStyleLifecycle,
   isExpiredPendingResponseStyleCandidate,
 } from "../response-style-lifecycle.js";
@@ -51,6 +63,7 @@ type CandidateSubmitRawParams = ToolRawParams;
 
 const RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS = 5_000;
 const PROJECT_FACT_CONFIRMATION_MIN_AGE_MS = 5_000;
+const PROCEDURE_CONFIRMATION_MIN_AGE_MS = 5_000;
 
 function candidateKindSchema() {
   return Type.Unsafe<CandidateSubmissionKind>({
@@ -417,6 +430,70 @@ function buildToolProjectFactAutoPromotionMetadata(params: {
   };
 }
 
+function buildToolRecurringProcedureAutoPromotionMetadata(params: {
+  input: CandidateSubmissionInput;
+  autoPromotionProfile: string;
+  confirmationState?: "confirmed";
+}): Record<string, unknown> {
+  const autoCapture = params.input.metadata?.autoCapture;
+  const semanticDetection = params.input.metadata?.semanticDetection;
+  return {
+    autoPromotion: {
+      source: "candidate_submit_auto_promotion",
+      captureSeam: "model_tool_primary",
+      profile: params.autoPromotionProfile,
+      captureProfile: "tool-submitted",
+      captureClass:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { captureClass?: unknown }).captureClass
+          : undefined,
+      reasonCode:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { reasonCode?: unknown }).reasonCode
+          : undefined,
+      procedureKey:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { procedureKey?: unknown }).procedureKey
+          : undefined,
+      key:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { key?: unknown }).key
+          : undefined,
+      subjectKey:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { subjectKey?: unknown }).subjectKey
+          : undefined,
+      subject:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { subject?: unknown }).subject
+          : undefined,
+      title:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { title?: unknown }).title
+          : undefined,
+      steps:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { steps?: unknown }).steps
+          : undefined,
+      toolName: "memory_candidate_submit",
+    },
+    ...(semanticDetection &&
+    typeof semanticDetection === "object" &&
+    !Array.isArray(semanticDetection)
+      ? { semanticDetection }
+      : {}),
+    ...(params.confirmationState
+      ? {
+          candidateConfirmation: {
+            state: params.confirmationState,
+            method: "repeat_subject_signal",
+            confirmationEvidenceCount: 2,
+          },
+        }
+      : {}),
+  };
+}
+
 async function maybeResolveExistingProjectFactCandidate(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
@@ -543,6 +620,222 @@ async function maybeResolveExistingProjectFactCandidate(params: {
   return null;
 }
 
+async function autoPromoteRecurringProcedureCandidateFromTool(params: {
+  runtime: MemoryMiddlewareRuntime;
+  candidateId: string;
+  input: CandidateSubmissionInput;
+  title: string;
+  subjectKey: string;
+  procedureKey: RecurringProcedureKey;
+  correctionPromotion: boolean;
+  confirmationState?: "confirmed";
+}): Promise<CandidateSubmissionResult> {
+  const promotionMetadata = buildToolRecurringProcedureAutoPromotionMetadata({
+    input: params.input,
+    autoPromotionProfile: params.confirmationState
+      ? "recurring_procedure_confirmation_v1"
+      : params.correctionPromotion
+        ? "recurring_procedure_correction_v1"
+        : "recurring_procedure_direct_v1",
+    ...(params.confirmationState ? { confirmationState: params.confirmationState } : {}),
+  });
+  const reviewResult = await params.runtime.candidateReview.review({
+    candidateId: params.candidateId,
+    outcome: "accepted",
+    metadata: promotionMetadata,
+  });
+  if (!reviewResult.accepted) {
+    return {
+      accepted: false,
+      status: "failed",
+      kind: "procedure",
+      reason: reviewResult.reason,
+    };
+  }
+  const procedurePromotion = await params.runtime.candidatePromotion.promoteToProcedureDraft({
+    candidateId: params.candidateId,
+    title: params.title,
+    metadata: promotionMetadata,
+  });
+  if (!procedurePromotion.accepted || !procedurePromotion.procedureId) {
+    return {
+      accepted: false,
+      status: "failed",
+      kind: "procedure",
+      reason: !procedurePromotion.accepted
+        ? procedurePromotion.reason
+        : "procedure promotion failed",
+    };
+  }
+  const validation = await params.runtime.procedureValidation.validate({
+    procedureId: procedurePromotion.procedureId,
+    metadata: promotionMetadata,
+  });
+  if (!validation.accepted || !validation.procedureId) {
+    return {
+      accepted: false,
+      status: "failed",
+      kind: "procedure",
+      reason: !validation.accepted ? validation.reason : "procedure validation failed",
+    };
+  }
+  if (params.correctionPromotion) {
+    const supersedeResult = await supersedeValidatedProceduresBySubjectKey({
+      config: params.runtime.config,
+      subjectKey: params.subjectKey,
+      supersededByProcedureId: validation.procedureId,
+      metadata: promotionMetadata,
+    });
+    if (!supersedeResult.accepted) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: "procedure",
+        reason: supersedeResult.reason,
+      };
+    }
+  }
+  return {
+    accepted: true,
+    status: "accepted",
+    kind: "procedure",
+    storage: "database",
+    reviewState: "approved",
+    eventId:
+      procedurePromotion.sourceEventId ??
+      readNestedMetadataString(params.input.metadata, ["sourceEventId"]) ??
+      params.candidateId,
+    memoryObjectId: validation.procedureId,
+  };
+}
+
+async function maybeResolveExistingRecurringProcedureCandidate(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: CandidateSubmissionInput;
+}): Promise<CandidateSubmissionResult | null> {
+  if (params.input.kind !== "procedure") {
+    return null;
+  }
+  const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
+  const key = readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]);
+  const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
+  const procedureKey = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "procedureKey",
+  ]);
+  const title =
+    readNestedMetadataString(params.input.metadata, ["autoCapture", "title"]) ??
+    (procedureKey && isSupportedRecurringProcedureKey(procedureKey)
+      ? getRecurringProcedureTitle(procedureKey)
+      : undefined);
+  const confidence =
+    readNestedMetadataString(params.input.metadata, ["semanticDetection", "confidence"]) ?? "high";
+  if (
+    template !== "named_recurring_checklist" ||
+    !key ||
+    !subjectKey ||
+    !procedureKey ||
+    !isSupportedRecurringProcedureKey(procedureKey) ||
+    !title
+  ) {
+    return null;
+  }
+
+  const inspection = await inspectRecurringProcedureLifecycle({
+    config: params.runtime.config,
+    key,
+    subjectKey,
+  });
+  if (!inspection) {
+    return null;
+  }
+
+  if (
+    inspection.pendingCandidate &&
+    isExpiredPendingRecurringProcedureCandidate(inspection.pendingCandidate)
+  ) {
+    await params.runtime.candidateReview.review({
+      candidateId: inspection.pendingCandidate.id,
+      outcome: "rejected",
+      rationale:
+        "recurring-procedure candidate confirmation window expired without later confirming evidence",
+      metadata: {
+        source: "candidate_submit_recurring_procedure_confirmation",
+        candidateLifecycle: {
+          family: "recurring_procedure",
+          state: "rejected",
+          subjectKey,
+          procedureKey,
+        },
+      },
+    });
+  }
+
+  if (inspection.matchingValidatedProcedureId) {
+    return {
+      accepted: false,
+      status: "failed",
+      kind: params.input.kind,
+      reason: `validated recurring procedure already exists for key ${key}`,
+    };
+  }
+
+  const captureClass = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "captureClass",
+  ]);
+  const isCorrection = captureClass === "recurring_procedure_correction";
+
+  if (inspection.activeValidatedSubjectProcedureIds.length > 0 && !isCorrection) {
+    return {
+      accepted: false,
+      status: "failed",
+      kind: params.input.kind,
+      reason: `validated recurring procedure already exists for title ${title}; use correction phrasing to replace it`,
+    };
+  }
+
+  if (
+    inspection.pendingCandidate &&
+    !isExpiredPendingRecurringProcedureCandidate(inspection.pendingCandidate)
+  ) {
+    if (shouldSkipImmediateRecurringProcedureConfirmation(inspection.pendingCandidate.createdAt)) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: `recurring-procedure confirmation candidate ${inspection.pendingCandidate.id} already exists`,
+      };
+    }
+    const autoPromotion =
+      params.runtime.config.autoPromotion ?? DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG;
+    if (autoPromotion.profile !== "explicit-user-preference-v1") {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: `recurring-procedure confirmation candidate ${inspection.pendingCandidate.id} is waiting for later evidence`,
+      };
+    }
+    return autoPromoteRecurringProcedureCandidateFromTool({
+      runtime: params.runtime,
+      candidateId: inspection.pendingCandidate.id,
+      input: params.input,
+      title,
+      subjectKey,
+      procedureKey,
+      correctionPromotion: isCorrection,
+      confirmationState: "confirmed",
+    });
+  }
+
+  if (confidence !== "high" && !isCorrection) {
+    return null;
+  }
+
+  return null;
+}
+
 export async function submitCandidateFromTool(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
@@ -565,6 +858,13 @@ export async function submitCandidateFromTool(params: {
   });
   if (resolvedExistingProjectFact) {
     return resolvedExistingProjectFact;
+  }
+  const resolvedExistingRecurringProcedure = await maybeResolveExistingRecurringProcedureCandidate({
+    runtime: params.runtime,
+    input: normalizedInput,
+  });
+  if (resolvedExistingRecurringProcedure) {
+    return resolvedExistingRecurringProcedure;
   }
   if (normalizedInput.kind === "learning" || normalizedInput.kind === "correction") {
     const duplicate = await findExistingAutoCaptureManagedDuplicate({
@@ -601,6 +901,11 @@ export async function submitCandidateFromTool(params: {
     result,
   });
   result = await maybeAutoPromoteToolSubmittedProjectFact({
+    runtime: params.runtime,
+    input: normalizedInput,
+    result,
+  });
+  result = await maybeAutoPromoteToolSubmittedRecurringProcedure({
     runtime: params.runtime,
     input: normalizedInput,
     result,
@@ -748,6 +1053,23 @@ function buildProjectFactSemanticMetadata(params: {
   };
 }
 
+function buildRecurringProcedureSemanticMetadata(params: {
+  detectionSource: "semantic";
+  confidence: "high" | RecurringProcedureSemanticConfidence;
+  evidence: string[];
+  procedureKey: RecurringProcedureKey;
+}): Record<string, unknown> {
+  return {
+    semanticDetection: {
+      source: "recurring_procedure_semantic_v1",
+      detectionSource: params.detectionSource,
+      confidence: params.confidence,
+      procedureKey: params.procedureKey,
+      evidence: params.evidence,
+    },
+  };
+}
+
 function buildPendingConfirmationMetadata(params: {
   confidence: ResponseStyleSemanticConfidence;
   evidence: string[];
@@ -781,6 +1103,27 @@ function buildProjectFactPendingConfirmationMetadata(params: {
       observedAt,
       expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
       fieldKey: params.fieldKey,
+      evidence: params.evidence,
+    },
+  };
+}
+
+function buildRecurringProcedurePendingConfirmationMetadata(params: {
+  confidence: RecurringProcedureSemanticConfidence;
+  evidence: string[];
+  procedureKey: RecurringProcedureKey;
+  observedAt?: string;
+}): Record<string, unknown> {
+  const observedAt = params.observedAt ?? new Date().toISOString();
+  return {
+    candidateLifecycle: {
+      family: "recurring_procedure",
+      state: "pending_confirmation",
+      confidence: params.confidence,
+      evidenceCount: 1,
+      observedAt,
+      expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
+      procedureKey: params.procedureKey,
       evidence: params.evidence,
     },
   };
@@ -848,6 +1191,40 @@ function toOrdinaryTurnProjectFactMatch(match: {
   };
 }
 
+function toOrdinaryTurnRecurringProcedureMatch(match: {
+  captureClass: "explicit_recurring_procedure" | "recurring_procedure_correction";
+  candidateKind: "procedure";
+  reasonCode: "explicit_recurring_procedure_statement" | "recurring_procedure_correction";
+  template: OrdinaryTurnAutoCaptureMatch["template"];
+  procedureKey: RecurringProcedureKey;
+  title: string;
+  body: string;
+  steps: string[];
+  normalizedTitle: string;
+  normalizedBody: string;
+  content: string;
+  subjectKey: string;
+  key: string;
+}): OrdinaryTurnAutoCaptureMatch {
+  return {
+    profile: "user-preference-v2",
+    captureClass: match.captureClass,
+    candidateKind: match.candidateKind,
+    reasonCode: match.reasonCode,
+    template: match.template,
+    subject: match.title,
+    value: match.body,
+    normalizedSubject: match.normalizedTitle,
+    normalizedValue: match.normalizedBody,
+    content: match.content,
+    subjectKey: match.subjectKey,
+    key: match.key,
+    procedureKey: match.procedureKey,
+    title: match.title,
+    steps: match.steps,
+  };
+}
+
 type TranscriptUserMessage = {
   role?: unknown;
   content?: unknown;
@@ -872,6 +1249,15 @@ type ManagedProjectFactResolution = {
   source: "content" | "raw";
   detectionSource: "deterministic" | "semantic";
   confidence: "high" | ProjectFactSemanticConfidence;
+  evidence: string[];
+};
+
+type ManagedRecurringProcedureResolution = {
+  parsed: OrdinaryTurnAutoCaptureMatch;
+  procedureKey: RecurringProcedureKey;
+  source: "content" | "raw";
+  detectionSource: "semantic";
+  confidence: "high" | RecurringProcedureSemanticConfidence;
   evidence: string[];
 };
 
@@ -1024,6 +1410,14 @@ function shouldSkipImmediateConfirmation(createdAt: string, now = Date.now()): b
 function shouldSkipImmediateProjectFactConfirmation(createdAt: string, now = Date.now()): boolean {
   const createdAtMs = Date.parse(createdAt);
   return Number.isFinite(createdAtMs) && now - createdAtMs < PROJECT_FACT_CONFIRMATION_MIN_AGE_MS;
+}
+
+function shouldSkipImmediateRecurringProcedureConfirmation(
+  createdAt: string,
+  now = Date.now(),
+): boolean {
+  const createdAtMs = Date.parse(createdAt);
+  return Number.isFinite(createdAtMs) && now - createdAtMs < PROCEDURE_CONFIRMATION_MIN_AGE_MS;
 }
 
 function isManagedCorrectionMatch(
@@ -1268,6 +1662,50 @@ async function resolveManagedProjectFactCorrection(params: {
       detectionSource: "semantic",
       confidence: semanticFromContent.confidence,
       evidence: semanticFromContent.evidence,
+    };
+  }
+
+  return null;
+}
+
+async function resolveManagedRecurringProcedureSubmission(params: {
+  input: CandidateSubmissionInput;
+  context?: OpenClawPluginToolContext;
+}): Promise<ManagedRecurringProcedureResolution | null> {
+  const { input, context } = params;
+  const contentDecision = detectRecurringProcedureSemanticDecision(input.content);
+  if (contentDecision.action === "capture") {
+    return {
+      parsed: toOrdinaryTurnRecurringProcedureMatch(contentDecision.match),
+      procedureKey: contentDecision.match.procedureKey,
+      source: "content",
+      detectionSource: "semantic",
+      confidence: contentDecision.confidence,
+      evidence: contentDecision.evidence,
+    };
+  }
+
+  const rawCandidates: string[] = [];
+  if (typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0) {
+    rawCandidates.push(input.metadata.raw);
+  }
+  const rawFromContext = await resolveLatestUserTurnFromContext(context);
+  if (rawFromContext && !rawCandidates.includes(rawFromContext)) {
+    rawCandidates.push(rawFromContext);
+  }
+
+  for (const rawCandidate of rawCandidates) {
+    const semanticFromRaw = detectRecurringProcedureSemanticDecision(rawCandidate);
+    if (semanticFromRaw.action !== "capture") {
+      continue;
+    }
+    return {
+      parsed: toOrdinaryTurnRecurringProcedureMatch(semanticFromRaw.match),
+      procedureKey: semanticFromRaw.match.procedureKey,
+      source: "raw",
+      detectionSource: "semantic",
+      confidence: semanticFromRaw.confidence,
+      evidence: semanticFromRaw.evidence,
     };
   }
 
@@ -1519,6 +1957,64 @@ async function normalizeManagedToolCandidateInput(params: {
         toolName: "memory_candidate_submit",
       },
     });
+  }
+
+  if (input.kind === "procedure") {
+    const procedureResolution = await resolveManagedRecurringProcedureSubmission({
+      input,
+      context,
+    });
+    if (!procedureResolution) {
+      return input;
+    }
+    return mergeCandidateMetadata(
+      {
+        ...input,
+        content: procedureResolution.parsed.content,
+      },
+      {
+        category:
+          procedureResolution.parsed.captureClass === "recurring_procedure_correction"
+            ? "recurring_procedure_correction"
+            : "recurring_procedure",
+        source:
+          procedureResolution.parsed.captureClass === "recurring_procedure_correction"
+            ? "conversational_recurring_procedure_correction"
+            : "explicit_recurring_procedure",
+        subject_key: procedureResolution.parsed.subjectKey,
+        autoCapture: {
+          source: "model_tool_candidate_submit",
+          captureSeam: "model_tool_primary",
+          profile: procedureResolution.parsed.profile,
+          captureClass: procedureResolution.parsed.captureClass,
+          reasonCode: procedureResolution.parsed.reasonCode,
+          template: procedureResolution.parsed.template,
+          procedureKey: procedureResolution.procedureKey,
+          key: procedureResolution.parsed.key,
+          subjectKey: procedureResolution.parsed.subjectKey,
+          subject: procedureResolution.parsed.subject,
+          title:
+            procedureResolution.parsed.title ??
+            getRecurringProcedureTitle(procedureResolution.procedureKey),
+          steps: procedureResolution.parsed.steps ?? [],
+          value: procedureResolution.parsed.value,
+          toolName: "memory_candidate_submit",
+        },
+        ...buildRecurringProcedureSemanticMetadata({
+          detectionSource: procedureResolution.detectionSource,
+          confidence: procedureResolution.confidence,
+          evidence: procedureResolution.evidence,
+          procedureKey: procedureResolution.procedureKey,
+        }),
+        ...(procedureResolution.confidence === "medium"
+          ? buildRecurringProcedurePendingConfirmationMetadata({
+              confidence: procedureResolution.confidence,
+              evidence: procedureResolution.evidence,
+              procedureKey: procedureResolution.procedureKey,
+            })
+          : {}),
+      },
+    );
   }
 
   if (input.kind === "correction") {
@@ -1777,6 +2273,92 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
     memoryObjectId: promotionResult.promotedMemoryObjectId,
     reviewState: "approved",
   };
+}
+
+async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: CandidateSubmissionInput;
+  result: CandidateSubmissionResult;
+}): Promise<CandidateSubmissionResult> {
+  const autoPromotion =
+    params.runtime.config.autoPromotion ?? DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG;
+  if (
+    autoPromotion.profile !== "explicit-user-preference-v1" ||
+    !params.result.accepted ||
+    !params.result.memoryObjectId ||
+    params.input.kind !== "procedure"
+  ) {
+    return params.result;
+  }
+
+  const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
+  const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
+  const procedureKey = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "procedureKey",
+  ]);
+  const title =
+    readNestedMetadataString(params.input.metadata, ["autoCapture", "title"]) ??
+    (procedureKey && isSupportedRecurringProcedureKey(procedureKey)
+      ? getRecurringProcedureTitle(procedureKey)
+      : undefined);
+  const pendingConfirmationState = readNestedMetadataString(params.input.metadata, [
+    "candidateLifecycle",
+    "state",
+  ]);
+  const captureClass = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "captureClass",
+  ]);
+  if (
+    template !== "named_recurring_checklist" ||
+    !subjectKey ||
+    !procedureKey ||
+    !isSupportedRecurringProcedureKey(procedureKey) ||
+    !title ||
+    pendingConfirmationState === "pending_confirmation"
+  ) {
+    return params.result;
+  }
+
+  const inspection = await inspectRecurringProcedureLifecycle({
+    config: params.runtime.config,
+    key:
+      readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]) ??
+      params.result.memoryObjectId,
+    subjectKey,
+  });
+  if (!inspection) {
+    if (captureClass === "recurring_procedure_correction") {
+      return params.result;
+    }
+    return autoPromoteRecurringProcedureCandidateFromTool({
+      runtime: params.runtime,
+      candidateId: params.result.memoryObjectId,
+      input: params.input,
+      title,
+      subjectKey,
+      procedureKey,
+      correctionPromotion: false,
+    });
+  }
+
+  if (
+    inspection.activeValidatedSubjectProcedureIds.length > 0 &&
+    captureClass !== "recurring_procedure_correction"
+  ) {
+    return params.result;
+  }
+
+  return autoPromoteRecurringProcedureCandidateFromTool({
+    runtime: params.runtime,
+    candidateId: params.result.memoryObjectId,
+    input: params.input,
+    title,
+    subjectKey,
+    procedureKey,
+    correctionPromotion: captureClass === "recurring_procedure_correction",
+  });
 }
 
 function resolveManagedAutoCaptureKey(input: CandidateSubmissionInput): string | null {

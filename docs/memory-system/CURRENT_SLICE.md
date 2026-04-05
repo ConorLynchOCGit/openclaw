@@ -2,27 +2,27 @@
 
 ## Active slice
 
-Semantic project memory UX v1
+Recurring procedure memory UX v1
 
 ## Objective
 
-Land the next bounded user-facing semantic memory slice so explicit named
-project facts feel materially useful and repairable without broadening into a
-generic fuzzy project-memory writer.
+Land the next bounded user-facing semantic memory slice so reusable named
+checklists feel materially useful and repairable without broadening into a
+generic fuzzy procedure writer.
 
 This slice is about:
 
-- bounded semantic detection for supported named-project facts
+- bounded semantic detection for supported recurring checklist subjects
 - candidate-with-confirmation instead of dead manual-review backlog
-- approved-only retrieval for remembered project facts
+- validated-procedure retrieval for clear checklist asks
 - conversational correction and supersede for this family
-- ambiguity-ignore behavior for weak project-fact turns
+- ambiguity-ignore behavior for weak nearby one-off turns
 - isolated proof plus narrow production proof
 - updating the canonical memory docs to reflect what is now live
 
 ## Required work
 
-1. Implement bounded semantic project-fact detection for the supported
+1. Implement bounded semantic recurring-procedure detection for the supported
    subject family.
 2. Implement the locked ambiguity posture for this family:
    - conservative writes
@@ -30,7 +30,8 @@ This slice is about:
    - sparse clarify
    - ignore weak ambiguous signals
 3. Implement later confirmation and bounded non-promotion behavior.
-4. Improve approved project-fact retrieval and field-aware overlap handling.
+4. Improve validated-procedure retrieval and clear-ask ranking for supported
+   checklist subjects.
 5. Implement conversational correction or supersede for this family only.
 6. Run isolated proof and narrow production proof.
 7. Update:
@@ -40,15 +41,14 @@ This slice is about:
 - `docs/memory-system/feature-inventory.md`
 - `docs/memory-system/OPERATIONAL_RUNBOOK.md`
 - `docs/memory-system/CURRENT_SLICE.md`
-- `docs/memory-system/PRODUCTION_PROJECT_MEMORY_UX_REPORT.md`
+- `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_UX_REPORT.md`
 
 ## Out of scope
 
-- repository URL memory
-- deployment URL memory
-- speculative project inference
 - workflow-improvement memory
-- recurring procedure memory as a user-facing semantic feature
+- broader procedure families beyond bounded named checklists
+- silent background application of stored procedures
+- skill extraction from recurring procedures
 - unmet-need planning
 - phrase induction as live behavior
 - self-improving capture enablement
@@ -58,13 +58,13 @@ This slice is about:
 
 ## Acceptance criteria
 
-- supported natural named-project phrasing works materially better than the
-  old exact-pattern posture
-- later confirming evidence can promote a bounded project-fact candidate
-  without manual review
+- supported natural recurring-checklist phrasing works materially better than
+  the old exact-pattern posture
+- later confirming evidence can promote a bounded recurring-procedure
+  candidate without manual review
 - weak ambiguous signals do not become dead candidate trash
-- later project questions retrieve the right approved remembered fact
-- users can repair supported project facts conversationally
+- later clear checklist asks retrieve the right validated stored procedure
+- users can repair supported recurring procedures conversationally
 - isolated proof and narrow production proof both exist
 - canonical docs reflect the live boundary accurately
 

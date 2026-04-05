@@ -668,6 +668,22 @@ Primary specs:
 
 ## Phase E — recurring procedure memory
 
+First bounded live recurring-procedure tranche:
+
+- reusable named-checklist memory is now live for:
+  - deploy checklist
+  - release checklist
+  - triage checklist
+  - investigation checklist
+- medium-confidence recurring-procedure candidate confirmation without manual
+  review is now live for this bounded family
+- recurring-procedure correction or supersede is now live for the supported
+  checklist subjects
+- clear checklist asks now have production-backed validated-procedure retrieval
+  for this family
+- report:
+  - `/memory-system/PRODUCTION_RECURRING_PROCEDURE_UX_REPORT`
+
 ### Goal
 
 Ship one reusable procedure lane that creates obvious user-visible value.
@@ -700,6 +716,13 @@ Support strongly structured, bounded recurring procedures such as:
 - the system can retrieve and use it later in a relevant context
 - procedure memory remains bounded and reviewable
 - procedure reuse feels obviously helpful rather than surprising or intrusive
+
+Current phase note:
+
+- the first bounded recurring-checklist tranche is complete for its intended
+  scope
+- broader procedure families and richer suggestion-first behavior still remain
+  future work inside this phase
 
 Primary spec:
 

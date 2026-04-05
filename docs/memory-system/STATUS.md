@@ -196,6 +196,12 @@ explicit named-project fact detection, candidate confirmation without manual
 review for supported project facts, correction or supersede for supported
 project-fact subjects, field-aware approved retrieval, and narrow production
 proof without broader automation enablement.
+Third user-experience-focused recurring-procedure semantic slice completed on
+the approved live production boundary for its intended scope, with bounded
+named-checklist detection, candidate confirmation without manual review for
+medium-confidence recurring procedures, correction or supersede for supported
+recurring checklist subjects, validated-procedure retrieval for clear checklist
+asks, and narrow production proof without broader automation enablement.
 
 ## Compact checkpoint
 
@@ -243,6 +249,19 @@ Current compact state:
   - bounded project-fact correction or supersede
   - weak ambiguous ignore instead of dead candidate backlog
   - field-aware approved retrieval for direct project questions
+- first recurring-procedure semantic UX slice is now live for its intended
+  scope
+- supported recurring-procedure subjects now include:
+  - deploy checklist
+  - release checklist
+  - triage checklist
+  - investigation checklist
+- semantic recurring-procedure capture now supports:
+  - explicit reusable named-checklist statements
+  - medium-confidence candidate confirmation without manual review
+  - bounded recurring-procedure correction or supersede
+  - validated-procedure retrieval for clear checklist asks
+  - weak ambiguous ignore instead of dead candidate backlog
 - latest semantic response-style proof timestamp:
   - `2026-04-05T16:38:19.403Z`
 - latest semantic response-style production proof artifacts:
@@ -258,6 +277,29 @@ Current compact state:
   - `memory_reviews +0` before cleanup
   - ambiguous follow-up caused `+0` additional writes
   - final approved-only retrieval for the seeded proof project remained empty
+- latest semantic project-memory production proof artifacts:
+  - `projectId = 00c98f31-5783-4ac9-9ea0-186e939987a4`
+  - `candidateId = d277ee41-dc0d-4c82-ac3c-09ba3953f9c5`
+  - `candidateEventId = 9f3be059-999c-4344-9543-feeca0fbf22f`
+  - `approvedObjectId = 4c493fe1-df27-4e60-8de7-a26885b88b5b`
+  - `reviewId = f2bed2c1-aa85-4496-8e86-d2e2bad1845e`
+- latest recurring-procedure production proof artifacts:
+  - `projectId = c5120fe9-b48c-411e-9fe9-c10757a0ac9a`
+  - `agentId = 4635a71e-fe43-4175-ab33-27c4e2a65809`
+  - `sessionId = 7a211d26-f80f-4a17-b078-abf3b0bd00d5`
+  - `candidateId = 80d1acb9-394d-4c8f-aab5-e4e29b06373b`
+  - `candidateEventId = ca9cb5a6-85a7-44ac-b989-c76ee7ac48bb`
+  - `reviewId = ec1d7a9e-791d-4dae-b3b8-8698f7e0140d`
+  - `validatedProcedureId = ed5dd44a-6ea9-4055-88d0-2e6d7bc05017`
+  - `procedureRunId = f6968b5c-d814-4968-80ad-4f6cb44b955d`
+- latest recurring-procedure production proof delta:
+  - `memory_events +1`
+  - `memory_objects +1`
+  - `memory_reviews +1`
+  - `procedures +1`
+  - `procedure_runs +1`
+  - `skill_candidates +0`
+  - `background_jobs +0`
 - isolated proof additionally proved:
   - transcript-seam semantic capture for all supported subjects
   - bullet candidate confirmation with later auto-promotion

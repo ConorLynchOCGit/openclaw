@@ -392,6 +392,77 @@ For the exact proof ids and production evidence for this slice, use:
 
 - `docs/memory-system/PRODUCTION_PROJECT_MEMORY_UX_REPORT.md`
 
+## Recurring-procedure semantic UX workflow
+
+The third user-facing semantic memory slice is now live for a bounded
+named-checklist family only.
+
+Supported first-slice recurring procedures:
+
+- deploy checklist
+- release checklist
+- triage checklist
+- investigation checklist
+
+Current live behavior:
+
+- bounded natural-language recurring-procedure detection is allowed only for
+  supported named checklist subjects with structured steps
+- medium-confidence recurring-procedure turns can enter a
+  pending-confirmation lifecycle instead of a dead manual-review queue
+- later confirming evidence can auto-promote those pending candidates without
+  manual review
+- supported recurring-procedure corrections can supersede stale validated
+  procedures for the same subject
+- clear checklist asks can use validated-procedure retrieval and
+  procedure-key-aware ranking
+- weak ambiguous turns should be ignored instead of creating memory trash
+
+Relevant surfaces:
+
+- transcript ordinary-turn path:
+  - `extensions/memory-middleware/src/ordinary-turn-auto-capture.ts`
+- tool path:
+  - `memory_candidate_submit`
+- lifecycle helpers:
+  - `extensions/memory-middleware/src/recurring-procedure-semantic.ts`
+  - `extensions/memory-middleware/src/recurring-procedure-lifecycle.ts`
+- retrieval:
+  - `memory_object_search_hybrid`
+  - `memory_object_get`
+  - `memory_object_list`
+
+Expected operator checks:
+
+- supported checklist phrasing can create bounded recurring-procedure
+  candidates or validated procedures without introducing freeform procedure
+  memory
+- a medium-confidence recurring-procedure candidate can later show:
+  - bounded pending-confirmation metadata
+  - a later validated procedure with:
+    - `promotionProfile = recurring_procedure_confirmation_v1`
+    - `confirmationState = confirmed`
+- a supported recurring-procedure correction can produce a validated
+  procedure with:
+  - `promotionProfile = recurring_procedure_correction_v1`
+- clear checklist asks can retrieve the right validated procedure first
+- weak ambiguous nearby text should not create additional durable writes
+- scoped validated-procedure retrieval remains the only user-visible read
+  source for this slice
+
+Current approved boundary note:
+
+- this slice is limited to supported named checklists only
+- vague one-off instructions are not live
+- broader procedure extraction is not live
+- silent background application of stored procedures is not live
+- candidates should not shape user-visible behavior before approval in this
+  slice
+
+For the exact proof ids and production evidence for this slice, use:
+
+- `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_UX_REPORT.md`
+
 ## Background-job inspection
 
 ### List current jobs

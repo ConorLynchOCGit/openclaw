@@ -74,6 +74,24 @@ function createRuntime() {
         promotedReviewState: "approved" as const,
         sourceEventId: "event-1",
       })),
+      promoteToProcedureDraft: vi.fn(async () => ({
+        accepted: true as const,
+        status: "promoted" as const,
+        candidateId: "memory-1",
+        procedureId: "procedure-1",
+        procedureStatus: "draft" as const,
+        sourceEventId: "event-1",
+      })),
+    },
+    procedureValidation: {
+      validate: vi.fn(async () => ({
+        accepted: true as const,
+        status: "validated" as const,
+        procedureId: "procedure-1",
+        procedureStatus: "validated" as const,
+        procedureRunId: "procedure-run-1",
+        sourceCandidateId: "memory-1",
+      })),
     },
   } as unknown as MemoryMiddlewareRuntime;
 }
@@ -1089,6 +1107,47 @@ describe("memory candidate submit tool", () => {
     expect(result.details).toMatchObject({
       accepted: true,
       kind: "correction",
+    });
+  });
+
+  it("auto-promotes a bounded recurring checklist into a validated procedure", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-recurring-procedure", {
+      kind: "procedure",
+      content: ["My deploy checklist:", "1. Open the canary lane.", "2. Verify health."].join("\n"),
+    });
+
+    expect(runtime.candidateIngress.submitProcedureSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: ["1. Open the canary lane", "2. Verify health"].join("\n"),
+        metadata: expect.objectContaining({
+          category: "recurring_procedure",
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_recurring_procedure",
+            procedureKey: "deploy_checklist",
+            title: "Deploy checklist",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidatePromotion.promoteToProcedureDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-1",
+        title: "Deploy checklist",
+      }),
+    );
+    expect(runtime.procedureValidation.validate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        procedureId: "procedure-1",
+      }),
+    );
+    expect(result.details).toMatchObject({
+      accepted: true,
+      kind: "procedure",
+      reviewState: "approved",
+      memoryObjectId: "procedure-1",
     });
   });
 });

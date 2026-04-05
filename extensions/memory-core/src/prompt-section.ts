@@ -82,9 +82,15 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
         lines.push(
           "For direct named-project fact questions, prefer memory_object_search_hybrid with kind=project and approved-only scope before falling back to generic memory_search.",
         );
+        lines.push(
+          "For clear asks about a stored checklist or recurring procedure, prefer memory_object_search_hybrid with kind=procedure and scope=include_validated_procedures before falling back to generic memory_search.",
+        );
       }
       lines.push(
         "If an approved durable memory result directly answers the question, use it in the normal reply without asking the user to restate it. If no approved result exists, answer normally and say you did not find stored memory only when that context matters.",
+      );
+      lines.push(
+        "If a validated procedure exists and the user clearly asks for that checklist or recurring steps, return it directly. If the user only asks for nearby advice, you may mention that a stored checklist exists, but do not silently force it as the only answer.",
       );
     }
 
@@ -100,6 +106,9 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
       );
       lines.push(
         "If the user states a tightly bounded named project fact in explicit declarative form, such as For project Atlas, the staging branch is atlas-staging, submit it as a learning candidate.",
+      );
+      lines.push(
+        "If the user explicitly teaches a reusable named checklist with bounded steps, such as my deploy checklist or my release checklist followed by numbered or bulleted steps, submit it as kind=procedure.",
       );
       lines.push(
         "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",

@@ -2848,6 +2848,237 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
+  it("auto-promotes an explicit recurring checklist into a validated procedure without manual review", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const submitResult = await submitTool.execute("call-rp-direct", {
+      kind: "procedure",
+      content: [
+        "My deploy checklist:",
+        "1. Open the canary lane.",
+        "2. Verify health.",
+        "3. Roll forward.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+
+    expect(submitResult.details).toMatchObject({
+      accepted: true,
+      kind: "procedure",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const procedureId = (submitResult.details as { memoryObjectId: string }).memoryObjectId;
+
+    const row = await querySingleRow<{
+      status: string;
+      title: string;
+      procedure_key: string | null;
+      promotion_profile: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          status::text as status,
+          title,
+          metadata->'candidateMetadata'->'autoCapture'->>'procedureKey' as procedure_key,
+          metadata->'promotionMetadata'->'autoPromotion'->>'profile' as promotion_profile
+        from memory_middleware.procedures
+        where id = $1::uuid
+      `,
+      [procedureId],
+    );
+
+    expect(row).toEqual({
+      status: "validated",
+      title: "Deploy checklist",
+      procedure_key: "deploy_checklist",
+      promotion_profile: "recurring_procedure_direct_v1",
+    });
+  });
+
+  it("promotes a medium-confidence recurring checklist candidate after later confirming evidence without manual review", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-rp-medium-1", {
+      kind: "procedure",
+      content: [
+        "For releases, we use this checklist:",
+        "1. Cut the release branch.",
+        "2. Run the smoke suite.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+    const candidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const initialRow = await querySingleRow<{
+      review_state: string;
+      lifecycle_state: string | null;
+      lifecycle_confidence: string | null;
+      procedure_key: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'confidence' as lifecycle_confidence,
+          metadata->'candidateMetadata'->'autoCapture'->>'procedureKey' as procedure_key
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [candidateId],
+    );
+
+    expect(initialRow).toEqual({
+      review_state: "candidate",
+      lifecycle_state: "pending_confirmation",
+      lifecycle_confidence: "medium",
+      procedure_key: "release_checklist",
+    });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-rp-medium-2", {
+      kind: "procedure",
+      content: [
+        "My release checklist:",
+        "1. Cut the release branch.",
+        "2. Run the smoke suite.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+
+    expect(confirmingSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "procedure",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const procedureId = (confirmingSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const confirmedRow = await querySingleRow<{
+      candidate_review_state: string;
+      status: string;
+      promotion_profile: string | null;
+      confirmation_state: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select review_state::text from memory_middleware.memory_objects where id = $1::uuid) as candidate_review_state,
+          (select status::text from memory_middleware.procedures where id = $2::uuid) as status,
+          (select metadata->'promotionMetadata'->'autoPromotion'->>'profile'
+            from memory_middleware.procedures where id = $2::uuid) as promotion_profile,
+          (select metadata->'promotionMetadata'->'candidateConfirmation'->>'state'
+            from memory_middleware.procedures where id = $2::uuid) as confirmation_state
+      `,
+      [candidateId, procedureId],
+    );
+
+    expect(confirmedRow).toEqual({
+      candidate_review_state: "candidate",
+      status: "validated",
+      promotion_profile: "recurring_procedure_confirmation_v1",
+      confirmation_state: "confirmed",
+    });
+  });
+
+  it("boosts the most relevant validated recurring checklist in hybrid retrieval", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const deploySubmit = await submitTool.execute("call-rp-hybrid-1", {
+      kind: "procedure",
+      content: ["My deploy checklist:", "1. Open the canary lane.", "2. Verify health."].join("\n"),
+      projectId: seeded.projectId,
+    });
+    const releaseSubmit = await submitTool.execute("call-rp-hybrid-2", {
+      kind: "procedure",
+      content: [
+        "My release checklist:",
+        "1. Cut the release branch.",
+        "2. Run the smoke suite.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+
+    const deployProcedureId = (deploySubmit.details as { memoryObjectId: string }).memoryObjectId;
+    const releaseProcedureId = (releaseSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "give me my deploy checklist",
+      scope: "include_validated_procedures",
+      kind: "procedure",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "include_validated_procedures",
+    });
+    const records = (
+      hybridSearch as {
+        records: Array<{ id: string; matchedFields: string[]; score: number }>;
+      }
+    ).records;
+    expect(records[0]?.id).toBe(deployProcedureId);
+    expect(records[0]?.matchedFields).toContain("procedure_key_match");
+    if (records[1]?.id === releaseProcedureId) {
+      expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
+    }
+  });
+
   it("boosts the most relevant approved response-style template in hybrid retrieval when overlapping memories exist", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

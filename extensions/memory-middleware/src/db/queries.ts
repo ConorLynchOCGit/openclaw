@@ -1262,6 +1262,14 @@ type ProjectFactQueryHint = {
     | "primary_environment_name";
 };
 
+type RecurringProcedureQueryHint = {
+  procedureKey:
+    | "deploy_checklist"
+    | "release_checklist"
+    | "triage_checklist"
+    | "investigation_checklist";
+};
+
 function normalizeRetrievalQuery(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -1316,6 +1324,29 @@ function inferProjectFactQueryHint(query: string): ProjectFactQueryHint | null {
   }
   if (normalized.includes("environment")) {
     return { fieldKey: "primary_environment_name" };
+  }
+  return null;
+}
+
+function inferRecurringProcedureQueryHint(query: string): RecurringProcedureQueryHint | null {
+  const normalized = normalizeRetrievalQuery(query);
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.includes("deploy checklist") || normalized.includes("deployment checklist")) {
+    return { procedureKey: "deploy_checklist" };
+  }
+  if (normalized.includes("release checklist")) {
+    return { procedureKey: "release_checklist" };
+  }
+  if (normalized.includes("triage checklist")) {
+    return { procedureKey: "triage_checklist" };
+  }
+  if (
+    normalized.includes("investigation checklist") ||
+    normalized.includes("investigation steps")
+  ) {
+    return { procedureKey: "investigation_checklist" };
   }
   return null;
 }
@@ -10233,6 +10264,15 @@ async function searchValidatedProcedureRowsHybrid(params: {
     table: "procedure_runs",
   });
   const combinedTextExpression = "lower(coalesce(p.title, '') || ' ' || coalesce(p.body, ''))";
+  const procedureKeyExpression = [
+    "coalesce(",
+    "p.metadata->'autoPromotion'->>'procedureKey',",
+    "p.metadata->'candidateMetadata'->'autoCapture'->>'procedureKey',",
+    "p.metadata->'promotionMetadata'->'autoPromotion'->>'procedureKey',",
+    "''",
+    ")",
+  ].join(" ");
+  const procedureHint = inferRecurringProcedureQueryHint(params.input.query);
   const conditions = [
     "p.status::text = 'validated'",
     `(
@@ -10241,7 +10281,11 @@ async function searchValidatedProcedureRowsHybrid(params: {
       or similarity(${combinedTextExpression}, lower($1::text)) >= 0.15
     )`,
   ];
-  const values: unknown[] = [params.input.query, `${params.input.query}%`];
+  const values: unknown[] = [
+    params.input.query,
+    `${params.input.query}%`,
+    procedureHint?.procedureKey ?? "",
+  ];
 
   if (params.input.projectId) {
     values.push(params.input.projectId);
@@ -10270,6 +10314,7 @@ async function searchValidatedProcedureRowsHybrid(params: {
         greatest(
           case when lower(p.title) = lower($1::text) then 160 else 0 end,
           case when lower(p.title) like lower($2::text) then 130 else 0 end,
+          case when $3::text <> '' and ${procedureKeyExpression} = $3::text then 220 else 0 end,
           (ts_rank_cd(p.search_document, websearch_to_tsquery('english', $1::text)) * 110.0),
           (similarity(${combinedTextExpression}, lower($1::text)) * 45.0)
         )::float8 as score,
@@ -10277,6 +10322,9 @@ async function searchValidatedProcedureRowsHybrid(params: {
           array[
             case when lower(p.title) = lower($1::text) then 'title_exact' end,
             case when lower(p.title) like lower($2::text) then 'title_prefix' end,
+            case when $3::text <> '' and ${procedureKeyExpression} = $3::text
+              then 'procedure_key_match'
+            end,
             case when p.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'
             end,

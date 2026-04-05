@@ -1458,6 +1458,111 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(reviewCandidate).toHaveBeenCalledTimes(1);
     expect(promoteToMemory).toHaveBeenCalledTimes(1);
   });
+  it("auto-promotes a bounded recurring checklist through draft and validation", async () => {
+    const submitProcedureSuggestion = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "procedure" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-procedure-1",
+      memoryObjectId: "memory-procedure-1",
+    }));
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "memory-procedure-1",
+      outcome: "accepted" as const,
+      reviewId: "review-procedure-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    }));
+    const promoteToProcedureDraft = vi.fn(async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "memory-procedure-1",
+      procedureId: "procedure-1",
+      procedureStatus: "draft" as const,
+      sourceEventId: "event-procedure-1",
+    }));
+    const validateProcedure = vi.fn(async () => ({
+      accepted: true as const,
+      status: "validated" as const,
+      procedureId: "procedure-1",
+      procedureStatus: "validated" as const,
+      procedureRunId: "procedure-run-1",
+      sourceCandidateId: "memory-procedure-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-3",
+          sessionId: "session-uuid-3",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        submitProcedureSuggestion,
+        reviewCandidate,
+        promoteToMemory: vi.fn(),
+        promoteToProcedureDraft,
+        validateProcedure,
+        inspectRecurringProcedureLifecycle: vi.fn(async () => ({
+          activeValidatedSubjectProcedureIds: [],
+          pendingSubjectCandidateIds: [],
+        })),
+        supersedeValidatedProceduresBySubjectKey: vi.fn(async () => ({
+          accepted: true as const,
+          status: "already_superseded" as const,
+          supersededProcedureIds: [],
+        })),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/recurring-procedure.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: [
+          "My deploy checklist:",
+          "1. Open the canary lane.",
+          "2. Verify health.",
+          "3. Roll forward.",
+        ].join("\n"),
+        timestamp: Date.parse("2026-04-05T18:00:00Z"),
+      },
+    });
+
+    expect(submitProcedureSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "agent-uuid-3",
+        sessionId: "session-uuid-3",
+        content: ["1. Open the canary lane", "2. Verify health", "3. Roll forward"].join("\n"),
+        metadata: expect.objectContaining({
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_recurring_procedure",
+            procedureKey: "deploy_checklist",
+            title: "Deploy checklist",
+          }),
+        }),
+      }),
+    );
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(promoteToProcedureDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-procedure-1",
+        title: "Deploy checklist",
+      }),
+    );
+    expect(validateProcedure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        procedureId: "procedure-1",
+      }),
+    );
+  });
 });
 
 describe("createOrdinaryTurnAutoCaptureController", () => {

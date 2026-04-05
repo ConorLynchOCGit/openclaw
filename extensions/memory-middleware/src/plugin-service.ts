@@ -29,6 +29,9 @@ export function createMemoryMiddlewarePluginService(
         deps: {
           reviewCandidate: (input) => runtime.candidateReview.review(input),
           promoteToMemory: (input) => runtime.candidatePromotion.promoteToMemory(input),
+          promoteToProcedureDraft: (input) =>
+            runtime.candidatePromotion.promoteToProcedureDraft(input),
+          validateProcedure: (input) => runtime.procedureValidation.validate(input),
         },
       });
       ordinaryTurnAutoCapture.start();
