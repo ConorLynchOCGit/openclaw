@@ -223,19 +223,22 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
     backgroundJobs.advisorySchedulingMode === "enabled" ? "enabled" : "disabled";
   const executeSchedulingMode =
     backgroundJobs.executeSchedulingMode === "enabled" ? "enabled" : "disabled";
-  const advisoryJobClasses = Array.isArray(backgroundJobs.advisoryJobClasses)
-    ? ([
-        ...new Set(
-          backgroundJobs.advisoryJobClasses.filter(
-            (value): value is "proactive_plan" | "consolidation_plan" =>
-              value === "proactive_plan" || value === "consolidation_plan",
+  const advisoryJobClasses: MemoryMiddlewareBackgroundJobConfig["advisoryJobClasses"] =
+    Array.isArray(backgroundJobs.advisoryJobClasses)
+      ? ([
+          ...new Set(
+            backgroundJobs.advisoryJobClasses.filter(
+              (value): value is "proactive_plan" | "consolidation_plan" =>
+                value === "proactive_plan" || value === "consolidation_plan",
+            ),
           ),
-        ),
-      ].sort((left, right) => left.localeCompare(right)) as Array<
-        "proactive_plan" | "consolidation_plan"
-      >)
-    : ["proactive_plan"];
-  const executeJobClasses = Array.isArray(backgroundJobs.executeJobClasses)
+        ].sort((left, right) => left.localeCompare(right)) as Array<
+          "proactive_plan" | "consolidation_plan"
+        >)
+      : ["proactive_plan"];
+  const executeJobClasses: MemoryMiddlewareBackgroundJobConfig["executeJobClasses"] = Array.isArray(
+    backgroundJobs.executeJobClasses,
+  )
     ? ([
         ...new Set(
           backgroundJobs.executeJobClasses.filter(
@@ -243,9 +246,9 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
               value === "proactive_execute_run_drift_check" || value === "consolidation_execute",
           ),
         ),
-      ].sort((left, right) => left.localeCompare(right)) as Array<
-        "proactive_execute_run_drift_check" | "consolidation_execute"
-      >)
+      ].sort((left, right) =>
+        left.localeCompare(right),
+      ) as MemoryMiddlewareBackgroundJobConfig["executeJobClasses"])
     : ["proactive_execute_run_drift_check"];
   const runnerOwnerId =
     typeof backgroundJobs.runnerOwnerId === "string" && backgroundJobs.runnerOwnerId.trim()

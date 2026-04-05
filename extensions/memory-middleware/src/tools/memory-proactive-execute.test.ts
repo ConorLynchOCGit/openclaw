@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DriftCheckExecuteResult, MemoryProactiveExecuteResult } from "../db/runtime.js";
+import type {
+  DriftCheckExecuteAcceptedResult,
+  MemoryProactiveExecuteResult,
+} from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   createMemoryProactiveExecuteTool,
   normalizeMemoryProactiveExecuteInput,
 } from "./memory-proactive-execute.js";
 
-function createDriftCheckResult(): DriftCheckExecuteResult {
+function createDriftCheckResult(): DriftCheckExecuteAcceptedResult {
   return {
     accepted: true,
     status: "executed",
@@ -96,17 +99,20 @@ describe("memory proactive-execute tool", () => {
 
   it("surfaces blocked non-drift proactive actions without mutation", async () => {
     const runtime = createRuntime();
-    runtime.proactiveExecution.execute = vi.fn(async () => ({
-      accepted: true,
-      status: "blocked",
-      actionType: "follow_up_candidate_review",
-      executionSource: "explicit_selection",
-      affectedIds: ["candidate-1"],
-      rationale: [
-        "proactive execution for follow_up_candidate_review is out of scope in this slice",
-        "only the bounded run_drift_check action class may execute proactively",
-      ],
-    }));
+    runtime.proactiveExecution.execute = vi.fn(
+      async () =>
+        ({
+          accepted: true,
+          status: "blocked",
+          actionType: "follow_up_candidate_review",
+          executionSource: "explicit_selection",
+          affectedIds: ["candidate-1"],
+          rationale: [
+            "proactive execution for follow_up_candidate_review is out of scope in this slice",
+            "only the bounded run_drift_check action class may execute proactively",
+          ],
+        }) satisfies MemoryProactiveExecuteResult,
+    );
     const tool = createMemoryProactiveExecuteTool({ runtime });
 
     const result = await tool.execute("call-2", {

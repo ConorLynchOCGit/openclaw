@@ -41,6 +41,8 @@ describe("document_read tool", () => {
       sessionId?: string;
       expectedChunkCount?: number;
       authoritativeState?: string;
+      readPreferredForThisFile?: boolean;
+      documentReadReason?: string;
     };
     expect(startDetails.sessionId).toBeTruthy();
     expect(startDetails.expectedChunkCount).toBe(3);

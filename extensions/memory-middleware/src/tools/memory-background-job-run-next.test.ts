@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { MemoryBackgroundJobRunNextResult } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   createMemoryBackgroundJobRunNextTool,
@@ -85,11 +86,14 @@ describe("memory background-job-run-next tool", () => {
 
   it("surfaces no-job results without mutation", async () => {
     const runtime = createRuntime();
-    runtime.backgroundJobs.runNext = vi.fn(async () => ({
-      accepted: true,
-      status: "no_job",
-      rationale: ["no queued bounded background job is currently ready to run"],
-    }));
+    runtime.backgroundJobs.runNext = vi.fn(
+      async () =>
+        ({
+          accepted: true,
+          status: "no_job",
+          rationale: ["no queued bounded background job is currently ready to run"],
+        }) satisfies MemoryBackgroundJobRunNextResult,
+    );
     const tool = createMemoryBackgroundJobRunNextTool({ runtime });
 
     const result = await tool.execute("call-2", {});
@@ -103,32 +107,35 @@ describe("memory background-job-run-next tool", () => {
 
   it("surfaces advisory consolidation-planning results", async () => {
     const runtime = createRuntime();
-    runtime.backgroundJobs.runNext = vi.fn(async () => ({
-      accepted: true,
-      status: "executed",
-      jobId: "job-2",
-      jobClass: "consolidation_plan",
-      jobStatus: "succeeded",
-      rationale: ["bounded background job executed advisory consolidation planning only"],
-      consolidationPlanResult: {
-        accepted: true,
-        status: "ok",
-        outcome: "review_needed",
-        inspectedRecordCount: 2,
-        includeValidatedProcedures: false,
-        findings: [
-          {
-            actionType: "duplicate_merge_review",
-            priority: "medium",
-            confidence: "high",
-            affectedObjectIds: ["memory-1", "memory-2"],
-            affectedObjectTypes: ["memory_object", "memory_object"],
-            rationale: ["bounded approved durable memory appears duplicate"],
+    runtime.backgroundJobs.runNext = vi.fn(
+      async () =>
+        ({
+          accepted: true,
+          status: "executed",
+          jobId: "job-2",
+          jobClass: "consolidation_plan",
+          jobStatus: "succeeded",
+          rationale: ["bounded background job executed advisory consolidation planning only"],
+          consolidationPlanResult: {
+            accepted: true,
+            status: "ok",
+            outcome: "review_needed",
+            inspectedRecordCount: 2,
+            includeValidatedProcedures: false,
+            findings: [
+              {
+                actionType: "duplicate_merge_review",
+                priority: "medium",
+                confidence: "high",
+                affectedObjectIds: ["memory-1", "memory-2"],
+                affectedObjectTypes: ["memory_object", "memory_object"],
+                rationale: ["bounded approved durable memory appears duplicate"],
+              },
+            ],
+            rationale: ["bounded consolidation review findings were identified"],
           },
-        ],
-        rationale: ["bounded consolidation review findings were identified"],
-      },
-    }));
+        }) satisfies MemoryBackgroundJobRunNextResult,
+    );
     const tool = createMemoryBackgroundJobRunNextTool({ runtime });
 
     const result = await tool.execute("call-3", {});
@@ -149,40 +156,43 @@ describe("memory background-job-run-next tool", () => {
 
   it("surfaces bounded consolidation-execution results", async () => {
     const runtime = createRuntime();
-    runtime.backgroundJobs.runNext = vi.fn(async () => ({
-      accepted: true,
-      status: "executed",
-      jobId: "job-3",
-      jobClass: "consolidation_execute",
-      jobStatus: "succeeded",
-      rationale: [
-        "bounded background job routed only safe consolidation execution selections through the existing bounded seam",
-      ],
-      consolidationExecuteResult: {
-        accepted: true,
-        status: "executed",
-        executionMode: "approved_subset",
-        reviewedFindingCount: 1,
-        executedActionCount: 1,
-        alreadyExecutedCount: 0,
-        skippedFindingCount: 0,
-        actions: [
-          {
-            actionType: "duplicate_merge_review",
+    runtime.backgroundJobs.runNext = vi.fn(
+      async () =>
+        ({
+          accepted: true,
+          status: "executed",
+          jobId: "job-3",
+          jobClass: "consolidation_execute",
+          jobStatus: "succeeded",
+          rationale: [
+            "bounded background job routed only safe consolidation execution selections through the existing bounded seam",
+          ],
+          consolidationExecuteResult: {
+            accepted: true,
             status: "executed",
-            affectedObjectIds: ["memory-1", "memory-2"],
-            supersededObjectIds: ["memory-2"],
-            survivorObjectId: "memory-1",
-            reviewIds: ["review-1"],
-            linkIds: ["link-1"],
-            rationale: ["duplicate durable memory objects were conservatively superseded"],
+            executionMode: "approved_subset",
+            reviewedFindingCount: 1,
+            executedActionCount: 1,
+            alreadyExecutedCount: 0,
+            skippedFindingCount: 0,
+            actions: [
+              {
+                actionType: "duplicate_merge_review",
+                status: "executed",
+                affectedObjectIds: ["memory-1", "memory-2"],
+                supersededObjectIds: ["memory-2"],
+                survivorObjectId: "memory-1",
+                reviewIds: ["review-1"],
+                linkIds: ["link-1"],
+                rationale: ["duplicate durable memory objects were conservatively superseded"],
+              },
+            ],
+            rationale: [
+              "1 bounded consolidation action executed without touching contradiction or drift findings",
+            ],
           },
-        ],
-        rationale: [
-          "1 bounded consolidation action executed without touching contradiction or drift findings",
-        ],
-      },
-    }));
+        }) satisfies MemoryBackgroundJobRunNextResult,
+    );
     const tool = createMemoryBackgroundJobRunNextTool({ runtime });
 
     const result = await tool.execute("call-4", {});

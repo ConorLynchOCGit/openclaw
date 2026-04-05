@@ -14,6 +14,7 @@ import {
   parseAutoCaptureManagedCandidateContent,
   parseManagedCorrectionCandidateContent,
   parseOrdinaryTurnAutoCapturePreference,
+  type OrdinaryTurnAutoCaptureMatch,
 } from "../ordinary-turn-auto-capture.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
@@ -209,7 +210,7 @@ function normalizeCorrectionPreferenceKey(raw: unknown): string | null {
 
 function resolveResponseStyleLearningParaphraseKey(
   content: string,
-): ReturnType<typeof parseOrdinaryTurnAutoCapturePreference>["key"] | null {
+): OrdinaryTurnAutoCaptureMatch["key"] | null {
   const normalized = content.trim().toLowerCase();
   if (!normalized) {
     return null;
@@ -228,6 +229,15 @@ function resolveResponseStyleLearningParaphraseKey(
   }
 
   return parseOrdinaryTurnAutoCapturePreference(canonicalRaw, "user-preference-v2")?.key ?? null;
+}
+
+function extractAutoCaptureKey(metadata: Record<string, unknown> | undefined): string | null {
+  const autoCapture = metadata?.autoCapture;
+  if (!autoCapture || typeof autoCapture !== "object" || Array.isArray(autoCapture)) {
+    return null;
+  }
+  const key = (autoCapture as { key?: unknown }).key;
+  return typeof key === "string" ? key : null;
 }
 
 function stripTranscriptTimestampPrefix(value: string): string {
@@ -622,12 +632,7 @@ async function maybeAutoPromoteToolSubmittedPreference(params: {
 
 function resolveManagedAutoCaptureKey(input: CandidateSubmissionInput): string | null {
   const metadata = input.metadata;
-  const directKey =
-    metadata?.autoCapture &&
-    typeof metadata.autoCapture === "object" &&
-    typeof metadata.autoCapture.key === "string"
-      ? metadata.autoCapture.key
-      : null;
+  const directKey = extractAutoCaptureKey(metadata);
   if (directKey) {
     return directKey;
   }

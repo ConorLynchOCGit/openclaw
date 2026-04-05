@@ -55,7 +55,7 @@ function toAcceptedResult(
     kind: input.kind,
     target: "candidate_only",
     storage: result.storage,
-    reviewState: result.reviewState,
+    reviewState: "candidate",
     eventId: result.eventId,
     memoryObjectId: result.memoryObjectId,
   };

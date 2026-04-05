@@ -4,6 +4,7 @@ import type {
   ConsolidationExecuteInput,
   ConsolidationExecuteSelection,
   ConsolidationPlanInput,
+  MemoryBackgroundJobRunNextAcceptedResult,
   MemoryBackgroundJobClass,
   MemoryBackgroundJobGetInput,
   MemoryBackgroundJobGetResult,
@@ -139,7 +140,7 @@ function buildProactiveExecuteInput(input: {
 function blockedUnsupportedJobResult(
   jobId: string,
   jobClass: string,
-): MemoryBackgroundJobRunNextResult {
+): MemoryBackgroundJobRunNextAcceptedResult {
   return {
     accepted: true,
     status: "blocked",
@@ -152,11 +153,15 @@ function blockedUnsupportedJobResult(
   };
 }
 
-function isAdvisoryJobClass(jobClass: MemoryBackgroundJobClass): boolean {
+function isAdvisoryJobClass(
+  jobClass: MemoryBackgroundJobClass,
+): jobClass is BackgroundJobAdvisoryClass {
   return jobClass === "proactive_plan" || jobClass === "consolidation_plan";
 }
 
-function isExecuteJobClass(jobClass: MemoryBackgroundJobClass): boolean {
+function isExecuteJobClass(
+  jobClass: MemoryBackgroundJobClass,
+): jobClass is BackgroundJobExecuteClass {
   return jobClass === "proactive_execute_run_drift_check" || jobClass === "consolidation_execute";
 }
 
@@ -506,10 +511,11 @@ export function createBackgroundJobSchedulerPort(params: {
         }
 
         if (claimedJob.jobClass === "consolidation_execute") {
+          const approvedFindings = safeSelections!;
           const consolidationExecuteResult = await params.consolidationExecution.execute(
             buildConsolidationExecuteInput({
               ...claimedJob,
-              approvedFindings: safeSelections,
+              approvedFindings,
             }),
           );
           const jobStatus = consolidationExecuteResult.accepted ? "succeeded" : "failed";

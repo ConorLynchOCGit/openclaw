@@ -96,27 +96,30 @@ describe("memory tool result persist tool", () => {
 
   it("surfaces inline preview results without persistence errors", async () => {
     const runtime = createRuntime();
-    runtime.toolResultStore.persist = vi.fn(async () => ({
-      accepted: true as const,
-      status: "inline" as const,
-      persisted: false,
-      sessionId: "session-1",
-      toolName: "memory_object_search_basic",
-      contentType: "text/plain",
-      sizeBytes: 120,
-      thresholdBytes: 4096,
-      preview: {
-        kind: "tool_result_preview",
-        shouldSubstitute: false,
-        previewText: "small result",
-        substitutionText: "small result",
-        retrievalToolName: "memory_tool_result_get",
-        contentType: "text/plain",
-        sizeBytes: 120,
-        truncated: false,
-        omittedBytes: 0,
-      },
-    }));
+    runtime.toolResultStore.persist = vi.fn(
+      async () =>
+        ({
+          accepted: true,
+          status: "inline",
+          persisted: false as const,
+          sessionId: "session-1",
+          toolName: "memory_object_search_basic",
+          contentType: "text/plain",
+          sizeBytes: 120,
+          thresholdBytes: 4096,
+          preview: {
+            kind: "tool_result_preview",
+            shouldSubstitute: false,
+            previewText: "small result",
+            substitutionText: "small result",
+            retrievalToolName: "memory_tool_result_get",
+            contentType: "text/plain",
+            sizeBytes: 120,
+            truncated: false,
+            omittedBytes: 0,
+          },
+        }) satisfies ToolResultPersistResult,
+    );
     const tool = createMemoryToolResultPersistTool({ runtime });
 
     const result = await tool.execute("call-2", {

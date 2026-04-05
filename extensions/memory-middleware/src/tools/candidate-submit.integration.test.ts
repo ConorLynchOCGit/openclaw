@@ -767,11 +767,15 @@ async function querySingleRow<T extends Record<string, unknown>>(
   connectionString: string,
   sql: string,
   values: readonly unknown[],
-): Promise<T | undefined> {
+): Promise<T> {
   const client = await connectClient(connectionString);
   try {
     const result = await client.query<T>(sql, [...values]);
-    return result.rows[0];
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error("expected query to return a row");
+    }
+    return row;
   } finally {
     await client.end();
   }
@@ -6727,15 +6731,19 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         },
       },
     });
-    if (
-      !("accepted" in getResult.details) ||
-      !getResult.details.accepted ||
-      getResult.details.status !== "ok"
-    ) {
+    const getDetails = getResult.details as {
+      accepted?: boolean;
+      status?: string;
+      toolResult?: {
+        createdAt?: string;
+        updatedAt?: string;
+      };
+    };
+    if (!getDetails.accepted || getDetails.status !== "ok" || !getDetails.toolResult) {
       throw new Error("expected persisted tool result lookup to succeed");
     }
-    expect(typeof getResult.details.toolResult.createdAt).toBe("string");
-    expect(typeof getResult.details.toolResult.updatedAt).toBe("string");
+    expect(typeof getDetails.toolResult.createdAt).toBe("string");
+    expect(typeof getDetails.toolResult.updatedAt).toBe("string");
   });
 
   it("returns inline preview contracts below the persistence threshold without writing tool-result rows", async () => {
@@ -14501,11 +14509,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         from memory_middleware.memory_events
         where id = $1::uuid
       `,
-      [
-        procurementRecord.accepted && procurementRecord.status !== "failed"
-          ? procurementRecord.procurementRecordId
-          : "",
-      ],
+      [procurementRecord.accepted ? procurementRecord.procurementRecordId : ""],
     );
 
     expect(approvedListBefore).toMatchObject({
@@ -14931,10 +14935,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       status: "ok",
       skillCandidateId: skillCandidateCreate.accepted ? skillCandidateCreate.skillCandidateId : "",
       skillCandidateStatus: "candidate",
-      procurementRecordId:
-        procurementRecord.accepted && procurementRecord.status !== "failed"
-          ? procurementRecord.procurementRecordId
-          : "",
+      procurementRecordId: procurementRecord.accepted ? procurementRecord.procurementRecordId : "",
       sourceProcedureId: validatedProcedure.accepted ? validatedProcedure.procedureId : "",
       sourceCandidateId: procedureCandidateId,
       latestValidationRunOutcome: "passed",
@@ -14945,10 +14946,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       accepted: true,
       status: "created",
       skillCandidateId: skillCandidateCreate.accepted ? skillCandidateCreate.skillCandidateId : "",
-      procurementRecordId:
-        procurementRecord.accepted && procurementRecord.status !== "failed"
-          ? procurementRecord.procurementRecordId
-          : "",
+      procurementRecordId: procurementRecord.accepted ? procurementRecord.procurementRecordId : "",
       decision: "approve_limited",
       skillCandidateStatus: "candidate",
       sourceProcedureId: validatedProcedure.accepted ? validatedProcedure.procedureId : "",
@@ -15019,10 +15017,9 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         skillCandidateId: skillCandidateCreate.accepted
           ? skillCandidateCreate.skillCandidateId
           : "",
-        procurementRecordId:
-          procurementRecord.accepted && procurementRecord.status !== "failed"
-            ? procurementRecord.procurementRecordId
-            : "",
+        procurementRecordId: procurementRecord.accepted
+          ? procurementRecord.procurementRecordId
+          : "",
         vettingDecision: "approve_limited",
         sourceProcedureId: validatedProcedure.accepted ? validatedProcedure.procedureId : "",
         sourceCandidateId: procedureCandidateId,
@@ -15323,14 +15320,8 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       status: "ok",
       skillCandidateId: skillCandidateCreate.accepted ? skillCandidateCreate.skillCandidateId : "",
       skillCandidateStatus: "candidate",
-      procurementRecordId:
-        procurementRecord.accepted && procurementRecord.status !== "failed"
-          ? procurementRecord.procurementRecordId
-          : "",
-      vettingResultRecordId:
-        vettingResult.accepted && vettingResult.status !== "failed"
-          ? vettingResult.vettingResultRecordId
-          : "",
+      procurementRecordId: procurementRecord.accepted ? procurementRecord.procurementRecordId : "",
+      vettingResultRecordId: vettingResult.accepted ? vettingResult.vettingResultRecordId : "",
       sourceProcedureId: validatedProcedure.accepted ? validatedProcedure.procedureId : "",
       sourceCandidateId: procedureCandidateId,
       latestValidationRunOutcome: "passed",
@@ -15346,14 +15337,8 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       approvalRecordId: expect.any(String),
       approvedScope: "limited",
       skillCandidateStatus: "approved_limited",
-      procurementRecordId:
-        procurementRecord.accepted && procurementRecord.status !== "failed"
-          ? procurementRecord.procurementRecordId
-          : "",
-      vettingResultRecordId:
-        vettingResult.accepted && vettingResult.status !== "failed"
-          ? vettingResult.vettingResultRecordId
-          : "",
+      procurementRecordId: procurementRecord.accepted ? procurementRecord.procurementRecordId : "",
+      vettingResultRecordId: vettingResult.accepted ? vettingResult.vettingResultRecordId : "",
       sourceProcedureId: validatedProcedure.accepted ? validatedProcedure.procedureId : "",
       sourceCandidateId: procedureCandidateId,
     });
@@ -15417,14 +15402,10 @@ integrationDescribe("memory candidate submit postgres integration", () => {
           ? skillCandidateCreate.skillCandidateId
           : "",
         approvedScope: "limited",
-        procurementRecordId:
-          procurementRecord.accepted && procurementRecord.status !== "failed"
-            ? procurementRecord.procurementRecordId
-            : "",
-        vettingResultRecordId:
-          vettingResult.accepted && vettingResult.status !== "failed"
-            ? vettingResult.vettingResultRecordId
-            : "",
+        procurementRecordId: procurementRecord.accepted
+          ? procurementRecord.procurementRecordId
+          : "",
+        vettingResultRecordId: vettingResult.accepted ? vettingResult.vettingResultRecordId : "",
         sourceProcedureId: validatedProcedure.accepted ? validatedProcedure.procedureId : "",
         sourceCandidateId: procedureCandidateId,
         approverAgentId: fixture.agentId,
@@ -15446,14 +15427,12 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         promotedFromReviewId: procedureReviewId,
         latestApprovalRecordId: approvalWrite.accepted ? approvalWrite.approvalRecordId : "",
         latestApprovedScope: "limited",
-        latestApprovalProcurementRecordId:
-          procurementRecord.accepted && procurementRecord.status !== "failed"
-            ? procurementRecord.procurementRecordId
-            : "",
-        latestApprovalVettingResultRecordId:
-          vettingResult.accepted && vettingResult.status !== "failed"
-            ? vettingResult.vettingResultRecordId
-            : "",
+        latestApprovalProcurementRecordId: procurementRecord.accepted
+          ? procurementRecord.procurementRecordId
+          : "",
+        latestApprovalVettingResultRecordId: vettingResult.accepted
+          ? vettingResult.vettingResultRecordId
+          : "",
         latestApproverAgentId: fixture.agentId,
       }),
     });
@@ -15759,14 +15738,8 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       skillCandidateId: skillCandidateCreate.accepted ? skillCandidateCreate.skillCandidateId : "",
       skillCandidateStatus: "approved_limited",
       approvalRecordId: approvalWrite.accepted ? approvalWrite.approvalRecordId : "",
-      procurementRecordId:
-        procurementRecord.accepted && procurementRecord.status !== "failed"
-          ? procurementRecord.procurementRecordId
-          : "",
-      vettingResultRecordId:
-        vettingResult.accepted && vettingResult.status !== "failed"
-          ? vettingResult.vettingResultRecordId
-          : "",
+      procurementRecordId: procurementRecord.accepted ? procurementRecord.procurementRecordId : "",
+      vettingResultRecordId: vettingResult.accepted ? vettingResult.vettingResultRecordId : "",
       sourceProcedureId: validatedProcedure.accepted ? validatedProcedure.procedureId : "",
       sourceCandidateId: procedureCandidateId,
       eligible: true,
@@ -15781,14 +15754,8 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       installedScope: "limited",
       skillCandidateStatus: "approved_limited",
       approvalRecordId: approvalWrite.accepted ? approvalWrite.approvalRecordId : "",
-      procurementRecordId:
-        procurementRecord.accepted && procurementRecord.status !== "failed"
-          ? procurementRecord.procurementRecordId
-          : "",
-      vettingResultRecordId:
-        vettingResult.accepted && vettingResult.status !== "failed"
-          ? vettingResult.vettingResultRecordId
-          : "",
+      procurementRecordId: procurementRecord.accepted ? procurementRecord.procurementRecordId : "",
+      vettingResultRecordId: vettingResult.accepted ? vettingResult.vettingResultRecordId : "",
       sourceProcedureId: validatedProcedure.accepted ? validatedProcedure.procedureId : "",
       sourceCandidateId: procedureCandidateId,
     });
@@ -15848,14 +15815,10 @@ integrationDescribe("memory candidate submit postgres integration", () => {
           : "",
         installedScope: "limited",
         approvalRecordId: approvalWrite.accepted ? approvalWrite.approvalRecordId : "",
-        procurementRecordId:
-          procurementRecord.accepted && procurementRecord.status !== "failed"
-            ? procurementRecord.procurementRecordId
-            : "",
-        vettingResultRecordId:
-          vettingResult.accepted && vettingResult.status !== "failed"
-            ? vettingResult.vettingResultRecordId
-            : "",
+        procurementRecordId: procurementRecord.accepted
+          ? procurementRecord.procurementRecordId
+          : "",
+        vettingResultRecordId: vettingResult.accepted ? vettingResult.vettingResultRecordId : "",
         sourceProcedureId: validatedProcedure.accepted ? validatedProcedure.procedureId : "",
         sourceCandidateId: procedureCandidateId,
         installerAgentId: fixture.agentId,
@@ -15877,14 +15840,12 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         promotedFromReviewId: procedureReviewId,
         latestApprovalRecordId: approvalWrite.accepted ? approvalWrite.approvalRecordId : "",
         latestApprovedScope: "limited",
-        latestApprovalProcurementRecordId:
-          procurementRecord.accepted && procurementRecord.status !== "failed"
-            ? procurementRecord.procurementRecordId
-            : "",
-        latestApprovalVettingResultRecordId:
-          vettingResult.accepted && vettingResult.status !== "failed"
-            ? vettingResult.vettingResultRecordId
-            : "",
+        latestApprovalProcurementRecordId: procurementRecord.accepted
+          ? procurementRecord.procurementRecordId
+          : "",
+        latestApprovalVettingResultRecordId: vettingResult.accepted
+          ? vettingResult.vettingResultRecordId
+          : "",
         latestApproverAgentId: fixture.agentId,
       }),
     });
