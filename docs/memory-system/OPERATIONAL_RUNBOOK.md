@@ -24,7 +24,7 @@ Production operator note:
 - this runbook covers the approved posture and rollback order now running in
   production
 - the first production rollout target on this VPS is:
-  - `openclaw-upgrade-2026324-openclaw-gateway-1`
+  - `openclaw`
 - the pre-rollout inventory, backup artifact path, exact rollout diff, and
   rollout result now live in:
   - `docs/memory-system/PRODUCTION_SURFACE_INVENTORY_AND_DIFF.md`
@@ -133,6 +133,10 @@ Use these middleware tools or runtime seams first:
 - `memory_candidate_promote_plan`
 - `memory_candidate_promote_procedure`
 - `memory_procedure_validate`
+- `memory_skill_candidate_plan`
+- `memory_skill_candidate_create`
+- `memory_skill_candidate_procurement_plan`
+- `memory_skill_candidate_procurement_record_create`
 - `memory_background_job_list`
 - `memory_background_job_get`
 - `memory_background_job_enqueue`
@@ -199,6 +203,60 @@ Current approved boundary note:
 
 - `memory_procedure_validate_plan` remains disabled even though
   `memory_procedure_validate` is part of the accepted live posture
+
+## Skill-candidate and procurement governance workflow
+
+The second quick-win governance family is now production-proven as a manual
+internal operator workflow.
+
+Use:
+
+- `memory_skill_candidate_plan`
+- `memory_skill_candidate_create`
+- `memory_skill_candidate_procurement_plan`
+- `memory_skill_candidate_procurement_record_create`
+- `memory_object_get`
+- `memory_object_list`
+
+Expected operator checks:
+
+- an eligible validated procedure can return:
+  - `possibleTargets = [propose_skill_candidate, remain_validated_procedure_only]`
+- `memory_skill_candidate_create` writes one bounded `skill_candidates` row
+  preserving:
+  - `createdFromProcedureId`
+  - `sourceCandidateId`
+  - `promotedFromReviewId`
+  - `sourceEventId`
+  - `validationRunId`
+- an eligible skill candidate can return:
+  - `possibleTargets = [propose_procurement_handoff, remain_internal_skill_candidate_only]`
+- `memory_skill_candidate_procurement_record_create` writes one bounded
+  internal `memory_events` row with:
+  - `event_name = skill_candidate.procurement_record`
+  - `event_kind = review`
+- `memory_object_get` without explicit candidate or validated-procedure scope
+  returns:
+  - `status = not_found` for `skillCandidateId`
+  - `status = not_found` for `procurementRecordId`
+- `memory_object_list(scope = approved_only)` does not expose skill-candidate
+  or procurement-record rows
+- downstream lifecycle counts remain unchanged:
+  - `skill_candidate.vetting_result`
+  - `skill_candidate.approval`
+  - `skill_candidate.install_record`
+  - `background_jobs`
+
+Current approved boundary note:
+
+- the following surfaces remain outside the accepted production-proven
+  quick-win family and should not be treated as normal operator workflow yet:
+  - `memory_skill_candidate_skill_vetter_handoff`
+  - `memory_skill_candidate_vetting_result_record`
+  - `memory_skill_candidate_approval_plan`
+  - `memory_skill_candidate_approve`
+  - `memory_skill_candidate_install_handoff`
+  - `memory_skill_candidate_install_record_create`
 
 ## Background-job inspection
 
@@ -388,6 +446,9 @@ Single-class disablement examples:
   `backgroundJobs.executeJobClasses`
 - narrow `backgroundJobs.advisoryJobClasses` back to
   `[proactive_plan]` if `consolidation_plan` must stop
+- set `candidateIngress.mode = submit-review-promote-memory-procedure-validate`
+  if skill-candidate and procurement governance must stop immediately while
+  preserving validated-procedure governance
 - set `candidateIngress.mode = submit-review-promote-memory` if procedure
   promotion and validation must stop immediately
 
@@ -400,13 +461,16 @@ Current rollback order:
 1. stop manual `run_next` invocation
 2. disable execute-class scheduling if execute work is the concern
 3. disable advisory scheduling if advisory work is also the concern
-4. narrow `candidateIngress.mode = submit-review-promote-memory` if the issue
+4. narrow `candidateIngress.mode = submit-review-promote-memory-procedure-validate`
+   if the issue is isolated to skill-candidate planning / creation or
+   procurement planning / internal procurement-record creation
+5. narrow `candidateIngress.mode = submit-review-promote-memory` if the issue
    is isolated to validated-procedure retrieval / procedure promotion /
    procedure validation
-5. disable the plugin only if the issue is broader than maintenance or
-   bounded procedure governance
-6. preserve the database for inspection
-7. restore from backup only if a database-level rollback is required
+6. disable the plugin only if the issue is broader than maintenance or
+   bounded governance
+7. preserve the database for inspection
+8. restore from backup only if a database-level rollback is required
 
 ## Soak checklist
 

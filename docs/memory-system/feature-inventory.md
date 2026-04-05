@@ -64,17 +64,17 @@ treated as constraints rather than speculative work:
 
 ## Governance productionization status
 
-The following governance family is now explicitly production-proven:
+The following governance families are now explicitly production-proven:
 
 - validated-procedure retrieval
 - candidate procedure promotion
 - procedure validation
+- skill-candidate planning and creation
+- procurement planning and internal procurement-record creation
 
 The following still have meaningful implementation and rollout evidence, but
 still need explicit productionization decisions:
 
-- skill-candidate planning and creation
-- procurement planning and internal procurement-record creation
 - manual Skill Vetter handoff preparation
 - manual vetting-result recording
 - approval planning and approval-state recording
@@ -87,8 +87,7 @@ These are tracked in:
 Current productionization split:
 
 - quick-win tranche:
-  - skill-candidate planning and creation
-  - procurement planning and internal procurement-record creation
+  - completed
 - wait tranche:
   - manual Skill Vetter handoff preparation
   - manual vetting-result recording

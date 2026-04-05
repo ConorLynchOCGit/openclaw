@@ -179,6 +179,11 @@ validated-procedure retrieval, candidate procedure promotion, and procedure
 validation on the approved live production boundary, with explicit production
 proof, runbook coverage, and no downstream skill, procurement, vetting,
 approval, or install growth.
+Second quick-win governance productionization tranche completed for
+skill-candidate planning and creation plus procurement planning and internal
+procurement-record creation on the approved live production boundary, with
+explicit production proof, runbook coverage, no downstream vetting,
+approval, or install growth, and no retrieval broadening.
 
 ## Compact checkpoint
 
@@ -194,29 +199,37 @@ Current compact state:
   - bounded scheduler classes
   - runner ownership enforcement
   - bounded durable-growth behavior
-- first quick-win governance family is now production-proven as an internal
-  manual workflow:
+- quick-win governance phase is now production-proven as internal manual
+  workflow coverage for:
   - validated-procedure retrieval when explicitly requested
   - candidate procedure promotion
   - procedure validation
-- fresh governance proof timestamp:
-  - `2026-04-05T15:00:19.781Z`
-- fresh governance proof artifacts:
-  - `eventId = f7515d2e-1251-4d15-838c-d34c829ec3ac`
-  - `candidateId = f1a8763b-92f4-4b72-9fd2-cdcdf0b8858d`
-  - `reviewId = fa7ef0ee-1891-4b6e-a467-0caa55aaf2f7`
-  - `procedureId = b7c160d6-6414-44f2-a382-952c8762b77f`
-  - `procedureRunId = 28f57aee-b0b1-4ecc-8861-041b8ce7b933`
-- governance proof delta:
-  - `memory_events +1`
+  - skill-candidate planning and creation
+  - procurement planning and internal procurement-record creation
+- latest quick-win production proof timestamp:
+  - `2026-04-05T15:18:19.270Z`
+- latest quick-win production proof artifacts:
+  - `eventId = c3f085b5-387d-4fc9-b3ae-9e4b2e8ec580`
+  - `candidateId = daba868a-9e0a-4099-ab83-952b3d4513f4`
+  - `reviewId = 62b5bbba-47fe-4158-b298-498f68a2ac36`
+  - `procedureId = fefa54a7-3169-4595-bef2-44fb8342a73a`
+  - `procedureRunId = f90116f5-503c-4497-95dc-33bf89659e17`
+  - `skillCandidateId = 63a32b7f-5665-44d2-970f-7f3dca6267f6`
+  - `procurementRecordId = 8f62046d-18f0-43be-af5a-c28122e19474`
+- latest quick-win production proof delta:
+  - `memory_events +2`
   - `memory_objects +1`
   - `memory_reviews +1`
   - `memory_links +1`
   - `memory_sources +1`
   - `procedures +1`
   - `procedure_runs +1`
-  - `skill_candidates +0`
+  - `skill_candidates +1`
   - `background_jobs +0`
+  - `skill_candidate.procurement_record +1`
+  - `skill_candidate.vetting_result +0`
+  - `skill_candidate.approval +0`
+  - `skill_candidate.install_record +0`
 - ordinary live agent-turn capture was not the original soak target
 - bounded ordinary live interaction -> candidate capture is now separately
   proven on the approved live production boundary

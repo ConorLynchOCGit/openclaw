@@ -26,7 +26,7 @@ Covered families:
 
 ### Already production-proven
 
-The first quick-win family is no longer ambiguous.
+The quick-win tranche is no longer ambiguous.
 
 - validated-procedure retrieval / procedure promotion / procedure validation
   - production proof date:
@@ -35,9 +35,22 @@ The first quick-win family is no longer ambiguous.
     - `docs/memory-system/PRODUCTION_VALIDATED_PROCEDURE_GOVERNANCE_REPORT.md`
   - accepted status:
     - live internal manual workflow
-  - still disabled:
+  - still explicitly outside the accepted family:
     - `memory_procedure_validate_plan`
-    - skill, procurement, vetting, approval, and install follow-on behavior
+    - later governance follow-on behavior remains outside the accepted
+      validated-procedure family
+- skill-candidate planning / skill-candidate creation / procurement planning /
+  internal procurement-record creation
+  - production proof date:
+    - `2026-04-05`
+  - proof artifact:
+    - `docs/memory-system/PRODUCTION_SKILL_PROCUREMENT_GOVERNANCE_REPORT.md`
+  - accepted status:
+    - live internal manual workflow
+  - still outside the accepted family:
+    - vetting
+    - approval
+    - install
 
 ### Already exists in code
 
@@ -141,23 +154,31 @@ Why these should wait:
 
 - target status:
   - production-proven internal governance workflow
+- current status:
+  - production-proven internal governance workflow
 - tranche:
   - quick win
 - still manual-only:
   - yes
 - required proof:
-  - narrow production proof with no downstream procurement/install behavior
+  - completed on `2026-04-05`
+  - narrow production proof now recorded in:
+    - `docs/memory-system/PRODUCTION_SKILL_PROCUREMENT_GOVERNANCE_REPORT.md`
 
 ### Procurement planning and procurement-record creation
 
 - target status:
   - production-proven recommendation/governance workflow
+- current status:
+  - production-proven internal governance workflow
 - tranche:
   - quick win
 - still manual-only:
   - yes
 - required proof:
-  - production proof that planning remains advisory-only
+  - completed on `2026-04-05`
+  - narrow production proof now recorded in:
+    - `docs/memory-system/PRODUCTION_SKILL_PROCUREMENT_GOVERNANCE_REPORT.md`
 
 ### Manual Skill Vetter handoff and vetting-result recording
 
@@ -198,8 +219,10 @@ The quick-win tranche should be productionized in this order:
 
 1. completed:
    - validated-procedure retrieval / procedure promotion / procedure validation
-2. skill-candidate planning and creation
-3. procurement planning and procurement-record creation
+2. completed:
+   - skill-candidate planning and creation
+3. completed:
+   - procurement planning and procurement-record creation
 
 For each family:
 
@@ -212,6 +235,11 @@ For each family:
   - live manual tool surface
   - live but intentionally internal-only
   - still deferred if proof uncovers unexpected friction
+
+Quick-win tranche status:
+
+- complete on `2026-04-05`
+- remaining governance work is now wait-tranche work only
 
 Quick-win stop rule:
 
