@@ -2527,6 +2527,186 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
+  it("persists bounded response-style correction overrides as correction candidates even when the tool call drifted to learning", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const submitResult = await submitTool.execute("call-16s-s7", {
+      kind: "learning",
+      content: "User prefers bullet-point responses.",
+      projectId: seeded.projectId,
+      metadata: {
+        raw: "No, use bullet points for me.",
+      },
+    });
+    const candidateId = (submitResult.details as { memoryObjectId: string }).memoryObjectId;
+
+    const row = await querySingleRow<{
+      submission_kind: string;
+      content: string;
+      category: string | null;
+      template: string | null;
+      from_kind: string | null;
+      to_kind: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          metadata->>'submissionKind' as submission_kind,
+          content,
+          metadata->'candidateMetadata'->>'category' as category,
+          metadata->'candidateMetadata'->'autoCapture'->>'template' as template,
+          metadata->'candidateMetadata'->'classificationAdjustment'->>'fromKind' as from_kind,
+          metadata->'candidateMetadata'->'classificationAdjustment'->>'toKind' as to_kind
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [candidateId],
+    );
+
+    expect(row).toEqual({
+      submission_kind: "correction",
+      content: "User correction: use bullet points when listing items.",
+      category: "user_requirement_correction",
+      template: "responses_bullets",
+      from_kind: "learning",
+      to_kind: "correction",
+    });
+  });
+
+  it("boosts the most relevant approved response-style template in hybrid retrieval when overlapping memories exist", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+
+    const plainEnglishSubmit = await submitTool.execute("call-16t-s7", {
+      kind: "learning",
+      content: "User requirement: use plain English.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "user_requirement",
+        source: "explicit_user_requirement",
+        autoCapture: {
+          captureClass: "explicit_requirement",
+          template: "responses_plain_english",
+          subjectKey: "s7-response-language",
+          key: "s7-response-language-plain-english",
+          subject: "response language",
+          value: "use plain English",
+        },
+      },
+    });
+    const plainEnglishCandidateId = (plainEnglishSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await reviewTool.execute("call-16u-s7", {
+      candidateId: plainEnglishCandidateId,
+      outcome: "accepted",
+      rationale: "Accept plain-English requirement for overlap ranking proof.",
+    });
+    const plainEnglishPromotion = await promoteTool.execute("call-16v-s7", {
+      candidateId: plainEnglishCandidateId,
+    });
+    const plainEnglishApprovedId = (
+      plainEnglishPromotion.details as { promotedMemoryObjectId: string }
+    ).promotedMemoryObjectId;
+
+    const numberedStepsSubmit = await submitTool.execute("call-16w-s7", {
+      kind: "learning",
+      content: "User requirement: use numbered steps when giving instructions.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "user_requirement",
+        source: "explicit_user_requirement",
+        autoCapture: {
+          captureClass: "explicit_requirement",
+          template: "responses_numbered_steps",
+          subjectKey: "s7-response-format-numbered-steps",
+          key: "s7-response-format-numbered-steps",
+          subject: "response format",
+          value: "use numbered steps when giving instructions",
+        },
+      },
+    });
+    const numberedStepsCandidateId = (numberedStepsSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await reviewTool.execute("call-16x-s7", {
+      candidateId: numberedStepsCandidateId,
+      outcome: "accepted",
+      rationale: "Accept numbered-steps requirement for overlap ranking proof.",
+    });
+    const numberedStepsPromotion = await promoteTool.execute("call-16y-s7", {
+      candidateId: numberedStepsCandidateId,
+    });
+    const numberedStepsApprovedId = (
+      numberedStepsPromotion.details as { promotedMemoryObjectId: string }
+    ).promotedMemoryObjectId;
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "numbered steps when giving instructions response format preference",
+      scope: "approved_only",
+      kind: "feedback",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      query: "numbered steps when giving instructions response format preference",
+    });
+    const records = (
+      hybridSearch as {
+        accepted: true;
+        status: "ok";
+        scope: "approved_only";
+        query: string;
+        records: Array<{
+          id: string;
+          score: number;
+          matchedFields: string[];
+          metadata?: Record<string, unknown>;
+        }>;
+      }
+    ).records;
+    expect(records.length).toBeGreaterThanOrEqual(1);
+    expect(records[0]?.id).toBe(numberedStepsApprovedId);
+    expect(records[0]?.matchedFields).toContain("auto_capture_template_match");
+    if (records[1]) {
+      expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
+    }
+    expect([plainEnglishApprovedId, numberedStepsApprovedId]).toContain(records[0]?.id);
+  });
+
   it("rejects bounded memory promotion for accepted procedure candidates", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

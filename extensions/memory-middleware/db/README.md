@@ -18,6 +18,10 @@ without claiming that a repo-wide SQL or Supabase convention already exists.
 - production readiness review: `docs/memory-system/PRODUCTION_READINESS_REVIEW.md`
 - automation readiness review: `docs/memory-system/AUTOMATION_READINESS_REVIEW.md`
 - operational runbook: `docs/memory-system/OPERATIONAL_RUNBOOK.md`
+- shared non-production provisioning plan:
+  `docs/memory-system/SHARED_NONPROD_PROVISIONING_PLAN.md`
+- shared non-production provisioning report:
+  `docs/memory-system/SHARED_NONPROD_PROVISIONING_REPORT.md`
 - shared-environment rehearsal report:
   `docs/memory-system/SHARED_ENV_REHEARSAL_REPORT.md`
 - staging rehearsal report: `docs/memory-system/STAGING_REHEARSAL_REPORT.md`
@@ -116,6 +120,22 @@ objects, and explicitly requested validated procedures.
 The current repo-native production-readiness review now concludes that
 scheduler and proactive surfaces should remain disabled until explicit
 operator, inspection, disablement, and config-gate controls are documented.
+
+The first proven shared non-production target now also uses the existing
+Supabase project `wvfcvuwsnhupalpxfttc` with the middleware schema
+`memory_middleware`.
+
+Current shared-target connection note:
+
+- the present Node `pg` path for that Supabase pooler target requires
+  `uselibpqcompat=true&sslmode=require` in the middleware DB URL
+
+Current production rollout note:
+
+- the first production rollout remains pending actual production deployment
+  access
+- the concrete blocker and next operator step now live in:
+  - `docs/memory-system/PRODUCTION_ROLLOUT_REPORT.md`
 
 The same controlled environment now also validates the first bounded ranked
 retrieval upgrade for approved memory objects and explicitly requested

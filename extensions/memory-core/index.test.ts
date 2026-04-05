@@ -67,16 +67,17 @@ describe("buildPromptSection", () => {
     expect(result[3]).toContain("format-sensitive or step-by-step replies");
     expect(result[4]).toContain("follow that preference in the current reply");
     expect(result[5]).toContain("memory_object_search_hybrid");
-    expect(result[6]).toContain("named-project fact questions");
-    expect(result[7]).toContain("directly answers the question");
-    expect(result[8]).toContain("memory_candidate_submit");
-    expect(result[9]).toContain("Actually, No, I meant, Sorry");
-    expect(result[10]).toContain("use numbered steps when giving instructions");
-    expect(result[11]).toContain("For project Atlas, the staging branch is atlas-staging");
-    expect(result[12]).toContain("store, remember, or save");
-    expect(result[13]).toContain("plain favorite/preferred preference");
-    expect(result[14]).toContain("some low-risk classes auto-promote");
-    expect(result[15]).toContain("memory_session_get and memory_session_update");
+    expect(result[6]).toContain("exact style in the hybrid-search query");
+    expect(result[7]).toContain("named-project fact questions");
+    expect(result[8]).toContain("directly answers the question");
+    expect(result[9]).toContain("memory_candidate_submit");
+    expect(result[10]).toContain("Actually, No, I meant, Sorry");
+    expect(result[11]).toContain("use numbered steps when giving instructions");
+    expect(result[12]).toContain("For project Atlas, the staging branch is atlas-staging");
+    expect(result[13]).toContain("store, remember, or save");
+    expect(result[14]).toContain("plain favorite/preferred preference");
+    expect(result[15]).toContain("some low-risk classes auto-promote");
+    expect(result[16]).toContain("memory_session_get and memory_session_update");
     expect(result.at(-1)).toBe("");
   });
 
