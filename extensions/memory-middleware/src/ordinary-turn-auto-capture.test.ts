@@ -191,6 +191,18 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
     });
   });
 
+  it("matches a bullet-points correction form with a for-me suffix", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference("No, use bullet points for me.", "user-preference-v2"),
+    ).toMatchObject({
+      captureClass: "requirement_correction",
+      candidateKind: "correction",
+      template: "responses_bullets",
+      subject: "response format",
+      value: "use bullet points when listing items",
+    });
+  });
+
   it("matches a bounded recurring response requirement in the broader profile", () => {
     expect(
       parseOrdinaryTurnAutoCapturePreference(
@@ -223,6 +235,22 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
     });
   });
 
+  it("matches a bounded plain-English requirement with an explicit no-jargon tail", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "Please use plain English, not jargon.",
+        "user-preference-v2",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_requirement",
+      candidateKind: "learning",
+      template: "responses_plain_english",
+      subject: "response language",
+      value: "use plain English",
+      content: "User requirement: use plain English.",
+    });
+  });
+
   it("matches a tightly bounded named project fact in the broader profile", () => {
     expect(
       parseOrdinaryTurnAutoCapturePreference(
@@ -237,6 +265,23 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
       value: "atlas-staging",
       projectScope: "atlas forge",
       content: "Project fact [atlas forge]: staging branch is atlas-staging.",
+    });
+  });
+
+  it("matches another tightly bounded named project fact field in the broader profile", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "For project atlas forge, the default branch is atlas-main.",
+        "user-preference-v2",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_project_fact",
+      candidateKind: "learning",
+      template: "project_fact_named_scope",
+      subject: "atlas forge / default branch",
+      value: "atlas-main",
+      projectScope: "atlas forge",
+      content: "Project fact [atlas forge]: default branch is atlas-main.",
     });
   });
 
@@ -491,6 +536,16 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
       template: "responses_plain_english",
       subject: "response language",
       value: "use plain English",
+    });
+    expect(
+      parseManagedCorrectionCandidateContent(
+        "User correction to response format preference: use bullet points for me.",
+      ),
+    ).toMatchObject({
+      captureClass: "requirement_correction",
+      template: "responses_bullets",
+      subject: "response format",
+      value: "use bullet points when listing items",
     });
   });
 
@@ -906,6 +961,66 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
             projectScope: "atlas forge",
             subject: "atlas forge / staging branch",
             value: "atlas-staging",
+          }),
+        }),
+      }),
+    );
+    expect(reviewCandidate).not.toHaveBeenCalled();
+    expect(promoteToMemory).not.toHaveBeenCalled();
+  });
+
+  it("routes another bounded named project fact field through learning submission without auto-promotion", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-project-fact-2",
+      memoryObjectId: "memory-project-fact-2",
+    }));
+    const reviewCandidate = vi.fn();
+    const promoteToMemory = vi.fn();
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "For project atlas forge, the default branch is atlas-main.",
+        timestamp: Date.parse("2026-04-05T05:00:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Project fact [atlas forge]: default branch is atlas-main.",
+        metadata: expect.objectContaining({
+          category: "project_fact",
+          source: "explicit_project_fact",
+          subject_key: expect.any(String),
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_project_fact",
+            captureSeam: "transcript_subscriber_fallback",
+            projectScope: "atlas forge",
+            subject: "atlas forge / default branch",
+            value: "atlas-main",
           }),
         }),
       }),

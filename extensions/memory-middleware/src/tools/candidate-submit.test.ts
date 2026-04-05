@@ -1,3 +1,6 @@
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawPluginToolContext } from "../../api.js";
 import type { CandidateSubmissionInput, CandidateSubmissionResult } from "../db/runtime.js";
@@ -61,6 +64,74 @@ function createRuntime() {
       })),
     },
   } as unknown as MemoryMiddlewareRuntime;
+}
+
+async function writeSessionTranscript(params: {
+  agentDir: string;
+  sessionId: string;
+  fileName: string;
+  userText: string;
+  wrapAsGatewayMessage?: boolean;
+}): Promise<void> {
+  const sessionsDir = path.join(params.agentDir, "sessions");
+  await mkdir(sessionsDir, { recursive: true });
+  const transcriptText = params.wrapAsGatewayMessage
+    ? [
+        "Sender (untrusted metadata):",
+        "```json",
+        JSON.stringify({ label: "gateway-client", id: "gateway-client" }, null, 2),
+        "```",
+        "",
+        `[Sun 2026-04-05 04:22 UTC] ${params.userText}`,
+      ].join("\n")
+    : params.userText;
+  await writeFile(
+    path.join(sessionsDir, params.fileName),
+    [
+      JSON.stringify({
+        type: "session",
+        version: 3,
+        id: params.sessionId,
+        timestamp: "2026-04-05T00:00:00.000Z",
+      }),
+      JSON.stringify({
+        type: "message",
+        id: "user-1",
+        timestamp: "2026-04-05T00:00:01.000Z",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: transcriptText }],
+          timestamp: Date.now(),
+        },
+      }),
+    ].join("\n"),
+    "utf8",
+  );
+}
+
+async function writeSessionRegistry(params: {
+  agentDir: string;
+  sessionKey: string;
+  sessionId: string;
+  sessionFile: string;
+}): Promise<void> {
+  const sessionsDir = path.join(params.agentDir, "sessions");
+  await mkdir(sessionsDir, { recursive: true });
+  await writeFile(
+    path.join(sessionsDir, "sessions.json"),
+    JSON.stringify(
+      {
+        [params.sessionKey]: {
+          sessionId: params.sessionId,
+          sessionFile: path.join(sessionsDir, params.sessionFile),
+          updatedAt: Date.now(),
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
 }
 
 describe("memory candidate submit tool", () => {
@@ -773,6 +844,94 @@ describe("memory candidate submit tool", () => {
     expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
   });
 
+  it("reclassifies bounded response-style corrections when the model submits them as learning", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-9req-learning-drift", {
+      kind: "learning",
+      content: "User prefers plain English responses.",
+      metadata: {
+        raw: "I meant plain English, not jargon.",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("correction"),
+    });
+    expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "correction",
+        content: "User correction: use plain English.",
+        metadata: expect.objectContaining({
+          category: "user_requirement_correction",
+          source: "conversational_user_requirement_correction",
+          classificationAdjustment: expect.objectContaining({
+            fromKind: "learning",
+            toKind: "correction",
+            reason: "bounded_correction_match",
+            matchedFrom: "raw",
+          }),
+          autoCapture: expect.objectContaining({
+            captureClass: "requirement_correction",
+            template: "responses_plain_english",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateIngress.submitLearning).not.toHaveBeenCalled();
+  });
+
+  it("reclassifies bounded bullet-point corrections when the model submits them as learning", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-9req-bullets-learning-drift", {
+      kind: "learning",
+      content: "User prefers bullet-point responses.",
+      metadata: {
+        raw: "No, use bullet points for me.",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("correction"),
+    });
+    expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "correction",
+        content: "User correction: use bullet points when listing items.",
+        metadata: expect.objectContaining({
+          category: "user_requirement_correction",
+          source: "conversational_user_requirement_correction",
+          classificationAdjustment: expect.objectContaining({
+            fromKind: "learning",
+            toKind: "correction",
+            reason: "bounded_correction_match",
+            matchedFrom: "raw",
+          }),
+          autoCapture: expect.objectContaining({
+            captureClass: "requirement_correction",
+            template: "responses_bullets",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateIngress.submitLearning).not.toHaveBeenCalled();
+  });
+
   it("normalizes the live natural project fact correction payload shape from the tool path", async () => {
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });
@@ -835,5 +994,61 @@ describe("memory candidate submit tool", () => {
         },
       }),
     ).toThrow("metadata must be an object");
+  });
+
+  it("reclassifies bounded response-style corrections from transcript context when metadata.raw is absent", async () => {
+    const runtime = createRuntime();
+    const agentDir = await mkdtemp(path.join(os.tmpdir(), "candidate-submit-transcript-"));
+    await writeSessionTranscript({
+      agentDir,
+      sessionId: "session-bullets-1",
+      fileName: "active.jsonl",
+      userText: "No, use bullet points for me.",
+      wrapAsGatewayMessage: true,
+    });
+    await writeSessionRegistry({
+      agentDir,
+      sessionKey: "agent:main:main",
+      sessionId: "session-bullets-1",
+      sessionFile: "active.jsonl",
+    });
+
+    const tool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        agentDir,
+        sessionKey: "agent:main:main",
+      } as OpenClawPluginToolContext,
+    });
+
+    const result = await tool.execute("call-transcript-correction", {
+      kind: "learning",
+      content:
+        "Conor prefers bullet points for list-style or structured responses. When presenting multiple items, options, or steps, use bullet points by default.",
+    });
+
+    expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "correction",
+        content: "User correction: use bullet points when listing items.",
+        metadata: expect.objectContaining({
+          classificationAdjustment: expect.objectContaining({
+            matchedFrom: "raw",
+            fromKind: "learning",
+            toKind: "correction",
+          }),
+          category: "user_requirement_correction",
+          autoCapture: expect.objectContaining({
+            captureClass: "requirement_correction",
+            template: "responses_bullets",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateIngress.submitLearning).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({
+      accepted: true,
+      kind: "correction",
+    });
   });
 });

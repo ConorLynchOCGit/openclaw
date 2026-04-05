@@ -1245,6 +1245,47 @@ function normalizeMemoryObjectSearchLimit(limit: number | undefined): number {
   );
 }
 
+type ResponseStyleQueryHint = {
+  template:
+    | "responses_concise"
+    | "responses_bullets"
+    | "responses_plain_english"
+    | "responses_no_tables"
+    | "responses_numbered_steps";
+};
+
+function normalizeRetrievalQuery(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function inferResponseStyleQueryHint(query: string): ResponseStyleQueryHint | null {
+  const normalized = normalizeRetrievalQuery(query);
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.includes("plain english") || normalized.includes("jargon")) {
+    return { template: "responses_plain_english" };
+  }
+  if (normalized.includes("bullet points") || normalized.includes("bullet-point")) {
+    return { template: "responses_bullets" };
+  }
+  if (normalized.includes("numbered steps") || normalized.includes("numbered lists")) {
+    return { template: "responses_numbered_steps" };
+  }
+  if (normalized.includes("table")) {
+    return { template: "responses_no_tables" };
+  }
+  if (
+    normalized.includes("concise") ||
+    normalized.includes("brief") ||
+    normalized.includes("short replies") ||
+    normalized.includes("short responses")
+  ) {
+    return { template: "responses_concise" };
+  }
+  return null;
+}
+
 function normalizeConsolidationPlanLimit(limit: number | undefined): number {
   if (!Number.isFinite(limit)) {
     return DEFAULT_CONSOLIDATION_PLAN_LIMIT;
@@ -9895,6 +9936,17 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     table: "memory_objects",
   });
   const combinedTextExpression = "lower(coalesce(v.title, '') || ' ' || coalesce(v.content, ''))";
+  const autoCaptureTemplateExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'template',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'template',",
+    "''",
+    ")",
+  ].join(" ");
+  const responseStyleHint =
+    params.input.kind === "project" || params.input.kind === "procedure"
+      ? null
+      : inferResponseStyleQueryHint(params.input.query);
   const conditions = [
     `(
       mo.search_document @@ websearch_to_tsquery('english', $1::text)
@@ -9902,7 +9954,11 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
       or similarity(${combinedTextExpression}, lower($1::text)) >= 0.15
     )`,
   ];
-  const values: unknown[] = [params.input.query, `${params.input.query}%`];
+  const values: unknown[] = [
+    params.input.query,
+    `${params.input.query}%`,
+    responseStyleHint?.template ?? "",
+  ];
 
   if (params.input.kind) {
     values.push(params.input.kind);
@@ -9936,6 +9992,7 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
           + case when ${combinedTextExpression} = lower($1::text) then 120 else 0 end
           + case when lower(coalesce(v.title, '')) like lower($2::text) then 110 else 0 end
           + case when ${combinedTextExpression} like lower($2::text) then 90 else 0 end
+          + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
         )::float8 as score,
@@ -9945,6 +10002,9 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
             case when ${combinedTextExpression} = lower($1::text) then 'content_exact' end,
             case when lower(coalesce(v.title, '')) like lower($2::text) then 'title_prefix' end,
             case when ${combinedTextExpression} like lower($2::text) then 'content_prefix' end,
+            case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text
+              then 'auto_capture_template_match'
+            end,
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'
             end,
@@ -9981,6 +10041,17 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
     table: "memory_objects",
   });
   const combinedTextExpression = "lower(coalesce(v.title, '') || ' ' || coalesce(v.content, ''))";
+  const autoCaptureTemplateExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'template',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'template',",
+    "''",
+    ")",
+  ].join(" ");
+  const responseStyleHint =
+    params.input.kind === "project" || params.input.kind === "procedure"
+      ? null
+      : inferResponseStyleQueryHint(params.input.query);
   const conditions = [
     "v.review_state = 'candidate'",
     `(
@@ -9989,7 +10060,11 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
       or similarity(${combinedTextExpression}, lower($1::text)) >= 0.15
     )`,
   ];
-  const values: unknown[] = [params.input.query, `${params.input.query}%`];
+  const values: unknown[] = [
+    params.input.query,
+    `${params.input.query}%`,
+    responseStyleHint?.template ?? "",
+  ];
 
   if (params.input.kind) {
     values.push(params.input.kind);
@@ -10023,6 +10098,7 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
           + case when ${combinedTextExpression} = lower($1::text) then 120 else 0 end
           + case when lower(coalesce(v.title, '')) like lower($2::text) then 110 else 0 end
           + case when ${combinedTextExpression} like lower($2::text) then 90 else 0 end
+          + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
         )::float8 as score,
@@ -10032,6 +10108,9 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
             case when ${combinedTextExpression} = lower($1::text) then 'content_exact' end,
             case when lower(coalesce(v.title, '')) like lower($2::text) then 'title_prefix' end,
             case when ${combinedTextExpression} like lower($2::text) then 'content_prefix' end,
+            case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text
+              then 'auto_capture_template_match'
+            end,
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'
             end,

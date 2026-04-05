@@ -1,3 +1,5 @@
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
 import { Type } from "@sinclair/typebox";
 import { Client } from "pg";
 import type { AnyAgentTool, OpenClawPluginToolContext } from "../../api.js";
@@ -101,8 +103,12 @@ export function normalizeCandidateSubmissionInput(params: {
 export async function submitCandidateFromTool(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
+  context?: OpenClawPluginToolContext;
 }): Promise<CandidateSubmissionResult> {
-  const normalizedInput = normalizeManagedToolCandidateInput(params.input);
+  const normalizedInput = await normalizeManagedToolCandidateInput({
+    input: params.input,
+    context: params.context,
+  });
   if (normalizedInput.kind === "learning" || normalizedInput.kind === "correction") {
     const duplicate = await findExistingAutoCaptureManagedDuplicate({
       runtime: params.runtime,
@@ -201,10 +207,267 @@ function normalizeCorrectionPreferenceKey(raw: unknown): string | null {
   return normalized;
 }
 
-function normalizeManagedToolCandidateInput(
-  input: CandidateSubmissionInput,
-): CandidateSubmissionInput {
+function resolveResponseStyleLearningParaphraseKey(
+  content: string,
+): ReturnType<typeof parseOrdinaryTurnAutoCapturePreference>["key"] | null {
+  const normalized = content.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  const canonicalRaw =
+    /^(?:user|[a-z][a-z0-9_-]*) prefers bullet points\b.*\b(?:reply|replies|response|responses|list|listing|structured)\b.*[.!?]?$/i.test(
+      content,
+    )
+      ? "Use bullet points for me."
+      : /^(?:user|[a-z][a-z0-9_-]*) prefers plain english\b.*(?:jargon)?.*[.!?]?$/i.test(content)
+        ? "Use plain English, not jargon."
+        : null;
+  if (!canonicalRaw) {
+    return null;
+  }
+
+  return parseOrdinaryTurnAutoCapturePreference(canonicalRaw, "user-preference-v2")?.key ?? null;
+}
+
+function stripTranscriptTimestampPrefix(value: string): string {
+  return value.replace(/^\[[^\]\n]{1,80}\]\s*/, "");
+}
+
+function stripGatewaySenderMetadataPrefix(value: string): string {
+  return value.replace(/^Sender \(untrusted metadata\):\n```json[\s\S]*?```\n\n/, "");
+}
+
+function normalizeTranscriptUserText(value: string): string | null {
+  const stripped = stripTranscriptTimestampPrefix(
+    stripGatewaySenderMetadataPrefix(value).trim(),
+  ).trim();
+  return stripped.length > 0 ? stripped : null;
+}
+
+type TranscriptUserMessage = {
+  role?: unknown;
+  content?: unknown;
+};
+
+type SessionStoreEntry = {
+  sessionId?: unknown;
+  sessionFile?: unknown;
+};
+
+function extractTranscriptUserText(message: TranscriptUserMessage | null): string | null {
+  if (!message || message.role !== "user") {
+    return null;
+  }
+  if (typeof message.content === "string") {
+    return normalizeTranscriptUserText(message.content);
+  }
+  if (!Array.isArray(message.content)) {
+    return null;
+  }
+  const parts = message.content
+    .map((block) =>
+      block && typeof block === "object" && "text" in block
+        ? (block as { text?: unknown }).text
+        : undefined,
+    )
+    .filter((text): text is string => typeof text === "string")
+    .map((text) => normalizeTranscriptUserText(text))
+    .filter((text): text is string => typeof text === "string");
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+function parseSessionHeaderId(raw: string): string | null {
+  const firstLine = raw
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(firstLine) as { type?: unknown; id?: unknown };
+    return parsed.type === "session" && typeof parsed.id === "string" && parsed.id.trim().length > 0
+      ? parsed.id.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function readLatestTranscriptUserTextFromRaw(raw: string): string | null {
+  const lines = raw.split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]?.trim();
+    if (!line) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(line) as { message?: TranscriptUserMessage | null };
+      const text = extractTranscriptUserText(parsed.message ?? null);
+      if (text) {
+        return text;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+async function resolveLatestUserTurnFromContext(
+  context: OpenClawPluginToolContext | undefined,
+): Promise<string | null> {
+  const agentDir = context?.agentDir?.trim();
+  const sessionId = context?.sessionId?.trim();
+  const sessionKey = context?.sessionKey?.trim();
+  if (!agentDir || (!sessionId && !sessionKey)) {
+    return null;
+  }
+  const sessionsDir = path.join(agentDir, "sessions");
+
+  if (sessionKey) {
+    try {
+      const rawStore = await readFile(path.join(sessionsDir, "sessions.json"), "utf8");
+      const parsedStore = JSON.parse(rawStore) as Record<string, SessionStoreEntry>;
+      const entry = parsedStore[sessionKey];
+      const sessionFile =
+        typeof entry?.sessionFile === "string" && entry.sessionFile.trim().length > 0
+          ? entry.sessionFile.trim()
+          : null;
+      if (sessionFile) {
+        const candidatePaths = [sessionFile, path.join(sessionsDir, path.basename(sessionFile))];
+        for (const candidatePath of candidatePaths) {
+          try {
+            const raw = await readFile(candidatePath, "utf8");
+            const text = readLatestTranscriptUserTextFromRaw(raw);
+            if (text) {
+              return text;
+            }
+          } catch {
+            continue;
+          }
+        }
+      }
+    } catch {
+      // Fall through to sessionId scan when the session registry is unavailable.
+    }
+  }
+
+  if (!agentDir || !sessionId) {
+    return null;
+  }
+  let entries: string[];
+  try {
+    entries = await readdir(sessionsDir);
+  } catch {
+    return null;
+  }
+
+  for (const entry of entries) {
+    if (!entry.endsWith(".jsonl") || entry === "sessions.json") {
+      continue;
+    }
+    const sessionFile = path.join(sessionsDir, entry);
+    let raw: string;
+    try {
+      raw = await readFile(sessionFile, "utf8");
+    } catch {
+      continue;
+    }
+    if (parseSessionHeaderId(raw) !== sessionId) {
+      continue;
+    }
+    return readLatestTranscriptUserTextFromRaw(raw);
+  }
+  return null;
+}
+
+function isManagedCorrectionMatch(
+  parsed: ReturnType<typeof parseManagedCorrectionCandidateContent> | null,
+): parsed is NonNullable<ReturnType<typeof parseManagedCorrectionCandidateContent>> {
+  return Boolean(
+    parsed &&
+    (parsed.captureClass === "preference_correction" ||
+      parsed.captureClass === "requirement_correction" ||
+      parsed.captureClass === "project_fact_correction"),
+  );
+}
+
+async function resolveManagedCorrectionSubmission(params: {
+  input: CandidateSubmissionInput;
+  context?: OpenClawPluginToolContext;
+}): Promise<{
+  parsed: NonNullable<ReturnType<typeof parseManagedCorrectionCandidateContent>>;
+  source: "content" | "raw";
+} | null> {
+  const { input, context } = params;
+  const parsedFromContent = parseManagedCorrectionCandidateContent(input.content);
+  if (isManagedCorrectionMatch(parsedFromContent)) {
+    return { parsed: parsedFromContent, source: "content" };
+  }
+
+  const rawCandidates: string[] = [];
+  if (typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0) {
+    rawCandidates.push(input.metadata.raw);
+  }
+  const rawFromContext = await resolveLatestUserTurnFromContext(context);
+  if (rawFromContext && !rawCandidates.includes(rawFromContext)) {
+    rawCandidates.push(rawFromContext);
+  }
+
+  for (const rawCandidate of rawCandidates) {
+    const parsedFromRawContent = parseManagedCorrectionCandidateContent(rawCandidate);
+    if (isManagedCorrectionMatch(parsedFromRawContent)) {
+      return { parsed: parsedFromRawContent, source: "raw" };
+    }
+
+    const parsedFromRawTurn = parseOrdinaryTurnAutoCapturePreference(
+      rawCandidate,
+      "user-preference-v2",
+    );
+    if (isManagedCorrectionMatch(parsedFromRawTurn)) {
+      return { parsed: parsedFromRawTurn, source: "raw" };
+    }
+  }
+
+  return null;
+}
+
+async function normalizeManagedToolCandidateInput(params: {
+  input: CandidateSubmissionInput;
+  context?: OpenClawPluginToolContext;
+}): Promise<CandidateSubmissionInput> {
+  const { input, context } = params;
+  const correctionOverride = await resolveManagedCorrectionSubmission({
+    input,
+    context,
+  });
+
   if (input.kind === "learning") {
+    if (correctionOverride) {
+      const normalizedCorrectionInput = mergeCandidateMetadata(
+        {
+          ...input,
+          kind: "correction",
+          content: correctionOverride.parsed.content,
+        },
+        {
+          classificationAdjustment: {
+            source: "candidate_submit_normalizer",
+            matchedFrom: correctionOverride.source,
+            fromKind: "learning",
+            toKind: "correction",
+            reason: "bounded_correction_match",
+          },
+        },
+      );
+      return await normalizeManagedToolCandidateInput({
+        input: normalizedCorrectionInput,
+        context,
+      });
+    }
+
     const parsed =
       resolveAutoPromotableFeedbackSubmission(input) ??
       (typeof input.metadata?.raw === "string"
@@ -244,11 +507,12 @@ function normalizeManagedToolCandidateInput(
   }
 
   if (input.kind === "correction") {
+    const parsedCorrectionOverride = correctionOverride?.parsed ?? null;
     const normalizedPreferenceKey = normalizeCorrectionPreferenceKey(input.metadata?.preferenceKey);
     const normalizedValue =
       typeof input.metadata?.value === "string" ? input.metadata.value.trim().toLowerCase() : null;
     const parsed =
-      parseManagedCorrectionCandidateContent(input.content) ??
+      parsedCorrectionOverride ??
       (normalizedPreferenceKey && normalizedValue
         ? parseManagedCorrectionCandidateContent(
             `User correction: preferred ${normalizedPreferenceKey} is ${normalizedValue}.`,
@@ -374,7 +638,7 @@ function resolveManagedAutoCaptureKey(input: CandidateSubmissionInput): string |
       (typeof metadata?.raw === "string"
         ? parseOrdinaryTurnAutoCapturePreference(metadata.raw, "user-preference-v2")
         : null);
-    return parsed?.key ?? null;
+    return parsed?.key ?? resolveResponseStyleLearningParaphraseKey(input.content);
   }
 
   if (input.kind === "correction") {
@@ -448,6 +712,7 @@ export function createCandidateSubmitTool(params: {
       const result = await submitCandidateFromTool({
         runtime: params.runtime,
         input,
+        context: params.context,
       });
       return asJsonToolResult(result);
     },

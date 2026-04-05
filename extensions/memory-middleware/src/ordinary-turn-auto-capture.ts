@@ -60,7 +60,7 @@ const REQUIREMENT_PATTERNS = [
   {
     template: "responses_bullets" as const,
     pattern:
-      /^(?:please\s+)?(?:use bullet points|write (?:your )?(?:responses|reply|replies|answers) in bullet points)(?: when listing items)?[.!?]?$/i,
+      /^(?:please\s+)?(?:use bullet points(?: for me)?|write (?:your )?(?:responses|reply|replies|answers) in bullet points)(?: when listing items)?[.!?]?$/i,
     subject: "response format",
     value: "use bullet points when listing items",
     content: "User requirement: use bullet points when listing items.",
@@ -68,7 +68,7 @@ const REQUIREMENT_PATTERNS = [
   {
     template: "responses_plain_english" as const,
     pattern:
-      /^(?:please\s+)?(?:use plain english|write (?:your )?(?:responses|reply|replies|answers) in plain english)[.!?]?$/i,
+      /^(?:please\s+)?(?:use plain english(?:,?\s+not jargon)?|write (?:your )?(?:responses|reply|replies|answers) in plain english(?:,?\s+not jargon)?)[.!?]?$/i,
     subject: "response language",
     value: "use plain English",
     content: "User requirement: use plain English.",
@@ -103,7 +103,7 @@ const REQUIREMENT_CORRECTION_PATTERNS = [
   {
     template: "responses_bullets" as const,
     pattern: new RegExp(
-      `^${CORRECTION_PREFIX}(?:please\\s+)?(?:use bullet points|write (?:your )?(?:responses|reply|replies|answers) in bullet points)(?: when listing items)?[.!?]?$`,
+      `^${CORRECTION_PREFIX}(?:please\\s+)?(?:use bullet points(?: for me)?|write (?:your )?(?:responses|reply|replies|answers) in bullet points)(?: when listing items)?[.!?]?$`,
       "i",
     ),
     subject: "response format",
@@ -204,6 +204,13 @@ const REQUIREMENT_CANDIDATE_CONTENT_PATTERNS = [
   {
     template: "responses_bullets" as const,
     pattern: /^user prefers bullet(?:-point)? responses[.!?]?$/i,
+    subject: "response format",
+    value: "use bullet points when listing items",
+    content: "User requirement: use bullet points when listing items.",
+  },
+  {
+    template: "responses_bullets" as const,
+    pattern: /^user prefers bullet points for replies[.!?]?$/i,
     subject: "response format",
     value: "use bullet points when listing items",
     content: "User requirement: use bullet points when listing items.",
@@ -339,6 +346,29 @@ const REQUIREMENT_CORRECTION_CANDIDATE_CONTENT_PATTERNS = [
   {
     template: "responses_bullets" as const,
     pattern: /^user correction: use bullet points when listing items[.!?]?$/i,
+    subject: "response format",
+    value: "use bullet points when listing items",
+    content: "User correction: use bullet points when listing items.",
+  },
+  {
+    template: "responses_bullets" as const,
+    pattern:
+      /^user correction to response (?:style|format|language) preference: use bullet points(?: for me)?[.!?]?$/i,
+    subject: "response format",
+    value: "use bullet points when listing items",
+    content: "User correction: use bullet points when listing items.",
+  },
+  {
+    template: "responses_bullets" as const,
+    pattern:
+      /^user corrected response(?:-| )(?:style|format|language) preference: use bullet points(?: for me)?[.!?]?$/i,
+    subject: "response format",
+    value: "use bullet points when listing items",
+    content: "User correction: use bullet points when listing items.",
+  },
+  {
+    template: "responses_bullets" as const,
+    pattern: new RegExp(`^${CORRECTION_PREFIX}use bullet points(?: for me)?[.!?]?$`, "i"),
     subject: "response format",
     value: "use bullet points when listing items",
     content: "User correction: use bullet points when listing items.",
