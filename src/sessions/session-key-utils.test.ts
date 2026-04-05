@@ -34,6 +34,16 @@ describe("resolveSessionSelectorVisibility", () => {
       "hide",
     );
     expect(resolveSessionSelectorVisibility("agent:x-manager:proof-conor-2026-03-28")).toBe("hide");
+    expect(
+      resolveSessionSelectorVisibility("agent:main:slice7-smoke-1775354837185", {
+        channel: "webchat",
+        lastChannel: "webchat",
+        origin: {
+          provider: "webchat",
+          surface: "webchat",
+        },
+      }),
+    ).toBe("hide");
   });
 
   it("hides spawned child sessions even when the key itself looks generic", () => {

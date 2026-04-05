@@ -324,4 +324,42 @@ describe("resolveSessionOptionGroups", () => {
     expect(labels).not.toContain("Unknown Direct");
     expect(labels).not.toContain("Unknown Direct · unknown:direct:+15555550125");
   });
+
+  it("does not include hidden proof sessions even when they are current", () => {
+    const state = {
+      sessionsHideCron: true,
+      agentsList: null,
+    } as Parameters<typeof resolveSessionOptionGroups>[0];
+    const sessions = {
+      ts: 0,
+      path: "",
+      count: 2,
+      defaults: { modelProvider: null, model: null, contextTokens: null },
+      sessions: [
+        row({ key: "agent:main:main", selectorVisibility: "show" }),
+        row({
+          key: "agent:main:slice7-smoke-1775354837185",
+          selectorVisibility: "hide",
+          channel: "webchat",
+          lastChannel: "webchat",
+          origin: {
+            provider: "webchat",
+            surface: "webchat",
+          },
+          label: "slice7-backend-proof",
+        }),
+      ],
+    } satisfies SessionsListResult;
+
+    const groups = resolveSessionOptionGroups(
+      state,
+      "agent:main:slice7-smoke-1775354837185",
+      sessions,
+    );
+    const labels = groups.flatMap((group) => group.options.map((option) => option.label));
+
+    expect(labels).toContain("Main Session");
+    expect(labels).not.toContain("slice7-backend-proof");
+    expect(labels).not.toContain("slice7-backend-proof · slice7-smoke-1775354837185");
+  });
 });

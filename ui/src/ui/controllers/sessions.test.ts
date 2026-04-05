@@ -188,4 +188,69 @@ describe("loadSessions", () => {
       }),
     );
   });
+
+  it("normalizes a hidden proof session back to the main session", async () => {
+    const applySettings = vi.fn();
+    const state = createState(
+      vi.fn(async (method: string) => {
+        if (method === "sessions.list") {
+          return {
+            ts: 0,
+            path: "",
+            count: 2,
+            defaults: { modelProvider: null, model: null, contextTokens: null },
+            sessions: [
+              { key: "agent:main:main", kind: "direct", updatedAt: 0, selectorVisibility: "show" },
+              {
+                key: "agent:main:slice7-smoke-1775354837185",
+                kind: "direct",
+                updatedAt: 0,
+                selectorVisibility: "hide",
+                channel: "webchat",
+                lastChannel: "webchat",
+                origin: { provider: "webchat", surface: "webchat" },
+              },
+            ],
+          };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      }),
+      {
+        sessionKey: "agent:main:slice7-smoke-1775354837185",
+        settings: {
+          gatewayUrl: "",
+          token: "",
+          locale: "en",
+          sessionKey: "agent:main:slice7-smoke-1775354837185",
+          lastActiveSessionKey: "agent:main:slice7-smoke-1775354837185",
+          theme: "claw",
+          themeMode: "dark",
+          splitRatio: 0.6,
+          navCollapsed: false,
+          navGroupsCollapsed: {},
+          borderRadius: 50,
+          chatFocusMode: false,
+          chatShowThinking: false,
+          chatShowToolCalls: true,
+        },
+        applySettings,
+        hello: { snapshot: { sessionDefaults: { mainSessionKey: "agent:main:main" } } },
+      } as Partial<SessionsState>,
+    ) as SessionsState & {
+      sessionKey: string;
+      settings: NonNullable<unknown>;
+      applySettings: typeof applySettings;
+      hello: { snapshot: { sessionDefaults: { mainSessionKey: string } } };
+    };
+
+    await loadSessions(state);
+
+    expect(state.sessionKey).toBe("agent:main:main");
+    expect(applySettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionKey: "agent:main:main",
+        lastActiveSessionKey: "agent:main:main",
+      }),
+    );
+  });
 });
