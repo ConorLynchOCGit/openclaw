@@ -103,16 +103,16 @@ export async function submitCandidateFromTool(params: {
   input: CandidateSubmissionInput;
 }): Promise<CandidateSubmissionResult> {
   const normalizedInput = normalizeManagedToolCandidateInput(params.input);
-  if (normalizedInput.kind === "learning") {
+  if (normalizedInput.kind === "learning" || normalizedInput.kind === "correction") {
     const duplicate = await findExistingAutoCaptureManagedDuplicate({
       runtime: params.runtime,
-      content: normalizedInput.content,
+      input: normalizedInput,
     });
     if (duplicate) {
       return {
         accepted: false,
         status: "failed",
-        kind: "learning",
+        kind: normalizedInput.kind,
         reason: `ordinary-turn auto-capture already created ${duplicate.reviewState} candidate ${duplicate.id}`,
       };
     }
@@ -218,11 +218,17 @@ function normalizeManagedToolCandidateInput(
     }
     return mergeCandidateMetadata(input, {
       category:
-        parsed.captureClass === "explicit_requirement" ? "user_requirement" : "user_preference",
+        parsed.captureClass === "explicit_requirement"
+          ? "user_requirement"
+          : parsed.captureClass === "explicit_project_fact"
+            ? "project_fact"
+            : "user_preference",
       source:
         parsed.captureClass === "explicit_requirement"
           ? "explicit_user_requirement"
-          : "explicit_user_statement",
+          : parsed.captureClass === "explicit_project_fact"
+            ? "explicit_project_fact"
+            : "explicit_user_statement",
       autoCapture: {
         source: "model_tool_candidate_submit",
         captureSeam: "model_tool_primary",
@@ -234,6 +240,7 @@ function normalizeManagedToolCandidateInput(
         subjectKey: parsed.subjectKey,
         subject: parsed.subject,
         value: parsed.value,
+        ...(parsed.projectScope ? { projectScope: parsed.projectScope } : {}),
         toolName: "memory_candidate_submit",
       },
     });
@@ -253,13 +260,26 @@ function normalizeManagedToolCandidateInput(
       (typeof input.metadata?.raw === "string"
         ? parseOrdinaryTurnAutoCapturePreference(input.metadata.raw, "user-preference-v2")
         : null);
-    if (!parsed || parsed.captureClass !== "preference_correction") {
+    if (
+      !parsed ||
+      (parsed.captureClass !== "preference_correction" &&
+        parsed.captureClass !== "project_fact_correction")
+    ) {
       return input;
     }
     return mergeCandidateMetadata(input, {
-      category: "user_preference_correction",
-      source: "conversational_user_correction",
-      preference_key: parsed.subjectKey,
+      category:
+        parsed.captureClass === "project_fact_correction"
+          ? "project_fact_correction"
+          : "user_preference_correction",
+      source:
+        parsed.captureClass === "project_fact_correction"
+          ? "conversational_project_fact_correction"
+          : "conversational_user_correction",
+      subject_key: parsed.subjectKey,
+      ...(parsed.captureClass === "preference_correction"
+        ? { preference_key: parsed.subjectKey }
+        : {}),
       autoCapture: {
         source: "model_tool_candidate_submit",
         captureSeam: "model_tool_primary",
@@ -271,6 +291,7 @@ function normalizeManagedToolCandidateInput(
         subjectKey: parsed.subjectKey,
         subject: parsed.subject,
         value: parsed.value,
+        ...(parsed.projectScope ? { projectScope: parsed.projectScope } : {}),
         toolName: "memory_candidate_submit",
       },
     });
@@ -333,13 +354,46 @@ async function maybeAutoPromoteToolSubmittedPreference(params: {
   };
 }
 
+function resolveManagedAutoCaptureKey(input: CandidateSubmissionInput): string | null {
+  const metadata = input.metadata;
+  const directKey =
+    metadata?.autoCapture &&
+    typeof metadata.autoCapture === "object" &&
+    typeof metadata.autoCapture.key === "string"
+      ? metadata.autoCapture.key
+      : null;
+  if (directKey) {
+    return directKey;
+  }
+
+  if (input.kind === "learning") {
+    const parsed =
+      parseAutoCaptureManagedCandidateContent(input.content) ??
+      (typeof metadata?.raw === "string"
+        ? parseOrdinaryTurnAutoCapturePreference(metadata.raw, "user-preference-v2")
+        : null);
+    return parsed?.key ?? null;
+  }
+
+  if (input.kind === "correction") {
+    const parsed =
+      parseManagedCorrectionCandidateContent(input.content) ??
+      (typeof metadata?.raw === "string"
+        ? parseOrdinaryTurnAutoCapturePreference(metadata.raw, "user-preference-v2")
+        : null);
+    return parsed?.key ?? null;
+  }
+
+  return null;
+}
+
 async function findExistingAutoCaptureManagedDuplicate(params: {
   runtime: MemoryMiddlewareRuntime;
-  content: string;
+  input: CandidateSubmissionInput;
 }): Promise<{ id: string; reviewState: string } | null> {
-  const parsed = parseAutoCaptureManagedCandidateContent(params.content);
+  const key = resolveManagedAutoCaptureKey(params.input);
   const databaseUrl = params.runtime.config.database.url;
-  if (!parsed || !databaseUrl) {
+  if (!key || !databaseUrl) {
     return null;
   }
 
@@ -359,7 +413,7 @@ async function findExistingAutoCaptureManagedDuplicate(params: {
         order by created_at desc
         limit 1
       `,
-      [parsed.key],
+      [key],
     );
     const row = result.rows[0];
     return row ? { id: row.id, reviewState: row.review_state } : null;

@@ -966,6 +966,75 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     },
   );
 
+  it("stores project fact corrections as project-memory candidates when normalized metadata marks the class", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const tool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const result = await tool.execute("call-project-fact-correction", {
+      kind: "correction",
+      content: "Project correction [atlas forge]: staging branch is atlas-green.",
+      projectId: seeded.projectId,
+      metadata: {
+        raw: "Actually, for project atlas forge, the staging branch is atlas-green.",
+      },
+    });
+
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "accepted",
+      kind: "correction",
+      storage: "database",
+      reviewState: "candidate",
+    });
+
+    const details = result.details as {
+      eventId: string;
+      memoryObjectId: string;
+    };
+
+    const memoryRow = await querySingleRow<{
+      memory_kind: string;
+      review_state: string;
+      content: string;
+      metadata: Record<string, unknown>;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select memory_kind, review_state, content, metadata
+        from memory_middleware.memory_objects
+        where id = $1
+      `,
+      [details.memoryObjectId],
+    );
+
+    expect(memoryRow).toMatchObject({
+      memory_kind: "project",
+      review_state: "candidate",
+      content: "Project correction [atlas forge]: staging branch is atlas-green.",
+      metadata: expect.objectContaining({
+        candidateMetadata: expect.objectContaining({
+          category: "project_fact_correction",
+          source: "conversational_project_fact_correction",
+          autoCapture: expect.objectContaining({
+            captureClass: "project_fact_correction",
+            captureSeam: "model_tool_primary",
+            projectScope: "atlas forge",
+          }),
+        }),
+      }),
+    });
+  });
+
   it("routes reduced-profile self-improving outputs only through the bounded candidate path", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

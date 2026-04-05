@@ -524,6 +524,130 @@ describe("memory candidate submit tool", () => {
     );
   });
 
+  it("normalizes tightly bounded named project facts from the tool path without auto-promotion", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-8", {
+      kind: "learning",
+      content: "Project fact [atlas forge]: staging branch is atlas-staging.",
+      metadata: {
+        raw: "For project atlas forge, the staging branch is atlas-staging.",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("learning"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("learning"),
+    });
+    expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "project_fact",
+          source: "explicit_project_fact",
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_project_fact",
+            captureSeam: "model_tool_primary",
+            projectScope: "atlas forge",
+            subject: "atlas forge / staging branch",
+            value: "atlas-staging",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateReview.review).not.toHaveBeenCalled();
+    expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
+  });
+
+  it("normalizes natural project fact corrections from the tool path without auto-promotion", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-9", {
+      kind: "correction",
+      content: "Project correction [atlas forge]: staging branch is atlas-green.",
+      metadata: {
+        raw: "Actually, for project atlas forge, the staging branch is atlas-green.",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("correction"),
+    });
+    expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "project_fact_correction",
+          source: "conversational_project_fact_correction",
+          subject_key: expect.any(String),
+          autoCapture: expect.objectContaining({
+            captureClass: "project_fact_correction",
+            captureSeam: "model_tool_primary",
+            projectScope: "atlas forge",
+            subject: "atlas forge / staging branch",
+            value: "atlas-green",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateReview.review).not.toHaveBeenCalled();
+    expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
+  });
+
+  it("normalizes the live natural project fact correction payload shape from the tool path", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-9b", {
+      kind: "correction",
+      content:
+        "Correction: For project cedar harbor, the staging branch is harbor-green (not harbor-staging).",
+      metadata: {
+        source: "user correction",
+        projectName: "cedar harbor",
+        factType: "staging_branch",
+        supersedes: "harbor-staging",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("correction"),
+    });
+    expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "project_fact_correction",
+          source: "conversational_project_fact_correction",
+          subject_key: expect.any(String),
+          autoCapture: expect.objectContaining({
+            captureClass: "project_fact_correction",
+            captureSeam: "model_tool_primary",
+            projectScope: "cedar harbor",
+            subject: "cedar harbor / staging branch",
+            value: "harbor-green",
+          }),
+        }),
+      }),
+    );
+  });
+
   it("rejects unsupported candidate payload shapes", () => {
     expect(() =>
       normalizeCandidateSubmissionInput({

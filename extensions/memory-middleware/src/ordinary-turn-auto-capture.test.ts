@@ -178,6 +178,40 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
     });
   });
 
+  it("matches a tightly bounded named project fact in the broader profile", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "For project atlas forge, the staging branch is atlas-staging.",
+        "user-preference-v2",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_project_fact",
+      candidateKind: "learning",
+      template: "project_fact_named_scope",
+      subject: "atlas forge / staging branch",
+      value: "atlas-staging",
+      projectScope: "atlas forge",
+      content: "Project fact [atlas forge]: staging branch is atlas-staging.",
+    });
+  });
+
+  it("matches a natural project fact correction in the broader profile", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "Actually, for project atlas forge, the staging branch is atlas-green.",
+        "user-preference-v2",
+      ),
+    ).toMatchObject({
+      captureClass: "project_fact_correction",
+      candidateKind: "correction",
+      template: "project_fact_named_scope",
+      subject: "atlas forge / staging branch",
+      value: "atlas-green",
+      projectScope: "atlas forge",
+      content: "Project correction [atlas forge]: staging branch is atlas-green.",
+    });
+  });
+
   it("rejects explicit memory requests", () => {
     expect(
       parseOrdinaryTurnAutoCapturePreference("Remember that my preferred tea is jasmine."),
@@ -258,6 +292,36 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
     });
   });
 
+  it("parses managed named project fact content", () => {
+    expect(
+      parseAutoCaptureManagedCandidateContent(
+        "Project fact [atlas forge]: staging branch is atlas-staging.",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_project_fact",
+      candidateKind: "learning",
+      template: "project_fact_named_scope",
+      subject: "atlas forge / staging branch",
+      value: "atlas-staging",
+      projectScope: "atlas forge",
+    });
+  });
+
+  it("parses natural named project fact content from the model tool path", () => {
+    expect(
+      parseAutoCaptureManagedCandidateContent(
+        "For project cedar harbor, the staging branch is harbor-staging.",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_project_fact",
+      candidateKind: "learning",
+      template: "project_fact_named_scope",
+      subject: "cedar harbor / staging branch",
+      value: "harbor-staging",
+      projectScope: "cedar harbor",
+    });
+  });
+
   it("parses managed correction candidate content", () => {
     expect(
       parseManagedCorrectionCandidateContent(
@@ -283,6 +347,36 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
       template: "my_preferred_is",
       subject: "slice four lantern reed",
       value: "moon amber pearl",
+    });
+  });
+
+  it("parses managed project fact correction content", () => {
+    expect(
+      parseManagedCorrectionCandidateContent(
+        "Project correction [atlas forge]: staging branch is atlas-green.",
+      ),
+    ).toMatchObject({
+      captureClass: "project_fact_correction",
+      candidateKind: "correction",
+      template: "project_fact_named_scope",
+      subject: "atlas forge / staging branch",
+      value: "atlas-green",
+      projectScope: "atlas forge",
+    });
+  });
+
+  it("parses natural project fact correction content from the model tool path", () => {
+    expect(
+      parseManagedCorrectionCandidateContent(
+        "Correction: For project cedar harbor, the staging branch is harbor-green (not harbor-staging).",
+      ),
+    ).toMatchObject({
+      captureClass: "project_fact_correction",
+      candidateKind: "correction",
+      template: "project_fact_named_scope",
+      subject: "cedar harbor / staging branch",
+      value: "harbor-green",
+      projectScope: "cedar harbor",
     });
   });
 });
@@ -470,6 +564,10 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
       expect.objectContaining({
         content: "User correction: favorite proof seed is fennel aurora.",
         metadata: expect.objectContaining({
+          category: "user_preference_correction",
+          source: "conversational_user_correction",
+          subject_key: expect.any(String),
+          preference_key: expect.any(String),
           autoCapture: expect.objectContaining({
             profile: "user-preference-v2",
             captureClass: "preference_correction",
@@ -552,6 +650,121 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     );
     expect(reviewCandidate).toHaveBeenCalledTimes(1);
     expect(promoteToMemory).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes bounded named project facts through learning submission without auto-promotion", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-project-fact-1",
+      memoryObjectId: "memory-project-fact-1",
+    }));
+    const reviewCandidate = vi.fn();
+    const promoteToMemory = vi.fn();
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "For project atlas forge, the staging branch is atlas-staging.",
+        timestamp: Date.parse("2026-04-04T12:07:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Project fact [atlas forge]: staging branch is atlas-staging.",
+        metadata: expect.objectContaining({
+          category: "project_fact",
+          source: "explicit_project_fact",
+          subject_key: expect.any(String),
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_project_fact",
+            captureSeam: "transcript_subscriber_fallback",
+            projectScope: "atlas forge",
+            subject: "atlas forge / staging branch",
+            value: "atlas-staging",
+          }),
+        }),
+      }),
+    );
+    expect(reviewCandidate).not.toHaveBeenCalled();
+    expect(promoteToMemory).not.toHaveBeenCalled();
+  });
+
+  it("routes natural named project fact corrections through correction submission with project metadata", async () => {
+    const submitCorrectionSuggestion = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "correction" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-project-correction-1",
+      memoryObjectId: "memory-project-correction-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion,
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "Actually, for project atlas forge, the staging branch is atlas-green.",
+        timestamp: Date.parse("2026-04-04T12:08:00Z"),
+      },
+    });
+
+    expect(submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Project correction [atlas forge]: staging branch is atlas-green.",
+        metadata: expect.objectContaining({
+          category: "project_fact_correction",
+          source: "conversational_project_fact_correction",
+          subject_key: expect.any(String),
+          autoCapture: expect.objectContaining({
+            captureClass: "project_fact_correction",
+            captureSeam: "transcript_subscriber_fallback",
+            projectScope: "atlas forge",
+            reasonCode: "explicit_project_fact_correction",
+          }),
+        }),
+      }),
+    );
   });
 
   it("falls back to the transcript file when the update omits message and sessionKey", async () => {

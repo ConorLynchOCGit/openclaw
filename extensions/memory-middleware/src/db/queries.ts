@@ -1143,6 +1143,14 @@ function mapCandidateKindToMemoryKind(
   input: CandidateSubmissionInput,
 ): CandidatePersistencePlan["memoryObject"]["memoryKind"] {
   if (
+    input.kind === "correction" &&
+    input.metadata &&
+    typeof input.metadata === "object" &&
+    input.metadata.category === "project_fact_correction"
+  ) {
+    return "project";
+  }
+  if (
     input.kind === "learning" &&
     input.metadata &&
     typeof input.metadata === "object" &&

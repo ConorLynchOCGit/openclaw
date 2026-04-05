@@ -70,6 +70,9 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
         lines.push(
           "For user preference, default, correction, or response-style requirement questions, prefer memory_object_search_hybrid with kind=feedback and approved-only scope before falling back to generic memory_search. Use memory_search afterward only when you need workspace notes or broader context.",
         );
+        lines.push(
+          "For direct named-project fact questions, prefer memory_object_search_hybrid with kind=project and approved-only scope before falling back to generic memory_search.",
+        );
       }
       lines.push(
         "If an approved durable memory result directly answers the question, use it in the normal reply without asking the user to restate it. If no approved result exists, answer normally and say you did not find stored memory only when that context matters.",
@@ -81,10 +84,13 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
         "When the user shares a recurring requirement, important correction, reusable procedure, or project improvement that should survive beyond the current turn, submit a concise candidate with memory_candidate_submit.",
       );
       lines.push(
-        "Natural correction phrasing still counts: if the user says things like Actually, No, I meant, or That's not right to correct a durable preference, default, or recurring requirement, submit it as kind=correction even without an explicit save request.",
+        "Natural correction phrasing still counts: if the user says things like Actually, No, I meant, or That's not right to correct a durable preference, default, recurring requirement, or tightly bounded named project fact, submit it as kind=correction even without an explicit save request.",
       );
       lines.push(
         "If the user states a bounded recurring response requirement in plain language, such as keep replies concise, use bullet points when listing items, use plain English, or do not use tables unless asked, submit it as a learning candidate.",
+      );
+      lines.push(
+        "If the user states a tightly bounded named project fact in explicit declarative form, such as For project Atlas, the staging branch is atlas-staging, submit it as a learning candidate.",
       );
       lines.push(
         "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",

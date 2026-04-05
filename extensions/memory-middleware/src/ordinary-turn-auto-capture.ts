@@ -75,6 +75,20 @@ const REQUIREMENT_PATTERNS = [
     content: "User requirement: do not use tables unless the user asks.",
   },
 ] as const;
+const PROJECT_FACT_PATTERNS = [
+  {
+    template: "project_fact_named_scope" as const,
+    pattern:
+      /^(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ([a-z0-9][a-z0-9 _./:-]{0,63})[.!?]?$/i,
+  },
+] as const;
+const PROJECT_FACT_CORRECTION_PATTERNS = [
+  {
+    template: "project_fact_named_scope" as const,
+    pattern:
+      /^(?:actually,?|correction:|no,|i meant,?|that(?:'|’)s not right,?|sorry,)\s*(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ([a-z0-9][a-z0-9 _./:-]{0,63})[.!?]?$/i,
+  },
+] as const;
 const PREFERENCE_CANDIDATE_CONTENT_PATTERNS = [
   {
     template: "my_preferred_is" as const,
@@ -149,6 +163,18 @@ const REQUIREMENT_CANDIDATE_CONTENT_PATTERNS = [
     content: "User requirement: do not use tables unless the user asks.",
   },
 ] as const;
+const PROJECT_FACT_CANDIDATE_CONTENT_PATTERNS = [
+  {
+    template: "project_fact_named_scope" as const,
+    pattern:
+      /^project fact \[([a-z0-9][a-z0-9 -]{0,47})\]: ([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?([a-z0-9][a-z0-9 _./:-]{0,63})["']?[.!?]?$/i,
+  },
+  {
+    template: "project_fact_named_scope" as const,
+    pattern:
+      /^(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?([a-z0-9][a-z0-9 _./:-]{0,63})["']?[.!?]?$/i,
+  },
+] as const;
 const PREFERENCE_CORRECTION_CANDIDATE_CONTENT_PATTERNS = [
   {
     template: "my_preferred_is" as const,
@@ -173,6 +199,18 @@ const PREFERENCE_CORRECTION_CANDIDATE_CONTENT_PATTERNS = [
     pattern:
       /^user corrected a durable preference: favorite ([a-z0-9][a-z0-9 -]{0,47}) is ["']?([a-z0-9][a-z0-9 '&/().,-]{0,63})["']?[.!?]?$/i,
     subjectPrefix: "favorite",
+  },
+] as const;
+const PROJECT_FACT_CORRECTION_CANDIDATE_CONTENT_PATTERNS = [
+  {
+    template: "project_fact_named_scope" as const,
+    pattern:
+      /^project correction \[([a-z0-9][a-z0-9 -]{0,47})\]: ([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?([a-z0-9][a-z0-9 _./:-]{0,63})["']?[.!?]?$/i,
+  },
+  {
+    template: "project_fact_named_scope" as const,
+    pattern:
+      /^(?:actually,?|correction:|no,|i meant,?|that(?:'|’)s not right,?|sorry,)\s*(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?([a-z0-9][a-z0-9 _./:-]{0,63})["']?(?:\s*\(not [^)]+\))?[.!?]?$/i,
   },
 ] as const;
 const SUBJECT_DENYLIST = new Set([
@@ -239,19 +277,27 @@ type TranscriptUserMessage = {
 
 export type OrdinaryTurnAutoCaptureMatch = {
   profile: "user-preference-v1" | "user-preference-v2";
-  captureClass: "explicit_preference" | "preference_correction" | "explicit_requirement";
+  captureClass:
+    | "explicit_preference"
+    | "preference_correction"
+    | "explicit_requirement"
+    | "explicit_project_fact"
+    | "project_fact_correction";
   candidateKind: "learning" | "correction";
   reasonCode:
     | "explicit_preference_statement"
     | "explicit_preference_correction"
-    | "explicit_requirement_statement";
+    | "explicit_requirement_statement"
+    | "explicit_project_fact_statement"
+    | "explicit_project_fact_correction";
   template:
     | "my_preferred_is"
     | "my_favorite_is"
     | "responses_concise"
     | "responses_bullets"
     | "responses_plain_english"
-    | "responses_no_tables";
+    | "responses_no_tables"
+    | "project_fact_named_scope";
   subject: string;
   value: string;
   normalizedSubject: string;
@@ -259,6 +305,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
   content: string;
   subjectKey: string;
   key: string;
+  projectScope?: string;
+  normalizedProjectScope?: string;
 };
 
 type ResolvedAttribution = {
@@ -615,6 +663,74 @@ function buildRequirementMatch(params: {
   };
 }
 
+function buildProjectFactMatch(params: {
+  profile: "user-preference-v1" | "user-preference-v2";
+  captureClass: "explicit_project_fact" | "project_fact_correction";
+  candidateKind: "learning" | "correction";
+  reasonCode: "explicit_project_fact_statement" | "explicit_project_fact_correction";
+  normalized: string;
+  pattern: RegExp;
+  template: "project_fact_named_scope";
+}): OrdinaryTurnAutoCaptureMatch | null {
+  const matched = params.normalized.match(params.pattern);
+  if (!matched) {
+    return null;
+  }
+  const projectScope = normalizeText(matched[1] ?? "");
+  const subject = normalizeText(matched[2] ?? "");
+  const value = normalizeText(matched[3] ?? "")
+    .replace(/[.!?]+$/, "")
+    .replace(/^["']+|["']+$/g, "");
+  const normalizedProjectScope = normalizeLower(projectScope);
+  const normalizedSubject = normalizeLower(subject);
+  const normalizedValue = normalizeLower(value);
+  if (!projectScope || !subject || !value) {
+    return null;
+  }
+  if (
+    normalizedProjectScope.split(" ").length > 5 ||
+    normalizedSubject.split(" ").length > 5 ||
+    normalizedValue.split(" ").length > 6
+  ) {
+    return null;
+  }
+  if (
+    containsSensitiveTerm(projectScope) ||
+    containsSensitiveTerm(subject) ||
+    looksLikeSensitiveValue(value)
+  ) {
+    return null;
+  }
+  const normalizedCompositeSubject = `${normalizedProjectScope} :: ${normalizedSubject}`;
+  const subjectKey = buildAutoCaptureSubjectKey({
+    template: params.template,
+    normalizedSubject: normalizedCompositeSubject,
+  });
+  return {
+    profile: params.profile,
+    captureClass: params.captureClass,
+    candidateKind: params.candidateKind,
+    reasonCode: params.reasonCode,
+    template: params.template,
+    subject: `${projectScope} / ${subject}`,
+    value,
+    normalizedSubject: normalizedCompositeSubject,
+    normalizedValue,
+    content:
+      params.captureClass === "project_fact_correction"
+        ? `Project correction [${projectScope}]: ${subject} is ${value}.`
+        : `Project fact [${projectScope}]: ${subject} is ${value}.`,
+    subjectKey,
+    key: buildAutoCaptureKey({
+      template: params.template,
+      normalizedSubject: normalizedCompositeSubject,
+      normalizedValue,
+    }),
+    projectScope,
+    normalizedProjectScope,
+  };
+}
+
 export function parseOrdinaryTurnAutoCapturePreference(
   messageText: string,
   profile: "user-preference-v1" | "user-preference-v2" = "user-preference-v1",
@@ -653,6 +769,21 @@ export function parseOrdinaryTurnAutoCapturePreference(
       }
     }
 
+    for (const { pattern, template } of PROJECT_FACT_CORRECTION_PATTERNS) {
+      const match = buildProjectFactMatch({
+        profile,
+        captureClass: "project_fact_correction",
+        candidateKind: "correction",
+        reasonCode: "explicit_project_fact_correction",
+        normalized,
+        pattern,
+        template,
+      });
+      if (match) {
+        return match;
+      }
+    }
+
     for (const { pattern, template, subject, value, content } of REQUIREMENT_PATTERNS) {
       const match = buildRequirementMatch({
         profile,
@@ -662,6 +793,23 @@ export function parseOrdinaryTurnAutoCapturePreference(
         subject,
         value,
         content,
+      });
+      if (match) {
+        return match;
+      }
+    }
+  }
+
+  if (profile === "user-preference-v2") {
+    for (const { pattern, template } of PROJECT_FACT_PATTERNS) {
+      const match = buildProjectFactMatch({
+        profile,
+        captureClass: "explicit_project_fact",
+        candidateKind: "learning",
+        reasonCode: "explicit_project_fact_statement",
+        normalized,
+        pattern,
+        template,
       });
       if (match) {
         return match;
@@ -733,6 +881,21 @@ export function parseAutoCaptureManagedCandidateContent(
     }
   }
 
+  for (const { pattern, template } of PROJECT_FACT_CANDIDATE_CONTENT_PATTERNS) {
+    const match = buildProjectFactMatch({
+      profile: "user-preference-v2",
+      captureClass: "explicit_project_fact",
+      candidateKind: "learning",
+      reasonCode: "explicit_project_fact_statement",
+      normalized,
+      pattern,
+      template,
+    });
+    if (match) {
+      return match;
+    }
+  }
+
   return null;
 }
 
@@ -758,6 +921,21 @@ export function parseManagedCorrectionCandidateContent(
       pattern,
       template,
       subjectPrefix,
+    });
+    if (match) {
+      return match;
+    }
+  }
+
+  for (const { pattern, template } of PROJECT_FACT_CORRECTION_CANDIDATE_CONTENT_PATTERNS) {
+    const match = buildProjectFactMatch({
+      profile: "user-preference-v2",
+      captureClass: "project_fact_correction",
+      candidateKind: "correction",
+      reasonCode: "explicit_project_fact_correction",
+      normalized,
+      pattern,
+      template,
     });
     if (match) {
       return match;
@@ -905,6 +1083,64 @@ function formatLog(message: string, meta: Record<string, unknown>): string {
   return `${message} ${JSON.stringify(meta)}`;
 }
 
+function buildSubscriberCaptureMetadata(params: {
+  match: OrdinaryTurnAutoCaptureMatch;
+  agentExternalKey: string;
+  sessionKey: string;
+  transcriptFile: string;
+  timestamp?: string;
+}): Record<string, unknown> {
+  const { match } = params;
+  const metadata: Record<string, unknown> = {
+    autoCapture: {
+      source: AUTO_CAPTURE_SOURCE,
+      captureSeam: "transcript_subscriber_fallback",
+      profile: match.profile,
+      captureClass: match.captureClass,
+      reasonCode: match.reasonCode,
+      template: match.template,
+      key: match.key,
+      subjectKey: match.subjectKey,
+      subject: match.subject,
+      value: match.value,
+      ...(match.projectScope ? { projectScope: match.projectScope } : {}),
+      agentExternalKey: params.agentExternalKey,
+      sessionKey: params.sessionKey,
+      transcriptFile: params.transcriptFile,
+      ...(params.timestamp ? { transcriptTimestamp: params.timestamp } : {}),
+    },
+  };
+
+  switch (match.captureClass) {
+    case "explicit_preference":
+      metadata.category = "user_preference";
+      metadata.source = "explicit_user_statement";
+      break;
+    case "preference_correction":
+      metadata.category = "user_preference_correction";
+      metadata.source = "conversational_user_correction";
+      metadata.subject_key = match.subjectKey;
+      metadata.preference_key = match.subjectKey;
+      break;
+    case "explicit_requirement":
+      metadata.category = "user_requirement";
+      metadata.source = "explicit_user_requirement";
+      break;
+    case "explicit_project_fact":
+      metadata.category = "project_fact";
+      metadata.source = "explicit_project_fact";
+      metadata.subject_key = match.subjectKey;
+      break;
+    case "project_fact_correction":
+      metadata.category = "project_fact_correction";
+      metadata.source = "conversational_project_fact_correction";
+      metadata.subject_key = match.subjectKey;
+      break;
+  }
+
+  return metadata;
+}
+
 export function createOrdinaryTurnAutoCaptureHandler(params: {
   config: MemoryMiddlewareConfig;
   logger: PluginLogger;
@@ -1005,24 +1241,13 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         return;
       }
       const timestamp = extractTranscriptTimestamp(transcriptMessage);
-      const candidateMetadata = {
-        autoCapture: {
-          source: AUTO_CAPTURE_SOURCE,
-          captureSeam: "transcript_subscriber_fallback",
-          profile: match.profile,
-          captureClass: match.captureClass,
-          reasonCode: match.reasonCode,
-          template: match.template,
-          key: match.key,
-          subjectKey: match.subjectKey,
-          subject: match.subject,
-          value: match.value,
-          agentExternalKey,
-          sessionKey,
-          transcriptFile,
-          ...(timestamp ? { transcriptTimestamp: timestamp } : {}),
-        },
-      };
+      const candidateMetadata = buildSubscriberCaptureMetadata({
+        match,
+        agentExternalKey,
+        sessionKey,
+        transcriptFile,
+        ...(timestamp ? { timestamp } : {}),
+      });
       const submit =
         match.candidateKind === "correction"
           ? deps.submitCorrectionSuggestion
@@ -1062,6 +1287,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             subjectKey: match.subjectKey,
             subject: match.subject,
             value: match.value,
+            ...(match.projectScope ? { projectScope: match.projectScope } : {}),
             agentExternalKey,
             sessionKey,
             transcriptFile,
