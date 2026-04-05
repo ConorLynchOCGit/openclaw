@@ -15,6 +15,13 @@ It does not:
 - enable actual installation
 - claim the exclusive memory slot
 
+Current production rollout blocker note:
+
+- this review does not replace the need for actual production deployment
+  access
+- no completed production rollout should be claimed unless the production
+  target is reachable and writable from the acting operator session
+
 ## Current reviewed baseline
 
 The current real non-production target has already proven:
@@ -330,3 +337,4 @@ The follow-up post-maintenance decision is now recorded in:
 
 - `docs/memory-system/AUTOMATION_READINESS_REVIEW.md`
 - `docs/memory-system/OPERATIONAL_RUNBOOK.md`
+- `docs/memory-system/PRODUCTION_SURFACE_INVENTORY_AND_DIFF.md`

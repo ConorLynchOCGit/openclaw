@@ -15,6 +15,13 @@ It does not enable any new automation.
 It exists to decide whether the current automation boundary should expand,
 hold, or contract before any further live change.
 
+Current production rollout blocker note:
+
+- no additional automation should be enabled just to compensate for missing
+  production deployment access
+- the correct next step remains obtaining a real production operator surface
+  and replaying the already-approved boundary unchanged
+
 ## Current reviewed live posture
 
 The current persistent real non-production target has already proven:

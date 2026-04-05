@@ -2,8 +2,9 @@
 
 ## Purpose
 
-This runbook covers the currently enabled real non-production
-`memory-middleware` posture.
+This runbook covers the currently enabled production `memory-middleware`
+posture on the live VPS Docker Compose runtime, along with the already-proven
+shared non-production lane it was rehearsed against.
 
 It is for operators who need to:
 
@@ -18,9 +19,50 @@ It is for operators who need to:
 
 This runbook does not enable any new automation.
 
+Production operator note:
+
+- this runbook covers the approved posture and rollback order now running in
+  production
+- the first production rollout target on this VPS is:
+  - `openclaw-upgrade-2026324-openclaw-gateway-1`
+- the pre-rollout inventory, backup artifact path, exact rollout diff, and
+  rollout result now live in:
+  - `docs/memory-system/PRODUCTION_SURFACE_INVENTORY_AND_DIFF.md`
+  - `docs/memory-system/PRODUCTION_ROLLOUT_REPORT.md`
+- the first production soak review now lives in:
+  - `docs/memory-system/PRODUCTION_SOAK_REPORT.md`
+
+The concrete provisioning plan and provisioning report for the shared
+non-production target now live in:
+
+- `docs/memory-system/SHARED_NONPROD_PROVISIONING_PLAN.md`
+- `docs/memory-system/SHARED_NONPROD_PROVISIONING_REPORT.md`
+
 ## Current enabled posture
 
-Current target:
+Current production target:
+
+- live OpenClaw runtime:
+  - container `openclaw-upgrade-2026324-openclaw-gateway-1`
+  - image `openclaw:local`
+  - ports `28789` and `28790`
+- production Postgres target:
+  - Supabase project `wvfcvuwsnhupalpxfttc`
+  - database `postgres`
+  - schema `memory_middleware`
+
+Previously proven shared target:
+
+- shared OpenClaw runtime:
+  - container `openclaw-upgrade-2026324-openclaw-gateway-1`
+  - image `openclaw:local`
+  - ports `28789` and `28790`
+- shared Postgres target:
+  - Supabase project `wvfcvuwsnhupalpxfttc`
+  - database `postgres`
+  - schema `memory_middleware`
+
+Previously proven local target:
 
 - persistent local non-production Docker Postgres
 - container `memory-middleware-readonly-rollout-pg`
@@ -35,7 +77,18 @@ Current live posture:
 - `backgroundJobs.advisoryJobClasses = [proactive_plan, consolidation_plan]`
 - `backgroundJobs.executeSchedulingMode = enabled`
 - `backgroundJobs.executeJobClasses = [proactive_execute_run_drift_check, consolidation_execute]`
-- `backgroundJobs.runnerOwnerId = rollout-runner-1`
+- `backgroundJobs.runnerOwnerId = production-runner-1`
+
+Current secret placement note:
+
+- `MEMORY_MIDDLEWARE_DATABASE_URL` is placed in `~/.openclaw/.env`
+- the current middleware checkpoint still requires a literal
+  `plugins.entries.memory-middleware.config.database.url` string in
+  `~/.openclaw/openclaw.json`
+- for the shared Supabase pooler target, that DB URL currently needs:
+  - `uselibpqcompat=true&sslmode=require`
+- treat both locations as operator-managed secret surfaces until the plugin
+  contract changes explicitly
 
 Enabled maintenance classes:
 
@@ -63,7 +116,16 @@ The following remain disabled:
 
 ## Primary inspection surfaces
 
-Use these middleware tools first:
+Production operator note:
+
+- bearer-auth HTTP `/tools/invoke` is not the current operator path for the
+  live gateway
+- the current bounded production validation path is:
+  - gateway health checks
+  - direct in-container `memory-middleware` runtime and tool invocation using
+    the running container's built `dist` output
+
+Use these middleware tools or runtime seams first:
 
 - `memory_object_list`
 - `memory_background_job_list`
@@ -84,6 +146,8 @@ Expected result:
 - `status = ok`
 - approved-memory records are returned
 - no requirement to enable writes or scheduling
+- omit optional project, session, and agent references unless they correspond
+  to real rows in the target environment
 
 If retrieval health is in doubt, confirm the current write posture remains
 unchanged before investigating automation state.
@@ -120,7 +184,8 @@ Use:
 Expected operator checks:
 
 - `jobClass` matches an allowlisted class
-- `execution_metadata.runnerId` matches `rollout-runner-1` for executed jobs
+- `execution_metadata.runnerId` matches `production-runner-1` for
+  executed jobs
 - advisory jobs show planner-only outputs
 - execute-class jobs show bounded execution metadata only
 
@@ -219,6 +284,8 @@ Expected current maintenance behavior:
 - bounded `consolidation_execute` should write only:
   - `memory_reviews`
   - `memory_links`
+- `memory_procedure_validate_plan` should still remain disabled in the current
+  approved posture
 
 ## Runner ownership and lock behavior
 
@@ -230,7 +297,8 @@ Expected checks:
 
 - a wrong `runnerId` returns:
   - `status = disabled`
-- the configured `runnerId = rollout-runner-1` can claim the next queued job
+- the configured `runnerId = production-runner-1` can claim the next
+  queued job
 - after a successful run, `memory_background_job_get` shows the same
   configured runner id in execution metadata
 
@@ -294,7 +362,7 @@ Use this checklist during the current single-runner soak period:
 - passive startup remains write-free
 - only allowlisted maintenance job classes appear in `background_jobs`
 - wrong-runner `run_next` remains blocked
-- `rollout-runner-1` remains the only executing runner
+- `production-runner-1` remains the only executing runner
 - advisory jobs remain write-free outside `background_jobs`
 - drift-check execute writes remain bounded to expected `memory_events`
 - bounded `consolidation_execute` writes remain bounded to:
@@ -325,6 +393,8 @@ Rollback triggers during soak:
 
 Before moving this same posture to any shared environment:
 
+- identify the exact shared runtime host or app name
+- identify the exact shared Postgres instance or database name
 - name the shared runner owner explicitly
 - document the operator responsible for disabling one job class or all
   scheduling
@@ -351,10 +421,16 @@ Current reconciliation note:
 - this checklist remains preparatory only
 - the current repo and host context still do not expose a real shared
   non-production target for replaying the approved posture
+- the smallest viable next step is provisioning:
+  - one dedicated shared non-production OpenClaw runtime
+  - one dedicated shared non-production Postgres database
+  - named owners for runner, disablement, and backup or restore
+  - env-backed DB secret placement through
+    `plugins.entries.memory-middleware.config.database.url`
 
 ## Recommended next step
 
 After this hardening slice, the recommended next step is:
 
-- keep the automation boundary as-is and continue bounded soak or prepare a
-  shared-environment rehearsal with the same allowlists unchanged
+- keep the automation boundary as-is and provision or identify one dedicated
+  shared rehearsal target that can replay the same allowlists unchanged

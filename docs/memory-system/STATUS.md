@@ -3,6 +3,11 @@
 ## Overall state
 
 Planning complete at high level.
+Feature inventory completed for the remaining memory roadmap, explicitly
+separating built-live, built-off-production-or-partial, and not-built
+families.
+Implementation-ready spec pack completed for the remaining major not-built
+and not-yet-productionized memory families.
 In-repo durable handoff pack initialized.
 Repo reconciliation completed at the architecture level.
 Initial middleware scaffold and immediate skill-onboarding preparation completed.
@@ -224,7 +229,12 @@ Current compact state:
   - contradiction execution
   - consolidation-driven drift remediation
   - memory-slot takeover
-  - broader proactive classes beyond the current bounded live set
+- broader proactive classes beyond the current bounded live set
+- fresh-session planning entrypoints now exist for the post-Slice-7 roadmap:
+  - `docs/memory-system/feature-inventory.md`
+  - `docs/memory-system/specs/README.md`
+  - `docs/memory-system/specs/implementation-sequencing.md`
+  - `docs/memory-system/specs/premortem.md`
 
 Fast re-entry reading order:
 

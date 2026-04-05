@@ -1,0 +1,102 @@
+# Feature Inventory
+
+## Purpose
+
+This document is the canonical inventory of the remaining memory-system
+families.
+
+It separates:
+
+- what is already built and live
+- what is built but not yet normal production behavior
+- what is not built yet and still needs a design-first implementation slice
+
+Use this file before starting a new memory slice.
+
+## Status classes
+
+- `built_live`
+  - implemented and already part of the accepted live memory boundary
+- `built_offprod_or_partial`
+  - implemented or partly implemented, but not yet normal live behavior,
+    incomplete, or proven only off-production
+- `not_built`
+  - no implementation-ready feature exists yet; new design and code are still
+    needed
+
+## Family inventory
+
+| Family                                                         | Status                     | Why                                                                                                                                                            | Existing surfaces                                                                                                              | Missing user-facing behavior                                                                    | Detailed spec                                                                                                                          |
+| -------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Semantic learning-event detector                               | `not_built`                | Current capture still depends primarily on deterministic matching plus bounded tool-side normalization rather than a first-pass event detector.                | `extensions/memory-middleware/src/ordinary-turn-auto-capture.ts`, `extensions/memory-middleware/src/tools/candidate-submit.ts` | Natural messy phrasing is still not broadly understood.                                         | `/memory-system/specs/semantic-event-detector`                                                                                         |
+| Ambiguity / clarify-abstain policy                             | `not_built`                | There is bounded rejection behavior, but no formal cross-family ambiguity policy for accept vs candidate vs clarify vs ignore.                                 | bounded validation and rejection paths in candidate ingress and ordinary-turn capture                                          | Users do not yet get consistent clarify/abstain behavior when phrasing is ambiguous.            | `/memory-system/specs/ambiguity-and-clarification`                                                                                     |
+| Candidate confirmation lifecycle                               | `not_built`                | Current candidate handling does not define how plausible but uncertain memory signals gather evidence, expire, or promote without manual review.               | existing candidate ingress/review/promotion substrate only                                                                     | `candidate_only` is not yet a real machine-evaluated lifecycle.                                 | `/memory-system/specs/candidate-confirmation-lifecycle`                                                                                |
+| Deterministic phrase induction                                 | `not_built`                | No reviewed phrase-pattern candidate store or promotion path exists yet.                                                                                       | deterministic parsing only                                                                                                     | Real user phrasing does not improve the parser automatically over time.                         | `/memory-system/specs/phrase-induction`                                                                                                |
+| Behavior application layer                                     | `built_offprod_or_partial` | Retrieval and prompt guidance already influence replies, but there is no explicit active-profile layer with stable precedence rules.                           | `extensions/memory-core/src/prompt-section.ts`, retrieval ranking in `extensions/memory-middleware/src/db/queries.ts`          | Remembered behavior is still more incidental than formally applied.                             | `/memory-system/specs/behavior-application`                                                                                            |
+| Response-style remembered profile                              | `built_offprod_or_partial` | Several response-style subjects are live, but the experience is still narrow and brittle.                                                                      | ordinary-turn capture, correction supersede, prompt-section usage, overlap ranking                                             | Users still cannot rely on broad natural phrasing or predictable repair.                        | `/memory-system/specs/response-style-profile`                                                                                          |
+| User repair / memory control                                   | `built_offprod_or_partial` | Corrections and bounded supersede exist, but forgetting, do-not-remember, and explicit removal controls do not.                                                | correction capture, correction promotion, supersede rules                                                                      | Users cannot fully repair or remove bad memory on their own.                                    | `/memory-system/specs/user-repair-and-memory-control`                                                                                  |
+| Recurring procedure memory                                     | `built_offprod_or_partial` | Procedure promotion and validation exist off-production, but recurring user-taught procedure memory is not live as a user-facing feature.                      | procedure promotion, procedure validation, validated-procedure retrieval                                                       | Users cannot yet teach a reusable checklist and get it back naturally later.                    | `/memory-system/specs/recurring-procedure-memory`                                                                                      |
+| Workflow improvement / tool-gotcha memory                      | `not_built`                | Improvement-note plumbing exists, but there is no productized event family or retrieval/application loop for tool gotchas.                                     | `improvement` candidate kind, governance tables                                                                                | Operational lessons are not yet captured and reused as a first-class memory family.             | `/memory-system/specs/workflow-improvement-memory`                                                                                     |
+| Broader bounded project memory                                 | `built_offprod_or_partial` | Named project facts are partially live, but the broader bounded field set and semantic coverage are not.                                                       | project-fact ordinary-turn capture, correction, retrieval                                                                      | Users cannot yet rely on a small, useful remembered project profile.                            | `/memory-system/specs/project-memory-expansion`                                                                                        |
+| Missing capability / recommendation-only planning              | `not_built`                | Internal procurement/governance surfaces exist, but repeated unmet-need detection and user-facing recommendation artifacts do not.                             | skill-candidate, procurement, vetting, approval, install-record governance paths                                               | Repeated missing capabilities are not yet remembered as recommendation-only planning artifacts. | `/memory-system/specs/unmet-need-planning`                                                                                             |
+| Reduced-profile self-improving capture enablement              | `built_offprod_or_partial` | The capture seam exists but remains disabled and intentionally constrained.                                                                                    | `extensions/memory-middleware/src/self-improving-candidate-capture.ts`, existing adoption/fork docs                            | Candidate coverage is not yet broadened through reduced-profile self-improving capture.         | existing docs sufficient for now: `/memory-system/SELF_IMPROVING_AGENT_ADOPTION_PLAN`, `/memory-system/SELF_IMPROVING_AGENT_FORK_SPEC` |
+| Productionization of off-production-proven governance surfaces | `built_offprod_or_partial` | Procedure/skill/procurement/vetting/approval/install-record flows exist and were validated off-production, but are not yet normal production-proven workflows. | runtime ports in `extensions/memory-middleware/src/runtime.ts`, multiple `REAL_ENV_*` rollout reports                          | These surfaces remain ambiguous: built, but not deliberately brought online.                    | `/memory-system/specs/governance-surface-productionization`                                                                            |
+| Messy-language eval framework                                  | `not_built`                | No canonical corpus/gate exists for typo-heavy, fragmentary, or indirect phrasing.                                                                             | ad hoc tests only                                                                                                              | We cannot prove that semantic capture works on real user phrasing.                              | `/memory-system/specs/messy-language-eval`                                                                                             |
+| Implementation sequencing / sprint guidance                    | `not_built`                | No single doc currently converts the roadmap and specs into an execution order.                                                                                | fragmented roadmap + rollout docs                                                                                              | New implementation sessions still risk thrash, duplication, or poor sequencing.                 | `/memory-system/specs/implementation-sequencing`                                                                                       |
+| Planning premortem / guardrails                                | `not_built`                | Risks are scattered across docs rather than concentrated into a planning-to-implementation premortem.                                                          | runbook warnings, readiness reviews                                                                                            | Teams/sessions can still repeat preventable planning and rollout mistakes.                      | `/memory-system/specs/premortem`                                                                                                       |
+
+## Already-built live baseline that new work must preserve
+
+The following are already part of the accepted live boundary and should be
+treated as constraints rather than speculative work:
+
+- bounded candidate ingress
+- bounded candidate review
+- bounded candidate promotion to approved memory
+- bounded ordinary-turn auto-capture for currently approved narrow classes
+- bounded correction supersede for supported subjects
+- approved-only and bounded candidate/validated-procedure retrieval
+- bounded advisory and execute-class scheduler classes within the accepted
+  current allowlists
+- canonical seam posture:
+  - `model_tool_primary` remains canonical
+  - `transcript_subscriber_fallback` remains a bounded assist path
+
+## Off-production-proven governance backlog
+
+The following already have meaningful implementation and rollout evidence, but
+still need explicit productionization decisions:
+
+- validated-procedure retrieval
+- candidate procedure promotion
+- procedure validation
+- skill-candidate planning and creation
+- procurement planning and internal procurement-record creation
+- manual Skill Vetter handoff preparation
+- manual vetting-result recording
+- approval planning and approval-state recording
+- manual install handoff and install-record creation
+
+These are tracked in:
+
+- `/memory-system/specs/governance-surface-productionization`
+
+Current productionization split:
+
+- quick-win tranche:
+  - validated-procedure retrieval
+  - candidate procedure promotion
+  - procedure validation
+  - skill-candidate planning and creation
+  - procurement planning and internal procurement-record creation
+- wait tranche:
+  - manual Skill Vetter handoff preparation
+  - manual vetting-result recording
+  - approval planning and approval-state recording
+  - manual install handoff and install-record creation
+
+## Read next
+
+1. `/memory-system/specs/README`
+2. `/memory-system/specs/implementation-sequencing`
+3. the specific spec doc for the family you want to implement next

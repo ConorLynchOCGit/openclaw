@@ -76,6 +76,18 @@
 - README (GitHub): keep absolute docs URLs (`https://docs.openclaw.ai/...`) so links work on GitHub.
 - Docs content must be generic: no personal device names/hostnames/paths; use placeholders like `user@gateway-host` and “gateway host”.
 
+## Large File And Docs Reading
+
+- When asked to read files, docs, or a doc pack, do not assume the terminal preview means the full file was ingested.
+- When `document_read` is available, use it for long files or any task that requires full-document coverage.
+- A long document is not considered fully read until `document_read(action=verify)` reports complete coverage.
+- For long files, use paged reads with `offset` and `limit` until:
+  - the requested sections are covered, or
+  - the file is fully read.
+- If a read result says it was capped or truncated, continue from the returned continuation offset instead of treating that first call as complete.
+- For multi-file reading tasks, read in bounded chunks and summarize between chunks or files so context stays stable.
+- Do not dump an entire large documentation tree into one read call when file-by-file or chunked reads would be more reliable.
+
 ## Docs i18n (zh-CN)
 
 - `docs/zh-CN/**` is generated; do not edit unless the user explicitly asks.
@@ -218,6 +230,7 @@
 - Pi sessions live under `~/.openclaw/sessions/` by default; the base directory is not configurable.
 - Environment variables: see `~/.profile`.
 - Never commit or publish real phone numbers, videos, or live configuration values. Use obviously fake placeholders in docs, tests, and examples.
+
 - Release flow: use the private [maintainer release docs](https://github.com/openclaw/maintainers/blob/main/release/README.md) for the actual runbook, `docs/reference/RELEASING.md` for the public release policy, and `$openclaw-release-maintainer` for the maintainership workflow.
 
 ## Local Runtime / Platform Notes
@@ -278,3 +291,62 @@
 - For manual `openclaw message send` messages that include `!`, use the heredoc pattern noted below to avoid the Bash tool’s escaping.
 - Release guardrails: do not change version numbers without operator’s explicit consent; always ask permission before running any npm publish/release step.
 - Beta release guardrail: when using a beta Git tag (for example `vYYYY.M.D-beta.N`), publish npm with a matching beta version suffix (for example `YYYY.M.D-beta.N`) rather than a plain version on `--tag beta`; otherwise the plain version name gets consumed/blocked.
+
+# Memory Middleware Build Instructions
+
+## Purpose
+
+This repo contains an in-progress build for a custom OpenClaw memory middleware system. The architecture is intentionally documented in-repo so work does not depend on chat history or a single Codex session.
+
+## Canonical memory-system docs
+
+Before working on any memory-system task, read these files in order:
+
+1. `docs/memory-system/README.md`
+2. `docs/memory-system/ARCHITECTURE.md`
+3. `docs/memory-system/memory-roadmap.md`
+4. `docs/memory-system/SCHEMA.md` (if present)
+5. `docs/memory-system/PLUGIN_CONTRACT.md` (if present)
+6. `docs/memory-system/SECURITY_AND_RETRIEVAL.md` (if present)
+7. `docs/memory-system/CURRENT_SLICE.md`
+
+## Working rules
+
+- Do not treat chat context as source of truth when these files exist.
+- Reconcile all proposed paths and components with the existing repo structure before implementing.
+- Do not invent a parallel architecture if repo conventions already provide an appropriate home.
+- Work one bounded slice at a time.
+- Do not implement beyond the scope defined in `docs/memory-system/CURRENT_SLICE.md`.
+- Do not automatically install or enable third-party skills.
+- Do not create broad autonomous behavior or external actions.
+- Do not make destructive schema or infrastructure changes outside the active slice.
+
+## Required updates after each slice
+
+Before considering a memory-system task complete, update:
+
+- `docs/memory-system/STATUS.md`
+- `docs/memory-system/DECISIONS.md`
+- `docs/memory-system/OPEN_QUESTIONS.md`
+- `docs/memory-system/CURRENT_SLICE.md` (advance or rewrite for next slice only if explicitly instructed)
+
+## Architecture posture
+
+The memory-system design has these core principles:
+
+- separate context-plane logic from durable knowledge-plane logic
+- prefer repo docs and structured storage over fragile prompt memory
+- use Postgres/Supabase as canonical structured backend
+- preserve inspectable file mirrors in workspace where appropriate
+- use hybrid retrieval, not vector-only retrieval
+- gate third-party skills through vetting before install
+- promote behavior through event -> memory -> procedure -> skill candidate -> vetted skill -> installed skill
+
+## Immediate task behavior
+
+Unless explicitly told otherwise, the first memory-system task in a new working session is:
+
+1. read the canonical memory-system docs
+2. audit current repo structure and conventions
+3. reconcile the proposed design with the actual repo
+4. only then implement the active slice

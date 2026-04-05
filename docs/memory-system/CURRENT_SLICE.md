@@ -2,72 +2,54 @@
 
 ## Active slice
 
-Bounded live interaction -> candidate capture soak and expansion for the
-current approved `memory-middleware` posture
+Memory spec-pack and implementation sequencing pass before the next major code
+slice
 
 ## Objective
 
-Keep the approved production boundary intact, carry forward the passed bounded
-production soak, and use the now-proven ordinary live interaction ->
-candidate-capture path as the basis for the next bounded soak.
+Prepare the memory system for fast, coherent implementation by turning the new
+roadmap into a discoverable spec pack.
 
 This slice is about:
 
-- keeping ordinary live interactions able to create bounded candidate memory
-- verifying that the produced rows stay correct and interpretable under real
-  use
-- compacting the memory build state so future re-entry does not require a
-  full doc-pack reread
-- deciding what larger bounded live chunk should move next only after this
-  path proves stable enough under real interaction volume
-
-Initial live-soak evidence already exists:
-
-- fresh `chief` production session created one candidate submission event plus
-  one matching candidate object from an explicit "please remember" stable
-  preference
-- fresh `main` production session created one candidate submission event plus
-  one matching candidate object from a softer "for future reference" standing
-  preference
-- neither session created `memory_reviews` rows or `background_jobs` rows
-
-The current approved live baseline is:
-
-- read-only retrieval enabled
-- bounded candidate, procedure, skill-candidate, procurement, vetting,
-  approval, and install-record governance path enabled
-- automation safeguards now wired
-- live advisory scheduler support enabled for:
-  - `proactive_plan`
-  - `consolidation_plan`
-- live execute-class scheduling enabled for:
-  - `proactive_execute_run_drift_check`
-  - `consolidation_execute` for bounded safe duplicate or stale actions only
+- separating:
+  - what is already built and live
+  - what is built but not yet normal production behavior
+  - what is not built yet
+- writing implementation-ready specs for the major not-built families
+- writing productionization plans for the built-off-production governance
+  surfaces
+- defining sequencing, guardrails, and premortem coverage before more feature
+  code begins
+- updating the roadmap and entrypoint docs so fresh sessions can find the
+  architecture and spec pack immediately
 
 ## Required work
 
-1. Keep the current approved production boundary unchanged while ordinary live
-   interactions are allowed to create bounded candidate submissions.
-2. Prove and monitor that real live turns create the expected candidate,
-   event, and object rows.
-3. Check whether volume and row quality remain in line with the intended lean
-   rollout.
-4. Keep review and promotion manual while the new capture path soaks.
+1. Inventory the remaining roadmap families as:
+   - `built_live`
+   - `built_offprod_or_partial`
+   - `not_built`
+2. Write dedicated specs for the major not-built families.
+3. Write productionization plans for already-built but not-yet-online
+   governance surfaces.
+4. Add sequencing guidance and premortem guardrails.
 5. Update:
 
 - `docs/memory-system/STATUS.md`
 - `docs/memory-system/DECISIONS.md`
 - `docs/memory-system/OPEN_QUESTIONS.md`
 - `docs/memory-system/CURRENT_SLICE.md`
-- `docs/memory-system/PRODUCTION_ADOPTION_PLAN.md`
-- `docs/memory-system/OPERATIONAL_RUNBOOK.md`
-- `docs/memory-system/PRODUCTION_SOAK_REPORT.md`
+- `docs/memory-system/README.md`
+- `docs/memory-system/memory-roadmap.md`
+- `docs/memory-system/feature-inventory.md`
+- `docs/memory-system/specs/README.md`
 
 ## Out of scope
 
-- claiming the exclusive `memory` plugin slot
-- taking over `memory-core` or `memory-lancedb`
-- enabling any new automation class
+- implementation code for new memory features
+- production posture changes
+- enabling new runtime behavior
 - enabling self-improving capture
 - enabling actual installation
 - automatic Skill Vetter invocation
@@ -75,15 +57,14 @@ The current approved live baseline is:
 
 ## Acceptance criteria
 
-- the previous bounded production soak is explicitly treated as passed for its
-  intended scope
-- ordinary live turns are proven to create bounded candidate memory through
-  the approved live path
-- initial fresh-session soak evidence exists for both `main` and `chief`
-- the new live interaction capture behavior is concrete enough to soak with
-  real usage
-- the next bounded expansion recommendation is explicit
+- a canonical feature inventory exists
+- the major not-built families each have implementation-ready specs
+- built-off-production governance surfaces have explicit productionization
+  plans
+- sequencing and premortem docs exist
+- the roadmap and entrypoint docs point to the new spec pack
 
 ## Notes
 
-This slice does not broaden into full autonomous memory behavior.
+This slice does not broaden into full autonomous memory behavior or begin new
+feature implementation.

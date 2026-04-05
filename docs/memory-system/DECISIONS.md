@@ -3566,6 +3566,100 @@ submissions from a fresh-session production interaction without requiring
 broader automation expansion. The next step is to soak and expand that slice
 carefully before reopening self-improving capture or wider scheduler classes.
 
+---
+
+### 16CW. V1 semantic memory work uses conservative writes plus candidate-with-confirmation
+
+The default v1 posture for broader semantic memory work is:
+
+- conservative durable writes
+- candidate-with-confirmation for plausible middle-confidence signals
+- sparse clarify
+- ignore weak ambiguous signals
+
+Reason:
+Manual review will not be the normal way candidates are resolved, so
+`candidate_only` must mean "watch for confirming evidence" rather than "leave
+this in a dead queue forever."
+
+---
+
+### 16CX. V1 recurring procedure use is suggestion-first, not silently applied
+
+The default v1 posture for validated recurring procedures is:
+
+- suggestion-first when a procedure looks relevant
+- direct-use only on clear asks for the named or strongly equivalent procedure
+- no silent background application
+
+Reason:
+This makes stored procedures feel useful without turning them into an
+intrusive always-on behavior layer or causing loosely related requests to be
+answered with the wrong remembered checklist.
+
+---
+
+### 16CY. V1 user memory repair is conversational-first
+
+The default v1 posture for user memory repair is:
+
+- conversational repair first
+- no full memory inspection UI in v1
+- no lightweight inspection command/tool required before the first semantic
+  slices
+
+Reason:
+Users need a normal way to fix memory, but the first implementation should
+optimize for a strong natural repair loop rather than delaying semantic memory
+work behind a separate browsing or admin surface.
+
+---
+
+### 16CZ. Governance productionization is split into a quick-win tranche and a wait tranche
+
+The governance backlog should not be productionized as one bundle.
+
+Quick-win tranche to execute first:
+
+- validated-procedure retrieval
+- candidate procedure promotion
+- procedure validation
+- skill-candidate planning and creation
+- procurement planning and internal procurement-record creation
+
+Wait tranche to defer until after the next user-facing semantic work:
+
+- manual Skill Vetter handoff preparation
+- manual vetting-result recording
+- approval planning and approval-state recording
+- manual install handoff and install-record creation
+
+Reason:
+The quick-win tranche is already built, remains manual/internal, preserves
+lineage, and stops short of approval/install semantics. The wait tranche is
+closer to external review authority or downstream lifecycle state and is more
+expensive to misunderstand or roll out casually.
+
+---
+
+### 16DA. No candidate-producing family may rely on an indefinite manual backlog
+
+The default rule for future memory families is:
+
+- no candidate-producing family may depend on an indefinite background manual
+  review queue as its normal resolution path
+
+Each candidate-producing family must explicitly choose one or more of:
+
+- auto-confirm / auto-promote under bounded policy
+- prompt-now while context is fresh
+- expire or reject if neither of the above happens safely
+
+Reason:
+Manual review will not be the normal operating model for user-facing memory
+quality, so unresolved candidate buildup would create memory trash instead of a
+real product loop.
+
 ## Provisional decisions pending implementation
 
 - whether the new middleware should be a regular bundled plugin or eventually replace the exclusive `kind: "memory"` slot

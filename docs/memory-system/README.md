@@ -20,20 +20,44 @@ Read these files in order:
 1. `README.md`
 2. `ARCHITECTURE.md`
 3. `memory-roadmap.md`
-4. `CURRENT_SLICE.md`
+4. `feature-inventory.md`
+5. `specs/README.md`
+6. `CURRENT_SLICE.md`
 
 Then consult as needed:
 
 - `STATUS.md`
 - `DECISIONS.md`
 - `OPEN_QUESTIONS.md`
+- `feature-inventory.md`
 - `SCHEMA.md`
 - `PLUGIN_CONTRACT.md`
 - `SECURITY_AND_RETRIEVAL.md`
+- `specs/README.md`
+- `specs/semantic-event-detector.md`
+- `specs/ambiguity-and-clarification.md`
+- `specs/phrase-induction.md`
+- `specs/behavior-application.md`
+- `specs/user-repair-and-memory-control.md`
+- `specs/response-style-profile.md`
+- `specs/recurring-procedure-memory.md`
+- `specs/workflow-improvement-memory.md`
+- `specs/project-memory-expansion.md`
+- `specs/unmet-need-planning.md`
+- `specs/messy-language-eval.md`
+- `specs/governance-surface-productionization.md`
+- `specs/implementation-sequencing.md`
+- `specs/premortem.md`
+- `specs/architecture-fit-review.md`
 - `PRODUCTION_ADOPTION_PLAN.md`
 - `PRODUCTION_READINESS_REVIEW.md`
 - `AUTOMATION_READINESS_REVIEW.md`
 - `OPERATIONAL_RUNBOOK.md`
+- `PRODUCTION_SURFACE_INVENTORY_AND_DIFF.md`
+- `PRODUCTION_ROLLOUT_REPORT.md`
+- `PRODUCTION_SOAK_REPORT.md`
+- `SHARED_NONPROD_PROVISIONING_PLAN.md`
+- `SHARED_NONPROD_PROVISIONING_REPORT.md`
 - `SHARED_ENV_REHEARSAL_REPORT.md`
 - `STAGING_REHEARSAL_REPORT.md`
 - `REAL_ENV_PASSIVE_READONLY_ROLLOUT_REPORT.md`
@@ -125,7 +149,9 @@ All third-party skills must go through vetting before installation or promotion 
 At the start of a new implementation session:
 
 1. read these docs
-2. read the current slice
-3. audit the actual repo layout if needed
-4. implement only the active slice
-5. update status/decisions/open questions
+2. read `feature-inventory.md`
+3. read `specs/README.md`
+4. read the current slice
+5. audit the actual repo layout if needed
+6. implement only the active slice
+7. update status/decisions/open questions

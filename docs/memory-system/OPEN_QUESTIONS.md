@@ -13,20 +13,30 @@
 
 1. Which exact operator or deployment unit should own the first shared
    scheduler runner beyond the already-proven local `rollout-runner-1`
-   posture?
+   posture now that the shared rehearsal target is proven with
+   `shared-nonprod-runner-1`?
 2. Should the initial middleware plugin continue to coexist with the current `memory-core` plugin as a regular bundled plugin indefinitely, or is the intention to eventually replace the exclusive memory slot?
 3. Should workspace mirrors be implemented immediately or deferred until DB-backed flows exist?
 4. Should workspace mirrors reuse the existing workspace memory conventions (`MEMORY.md` and `memory/*.md`) or live in a separate system-managed workspace subtree?
-5. Which exact real environment should receive the first staged migration
-   rehearsal, and who owns backup confirmation plus rollback execution?
+5. The first shared non-production pair is now identified:
+   - runtime:
+     - Docker service `openclaw-upgrade-2026324-openclaw-gateway-1`
+   - Postgres:
+     - Supabase project `wvfcvuwsnhupalpxfttc`
+     - database `postgres`
+     - schema `memory_middleware`
+       Which named operator owns backup confirmation plus rollback execution for
+       that shared target?
 6. Which exact deployment config source should own:
    - the advisory scheduler enablement flag
    - the execute-class scheduler enablement flag
    - the runner-owner id
      in shared environments?
-7. Is there a managed shared staging database that can provide the next
-   rehearsal step beyond the disposable Docker lane already proven here?
-8. If a managed shared staging target appears next, should the first
+7. No separate app-platform provisioning is required for the first shared
+   target anymore. Which maintainer or deployment owner now owns the
+   server-hosted shared runtime plus Supabase pair for rehearsal, soak, and
+   disablement?
+8. If a managed shared staging target appears next, should that later
    shared-environment automation rehearsal keep the current live allowlists
    unchanged:
    - `advisoryJobClasses = [proactive_plan, consolidation_plan]`
@@ -44,11 +54,39 @@
     in `OPERATIONAL_RUNBOOK.md` become a checked-in helper script, or should
     operators continue to use the documented queries directly until a shared
     environment exists?
-12. Who will provide or approve the first actual shared non-production target
-    for the unchanged current allowlists, given that the current repo and host
-    context still expose only:
-    - the disposable local validation lane
-    - the persistent local non-production rollout lane
+12. The first actual shared non-production target now exists and the first
+    shared rehearsal has passed. Who explicitly approves it as the canonical
+    shared soak or rehearsal surface for the unchanged current allowlists?
+13. The first shared runtime is the existing server-hosted Docker gateway.
+    Should the server-hosted Docker runtime remain the canonical shared lane,
+    or should a different VPS-native deployment surface be introduced later?
+14. `MEMORY_MIDDLEWARE_DATABASE_URL` is now placed for the shared target. Who
+    owns rotation and cleanup of both:
+    - the `.env` secret
+    - the current literal non-production copy in `openclaw.json`
+15. Should the shared runbook continue to standardize on repo-native runtime
+    rehearsal plus gateway health checks, or should a different authenticated
+    operator execution path be added later for shared bounded middleware tool
+    invocation?
+16. `production-runner-1` is now live. Who owns that runner identity
+    operationally for ongoing queue observation, disablement, and restart
+    decisions?
+17. The first production rollout succeeded on
+    `openclaw-upgrade-2026324-openclaw-gateway-1`. Who owns the next
+    production rollback or rollback-drill decision if the current boundary
+    shows instability during soak?
+18. The current production validation seam is direct in-container middleware
+    runtime invocation because bearer-auth HTTP `/tools/invoke` is blocked.
+    Should a more operator-friendly authenticated execution path be added
+    later, or should the container-native seam remain canonical?
+19. The production-scoped `.env` URL now includes
+    `uselibpqcompat=true&sslmode=require`, while the plugin still requires a
+    literal operator-managed `database.url` in `openclaw.json`. Should the
+    plugin contract be updated later so the `.env` secret can become the
+    single source of truth?
+20. The first production soak review stayed stable with no rollback needed.
+    How long should production remain on this exact boundary before any future
+    automation-expansion discussion is reopened?
 
 ## Security questions
 

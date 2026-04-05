@@ -55,6 +55,20 @@ The first real-environment rollout should prove that the middleware can:
 - keep automation narrow, explicit, and mostly disabled by default
 - provide enough observability to stop or roll back quickly
 
+Current production rollout note:
+
+- this document still describes the production rollout shape
+- the first production rollout has now been executed successfully on the live
+  VPS Docker Compose runtime using only the approved minimal config patch
+- the production runtime identity is now resolved in
+  `docs/memory-system/PRODUCTION_SURFACE_INVENTORY_AND_DIFF.md`
+- the actual live VPS runtime has been inventoried and backed up in
+  `docs/memory-system/PRODUCTION_SURFACE_INVENTORY_AND_DIFF.md`
+- the rollout result now lives in:
+  - `docs/memory-system/PRODUCTION_ROLLOUT_REPORT.md`
+- the first production soak review now lives in:
+  - `docs/memory-system/PRODUCTION_SOAK_REPORT.md`
+
 ## Runtime environments and assumptions
 
 The rollout assumes these environment tiers:
@@ -94,6 +108,11 @@ Current repo reality:
   Docker `pgvector/pg16` environment already used by integration validation
 - the first real non-disposable non-production rollout target now uses a
   persistent local Docker Postgres container with a named volume
+- the repo's actual server-hosted runtime surface is Docker Compose plus the
+  operator-managed `~/.openclaw` config tree
+- the first shared non-production target was therefore wired by reusing that
+  server-hosted Docker runtime and the existing Supabase project, not by
+  inventing a second deployment surface
 
 ### 3. Limited production runtime
 
@@ -171,6 +190,28 @@ Before any shared-environment rollout:
      internal-reader tests
 5. Confirm DB backup and restore posture before the first migration run.
 
+## Production rollout result
+
+The first production rollout is no longer blocked.
+
+It was applied on:
+
+- Compose project `openclaw-upgrade-2026324`
+- service `openclaw-gateway`
+- container `openclaw-upgrade-2026324-openclaw-gateway-1`
+
+using only:
+
+1. `~/.openclaw/.env` DB URL parity
+2. `~/.openclaw/openclaw.json` runner-owner parity
+3. a targeted restart of `openclaw-gateway`
+4. the documented validation sequence
+
+The exact production result is documented in:
+
+- `docs/memory-system/PRODUCTION_ROLLOUT_REPORT.md`
+- `docs/memory-system/PRODUCTION_SURFACE_INVENTORY_AND_DIFF.md`
+
 ## Required runtime configuration
 
 The first real-environment rollout should document and supply:
@@ -195,10 +236,16 @@ Current live automation posture:
 - `backgroundJobs.advisoryJobClasses = [proactive_plan, consolidation_plan]`
 - `backgroundJobs.executeSchedulingMode = enabled`
 - `backgroundJobs.executeJobClasses = [proactive_execute_run_drift_check, consolidation_execute]`
-- `backgroundJobs.runnerOwnerId = rollout-runner-1`
+- `backgroundJobs.runnerOwnerId = production-runner-1`
 - scheduled `consolidation_execute` limited to:
   - `duplicate_merge_review`
   - `stale_superseded_review`
+
+Current post-rollout soak result:
+
+- the first production soak review remained stable
+- no rollback or disablement was needed
+- no feature-boundary expansion is recommended after that soak review
 - contradiction and drift consolidation actions disabled
 - direct proactive execution disabled
 
@@ -206,6 +253,97 @@ First passive rollout posture:
 
 - `candidateIngress.mode = disabled`
 - `memoryObjectQuery.mode = read-only`
+
+## Shared-target provisioning status
+
+The first shared non-production target now exists and keeps the approved
+middleware posture unchanged.
+
+Provisioned shared runtime:
+
+1. Dockerized OpenClaw gateway on the shared server
+   - container: `openclaw-upgrade-2026324-openclaw-gateway-1`
+   - image: `openclaw:local`
+   - ports: `28789` and `28790`
+
+Provisioned shared Postgres target:
+
+1. existing Supabase project `wvfcvuwsnhupalpxfttc`
+2. database `postgres`
+3. schema `memory_middleware`
+4. required extensions confirmed:
+   - `pgcrypto`
+   - `pg_trgm`
+   - `vector`
+
+Shared secret placement:
+
+- `MEMORY_MIDDLEWARE_DATABASE_URL` is placed in `~/.openclaw/.env`
+
+Current operational ownership:
+
+- one named shared scheduler runner owner:
+  - `backgroundJobs.runnerOwnerId = shared-nonprod-runner-1`
+- disablement and backup ownership still need explicit human assignment in the
+  runbook
+
+The first shared rehearsal should keep the posture unchanged:
+
+- `candidateIngress.mode = submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install`
+- `memoryObjectQuery.mode = read-only`
+- `backgroundJobs.inspectionMode = enabled`
+- `backgroundJobs.advisorySchedulingMode = enabled`
+- `backgroundJobs.advisoryJobClasses = [proactive_plan, consolidation_plan]`
+- `backgroundJobs.executeSchedulingMode = enabled`
+- `backgroundJobs.executeJobClasses = [proactive_execute_run_drift_check, consolidation_execute]`
+- `backgroundJobs.runnerOwnerId = shared-nonprod-runner-1`
+
+Shared-target deviation:
+
+- the runtime secret is placed in `~/.openclaw/.env` as
+  `MEMORY_MIDDLEWARE_DATABASE_URL`
+- the current middleware checkpoint still requires
+  `plugins.entries.memory-middleware.config.database.url` to be a literal
+  string, so the non-production runtime currently carries the same DB URL in
+  `~/.openclaw/openclaw.json`
+- the shared Supabase pooler target currently requires
+  `uselibpqcompat=true&sslmode=require` in that DB URL for the present Node
+  `pg` connection path
+
+The first shared-environment rehearsal has now passed for the unchanged
+approved posture.
+
+What passed:
+
+- passive startup remained write-free
+- read-only retrieval remained healthy
+- bounded governance flows remained healthy
+- advisory scheduling remained healthy for:
+  - `proactive_plan`
+  - `consolidation_plan`
+- execute-class scheduling remained healthy for:
+  - `proactive_execute_run_drift_check`
+  - bounded safe `consolidation_execute`
+- runner ownership enforcement remained healthy
+- rollback or disablement steps from the runbook worked in the shared target
+
+Shared-only operational differences now documented:
+
+- shared rehearsal used the repo-native runtime against the shared DB plus
+  gateway health checks
+- bearer-auth HTTP `/tools/invoke` is not the current operator path for this
+  shared target
+- optional project, session, and agent references must be omitted unless they
+  map to real shared-environment rows
+- `memory_procedure_validate_plan` remains disabled even while
+  `memory_procedure_validate` is enabled
+
+The next operational step is shared-target soak or controlled observation with
+the same allowlists unchanged, not more provisioning.
+
+The concrete provisioning and ownership plan for that step now lives in:
+
+- `docs/memory-system/SHARED_NONPROD_PROVISIONING_PLAN.md`
 
 ## Migration sequencing
 
@@ -247,6 +385,9 @@ Current rehearsal note:
 
 - operational disablement and disposable-environment teardown have now been
   rehearsed
+- the shared target is now wired
+- the next rehearsal should reuse the exact same posture with no automation
+  expansion
 - shared-environment backup and restore still require a later managed staging
   or preproduction exercise
 
