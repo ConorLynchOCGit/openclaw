@@ -202,6 +202,12 @@ named-checklist detection, candidate confirmation without manual review for
 medium-confidence recurring procedures, correction or supersede for supported
 recurring checklist subjects, validated-procedure retrieval for clear checklist
 asks, and narrow production proof without broader automation enablement.
+Fourth user-experience-focused recurring-procedure behavior slice completed on
+the approved live production boundary for its intended scope, with
+procedure-key-aware validated-procedure retrieval for nearby deploy, release,
+triage, and investigation asks, explicit suggestion-first prompt guidance for
+nearby advice asks, preserved direct-use only on clear checklist asks, and
+narrow production proof without broader automation enablement.
 
 ## Compact checkpoint
 
@@ -261,6 +267,9 @@ Current compact state:
   - medium-confidence candidate confirmation without manual review
   - bounded recurring-procedure correction or supersede
   - validated-procedure retrieval for clear checklist asks
+  - validated-procedure retrieval for nearby deploy/release/triage or
+    investigation asks
+  - suggestion-first behavior guidance for nearby advice asks
   - weak ambiguous ignore instead of dead candidate backlog
 - latest semantic response-style proof timestamp:
   - `2026-04-05T16:38:19.403Z`
@@ -300,6 +309,19 @@ Current compact state:
   - `procedure_runs +1`
   - `skill_candidates +0`
   - `background_jobs +0`
+- latest recurring-procedure behavior proof timestamp:
+  - `2026-04-05T19:39:00Z`
+- latest recurring-procedure behavior production proof artifacts:
+  - `projectId = c5120fe9-b48c-411e-9fe9-c10757a0ac9a`
+  - `agentId = 4635a71e-fe43-4175-ab33-27c4e2a65809`
+  - `sessionId = 7a211d26-f80f-4a17-b078-abf3b0bd00d5`
+  - `validatedProcedureId = ed5dd44a-6ea9-4055-88d0-2e6d7bc05017`
+  - `rollbackTag = openclaw:pre-recurring-procedure-behavior-20260405T193900Z`
+- latest recurring-procedure behavior production proof delta:
+  - retrieval-only proof
+  - `skill_candidates +0`
+  - `background_jobs +0`
+  - production health remained `ok`
 - isolated proof additionally proved:
   - transcript-seam semantic capture for all supported subjects
   - bullet candidate confirmation with later auto-promotion
@@ -360,6 +382,8 @@ Current compact state:
   - `memoryObjectId = 98833f6a-4305-48bf-8492-31f7b95f987d`
 - first semantic response-style UX production report now lives in:
   - `docs/memory-system/PRODUCTION_RESPONSE_STYLE_UX_REPORT.md`
+- recurring-procedure behavior production report now lives in:
+  - `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_BEHAVIOR_REPORT.md`
 - fresh proof delta:
   - `memory_events +1`
   - `memory_objects +1`
@@ -383,7 +407,8 @@ Current compact state:
   - `chief` captured an explicit "please remember" stable preference
   - both stayed within bounded candidate-only writes
 - current active slice:
-  - bounded live interaction -> candidate capture soak and expansion
+  - recurring-procedure behavior expansion is now landed for its intended
+    scope
 - still intentionally disabled:
   - self-improving capture in production
   - automatic Skill Vetter invocation

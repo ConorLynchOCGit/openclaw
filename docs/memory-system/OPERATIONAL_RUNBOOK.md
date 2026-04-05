@@ -416,6 +416,10 @@ Current live behavior:
   procedures for the same subject
 - clear checklist asks can use validated-procedure retrieval and
   procedure-key-aware ranking
+- nearby deploy/release/triage/investigation asks can also use
+  validated-procedure retrieval through bounded procedure-key inference
+- prompt guidance keeps those nearby asks suggestion-first unless the user is
+  clearly asking for the stored checklist directly
 - weak ambiguous turns should be ignored instead of creating memory trash
 
 Relevant surfaces:
@@ -446,6 +450,10 @@ Expected operator checks:
   procedure with:
   - `promotionProfile = recurring_procedure_correction_v1`
 - clear checklist asks can retrieve the right validated procedure first
+- nearby deploy/release/triage/investigation asks can retrieve the right
+  validated procedure first even without explicit `checklist` wording
+- prompt guidance for nearby advice asks should surface the stored checklist as
+  a relevant option rather than silently forcing it
 - weak ambiguous nearby text should not create additional durable writes
 - scoped validated-procedure retrieval remains the only user-visible read
   source for this slice
@@ -462,6 +470,7 @@ Current approved boundary note:
 For the exact proof ids and production evidence for this slice, use:
 
 - `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_UX_REPORT.md`
+- `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_BEHAVIOR_REPORT.md`
 
 ## Background-job inspection
 

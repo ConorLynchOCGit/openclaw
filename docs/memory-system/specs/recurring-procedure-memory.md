@@ -73,18 +73,19 @@ Outputs:
 - validated procedure remains the threshold for reliable later application
 - unvalidated procedure candidates must not shape normal user-facing behavior
 
-Candidate resolution mode for this family:
+Candidate resolution mode for the currently live bounded checklist family:
 
-- `prompt_now` or `expire_or_reject`
+- `candidate_with_confirmation` or `expire_or_reject`
 
 That means:
 
-- when the system sees a likely reusable procedure, it should ask while the
-  context is fresh whether the user wants it remembered as a recurring checklist
-- if the user confirms, the existing candidate -> draft -> validated procedure
-  path may continue
-- if the user does not confirm or later evidence never strengthens the signal,
-  the candidate should expire instead of sitting in background review
+- medium-confidence supported recurring checklist signals may land as bounded
+  pending-confirmation candidates
+- later confirming evidence may auto-promote through the existing candidate ->
+  draft -> validated procedure path without manual review
+- contradictory evidence should block or supersede promotion
+- if later evidence never strengthens the signal, the candidate should expire
+  instead of sitting in background review
 
 ## Provenance / metadata requirements
 
@@ -133,6 +134,17 @@ In those suggestion-first cases, the system may:
 
 It should not silently assume the stored procedure is the right answer.
 
+The first live behavior expansion for this family now also allows retrieval on
+nearby asks such as:
+
+- "How should we deploy this safely?"
+- "What do you recommend for release steps?"
+- "Can you help me investigate this?"
+
+as long as retrieval stays bounded to the supported checklist family and the
+response remains suggestion-first unless the ask is clearly a direct request
+for the stored checklist.
+
 ## Ambiguity / abstain / clarify rules
 
 - if it is unclear whether the instruction is reusable or one-off, abstain or
@@ -165,7 +177,7 @@ Track:
 - prove one suggestion-first case where the stored procedure is surfaced but
   not silently applied
 - prove one clear-ask case where direct-use is correct
-- prove one "should I remember this checklist?" prompt-now case
+- prove one medium-confidence candidate-confirmation case without manual review
 - prove ambiguous one-offs do not overcapture
 
 ## Rollout posture

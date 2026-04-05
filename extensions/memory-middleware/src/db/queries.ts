@@ -1333,18 +1333,37 @@ function inferRecurringProcedureQueryHint(query: string): RecurringProcedureQuer
   if (!normalized) {
     return null;
   }
-  if (normalized.includes("deploy checklist") || normalized.includes("deployment checklist")) {
+  if (
+    normalized.includes("deploy checklist") ||
+    normalized.includes("deployment checklist") ||
+    /\bdeploy\b/.test(normalized) ||
+    /\bdeployment\b/.test(normalized) ||
+    /\broll out\b/.test(normalized) ||
+    /\brollout\b/.test(normalized)
+  ) {
     return { procedureKey: "deploy_checklist" };
   }
-  if (normalized.includes("release checklist")) {
+  if (
+    normalized.includes("release checklist") ||
+    normalized.includes("release steps") ||
+    /\brelease\b/.test(normalized) ||
+    /\bship\b/.test(normalized)
+  ) {
     return { procedureKey: "release_checklist" };
   }
-  if (normalized.includes("triage checklist")) {
+  if (
+    normalized.includes("triage checklist") ||
+    normalized.includes("triage steps") ||
+    /\btriage\b/.test(normalized)
+  ) {
     return { procedureKey: "triage_checklist" };
   }
   if (
     normalized.includes("investigation checklist") ||
-    normalized.includes("investigation steps")
+    normalized.includes("investigation steps") ||
+    /\binvestigate\b/.test(normalized) ||
+    /\binvestigation\b/.test(normalized) ||
+    /\bdebug\b/.test(normalized)
   ) {
     return { procedureKey: "investigation_checklist" };
   }
@@ -10279,6 +10298,7 @@ async function searchValidatedProcedureRowsHybrid(params: {
       p.search_document @@ websearch_to_tsquery('english', $1::text)
       or ${combinedTextExpression} like lower($2::text)
       or similarity(${combinedTextExpression}, lower($1::text)) >= 0.15
+      or ($3::text <> '' and ${procedureKeyExpression} = $3::text)
     )`,
   ];
   const values: unknown[] = [

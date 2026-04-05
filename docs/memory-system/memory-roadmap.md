@@ -81,6 +81,13 @@ Current state:
     direct fresh-session questions
   - wider bounded named project-fact coverage is now proven for
     `default branch` and `primary package manager`
+- the first recurring-procedure behavior expansion is now live for its
+  intended scope:
+  - nearby deploy/release/triage/investigation asks can now retrieve the right
+    stored validated checklist without explicit `checklist` wording
+  - prompt guidance now makes suggestion-first behavior explicit for nearby
+    advice asks
+  - direct-use remains limited to clear checklist asks
 
 Current live limits:
 
@@ -90,7 +97,10 @@ Current live limits:
 - broader semantic learning-event detection is not live yet
 - phrase induction from fuzzy detections into reviewed deterministic patterns
   is not live yet
-- structured procedures are not live as a normal remembered user feature yet
+- broader structured procedures are not live as a normal remembered user
+  feature yet
+- recurring procedures are still bounded to the supported named checklist
+  family and do not silently apply in the background
 - workflow-improvement / tool-gotcha memory is not live yet
 - recommendation-only procurement/install artifacts are not live yet
 - self-improving capture remains disabled in production
@@ -681,8 +691,12 @@ First bounded live recurring-procedure tranche:
   checklist subjects
 - clear checklist asks now have production-backed validated-procedure retrieval
   for this family
+- nearby deploy/release/triage/investigation asks now have production-backed
+  validated-procedure retrieval through bounded procedure-key inference and
+  suggestion-first guidance
 - report:
   - `/memory-system/PRODUCTION_RECURRING_PROCEDURE_UX_REPORT`
+  - `/memory-system/PRODUCTION_RECURRING_PROCEDURE_BEHAVIOR_REPORT`
 
 ### Goal
 
@@ -721,8 +735,9 @@ Current phase note:
 
 - the first bounded recurring-checklist tranche is complete for its intended
   scope
-- broader procedure families and richer suggestion-first behavior still remain
-  future work inside this phase
+- the first behavior-side expansion inside that bounded checklist family is now
+  complete for its intended scope
+- broader procedure families still remain future work inside this phase
 
 Primary spec:
 

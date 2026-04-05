@@ -3079,6 +3079,63 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     }
   });
 
+  it("boosts the relevant validated recurring checklist for nearby procedural asks without checklist wording", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const deploySubmit = await submitTool.execute("call-rp-nearby-1", {
+      kind: "procedure",
+      content: ["My deploy checklist:", "1. Open the canary lane.", "2. Verify health."].join("\n"),
+      projectId: seeded.projectId,
+    });
+    const investigationSubmit = await submitTool.execute("call-rp-nearby-2", {
+      kind: "procedure",
+      content: ["My investigation checklist:", "1. Reproduce the issue.", "2. Gather logs."].join(
+        "\n",
+      ),
+      projectId: seeded.projectId,
+    });
+
+    const deployProcedureId = (deploySubmit.details as { memoryObjectId: string }).memoryObjectId;
+    const investigationProcedureId = (investigationSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "how should we deploy this safely",
+      scope: "include_validated_procedures",
+      kind: "procedure",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "include_validated_procedures",
+      query: "how should we deploy this safely",
+    });
+    const records = (
+      hybridSearch as {
+        records: Array<{ id: string; matchedFields: string[]; score: number }>;
+      }
+    ).records;
+    expect(records[0]?.id).toBe(deployProcedureId);
+    expect(records[0]?.matchedFields).toContain("procedure_key_match");
+    if (records[1]?.id === investigationProcedureId) {
+      expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
+    }
+  });
+
   it("boosts the most relevant approved response-style template in hybrid retrieval when overlapping memories exist", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

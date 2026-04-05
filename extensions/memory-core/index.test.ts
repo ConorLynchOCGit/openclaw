@@ -69,15 +69,24 @@ describe("buildPromptSection", () => {
     expect(result[5]).toContain("memory_object_search_hybrid");
     expect(result[6]).toContain("exact style in the hybrid-search query");
     expect(result[7]).toContain("named-project fact questions");
-    expect(result[8]).toContain("directly answers the question");
-    expect(result[9]).toContain("memory_candidate_submit");
-    expect(result[10]).toContain("Actually, No, I meant, Sorry");
-    expect(result[11]).toContain("use numbered steps when giving instructions");
-    expect(result[12]).toContain("For project Atlas, the staging branch is atlas-staging");
-    expect(result[13]).toContain("store, remember, or save");
-    expect(result[14]).toContain("plain favorite/preferred preference");
-    expect(result[15]).toContain("some low-risk classes auto-promote");
-    expect(result[16]).toContain("memory_session_get and memory_session_update");
+    expect(result).toContainEqual(expect.stringContaining("stored checklist may help"));
+    expect(result).toContainEqual(expect.stringContaining("directly answers the question"));
+    expect(result).toContainEqual(expect.stringContaining("stored checklist exists"));
+    expect(result).toContainEqual(expect.stringContaining("suggestion-first as an option"));
+    expect(result).toContainEqual(expect.stringContaining("memory_candidate_submit"));
+    expect(result).toContainEqual(expect.stringContaining("Actually, No, I meant, Sorry"));
+    expect(result).toContainEqual(
+      expect.stringContaining("use numbered steps when giving instructions"),
+    );
+    expect(result).toContainEqual(
+      expect.stringContaining("For project Atlas, the staging branch is atlas-staging"),
+    );
+    expect(result).toContainEqual(expect.stringContaining("store, remember, or save"));
+    expect(result).toContainEqual(expect.stringContaining("plain favorite/preferred preference"));
+    expect(result).toContainEqual(expect.stringContaining("some low-risk classes auto-promote"));
+    expect(result).toContainEqual(
+      expect.stringContaining("memory_session_get and memory_session_update"),
+    );
     expect(result.at(-1)).toBe("");
   });
 

@@ -2,46 +2,47 @@
 
 ## Active slice
 
-Recurring procedure memory UX v1
+Recurring procedure behavior UX v1
 
 ## Objective
 
-Land the next bounded user-facing semantic memory slice so reusable named
-checklists feel materially useful and repairable without broadening into a
-generic fuzzy procedure writer.
+Land the next bounded recurring-procedure behavior expansion so reusable named
+checklists feel materially more useful in nearby real asks without broadening
+into generic fuzzy procedure writing or silent background application.
 
 This slice is about:
 
-- bounded semantic detection for supported recurring checklist subjects
-- candidate-with-confirmation instead of dead manual-review backlog
-- validated-procedure retrieval for clear checklist asks
-- conversational correction and supersede for this family
-- ambiguity-ignore behavior for weak nearby one-off turns
+- preserving the already-landed bounded recurring checklist capture family
+- expanding validated-procedure retrieval beyond only explicit checklist
+  wording
+- nearby deploy/release/triage/investigation asks finding the right stored
+  checklist through bounded procedure-key inference
+- suggestion-first behavior for nearby advice asks
+- preserving direct-use only for clear checklist asks
 - isolated proof plus narrow production proof
 - updating the canonical memory docs to reflect what is now live
 
 ## Required work
 
-1. Implement bounded semantic recurring-procedure detection for the supported
-   subject family.
-2. Implement the locked ambiguity posture for this family:
-   - conservative writes
-   - candidate-with-confirmation
-   - sparse clarify
-   - ignore weak ambiguous signals
-3. Implement later confirmation and bounded non-promotion behavior.
-4. Improve validated-procedure retrieval and clear-ask ranking for supported
-   checklist subjects.
-5. Implement conversational correction or supersede for this family only.
-6. Run isolated proof and narrow production proof.
-7. Update:
+1. Expand validated-procedure retrieval so nearby deploy/release/triage or
+   investigation asks can resolve to the right stored checklist even without
+   explicit `checklist` wording.
+2. Keep the locked v1 posture concrete:
+   - suggestion-first on nearby advice asks
+   - direct-use only on clear checklist asks
+   - no silent background application
+3. Preserve the already-landed candidate-confirmation and correction behavior
+   for this family.
+4. Run isolated proof and narrow production proof.
+5. Update:
 
 - `docs/memory-system/STATUS.md`
 - `docs/memory-system/memory-roadmap.md`
 - `docs/memory-system/feature-inventory.md`
 - `docs/memory-system/OPERATIONAL_RUNBOOK.md`
 - `docs/memory-system/CURRENT_SLICE.md`
-- `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_UX_REPORT.md`
+- `docs/memory-system/specs/recurring-procedure-memory.md`
+- `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_BEHAVIOR_REPORT.md`
 
 ## Out of scope
 
@@ -58,13 +59,13 @@ This slice is about:
 
 ## Acceptance criteria
 
-- supported natural recurring-checklist phrasing works materially better than
-  the old exact-pattern posture
-- later confirming evidence can promote a bounded recurring-procedure
-  candidate without manual review
-- weak ambiguous signals do not become dead candidate trash
-- later clear checklist asks retrieve the right validated stored procedure
-- users can repair supported recurring procedures conversationally
+- nearby deploy/release/triage/investigation asks can retrieve the right
+  validated stored procedure without explicit checklist wording
+- clear checklist asks still retrieve the right validated stored procedure
+- the prompt/application posture makes suggestion-first behavior explicit for
+  nearby asks
+- direct-use remains limited to clear asks
+- weak ambiguous nearby turns do not become durable write noise
 - isolated proof and narrow production proof both exist
 - canonical docs reflect the live boundary accurately
 
