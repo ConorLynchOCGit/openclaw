@@ -162,6 +162,35 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
     });
   });
 
+  it("matches a bounded response-style requirement correction in the broader profile", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference("Actually keep replies short.", "user-preference-v2"),
+    ).toMatchObject({
+      captureClass: "requirement_correction",
+      candidateKind: "correction",
+      reasonCode: "explicit_requirement_correction",
+      template: "responses_concise",
+      subject: "response style",
+      value: "keep responses concise",
+      content: "User correction: keep responses concise.",
+    });
+  });
+
+  it("matches a plain-English correction form without a required comma after No", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "No use plain English, not jargon.",
+        "user-preference-v2",
+      ),
+    ).toMatchObject({
+      captureClass: "requirement_correction",
+      candidateKind: "correction",
+      template: "responses_plain_english",
+      subject: "response language",
+      value: "use plain English",
+    });
+  });
+
   it("matches a bounded recurring response requirement in the broader profile", () => {
     expect(
       parseOrdinaryTurnAutoCapturePreference(
@@ -175,6 +204,22 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
       subject: "response style",
       value: "keep responses concise",
       content: "User requirement: keep responses concise.",
+    });
+  });
+
+  it("matches a numbered-steps requirement in the broader profile", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "Please use numbered steps when giving instructions.",
+        "user-preference-v2",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_requirement",
+      candidateKind: "learning",
+      template: "responses_numbered_steps",
+      subject: "response format",
+      value: "use numbered steps when giving instructions",
+      content: "User requirement: use numbered steps when giving instructions.",
     });
   });
 
@@ -292,6 +337,36 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
     });
   });
 
+  it("parses the managed numbered-steps requirement content", () => {
+    expect(
+      parseAutoCaptureManagedCandidateContent("User prefers numbered steps for instructions."),
+    ).toMatchObject({
+      captureClass: "explicit_requirement",
+      template: "responses_numbered_steps",
+      subject: "response format",
+      value: "use numbered steps when giving instructions",
+    });
+  });
+
+  it("parses additional live managed requirement phrasings", () => {
+    expect(
+      parseAutoCaptureManagedCandidateContent(
+        "User prefers numbered steps when giving instructions.",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_requirement",
+      template: "responses_numbered_steps",
+      subject: "response format",
+      value: "use numbered steps when giving instructions",
+    });
+    expect(parseAutoCaptureManagedCandidateContent("User prefers short replies.")).toMatchObject({
+      captureClass: "explicit_requirement",
+      template: "responses_concise",
+      subject: "response style",
+      value: "keep responses concise",
+    });
+  });
+
   it("parses managed named project fact content", () => {
     expect(
       parseAutoCaptureManagedCandidateContent(
@@ -347,6 +422,75 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
       template: "my_preferred_is",
       subject: "slice four lantern reed",
       value: "moon amber pearl",
+    });
+  });
+
+  it("parses managed response-style requirement correction content", () => {
+    expect(
+      parseManagedCorrectionCandidateContent(
+        "User correction: use numbered steps when giving instructions.",
+      ),
+    ).toMatchObject({
+      captureClass: "requirement_correction",
+      candidateKind: "correction",
+      template: "responses_numbered_steps",
+      subject: "response format",
+      value: "use numbered steps when giving instructions",
+    });
+  });
+
+  it("parses natural response-style correction content from the model tool path", () => {
+    expect(
+      parseManagedCorrectionCandidateContent("I meant plain English, not jargon."),
+    ).toMatchObject({
+      captureClass: "requirement_correction",
+      candidateKind: "correction",
+      template: "responses_plain_english",
+      subject: "response language",
+      value: "use plain English",
+    });
+  });
+
+  it("parses additional live managed response-style correction phrasings", () => {
+    expect(
+      parseManagedCorrectionCandidateContent(
+        "User correction to response style preference: keep replies short.",
+      ),
+    ).toMatchObject({
+      captureClass: "requirement_correction",
+      template: "responses_concise",
+      subject: "response style",
+      value: "keep responses concise",
+    });
+    expect(
+      parseManagedCorrectionCandidateContent(
+        "User corrected response-style preference: keep replies short.",
+      ),
+    ).toMatchObject({
+      captureClass: "requirement_correction",
+      template: "responses_concise",
+      subject: "response style",
+      value: "keep responses concise",
+    });
+    expect(
+      parseManagedCorrectionCandidateContent(
+        "User correction to response language preference: use plain English, not jargon.",
+      ),
+    ).toMatchObject({
+      captureClass: "requirement_correction",
+      template: "responses_plain_english",
+      subject: "response language",
+      value: "use plain English",
+    });
+    expect(
+      parseManagedCorrectionCandidateContent(
+        "User correction: use plain English, not jargon, when replying.",
+      ),
+    ).toMatchObject({
+      captureClass: "requirement_correction",
+      template: "responses_plain_english",
+      subject: "response language",
+      value: "use plain English",
     });
   });
 
@@ -650,6 +794,64 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     );
     expect(reviewCandidate).toHaveBeenCalledTimes(1);
     expect(promoteToMemory).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes bounded response-style corrections through correction submission without auto-promotion", async () => {
+    const submitCorrectionSuggestion = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "correction" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-requirement-correction-1",
+      memoryObjectId: "memory-requirement-correction-1",
+    }));
+    const reviewCandidate = vi.fn();
+    const promoteToMemory = vi.fn();
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion,
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "Actually keep replies short.",
+        timestamp: Date.parse("2026-04-05T08:06:00Z"),
+      },
+    });
+
+    expect(submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "User correction: keep responses concise.",
+        metadata: expect.objectContaining({
+          category: "user_requirement_correction",
+          source: "conversational_user_requirement_correction",
+          subject_key: expect.any(String),
+          autoCapture: expect.objectContaining({
+            captureClass: "requirement_correction",
+            template: "responses_concise",
+            captureSeam: "transcript_subscriber_fallback",
+          }),
+        }),
+      }),
+    );
+    expect(reviewCandidate).not.toHaveBeenCalled();
+    expect(promoteToMemory).not.toHaveBeenCalled();
   });
 
   it("routes bounded named project facts through learning submission without auto-promotion", async () => {

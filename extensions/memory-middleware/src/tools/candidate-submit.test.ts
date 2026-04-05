@@ -524,6 +524,133 @@ describe("memory candidate submit tool", () => {
     );
   });
 
+  it("auto-promotes numbered-steps requirements from the tool path", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-7c", {
+      kind: "learning",
+      content: "User prefers numbered steps for instructions.",
+      metadata: {
+        source: "explicit_user_requirement",
+        channel: "webchat",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              ...createAcceptedResult("learning"),
+              reviewState: "approved",
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+      details: {
+        ...createAcceptedResult("learning"),
+        reviewState: "approved",
+      },
+    });
+    expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "user_requirement",
+          source: "explicit_user_requirement",
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_requirement",
+            template: "responses_numbered_steps",
+            captureSeam: "model_tool_primary",
+            value: "use numbered steps when giving instructions",
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("auto-promotes live numbered-steps tool payloads even when the model uses response_style metadata", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-7d", {
+      kind: "learning",
+      content: "User prefers numbered steps when giving instructions.",
+      metadata: {
+        source: "user_direct_statement",
+        category: "response_style",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            {
+              ...createAcceptedResult("learning"),
+              reviewState: "approved",
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+      details: {
+        ...createAcceptedResult("learning"),
+        reviewState: "approved",
+      },
+    });
+    expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
+    expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledTimes(1);
+  });
+
+  it("normalizes live response-style correction payloads from the tool path", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-9req-live", {
+      kind: "correction",
+      content: "User corrected response-style preference: keep replies short.",
+      metadata: {
+        source: "explicit user correction",
+        scope: "response style",
+        applies_to: "current and future replies",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("correction"),
+    });
+    expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "user_requirement_correction",
+          source: "conversational_user_requirement_correction",
+          subject_key: expect.any(String),
+          autoCapture: expect.objectContaining({
+            captureClass: "requirement_correction",
+            captureSeam: "model_tool_primary",
+            template: "responses_concise",
+            subject: "response style",
+            value: "keep responses concise",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateReview.review).not.toHaveBeenCalled();
+    expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
+  });
+
   it("normalizes tightly bounded named project facts from the tool path without auto-promotion", async () => {
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });
@@ -597,6 +724,47 @@ describe("memory candidate submit tool", () => {
             projectScope: "atlas forge",
             subject: "atlas forge / staging branch",
             value: "atlas-green",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateReview.review).not.toHaveBeenCalled();
+    expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
+  });
+
+  it("normalizes response-style requirement corrections from the tool path without auto-promotion", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-9req", {
+      kind: "correction",
+      content: "I meant plain English, not jargon.",
+      metadata: {
+        raw: "I meant plain English, not jargon.",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("correction"),
+    });
+    expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "user_requirement_correction",
+          source: "conversational_user_requirement_correction",
+          subject_key: expect.any(String),
+          autoCapture: expect.objectContaining({
+            captureClass: "requirement_correction",
+            captureSeam: "model_tool_primary",
+            template: "responses_plain_english",
+            subject: "response language",
+            value: "use plain English",
           }),
         }),
       }),

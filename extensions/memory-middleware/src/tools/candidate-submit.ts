@@ -147,15 +147,12 @@ function resolveAutoPromotableFeedbackSubmission(
     return null;
   }
   const metadata = input.metadata ?? {};
-  if (
-    metadata.category &&
-    metadata.category !== "user_preference" &&
-    metadata.category !== "user_requirement"
-  ) {
-    return null;
-  }
   const parsedFromContent = parseAutoCaptureManagedCandidateContent(input.content);
-  if (parsedFromContent) {
+  if (
+    parsedFromContent &&
+    (parsedFromContent.captureClass === "explicit_preference" ||
+      parsedFromContent.captureClass === "explicit_requirement")
+  ) {
     return parsedFromContent;
   }
   if (typeof metadata.raw === "string") {
@@ -263,6 +260,7 @@ function normalizeManagedToolCandidateInput(
     if (
       !parsed ||
       (parsed.captureClass !== "preference_correction" &&
+        parsed.captureClass !== "requirement_correction" &&
         parsed.captureClass !== "project_fact_correction")
     ) {
       return input;
@@ -271,11 +269,15 @@ function normalizeManagedToolCandidateInput(
       category:
         parsed.captureClass === "project_fact_correction"
           ? "project_fact_correction"
-          : "user_preference_correction",
+          : parsed.captureClass === "requirement_correction"
+            ? "user_requirement_correction"
+            : "user_preference_correction",
       source:
         parsed.captureClass === "project_fact_correction"
           ? "conversational_project_fact_correction"
-          : "conversational_user_correction",
+          : parsed.captureClass === "requirement_correction"
+            ? "conversational_user_requirement_correction"
+            : "conversational_user_correction",
       subject_key: parsed.subjectKey,
       ...(parsed.captureClass === "preference_correction"
         ? { preference_key: parsed.subjectKey }

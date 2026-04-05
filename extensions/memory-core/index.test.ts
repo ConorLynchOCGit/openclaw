@@ -64,17 +64,19 @@ describe("buildPromptSection", () => {
     expect(result[0]).toBe("## Durable Memory");
     expect(result[1]).toContain("inspect existing approved memory");
     expect(result[2]).toContain("search approved durable memory before answering");
-    expect(result[3]).toContain("memory_object_search_hybrid");
-    expect(result[4]).toContain("named-project fact questions");
-    expect(result[5]).toContain("directly answers the question");
-    expect(result[6]).toContain("memory_candidate_submit");
-    expect(result[7]).toContain("Actually, No, I meant");
-    expect(result[8]).toContain("keep replies concise");
-    expect(result[9]).toContain("For project Atlas, the staging branch is atlas-staging");
-    expect(result[10]).toContain("store, remember, or save");
-    expect(result[11]).toContain("plain favorite/preferred preference");
-    expect(result[12]).toContain("some low-risk classes auto-promote");
-    expect(result[13]).toContain("memory_session_get and memory_session_update");
+    expect(result[3]).toContain("format-sensitive or step-by-step replies");
+    expect(result[4]).toContain("follow that preference in the current reply");
+    expect(result[5]).toContain("memory_object_search_hybrid");
+    expect(result[6]).toContain("named-project fact questions");
+    expect(result[7]).toContain("directly answers the question");
+    expect(result[8]).toContain("memory_candidate_submit");
+    expect(result[9]).toContain("Actually, No, I meant, Sorry");
+    expect(result[10]).toContain("use numbered steps when giving instructions");
+    expect(result[11]).toContain("For project Atlas, the staging branch is atlas-staging");
+    expect(result[12]).toContain("store, remember, or save");
+    expect(result[13]).toContain("plain favorite/preferred preference");
+    expect(result[14]).toContain("some low-risk classes auto-promote");
+    expect(result[15]).toContain("memory_session_get and memory_session_update");
     expect(result.at(-1)).toBe("");
   });
 
@@ -94,10 +96,10 @@ describe("buildPromptSection", () => {
       "When the user shares a recurring requirement, important correction, reusable procedure, or project improvement that should survive beyond the current turn, submit a concise candidate with memory_candidate_submit.",
     );
     expect(result).toContain(
-      "Natural correction phrasing still counts: if the user says things like Actually, No, I meant, or That's not right to correct a durable preference, default, recurring requirement, or tightly bounded named project fact, submit it as kind=correction even without an explicit save request.",
+      "Natural correction phrasing still counts: if the user says things like Actually, No, I meant, Sorry, or That's not right to correct a durable preference, default, recurring requirement, or tightly bounded named project fact, submit it as kind=correction even without an explicit save request.",
     );
     expect(result).toContain(
-      "If the user states a bounded recurring response requirement in plain language, such as keep replies concise, use bullet points when listing items, use plain English, or do not use tables unless asked, submit it as a learning candidate.",
+      "If the user states a bounded recurring response requirement in plain language, such as keep replies concise, use bullet points when listing items, use plain English, do not use tables unless asked, or use numbered steps when giving instructions, submit it as a learning candidate.",
     );
     expect(result).toContain(
       "If the user states a tightly bounded named project fact in explicit declarative form, such as For project Atlas, the staging branch is atlas-staging, submit it as a learning candidate.",

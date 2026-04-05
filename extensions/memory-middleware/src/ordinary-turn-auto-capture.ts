@@ -15,6 +15,8 @@ const AUTO_CAPTURE_SOURCE = "ordinary_turn_auto_capture";
 const AUTO_PROMOTION_SOURCE = "ordinary_turn_auto_promotion";
 const AUTO_CAPTURE_ALLOWED_ROLES = new Set(["user"]);
 const DEFAULT_ALLOWED_AGENTS = new Set(["chief", "main"]);
+const CORRECTION_PREFIX =
+  "(?:actually,?|correction:|no,?|i meant,?|that(?:'|’)s not right,?|sorry,?)\\s*";
 const PREFERENCE_PATTERNS = [
   {
     template: "my_preferred_is" as const,
@@ -31,14 +33,18 @@ const PREFERENCE_PATTERNS = [
 const PREFERENCE_CORRECTION_PATTERNS = [
   {
     template: "my_preferred_is" as const,
-    pattern:
-      /^(?:actually,?|correction:|no,|i meant,?|that(?:'|’)s not right,?|sorry,)\s*my preferred ([a-z0-9][a-z0-9 -]{0,47}) is ([a-z0-9][a-z0-9 '&/().,-]{0,63})[.!?]?$/i,
+    pattern: new RegExp(
+      `^${CORRECTION_PREFIX}my preferred ([a-z0-9][a-z0-9 -]{0,47}) is ([a-z0-9][a-z0-9 '&/().,-]{0,63})[.!?]?$`,
+      "i",
+    ),
     subjectPrefix: "preferred",
   },
   {
     template: "my_favorite_is" as const,
-    pattern:
-      /^(?:actually,?|correction:|no,|i meant,?|that(?:'|’)s not right,?|sorry,)\s*my favorite ([a-z0-9][a-z0-9 -]{0,47}) is ([a-z0-9][a-z0-9 '&/().,-]{0,63})[.!?]?$/i,
+    pattern: new RegExp(
+      `^${CORRECTION_PREFIX}my favorite ([a-z0-9][a-z0-9 -]{0,47}) is ([a-z0-9][a-z0-9 '&/().,-]{0,63})[.!?]?$`,
+      "i",
+    ),
     subjectPrefix: "favorite",
   },
 ] as const;
@@ -74,6 +80,66 @@ const REQUIREMENT_PATTERNS = [
     value: "do not use tables unless the user asks",
     content: "User requirement: do not use tables unless the user asks.",
   },
+  {
+    template: "responses_numbered_steps" as const,
+    pattern:
+      /^(?:please\s+)?(?:use numbered (?:steps|lists?)|give me numbered (?:steps|lists?)|write (?:your )?(?:responses|reply|replies|answers) in numbered (?:steps|lists?))(?: when (?:giving instructions|walking me through something|explaining steps|explaining instructions))?[.!?]?$/i,
+    subject: "response format",
+    value: "use numbered steps when giving instructions",
+    content: "User requirement: use numbered steps when giving instructions.",
+  },
+] as const;
+const REQUIREMENT_CORRECTION_PATTERNS = [
+  {
+    template: "responses_concise" as const,
+    pattern: new RegExp(
+      `^${CORRECTION_PREFIX}(?:please\\s+|always\\s+)?(?:keep|make) (?:your |the )?(?:responses|reply|replies|answers) (?:concise|brief|short)[.!?]?$`,
+      "i",
+    ),
+    subject: "response style",
+    value: "keep responses concise",
+    content: "User correction: keep responses concise.",
+  },
+  {
+    template: "responses_bullets" as const,
+    pattern: new RegExp(
+      `^${CORRECTION_PREFIX}(?:please\\s+)?(?:use bullet points|write (?:your )?(?:responses|reply|replies|answers) in bullet points)(?: when listing items)?[.!?]?$`,
+      "i",
+    ),
+    subject: "response format",
+    value: "use bullet points when listing items",
+    content: "User correction: use bullet points when listing items.",
+  },
+  {
+    template: "responses_plain_english" as const,
+    pattern: new RegExp(
+      `^${CORRECTION_PREFIX}(?:(?:please\\s+)?(?:use plain english|write (?:your )?(?:responses|reply|replies|answers) in plain english)(?:,? not jargon)?|plain english,? not jargon)[.!?]?$`,
+      "i",
+    ),
+    subject: "response language",
+    value: "use plain English",
+    content: "User correction: use plain English.",
+  },
+  {
+    template: "responses_no_tables" as const,
+    pattern: new RegExp(
+      `^${CORRECTION_PREFIX}(?:please\\s+)?do not use tables(?: unless i ask)?[.!?]?$`,
+      "i",
+    ),
+    subject: "response format",
+    value: "do not use tables unless the user asks",
+    content: "User correction: do not use tables unless the user asks.",
+  },
+  {
+    template: "responses_numbered_steps" as const,
+    pattern: new RegExp(
+      `^${CORRECTION_PREFIX}(?:please\\s+)?(?:use numbered (?:steps|lists?)|give me numbered (?:steps|lists?)|write (?:your )?(?:responses|reply|replies|answers) in numbered (?:steps|lists?))(?: when (?:giving instructions|walking me through something|explaining steps|explaining instructions))?[.!?]?$`,
+      "i",
+    ),
+    subject: "response format",
+    value: "use numbered steps when giving instructions",
+    content: "User correction: use numbered steps when giving instructions.",
+  },
 ] as const;
 const PROJECT_FACT_PATTERNS = [
   {
@@ -85,8 +151,10 @@ const PROJECT_FACT_PATTERNS = [
 const PROJECT_FACT_CORRECTION_PATTERNS = [
   {
     template: "project_fact_named_scope" as const,
-    pattern:
-      /^(?:actually,?|correction:|no,|i meant,?|that(?:'|’)s not right,?|sorry,)\s*(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ([a-z0-9][a-z0-9 _./:-]{0,63})[.!?]?$/i,
+    pattern: new RegExp(
+      `^${CORRECTION_PREFIX}(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ([a-z0-9][a-z0-9 _./:-]{0,63})[.!?]?$`,
+      "i",
+    ),
   },
 ] as const;
 const PREFERENCE_CANDIDATE_CONTENT_PATTERNS = [
@@ -114,6 +182,13 @@ const REQUIREMENT_CANDIDATE_CONTENT_PATTERNS = [
   {
     template: "responses_concise" as const,
     pattern: /^user prefers concise responses[.!?]?$/i,
+    subject: "response style",
+    value: "keep responses concise",
+    content: "User requirement: keep responses concise.",
+  },
+  {
+    template: "responses_concise" as const,
+    pattern: /^user prefers (?:short|brief) replies[.!?]?$/i,
     subject: "response style",
     value: "keep responses concise",
     content: "User requirement: keep responses concise.",
@@ -162,6 +237,28 @@ const REQUIREMENT_CANDIDATE_CONTENT_PATTERNS = [
     value: "do not use tables unless the user asks",
     content: "User requirement: do not use tables unless the user asks.",
   },
+  {
+    template: "responses_numbered_steps" as const,
+    pattern:
+      /^user requirement(?::| stated explicitly:)? use numbered steps when giving instructions[.!?]?$/i,
+    subject: "response format",
+    value: "use numbered steps when giving instructions",
+    content: "User requirement: use numbered steps when giving instructions.",
+  },
+  {
+    template: "responses_numbered_steps" as const,
+    pattern: /^user prefers numbered steps for instructions[.!?]?$/i,
+    subject: "response format",
+    value: "use numbered steps when giving instructions",
+    content: "User requirement: use numbered steps when giving instructions.",
+  },
+  {
+    template: "responses_numbered_steps" as const,
+    pattern: /^user prefers numbered steps when giving instructions[.!?]?$/i,
+    subject: "response format",
+    value: "use numbered steps when giving instructions",
+    content: "User requirement: use numbered steps when giving instructions.",
+  },
 ] as const;
 const PROJECT_FACT_CANDIDATE_CONTENT_PATTERNS = [
   {
@@ -209,8 +306,86 @@ const PROJECT_FACT_CORRECTION_CANDIDATE_CONTENT_PATTERNS = [
   },
   {
     template: "project_fact_named_scope" as const,
+    pattern: new RegExp(
+      `^${CORRECTION_PREFIX}(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?([a-z0-9][a-z0-9 _./:-]{0,63})["']?(?:\\s*\\(not [^)]+\\))?[.!?]?$`,
+      "i",
+    ),
+  },
+] as const;
+const REQUIREMENT_CORRECTION_CANDIDATE_CONTENT_PATTERNS = [
+  {
+    template: "responses_concise" as const,
+    pattern: /^user correction: keep responses concise[.!?]?$/i,
+    subject: "response style",
+    value: "keep responses concise",
+    content: "User correction: keep responses concise.",
+  },
+  {
+    template: "responses_concise" as const,
     pattern:
-      /^(?:actually,?|correction:|no,|i meant,?|that(?:'|’)s not right,?|sorry,)\s*(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?([a-z0-9][a-z0-9 _./:-]{0,63})["']?(?:\s*\(not [^)]+\))?[.!?]?$/i,
+      /^user correction to response (?:style|format|language) preference: keep replies short[.!?]?$/i,
+    subject: "response style",
+    value: "keep responses concise",
+    content: "User correction: keep responses concise.",
+  },
+  {
+    template: "responses_concise" as const,
+    pattern:
+      /^user corrected response(?:-| )(?:style|format|language) preference: keep replies short[.!?]?$/i,
+    subject: "response style",
+    value: "keep responses concise",
+    content: "User correction: keep responses concise.",
+  },
+  {
+    template: "responses_bullets" as const,
+    pattern: /^user correction: use bullet points when listing items[.!?]?$/i,
+    subject: "response format",
+    value: "use bullet points when listing items",
+    content: "User correction: use bullet points when listing items.",
+  },
+  {
+    template: "responses_plain_english" as const,
+    pattern: /^user correction: use plain english(?:,? not jargon)?(?:,? when replying)?[.!?]?$/i,
+    subject: "response language",
+    value: "use plain English",
+    content: "User correction: use plain English.",
+  },
+  {
+    template: "responses_plain_english" as const,
+    pattern:
+      /^user correction to response (?:style|format|language) preference: use plain english(?:,? not jargon)?[.!?]?$/i,
+    subject: "response language",
+    value: "use plain English",
+    content: "User correction: use plain English.",
+  },
+  {
+    template: "responses_plain_english" as const,
+    pattern:
+      /^user corrected response(?:-| )(?:style|format|language) preference: use plain english(?:,? not jargon)?[.!?]?$/i,
+    subject: "response language",
+    value: "use plain English",
+    content: "User correction: use plain English.",
+  },
+  {
+    template: "responses_plain_english" as const,
+    pattern: new RegExp(`^${CORRECTION_PREFIX}plain english,? not jargon[.!?]?$`, "i"),
+    subject: "response language",
+    value: "use plain English",
+    content: "User correction: use plain English.",
+  },
+  {
+    template: "responses_no_tables" as const,
+    pattern: /^user correction: do not use tables unless the user asks[.!?]?$/i,
+    subject: "response format",
+    value: "do not use tables unless the user asks",
+    content: "User correction: do not use tables unless the user asks.",
+  },
+  {
+    template: "responses_numbered_steps" as const,
+    pattern: /^user correction: use numbered steps when giving instructions[.!?]?$/i,
+    subject: "response format",
+    value: "use numbered steps when giving instructions",
+    content: "User correction: use numbered steps when giving instructions.",
   },
 ] as const;
 const SUBJECT_DENYLIST = new Set([
@@ -281,6 +456,7 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "explicit_preference"
     | "preference_correction"
     | "explicit_requirement"
+    | "requirement_correction"
     | "explicit_project_fact"
     | "project_fact_correction";
   candidateKind: "learning" | "correction";
@@ -288,6 +464,7 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "explicit_preference_statement"
     | "explicit_preference_correction"
     | "explicit_requirement_statement"
+    | "explicit_requirement_correction"
     | "explicit_project_fact_statement"
     | "explicit_project_fact_correction";
   template:
@@ -297,6 +474,7 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "responses_bullets"
     | "responses_plain_english"
     | "responses_no_tables"
+    | "responses_numbered_steps"
     | "project_fact_named_scope";
   subject: string;
   value: string;
@@ -621,12 +799,16 @@ function buildPreferenceMatch(params: {
 
 function buildRequirementMatch(params: {
   profile: "user-preference-v1" | "user-preference-v2";
+  captureClass: "explicit_requirement" | "requirement_correction";
+  candidateKind: "learning" | "correction";
+  reasonCode: "explicit_requirement_statement" | "explicit_requirement_correction";
   normalized: string;
   template:
     | "responses_concise"
     | "responses_bullets"
     | "responses_plain_english"
-    | "responses_no_tables";
+    | "responses_no_tables"
+    | "responses_numbered_steps";
   pattern: RegExp;
   subject: string;
   value: string;
@@ -645,9 +827,9 @@ function buildRequirementMatch(params: {
   });
   return {
     profile: params.profile,
-    captureClass: "explicit_requirement",
-    candidateKind: "learning",
-    reasonCode: "explicit_requirement_statement",
+    captureClass: params.captureClass,
+    candidateKind: params.candidateKind,
+    reasonCode: params.reasonCode,
     template: params.template,
     subject,
     value,
@@ -784,9 +966,30 @@ export function parseOrdinaryTurnAutoCapturePreference(
       }
     }
 
+    for (const { pattern, template, subject, value, content } of REQUIREMENT_CORRECTION_PATTERNS) {
+      const match = buildRequirementMatch({
+        profile,
+        captureClass: "requirement_correction",
+        candidateKind: "correction",
+        reasonCode: "explicit_requirement_correction",
+        normalized,
+        pattern,
+        template,
+        subject,
+        value,
+        content,
+      });
+      if (match) {
+        return match;
+      }
+    }
+
     for (const { pattern, template, subject, value, content } of REQUIREMENT_PATTERNS) {
       const match = buildRequirementMatch({
         profile,
+        captureClass: "explicit_requirement",
+        candidateKind: "learning",
+        reasonCode: "explicit_requirement_statement",
         normalized,
         pattern,
         template,
@@ -869,6 +1072,9 @@ export function parseAutoCaptureManagedCandidateContent(
   } of REQUIREMENT_CANDIDATE_CONTENT_PATTERNS) {
     const match = buildRequirementMatch({
       profile: "user-preference-v2",
+      captureClass: "explicit_requirement",
+      candidateKind: "learning",
+      reasonCode: "explicit_requirement_statement",
       normalized,
       pattern,
       template,
@@ -921,6 +1127,30 @@ export function parseManagedCorrectionCandidateContent(
       pattern,
       template,
       subjectPrefix,
+    });
+    if (match) {
+      return match;
+    }
+  }
+
+  for (const {
+    pattern,
+    template,
+    subject,
+    value,
+    content: requirementContent,
+  } of REQUIREMENT_CORRECTION_CANDIDATE_CONTENT_PATTERNS) {
+    const match = buildRequirementMatch({
+      profile: "user-preference-v2",
+      captureClass: "requirement_correction",
+      candidateKind: "correction",
+      reasonCode: "explicit_requirement_correction",
+      normalized,
+      pattern,
+      template,
+      subject,
+      value,
+      content: requirementContent,
     });
     if (match) {
       return match;
@@ -1125,6 +1355,11 @@ function buildSubscriberCaptureMetadata(params: {
     case "explicit_requirement":
       metadata.category = "user_requirement";
       metadata.source = "explicit_user_requirement";
+      break;
+    case "requirement_correction":
+      metadata.category = "user_requirement_correction";
+      metadata.source = "conversational_user_requirement_correction";
+      metadata.subject_key = match.subjectKey;
       break;
     case "explicit_project_fact":
       metadata.category = "project_fact";

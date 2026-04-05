@@ -66,6 +66,12 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
       lines.push(
         "When the user asks about their own preferences, defaults, recurring requirements, or prior corrections, search approved durable memory before answering instead of relying on unstated recollection. Candidate backlog is not durable memory unless you are explicitly reviewing candidates.",
       );
+      lines.push(
+        "For format-sensitive or step-by-step replies, search approved durable feedback memory for response-style requirements before answering when that can change how you should present the answer.",
+      );
+      lines.push(
+        "If approved durable memory says the user prefers concise replies, bullet points, plain English, no tables, or numbered steps for instructions, follow that preference in the current reply whenever it is relevant instead of treating it as passive metadata.",
+      );
       if (hasObjectSearchHybrid) {
         lines.push(
           "For user preference, default, correction, or response-style requirement questions, prefer memory_object_search_hybrid with kind=feedback and approved-only scope before falling back to generic memory_search. Use memory_search afterward only when you need workspace notes or broader context.",
@@ -84,10 +90,10 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
         "When the user shares a recurring requirement, important correction, reusable procedure, or project improvement that should survive beyond the current turn, submit a concise candidate with memory_candidate_submit.",
       );
       lines.push(
-        "Natural correction phrasing still counts: if the user says things like Actually, No, I meant, or That's not right to correct a durable preference, default, recurring requirement, or tightly bounded named project fact, submit it as kind=correction even without an explicit save request.",
+        "Natural correction phrasing still counts: if the user says things like Actually, No, I meant, Sorry, or That's not right to correct a durable preference, default, recurring requirement, or tightly bounded named project fact, submit it as kind=correction even without an explicit save request.",
       );
       lines.push(
-        "If the user states a bounded recurring response requirement in plain language, such as keep replies concise, use bullet points when listing items, use plain English, or do not use tables unless asked, submit it as a learning candidate.",
+        "If the user states a bounded recurring response requirement in plain language, such as keep replies concise, use bullet points when listing items, use plain English, do not use tables unless asked, or use numbered steps when giving instructions, submit it as a learning candidate.",
       );
       lines.push(
         "If the user states a tightly bounded named project fact in explicit declarative form, such as For project Atlas, the staging branch is atlas-staging, submit it as a learning candidate.",
