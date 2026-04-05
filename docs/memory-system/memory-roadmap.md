@@ -34,6 +34,11 @@ Current state:
   duplicate-suppression seam, not the canonical seam
 - bounded response-style auto-promotion is live for the currently approved
   low-risk requirements
+- the first quick-win governance family is now production-proven as an
+  internal manual workflow:
+  - validated-procedure retrieval when explicitly requested
+  - candidate procedure promotion
+  - procedure validation
 - Slice 7 is now landed for its intended scope:
   - `I meant plain English, not jargon.` can land as a bounded correction
   - `No, use bullet points for me.` can be accepted through bounded fallback
@@ -63,9 +68,6 @@ Current live limits:
 Built and validated off-production, but not yet fully brought online as normal
 production behavior:
 
-- validated-procedure retrieval when explicitly requested
-- candidate procedure promotion
-- procedure validation
 - skill-candidate planning and creation
 - procurement planning plus internal procurement-record creation
 - manual Skill Vetter handoff preparation plus manual vetting-result recording
@@ -423,6 +425,16 @@ This phase is now split into:
 
 - a quick-win tranche to execute first
 - a wait tranche to defer until after the next user-facing semantic work
+
+Current phase note:
+
+- the first quick-win family is complete:
+  - validated-procedure retrieval
+  - candidate procedure promotion
+  - procedure validation
+- the remaining quick-win families are:
+  - skill-candidate planning and creation
+  - procurement planning and internal procurement-record creation
 
 ### Scope
 

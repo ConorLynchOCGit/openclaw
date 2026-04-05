@@ -24,6 +24,21 @@ Covered families:
 
 ## Current status
 
+### Already production-proven
+
+The first quick-win family is no longer ambiguous.
+
+- validated-procedure retrieval / procedure promotion / procedure validation
+  - production proof date:
+    - `2026-04-05`
+  - proof artifact:
+    - `docs/memory-system/PRODUCTION_VALIDATED_PROCEDURE_GOVERNANCE_REPORT.md`
+  - accepted status:
+    - live internal manual workflow
+  - still disabled:
+    - `memory_procedure_validate_plan`
+    - skill, procurement, vetting, approval, and install follow-on behavior
+
 ### Already exists in code
 
 These surfaces are wired through the runtime in
@@ -111,12 +126,16 @@ Why these should wait:
 
 - target status:
   - production-proven internal workflow
+- current status:
+  - production-proven internal workflow
 - tranche:
   - quick win
 - still manual-only:
   - yes
 - required proof:
-  - narrow production operator proof and runbook confirmation
+  - completed on `2026-04-05`
+  - narrow production operator proof and runbook confirmation now recorded in:
+    - `docs/memory-system/PRODUCTION_VALIDATED_PROCEDURE_GOVERNANCE_REPORT.md`
 
 ### Skill-candidate planning and creation
 
@@ -177,7 +196,8 @@ Why these should wait:
 
 The quick-win tranche should be productionized in this order:
 
-1. validated-procedure retrieval / procedure promotion / procedure validation
+1. completed:
+   - validated-procedure retrieval / procedure promotion / procedure validation
 2. skill-candidate planning and creation
 3. procurement planning and procurement-record creation
 

@@ -43,7 +43,7 @@ non-production target now live in:
 Current production target:
 
 - live OpenClaw runtime:
-  - container `openclaw-upgrade-2026324-openclaw-gateway-1`
+  - container `openclaw`
   - image `openclaw:local`
   - ports `28789` and `28790`
 - production Postgres target:
@@ -54,7 +54,7 @@ Current production target:
 Previously proven shared target:
 
 - shared OpenClaw runtime:
-  - container `openclaw-upgrade-2026324-openclaw-gateway-1`
+  - container `openclaw`
   - image `openclaw:local`
   - ports `28789` and `28790`
 - shared Postgres target:
@@ -128,6 +128,11 @@ Production operator note:
 Use these middleware tools or runtime seams first:
 
 - `memory_object_list`
+- `memory_object_get`
+- `memory_candidate_review`
+- `memory_candidate_promote_plan`
+- `memory_candidate_promote_procedure`
+- `memory_procedure_validate`
 - `memory_background_job_list`
 - `memory_background_job_get`
 - `memory_background_job_enqueue`
@@ -151,6 +156,49 @@ Expected result:
 
 If retrieval health is in doubt, confirm the current write posture remains
 unchanged before investigating automation state.
+
+## Validated-procedure governance workflow
+
+The first quick-win governance family is now production-proven as a manual
+internal operator workflow.
+
+Use:
+
+- `memory_candidate_review`
+- `memory_candidate_promote_plan`
+- `memory_candidate_promote_procedure`
+- `memory_procedure_validate`
+- `memory_object_get`
+- `memory_object_list`
+
+Expected operator checks:
+
+- accepted reviewed procedure candidates can return:
+  - `possibleTargets = [propose_procedure_draft, remain_candidate_only]`
+- `memory_candidate_promote_procedure` writes one bounded draft procedure row
+- `memory_procedure_validate` writes one bounded `procedure_runs` row and
+  transitions the procedure to `validated`
+- `memory_object_get` without explicit validated-procedure scope returns:
+  - `status = not_found`
+- `memory_object_get` or `memory_object_list` with
+  `scope = include_validated_procedures` returns:
+  - `readSurface = validated_procedure_read_model`
+- procedure lineage stays intact through:
+  - `promotedFromCandidateId`
+  - `promotedFromReviewId`
+  - `sourceEventId`
+  - `lastValidationRunId`
+- downstream governance rows remain unchanged:
+  - `skill_candidates`
+  - `background_jobs`
+  - `agent_state`
+  - `tool_results`
+  - `compaction_events`
+
+Current approved boundary note:
+
+- `memory_procedure_validate_plan` remains disabled even though
+  `memory_procedure_validate` is part of the accepted live posture
 
 ## Background-job inspection
 
@@ -340,6 +388,8 @@ Single-class disablement examples:
   `backgroundJobs.executeJobClasses`
 - narrow `backgroundJobs.advisoryJobClasses` back to
   `[proactive_plan]` if `consolidation_plan` must stop
+- set `candidateIngress.mode = submit-review-promote-memory` if procedure
+  promotion and validation must stop immediately
 
 ## Rollback posture
 
@@ -350,9 +400,13 @@ Current rollback order:
 1. stop manual `run_next` invocation
 2. disable execute-class scheduling if execute work is the concern
 3. disable advisory scheduling if advisory work is also the concern
-4. disable the plugin only if the issue is broader than maintenance
-5. preserve the database for inspection
-6. restore from backup only if a database-level rollback is required
+4. narrow `candidateIngress.mode = submit-review-promote-memory` if the issue
+   is isolated to validated-procedure retrieval / procedure promotion /
+   procedure validation
+5. disable the plugin only if the issue is broader than maintenance or
+   bounded procedure governance
+6. preserve the database for inspection
+7. restore from backup only if a database-level rollback is required
 
 ## Soak checklist
 

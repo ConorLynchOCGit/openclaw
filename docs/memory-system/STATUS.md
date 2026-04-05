@@ -174,6 +174,11 @@ Bounded ordinary live interaction -> candidate capture is now proven on the
 approved live production boundary via one fresh `chief` session that created
 one candidate submission event plus one matching candidate memory object in
 Postgres while leaving review and promotion manual.
+First quick-win governance productionization tranche completed for
+validated-procedure retrieval, candidate procedure promotion, and procedure
+validation on the approved live production boundary, with explicit production
+proof, runbook coverage, and no downstream skill, procurement, vetting,
+approval, or install growth.
 
 ## Compact checkpoint
 
@@ -189,6 +194,29 @@ Current compact state:
   - bounded scheduler classes
   - runner ownership enforcement
   - bounded durable-growth behavior
+- first quick-win governance family is now production-proven as an internal
+  manual workflow:
+  - validated-procedure retrieval when explicitly requested
+  - candidate procedure promotion
+  - procedure validation
+- fresh governance proof timestamp:
+  - `2026-04-05T15:00:19.781Z`
+- fresh governance proof artifacts:
+  - `eventId = f7515d2e-1251-4d15-838c-d34c829ec3ac`
+  - `candidateId = f1a8763b-92f4-4b72-9fd2-cdcdf0b8858d`
+  - `reviewId = fa7ef0ee-1891-4b6e-a467-0caa55aaf2f7`
+  - `procedureId = b7c160d6-6414-44f2-a382-952c8762b77f`
+  - `procedureRunId = 28f57aee-b0b1-4ecc-8861-041b8ce7b933`
+- governance proof delta:
+  - `memory_events +1`
+  - `memory_objects +1`
+  - `memory_reviews +1`
+  - `memory_links +1`
+  - `memory_sources +1`
+  - `procedures +1`
+  - `procedure_runs +1`
+  - `skill_candidates +0`
+  - `background_jobs +0`
 - ordinary live agent-turn capture was not the original soak target
 - bounded ordinary live interaction -> candidate capture is now separately
   proven on the approved live production boundary
