@@ -3,6 +3,7 @@ import {
   isCronSessionKey,
   parseSessionKey,
   resolveSessionDisplayName,
+  resolveSessionOptionGroups,
 } from "./app-render.helpers.ts";
 import type { SessionsListResult } from "./types.ts";
 
@@ -113,6 +114,13 @@ describe("resolveSessionDisplayName", () => {
 
   it("returns 'Main Session' for bare 'main' key", () => {
     expect(resolveSessionDisplayName("main")).toBe("Main Session");
+  });
+
+  it("uses polished canonical operator labels", () => {
+    expect(resolveSessionDisplayName("agent:builder:main")).toBe("Builder");
+    expect(resolveSessionDisplayName("agent:writer:main")).toBe("Writer");
+    expect(resolveSessionDisplayName("agent:x-manager:main")).toBe("X Manager");
+    expect(resolveSessionDisplayName("agent:web-researcher:main")).toBe("Web Researcher");
   });
 
   it("returns 'Subagent:' for subagent key without row", () => {
@@ -282,5 +290,38 @@ describe("isCronSessionKey", () => {
     expect(isCronSessionKey("main")).toBe(false);
     expect(isCronSessionKey("discord:group:eng")).toBe(false);
     expect(isCronSessionKey("agent:main:slack:cron:job:run:uuid")).toBe(false);
+  });
+});
+
+describe("resolveSessionOptionGroups", () => {
+  it("does not include a hidden current session in selector options", () => {
+    const state = {
+      sessionsHideCron: true,
+      agentsList: null,
+    } as Parameters<typeof resolveSessionOptionGroups>[0];
+    const sessions = {
+      ts: 0,
+      path: "",
+      count: 2,
+      defaults: { modelProvider: null, model: null, contextTokens: null },
+      sessions: [
+        row({ key: "agent:main:main", selectorVisibility: "show" }),
+        row({
+          key: "agent:main:unknown:direct:+15555550125",
+          selectorVisibility: "hide",
+        }),
+      ],
+    } satisfies SessionsListResult;
+
+    const groups = resolveSessionOptionGroups(
+      state,
+      "agent:main:unknown:direct:+15555550125",
+      sessions,
+    );
+    const labels = groups.flatMap((group) => group.options.map((option) => option.label));
+
+    expect(labels).toContain("Main Session");
+    expect(labels).not.toContain("Unknown Direct");
+    expect(labels).not.toContain("Unknown Direct · unknown:direct:+15555550125");
   });
 });

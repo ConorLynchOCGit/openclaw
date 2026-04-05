@@ -162,6 +162,7 @@ function emitSessionsChanged(
             subagentControlScope: sessionRow.subagentControlScope,
             label: sessionRow.label,
             displayName: sessionRow.displayName,
+            selectorVisibility: sessionRow.selectorVisibility,
             deliveryContext: sessionRow.deliveryContext,
             parentSessionKey: sessionRow.parentSessionKey,
             childSessions: sessionRow.childSessions,
@@ -707,6 +708,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
           key: target.canonicalKey,
           label: typeof p.label === "string" ? p.label.trim() : undefined,
           model: typeof p.model === "string" ? p.model.trim() : undefined,
+          selectorVisibility: "hide",
         },
         loadGatewayModelCatalog: context.loadGatewayModelCatalog,
       });

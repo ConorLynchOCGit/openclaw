@@ -1,3 +1,5 @@
+import type { SessionSelectorVisibility } from "../config/sessions/types.js";
+
 export type ParsedAgentSessionKey = {
   agentId: string;
   rest: string;
@@ -84,20 +86,36 @@ const DEFAULT_VISIBLE_SESSION_KEYS = new Set([
   "agent:writer:main",
 ]);
 
-const DEFAULT_HIDDEN_SESSION_PATTERNS = [
-  /:proof-[^:]+/i,
-  /:dashboard:w[0-9a-z-]*(?:[:.-]|$)/i,
-  /(^|[:.-])w(?:5|6|6d|8|9|10|11|14|15|16)[0-9a-z-]*(?:[:.-]|$)/i,
-  /:delegate(?:[:.-]|$)/i,
-  /:main-smoke:/i,
-  /:xmanager-smoke:/i,
-  /:fresh(?:[:.-]|$)/i,
-  /:(?:example|clawhub|react|docs)(?:[:.-]|$)/i,
-  /:routing-verification(?:[:.-]|$)/i,
-  /^webchat:g-agent-[a-z0-9-]+-w[0-9a-z-]+/i,
-  /^webchat:g-agent-[a-z0-9-]+-main$/i,
-  /:g-agent-[^:]*-w[0-9a-z-]+/i,
-];
+export type SessionSelectorVisibilitySource = {
+  selectorVisibility?: SessionSelectorVisibility | null;
+  spawnedBy?: string | null;
+  parentSessionKey?: string | null;
+  subagentRole?: string | null;
+  subagentControlScope?: string | null;
+  channel?: string | null;
+  lastChannel?: string | null;
+  origin?: {
+    provider?: string | null;
+    surface?: string | null;
+  } | null;
+};
+
+function resolveSessionTransportChannel(
+  sessionKey: string,
+  source?: SessionSelectorVisibilitySource | null,
+): string | null {
+  const parsed = parseAgentSessionKey(sessionKey);
+  const raw = parsed?.rest ?? sessionKey.trim().toLowerCase();
+  const parts = raw.split(":").filter(Boolean);
+  const fromKey =
+    parts.length >= 2 && (parts[1] === "direct" || parts[1] === "group" || parts[1] === "channel")
+      ? (parts[0] ?? null)
+      : null;
+  const fromOrigin = source?.origin?.provider?.trim().toLowerCase();
+  const fromChannel = source?.channel?.trim().toLowerCase();
+  const fromLastChannel = source?.lastChannel?.trim().toLowerCase();
+  return fromKey || fromOrigin || fromChannel || fromLastChannel || null;
+}
 
 export function isDefaultVisibleOperationalSessionKey(
   sessionKey: string | undefined | null,
@@ -109,15 +127,66 @@ export function isDefaultVisibleOperationalSessionKey(
   return DEFAULT_VISIBLE_SESSION_KEYS.has(normalized);
 }
 
-export function isDefaultHiddenUiSessionKey(sessionKey: string | undefined | null): boolean {
+export function resolveSessionSelectorVisibility(
+  sessionKey: string | undefined | null,
+  source?: SessionSelectorVisibilitySource | null,
+): SessionSelectorVisibility {
   const normalized = (sessionKey ?? "").trim().toLowerCase();
-  if (!normalized || isDefaultVisibleOperationalSessionKey(normalized)) {
-    return false;
+  const explicitVisibility = source?.selectorVisibility;
+  if (explicitVisibility === "show" || explicitVisibility === "hide") {
+    return explicitVisibility;
+  }
+  if (!normalized) {
+    return "hide";
+  }
+  if (isDefaultVisibleOperationalSessionKey(normalized)) {
+    return "show";
+  }
+  if (normalized === "global" || normalized === "unknown") {
+    return "hide";
   }
   if (isCronSessionKey(normalized)) {
-    return true;
+    return "hide";
   }
-  return DEFAULT_HIDDEN_SESSION_PATTERNS.some((pattern) => pattern.test(normalized));
+  if (isSubagentSessionKey(normalized) || isAcpSessionKey(normalized)) {
+    return "hide";
+  }
+  if (
+    source?.spawnedBy?.trim() ||
+    source?.parentSessionKey?.trim() ||
+    source?.subagentRole?.trim() ||
+    source?.subagentControlScope?.trim()
+  ) {
+    return "hide";
+  }
+
+  const parsed = parseAgentSessionKey(normalized);
+  if (parsed?.rest === "main") {
+    return "show";
+  }
+
+  const chatType = deriveSessionChatType(normalized);
+  if (chatType === "direct" || chatType === "group" || chatType === "channel") {
+    const channel = resolveSessionTransportChannel(normalized, source);
+    if (!channel || channel === "unknown" || channel === "webchat") {
+      return "hide";
+    }
+    return "show";
+  }
+
+  const rootToken = normalized.split(":").filter(Boolean)[0] ?? "";
+  if (rootToken === "webchat" || rootToken === "unknown") {
+    return "hide";
+  }
+
+  return "hide";
+}
+
+export function isDefaultHiddenUiSessionKey(
+  sessionKey: string | undefined | null,
+  source?: SessionSelectorVisibilitySource | null,
+): boolean {
+  return resolveSessionSelectorVisibility(sessionKey, source) === "hide";
 }
 
 export function isSubagentSessionKey(sessionKey: string | undefined | null): boolean {

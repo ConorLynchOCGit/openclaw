@@ -372,13 +372,31 @@ export type SessionRunStatus = "running" | "done" | "failed" | "killed" | "timeo
 export type GatewaySessionRow = {
   key: string;
   spawnedBy?: string;
+  spawnedWorkspaceDir?: string;
+  forkedFromParent?: boolean;
+  spawnDepth?: number;
+  subagentRole?: "orchestrator" | "leaf";
+  subagentControlScope?: "children" | "none";
   kind: "direct" | "group" | "global" | "unknown";
   label?: string;
   displayName?: string;
+  selectorVisibility?: "show" | "hide";
   surface?: string;
+  channel?: string;
   subject?: string;
   room?: string;
+  groupChannel?: string;
   space?: string;
+  origin?: {
+    label?: string;
+    provider?: string;
+    surface?: string;
+    chatType?: string;
+    from?: string;
+    to?: string;
+    accountId?: string;
+    threadId?: string | number;
+  };
   updatedAt: number | null;
   sessionId?: string;
   systemSent?: boolean;
@@ -396,10 +414,12 @@ export type GatewaySessionRow = {
   startedAt?: number;
   endedAt?: number;
   runtimeMs?: number;
+  parentSessionKey?: string;
   childSessions?: string[];
   model?: string;
   modelProvider?: string;
   contextTokens?: number;
+  lastChannel?: string;
 };
 
 export type SessionsListResult = SessionsListResultBase<GatewaySessionsDefaults, GatewaySessionRow>;

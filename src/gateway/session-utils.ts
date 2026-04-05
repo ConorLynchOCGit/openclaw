@@ -44,7 +44,10 @@ import {
   normalizeMainKey,
   parseAgentSessionKey,
 } from "../routing/session-key.js";
-import { isCronRunSessionKey } from "../sessions/session-key-utils.js";
+import {
+  isCronRunSessionKey,
+  resolveSessionSelectorVisibility,
+} from "../sessions/session-key-utils.js";
 import {
   AVATAR_MAX_BYTES,
   isAvatarDataUrl,
@@ -1292,6 +1295,16 @@ export function buildGatewaySessionRow(params: {
     kind: classifySessionKey(key, entry),
     label: entry?.label,
     displayName,
+    selectorVisibility: resolveSessionSelectorVisibility(key, {
+      selectorVisibility: entry?.selectorVisibility,
+      spawnedBy: subagentOwner || entry?.spawnedBy,
+      parentSessionKey: subagentOwner || entry?.parentSessionKey,
+      subagentRole: entry?.subagentRole,
+      subagentControlScope: entry?.subagentControlScope,
+      channel,
+      lastChannel: deliveryFields.lastChannel ?? entry?.lastChannel,
+      origin: entry?.origin,
+    }),
     derivedTitle,
     lastMessagePreview,
     channel,

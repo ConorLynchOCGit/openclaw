@@ -133,6 +133,9 @@ export const SessionsPatchParamsSchema = Type.Object(
     groupActivation: Type.Optional(
       Type.Union([Type.Literal("mention"), Type.Literal("always"), Type.Null()]),
     ),
+    selectorVisibility: Type.Optional(
+      Type.Union([Type.Literal("show"), Type.Literal("hide"), Type.Null()]),
+    ),
   },
   { additionalProperties: false },
 );

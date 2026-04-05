@@ -132,7 +132,7 @@ function resolveThinkLevelPatchValue(value: string, isBinary: boolean): string |
 }
 
 function filterRows(rows: GatewaySessionRow[], query: string): GatewaySessionRow[] {
-  const visibleRows = rows.filter((row) => !isDefaultHiddenUiSessionKey(row.key));
+  const visibleRows = rows.filter((row) => !isDefaultHiddenUiSessionKey(row.key, row));
   const q = query.trim().toLowerCase();
   if (!q) {
     return visibleRows;

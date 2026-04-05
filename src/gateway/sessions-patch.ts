@@ -450,6 +450,19 @@ export async function applySessionsPatchToStore(params: {
     }
   }
 
+  if ("selectorVisibility" in patch) {
+    const raw = patch.selectorVisibility;
+    if (raw === null) {
+      delete next.selectorVisibility;
+    } else if (raw !== undefined) {
+      const normalized = String(raw).trim().toLowerCase();
+      if (normalized !== "show" && normalized !== "hide") {
+        return invalid('invalid selectorVisibility (use "show"|"hide")');
+      }
+      next.selectorVisibility = normalized;
+    }
+  }
+
   store[storeKey] = next;
   return { ok: true, entry: next };
 }

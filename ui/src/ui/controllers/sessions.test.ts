@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deleteSessionsAndRefresh, subscribeSessions, type SessionsState } from "./sessions.ts";
+import {
+  deleteSessionsAndRefresh,
+  loadSessions,
+  subscribeSessions,
+  type SessionsState,
+} from "./sessions.ts";
 
 type RequestFn = (method: string, params?: unknown) => Promise<unknown>;
 
@@ -118,5 +123,69 @@ describe("deleteSessionsAndRefresh", () => {
 
     expect(deleted).toEqual([]);
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadSessions", () => {
+  it("normalizes a hidden active session back to the main session", async () => {
+    const applySettings = vi.fn();
+    const state = createState(
+      vi.fn(async (method: string) => {
+        if (method === "sessions.list") {
+          return {
+            ts: 0,
+            path: "",
+            count: 2,
+            defaults: { modelProvider: null, model: null, contextTokens: null },
+            sessions: [
+              { key: "agent:main:main", kind: "direct", updatedAt: 0, selectorVisibility: "show" },
+              {
+                key: "agent:main:unknown:direct:+15555550125",
+                kind: "direct",
+                updatedAt: 0,
+                selectorVisibility: "hide",
+              },
+            ],
+          };
+        }
+        throw new Error(`unexpected method: ${method}`);
+      }),
+      {
+        sessionKey: "agent:main:unknown:direct:+15555550125",
+        settings: {
+          gatewayUrl: "",
+          token: "",
+          locale: "en",
+          sessionKey: "agent:main:unknown:direct:+15555550125",
+          lastActiveSessionKey: "agent:main:unknown:direct:+15555550125",
+          theme: "claw",
+          themeMode: "dark",
+          splitRatio: 0.6,
+          navCollapsed: false,
+          navGroupsCollapsed: {},
+          borderRadius: 50,
+          chatFocusMode: false,
+          chatShowThinking: false,
+          chatShowToolCalls: true,
+        },
+        applySettings,
+        hello: { snapshot: { sessionDefaults: { mainSessionKey: "agent:main:main" } } },
+      } as Partial<SessionsState>,
+    ) as SessionsState & {
+      sessionKey: string;
+      settings: NonNullable<unknown>;
+      applySettings: typeof applySettings;
+      hello: { snapshot: { sessionDefaults: { mainSessionKey: string } } };
+    };
+
+    await loadSessions(state);
+
+    expect(state.sessionKey).toBe("agent:main:main");
+    expect(applySettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionKey: "agent:main:main",
+        lastActiveSessionKey: "agent:main:main",
+      }),
+    );
   });
 });

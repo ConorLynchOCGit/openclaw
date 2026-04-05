@@ -26,6 +26,8 @@ export type SessionAcpIdentitySource = "ensure" | "status" | "event";
 
 export type SessionAcpIdentityState = "pending" | "resolved";
 
+export type SessionSelectorVisibility = "show" | "hide";
+
 export type SessionAcpIdentity = {
   state: SessionAcpIdentityState;
   acpxRecordId?: string;
@@ -177,6 +179,11 @@ export type SessionEntry = {
   claudeCliSessionId?: string;
   label?: string;
   displayName?: string;
+  /**
+   * Whether this session should appear in operator session selectors by default.
+   * When absent, selector visibility is derived from the canonical session shape.
+   */
+  selectorVisibility?: SessionSelectorVisibility;
   channel?: string;
   groupId?: string;
   subject?: string;

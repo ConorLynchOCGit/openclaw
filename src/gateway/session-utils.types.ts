@@ -1,5 +1,5 @@
 import type { ChatType } from "../channels/chat-type.js";
-import type { SessionEntry } from "../config/sessions.js";
+import type { SessionEntry, SessionSelectorVisibility } from "../config/sessions.js";
 import type {
   GatewayAgentRow as SharedGatewayAgentRow,
   SessionsListResultBase,
@@ -26,6 +26,7 @@ export type GatewaySessionRow = {
   kind: "direct" | "group" | "global" | "unknown";
   label?: string;
   displayName?: string;
+  selectorVisibility?: SessionSelectorVisibility;
   derivedTitle?: string;
   lastMessagePreview?: string;
   channel?: string;

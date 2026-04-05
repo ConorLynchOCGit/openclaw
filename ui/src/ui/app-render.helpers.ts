@@ -627,16 +627,16 @@ function resolveKnownSessionClassName(key: string): string | null {
     return "Chief Session";
   }
   if (key === "agent:builder:main") {
-    return "Builder Session";
+    return "Builder";
   }
   if (key === "agent:x-manager:main") {
-    return "X Manager Session";
+    return "X Manager";
   }
   if (key === "agent:web-researcher:main") {
     return "Web Researcher";
   }
   if (key === "agent:writer:main") {
-    return "Writer Session";
+    return "Writer";
   }
 
   const proofMatch = key.match(/^agent:[^:]+:proof-([a-z-]+)(?::|-|$)/i);
@@ -808,18 +808,29 @@ export function resolveSessionOptionGroups(
   };
 
   for (const row of rows) {
-    if (row.key !== sessionKey && (row.kind === "global" || row.kind === "unknown")) {
+    if (row.kind === "global" || row.kind === "unknown") {
       continue;
     }
-    if (hideCron && row.key !== sessionKey && isCronSessionKey(row.key)) {
+    if (hideCron && isCronSessionKey(row.key)) {
       continue;
     }
-    if (row.key !== sessionKey && isDefaultHiddenUiSessionKey(row.key)) {
+    if (isDefaultHiddenUiSessionKey(row.key, row)) {
       continue;
     }
     addOption(row.key);
   }
-  addOption(sessionKey);
+  const currentRow = byKey.get(sessionKey);
+  const shouldShowCurrent =
+    sessionKey &&
+    !(
+      currentRow?.kind === "global" ||
+      currentRow?.kind === "unknown" ||
+      isCronSessionKey(sessionKey) ||
+      isDefaultHiddenUiSessionKey(sessionKey, currentRow)
+    );
+  if (shouldShowCurrent) {
+    addOption(sessionKey);
+  }
 
   for (const group of groups.values()) {
     const counts = new Map<string, number>();
