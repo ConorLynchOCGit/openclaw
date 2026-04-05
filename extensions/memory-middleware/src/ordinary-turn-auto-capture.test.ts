@@ -45,7 +45,7 @@ function createConfig(): MemoryMiddlewareConfig {
     database: {
       driver: "postgres",
       schema: "memory_middleware",
-      url: "postgres://user:pass@example.com/db",
+      url: "",
     },
     candidateIngress: {
       mode: "submit-review-only",
@@ -851,7 +851,7 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(promoteToMemory).toHaveBeenCalledTimes(1);
   });
 
-  it("routes bounded response-style corrections through correction submission without auto-promotion", async () => {
+  it("routes bounded response-style corrections through correction submission with direct auto-promotion", async () => {
     const submitCorrectionSuggestion = vi.fn(async () => ({
       accepted: true as const,
       status: "accepted" as const,
@@ -861,8 +861,14 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
       eventId: "event-requirement-correction-1",
       memoryObjectId: "memory-requirement-correction-1",
     }));
-    const reviewCandidate = vi.fn();
-    const promoteToMemory = vi.fn();
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      reviewId: "review-requirement-correction-1",
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      promotedMemoryObjectId: "memory-approved-requirement-correction-1",
+    }));
     const handler = createOrdinaryTurnAutoCaptureHandler({
       config: createConfig(),
       logger: { info() {}, warn() {}, error() {}, debug() {} },
@@ -905,8 +911,135 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
         }),
       }),
     );
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(promoteToMemory).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes targetable response-style forget requests through bounded forget handling", async () => {
+    const forgetApprovedResponseStyleBySubjectKey = vi.fn(async () => ({
+      accepted: true as const,
+      status: "superseded" as const,
+      supersededObjectIds: ["memory-approved-no-tables-1"],
+      reviewIds: ["review-forget-no-tables-1"],
+    }));
+    const reviewCandidate = vi.fn();
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        inspectResponseStyleLifecycle: vi.fn(async () => ({
+          activeApprovedSubjectObjectIds: ["memory-approved-no-tables-1"],
+          pendingSubjectCandidateIds: [],
+        })),
+        forgetApprovedResponseStyleBySubjectKey,
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate,
+        promoteToMemory: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "Forget the table preference.",
+        timestamp: Date.parse("2026-04-05T08:09:00Z"),
+      },
+    });
+
+    expect(forgetApprovedResponseStyleBySubjectKey).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subjectKey: expect.any(String),
+        reviewerAgentId: "agent-uuid-1",
+        metadata: expect.objectContaining({
+          source: "response_style_forget_request",
+          subject: "response format",
+        }),
+      }),
+    );
     expect(reviewCandidate).not.toHaveBeenCalled();
-    expect(promoteToMemory).not.toHaveBeenCalled();
+  });
+
+  it("promotes a pending response-style candidate when later confirming evidence arrives in the recent-key window", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-requirement-learning-1",
+      memoryObjectId: "memory-requirement-learning-1",
+    }));
+    const inspectResponseStyleLifecycle = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        pendingCandidate: {
+          id: "memory-requirement-learning-1",
+          sourceEventId: "event-requirement-learning-1",
+          createdAt: "2026-04-05T08:00:00.000Z",
+          updatedAt: "2026-04-05T08:00:00.000Z",
+          confirmationState: "pending_confirmation",
+        },
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: ["memory-requirement-learning-1"],
+      });
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      reviewId: "review-requirement-learning-1",
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      promotedMemoryObjectId: "memory-approved-requirement-learning-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        inspectResponseStyleLifecycle,
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "can you use bullets",
+        timestamp: Date.parse("2026-04-05T08:06:00Z"),
+      },
+    });
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "use bullets when listing",
+        timestamp: Date.parse("2026-04-05T08:07:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(1);
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(promoteToMemory).toHaveBeenCalledTimes(1);
   });
 
   it("routes bounded named project facts through learning submission without auto-promotion", async () => {

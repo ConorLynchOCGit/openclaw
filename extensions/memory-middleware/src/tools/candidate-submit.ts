@@ -16,6 +16,16 @@ import {
   parseOrdinaryTurnAutoCapturePreference,
   type OrdinaryTurnAutoCaptureMatch,
 } from "../ordinary-turn-auto-capture.js";
+import {
+  inspectResponseStyleLifecycle,
+  isExpiredPendingResponseStyleCandidate,
+} from "../response-style-lifecycle.js";
+import {
+  detectResponseStyleSemanticDecision,
+  isResponseStyleCorrectionMatch,
+  isResponseStyleLearningMatch,
+  type ResponseStyleSemanticConfidence,
+} from "../response-style-semantic.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   asJsonToolResult as asJsonToolResultBase,
@@ -28,6 +38,8 @@ import {
 } from "./common.js";
 
 type CandidateSubmitRawParams = ToolRawParams;
+
+const RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS = 5_000;
 
 function candidateKindSchema() {
   return Type.Unsafe<CandidateSubmissionKind>({
@@ -101,6 +113,232 @@ export function normalizeCandidateSubmissionInput(params: {
   };
 }
 
+function readNestedMetadataString(
+  metadata: Record<string, unknown> | undefined,
+  path: string[],
+): string | undefined {
+  let cursor: unknown = metadata;
+  for (const segment of path) {
+    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) {
+      return undefined;
+    }
+    cursor = (cursor as Record<string, unknown>)[segment];
+  }
+  return typeof cursor === "string" && cursor.trim().length > 0 ? cursor.trim() : undefined;
+}
+
+function buildToolResponseStyleAutoPromotionMetadata(params: {
+  input: CandidateSubmissionInput;
+  autoPromotionProfile: string;
+  confirmationState?: "confirmed";
+}): Record<string, unknown> {
+  const autoCapture = params.input.metadata?.autoCapture;
+  const semanticDetection = params.input.metadata?.semanticDetection;
+  return {
+    autoPromotion: {
+      source: "candidate_submit_auto_promotion",
+      captureSeam: "model_tool_primary",
+      profile: params.autoPromotionProfile,
+      captureProfile: "tool-submitted",
+      captureClass:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { captureClass?: unknown }).captureClass
+          : undefined,
+      reasonCode:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { reasonCode?: unknown }).reasonCode
+          : undefined,
+      key:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { key?: unknown }).key
+          : undefined,
+      subjectKey:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { subjectKey?: unknown }).subjectKey
+          : undefined,
+      subject:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { subject?: unknown }).subject
+          : undefined,
+      value:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { value?: unknown }).value
+          : undefined,
+      toolName: "memory_candidate_submit",
+    },
+    ...(semanticDetection &&
+    typeof semanticDetection === "object" &&
+    !Array.isArray(semanticDetection)
+      ? { semanticDetection }
+      : {}),
+    ...(params.confirmationState
+      ? {
+          candidateConfirmation: {
+            state: params.confirmationState,
+            method: "repeat_subject_signal",
+            confirmationEvidenceCount: 2,
+          },
+        }
+      : {}),
+  };
+}
+
+async function maybeResolveExistingResponseStyleCandidate(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: CandidateSubmissionInput;
+}): Promise<CandidateSubmissionResult | null> {
+  if (params.input.kind !== "learning" && params.input.kind !== "correction") {
+    return null;
+  }
+  const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
+  const key = readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]);
+  const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
+  const confirmationState = readNestedMetadataString(params.input.metadata, [
+    "candidateLifecycle",
+    "state",
+  ]);
+  const confidence =
+    readNestedMetadataString(params.input.metadata, ["semanticDetection", "confidence"]) ?? "high";
+  if (
+    !template ||
+    !key ||
+    !subjectKey ||
+    (template !== "responses_concise" &&
+      template !== "responses_bullets" &&
+      template !== "responses_plain_english" &&
+      template !== "responses_no_tables" &&
+      template !== "responses_numbered_steps")
+  ) {
+    return null;
+  }
+
+  const inspection = await inspectResponseStyleLifecycle({
+    config: params.runtime.config,
+    key,
+    subjectKey,
+  });
+  if (!inspection) {
+    return null;
+  }
+
+  if (
+    inspection.pendingCandidate &&
+    isExpiredPendingResponseStyleCandidate(inspection.pendingCandidate)
+  ) {
+    await params.runtime.candidateReview.review({
+      candidateId: inspection.pendingCandidate.id,
+      outcome: "rejected",
+      rationale:
+        "response-style candidate confirmation window expired without later confirming evidence",
+      metadata: {
+        source: "candidate_submit_response_style_confirmation",
+        candidateLifecycle: {
+          family: "response_style",
+          state: "rejected",
+          subjectKey,
+        },
+      },
+    });
+  }
+
+  if (inspection.matchingApprovedObjectId) {
+    return {
+      accepted: false,
+      status: "failed",
+      kind: params.input.kind,
+      reason: `approved response-style memory already exists for key ${key}`,
+    };
+  }
+
+  if (
+    inspection.pendingCandidate &&
+    !isExpiredPendingResponseStyleCandidate(inspection.pendingCandidate)
+  ) {
+    if (shouldSkipImmediateConfirmation(inspection.pendingCandidate.createdAt)) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: `response-style confirmation candidate ${inspection.pendingCandidate.id} already exists`,
+      };
+    }
+    const autoPromotion =
+      params.runtime.config.autoPromotion ?? DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG;
+    if (autoPromotion.profile !== "explicit-user-preference-v1") {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: `response-style confirmation candidate ${inspection.pendingCandidate.id} is waiting for later evidence`,
+      };
+    }
+    if (params.input.kind === "correction" && inspection.pendingSubjectCandidateIds.length > 0) {
+      for (const candidateId of inspection.pendingSubjectCandidateIds) {
+        if (candidateId === inspection.pendingCandidate.id) {
+          continue;
+        }
+        await params.runtime.candidateReview.review({
+          candidateId,
+          outcome: "rejected",
+          rationale: "high-confidence response-style correction superseded pending candidate state",
+          metadata: {
+            source: "candidate_submit_response_style_confirmation",
+            candidateLifecycle: {
+              family: "response_style",
+              state: "rejected",
+              subjectKey,
+            },
+          },
+        });
+      }
+    }
+    if (confirmationState !== "pending_confirmation" && confidence !== "high") {
+      return null;
+    }
+    const promotionMetadata = buildToolResponseStyleAutoPromotionMetadata({
+      input: params.input,
+      autoPromotionProfile: "response_style_confirmation_v1",
+      confirmationState: "confirmed",
+    });
+    const reviewResult = await params.runtime.candidateReview.review({
+      candidateId: inspection.pendingCandidate.id,
+      outcome: "accepted",
+      metadata: promotionMetadata,
+    });
+    if (!reviewResult.accepted) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: reviewResult.reason,
+      };
+    }
+    const promotionResult = await params.runtime.candidatePromotion.promoteToMemory({
+      candidateId: inspection.pendingCandidate.id,
+      metadata: promotionMetadata,
+    });
+    if (!promotionResult.accepted) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: promotionResult.reason,
+      };
+    }
+    return {
+      accepted: true,
+      status: "accepted",
+      kind: params.input.kind,
+      storage: "database",
+      reviewState: "approved",
+      eventId: promotionResult.sourceEventId ?? inspection.pendingCandidate.sourceEventId,
+      memoryObjectId: promotionResult.promotedMemoryObjectId,
+    };
+  }
+
+  return null;
+}
+
 export async function submitCandidateFromTool(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
@@ -110,6 +348,13 @@ export async function submitCandidateFromTool(params: {
     input: params.input,
     context: params.context,
   });
+  const resolvedExisting = await maybeResolveExistingResponseStyleCandidate({
+    runtime: params.runtime,
+    input: normalizedInput,
+  });
+  if (resolvedExisting) {
+    return resolvedExisting;
+  }
   if (normalizedInput.kind === "learning" || normalizedInput.kind === "correction") {
     const duplicate = await findExistingAutoCaptureManagedDuplicate({
       runtime: params.runtime,
@@ -255,6 +500,68 @@ function normalizeTranscriptUserText(value: string): string | null {
   return stripped.length > 0 ? stripped : null;
 }
 
+function buildResponseStyleSemanticMetadata(params: {
+  detectionSource: "deterministic" | "semantic";
+  confidence: "high" | ResponseStyleSemanticConfidence;
+  evidence: string[];
+}): Record<string, unknown> {
+  return {
+    semanticDetection: {
+      source: "response_style_semantic_v1",
+      detectionSource: params.detectionSource,
+      confidence: params.confidence,
+      evidence: params.evidence,
+    },
+  };
+}
+
+function buildPendingConfirmationMetadata(params: {
+  confidence: ResponseStyleSemanticConfidence;
+  evidence: string[];
+}): Record<string, unknown> {
+  const observedAt = new Date().toISOString();
+  return {
+    candidateLifecycle: {
+      family: "response_style",
+      state: "pending_confirmation",
+      confidence: params.confidence,
+      evidenceCount: 1,
+      observedAt,
+      expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
+      evidence: params.evidence,
+    },
+  };
+}
+
+function toOrdinaryTurnResponseStyleMatch(match: {
+  captureClass: "explicit_requirement" | "requirement_correction";
+  candidateKind: "learning" | "correction";
+  reasonCode: "explicit_requirement_statement" | "explicit_requirement_correction";
+  template: OrdinaryTurnAutoCaptureMatch["template"];
+  subject: string;
+  value: string;
+  normalizedSubject: string;
+  normalizedValue: string;
+  content: string;
+  subjectKey: string;
+  key: string;
+}): OrdinaryTurnAutoCaptureMatch {
+  return {
+    profile: "user-preference-v2",
+    captureClass: match.captureClass,
+    candidateKind: match.candidateKind,
+    reasonCode: match.reasonCode,
+    template: match.template,
+    subject: match.subject,
+    value: match.value,
+    normalizedSubject: match.normalizedSubject,
+    normalizedValue: match.normalizedValue,
+    content: match.content,
+    subjectKey: match.subjectKey,
+    key: match.key,
+  };
+}
+
 type TranscriptUserMessage = {
   role?: unknown;
   content?: unknown;
@@ -263,6 +570,14 @@ type TranscriptUserMessage = {
 type SessionStoreEntry = {
   sessionId?: unknown;
   sessionFile?: unknown;
+};
+
+type ManagedResponseStyleResolution = {
+  parsed: OrdinaryTurnAutoCaptureMatch;
+  source: "content" | "raw";
+  detectionSource: "deterministic" | "semantic";
+  confidence: "high" | ResponseStyleSemanticConfidence;
+  evidence: string[];
 };
 
 function extractTranscriptUserText(message: TranscriptUserMessage | null): string | null {
@@ -393,6 +708,11 @@ async function resolveLatestUserTurnFromContext(
   return null;
 }
 
+function shouldSkipImmediateConfirmation(createdAt: string, now = Date.now()): boolean {
+  const createdAtMs = Date.parse(createdAt);
+  return Number.isFinite(createdAtMs) && now - createdAtMs < RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS;
+}
+
 function isManagedCorrectionMatch(
   parsed: ReturnType<typeof parseManagedCorrectionCandidateContent> | null,
 ): parsed is NonNullable<ReturnType<typeof parseManagedCorrectionCandidateContent>> {
@@ -404,12 +724,77 @@ function isManagedCorrectionMatch(
   );
 }
 
+function isManagedResponseStyleMatch(
+  parsed: OrdinaryTurnAutoCaptureMatch | null,
+): parsed is OrdinaryTurnAutoCaptureMatch {
+  return Boolean(
+    parsed && (isResponseStyleLearningMatch(parsed) || isResponseStyleCorrectionMatch(parsed)),
+  );
+}
+
+function resolveManagedResponseStyleLearning(
+  input: CandidateSubmissionInput,
+): ManagedResponseStyleResolution | null {
+  const parsedFromContent = parseAutoCaptureManagedCandidateContent(input.content);
+  if (isManagedResponseStyleMatch(parsedFromContent)) {
+    return {
+      parsed: parsedFromContent,
+      source: "content",
+      detectionSource: "deterministic",
+      confidence: "high",
+      evidence: ["managed_content_pattern_match"],
+    };
+  }
+
+  if (typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0) {
+    const parsedFromRaw = parseOrdinaryTurnAutoCapturePreference(
+      input.metadata.raw,
+      "user-preference-v2",
+    );
+    if (isManagedResponseStyleMatch(parsedFromRaw)) {
+      return {
+        parsed: parsedFromRaw,
+        source: "raw",
+        detectionSource: "deterministic",
+        confidence: "high",
+        evidence: ["raw_turn_pattern_match"],
+      };
+    }
+    const semanticFromRaw = detectResponseStyleSemanticDecision(input.metadata.raw);
+    if (semanticFromRaw.action === "capture") {
+      return {
+        parsed: toOrdinaryTurnResponseStyleMatch(semanticFromRaw.match),
+        source: "raw",
+        detectionSource: "semantic",
+        confidence: semanticFromRaw.confidence,
+        evidence: semanticFromRaw.evidence,
+      };
+    }
+  }
+
+  const semanticFromContent = detectResponseStyleSemanticDecision(input.content);
+  if (semanticFromContent.action === "capture") {
+    return {
+      parsed: toOrdinaryTurnResponseStyleMatch(semanticFromContent.match),
+      source: "content",
+      detectionSource: "semantic",
+      confidence: semanticFromContent.confidence,
+      evidence: semanticFromContent.evidence,
+    };
+  }
+
+  return null;
+}
+
 async function resolveManagedCorrectionSubmission(params: {
   input: CandidateSubmissionInput;
   context?: OpenClawPluginToolContext;
 }): Promise<{
   parsed: NonNullable<ReturnType<typeof parseManagedCorrectionCandidateContent>>;
   source: "content" | "raw";
+  detectionSource?: "semantic";
+  confidence?: ResponseStyleSemanticConfidence;
+  evidence?: string[];
 } | null> {
   const { input, context } = params;
   const parsedFromContent = parseManagedCorrectionCandidateContent(input.content);
@@ -439,6 +824,38 @@ async function resolveManagedCorrectionSubmission(params: {
     if (isManagedCorrectionMatch(parsedFromRawTurn)) {
       return { parsed: parsedFromRawTurn, source: "raw" };
     }
+
+    const semanticFromRaw = detectResponseStyleSemanticDecision(rawCandidate);
+    if (
+      semanticFromRaw.action === "capture" &&
+      semanticFromRaw.match.captureClass === "requirement_correction"
+    ) {
+      return {
+        parsed: toOrdinaryTurnResponseStyleMatch(semanticFromRaw.match) as NonNullable<
+          ReturnType<typeof parseManagedCorrectionCandidateContent>
+        >,
+        source: "raw",
+        detectionSource: "semantic",
+        confidence: semanticFromRaw.confidence,
+        evidence: semanticFromRaw.evidence,
+      };
+    }
+  }
+
+  const semanticFromContent = detectResponseStyleSemanticDecision(input.content);
+  if (
+    semanticFromContent.action === "capture" &&
+    semanticFromContent.match.captureClass === "requirement_correction"
+  ) {
+    return {
+      parsed: toOrdinaryTurnResponseStyleMatch(semanticFromContent.match) as NonNullable<
+        ReturnType<typeof parseManagedCorrectionCandidateContent>
+      >,
+      source: "content",
+      detectionSource: "semantic",
+      confidence: semanticFromContent.confidence,
+      evidence: semanticFromContent.evidence,
+    };
   }
 
   return null;
@@ -475,6 +892,40 @@ async function normalizeManagedToolCandidateInput(params: {
       return await normalizeManagedToolCandidateInput({
         input: normalizedCorrectionInput,
         context,
+      });
+    }
+
+    const responseStyleResolution = resolveManagedResponseStyleLearning(input);
+    if (responseStyleResolution) {
+      return mergeCandidateMetadata(input, {
+        category: "user_requirement",
+        source: "explicit_user_requirement",
+        autoCapture: {
+          source: "model_tool_candidate_submit",
+          captureSeam: "model_tool_primary",
+          profile: responseStyleResolution.parsed.profile,
+          captureClass: responseStyleResolution.parsed.captureClass,
+          reasonCode: responseStyleResolution.parsed.reasonCode,
+          template: responseStyleResolution.parsed.template,
+          key: responseStyleResolution.parsed.key,
+          subjectKey: responseStyleResolution.parsed.subjectKey,
+          subject: responseStyleResolution.parsed.subject,
+          value: responseStyleResolution.parsed.value,
+          toolName: "memory_candidate_submit",
+        },
+        ...(responseStyleResolution.detectionSource === "semantic"
+          ? buildResponseStyleSemanticMetadata({
+              detectionSource: responseStyleResolution.detectionSource,
+              confidence: responseStyleResolution.confidence,
+              evidence: responseStyleResolution.evidence,
+            })
+          : {}),
+        ...(responseStyleResolution.confidence === "medium"
+          ? buildPendingConfirmationMetadata({
+              confidence: responseStyleResolution.confidence,
+              evidence: responseStyleResolution.evidence,
+            })
+          : {}),
       });
     }
 
@@ -570,6 +1021,21 @@ async function normalizeManagedToolCandidateInput(params: {
         ...(parsed.projectScope ? { projectScope: parsed.projectScope } : {}),
         toolName: "memory_candidate_submit",
       },
+      ...(correctionOverride?.detectionSource === "semantic" &&
+      correctionOverride.confidence &&
+      correctionOverride.evidence
+        ? buildResponseStyleSemanticMetadata({
+            detectionSource: correctionOverride.detectionSource,
+            confidence: correctionOverride.confidence,
+            evidence: correctionOverride.evidence,
+          })
+        : {}),
+      ...(correctionOverride?.confidence === "medium" && correctionOverride.evidence
+        ? buildPendingConfirmationMetadata({
+            confidence: correctionOverride.confidence,
+            evidence: correctionOverride.evidence,
+          })
+        : {}),
     });
   }
 
@@ -590,25 +1056,50 @@ async function maybeAutoPromoteToolSubmittedPreference(params: {
   ) {
     return params.result;
   }
-  const parsed = resolveAutoPromotableFeedbackSubmission(params.input);
-  if (!parsed) {
+  const parsedGeneral = resolveAutoPromotableFeedbackSubmission(params.input);
+  const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
+  const captureClass = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "captureClass",
+  ]);
+  const pendingConfirmationState = readNestedMetadataString(params.input.metadata, [
+    "candidateLifecycle",
+    "state",
+  ]);
+  const isSupportedResponseStyleTemplate =
+    template === "responses_concise" ||
+    template === "responses_bullets" ||
+    template === "responses_plain_english" ||
+    template === "responses_no_tables" ||
+    template === "responses_numbered_steps";
+  if (
+    pendingConfirmationState === "pending_confirmation" ||
+    (!parsedGeneral &&
+      (!isSupportedResponseStyleTemplate ||
+        (captureClass !== "explicit_requirement" && captureClass !== "requirement_correction")))
+  ) {
     return params.result;
   }
-  const autoPromotionMetadata = {
-    autoPromotion: {
-      source: "candidate_submit_auto_promotion",
-      captureSeam: "model_tool_primary",
-      profile: autoPromotion.profile,
-      captureProfile: "tool-submitted",
-      captureClass: parsed.captureClass,
-      reasonCode: parsed.reasonCode,
-      key: parsed.key,
-      subjectKey: parsed.subjectKey,
-      subject: parsed.subject,
-      value: parsed.value,
-      toolName: "memory_candidate_submit",
-    },
-  };
+  const autoPromotionMetadata = parsedGeneral
+    ? {
+        autoPromotion: {
+          source: "candidate_submit_auto_promotion",
+          captureSeam: "model_tool_primary",
+          profile: autoPromotion.profile,
+          captureProfile: "tool-submitted",
+          captureClass: parsedGeneral.captureClass,
+          reasonCode: parsedGeneral.reasonCode,
+          key: parsedGeneral.key,
+          subjectKey: parsedGeneral.subjectKey,
+          subject: parsedGeneral.subject,
+          value: parsedGeneral.value,
+          toolName: "memory_candidate_submit",
+        },
+      }
+    : buildToolResponseStyleAutoPromotionMetadata({
+        input: params.input,
+        autoPromotionProfile: autoPromotion.profile,
+      });
   const reviewResult = await params.runtime.candidateReview.review({
     candidateId: params.result.memoryObjectId,
     outcome: "accepted",
@@ -626,6 +1117,7 @@ async function maybeAutoPromoteToolSubmittedPreference(params: {
   }
   return {
     ...params.result,
+    memoryObjectId: promotionResult.promotedMemoryObjectId,
     reviewState: "approved",
   };
 }

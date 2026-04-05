@@ -3,14 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawPluginToolContext } from "../../api.js";
-import type { CandidateSubmissionInput, CandidateSubmissionResult } from "../db/runtime.js";
+import type { CandidateSubmissionAcceptedResult, CandidateSubmissionInput } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   createCandidateSubmitTool,
   normalizeCandidateSubmissionInput,
 } from "./candidate-submit.js";
 
-function createAcceptedResult(kind: CandidateSubmissionInput["kind"]): CandidateSubmissionResult {
+function createAcceptedResult(
+  kind: CandidateSubmissionInput["kind"],
+): CandidateSubmissionAcceptedResult {
   return {
     accepted: true,
     status: "accepted",
@@ -19,6 +21,16 @@ function createAcceptedResult(kind: CandidateSubmissionInput["kind"]): Candidate
     reviewState: "candidate",
     eventId: "event-1",
     memoryObjectId: "memory-1",
+  };
+}
+
+function createAutoPromotedResult(
+  kind: CandidateSubmissionInput["kind"],
+): CandidateSubmissionAcceptedResult {
+  return {
+    ...createAcceptedResult(kind),
+    reviewState: "approved",
+    memoryObjectId: "approved-1",
   };
 }
 
@@ -282,20 +294,10 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(
-            {
-              ...createAcceptedResult("learning"),
-              reviewState: "approved",
-            },
-            null,
-            2,
-          ),
+          text: JSON.stringify(createAutoPromotedResult("learning"), null, 2),
         },
       ],
-      details: {
-        ...createAcceptedResult("learning"),
-        reviewState: "approved",
-      },
+      details: createAutoPromotedResult("learning"),
     });
     expect(runtime.candidateReview.review).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -341,20 +343,10 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(
-            {
-              ...createAcceptedResult("learning"),
-              reviewState: "approved",
-            },
-            null,
-            2,
-          ),
+          text: JSON.stringify(createAutoPromotedResult("learning"), null, 2),
         },
       ],
-      details: {
-        ...createAcceptedResult("learning"),
-        reviewState: "approved",
-      },
+      details: createAutoPromotedResult("learning"),
     });
     expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
     expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledTimes(1);
@@ -379,20 +371,10 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(
-            {
-              ...createAcceptedResult("learning"),
-              reviewState: "approved",
-            },
-            null,
-            2,
-          ),
+          text: JSON.stringify(createAutoPromotedResult("learning"), null, 2),
         },
       ],
-      details: {
-        ...createAcceptedResult("learning"),
-        reviewState: "approved",
-      },
+      details: createAutoPromotedResult("learning"),
     });
     expect(runtime.candidateReview.review).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -504,20 +486,10 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(
-            {
-              ...createAcceptedResult("learning"),
-              reviewState: "approved",
-            },
-            null,
-            2,
-          ),
+          text: JSON.stringify(createAutoPromotedResult("learning"), null, 2),
         },
       ],
-      details: {
-        ...createAcceptedResult("learning"),
-        reviewState: "approved",
-      },
+      details: createAutoPromotedResult("learning"),
     });
     expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -564,20 +536,10 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(
-            {
-              ...createAcceptedResult("learning"),
-              reviewState: "approved",
-            },
-            null,
-            2,
-          ),
+          text: JSON.stringify(createAutoPromotedResult("learning"), null, 2),
         },
       ],
-      details: {
-        ...createAcceptedResult("learning"),
-        reviewState: "approved",
-      },
+      details: createAutoPromotedResult("learning"),
     });
     expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -612,20 +574,10 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(
-            {
-              ...createAcceptedResult("learning"),
-              reviewState: "approved",
-            },
-            null,
-            2,
-          ),
+          text: JSON.stringify(createAutoPromotedResult("learning"), null, 2),
         },
       ],
-      details: {
-        ...createAcceptedResult("learning"),
-        reviewState: "approved",
-      },
+      details: createAutoPromotedResult("learning"),
     });
     expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -660,20 +612,10 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(
-            {
-              ...createAcceptedResult("learning"),
-              reviewState: "approved",
-            },
-            null,
-            2,
-          ),
+          text: JSON.stringify(createAutoPromotedResult("learning"), null, 2),
         },
       ],
-      details: {
-        ...createAcceptedResult("learning"),
-        reviewState: "approved",
-      },
+      details: createAutoPromotedResult("learning"),
     });
     expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
     expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledTimes(1);
@@ -697,10 +639,10 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+          text: JSON.stringify(createAutoPromotedResult("correction"), null, 2),
         },
       ],
-      details: createAcceptedResult("correction"),
+      details: createAutoPromotedResult("correction"),
     });
     expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -718,8 +660,8 @@ describe("memory candidate submit tool", () => {
         }),
       }),
     );
-    expect(runtime.candidateReview.review).not.toHaveBeenCalled();
-    expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
+    expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
+    expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledTimes(1);
   });
 
   it("normalizes tightly bounded named project facts from the tool path without auto-promotion", async () => {
@@ -819,10 +761,10 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+          text: JSON.stringify(createAutoPromotedResult("correction"), null, 2),
         },
       ],
-      details: createAcceptedResult("correction"),
+      details: createAutoPromotedResult("correction"),
     });
     expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -840,8 +782,8 @@ describe("memory candidate submit tool", () => {
         }),
       }),
     );
-    expect(runtime.candidateReview.review).not.toHaveBeenCalled();
-    expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
+    expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
+    expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledTimes(1);
   });
 
   it("reclassifies bounded response-style corrections when the model submits them as learning", async () => {
@@ -860,10 +802,10 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+          text: JSON.stringify(createAutoPromotedResult("correction"), null, 2),
         },
       ],
-      details: createAcceptedResult("correction"),
+      details: createAutoPromotedResult("correction"),
     });
     expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -886,6 +828,8 @@ describe("memory candidate submit tool", () => {
       }),
     );
     expect(runtime.candidateIngress.submitLearning).not.toHaveBeenCalled();
+    expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
+    expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledTimes(1);
   });
 
   it("reclassifies bounded bullet-point corrections when the model submits them as learning", async () => {
@@ -904,10 +848,10 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+          text: JSON.stringify(createAutoPromotedResult("correction"), null, 2),
         },
       ],
-      details: createAcceptedResult("correction"),
+      details: createAutoPromotedResult("correction"),
     });
     expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -929,6 +873,8 @@ describe("memory candidate submit tool", () => {
         }),
       }),
     );
+    expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
+    expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledTimes(1);
     expect(runtime.candidateIngress.submitLearning).not.toHaveBeenCalled();
   });
 

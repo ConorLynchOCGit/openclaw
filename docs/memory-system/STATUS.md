@@ -184,6 +184,12 @@ skill-candidate planning and creation plus procurement planning and internal
 procurement-record creation on the approved live production boundary, with
 explicit production proof, runbook coverage, no downstream vetting,
 approval, or install growth, and no retrieval broadening.
+First user-experience-focused semantic response-style slice completed on the
+approved live production boundary for its intended scope, with bounded
+semantic detection, candidate confirmation without manual review,
+conversational repair or forget for supported response-style subjects,
+checked-in messy-language eval coverage, and narrow production proof without
+broader automation enablement.
 
 ## Compact checkpoint
 
@@ -206,6 +212,39 @@ Current compact state:
   - procedure validation
   - skill-candidate planning and creation
   - procurement planning and internal procurement-record creation
+- first semantic response-style UX slice is now live for its intended scope
+- supported semantic response-style subjects now include:
+  - plain English / avoid jargon
+  - bullet points
+  - concise replies
+  - numbered steps when giving instructions
+  - no tables unless asked
+- semantic response-style capture now supports:
+  - natural preference statements
+  - bounded conversational corrections
+  - medium-confidence candidate confirmation without manual review
+  - targetable conversational forget for supported subjects
+  - weak ambiguous ignore instead of dead candidate backlog
+- latest semantic response-style proof timestamp:
+  - `2026-04-05T16:38:19.403Z`
+- latest semantic response-style production proof artifacts:
+  - `projectId = a3eddcc3-58cb-412f-a19b-ddc1cc20c65e`
+  - `agentId = f275b481-e49b-4a83-8c2a-8896d2848036`
+  - `sessionId = 7a2ce36a-ed01-4b80-9364-bc4d27487c61`
+  - `candidateId = cfe86364-440a-44f5-8dab-97d7004cbb1f`
+  - `candidateEventId = 208cd978-c7f7-4b1f-ac92-98cece6824f8`
+  - `cleanupReviewId = 11abf604-e12e-4d4a-b1bf-c20ea9980f3c`
+- latest semantic response-style production proof delta:
+  - `memory_events +1`
+  - `memory_objects +1`
+  - `memory_reviews +0` before cleanup
+  - ambiguous follow-up caused `+0` additional writes
+  - final approved-only retrieval for the seeded proof project remained empty
+- isolated proof additionally proved:
+  - transcript-seam semantic capture for all supported subjects
+  - bullet candidate confirmation with later auto-promotion
+  - overlap-aware retrieval choosing numbered steps correctly
+  - targetable conversational forget superseding the no-tables preference
 - latest quick-win production proof timestamp:
   - `2026-04-05T15:18:19.270Z`
 - latest quick-win production proof artifacts:
@@ -238,6 +277,8 @@ Current compact state:
 - fresh proof artifacts:
   - `eventId = c3c336fa-baac-4886-b8b1-a78a1e7abac4`
   - `memoryObjectId = 98833f6a-4305-48bf-8492-31f7b95f987d`
+- first semantic response-style UX production report now lives in:
+  - `docs/memory-system/PRODUCTION_RESPONSE_STYLE_UX_REPORT.md`
 - fresh proof delta:
   - `memory_events +1`
   - `memory_objects +1`

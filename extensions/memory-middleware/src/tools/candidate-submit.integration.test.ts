@@ -453,6 +453,7 @@ function createRuntime(params: {
     | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
     | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
     | "candidate-only";
+  autoPromotionProfile?: "disabled" | "explicit-user-preference-v1";
   queryMode?: "disabled" | "read-only" | "candidate-only";
   backgroundJobInspectionMode?: "disabled" | "enabled";
   backgroundJobAdvisorySchedulingMode?: "disabled" | "candidate-only";
@@ -631,6 +632,10 @@ function createRuntime(params: {
       },
       candidateIngress: {
         mode: params.mode,
+      },
+      autoPromotion: {
+        profile: params.autoPromotionProfile ?? "disabled",
+        allowedAgents: ["chief", "main"],
       },
       memoryObjectQuery: {
         mode: queryMode,
@@ -975,6 +980,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
       mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
     });
     const tool = createCandidateSubmitTool({
       runtime,
@@ -1044,6 +1050,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
       mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
     });
     const tool = createMemorySelfImprovingCaptureCandidateTool({
       runtime,
@@ -2531,11 +2538,12 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
-  it("persists bounded response-style correction overrides as correction candidates even when the tool call drifted to learning", async () => {
+  it("auto-promotes bounded response-style correction overrides even when the tool call drifted to learning", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
       mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
     });
     const submitTool = createCandidateSubmitTool({
       runtime,
@@ -2553,38 +2561,172 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         raw: "No, use bullet points for me.",
       },
     });
-    const candidateId = (submitResult.details as { memoryObjectId: string }).memoryObjectId;
+    expect(submitResult.details).toMatchObject({
+      accepted: true,
+      kind: "correction",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const promotedMemoryObjectId = (submitResult.details as { memoryObjectId: string })
+      .memoryObjectId;
 
     const row = await querySingleRow<{
       submission_kind: string;
       content: string;
+      review_state: string;
       category: string | null;
       template: string | null;
       from_kind: string | null;
       to_kind: string | null;
+      promotion_profile: string | null;
     }>(
       dbEnvironment.connectionString,
       `
         select
           metadata->>'submissionKind' as submission_kind,
           content,
+          review_state::text as review_state,
           metadata->'candidateMetadata'->>'category' as category,
           metadata->'candidateMetadata'->'autoCapture'->>'template' as template,
           metadata->'candidateMetadata'->'classificationAdjustment'->>'fromKind' as from_kind,
-          metadata->'candidateMetadata'->'classificationAdjustment'->>'toKind' as to_kind
+          metadata->'candidateMetadata'->'classificationAdjustment'->>'toKind' as to_kind,
+          metadata->'promotionMetadata'->'autoPromotion'->>'profile' as promotion_profile
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [promotedMemoryObjectId],
+    );
+
+    expect(row).toEqual({
+      submission_kind: "correction",
+      content: "User correction: use bullet points when listing items.",
+      review_state: "approved",
+      category: "user_requirement_correction",
+      template: "responses_bullets",
+      from_kind: "learning",
+      to_kind: "correction",
+      promotion_profile: "explicit-user-preference-v1",
+    });
+  });
+
+  it("promotes a medium-confidence response-style candidate after later confirming evidence without manual review", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-16s-semantic-medium", {
+      kind: "learning",
+      content: "can you use bullets",
+      projectId: seeded.projectId,
+    });
+    const candidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const initialRow = await querySingleRow<{
+      review_state: string;
+      content: string;
+      template: string | null;
+      lifecycle_state: string | null;
+      lifecycle_confidence: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          content,
+          metadata->'candidateMetadata'->'autoCapture'->>'template' as template,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'confidence' as lifecycle_confidence
         from memory_middleware.memory_objects
         where id = $1::uuid
       `,
       [candidateId],
     );
 
-    expect(row).toEqual({
-      submission_kind: "correction",
-      content: "User correction: use bullet points when listing items.",
-      category: "user_requirement_correction",
+    expect(initialRow).toEqual({
+      review_state: "candidate",
+      content: "can you use bullets",
       template: "responses_bullets",
-      from_kind: "learning",
-      to_kind: "correction",
+      lifecycle_state: "pending_confirmation",
+      lifecycle_confidence: "medium",
+    });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-16t-semantic-confirm", {
+      kind: "learning",
+      content: "use bullets when listing",
+      projectId: seeded.projectId,
+    });
+
+    expect(confirmingSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "learning",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const promotedMemoryObjectId = (confirmingSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const confirmedRow = await querySingleRow<{
+      candidate_review_state: string;
+      review_state: string;
+      object_count: string;
+      promotion_profile: string | null;
+      confirmation_state: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select review_state::text from memory_middleware.memory_objects where id = $1::uuid) as candidate_review_state,
+          (select review_state::text from memory_middleware.memory_objects where id = $2::uuid) as review_state,
+          (
+            select count(*)::text
+            from memory_middleware.memory_objects
+            where metadata->'candidateMetadata'->'autoCapture'->>'key' =
+              (
+                select metadata->'candidateMetadata'->'autoCapture'->>'key'
+                from memory_middleware.memory_objects
+                where id = $1::uuid
+              )
+          ) as object_count,
+          (select metadata->'promotionMetadata'->'autoPromotion'->>'profile'
+            from memory_middleware.memory_objects where id = $2::uuid) as promotion_profile,
+          (select metadata->'promotionMetadata'->'candidateConfirmation'->>'state'
+            from memory_middleware.memory_objects where id = $2::uuid) as confirmation_state
+      `,
+      [candidateId, promotedMemoryObjectId],
+    );
+
+    expect(confirmedRow).toEqual({
+      candidate_review_state: "candidate",
+      review_state: "approved",
+      object_count: "2",
+      promotion_profile: "response_style_confirmation_v1",
+      confirmation_state: "confirmed",
     });
   });
 

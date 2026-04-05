@@ -9,14 +9,33 @@ import {
   DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG,
   type MemoryMiddlewareConfig,
 } from "./config.js";
+import {
+  type ResponseStyleForgetResult,
+  type ResponseStyleLifecycleInspection,
+  forgetApprovedResponseStyleBySubjectKey,
+  inspectResponseStyleLifecycle,
+  isExpiredPendingResponseStyleCandidate,
+} from "./response-style-lifecycle.js";
+import {
+  detectResponseStyleSemanticDecision,
+  isResponseStyleCorrectionMatch,
+  isResponseStyleLearningMatch,
+  RESPONSE_STYLE_TEMPLATES,
+  type ResponseStyleCanonicalMatch,
+  type ResponseStyleSemanticConfidence,
+} from "./response-style-semantic.js";
 
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const AUTO_CAPTURE_SOURCE = "ordinary_turn_auto_capture";
 const AUTO_PROMOTION_SOURCE = "ordinary_turn_auto_promotion";
+const RESPONSE_STYLE_FORGET_SOURCE = "response_style_forget_request";
 const AUTO_CAPTURE_ALLOWED_ROLES = new Set(["user"]);
 const DEFAULT_ALLOWED_AGENTS = new Set(["chief", "main"]);
+const RESPONSE_STYLE_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
+const RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS = 5_000;
 const CORRECTION_PREFIX =
   "(?:actually,?|correction:|no,?|i meant,?|that(?:'|’)s not right,?|sorry,?)\\s*";
+const RESPONSE_STYLE_TEMPLATE_SET = new Set<string>(RESPONSE_STYLE_TEMPLATES);
 const PREFERENCE_PATTERNS = [
   {
     template: "my_preferred_is" as const,
@@ -547,8 +566,9 @@ type OrdinaryTurnAutoCaptureHandlerDeps = {
   }) => Promise<{ accepted: boolean; reason?: string; eventId?: string; memoryObjectId?: string }>;
   reviewCandidate: (input: {
     candidateId: string;
-    outcome: "accepted";
+    outcome: "accepted" | "rejected";
     reviewerAgentId?: string;
+    rationale?: string;
     metadata?: Record<string, unknown>;
   }) => Promise<{ accepted: boolean; reason?: string; reviewId?: string }>;
   promoteToMemory: (input: {
@@ -556,12 +576,52 @@ type OrdinaryTurnAutoCaptureHandlerDeps = {
     promoterAgentId?: string;
     metadata?: Record<string, unknown>;
   }) => Promise<{ accepted: boolean; reason?: string; promotedMemoryObjectId?: string }>;
+  inspectResponseStyleLifecycle: (params: {
+    config: MemoryMiddlewareConfig;
+    key: string;
+    subjectKey: string;
+    logger?: PluginLogger;
+  }) => Promise<ResponseStyleLifecycleInspection | null>;
+  forgetApprovedResponseStyleBySubjectKey: (params: {
+    config: MemoryMiddlewareConfig;
+    subjectKey: string;
+    reviewerAgentId?: string;
+    metadata?: Record<string, unknown>;
+  }) => Promise<ResponseStyleForgetResult>;
 };
 
 export type OrdinaryTurnAutoCaptureController = {
   start: () => void;
   stop: () => void;
 };
+
+type ResponseStyleDetectionSource = "deterministic" | "semantic";
+
+type ResponseStyleCaptureDecision =
+  | {
+      action: "capture";
+      confidence: "high";
+      detectionSource: "deterministic" | "semantic";
+      evidence: string[];
+      match: OrdinaryTurnAutoCaptureMatch;
+      confirmationMode: "direct";
+    }
+  | {
+      action: "capture";
+      confidence: ResponseStyleSemanticConfidence;
+      detectionSource: "semantic";
+      evidence: string[];
+      match: OrdinaryTurnAutoCaptureMatch;
+      confirmationMode: "pending_confirmation";
+    }
+  | {
+      action: "forget";
+      confidence: "high";
+      detectionSource: "semantic";
+      evidence: string[];
+      subject: string;
+      subjectKey: string;
+    };
 
 function quoteIdentifier(value: string): string {
   if (!SAFE_IDENTIFIER_PATTERN.test(value)) {
@@ -1205,6 +1265,85 @@ export function parseManagedCorrectionCandidateContent(
   return null;
 }
 
+function isSupportedResponseStyleTemplate(template: string): boolean {
+  return RESPONSE_STYLE_TEMPLATE_SET.has(template);
+}
+
+function toOrdinaryTurnResponseStyleMatch(
+  match: ResponseStyleCanonicalMatch,
+): OrdinaryTurnAutoCaptureMatch {
+  return {
+    profile: "user-preference-v2",
+    captureClass: match.captureClass,
+    candidateKind: match.candidateKind,
+    reasonCode: match.reasonCode,
+    template: match.template,
+    subject: match.subject,
+    value: match.value,
+    normalizedSubject: match.normalizedSubject,
+    normalizedValue: match.normalizedValue,
+    content: match.content,
+    subjectKey: match.subjectKey,
+    key: match.key,
+  };
+}
+
+function detectResponseStyleCaptureDecision(
+  text: string,
+  profile: "user-preference-v1" | "user-preference-v2",
+): ResponseStyleCaptureDecision | null {
+  if (profile !== "user-preference-v2") {
+    return null;
+  }
+
+  const exactMatch = parseOrdinaryTurnAutoCapturePreference(text, profile);
+  if (exactMatch && isSupportedResponseStyleTemplate(exactMatch.template)) {
+    return {
+      action: "capture",
+      confidence: "high",
+      detectionSource: "deterministic",
+      evidence: ["deterministic_pattern_match"],
+      match: exactMatch,
+      confirmationMode: "direct",
+    };
+  }
+
+  const semanticDecision = detectResponseStyleSemanticDecision(text);
+  if (semanticDecision.action === "ignore") {
+    return null;
+  }
+  if (semanticDecision.action === "forget") {
+    return {
+      action: "forget",
+      confidence: "high",
+      detectionSource: "semantic",
+      evidence: semanticDecision.evidence,
+      subject: semanticDecision.subject,
+      subjectKey: semanticDecision.subjectKey,
+    };
+  }
+
+  const match = toOrdinaryTurnResponseStyleMatch(semanticDecision.match);
+  if (semanticDecision.confidence === "high") {
+    return {
+      action: "capture",
+      confidence: "high",
+      detectionSource: "semantic",
+      evidence: semanticDecision.evidence,
+      match,
+      confirmationMode: "direct",
+    };
+  }
+  return {
+    action: "capture",
+    confidence: "medium",
+    detectionSource: "semantic",
+    evidence: semanticDecision.evidence,
+    match,
+    confirmationMode: "pending_confirmation",
+  };
+}
+
 async function resolveAttributionWithDatabase(params: {
   config: MemoryMiddlewareConfig;
   agentExternalKey: string;
@@ -1336,11 +1475,54 @@ function createDefaultDeps(
         reason: "auto-promotion promotion dependency is not configured",
       };
     },
+    inspectResponseStyleLifecycle,
+    forgetApprovedResponseStyleBySubjectKey,
   };
 }
 
 function formatLog(message: string, meta: Record<string, unknown>): string {
   return `${message} ${JSON.stringify(meta)}`;
+}
+
+function buildResponseStyleSemanticMetadata(params: {
+  detectionSource: ResponseStyleDetectionSource;
+  confidence: ResponseStyleSemanticConfidence | "high";
+  evidence: string[];
+}): Record<string, unknown> {
+  return {
+    semanticDetection: {
+      source: "response_style_semantic_v1",
+      detectionSource: params.detectionSource,
+      confidence: params.confidence,
+      evidence: params.evidence,
+    },
+  };
+}
+
+function buildPendingConfirmationMetadata(params: {
+  confidence: ResponseStyleSemanticConfidence;
+  evidence: string[];
+  observedAt?: string;
+}): Record<string, unknown> {
+  const observedAt = params.observedAt ?? new Date().toISOString();
+  return {
+    candidateLifecycle: {
+      family: "response_style",
+      state: "pending_confirmation",
+      confidence: params.confidence,
+      evidenceCount: 1,
+      observedAt,
+      expiresAt: new Date(
+        Date.parse(observedAt) + RESPONSE_STYLE_CONFIRMATION_WINDOW_MS,
+      ).toISOString(),
+      evidence: params.evidence,
+    },
+  };
+}
+
+function shouldSkipImmediateConfirmation(createdAt: string, now = Date.now()): boolean {
+  const createdAtMs = Date.parse(createdAt);
+  return Number.isFinite(createdAtMs) && now - createdAtMs < RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS;
 }
 
 function buildSubscriberCaptureMetadata(params: {
@@ -1349,6 +1531,7 @@ function buildSubscriberCaptureMetadata(params: {
   sessionKey: string;
   transcriptFile: string;
   timestamp?: string;
+  extraMetadata?: Record<string, unknown>;
 }): Record<string, unknown> {
   const { match } = params;
   const metadata: Record<string, unknown> = {
@@ -1403,7 +1586,128 @@ function buildSubscriberCaptureMetadata(params: {
       break;
   }
 
-  return metadata;
+  return params.extraMetadata ? { ...metadata, ...params.extraMetadata } : metadata;
+}
+
+async function rejectCandidateIfPresent(params: {
+  candidateId: string;
+  subjectKey: string;
+  rationale: string;
+  reviewerAgentId?: string;
+  logger: PluginLogger;
+  reviewCandidate: OrdinaryTurnAutoCaptureHandlerDeps["reviewCandidate"];
+  source: string;
+}): Promise<void> {
+  const result = await params.reviewCandidate({
+    candidateId: params.candidateId,
+    outcome: "rejected",
+    reviewerAgentId: params.reviewerAgentId,
+    rationale: params.rationale,
+    metadata: {
+      source: params.source,
+      candidateLifecycle: {
+        family: "response_style",
+        state: "rejected",
+        subjectKey: params.subjectKey,
+      },
+    },
+  });
+  if (!result.accepted) {
+    params.logger.warn(
+      formatLog("memory-middleware response-style candidate rejection failed", {
+        candidateId: params.candidateId,
+        subjectKey: params.subjectKey,
+        reason: result.reason ?? "unknown",
+      }),
+    );
+  }
+}
+
+async function autoPromoteResponseStyleCandidate(params: {
+  candidateId: string;
+  reviewerAgentId?: string;
+  logger: PluginLogger;
+  reviewCandidate: OrdinaryTurnAutoCaptureHandlerDeps["reviewCandidate"];
+  promoteToMemory: OrdinaryTurnAutoCaptureHandlerDeps["promoteToMemory"];
+  metadata: Record<string, unknown>;
+  logContext: Record<string, unknown>;
+}): Promise<boolean> {
+  const reviewResult = await params.reviewCandidate({
+    candidateId: params.candidateId,
+    outcome: "accepted",
+    reviewerAgentId: params.reviewerAgentId,
+    metadata: params.metadata,
+  });
+  if (!reviewResult.accepted) {
+    params.logger.warn(
+      formatLog("memory-middleware response-style auto-promotion review rejected", {
+        ...params.logContext,
+        candidateId: params.candidateId,
+        reason: reviewResult.reason ?? "unknown",
+      }),
+    );
+    return false;
+  }
+
+  const promotionResult = await params.promoteToMemory({
+    candidateId: params.candidateId,
+    promoterAgentId: params.reviewerAgentId,
+    metadata: params.metadata,
+  });
+  if (!promotionResult.accepted) {
+    params.logger.warn(
+      formatLog("memory-middleware response-style auto-promotion failed", {
+        ...params.logContext,
+        candidateId: params.candidateId,
+        reason: promotionResult.reason ?? "unknown",
+      }),
+    );
+    return false;
+  }
+
+  params.logger.info(
+    formatLog("memory-middleware response-style auto-promotion accepted", {
+      ...params.logContext,
+      candidateId: params.candidateId,
+      promotedMemoryObjectId: promotionResult.promotedMemoryObjectId,
+    }),
+  );
+  return true;
+}
+
+function buildResponseStyleAutoPromotionMetadata(params: {
+  match: OrdinaryTurnAutoCaptureMatch;
+  agentExternalKey: string;
+  sessionKey: string;
+  transcriptFile: string;
+  autoPromotionProfile: string;
+  timestamp?: string;
+  semanticMetadata?: Record<string, unknown>;
+  candidateConfirmation?: Record<string, unknown>;
+}): Record<string, unknown> {
+  return {
+    autoPromotion: {
+      source: AUTO_PROMOTION_SOURCE,
+      captureSeam: "transcript_subscriber_fallback",
+      profile: params.autoPromotionProfile,
+      captureProfile: params.match.profile,
+      captureClass: params.match.captureClass,
+      reasonCode: params.match.reasonCode,
+      key: params.match.key,
+      subjectKey: params.match.subjectKey,
+      subject: params.match.subject,
+      value: params.match.value,
+      ...(params.match.projectScope ? { projectScope: params.match.projectScope } : {}),
+      agentExternalKey: params.agentExternalKey,
+      sessionKey: params.sessionKey,
+      transcriptFile: params.transcriptFile,
+      ...(params.timestamp ? { transcriptTimestamp: params.timestamp } : {}),
+    },
+    ...(params.semanticMetadata ?? {}),
+    ...(params.candidateConfirmation
+      ? { candidateConfirmation: params.candidateConfirmation }
+      : {}),
+  };
 }
 
 export function createOrdinaryTurnAutoCaptureHandler(params: {
@@ -1440,6 +1744,310 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     }
   }
 
+  async function handleResponseStyleDecision(decisionParams: {
+    decision: ResponseStyleCaptureDecision;
+    agentExternalKey: string;
+    sessionKey: string;
+    transcriptFile: string;
+    timestamp?: string;
+  }): Promise<boolean> {
+    const semanticMetadata =
+      decisionParams.decision.detectionSource === "semantic"
+        ? buildResponseStyleSemanticMetadata({
+            detectionSource: decisionParams.decision.detectionSource,
+            confidence: decisionParams.decision.confidence,
+            evidence: decisionParams.decision.evidence,
+          })
+        : undefined;
+
+    if (decisionParams.decision.action === "forget") {
+      const attribution = await deps.resolveAttribution({
+        config: params.config,
+        agentExternalKey: decisionParams.agentExternalKey,
+        sessionKey: decisionParams.sessionKey,
+        transcriptFile: decisionParams.transcriptFile,
+      });
+      if (!attribution) {
+        params.logger.warn(
+          formatLog("memory-middleware response-style forget skipped missing attribution", {
+            agentExternalKey: decisionParams.agentExternalKey,
+            sessionKey: decisionParams.sessionKey,
+            subjectKey: decisionParams.decision.subjectKey,
+          }),
+        );
+        return true;
+      }
+      const inspection = await deps.inspectResponseStyleLifecycle({
+        config: params.config,
+        key: decisionParams.decision.subjectKey,
+        subjectKey: decisionParams.decision.subjectKey,
+        logger: params.logger,
+      });
+      if (inspection?.pendingSubjectCandidateIds.length) {
+        for (const candidateId of inspection.pendingSubjectCandidateIds) {
+          await rejectCandidateIfPresent({
+            candidateId,
+            subjectKey: decisionParams.decision.subjectKey,
+            rationale: "targeted forget request replaced pending response-style candidate state",
+            reviewerAgentId: attribution.agentId,
+            logger: params.logger,
+            reviewCandidate: deps.reviewCandidate,
+            source: RESPONSE_STYLE_FORGET_SOURCE,
+          });
+        }
+      }
+      const forgetResult = await deps.forgetApprovedResponseStyleBySubjectKey({
+        config: params.config,
+        subjectKey: decisionParams.decision.subjectKey,
+        reviewerAgentId: attribution.agentId,
+        metadata: {
+          source: RESPONSE_STYLE_FORGET_SOURCE,
+          subject: decisionParams.decision.subject,
+          captureSeam: "transcript_subscriber_fallback",
+          ...(semanticMetadata ?? {}),
+        },
+      });
+      if (!forgetResult.accepted) {
+        params.logger.warn(
+          formatLog("memory-middleware response-style forget failed", {
+            subjectKey: decisionParams.decision.subjectKey,
+            reason: forgetResult.reason,
+          }),
+        );
+      } else {
+        params.logger.info(
+          formatLog("memory-middleware response-style forget recorded", {
+            subjectKey: decisionParams.decision.subjectKey,
+            status: forgetResult.status,
+            supersededObjectIds: forgetResult.supersededObjectIds,
+          }),
+        );
+      }
+      return true;
+    }
+
+    const match = decisionParams.decision.match;
+    if (inFlightKeys.has(match.key)) {
+      return true;
+    }
+
+    const inspection = await deps.inspectResponseStyleLifecycle({
+      config: params.config,
+      key: match.key,
+      subjectKey: match.subjectKey,
+      logger: params.logger,
+    });
+    const attribution = await deps.resolveAttribution({
+      config: params.config,
+      agentExternalKey: decisionParams.agentExternalKey,
+      sessionKey: decisionParams.sessionKey,
+      transcriptFile: decisionParams.transcriptFile,
+    });
+    if (!attribution) {
+      params.logger.warn(
+        formatLog("memory-middleware ordinary-turn auto-capture skipped missing attribution", {
+          agentExternalKey: decisionParams.agentExternalKey,
+          sessionKey: decisionParams.sessionKey,
+          key: match.key,
+        }),
+      );
+      return true;
+    }
+
+    if (
+      inspection?.pendingCandidate &&
+      isExpiredPendingResponseStyleCandidate(inspection.pendingCandidate)
+    ) {
+      await rejectCandidateIfPresent({
+        candidateId: inspection.pendingCandidate.id,
+        subjectKey: match.subjectKey,
+        rationale:
+          "response-style candidate confirmation window expired without later confirming evidence",
+        reviewerAgentId: attribution.agentId,
+        logger: params.logger,
+        reviewCandidate: deps.reviewCandidate,
+        source: "response_style_candidate_confirmation",
+      });
+    }
+
+    if (
+      inspection?.matchingApprovedObjectId &&
+      (isResponseStyleLearningMatch(match) || isResponseStyleCorrectionMatch(match))
+    ) {
+      params.logger.debug?.(
+        formatLog("memory-middleware response-style capture skipped existing approved key", {
+          key: match.key,
+          memoryObjectId: inspection.matchingApprovedObjectId,
+        }),
+      );
+      markRecent(match.key);
+      return true;
+    }
+
+    if (recentKeys.has(match.key) && !inspection?.pendingCandidate) {
+      params.logger.debug?.(
+        formatLog("memory-middleware response-style capture skipped recent duplicate", {
+          key: match.key,
+        }),
+      );
+      return true;
+    }
+
+    if (isResponseStyleCorrectionMatch(match) && inspection?.pendingSubjectCandidateIds.length) {
+      for (const candidateId of inspection.pendingSubjectCandidateIds) {
+        if (candidateId === inspection.pendingCandidate?.id) {
+          continue;
+        }
+        await rejectCandidateIfPresent({
+          candidateId,
+          subjectKey: match.subjectKey,
+          rationale: "high-confidence response-style correction superseded pending candidate state",
+          reviewerAgentId: attribution.agentId,
+          logger: params.logger,
+          reviewCandidate: deps.reviewCandidate,
+          source: "response_style_candidate_correction_reject",
+        });
+      }
+    }
+
+    const candidateMetadata = buildSubscriberCaptureMetadata({
+      match,
+      agentExternalKey: decisionParams.agentExternalKey,
+      sessionKey: decisionParams.sessionKey,
+      transcriptFile: decisionParams.transcriptFile,
+      ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
+      extraMetadata: {
+        ...(semanticMetadata ?? {}),
+        ...(decisionParams.decision.confirmationMode === "pending_confirmation"
+          ? buildPendingConfirmationMetadata({
+              confidence: decisionParams.decision.confidence,
+              evidence: decisionParams.decision.evidence,
+              ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
+            })
+          : {}),
+      },
+    });
+
+    if (
+      inspection?.pendingCandidate &&
+      !isExpiredPendingResponseStyleCandidate(inspection.pendingCandidate) &&
+      !shouldSkipImmediateConfirmation(inspection.pendingCandidate.createdAt)
+    ) {
+      const promoted = await autoPromoteResponseStyleCandidate({
+        candidateId: inspection.pendingCandidate.id,
+        reviewerAgentId: attribution.agentId,
+        logger: params.logger,
+        reviewCandidate: deps.reviewCandidate,
+        promoteToMemory: deps.promoteToMemory,
+        metadata: buildResponseStyleAutoPromotionMetadata({
+          match,
+          agentExternalKey: decisionParams.agentExternalKey,
+          sessionKey: decisionParams.sessionKey,
+          transcriptFile: decisionParams.transcriptFile,
+          autoPromotionProfile: "response_style_confirmation_v1",
+          ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
+          ...(semanticMetadata ? { semanticMetadata } : {}),
+          candidateConfirmation: {
+            state: "confirmed",
+            method: "repeat_subject_signal",
+            confirmationEvidenceCount: 2,
+            confirmationWindowMs: RESPONSE_STYLE_CONFIRMATION_WINDOW_MS,
+          },
+        }),
+        logContext: {
+          key: match.key,
+          subjectKey: match.subjectKey,
+          confirmationMode: "repeat_subject_signal",
+          confidence: decisionParams.decision.confidence,
+        },
+      });
+      if (promoted) {
+        markRecent(match.key);
+      }
+      return true;
+    }
+
+    if (
+      inspection?.pendingCandidate &&
+      !isExpiredPendingResponseStyleCandidate(inspection.pendingCandidate) &&
+      shouldSkipImmediateConfirmation(inspection.pendingCandidate.createdAt)
+    ) {
+      params.logger.debug?.(
+        formatLog("memory-middleware response-style capture skipped immediate duplicate", {
+          key: match.key,
+          candidateId: inspection.pendingCandidate.id,
+        }),
+      );
+      markRecent(match.key);
+      return true;
+    }
+
+    const submit =
+      match.candidateKind === "correction" ? deps.submitCorrectionSuggestion : deps.submitLearning;
+    const result = await submit({
+      content: match.content,
+      agentId: attribution.agentId,
+      sessionId: attribution.sessionId,
+      metadata: candidateMetadata,
+    });
+    if (!result.accepted) {
+      params.logger.warn(
+        formatLog("memory-middleware ordinary-turn auto-capture submission rejected", {
+          key: match.key,
+          reason: result.reason ?? "unknown",
+        }),
+      );
+      return true;
+    }
+
+    markRecent(match.key);
+
+    const shouldDirectPromote =
+      autoPromotion.profile === "explicit-user-preference-v1" &&
+      autoPromotionAgents.has(decisionParams.agentExternalKey) &&
+      result.memoryObjectId &&
+      decisionParams.decision.confirmationMode === "direct" &&
+      (isResponseStyleLearningMatch(match) || isResponseStyleCorrectionMatch(match));
+
+    if (shouldDirectPromote && result.memoryObjectId) {
+      await autoPromoteResponseStyleCandidate({
+        candidateId: result.memoryObjectId,
+        reviewerAgentId: attribution.agentId,
+        logger: params.logger,
+        reviewCandidate: deps.reviewCandidate,
+        promoteToMemory: deps.promoteToMemory,
+        metadata: buildResponseStyleAutoPromotionMetadata({
+          match,
+          agentExternalKey: decisionParams.agentExternalKey,
+          sessionKey: decisionParams.sessionKey,
+          transcriptFile: decisionParams.transcriptFile,
+          autoPromotionProfile: autoPromotion.profile,
+          ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
+          ...(semanticMetadata ? { semanticMetadata } : {}),
+        }),
+        logContext: {
+          key: match.key,
+          subjectKey: match.subjectKey,
+          confidence: decisionParams.decision.confidence,
+        },
+      });
+    }
+
+    params.logger.info(
+      formatLog("memory-middleware ordinary-turn response-style capture accepted", {
+        key: match.key,
+        profile: match.profile,
+        captureClass: match.captureClass,
+        candidateKind: match.candidateKind,
+        confidence: decisionParams.decision.confidence,
+        confirmationMode: decisionParams.decision.confirmationMode,
+        eventId: result.eventId,
+        memoryObjectId: result.memoryObjectId,
+      }),
+    );
+    return true;
+  }
+
   return async (update) => {
     if (autoCapture.profile === "disabled") {
       return;
@@ -1463,6 +2071,20 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       update.message ?? (await readLatestTranscriptUserMessage(transcriptFile));
     const text = extractTranscriptUserText(transcriptMessage);
     if (!text) {
+      return;
+    }
+    const timestamp = extractTranscriptTimestamp(transcriptMessage);
+    const responseStyleDecision = detectResponseStyleCaptureDecision(text, autoCapture.profile);
+    if (
+      responseStyleDecision &&
+      (await handleResponseStyleDecision({
+        decision: responseStyleDecision,
+        agentExternalKey,
+        sessionKey,
+        transcriptFile,
+        ...(timestamp ? { timestamp } : {}),
+      }))
+    ) {
       return;
     }
     const match = parseOrdinaryTurnAutoCapturePreference(text, autoCapture.profile);
@@ -1505,7 +2127,6 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         );
         return;
       }
-      const timestamp = extractTranscriptTimestamp(transcriptMessage);
       const candidateMetadata = buildSubscriberCaptureMetadata({
         match,
         agentExternalKey,

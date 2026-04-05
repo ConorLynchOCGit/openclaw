@@ -2,69 +2,75 @@
 
 ## Active slice
 
-Memory spec-pack and implementation sequencing pass before the next major code
-slice
+Semantic response-style UX v1
 
 ## Objective
 
-Prepare the memory system for fast, coherent implementation by turning the new
-roadmap into a discoverable spec pack.
+Land the first bounded user-facing semantic memory slice so response-style
+preferences feel materially more natural and repairable without broadening
+into a generic fuzzy memory writer.
 
 This slice is about:
 
-- separating:
-  - what is already built and live
-  - what is built but not yet normal production behavior
-  - what is not built yet
-- writing implementation-ready specs for the major not-built families
-- writing productionization plans for the built-off-production governance
-  surfaces
-- defining sequencing, guardrails, and premortem coverage before more feature
-  code begins
-- updating the roadmap and entrypoint docs so fresh sessions can find the
-  architecture and spec pack immediately
+- bounded semantic detection for supported response-style subjects
+- candidate-with-confirmation instead of dead manual-review backlog
+- approved-only behavior application for remembered response-style memory
+- conversational correction, supersede, and targetable forget for this family
+- checked-in messy-language eval coverage for this family
+- isolated proof plus narrow production proof
+- updating the canonical memory docs to reflect what is now live
 
 ## Required work
 
-1. Inventory the remaining roadmap families as:
-   - `built_live`
-   - `built_offprod_or_partial`
-   - `not_built`
-2. Write dedicated specs for the major not-built families.
-3. Write productionization plans for already-built but not-yet-online
-   governance surfaces.
-4. Add sequencing guidance and premortem guardrails.
-5. Update:
+1. Implement bounded semantic response-style detection for the supported
+   subject family.
+2. Implement the locked ambiguity posture for this family:
+   - conservative writes
+   - candidate-with-confirmation
+   - sparse clarify
+   - ignore weak ambiguous signals
+3. Implement later confirmation and bounded non-promotion behavior.
+4. Improve approved response-style behavior application and overlap handling.
+5. Implement conversational repair for this family only.
+6. Add checked-in messy-language eval coverage for the supported subjects.
+7. Run isolated proof and narrow production proof.
+8. Update:
 
 - `docs/memory-system/STATUS.md`
-- `docs/memory-system/DECISIONS.md`
-- `docs/memory-system/OPEN_QUESTIONS.md`
-- `docs/memory-system/CURRENT_SLICE.md`
-- `docs/memory-system/README.md`
 - `docs/memory-system/memory-roadmap.md`
 - `docs/memory-system/feature-inventory.md`
-- `docs/memory-system/specs/README.md`
+- `docs/memory-system/OPERATIONAL_RUNBOOK.md`
+- `docs/memory-system/CURRENT_SLICE.md`
+- `docs/memory-system/PRODUCTION_RESPONSE_STYLE_UX_REPORT.md`
 
 ## Out of scope
 
-- implementation code for new memory features
-- production posture changes
-- enabling new runtime behavior
-- enabling self-improving capture
-- enabling actual installation
-- automatic Skill Vetter invocation
-- runtime memory-slot takeover
+- broader semantic learning-event families
+- phrase induction as live behavior
+- recurring procedure memory as a user-facing semantic feature
+- workflow-improvement memory
+- broader project-memory expansion
+- unmet-need planning
+- self-improving capture enablement
+- UI memory inspection surfaces
+- production pairing/auth changes
+- procurement, vetting, approval, or install automation
 
 ## Acceptance criteria
 
-- a canonical feature inventory exists
-- the major not-built families each have implementation-ready specs
-- built-off-production governance surfaces have explicit productionization
-  plans
-- sequencing and premortem docs exist
-- the roadmap and entrypoint docs point to the new spec pack
+- supported natural response-style phrasing works materially better than the
+  old phrase-first posture
+- later confirming evidence can promote a bounded response-style candidate
+  without manual review
+- weak ambiguous signals do not become dead candidate trash
+- later replies apply approved remembered response-style behavior more
+  consistently
+- users can repair supported response-style memory conversationally
+- isolated proof and narrow production proof both exist
+- canonical docs reflect the live boundary accurately
 
 ## Notes
 
-This slice does not broaden into full autonomous memory behavior or begin new
-feature implementation.
+This slice is now landed for its intended scope.
+
+The next UX-focused memory slice has not been chosen yet.

@@ -258,6 +258,74 @@ Current approved boundary note:
   - `memory_skill_candidate_install_handoff`
   - `memory_skill_candidate_install_record_create`
 
+## Response-style semantic UX workflow
+
+The first user-facing semantic memory slice is now live for the bounded
+response-style family only.
+
+Supported subjects:
+
+- plain English / avoid jargon
+- bullet points
+- concise replies
+- numbered steps when giving instructions
+- no tables unless asked
+
+Current live behavior:
+
+- bounded natural-language response-style detection is allowed for this family
+- high-confidence low-risk turns can still land as approved memory through the
+  existing bounded posture
+- medium-confidence turns can enter a pending-confirmation lifecycle instead of
+  a dead manual-review queue
+- later confirming evidence can auto-promote those pending candidates without
+  manual review
+- approved-only memory remains the behavior-application source
+- targetable conversational forget is allowed for supported response-style
+  subjects
+- weak ambiguous turns should be ignored instead of creating memory trash
+
+Relevant surfaces:
+
+- transcript ordinary-turn path:
+  - `extensions/memory-middleware/src/ordinary-turn-auto-capture.ts`
+- tool path:
+  - `memory_candidate_submit`
+- retrieval / application:
+  - `memory_object_list`
+  - `memory_object_get`
+  - approved-memory hybrid search and prompt shaping
+
+Expected operator checks:
+
+- supported natural phrasing can create bounded response-style candidates or
+  approved rows without introducing freeform semantic memory
+- a medium-confidence candidate can later show:
+  - bounded pending-confirmation metadata
+  - a later approved row with:
+    - `promotionProfile = response_style_confirmation_v1`
+    - `confirmationState = confirmed`
+- approved response-style retrieval continues to rank the most relevant
+  overlapping approved template cleanly
+- a targetable forget turn can:
+  - reject a pending candidate
+  - supersede an approved supported response-style row
+- `memory_object_list(scope = approved_only)` remains the only behavior
+  application source
+- weak ambiguous nearby text should not create additional durable writes
+
+Current approved boundary note:
+
+- no phrase induction behavior is live
+- no broader semantic learning-event families are live
+- no UI memory browser or inspection surface exists
+- candidates should not shape user-visible behavior before approval in this
+  slice
+
+For the exact proof ids and production evidence for this slice, use:
+
+- `docs/memory-system/PRODUCTION_RESPONSE_STYLE_UX_REPORT.md`
+
 ## Background-job inspection
 
 ### List current jobs

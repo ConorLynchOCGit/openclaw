@@ -41,6 +41,22 @@ Current state:
   - procedure validation
   - skill-candidate planning and creation
   - procurement planning plus internal procurement-record creation
+- the first bounded semantic response-style UX slice is now live for its
+  intended scope:
+  - semantic response-style detection is live for:
+    - plain English / avoid jargon
+    - bullet points
+    - concise replies
+    - numbered steps when giving instructions
+    - no tables unless asked
+  - medium-confidence response-style signals can now enter a
+    candidate-with-confirmation lifecycle instead of dead manual backlog
+  - later confirming evidence can auto-promote a bounded response-style
+    candidate without manual review
+  - bounded conversational forget is live for targetable supported
+    response-style subjects
+  - a checked-in messy-language eval harness now exists for the supported
+    response-style family
 - Slice 7 is now landed for its intended scope:
   - `I meant plain English, not jargon.` can land as a bounded correction
   - `No, use bullet points for me.` can be accepted through bounded fallback
@@ -53,8 +69,9 @@ Current state:
 
 Current live limits:
 
-- the front end is still too brittle because deterministic matching is doing
-  too much of the first-pass interpretation work
+- the front end is improved for the bounded response-style family, but still
+  too brittle outside that family because deterministic matching is doing too
+  much of the first-pass interpretation work
 - broader semantic learning-event detection is not live yet
 - phrase induction from fuzzy detections into reviewed deterministic patterns
   is not live yet
@@ -126,6 +143,9 @@ architecture each time:
 
 The next phase of this build should stop treating exact phrase matching as the
 primary product strategy.
+
+The first bounded production proof of that direction is now live for the
+response-style family only.
 
 The correct long-term shape is:
 
