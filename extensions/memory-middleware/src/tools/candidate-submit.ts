@@ -17,6 +17,16 @@ import {
   type OrdinaryTurnAutoCaptureMatch,
 } from "../ordinary-turn-auto-capture.js";
 import {
+  inspectProjectFactLifecycle,
+  isExpiredPendingProjectFactCandidate,
+} from "../project-fact-lifecycle.js";
+import {
+  detectProjectFactSemanticDecision,
+  isSupportedProjectFactField,
+  type ProjectFactFieldKey,
+  type ProjectFactSemanticConfidence,
+} from "../project-fact-semantic.js";
+import {
   inspectResponseStyleLifecycle,
   isExpiredPendingResponseStyleCandidate,
 } from "../response-style-lifecycle.js";
@@ -40,6 +50,7 @@ import {
 type CandidateSubmitRawParams = ToolRawParams;
 
 const RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS = 5_000;
+const PROJECT_FACT_CONFIRMATION_MIN_AGE_MS = 5_000;
 
 function candidateKindSchema() {
   return Type.Unsafe<CandidateSubmissionKind>({
@@ -339,6 +350,199 @@ async function maybeResolveExistingResponseStyleCandidate(params: {
   return null;
 }
 
+function buildToolProjectFactAutoPromotionMetadata(params: {
+  input: CandidateSubmissionInput;
+  autoPromotionProfile: string;
+  confirmationState?: "confirmed";
+}): Record<string, unknown> {
+  const autoCapture = params.input.metadata?.autoCapture;
+  const semanticDetection = params.input.metadata?.semanticDetection;
+  return {
+    autoPromotion: {
+      source: "candidate_submit_auto_promotion",
+      captureSeam: "model_tool_primary",
+      profile: params.autoPromotionProfile,
+      captureProfile:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { profile?: unknown }).profile
+          : undefined,
+      captureClass:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { captureClass?: unknown }).captureClass
+          : undefined,
+      reasonCode:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { reasonCode?: unknown }).reasonCode
+          : undefined,
+      fieldKey:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { fieldKey?: unknown }).fieldKey
+          : undefined,
+      key:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { key?: unknown }).key
+          : undefined,
+      subjectKey:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { subjectKey?: unknown }).subjectKey
+          : undefined,
+      projectScope:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { projectScope?: unknown }).projectScope
+          : undefined,
+      subject:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { subject?: unknown }).subject
+          : undefined,
+      value:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { value?: unknown }).value
+          : undefined,
+      toolName: "memory_candidate_submit",
+    },
+    ...(semanticDetection &&
+    typeof semanticDetection === "object" &&
+    !Array.isArray(semanticDetection)
+      ? { semanticDetection }
+      : {}),
+    ...(params.confirmationState
+      ? {
+          candidateConfirmation: {
+            state: params.confirmationState,
+            method: "repeat_subject_signal",
+            confirmationEvidenceCount: 2,
+          },
+        }
+      : {}),
+  };
+}
+
+async function maybeResolveExistingProjectFactCandidate(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: CandidateSubmissionInput;
+}): Promise<CandidateSubmissionResult | null> {
+  if (params.input.kind !== "learning" && params.input.kind !== "correction") {
+    return null;
+  }
+  const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
+  const key = readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]);
+  const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
+  const fieldKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "fieldKey"]);
+  if (
+    template !== "project_fact_named_scope" ||
+    !key ||
+    !subjectKey ||
+    !fieldKey ||
+    !isSupportedProjectFactField(fieldKey)
+  ) {
+    return null;
+  }
+
+  const inspection = await inspectProjectFactLifecycle({
+    config: params.runtime.config,
+    key,
+    subjectKey,
+  });
+  if (!inspection) {
+    return null;
+  }
+
+  if (
+    inspection.pendingCandidate &&
+    isExpiredPendingProjectFactCandidate(inspection.pendingCandidate)
+  ) {
+    await params.runtime.candidateReview.review({
+      candidateId: inspection.pendingCandidate.id,
+      outcome: "rejected",
+      rationale:
+        "project-fact candidate confirmation window expired without later confirming evidence",
+      metadata: {
+        source: "candidate_submit_project_fact_confirmation",
+        candidateLifecycle: {
+          family: "project_fact",
+          state: "rejected",
+          subjectKey,
+          fieldKey,
+        },
+      },
+    });
+  }
+
+  if (inspection.matchingApprovedObjectId && params.input.kind === "learning") {
+    return {
+      accepted: false,
+      status: "failed",
+      kind: params.input.kind,
+      reason: `approved project fact already exists for key ${key}`,
+    };
+  }
+
+  if (
+    inspection.pendingCandidate &&
+    !isExpiredPendingProjectFactCandidate(inspection.pendingCandidate)
+  ) {
+    if (shouldSkipImmediateProjectFactConfirmation(inspection.pendingCandidate.createdAt)) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: `project-fact confirmation candidate ${inspection.pendingCandidate.id} already exists`,
+      };
+    }
+    const autoPromotion =
+      params.runtime.config.autoPromotion ?? DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG;
+    if (autoPromotion.profile !== "explicit-user-preference-v1") {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: `project-fact confirmation candidate ${inspection.pendingCandidate.id} is waiting for later evidence`,
+      };
+    }
+    const promotionMetadata = buildToolProjectFactAutoPromotionMetadata({
+      input: params.input,
+      autoPromotionProfile: "project_fact_confirmation_v1",
+      confirmationState: "confirmed",
+    });
+    const reviewResult = await params.runtime.candidateReview.review({
+      candidateId: inspection.pendingCandidate.id,
+      outcome: "accepted",
+      metadata: promotionMetadata,
+    });
+    if (!reviewResult.accepted) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: reviewResult.reason,
+      };
+    }
+    const promotionResult = await params.runtime.candidatePromotion.promoteToMemory({
+      candidateId: inspection.pendingCandidate.id,
+      metadata: promotionMetadata,
+    });
+    if (!promotionResult.accepted) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: promotionResult.reason,
+      };
+    }
+    return {
+      accepted: true,
+      status: "accepted",
+      kind: params.input.kind,
+      storage: "database",
+      reviewState: "approved",
+      eventId: promotionResult.sourceEventId ?? inspection.pendingCandidate.sourceEventId,
+      memoryObjectId: promotionResult.promotedMemoryObjectId,
+    };
+  }
+
+  return null;
+}
+
 export async function submitCandidateFromTool(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
@@ -354,6 +558,13 @@ export async function submitCandidateFromTool(params: {
   });
   if (resolvedExisting) {
     return resolvedExisting;
+  }
+  const resolvedExistingProjectFact = await maybeResolveExistingProjectFactCandidate({
+    runtime: params.runtime,
+    input: normalizedInput,
+  });
+  if (resolvedExistingProjectFact) {
+    return resolvedExistingProjectFact;
   }
   if (normalizedInput.kind === "learning" || normalizedInput.kind === "correction") {
     const duplicate = await findExistingAutoCaptureManagedDuplicate({
@@ -385,6 +596,11 @@ export async function submitCandidateFromTool(params: {
       break;
   }
   result = await maybeAutoPromoteToolSubmittedPreference({
+    runtime: params.runtime,
+    input: normalizedInput,
+    result,
+  });
+  result = await maybeAutoPromoteToolSubmittedProjectFact({
     runtime: params.runtime,
     input: normalizedInput,
     result,
@@ -515,6 +731,23 @@ function buildResponseStyleSemanticMetadata(params: {
   };
 }
 
+function buildProjectFactSemanticMetadata(params: {
+  detectionSource: "deterministic" | "semantic";
+  confidence: "high" | ProjectFactSemanticConfidence;
+  evidence: string[];
+  fieldKey: ProjectFactFieldKey;
+}): Record<string, unknown> {
+  return {
+    semanticDetection: {
+      source: "project_fact_semantic_v1",
+      detectionSource: params.detectionSource,
+      confidence: params.confidence,
+      fieldKey: params.fieldKey,
+      evidence: params.evidence,
+    },
+  };
+}
+
 function buildPendingConfirmationMetadata(params: {
   confidence: ResponseStyleSemanticConfidence;
   evidence: string[];
@@ -528,6 +761,26 @@ function buildPendingConfirmationMetadata(params: {
       evidenceCount: 1,
       observedAt,
       expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
+      evidence: params.evidence,
+    },
+  };
+}
+
+function buildProjectFactPendingConfirmationMetadata(params: {
+  confidence: ProjectFactSemanticConfidence;
+  evidence: string[];
+  fieldKey: ProjectFactFieldKey;
+}): Record<string, unknown> {
+  const observedAt = new Date().toISOString();
+  return {
+    candidateLifecycle: {
+      family: "project_fact",
+      state: "pending_confirmation",
+      confidence: params.confidence,
+      evidenceCount: 1,
+      observedAt,
+      expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
+      fieldKey: params.fieldKey,
       evidence: params.evidence,
     },
   };
@@ -562,6 +815,39 @@ function toOrdinaryTurnResponseStyleMatch(match: {
   };
 }
 
+function toOrdinaryTurnProjectFactMatch(match: {
+  captureClass: "explicit_project_fact" | "project_fact_correction";
+  candidateKind: "learning" | "correction";
+  reasonCode: "explicit_project_fact_statement" | "explicit_project_fact_correction";
+  template: OrdinaryTurnAutoCaptureMatch["template"];
+  projectScope: string;
+  normalizedProjectScope: string;
+  subject: string;
+  value: string;
+  normalizedSubject: string;
+  normalizedValue: string;
+  content: string;
+  subjectKey: string;
+  key: string;
+}): OrdinaryTurnAutoCaptureMatch {
+  return {
+    profile: "user-preference-v2",
+    captureClass: match.captureClass,
+    candidateKind: match.candidateKind,
+    reasonCode: match.reasonCode,
+    template: match.template,
+    subject: match.subject,
+    value: match.value,
+    normalizedSubject: match.normalizedSubject,
+    normalizedValue: match.normalizedValue,
+    content: match.content,
+    subjectKey: match.subjectKey,
+    key: match.key,
+    projectScope: match.projectScope,
+    normalizedProjectScope: match.normalizedProjectScope,
+  };
+}
+
 type TranscriptUserMessage = {
   role?: unknown;
   content?: unknown;
@@ -579,6 +865,28 @@ type ManagedResponseStyleResolution = {
   confidence: "high" | ResponseStyleSemanticConfidence;
   evidence: string[];
 };
+
+type ManagedProjectFactResolution = {
+  parsed: OrdinaryTurnAutoCaptureMatch;
+  fieldKey: ProjectFactFieldKey;
+  source: "content" | "raw";
+  detectionSource: "deterministic" | "semantic";
+  confidence: "high" | ProjectFactSemanticConfidence;
+  evidence: string[];
+};
+
+function inferProjectFactFieldKeyFromSubject(subject: string): ProjectFactFieldKey | null {
+  const fieldLabel = subject.split("/").pop()?.trim().toLowerCase() ?? "";
+  return fieldLabel === "default branch"
+    ? "default_branch"
+    : fieldLabel === "staging branch"
+      ? "staging_branch"
+      : fieldLabel === "primary package manager"
+        ? "primary_package_manager"
+        : fieldLabel === "primary environment name"
+          ? "primary_environment_name"
+          : null;
+}
 
 function extractTranscriptUserText(message: TranscriptUserMessage | null): string | null {
   if (!message || message.role !== "user") {
@@ -713,14 +1021,18 @@ function shouldSkipImmediateConfirmation(createdAt: string, now = Date.now()): b
   return Number.isFinite(createdAtMs) && now - createdAtMs < RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS;
 }
 
+function shouldSkipImmediateProjectFactConfirmation(createdAt: string, now = Date.now()): boolean {
+  const createdAtMs = Date.parse(createdAt);
+  return Number.isFinite(createdAtMs) && now - createdAtMs < PROJECT_FACT_CONFIRMATION_MIN_AGE_MS;
+}
+
 function isManagedCorrectionMatch(
   parsed: ReturnType<typeof parseManagedCorrectionCandidateContent> | null,
 ): parsed is NonNullable<ReturnType<typeof parseManagedCorrectionCandidateContent>> {
   return Boolean(
     parsed &&
     (parsed.captureClass === "preference_correction" ||
-      parsed.captureClass === "requirement_correction" ||
-      parsed.captureClass === "project_fact_correction"),
+      parsed.captureClass === "requirement_correction"),
   );
 }
 
@@ -776,6 +1088,182 @@ function resolveManagedResponseStyleLearning(
   if (semanticFromContent.action === "capture") {
     return {
       parsed: toOrdinaryTurnResponseStyleMatch(semanticFromContent.match),
+      source: "content",
+      detectionSource: "semantic",
+      confidence: semanticFromContent.confidence,
+      evidence: semanticFromContent.evidence,
+    };
+  }
+
+  return null;
+}
+
+function isManagedProjectFactMatch(
+  parsed: OrdinaryTurnAutoCaptureMatch | null,
+): parsed is OrdinaryTurnAutoCaptureMatch {
+  return Boolean(
+    parsed &&
+    parsed.template === "project_fact_named_scope" &&
+    (parsed.captureClass === "explicit_project_fact" ||
+      parsed.captureClass === "project_fact_correction"),
+  );
+}
+
+function resolveManagedProjectFactLearning(
+  input: CandidateSubmissionInput,
+): ManagedProjectFactResolution | null {
+  const parsedFromContent = parseAutoCaptureManagedCandidateContent(input.content);
+  if (
+    isManagedProjectFactMatch(parsedFromContent) &&
+    parsedFromContent.captureClass === "explicit_project_fact"
+  ) {
+    const fieldKey = inferProjectFactFieldKeyFromSubject(parsedFromContent.subject);
+    if (fieldKey && isSupportedProjectFactField(fieldKey)) {
+      return {
+        parsed: parsedFromContent,
+        fieldKey,
+        source: "content",
+        detectionSource: "deterministic",
+        confidence: "high",
+        evidence: ["managed_content_pattern_match"],
+      };
+    }
+  }
+
+  if (typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0) {
+    const parsedFromRaw = parseOrdinaryTurnAutoCapturePreference(
+      input.metadata.raw,
+      "user-preference-v2",
+    );
+    if (
+      isManagedProjectFactMatch(parsedFromRaw) &&
+      parsedFromRaw.captureClass === "explicit_project_fact"
+    ) {
+      const fieldKey = inferProjectFactFieldKeyFromSubject(parsedFromRaw.subject);
+      if (fieldKey && isSupportedProjectFactField(fieldKey)) {
+        return {
+          parsed: parsedFromRaw,
+          fieldKey,
+          source: "raw",
+          detectionSource: "deterministic",
+          confidence: "high",
+          evidence: ["raw_turn_pattern_match"],
+        };
+      }
+    }
+
+    const semanticFromRaw = detectProjectFactSemanticDecision(input.metadata.raw);
+    if (
+      semanticFromRaw.action === "capture" &&
+      semanticFromRaw.match.captureClass === "explicit_project_fact"
+    ) {
+      return {
+        parsed: toOrdinaryTurnProjectFactMatch(semanticFromRaw.match),
+        fieldKey: semanticFromRaw.match.fieldKey,
+        source: "raw",
+        detectionSource: "semantic",
+        confidence: semanticFromRaw.confidence,
+        evidence: semanticFromRaw.evidence,
+      };
+    }
+  }
+
+  const semanticFromContent = detectProjectFactSemanticDecision(input.content);
+  if (
+    semanticFromContent.action === "capture" &&
+    semanticFromContent.match.captureClass === "explicit_project_fact"
+  ) {
+    return {
+      parsed: toOrdinaryTurnProjectFactMatch(semanticFromContent.match),
+      fieldKey: semanticFromContent.match.fieldKey,
+      source: "content",
+      detectionSource: "semantic",
+      confidence: semanticFromContent.confidence,
+      evidence: semanticFromContent.evidence,
+    };
+  }
+
+  return null;
+}
+
+async function resolveManagedProjectFactCorrection(params: {
+  input: CandidateSubmissionInput;
+  context?: OpenClawPluginToolContext;
+}): Promise<ManagedProjectFactResolution | null> {
+  const { input, context } = params;
+  const parsedFromContent = parseManagedCorrectionCandidateContent(input.content);
+  if (
+    isManagedProjectFactMatch(parsedFromContent) &&
+    parsedFromContent.captureClass === "project_fact_correction"
+  ) {
+    const fieldKey = inferProjectFactFieldKeyFromSubject(parsedFromContent.subject);
+    if (fieldKey && isSupportedProjectFactField(fieldKey)) {
+      return {
+        parsed: parsedFromContent,
+        fieldKey,
+        source: "content",
+        detectionSource: "deterministic",
+        confidence: "high",
+        evidence: ["managed_content_pattern_match"],
+      };
+    }
+  }
+
+  const rawCandidates: string[] = [];
+  if (typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0) {
+    rawCandidates.push(input.metadata.raw);
+  }
+  const rawFromContext = await resolveLatestUserTurnFromContext(context);
+  if (rawFromContext && !rawCandidates.includes(rawFromContext)) {
+    rawCandidates.push(rawFromContext);
+  }
+
+  for (const rawCandidate of rawCandidates) {
+    const parsedFromRaw = parseOrdinaryTurnAutoCapturePreference(
+      rawCandidate,
+      "user-preference-v2",
+    );
+    if (
+      isManagedProjectFactMatch(parsedFromRaw) &&
+      parsedFromRaw.captureClass === "project_fact_correction"
+    ) {
+      const fieldKey = inferProjectFactFieldKeyFromSubject(parsedFromRaw.subject);
+      if (fieldKey && isSupportedProjectFactField(fieldKey)) {
+        return {
+          parsed: parsedFromRaw,
+          fieldKey,
+          source: "raw",
+          detectionSource: "deterministic",
+          confidence: "high",
+          evidence: ["raw_turn_pattern_match"],
+        };
+      }
+    }
+
+    const semanticFromRaw = detectProjectFactSemanticDecision(rawCandidate);
+    if (
+      semanticFromRaw.action === "capture" &&
+      semanticFromRaw.match.captureClass === "project_fact_correction"
+    ) {
+      return {
+        parsed: toOrdinaryTurnProjectFactMatch(semanticFromRaw.match),
+        fieldKey: semanticFromRaw.match.fieldKey,
+        source: "raw",
+        detectionSource: "semantic",
+        confidence: semanticFromRaw.confidence,
+        evidence: semanticFromRaw.evidence,
+      };
+    }
+  }
+
+  const semanticFromContent = detectProjectFactSemanticDecision(input.content);
+  if (
+    semanticFromContent.action === "capture" &&
+    semanticFromContent.match.captureClass === "project_fact_correction"
+  ) {
+    return {
+      parsed: toOrdinaryTurnProjectFactMatch(semanticFromContent.match),
+      fieldKey: semanticFromContent.match.fieldKey,
       source: "content",
       detectionSource: "semantic",
       confidence: semanticFromContent.confidence,
@@ -895,6 +1383,33 @@ async function normalizeManagedToolCandidateInput(params: {
       });
     }
 
+    const projectFactCorrectionOverride = await resolveManagedProjectFactCorrection({
+      input,
+      context,
+    });
+    if (projectFactCorrectionOverride) {
+      const normalizedCorrectionInput = mergeCandidateMetadata(
+        {
+          ...input,
+          kind: "correction",
+          content: projectFactCorrectionOverride.parsed.content,
+        },
+        {
+          classificationAdjustment: {
+            source: "candidate_submit_normalizer",
+            matchedFrom: projectFactCorrectionOverride.source,
+            fromKind: "learning",
+            toKind: "correction",
+            reason: "bounded_project_fact_correction_match",
+          },
+        },
+      );
+      return await normalizeManagedToolCandidateInput({
+        input: normalizedCorrectionInput,
+        context,
+      });
+    }
+
     const responseStyleResolution = resolveManagedResponseStyleLearning(input);
     if (responseStyleResolution) {
       return mergeCandidateMetadata(input, {
@@ -926,6 +1441,45 @@ async function normalizeManagedToolCandidateInput(params: {
               evidence: responseStyleResolution.evidence,
             })
           : {}),
+      });
+    }
+
+    const projectFactResolution = resolveManagedProjectFactLearning(input);
+    if (projectFactResolution) {
+      return mergeCandidateMetadata(input, {
+        category: "project_fact",
+        source: "explicit_project_fact",
+        subject_key: projectFactResolution.parsed.subjectKey,
+        autoCapture: {
+          source: "model_tool_candidate_submit",
+          captureSeam: "model_tool_primary",
+          profile: projectFactResolution.parsed.profile,
+          captureClass: projectFactResolution.parsed.captureClass,
+          reasonCode: projectFactResolution.parsed.reasonCode,
+          template: projectFactResolution.parsed.template,
+          fieldKey: projectFactResolution.fieldKey,
+          key: projectFactResolution.parsed.key,
+          subjectKey: projectFactResolution.parsed.subjectKey,
+          subject: projectFactResolution.parsed.subject,
+          value: projectFactResolution.parsed.value,
+          ...(projectFactResolution.parsed.projectScope
+            ? { projectScope: projectFactResolution.parsed.projectScope }
+            : {}),
+          toolName: "memory_candidate_submit",
+        },
+        ...(projectFactResolution.detectionSource === "semantic"
+          ? buildProjectFactSemanticMetadata({
+              detectionSource: projectFactResolution.detectionSource,
+              confidence: projectFactResolution.confidence,
+              evidence: projectFactResolution.evidence,
+              fieldKey: projectFactResolution.fieldKey,
+            })
+          : {}),
+        ...buildProjectFactPendingConfirmationMetadata({
+          confidence: projectFactResolution.confidence,
+          evidence: projectFactResolution.evidence,
+          fieldKey: projectFactResolution.fieldKey,
+        }),
       });
     }
 
@@ -968,6 +1522,43 @@ async function normalizeManagedToolCandidateInput(params: {
   }
 
   if (input.kind === "correction") {
+    const projectFactCorrection = await resolveManagedProjectFactCorrection({
+      input,
+      context,
+    });
+    if (projectFactCorrection) {
+      return mergeCandidateMetadata(input, {
+        category: "project_fact_correction",
+        source: "conversational_project_fact_correction",
+        subject_key: projectFactCorrection.parsed.subjectKey,
+        autoCapture: {
+          source: "model_tool_candidate_submit",
+          captureSeam: "model_tool_primary",
+          profile: projectFactCorrection.parsed.profile,
+          captureClass: projectFactCorrection.parsed.captureClass,
+          reasonCode: projectFactCorrection.parsed.reasonCode,
+          template: projectFactCorrection.parsed.template,
+          fieldKey: projectFactCorrection.fieldKey,
+          key: projectFactCorrection.parsed.key,
+          subjectKey: projectFactCorrection.parsed.subjectKey,
+          subject: projectFactCorrection.parsed.subject,
+          value: projectFactCorrection.parsed.value,
+          ...(projectFactCorrection.parsed.projectScope
+            ? { projectScope: projectFactCorrection.parsed.projectScope }
+            : {}),
+          toolName: "memory_candidate_submit",
+        },
+        ...(projectFactCorrection.detectionSource === "semantic"
+          ? buildProjectFactSemanticMetadata({
+              detectionSource: projectFactCorrection.detectionSource,
+              confidence: projectFactCorrection.confidence,
+              evidence: projectFactCorrection.evidence,
+              fieldKey: projectFactCorrection.fieldKey,
+            })
+          : {}),
+      });
+    }
+
     const parsedCorrectionOverride = correctionOverride?.parsed ?? null;
     const normalizedPreferenceKey = normalizeCorrectionPreferenceKey(input.metadata?.preferenceKey);
     const normalizedValue =
@@ -1115,6 +1706,72 @@ async function maybeAutoPromoteToolSubmittedPreference(params: {
   if (!promotionResult.accepted) {
     return params.result;
   }
+  return {
+    ...params.result,
+    memoryObjectId: promotionResult.promotedMemoryObjectId,
+    reviewState: "approved",
+  };
+}
+
+async function maybeAutoPromoteToolSubmittedProjectFact(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: CandidateSubmissionInput;
+  result: CandidateSubmissionResult;
+}): Promise<CandidateSubmissionResult> {
+  const autoPromotion =
+    params.runtime.config.autoPromotion ?? DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG;
+  if (
+    autoPromotion.profile !== "explicit-user-preference-v1" ||
+    !params.result.accepted ||
+    !params.result.memoryObjectId ||
+    params.input.kind !== "correction"
+  ) {
+    return params.result;
+  }
+
+  const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
+  const key = readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]);
+  const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
+  const fieldKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "fieldKey"]);
+  if (
+    template !== "project_fact_named_scope" ||
+    !key ||
+    !subjectKey ||
+    !fieldKey ||
+    !isSupportedProjectFactField(fieldKey)
+  ) {
+    return params.result;
+  }
+
+  const inspection = await inspectProjectFactLifecycle({
+    config: params.runtime.config,
+    key,
+    subjectKey,
+  });
+  if (!inspection || inspection.activeApprovedSubjectObjectIds.length === 0) {
+    return params.result;
+  }
+
+  const promotionMetadata = buildToolProjectFactAutoPromotionMetadata({
+    input: params.input,
+    autoPromotionProfile: "project_fact_correction_v1",
+  });
+  const reviewResult = await params.runtime.candidateReview.review({
+    candidateId: params.result.memoryObjectId,
+    outcome: "accepted",
+    metadata: promotionMetadata,
+  });
+  if (!reviewResult.accepted) {
+    return params.result;
+  }
+  const promotionResult = await params.runtime.candidatePromotion.promoteToMemory({
+    candidateId: params.result.memoryObjectId,
+    metadata: promotionMetadata,
+  });
+  if (!promotionResult.accepted) {
+    return params.result;
+  }
+
   return {
     ...params.result,
     memoryObjectId: promotionResult.promotedMemoryObjectId,

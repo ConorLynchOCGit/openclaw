@@ -57,6 +57,21 @@ Current state:
     response-style subjects
   - a checked-in messy-language eval harness now exists for the supported
     response-style family
+- the first bounded semantic project-memory UX slice is now live for its
+  intended scope:
+  - semantic explicit named-project detection is now live for:
+    - default branch
+    - staging branch
+    - primary package manager
+    - primary environment name
+  - medium-confidence project-fact signals can now enter a
+    candidate-with-confirmation lifecycle instead of dead manual backlog
+  - later confirming evidence can auto-promote a bounded project-fact
+    candidate without manual review
+  - bounded project-fact correction or supersede is now live for supported
+    subjects
+  - approved-only hybrid retrieval now ranks the right project fact more
+    cleanly for direct fresh-session project questions
 - Slice 7 is now landed for its intended scope:
   - `I meant plain English, not jargon.` can land as a bounded correction
   - `No, use bullet points for me.` can be accepted through bounded fallback
@@ -65,13 +80,13 @@ Current state:
   - overlapping approved response-style memories now rank more cleanly for
     direct fresh-session questions
   - wider bounded named project-fact coverage is now proven for
-    `default branch`, remaining candidate-only
+    `default branch` and `primary package manager`
 
 Current live limits:
 
-- the front end is improved for the bounded response-style family, but still
-  too brittle outside that family because deterministic matching is doing too
-  much of the first-pass interpretation work
+- the front end is improved for the bounded response-style and named-project
+  families, but still too brittle outside those families because deterministic
+  matching is doing too much of the first-pass interpretation work
 - broader semantic learning-event detection is not live yet
 - phrase induction from fuzzy detections into reviewed deterministic patterns
   is not live yet
@@ -733,6 +748,19 @@ Primary spec:
 ---
 
 ## Phase G — broader bounded project memory
+
+First bounded live tranche:
+
+- explicit named-project facts are now live for:
+  - default branch
+  - staging branch
+  - primary package manager
+  - primary environment name
+- proof is currently production-backed for:
+  - default branch
+  - primary package manager
+- report:
+  - `/memory-system/PRODUCTION_PROJECT_MEMORY_UX_REPORT`
 
 ### Goal
 

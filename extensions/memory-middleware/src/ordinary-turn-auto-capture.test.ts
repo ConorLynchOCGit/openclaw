@@ -1162,6 +1162,147 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(promoteToMemory).not.toHaveBeenCalled();
   });
 
+  it("captures medium-confidence semantic project facts as pending-confirmation candidates", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-project-fact-semantic-1",
+      memoryObjectId: "memory-project-fact-semantic-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectProjectFactLifecycle: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "For project atlas forge, we use pnpm.",
+        timestamp: Date.parse("2026-04-05T08:11:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Project fact [atlas forge]: primary package manager is pnpm.",
+        metadata: expect.objectContaining({
+          category: "project_fact",
+          source: "explicit_project_fact",
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_project_fact",
+            captureSeam: "transcript_subscriber_fallback",
+            fieldKey: "primary_package_manager",
+            subject: "atlas forge / primary package manager",
+            value: "pnpm",
+          }),
+          semanticDetection: expect.objectContaining({
+            source: "project_fact_semantic_v1",
+            confidence: "medium",
+            fieldKey: "primary_package_manager",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "project_fact",
+            state: "pending_confirmation",
+            confidence: "medium",
+            fieldKey: "primary_package_manager",
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("promotes a pending project-fact candidate when later confirming evidence arrives", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-project-fact-learning-1",
+      memoryObjectId: "memory-project-fact-learning-1",
+    }));
+    const inspectProjectFactLifecycle = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        pendingCandidate: {
+          id: "memory-project-fact-learning-1",
+          sourceEventId: "event-project-fact-learning-1",
+          createdAt: "2026-04-05T08:00:00.000Z",
+          updatedAt: "2026-04-05T08:00:00.000Z",
+          confirmationState: "pending_confirmation",
+        },
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: ["memory-project-fact-learning-1"],
+      });
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      reviewId: "review-project-fact-learning-1",
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      promotedMemoryObjectId: "memory-approved-project-fact-learning-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectProjectFactLifecycle,
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "For project atlas forge, we use pnpm.",
+        timestamp: Date.parse("2026-04-05T08:06:00Z"),
+      },
+    });
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "For project atlas forge, the package manager is pnpm.",
+        timestamp: Date.parse("2026-04-05T08:07:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(1);
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(promoteToMemory).toHaveBeenCalledTimes(1);
+  });
+
   it("routes natural named project fact corrections through correction submission with project metadata", async () => {
     const submitCorrectionSuggestion = vi.fn(async () => ({
       accepted: true as const,

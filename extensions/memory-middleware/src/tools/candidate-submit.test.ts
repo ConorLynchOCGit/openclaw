@@ -704,6 +704,56 @@ describe("memory candidate submit tool", () => {
     expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
   });
 
+  it("normalizes semantic project facts from the tool path as pending-confirmation candidates", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-8b", {
+      kind: "learning",
+      content: "For project atlas forge, we use pnpm.",
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("learning"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("learning"),
+    });
+    expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "project_fact",
+          source: "explicit_project_fact",
+          subject_key: expect.any(String),
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_project_fact",
+            captureSeam: "model_tool_primary",
+            fieldKey: "primary_package_manager",
+            projectScope: "atlas forge",
+            subject: "atlas forge / primary package manager",
+            value: "pnpm",
+          }),
+          semanticDetection: expect.objectContaining({
+            source: "project_fact_semantic_v1",
+            confidence: "medium",
+            fieldKey: "primary_package_manager",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "project_fact",
+            state: "pending_confirmation",
+            confidence: "medium",
+            fieldKey: "primary_package_manager",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateReview.review).not.toHaveBeenCalled();
+    expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
+  });
+
   it("normalizes natural project fact corrections from the tool path without auto-promotion", async () => {
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });
@@ -919,6 +969,50 @@ describe("memory candidate submit tool", () => {
         }),
       }),
     );
+  });
+
+  it("reclassifies bounded project-fact corrections when the model submits them as learning", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-9c", {
+      kind: "learning",
+      content: "Project fact [atlas forge]: default branch is atlas-main.",
+      metadata: {
+        raw: "Actually, for project atlas forge, the default branch is atlas-green.",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("correction"),
+    });
+    expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "correction",
+        content: "Project correction [atlas forge]: default branch is atlas-green.",
+        metadata: expect.objectContaining({
+          category: "project_fact_correction",
+          source: "conversational_project_fact_correction",
+          classificationAdjustment: expect.objectContaining({
+            fromKind: "learning",
+            toKind: "correction",
+            reason: "bounded_project_fact_correction_match",
+            matchedFrom: "raw",
+          }),
+          autoCapture: expect.objectContaining({
+            captureClass: "project_fact_correction",
+            fieldKey: "default_branch",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateIngress.submitLearning).not.toHaveBeenCalled();
   });
 
   it("rejects unsupported candidate payload shapes", () => {

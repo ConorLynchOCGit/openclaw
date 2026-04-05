@@ -2730,6 +2730,124 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
+  it("promotes a medium-confidence project fact candidate after later confirming evidence without manual review", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-16s-project-fact-medium", {
+      kind: "learning",
+      content: "For project atlas forge, we use pnpm.",
+      projectId: seeded.projectId,
+    });
+    const candidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const initialRow = await querySingleRow<{
+      review_state: string;
+      field_key: string | null;
+      lifecycle_state: string | null;
+      lifecycle_confidence: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'fieldKey' as field_key,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'confidence' as lifecycle_confidence
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [candidateId],
+    );
+
+    expect(initialRow).toEqual({
+      review_state: "candidate",
+      field_key: "primary_package_manager",
+      lifecycle_state: "pending_confirmation",
+      lifecycle_confidence: "medium",
+    });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-16t-project-fact-confirm", {
+      kind: "learning",
+      content: "For project atlas forge, the package manager is pnpm.",
+      projectId: seeded.projectId,
+    });
+
+    expect(confirmingSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "learning",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const promotedMemoryObjectId = (confirmingSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const confirmedRow = await querySingleRow<{
+      candidate_review_state: string;
+      review_state: string;
+      object_count: string;
+      promotion_profile: string | null;
+      confirmation_state: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select review_state::text from memory_middleware.memory_objects where id = $1::uuid) as candidate_review_state,
+          (select review_state::text from memory_middleware.memory_objects where id = $2::uuid) as review_state,
+          (
+            select count(*)::text
+            from memory_middleware.memory_objects
+            where metadata->'candidateMetadata'->'autoCapture'->>'key' =
+              (
+                select metadata->'candidateMetadata'->'autoCapture'->>'key'
+                from memory_middleware.memory_objects
+                where id = $1::uuid
+              )
+          ) as object_count,
+          (select metadata->'promotionMetadata'->'autoPromotion'->>'profile'
+            from memory_middleware.memory_objects where id = $2::uuid) as promotion_profile,
+          (select metadata->'promotionMetadata'->'candidateConfirmation'->>'state'
+            from memory_middleware.memory_objects where id = $2::uuid) as confirmation_state
+      `,
+      [candidateId, promotedMemoryObjectId],
+    );
+
+    expect(confirmedRow).toEqual({
+      candidate_review_state: "candidate",
+      review_state: "approved",
+      object_count: "2",
+      promotion_profile: "project_fact_confirmation_v1",
+      confirmation_state: "confirmed",
+    });
+  });
+
   it("boosts the most relevant approved response-style template in hybrid retrieval when overlapping memories exist", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
@@ -2851,6 +2969,129 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
     }
     expect([plainEnglishApprovedId, numberedStepsApprovedId]).toContain(records[0]?.id);
+  });
+
+  it("boosts the most relevant approved project fact field in hybrid retrieval when overlapping project memories exist", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+
+    const defaultBranchSubmit = await submitTool.execute("call-16pf-a", {
+      kind: "learning",
+      content: "Project fact [atlas forge]: default branch is atlas-main.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "project_fact",
+        source: "explicit_project_fact",
+        autoCapture: {
+          captureClass: "explicit_project_fact",
+          template: "project_fact_named_scope",
+          fieldKey: "default_branch",
+          subjectKey: "atlas-forge-default-branch",
+          key: "atlas-forge-default-branch-atlas-main",
+          subject: "atlas forge / default branch",
+          value: "atlas-main",
+          projectScope: "atlas forge",
+        },
+      },
+    });
+    const defaultBranchCandidateId = (defaultBranchSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await reviewTool.execute("call-16pf-b", {
+      candidateId: defaultBranchCandidateId,
+      outcome: "accepted",
+    });
+    const defaultBranchPromotion = await promoteTool.execute("call-16pf-c", {
+      candidateId: defaultBranchCandidateId,
+    });
+    const defaultBranchApprovedId = (
+      defaultBranchPromotion.details as { promotedMemoryObjectId: string }
+    ).promotedMemoryObjectId;
+
+    const packageManagerSubmit = await submitTool.execute("call-16pf-d", {
+      kind: "learning",
+      content: "Project fact [atlas forge]: primary package manager is pnpm.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "project_fact",
+        source: "explicit_project_fact",
+        autoCapture: {
+          captureClass: "explicit_project_fact",
+          template: "project_fact_named_scope",
+          fieldKey: "primary_package_manager",
+          subjectKey: "atlas-forge-package-manager",
+          key: "atlas-forge-package-manager-pnpm",
+          subject: "atlas forge / primary package manager",
+          value: "pnpm",
+          projectScope: "atlas forge",
+        },
+      },
+    });
+    const packageManagerCandidateId = (packageManagerSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await reviewTool.execute("call-16pf-e", {
+      candidateId: packageManagerCandidateId,
+      outcome: "accepted",
+    });
+    const packageManagerPromotion = await promoteTool.execute("call-16pf-f", {
+      candidateId: packageManagerCandidateId,
+    });
+    const packageManagerApprovedId = (
+      packageManagerPromotion.details as { promotedMemoryObjectId: string }
+    ).promotedMemoryObjectId;
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "what is the default branch for project atlas forge",
+      scope: "approved_only",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+    });
+    const records = (
+      hybridSearch as {
+        accepted: true;
+        status: "ok";
+        scope: "approved_only";
+        records: Array<{
+          id: string;
+          score: number;
+          matchedFields: string[];
+        }>;
+      }
+    ).records;
+    expect(records.length).toBeGreaterThanOrEqual(2);
+    expect(records[0]?.id).toBe(defaultBranchApprovedId);
+    expect(records[0]?.matchedFields).toContain("auto_capture_field_match");
+    if (records[1]) {
+      expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
+    }
+    expect([defaultBranchApprovedId, packageManagerApprovedId]).toContain(records[0]?.id);
   });
 
   it("rejects bounded memory promotion for accepted procedure candidates", async () => {

@@ -326,6 +326,72 @@ For the exact proof ids and production evidence for this slice, use:
 
 - `docs/memory-system/PRODUCTION_RESPONSE_STYLE_UX_REPORT.md`
 
+## Project-memory semantic UX workflow
+
+The second user-facing semantic memory slice is now live for a bounded
+explicit named-project fact family only.
+
+Supported first-slice fields:
+
+- default branch
+- staging branch
+- primary package manager
+- primary environment name
+
+Current live behavior:
+
+- bounded natural-language project-fact detection is allowed only for explicit
+  named-project turns in the supported field set
+- medium-confidence project-fact turns can enter a pending-confirmation
+  lifecycle instead of a dead manual-review queue
+- later confirming evidence can auto-promote those pending candidates without
+  manual review
+- supported project-fact corrections can supersede stale approved rows
+- approved-only hybrid retrieval can rank the right field-specific project
+  fact first for direct project questions
+- weak ambiguous turns should be ignored instead of creating memory trash
+
+Relevant surfaces:
+
+- transcript ordinary-turn path:
+  - `extensions/memory-middleware/src/ordinary-turn-auto-capture.ts`
+- tool path:
+  - `memory_candidate_submit`
+- retrieval:
+  - `memory_object_search_hybrid`
+  - `memory_object_list`
+  - `memory_object_get`
+
+Expected operator checks:
+
+- supported named-project phrasing can create bounded project-fact candidates
+  or approved rows without introducing freeform project memory
+- a medium-confidence project-fact candidate can later show:
+  - bounded pending-confirmation metadata
+  - a later approved row with:
+    - `promotionProfile = project_fact_confirmation_v1`
+    - `confirmationState = confirmed`
+- a supported project-fact correction can produce an approved row with:
+  - `promotionProfile = project_fact_correction_v1`
+- approved hybrid retrieval can rank the right field-specific project fact
+  first for direct project questions
+- weak ambiguous nearby text should not create additional durable writes
+- approved-only retrieval remains the only user-visible read source for this
+  slice
+
+Current approved boundary note:
+
+- this slice is limited to explicit named-project facts only
+- repository URL and deployment URL memory are not live yet
+- speculative project inference is not live
+- workflow-improvement memory is not live
+- candidates should not shape user-visible behavior before approval in this
+  slice
+
+For the exact proof ids and production evidence for this slice, use:
+
+- `docs/memory-system/PRODUCTION_PROJECT_MEMORY_UX_REPORT.md`
+
 ## Background-job inspection
 
 ### List current jobs

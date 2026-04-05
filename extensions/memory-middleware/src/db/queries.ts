@@ -1254,6 +1254,14 @@ type ResponseStyleQueryHint = {
     | "responses_numbered_steps";
 };
 
+type ProjectFactQueryHint = {
+  fieldKey:
+    | "default_branch"
+    | "staging_branch"
+    | "primary_package_manager"
+    | "primary_environment_name";
+};
+
 function normalizeRetrievalQuery(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -1282,6 +1290,32 @@ function inferResponseStyleQueryHint(query: string): ResponseStyleQueryHint | nu
     normalized.includes("short responses")
   ) {
     return { template: "responses_concise" };
+  }
+  return null;
+}
+
+function inferProjectFactQueryHint(query: string): ProjectFactQueryHint | null {
+  const normalized = normalizeRetrievalQuery(query);
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.includes("default branch")) {
+    return { fieldKey: "default_branch" };
+  }
+  if (normalized.includes("staging branch")) {
+    return { fieldKey: "staging_branch" };
+  }
+  if (
+    normalized.includes("package manager") ||
+    normalized.includes("pnpm") ||
+    normalized.includes("npm") ||
+    normalized.includes("yarn") ||
+    normalized.includes("bun")
+  ) {
+    return { fieldKey: "primary_package_manager" };
+  }
+  if (normalized.includes("environment")) {
+    return { fieldKey: "primary_environment_name" };
   }
   return null;
 }
@@ -9943,10 +9977,21 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
+  const autoCaptureFieldKeyExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'fieldKey',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'fieldKey',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'fieldKey',",
+    "v.metadata->'autoPromotion'->>'fieldKey',",
+    "''",
+    ")",
+  ].join(" ");
   const responseStyleHint =
     params.input.kind === "project" || params.input.kind === "procedure"
       ? null
       : inferResponseStyleQueryHint(params.input.query);
+  const projectFactHint =
+    params.input.kind === "project" ? inferProjectFactQueryHint(params.input.query) : null;
   const conditions = [
     `(
       mo.search_document @@ websearch_to_tsquery('english', $1::text)
@@ -9958,6 +10003,7 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     params.input.query,
     `${params.input.query}%`,
     responseStyleHint?.template ?? "",
+    projectFactHint?.fieldKey ?? "",
   ];
 
   if (params.input.kind) {
@@ -9993,6 +10039,7 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
           + case when lower(coalesce(v.title, '')) like lower($2::text) then 110 else 0 end
           + case when ${combinedTextExpression} like lower($2::text) then 90 else 0 end
           + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
+          + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
         )::float8 as score,
@@ -10004,6 +10051,9 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
             case when ${combinedTextExpression} like lower($2::text) then 'content_prefix' end,
             case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text
               then 'auto_capture_template_match'
+            end,
+            case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text
+              then 'auto_capture_field_match'
             end,
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'
@@ -10048,10 +10098,21 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
+  const autoCaptureFieldKeyExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'fieldKey',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'fieldKey',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'fieldKey',",
+    "v.metadata->'autoPromotion'->>'fieldKey',",
+    "''",
+    ")",
+  ].join(" ");
   const responseStyleHint =
     params.input.kind === "project" || params.input.kind === "procedure"
       ? null
       : inferResponseStyleQueryHint(params.input.query);
+  const projectFactHint =
+    params.input.kind === "project" ? inferProjectFactQueryHint(params.input.query) : null;
   const conditions = [
     "v.review_state = 'candidate'",
     `(
@@ -10064,6 +10125,7 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
     params.input.query,
     `${params.input.query}%`,
     responseStyleHint?.template ?? "",
+    projectFactHint?.fieldKey ?? "",
   ];
 
   if (params.input.kind) {
@@ -10099,6 +10161,7 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
           + case when lower(coalesce(v.title, '')) like lower($2::text) then 110 else 0 end
           + case when ${combinedTextExpression} like lower($2::text) then 90 else 0 end
           + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
+          + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
         )::float8 as score,
@@ -10110,6 +10173,9 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
             case when ${combinedTextExpression} like lower($2::text) then 'content_prefix' end,
             case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text
               then 'auto_capture_template_match'
+            end,
+            case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text
+              then 'auto_capture_field_match'
             end,
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'
@@ -10494,6 +10560,15 @@ function sortRetrievedRecordsByUpdatedAtDesc<T extends { updatedAt: string }>(re
   );
 }
 
+function sortRankedRetrievedRecords<T extends { updatedAt: string; score: number }>(
+  records: T[],
+): T[] {
+  return [...records].sort(
+    (left, right) =>
+      right.score - left.score || Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
+  );
+}
+
 function sortRetrievedRowsByUpdatedAtDesc<T extends { updated_at: string }>(records: T[]): T[] {
   return [...records].sort(
     (left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at),
@@ -10708,17 +10783,17 @@ async function searchMemoryObjectsHybridInConfiguredDatabase(params: {
         });
         const retrieved = memoryObjects.map(normalizeRankedMemoryObjectRecord);
         if (!scopeIncludesValidatedProcedures(scope)) {
-          return sortRetrievedRecordsByUpdatedAtDesc(retrieved);
+          return sortRankedRetrievedRecords(retrieved);
         }
         const procedures = await searchValidatedProcedureRowsHybrid({
           client,
           schema: params.schema,
           input: params.input,
         });
-        return [...retrieved, ...procedures.map(normalizeRankedProcedureObjectRecord)].sort(
-          (left, right) =>
-            right.score - left.score || Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
-        );
+        return sortRankedRetrievedRecords([
+          ...retrieved,
+          ...procedures.map(normalizeRankedProcedureObjectRecord),
+        ]);
       },
     });
 

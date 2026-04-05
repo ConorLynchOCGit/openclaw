@@ -190,6 +190,12 @@ semantic detection, candidate confirmation without manual review,
 conversational repair or forget for supported response-style subjects,
 checked-in messy-language eval coverage, and narrow production proof without
 broader automation enablement.
+Second user-experience-focused semantic project-memory slice completed on the
+approved live production boundary for its intended scope, with bounded
+explicit named-project fact detection, candidate confirmation without manual
+review for supported project facts, correction or supersede for supported
+project-fact subjects, field-aware approved retrieval, and narrow production
+proof without broader automation enablement.
 
 ## Compact checkpoint
 
@@ -225,6 +231,18 @@ Current compact state:
   - medium-confidence candidate confirmation without manual review
   - targetable conversational forget for supported subjects
   - weak ambiguous ignore instead of dead candidate backlog
+- first semantic project-memory UX slice is now live for its intended scope
+- supported semantic project-fact subjects now include:
+  - default branch
+  - staging branch
+  - primary package manager
+  - primary environment name
+- semantic project-memory capture now supports:
+  - explicit named-project fact statements
+  - medium-confidence candidate confirmation without manual review
+  - bounded project-fact correction or supersede
+  - weak ambiguous ignore instead of dead candidate backlog
+  - field-aware approved retrieval for direct project questions
 - latest semantic response-style proof timestamp:
   - `2026-04-05T16:38:19.403Z`
 - latest semantic response-style production proof artifacts:
@@ -245,6 +263,27 @@ Current compact state:
   - bullet candidate confirmation with later auto-promotion
   - overlap-aware retrieval choosing numbered steps correctly
   - targetable conversational forget superseding the no-tables preference
+- latest semantic project-memory proof timestamp:
+  - `2026-04-05T18:05:38.694Z`
+- latest semantic project-memory production proof artifacts:
+  - `projectId = 00c98f31-5783-4ac9-9ea0-186e939987a4`
+  - `agentId = fc635192-6bfd-461d-b013-b04bbea29f9a`
+  - `sessionId = d3c37b42-5f3e-4590-addf-75ef62ddc4a6`
+  - `candidateId = d277ee41-dc0d-4c82-ac3c-09ba3953f9c5`
+  - `candidateEventId = 9f3be059-999c-4344-9543-feeca0fbf22f`
+  - `approvedObjectId = 4c493fe1-df27-4e60-8de7-a26885b88b5b`
+  - `reviewId = f2bed2c1-aa85-4496-8e86-d2e2bad1845e`
+- latest semantic project-memory production proof delta:
+  - `memory_events +1`
+  - `memory_objects +2`
+  - `memory_reviews +1`
+  - ambiguous follow-up caused `+0` additional writes
+- isolated project-memory proof additionally proved:
+  - default-branch confirmation into approved memory
+  - default-branch correction superseding stale approved memory
+  - field-aware retrieval ranking the right approved project fact first
+  - transcript-seam ambiguity ignore and duplicate suppression for project
+    facts
 - latest quick-win production proof timestamp:
   - `2026-04-05T15:18:19.270Z`
 - latest quick-win production proof artifacts:
