@@ -93,6 +93,38 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
     });
   });
 
+  it("captures the OpenAI embeddings auth workaround", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision(
+        "Codex OAuth does not help for OpenAI embeddings here; semantic memory search still needs a real OPENAI_API_KEY.",
+      ),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        lessonKey: "openai_embeddings_api_key_required",
+        toolKey: "openai_embeddings",
+        captureClass: "workflow_api_workaround",
+      },
+    });
+  });
+
+  it("captures the Anthropic long-context workaround", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision(
+        "Anthropic Extra usage is required for long context requests means context1m needs an eligible billed API key or a fallback model.",
+      ),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        lessonKey: "anthropic_context1m_eligible_credential_required",
+        toolKey: "anthropic_context1m",
+        captureClass: "workflow_api_workaround",
+      },
+    });
+  });
+
   it("ignores a one-off tool complaint without durable guidance", () => {
     expect(detectWorkflowImprovementSemanticDecision("Vitest was slow today.")).toMatchObject({
       action: "ignore",
@@ -101,6 +133,14 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
 
   it("ignores a vague environment complaint without a bounded constraint", () => {
     expect(detectWorkflowImprovementSemanticDecision("This host is weird today.")).toMatchObject({
+      action: "ignore",
+    });
+  });
+
+  it("ignores a vague API complaint without a bounded workaround", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision("Anthropic has been flaky today."),
+    ).toMatchObject({
       action: "ignore",
     });
   });

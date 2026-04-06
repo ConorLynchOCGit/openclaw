@@ -377,6 +377,38 @@ describe("memory candidate submit tool", () => {
     });
   });
 
+  it("normalizes bounded API workaround submissions into managed improvement metadata", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    await tool.execute("call-2c-api", {
+      kind: "improvement",
+      content:
+        "Codex OAuth does not help for OpenAI embeddings here; semantic memory search still needs a real OPENAI_API_KEY.",
+    });
+
+    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
+      kind: "improvement",
+      content:
+        "API workaround: OpenAI embeddings require a real OPENAI_API_KEY or another embeddings provider; Codex OAuth alone does not enable semantic memory search.",
+      metadata: expect.objectContaining({
+        category: "workflow_improvement",
+        source: "explicit_workflow_improvement",
+        autoCapture: expect.objectContaining({
+          captureClass: "workflow_api_workaround",
+          template: "workflow_api_workaround",
+          lessonKey: "openai_embeddings_api_key_required",
+          toolKey: "openai_embeddings",
+          guidanceMode: "guidance_only",
+        }),
+        candidateLifecycle: expect.objectContaining({
+          family: "workflow_improvement",
+          state: "pending_confirmation",
+        }),
+      }),
+    });
+  });
+
   it("stores an approved environment-constraint semantic embedding after confirmation promotion", async () => {
     storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
     inspectWorkflowImprovementLifecycle.mockReset();
@@ -518,6 +550,75 @@ describe("memory candidate submit tool", () => {
       sessionKey: "agent:main:main",
       memoryObjectId: "approved-tool-gotcha-1",
     });
+    inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);
+  });
+
+  it("does not store semantic embeddings for approved API workaround promotion yet", async () => {
+    const runtime = createRuntime();
+    storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
+    storeApprovedWorkflowToolGotchaSemanticEmbedding.mockClear();
+    inspectWorkflowImprovementLifecycle.mockImplementationOnce(async () => ({
+      activeApprovedSubjectObjectIds: [],
+      pendingSubjectCandidateIds: [],
+      pendingCandidate: {
+        id: "memory-1",
+        key: "workflow-key-1",
+        subjectKey: "workflow-subject-1",
+        lessonKey: "openai_embeddings_api_key_required",
+        createdAt: new Date(Date.now() - 10_000).toISOString(),
+        updatedAt: new Date(Date.now() - 10_000).toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        confirmationState: "pending_confirmation",
+        sourceEventId: "event-1",
+      },
+    }));
+    runtime.candidateReview.review = vi.fn(async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "memory-1",
+      outcome: "accepted" as const,
+      reviewId: "review-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    }));
+    runtime.candidatePromotion.promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "memory-1",
+      promotedMemoryObjectId: "approved-api-workaround-1",
+      promotedMemoryKind: "project" as const,
+      promotedReviewState: "approved" as const,
+      sourceEventId: "event-1",
+    }));
+    const tool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        config: { plugins: {} },
+        runtimeConfig: { plugins: { memory: { provider: "openai" } } },
+        agentId: "main",
+        sessionKey: "agent:main:main",
+      } as never,
+    });
+
+    await tool.execute("call-2h", {
+      kind: "improvement",
+      content:
+        "OpenAI embeddings still need a real API key; Codex OAuth alone does not enable semantic memory search.",
+    });
+    await tool.execute("call-2i", {
+      kind: "improvement",
+      content:
+        "Codex OAuth does not help for OpenAI embeddings here; semantic memory search still needs a real OPENAI_API_KEY.",
+    });
+
+    expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
+    expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-1",
+      }),
+    );
+    expect(storeApprovedEnvironmentConstraintSemanticEmbedding).not.toHaveBeenCalled();
+    expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).not.toHaveBeenCalled();
     inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);
   });
 

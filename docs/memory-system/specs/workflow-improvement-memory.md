@@ -53,6 +53,14 @@ first repeated environment constraints only:
 - Python command unavailable on this host or environment
 - gateway `POST /tools/invoke` forbidden in this environment
 
+Bound the next live slice to the first repeated API workaround family only:
+
+- OpenAI embeddings require a real `OPENAI_API_KEY` or another embeddings
+  provider; Codex OAuth alone does not enable semantic memory search
+- Anthropic `Extra usage is required for long context requests` means the
+  credential is not eligible for `context1m`; use an eligible billed API key
+  or keep a fallback model configured
+
 Candidate confirmation is allowed for this narrow slice.
 
 Automatic application is not allowed beyond reviewed retrieval hints.
@@ -130,6 +138,19 @@ Implementation clarification from the live environment-constraint slice:
 - direct manual `memory_candidate_submit` still remains a broader explicit
   `improvement` ingress, so generic manual improvement notes are not the proof
   surface for ambiguity-ignore in this family
+
+Implementation clarification from the live API workaround slice:
+
+- the supported API workaround subjects now also use the same bounded
+  candidate-confirmation lifecycle as tool gotchas and environment constraints
+- approved-only hybrid retrieval is now live for later provider-troubleshooting
+  asks about those supported workaround subjects
+- semantic retrieval for approved API workaround guidance is still not live;
+  that remains a later retrieval-routing slice
+- direct manual `memory_candidate_submit` still remains a broader explicit
+  `improvement` ingress, so vague manual API complaint notes can still create
+  generic candidates and should be rejected immediately if used in proof-only
+  cleanup
 
 ## User repair / supersede / forgetting implications
 

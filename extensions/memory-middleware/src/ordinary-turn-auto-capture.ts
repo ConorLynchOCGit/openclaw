@@ -567,7 +567,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "explicit_recurring_procedure"
     | "recurring_procedure_correction"
     | "workflow_tool_gotcha"
-    | "workflow_environment_constraint";
+    | "workflow_environment_constraint"
+    | "workflow_api_workaround";
   candidateKind: "learning" | "correction" | "procedure" | "improvement";
   reasonCode:
     | "explicit_preference_statement"
@@ -579,7 +580,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "explicit_recurring_procedure_statement"
     | "recurring_procedure_correction"
     | "workflow_tool_gotcha_statement"
-    | "workflow_environment_constraint_statement";
+    | "workflow_environment_constraint_statement"
+    | "workflow_api_workaround_statement";
   template:
     | "my_preferred_is"
     | "my_favorite_is"
@@ -591,7 +593,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "project_fact_named_scope"
     | "named_recurring_checklist"
     | "workflow_tool_gotcha"
-    | "workflow_environment_constraint";
+    | "workflow_environment_constraint"
+    | "workflow_api_workaround";
   subject: string;
   value: string;
   normalizedSubject: string;
@@ -2100,6 +2103,7 @@ function buildSubscriberCaptureMetadata(params: {
       break;
     case "workflow_tool_gotcha":
     case "workflow_environment_constraint":
+    case "workflow_api_workaround":
       metadata.category = "workflow_improvement";
       metadata.source = "explicit_workflow_improvement";
       metadata.subject_key = match.subjectKey;

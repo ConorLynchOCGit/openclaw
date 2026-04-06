@@ -355,6 +355,16 @@ Current live adoption for workflow tool gotchas:
   and `content_prefix` still outrank semantic similarity
 - `git_stash_unsafe` remains hybrid-first for now
 
+Current live posture for API workaround guidance:
+
+- approved API workaround memory now exists as a bounded hybrid-first family
+- live support is currently limited to:
+  - `openai_embeddings_api_key_required`
+  - `anthropic_context1m_eligible_credential_required`
+- approved API workaround guidance does not yet use semantic fallback
+- exact typed lesson matches through hybrid retrieval remain the current
+  working-context path
+
 ### Unmet-need planning
 
 Semantic retrieval is reasonable only after typed unmet-need artifacts exist.
@@ -426,6 +436,7 @@ Exact live routing posture:
 - exact `auto_capture_lesson_match`, `title_exact`, `content_exact`,
   `title_prefix`, and `content_prefix` still outrank semantic similarity for
   environment constraints
+- approved API workaround guidance is still hybrid-first only
 - candidate semantic retrieval remains disabled
 
 ## Recommended next implementation slice
@@ -433,8 +444,7 @@ Exact live routing posture:
 The next recommended implementation slice for normal working-context semantic
 retrieval is:
 
-- approved workflow-improvement tool-gotcha guidance
-- or approved API workaround guidance once that family exists
+- approved API workaround guidance
 
 That next slice has:
 

@@ -1899,6 +1899,118 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     );
   });
 
+  it("does not store semantic embeddings for approved API workaround auto-promotion yet", async () => {
+    storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
+    storeApprovedWorkflowToolGotchaSemanticEmbedding.mockClear();
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "memory-improvement-api-1",
+      outcome: "accepted" as const,
+      reviewId: "review-improvement-api-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "memory-improvement-api-1",
+      promotedMemoryObjectId: "approved-api-workaround-1",
+      sourceEventId: "event-improvement-api-1",
+      reviewState: "approved" as const,
+    }));
+    const submitImprovementNote = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "improvement" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-improvement-api-1",
+      memoryObjectId: "memory-improvement-api-1",
+    }));
+    const inspectWorkflowImprovementLifecycle = vi
+      .fn()
+      .mockResolvedValueOnce({
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: [],
+      })
+      .mockResolvedValueOnce({
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: ["memory-improvement-api-1"],
+        pendingCandidate: {
+          id: "memory-improvement-api-1",
+          createdAt: new Date(Date.now() - 10_000).toISOString(),
+          updatedAt: new Date(Date.now() - 10_000).toISOString(),
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          confirmationState: "pending_confirmation",
+        },
+      });
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-7",
+          sessionId: "session-uuid-7",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        submitProcedureSuggestion: vi.fn(),
+        submitImprovementNote,
+        reviewCandidate,
+        promoteToMemory,
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+        inspectWorkflowImprovementLifecycle,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/workflow-api.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content:
+          "OpenAI embeddings still need a real API key; Codex OAuth alone does not enable semantic memory search.",
+        timestamp: Date.parse("2026-04-06T05:00:00Z"),
+      },
+    });
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/workflow-api.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content:
+          "Codex OAuth does not help for OpenAI embeddings here; semantic memory search still needs a real OPENAI_API_KEY.",
+        timestamp: Date.parse("2026-04-06T05:01:00Z"),
+      },
+    });
+
+    expect(submitImprovementNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          "API workaround: OpenAI embeddings require a real OPENAI_API_KEY or another embeddings provider; Codex OAuth alone does not enable semantic memory search.",
+        metadata: expect.objectContaining({
+          autoCapture: expect.objectContaining({
+            captureClass: "workflow_api_workaround",
+            template: "workflow_api_workaround",
+            lessonKey: "openai_embeddings_api_key_required",
+            toolKey: "openai_embeddings",
+          }),
+        }),
+      }),
+    );
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(promoteToMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-improvement-api-1",
+      }),
+    );
+    expect(storeApprovedEnvironmentConstraintSemanticEmbedding).not.toHaveBeenCalled();
+    expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).not.toHaveBeenCalled();
+  });
+
   it("captures a bounded environment constraint as an improvement candidate", async () => {
     const submitImprovementNote = vi.fn(async () => ({
       accepted: true as const,

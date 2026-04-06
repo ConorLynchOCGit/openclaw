@@ -6,6 +6,8 @@ export const WORKFLOW_IMPROVEMENT_LESSON_KEYS = [
   "git_stash_unsafe",
   "python_command_unavailable",
   "gateway_tools_invoke_forbidden",
+  "openai_embeddings_api_key_required",
+  "anthropic_context1m_eligible_credential_required",
 ] as const;
 
 export const WORKFLOW_IMPROVEMENT_TOOL_KEYS = [
@@ -14,6 +16,8 @@ export const WORKFLOW_IMPROVEMENT_TOOL_KEYS = [
   "git_stash",
   "python_runtime",
   "gateway_tools_invoke",
+  "openai_embeddings",
+  "anthropic_context1m",
 ] as const;
 
 export type WorkflowImprovementLessonKey = (typeof WORKFLOW_IMPROVEMENT_LESSON_KEYS)[number];
@@ -21,13 +25,16 @@ export type WorkflowImprovementToolKey = (typeof WORKFLOW_IMPROVEMENT_TOOL_KEYS)
 export type WorkflowImprovementSemanticConfidence = "high" | "medium";
 export type WorkflowImprovementCaptureClass =
   | "workflow_tool_gotcha"
-  | "workflow_environment_constraint";
+  | "workflow_environment_constraint"
+  | "workflow_api_workaround";
 export type WorkflowImprovementReasonCode =
   | "workflow_tool_gotcha_statement"
-  | "workflow_environment_constraint_statement";
+  | "workflow_environment_constraint_statement"
+  | "workflow_api_workaround_statement";
 export type WorkflowImprovementTemplate =
   | "workflow_tool_gotcha"
-  | "workflow_environment_constraint";
+  | "workflow_environment_constraint"
+  | "workflow_api_workaround";
 
 export type WorkflowImprovementCanonicalMatch = {
   captureClass: WorkflowImprovementCaptureClass;
@@ -119,6 +126,28 @@ const WORKFLOW_IMPROVEMENT_SPECS: Record<WorkflowImprovementLessonKey, WorkflowI
     content:
       "Environment constraint: gateway POST /tools/invoke is forbidden in this environment; use direct runtime invocation instead.",
   },
+  openai_embeddings_api_key_required: {
+    captureClass: "workflow_api_workaround",
+    reasonCode: "workflow_api_workaround_statement",
+    template: "workflow_api_workaround",
+    toolKey: "openai_embeddings",
+    subject: "OpenAI embeddings auth",
+    value:
+      "OpenAI embeddings require a real OPENAI_API_KEY or another embeddings provider; Codex OAuth alone does not enable semantic memory search",
+    content:
+      "API workaround: OpenAI embeddings require a real OPENAI_API_KEY or another embeddings provider; Codex OAuth alone does not enable semantic memory search.",
+  },
+  anthropic_context1m_eligible_credential_required: {
+    captureClass: "workflow_api_workaround",
+    reasonCode: "workflow_api_workaround_statement",
+    template: "workflow_api_workaround",
+    toolKey: "anthropic_context1m",
+    subject: "Anthropic long-context eligibility",
+    value:
+      "Anthropic Extra usage required for long context requests means the credential is not eligible for context1m; use an eligible billed API key or disable context1m and keep a fallback model configured",
+    content:
+      "API workaround: Anthropic Extra usage required for long context requests means the credential is not eligible for context1m; use an eligible billed API key or disable context1m and keep a fallback model configured.",
+  },
 };
 
 function normalizeText(value: string): string {
@@ -139,6 +168,9 @@ function normalizeSemanticText(value: string): string {
     .replace(/\bgit\s+add\s*\/\s*git\s+commit\b/g, "git add git commit")
     .replace(/\bpost\s+\/tools\/invoke\b/g, "/tools/invoke")
     .replace(/\btools invoke\b/g, "/tools/invoke")
+    .replace(/\bopenai_api_key\b/g, "openai api key")
+    .replace(/\bcontext1m\b/g, "context 1m")
+    .replace(/\bcodex cli\b/g, "codex")
     .replace(/[^a-z0-9\s/.-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -388,6 +420,78 @@ function detectGatewayToolsInvokeLesson(normalized: string): {
   return null;
 }
 
+function detectOpenAIEmbeddingsApiKeyLesson(normalized: string): {
+  confidence: WorkflowImprovementSemanticConfidence;
+  evidence: string[];
+} | null {
+  const hasEmbeddings =
+    /\bembedding\b/.test(normalized) ||
+    /\bsemantic memory search\b/.test(normalized) ||
+    /\bmemory search\b/.test(normalized);
+  const hasCodex =
+    /\bcodex\b/.test(normalized) || /\boauth\b/.test(normalized) || /\bchatgpt\b/.test(normalized);
+  const hasApiKey =
+    /\bopenai api key\b/.test(normalized) ||
+    /\bapi key\b/.test(normalized) ||
+    /\bprovider key\b/.test(normalized);
+  const hasRequirement =
+    /\b(?:require|requires|need|needs|still need)\b/.test(normalized) ||
+    /\bdoes not help\b/.test(normalized) ||
+    /\balone does not\b/.test(normalized);
+
+  if (hasEmbeddings && hasCodex && hasApiKey && hasRequirement) {
+    return {
+      confidence: "high",
+      evidence: ["openai_embeddings", "codex_oauth", "api_key_requirement"],
+    };
+  }
+
+  if (hasEmbeddings && hasCodex && hasApiKey) {
+    return {
+      confidence: "medium",
+      evidence: ["openai_embeddings", "codex_oauth", "api_key_reference"],
+    };
+  }
+
+  return null;
+}
+
+function detectAnthropicContext1mLesson(normalized: string): {
+  confidence: WorkflowImprovementSemanticConfidence;
+  evidence: string[];
+} | null {
+  const hasAnthropic = /\banthropic\b/.test(normalized);
+  const hasLongContext =
+    /\blong context\b/.test(normalized) ||
+    /\bcontext 1m\b/.test(normalized) ||
+    /\bcontext1m\b/.test(normalized);
+  const hasSpecificError =
+    /extra usage is required for long context requests/.test(normalized) ||
+    (/\b429\b/.test(normalized) && hasLongContext);
+  const hasWorkaround =
+    /\bfallback model\b/.test(normalized) ||
+    /\bdisable context 1m\b/.test(normalized) ||
+    /\beligible\b/.test(normalized) ||
+    /\bbilled api key\b/.test(normalized) ||
+    /\bapi key billing\b/.test(normalized);
+
+  if (hasAnthropic && hasLongContext && hasSpecificError && hasWorkaround) {
+    return {
+      confidence: "high",
+      evidence: ["anthropic_context1m", "specific_429_error", "workaround_reference"],
+    };
+  }
+
+  if (hasAnthropic && hasLongContext && hasSpecificError) {
+    return {
+      confidence: "medium",
+      evidence: ["anthropic_context1m", "specific_429_error"],
+    };
+  }
+
+  return null;
+}
+
 export function isSupportedWorkflowImprovementLessonKey(
   value: string,
 ): value is WorkflowImprovementLessonKey {
@@ -459,6 +563,26 @@ export function detectWorkflowImprovementSemanticDecision(
       confidence: gatewayToolsInvoke.confidence,
       evidence: gatewayToolsInvoke.evidence,
       match: createMatch("gateway_tools_invoke_forbidden"),
+    };
+  }
+
+  const openaiEmbeddings = detectOpenAIEmbeddingsApiKeyLesson(normalized);
+  if (openaiEmbeddings) {
+    return {
+      action: "capture",
+      confidence: openaiEmbeddings.confidence,
+      evidence: openaiEmbeddings.evidence,
+      match: createMatch("openai_embeddings_api_key_required"),
+    };
+  }
+
+  const anthropicContext1m = detectAnthropicContext1mLesson(normalized);
+  if (anthropicContext1m) {
+    return {
+      action: "capture",
+      confidence: anthropicContext1m.confidence,
+      evidence: anthropicContext1m.evidence,
+      match: createMatch("anthropic_context1m_eligible_credential_required"),
     };
   }
 

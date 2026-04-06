@@ -3177,6 +3177,129 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
+  it("promotes a medium-confidence API workaround candidate after later confirming evidence without manual review", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-16u-api-medium", {
+      kind: "improvement",
+      content:
+        "Semantic memory search with Codex OAuth keeps coming back to the OpenAI API key here.",
+      projectId: seeded.projectId,
+    });
+    const candidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const initialRow = await querySingleRow<{
+      review_state: string;
+      lesson_key: string | null;
+      lifecycle_state: string | null;
+      lifecycle_confidence: string | null;
+      capture_class: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'lessonKey' as lesson_key,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'confidence' as lifecycle_confidence,
+          metadata->'candidateMetadata'->'autoCapture'->>'captureClass' as capture_class
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [candidateId],
+    );
+
+    expect(initialRow).toEqual({
+      review_state: "candidate",
+      lesson_key: "openai_embeddings_api_key_required",
+      lifecycle_state: "pending_confirmation",
+      lifecycle_confidence: "medium",
+      capture_class: "workflow_api_workaround",
+    });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-16u-api-confirm", {
+      kind: "improvement",
+      content:
+        "Codex OAuth does not help for OpenAI embeddings here; semantic memory search still needs a real OPENAI_API_KEY.",
+      projectId: seeded.projectId,
+    });
+
+    expect(confirmingSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "improvement",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const promotedMemoryObjectId = (confirmingSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const confirmedRow = await querySingleRow<{
+      candidate_review_state: string;
+      review_state: string;
+      object_count: string;
+      promotion_profile: string | null;
+      confirmation_state: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select review_state::text from memory_middleware.memory_objects where id = $1::uuid) as candidate_review_state,
+          (select review_state::text from memory_middleware.memory_objects where id = $2::uuid) as review_state,
+          (
+            select count(*)::text
+            from memory_middleware.memory_objects
+            where metadata->'candidateMetadata'->'autoCapture'->>'key' =
+              (
+                select metadata->'candidateMetadata'->'autoCapture'->>'key'
+                from memory_middleware.memory_objects
+                where id = $1::uuid
+              )
+          ) as object_count,
+          (select metadata->'promotionMetadata'->'autoPromotion'->>'profile'
+            from memory_middleware.memory_objects where id = $2::uuid) as promotion_profile,
+          (select metadata->'promotionMetadata'->'candidateConfirmation'->>'state'
+            from memory_middleware.memory_objects where id = $2::uuid) as confirmation_state
+      `,
+      [candidateId, promotedMemoryObjectId],
+    );
+
+    expect(confirmedRow).toEqual({
+      candidate_review_state: "candidate",
+      review_state: "approved",
+      object_count: "2",
+      promotion_profile: "workflow_improvement_confirmation_v1",
+      confirmation_state: "confirmed",
+    });
+  });
+
   it("auto-promotes an explicit recurring checklist into a validated procedure without manual review", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
@@ -3886,6 +4009,94 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     ).records;
     expect(records.length).toBeGreaterThanOrEqual(1);
     expect(records[0]?.id).toBe(pythonApprovedId);
+    expect(records[0]?.matchedFields).toContain("auto_capture_lesson_match");
+  });
+
+  it("boosts the most relevant approved API workaround lesson in hybrid retrieval", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+
+    const openaiSubmit = await submitTool.execute("call-16wk-a", {
+      kind: "improvement",
+      content:
+        "Codex OAuth does not help for OpenAI embeddings here; semantic memory search still needs a real OPENAI_API_KEY.",
+      projectId: seeded.projectId,
+    });
+    const openaiCandidateId = (openaiSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    await reviewTool.execute("call-16wk-b", {
+      candidateId: openaiCandidateId,
+      outcome: "accepted",
+    });
+    const openaiPromotion = await promoteTool.execute("call-16wk-c", {
+      candidateId: openaiCandidateId,
+    });
+    const openaiApprovedId = (openaiPromotion.details as { promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const anthropicSubmit = await submitTool.execute("call-16wk-d", {
+      kind: "improvement",
+      content:
+        "Anthropic Extra usage is required for long context requests means context1m needs an eligible billed API key or a fallback model.",
+      projectId: seeded.projectId,
+    });
+    const anthropicCandidateId = (anthropicSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await reviewTool.execute("call-16wk-e", {
+      candidateId: anthropicCandidateId,
+      outcome: "accepted",
+    });
+    await promoteTool.execute("call-16wk-f", {
+      candidateId: anthropicCandidateId,
+    });
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "does semantic memory search need an openai api key with codex oauth",
+      scope: "approved_only",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+    });
+    const records = (
+      hybridSearch as {
+        accepted: true;
+        status: "ok";
+        scope: "approved_only";
+        records: Array<{
+          id: string;
+          score: number;
+          matchedFields: string[];
+        }>;
+      }
+    ).records;
+    expect(records.length).toBeGreaterThanOrEqual(1);
+    expect(records[0]?.id).toBe(openaiApprovedId);
     expect(records[0]?.matchedFields).toContain("auto_capture_lesson_match");
   });
 

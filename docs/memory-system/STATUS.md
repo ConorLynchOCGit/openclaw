@@ -227,6 +227,12 @@ approved live production boundary for its intended scope, with bounded
 environment-constraint detection, candidate confirmation without manual review
 for supported host and runtime constraints, approved-only guidance retrieval,
 and narrow production proof without broader automation enablement.
+Seventh user-experience-focused workflow-improvement slice completed on the
+approved live production boundary for its intended scope, with bounded API
+workaround detection, candidate confirmation without manual review for the
+first supported provider-troubleshooting lessons, approved-only hybrid
+guidance retrieval, and narrow production proof without broader automation
+enablement.
 
 ## Compact checkpoint
 
@@ -298,11 +304,18 @@ Current compact state:
   - avoiding `git stash` in this multi-agent repo
   - Python command unavailable on this host or environment
   - gateway `POST /tools/invoke` forbidden in this environment
+  - OpenAI embeddings need a real `OPENAI_API_KEY` or another embeddings
+    provider; Codex OAuth alone does not enable semantic memory search
+  - Anthropic `Extra usage is required for long context requests` means the
+    credential is not eligible for `context1m`; use an eligible billed API key
+    or keep a fallback model posture
 - semantic workflow-improvement capture now supports:
   - repeated bounded repo-operating tool-gotcha statements
   - repeated bounded host or runtime constraint statements
+  - repeated bounded provider-troubleshooting API workaround statements
   - medium-confidence candidate confirmation without manual review
-  - approved-only guidance retrieval for later repo-operating asks
+  - approved-only guidance retrieval for later repo-operating or
+    provider-troubleshooting asks
   - weak ambiguous ignore instead of dead candidate backlog on the transcript
     assist seam
   - no action-taking or silent plan mutation
@@ -316,6 +329,7 @@ Current compact state:
 - semantic retrieval remains hybrid-first for:
   - response-style memory
   - explicit named project facts
+  - approved API workaround guidance
   - `git_stash_unsafe`
 - latest semantic response-style proof timestamp:
   - `2026-04-05T16:38:19.403Z`
@@ -407,6 +421,29 @@ Current compact state:
   - `procedures +0`
   - `skill_candidates +0`
   - `background_jobs +0`
+- latest API workaround proof timestamp:
+  - `2026-04-06T11:55:43.393255+00`
+- latest API workaround production proof artifacts:
+  - `projectId = a2b0e2f6-71fd-4bff-a153-522ff4d0d3a4`
+  - `agentId = 7670fe60-e1bb-4fd1-a50d-2b0fccac5180`
+  - `sessionId = b21351e3-3f5f-411a-a162-dcc8033da53e`
+  - `candidateId = 78c552c8-7cdd-46bb-ba0f-44112c54bd7c`
+  - `candidateEventId = 2e3bf0a2-150a-45cf-b2a9-f4c0fdb9bacc`
+  - `approvedObjectId = e4e1e2e1-cb77-4242-b53b-84ad18c8105b`
+  - `reviewId = 1c8333ce-ce36-4f2b-9d81-6eca35eae970`
+  - `cleanupReviewId = a8d02bf9-3d15-4dec-b169-fa4743273494`
+  - `rollbackTag = openclaw:pre-api-workaround-20260406T114704Z`
+- latest API workaround production proof delta:
+  - `memory_reviews +2`
+  - repeated confirming evidence caused `+0` additional writes
+  - exact workaround retrieval ranked the approved lesson first with
+    `auto_capture_lesson_match`, `fts_search_document`, and
+    `trigram_similarity`
+  - explicit ambiguous manual note submission still hit the broader generic
+    `memory_candidate_submit` path and was immediately rejected as proof
+    cleanup, so no dead candidate backlog remained
+  - `skill_candidates +0`
+  - `background_jobs +0`
 - latest semantic retrieval routing v2 proof timestamp:
   - `2026-04-06T03:43:15.629278+00`
 - latest semantic retrieval routing v2 production proof artifacts:
@@ -433,6 +470,7 @@ Current compact state:
   - conceptual tool-gotcha ask gained
     `semantic_embedding` + `semantic_fallback`
   - `git_stash_unsafe` remained semantic-out-of-scope
+  - approved API workaround guidance remained hybrid-first only
   - candidate semantic retrieval stayed disabled
   - health remained `ok`
 - isolated proof additionally proved:
@@ -500,6 +538,7 @@ Current compact state:
 - workflow-improvement production report now lives in:
   - `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_REPORT.md`
   - `docs/memory-system/PRODUCTION_ENVIRONMENT_CONSTRAINT_UX_REPORT.md`
+  - `docs/memory-system/PRODUCTION_API_WORKAROUND_UX_REPORT.md`
 - fresh proof delta:
   - `memory_events +1`
   - `memory_objects +1`

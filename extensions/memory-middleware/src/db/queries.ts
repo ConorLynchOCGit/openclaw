@@ -1276,7 +1276,9 @@ type WorkflowImprovementQueryHint = {
     | "scripts_committer_required"
     | "git_stash_unsafe"
     | "python_command_unavailable"
-    | "gateway_tools_invoke_forbidden";
+    | "gateway_tools_invoke_forbidden"
+    | "openai_embeddings_api_key_required"
+    | "anthropic_context1m_eligible_credential_required";
 };
 
 function normalizeRetrievalQuery(value: string): string {
@@ -1419,6 +1421,24 @@ function inferWorkflowImprovementQueryHint(query: string): WorkflowImprovementQu
     (normalized.includes("gateway") && normalized.includes("runtime invocation"))
   ) {
     return { lessonKey: "gateway_tools_invoke_forbidden" };
+  }
+  if (
+    (normalized.includes("embedding") || normalized.includes("semantic memory search")) &&
+    (normalized.includes("codex oauth") ||
+      normalized.includes("codex") ||
+      normalized.includes("chatgpt oauth")) &&
+    (normalized.includes("api key") || normalized.includes("openai_api_key"))
+  ) {
+    return { lessonKey: "openai_embeddings_api_key_required" };
+  }
+  if (
+    (normalized.includes("anthropic") || normalized.includes("claude")) &&
+    (normalized.includes("long context") || normalized.includes("context1m")) &&
+    (normalized.includes("extra usage") ||
+      normalized.includes("429") ||
+      normalized.includes("fallback model"))
+  ) {
+    return { lessonKey: "anthropic_context1m_eligible_credential_required" };
   }
   return null;
 }

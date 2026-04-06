@@ -89,7 +89,7 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
           "For nearby deploy, release, triage, or investigation asks where a stored checklist may help, also prefer memory_object_search_hybrid with kind=procedure and scope=include_validated_procedures even if the user did not say checklist.",
         );
         lines.push(
-          "For repo-operating asks about running tests, making scoped commits, git-state safety, or known host/runtime constraints, prefer memory_object_search_hybrid with kind=project and approved-only scope before falling back to generic memory_search when a remembered workflow hint may matter.",
+          "For repo-operating or provider-troubleshooting asks about running tests, making scoped commits, git-state safety, known host/runtime constraints, OpenAI embeddings auth, or Anthropic long-context API gotchas, prefer memory_object_search_hybrid with kind=project and approved-only scope before falling back to generic memory_search when a remembered workflow hint may matter.",
         );
       }
       lines.push(
@@ -123,7 +123,7 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
         "If the user explicitly teaches a reusable named checklist with bounded steps, such as my deploy checklist or my release checklist followed by numbered or bulleted steps, submit it as kind=procedure.",
       );
       lines.push(
-        "If the user shares a repeated repo-local tool gotcha or environment constraint such as use pnpm test -- <path-or-filter> instead of raw vitest, use scripts/committer for commits, avoid git stash in multi-agent work, python is not available here so use node/tsx, or gateway POST /tools/invoke is forbidden here so use direct runtime invocation, submit it as kind=improvement.",
+        "If the user shares a repeated repo-local tool gotcha, environment constraint, or bounded API workaround such as use pnpm test -- <path-or-filter> instead of raw vitest, use scripts/committer for commits, avoid git stash in multi-agent work, python is not available here so use node/tsx, gateway POST /tools/invoke is forbidden here so use direct runtime invocation, Codex OAuth does not enable OpenAI embeddings by itself, or Anthropic Extra usage required for long context requests means context1m needs an eligible credential or fallback posture, submit it as kind=improvement.",
       );
       lines.push(
         "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",

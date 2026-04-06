@@ -106,6 +106,20 @@ Current state:
   - prompt guidance now makes the guidance-only posture explicit for running
     tests, making scoped commits, git-state safety asks, and known environment
     constraint asks
+- the next bounded workflow-improvement slice is now live for its intended
+  scope:
+  - semantic API workaround detection is now live for:
+    - `openai_embeddings_api_key_required`
+    - `anthropic_context1m_eligible_credential_required`
+  - first-seen supported API workaround lessons now enter a
+    candidate-with-confirmation lifecycle instead of dead manual backlog
+  - later confirming evidence can auto-promote a bounded API workaround lesson
+    without manual review
+  - approved-only hybrid retrieval can now surface the right API workaround as
+    bounded guidance for later provider-troubleshooting asks
+  - prompt guidance now explicitly covers OpenAI embeddings auth and Anthropic
+    long-context eligibility questions
+  - semantic retrieval for approved API workaround guidance is not live yet
 - the first bounded semantic retrieval routing slice is now live:
   - `memory_object_search_hybrid` remains the default working-context
     retrieval path
@@ -159,7 +173,9 @@ Current live limits:
   family and do not silently apply in the background
 - workflow-improvement memory is now live only for the first bounded repeated
   tool-gotcha and environment-constraint families
-- repeated API failure workaround memory is not live yet
+- repeated API failure workaround memory is now live only for the first bounded
+  approved guidance family
+- semantic retrieval for approved API workaround guidance is not live yet
 - broader workflow-improvement memory is not live yet
 - recommendation-only procurement/install artifacts are not live yet
 - self-improving capture remains disabled in production
@@ -274,7 +290,7 @@ Current direction:
   - approved workflow-improvement tool-gotcha guidance for
     `vitest_wrapper_required` and `scripts_committer_required`
 - introduce semantic rerank or fallback next for:
-  - later API workaround memory
+  - approved API workaround guidance
   - later broader workflow-improvement memory
   - remaining workflow-improvement guidance only if a lower-noise bounded
     retrieval shape emerges
@@ -903,13 +919,15 @@ Bound the broader phase to operational learnings such as:
 
 Current phase note:
 
-- the first bounded workflow-improvement tranche is complete for its intended
-  scope
+- the first bounded workflow-improvement tranches are complete for their
+  intended scope
 - approved workflow lessons currently remain guidance-only
 - semantic retrieval is now live only for approved environment constraints
-  inside this phase
-- broader workflow lessons and repeated API workarounds still remain future
-  work inside this phase
+  plus the safest approved workflow tool gotchas inside this phase
+- repeated API workaround memory is now live for the first bounded family, but
+  semantic retrieval for that family still remains future work inside this
+  phase
+- broader workflow lessons still remain future work inside this phase
 
 Primary spec:
 

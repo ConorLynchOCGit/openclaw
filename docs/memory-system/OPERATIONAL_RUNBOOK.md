@@ -507,6 +507,8 @@ Current live behavior:
   - only approved supported tool-gotcha lesson keys are eligible:
     - `vitest_wrapper_required`
     - `scripts_committer_required`
+- approved API workaround guidance remains hybrid-first only in the current
+  live boundary
 - matched-field observability should show:
   - `semantic_embedding`
   - `semantic_fallback`
@@ -520,6 +522,8 @@ Embedding posture for this slice:
 - approved workflow-improvement tool-gotcha source memory objects can also
   receive semantic embeddings
 - embeddings are written only for those bounded families
+- approved API workaround source memory objects do not receive semantic
+  embeddings yet
 - current live proof used:
   - `provider = openai`
   - `model = text-embedding-3-small`
@@ -555,6 +559,7 @@ Current approved boundary note:
   routing in this slice for:
   - `vitest_wrapper_required`
   - `scripts_committer_required`
+- approved API workaround guidance does not use live semantic routing yet
 - `git_stash_unsafe` remains hybrid-only
 - response-style and explicit named project facts remain hybrid-first
 - this slice does not introduce generic semantic search across memory
@@ -566,8 +571,9 @@ For the exact proof ids and production evidence for this slice, use:
 
 ## Workflow-improvement UX workflow
 
-The fifth and sixth user-facing semantic workflow-memory slices are now live
-for bounded tool-gotcha and environment-constraint families only.
+The fifth through seventh user-facing semantic workflow-memory slices are now
+live for bounded tool-gotcha, environment-constraint, and API workaround
+families only.
 
 Supported first-slice workflow lessons:
 
@@ -577,17 +583,23 @@ Supported first-slice workflow lessons:
 - avoid `git stash` in this multi-agent repo
 - Python command unavailable on this host or environment
 - gateway `POST /tools/invoke` forbidden in this environment
+- OpenAI embeddings require a real `OPENAI_API_KEY` or another embeddings
+  provider; Codex OAuth alone does not enable semantic memory search
+- Anthropic `Extra usage is required for long context requests` means the
+  credential is not eligible for `context1m`; use an eligible billed API key
+  or keep a fallback model configured
 
 Current live behavior:
 
 - bounded natural-language workflow-improvement detection is allowed only for
-  the supported repeated tool-gotcha and environment-constraint subjects
+  the supported repeated tool-gotcha, environment-constraint, and API
+  workaround subjects
 - first-seen supported workflow lessons enter a pending-confirmation
   lifecycle instead of immediate approval or a dead manual-review queue
 - later confirming evidence can auto-promote those pending candidates without
   manual review
 - approved workflow lessons can later surface through approved-only retrieval
-  as bounded guidance for repo-operating asks
+  as bounded guidance for repo-operating or provider-troubleshooting asks
 - prompt guidance keeps this family guidance-only:
   - no action-taking
   - no silent plan mutation
@@ -615,13 +627,15 @@ Expected operator checks:
   candidates without introducing freeform workflow memory
 - supported repeated environment-constraint phrasing can create bounded
   improvement candidates without introducing freeform workflow memory
+- supported repeated API workaround phrasing can create bounded improvement
+  candidates without introducing freeform workflow memory
 - a supported workflow-improvement candidate can later show:
   - bounded pending-confirmation metadata
   - a later approved row with:
     - `promotionProfile = workflow_improvement_confirmation_v1`
     - `confirmationState = confirmed`
-- later repo-operating asks can retrieve the right approved workflow lesson
-  first through:
+- later repo-operating or provider-troubleshooting asks can retrieve the right
+  approved workflow lesson first through:
   - `auto_capture_lesson_match`
 - repeated confirming evidence should not create duplicate durable writes
 - weak ambiguous nearby environment text should not create additional durable
@@ -632,9 +646,11 @@ Expected operator checks:
 Current approved boundary note:
 
 - this slice is limited to the supported repeated tool-gotcha and
-  environment-constraint families only
+  environment-constraint families plus the first supported API workaround
+  family only
 - broader workflow-improvement memory is not live yet
-- repeated API failure workaround memory is not live yet
+- broader API workaround memory is not live yet
+- semantic retrieval for approved API workaround guidance is not live yet
 - repair or forgetting is not live yet for this family
 - candidates should not shape user-visible behavior before approval in this
   slice
@@ -646,6 +662,7 @@ For the exact proof ids and production evidence for this slice, use:
 
 - `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_REPORT.md`
 - `docs/memory-system/PRODUCTION_ENVIRONMENT_CONSTRAINT_UX_REPORT.md`
+- `docs/memory-system/PRODUCTION_API_WORKAROUND_UX_REPORT.md`
 
 ## Background-job inspection
 

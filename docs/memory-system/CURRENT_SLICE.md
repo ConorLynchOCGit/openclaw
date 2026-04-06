@@ -2,42 +2,43 @@
 
 ## Active slice
 
-Semantic retrieval routing v3
+API workaround UX v1
 
 ## Objective
 
-Land the next bounded working-context semantic retrieval slice so later-turn
-workflow guidance improves for the safest conceptual tool-gotcha asks without
-turning the system into a generic embedding-first memory retriever.
+Land the first bounded repeated API workaround memory slice so later-turn
+provider-troubleshooting asks can benefit from remembered approved guidance
+without turning the system into freeform operational note capture or semantic
+search everywhere.
 
 This slice is about:
 
 - preserving the already-landed response-style, project-memory,
-  recurring-procedure, workflow-improvement, and project-memory families
+  recurring-procedure, workflow-improvement, and semantic-retrieval-routing
+  families
+- adding the first bounded API workaround subjects under the existing
+  workflow-improvement candidate-confirmation posture
 - keeping `memory_object_search_hybrid` as the normal default retrieval path
-- adding the next bounded semantic fallback only where the routing spec says it
-  is safe
-- improving approved workflow tool-gotcha asks when hybrid lexical recall is
-  too weak
-- preserving exact typed wins for strong lesson-key tool-gotcha matches
-- preserving approved-only and guidance-only posture
-- preserving candidate exclusion and explainable matched-field observability
+- improving approved provider-troubleshooting guidance for the first supported
+  API workaround asks
+- preserving guidance-only posture and duplicate suppression
+- preserving semantic retrieval routing v1-v3 exactly as already landed
 - isolated proof plus narrow production proof
 - updating the canonical memory docs to reflect what is now live
 
 ## Required work
 
-1. Land one bounded semantic-retrieval routing subject family:
-   - approved workflow-improvement tool-gotcha guidance only
-2. Keep the locked v3 posture concrete:
+1. Land one bounded workflow-improvement subject family:
+   - approved API workaround guidance only
+2. Keep the locked posture concrete:
    - hybrid retrieval remains the default
-   - strong typed workflow-lesson matches remain hybrid-first
-   - semantic routing is additive, family-scoped, and approved-only
+   - exact typed workflow/API workaround matches remain hybrid-first
+   - no semantic routing for API workaround guidance yet
    - no candidate semantic retrieval
    - no action-taking or silent workflow remediation
-3. Add only the smallest bounded embedding-generation seam required for this
-   slice:
-   - approved workflow tool-gotcha source memory embeddings only
+3. Support only the first bounded API workaround subjects:
+   - `openai_embeddings_api_key_required`
+   - `anthropic_context1m_eligible_credential_required`
 4. Preserve the already-landed behavior of the other memory families.
 5. Run isolated proof and narrow production proof.
 6. Update:
@@ -46,15 +47,16 @@ This slice is about:
    - `docs/memory-system/feature-inventory.md`
    - `docs/memory-system/OPERATIONAL_RUNBOOK.md`
    - `docs/memory-system/CURRENT_SLICE.md`
+   - `docs/memory-system/specs/workflow-improvement-memory.md`
    - `docs/memory-system/specs/semantic-retrieval-routing.md`
-   - `docs/memory-system/specs/behavior-application.md`
-   - `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V3_REPORT.md`
+   - `docs/memory-system/PRODUCTION_API_WORKAROUND_UX_REPORT.md`
 
 ## Out of scope
 
-- repeated API failure workaround memory
+- broader API workaround memory
+- semantic retrieval for approved API workaround guidance
 - semantic retrieval for `git_stash_unsafe`
-- generic embedding-first working-context retrieval
+- generic embedding-first or semantic-first working-context retrieval
 - autonomous remediation or direct operational execution
 - silent background application of stored procedures
 - unmet-need planning
@@ -66,13 +68,13 @@ This slice is about:
 
 ## Acceptance criteria
 
-- a conceptual approved tool-gotcha ask that hybrid alone misses or ranks
-  weakly can be improved by semantic fallback
-- a strong exact tool-gotcha ask still keeps the typed approved memory result
-  on top
-- only approved project memory remains eligible for this slice
-- candidate semantic retrieval remains disabled
-- matched-field observability makes the routing explainable
+- a first supported API workaround statement can enter pending confirmation
+- later confirming evidence can auto-promote the bounded lesson without manual
+  review
+- approved-only hybrid retrieval can surface the right approved workaround for a
+  later provider-troubleshooting ask
+- duplicate confirming evidence does not create additional durable writes
+- no semantic retrieval expansion is introduced
 - no action-taking or automation is introduced
 - isolated proof and narrow production proof both exist
 - canonical docs reflect the live boundary accurately
@@ -88,5 +90,10 @@ This slice is now landed for its intended scope:
 - approved workflow tool gotchas for `vitest_wrapper_required` and
   `scripts_committer_required` are now the third live semantic fallback
   family
+- approved API workaround memory is now live for:
+  - `openai_embeddings_api_key_required`
+  - `anthropic_context1m_eligible_credential_required`
+- approved API workaround guidance is still hybrid-first only
 - `git_stash_unsafe` still remains hybrid-first
-- the next UX-focused memory slice has not been chosen yet
+- the next likely UX-focused slice is semantic retrieval routing for approved
+  API workaround guidance

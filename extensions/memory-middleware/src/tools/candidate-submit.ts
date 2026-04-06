@@ -954,7 +954,9 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
   const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
   const lessonKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "lessonKey"]);
   if (
-    (template !== "workflow_tool_gotcha" && template !== "workflow_environment_constraint") ||
+    (template !== "workflow_tool_gotcha" &&
+      template !== "workflow_environment_constraint" &&
+      template !== "workflow_api_workaround") ||
     !key ||
     !subjectKey ||
     !lessonKey ||
