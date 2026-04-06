@@ -384,7 +384,6 @@ Current approved boundary note:
 - this slice is limited to explicit named-project facts only
 - repository URL and deployment URL memory are not live yet
 - speculative project inference is not live
-- workflow-improvement memory is not live
 - candidates should not shape user-visible behavior before approval in this
   slice
 
@@ -471,6 +470,80 @@ For the exact proof ids and production evidence for this slice, use:
 
 - `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_UX_REPORT.md`
 - `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_BEHAVIOR_REPORT.md`
+
+## Workflow-improvement UX workflow
+
+The fifth user-facing semantic memory slice is now live for a bounded
+tool-gotcha family only.
+
+Supported first-slice workflow lessons:
+
+- use `pnpm test -- <path-or-filter>` instead of raw Vitest
+- use `scripts/committer "<msg>" <file...>` instead of manual
+  `git add` + `git commit`
+- avoid `git stash` in this multi-agent repo
+
+Current live behavior:
+
+- bounded natural-language workflow-improvement detection is allowed only for
+  the supported repeated tool-gotcha subjects
+- first-seen supported workflow lessons enter a pending-confirmation
+  lifecycle instead of immediate approval or a dead manual-review queue
+- later confirming evidence can auto-promote those pending candidates without
+  manual review
+- approved workflow lessons can later surface through approved-only retrieval
+  as bounded guidance for repo-operating asks
+- prompt guidance keeps this family guidance-only:
+  - no action-taking
+  - no silent plan mutation
+  - no autonomous remediation
+- weak ambiguous complaints should be ignored instead of creating memory
+  trash
+
+Relevant surfaces:
+
+- transcript ordinary-turn path:
+  - `extensions/memory-middleware/src/ordinary-turn-auto-capture.ts`
+- tool path:
+  - `memory_candidate_submit`
+- lifecycle helpers:
+  - `extensions/memory-middleware/src/workflow-improvement-semantic.ts`
+  - `extensions/memory-middleware/src/workflow-improvement-lifecycle.ts`
+- retrieval:
+  - `memory_object_search_hybrid`
+  - `memory_object_list`
+  - `memory_object_get`
+
+Expected operator checks:
+
+- supported repeated tool-gotcha phrasing can create bounded improvement
+  candidates without introducing freeform workflow memory
+- a supported workflow-improvement candidate can later show:
+  - bounded pending-confirmation metadata
+  - a later approved row with:
+    - `promotionProfile = workflow_improvement_confirmation_v1`
+    - `confirmationState = confirmed`
+- later repo-operating asks can retrieve the right approved workflow lesson
+  first through:
+  - `auto_capture_lesson_match`
+- repeated confirming evidence should not create duplicate durable writes
+- weak ambiguous nearby text should not create additional durable writes
+- approved-only retrieval remains the only user-visible read source for this
+  slice
+
+Current approved boundary note:
+
+- this slice is limited to the supported repeated tool-gotcha family only
+- broader workflow-improvement memory is not live yet
+- repeated environment-constraint memory is not live yet
+- repeated API failure workaround memory is not live yet
+- repair or forgetting is not live yet for this family
+- candidates should not shape user-visible behavior before approval in this
+  slice
+
+For the exact proof ids and production evidence for this slice, use:
+
+- `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_REPORT.md`
 
 ## Background-job inspection
 

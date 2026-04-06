@@ -48,6 +48,17 @@ import {
   type ResponseStyleCanonicalMatch,
   type ResponseStyleSemanticConfidence,
 } from "./response-style-semantic.js";
+import {
+  type WorkflowImprovementLifecycleInspection,
+  inspectWorkflowImprovementLifecycle,
+  isExpiredPendingWorkflowImprovementCandidate,
+} from "./workflow-improvement-lifecycle.js";
+import {
+  detectWorkflowImprovementSemanticDecision,
+  type WorkflowImprovementLessonKey,
+  type WorkflowImprovementSemanticConfidence,
+  type WorkflowImprovementToolKey,
+} from "./workflow-improvement-semantic.js";
 
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const AUTO_CAPTURE_SOURCE = "ordinary_turn_auto_capture";
@@ -61,6 +72,8 @@ const PROJECT_FACT_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
 const PROJECT_FACT_CONFIRMATION_MIN_AGE_MS = 5_000;
 const PROCEDURE_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
 const PROCEDURE_CONFIRMATION_MIN_AGE_MS = 5_000;
+const WORKFLOW_IMPROVEMENT_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
+const WORKFLOW_IMPROVEMENT_CONFIRMATION_MIN_AGE_MS = 5_000;
 const CORRECTION_PREFIX =
   "(?:actually,?|correction:|no,?|i meant,?|that(?:'|’)s not right,?|sorry,?)\\s*";
 const RESPONSE_STYLE_TEMPLATE_SET = new Set<string>(RESPONSE_STYLE_TEMPLATES);
@@ -543,8 +556,9 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "explicit_project_fact"
     | "project_fact_correction"
     | "explicit_recurring_procedure"
-    | "recurring_procedure_correction";
-  candidateKind: "learning" | "correction" | "procedure";
+    | "recurring_procedure_correction"
+    | "workflow_tool_gotcha";
+  candidateKind: "learning" | "correction" | "procedure" | "improvement";
   reasonCode:
     | "explicit_preference_statement"
     | "explicit_preference_correction"
@@ -553,7 +567,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "explicit_project_fact_statement"
     | "explicit_project_fact_correction"
     | "explicit_recurring_procedure_statement"
-    | "recurring_procedure_correction";
+    | "recurring_procedure_correction"
+    | "workflow_tool_gotcha_statement";
   template:
     | "my_preferred_is"
     | "my_favorite_is"
@@ -563,7 +578,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "responses_no_tables"
     | "responses_numbered_steps"
     | "project_fact_named_scope"
-    | "named_recurring_checklist";
+    | "named_recurring_checklist"
+    | "workflow_tool_gotcha";
   subject: string;
   value: string;
   normalizedSubject: string;
@@ -576,11 +592,14 @@ export type OrdinaryTurnAutoCaptureMatch = {
   procedureKey?: RecurringProcedureKey;
   title?: string;
   steps?: string[];
+  lessonKey?: WorkflowImprovementLessonKey;
+  toolKey?: WorkflowImprovementToolKey;
 };
 
 type ResolvedAttribution = {
   agentId: string;
   sessionId: string;
+  projectId?: string;
 };
 
 type OrdinaryTurnAutoCaptureHandlerDeps = {
@@ -607,6 +626,12 @@ type OrdinaryTurnAutoCaptureHandlerDeps = {
     metadata: Record<string, unknown>;
   }) => Promise<{ accepted: boolean; reason?: string; eventId?: string; memoryObjectId?: string }>;
   submitProcedureSuggestion: (input: {
+    content: string;
+    agentId: string;
+    sessionId: string;
+    metadata: Record<string, unknown>;
+  }) => Promise<{ accepted: boolean; reason?: string; eventId?: string; memoryObjectId?: string }>;
+  submitImprovementNote: (input: {
     content: string;
     agentId: string;
     sessionId: string;
@@ -658,6 +683,12 @@ type OrdinaryTurnAutoCaptureHandlerDeps = {
     subjectKey: string;
     logger?: PluginLogger;
   }) => Promise<RecurringProcedureLifecycleInspection | null>;
+  inspectWorkflowImprovementLifecycle: (params: {
+    config: MemoryMiddlewareConfig;
+    key: string;
+    subjectKey: string;
+    logger?: PluginLogger;
+  }) => Promise<WorkflowImprovementLifecycleInspection | null>;
   forgetApprovedResponseStyleBySubjectKey: (params: {
     config: MemoryMiddlewareConfig;
     subjectKey: string;
@@ -685,6 +716,7 @@ export type OrdinaryTurnAutoCaptureController = {
 type ResponseStyleDetectionSource = "deterministic" | "semantic";
 type ProjectFactDetectionSource = "deterministic" | "semantic";
 type RecurringProcedureDetectionSource = "semantic";
+type WorkflowImprovementDetectionSource = "semantic";
 
 type ResponseStyleCaptureDecision =
   | {
@@ -727,6 +759,16 @@ type RecurringProcedureCaptureDecision = {
   detectionSource: RecurringProcedureDetectionSource;
   evidence: string[];
   procedureKey: RecurringProcedureKey;
+  match: OrdinaryTurnAutoCaptureMatch;
+};
+
+type WorkflowImprovementCaptureDecision = {
+  action: "capture";
+  confidence: WorkflowImprovementSemanticConfidence;
+  detectionSource: WorkflowImprovementDetectionSource;
+  evidence: string[];
+  lessonKey: WorkflowImprovementLessonKey;
+  toolKey: WorkflowImprovementToolKey;
   match: OrdinaryTurnAutoCaptureMatch;
 };
 
@@ -1448,6 +1490,39 @@ function toOrdinaryTurnRecurringProcedureMatch(
   };
 }
 
+function toOrdinaryTurnWorkflowImprovementMatch(match: {
+  captureClass: "workflow_tool_gotcha";
+  candidateKind: "improvement";
+  reasonCode: "workflow_tool_gotcha_statement";
+  template: "workflow_tool_gotcha";
+  lessonKey: WorkflowImprovementLessonKey;
+  toolKey: WorkflowImprovementToolKey;
+  subject: string;
+  value: string;
+  normalizedSubject: string;
+  normalizedValue: string;
+  content: string;
+  subjectKey: string;
+  key: string;
+}): OrdinaryTurnAutoCaptureMatch {
+  return {
+    profile: "user-preference-v2",
+    captureClass: match.captureClass,
+    candidateKind: match.candidateKind,
+    reasonCode: match.reasonCode,
+    template: match.template,
+    subject: match.subject,
+    value: match.value,
+    normalizedSubject: match.normalizedSubject,
+    normalizedValue: match.normalizedValue,
+    content: match.content,
+    subjectKey: match.subjectKey,
+    key: match.key,
+    lessonKey: match.lessonKey,
+    toolKey: match.toolKey,
+  };
+}
+
 function detectResponseStyleCaptureDecision(
   text: string,
   profile: "user-preference-v1" | "user-preference-v2",
@@ -1568,6 +1643,30 @@ function detectRecurringProcedureCaptureDecision(
   };
 }
 
+function detectWorkflowImprovementCaptureDecision(
+  text: string,
+  profile: "user-preference-v1" | "user-preference-v2",
+): WorkflowImprovementCaptureDecision | null {
+  if (profile !== "user-preference-v2") {
+    return null;
+  }
+
+  const semanticDecision = detectWorkflowImprovementSemanticDecision(text);
+  if (semanticDecision.action === "ignore") {
+    return null;
+  }
+
+  return {
+    action: "capture",
+    confidence: semanticDecision.confidence,
+    detectionSource: "semantic",
+    evidence: semanticDecision.evidence,
+    lessonKey: semanticDecision.match.lessonKey,
+    toolKey: semanticDecision.match.toolKey,
+    match: toOrdinaryTurnWorkflowImprovementMatch(semanticDecision.match),
+  };
+}
+
 async function resolveAttributionWithDatabase(params: {
   config: MemoryMiddlewareConfig;
   agentExternalKey: string;
@@ -1608,7 +1707,7 @@ async function resolveAttributionWithDatabase(params: {
     if (!agentId) {
       throw new Error("failed to resolve agent attribution");
     }
-    const sessionResult = await client.query<{ id: string }>(
+    const sessionResult = await client.query<{ id: string; project_id: string | null }>(
       `
         insert into ${sessionsTable} (agent_id, session_key, metadata)
         values ($1::uuid, $2, $3::jsonb)
@@ -1616,7 +1715,7 @@ async function resolveAttributionWithDatabase(params: {
           set agent_id = excluded.agent_id,
               metadata = ${sessionsTable}.metadata || excluded.metadata,
               updated_at = now()
-        returning id::text as id
+        returning id::text as id, project_id::text as project_id
       `,
       [
         agentId,
@@ -1632,7 +1731,11 @@ async function resolveAttributionWithDatabase(params: {
       throw new Error("failed to resolve session attribution");
     }
     await client.query("commit");
-    return { agentId, sessionId };
+    return {
+      agentId,
+      sessionId,
+      ...(sessionResult.rows[0]?.project_id ? { projectId: sessionResult.rows[0].project_id } : {}),
+    };
   } catch (error) {
     try {
       await client.query("rollback");
@@ -1688,6 +1791,7 @@ function createDefaultDeps(
     submitCorrectionSuggestion: async (input) => candidateIngress.submitCorrectionSuggestion(input),
     submitLearning: async (input) => candidateIngress.submitLearning(input),
     submitProcedureSuggestion: async (input) => candidateIngress.submitProcedureSuggestion(input),
+    submitImprovementNote: async (input) => candidateIngress.submitImprovementNote(input),
     async reviewCandidate() {
       return {
         accepted: false,
@@ -1715,6 +1819,7 @@ function createDefaultDeps(
     inspectResponseStyleLifecycle,
     inspectProjectFactLifecycle,
     inspectRecurringProcedureLifecycle,
+    inspectWorkflowImprovementLifecycle,
     forgetApprovedResponseStyleBySubjectKey,
     supersedeValidatedProceduresBySubjectKey,
   };
@@ -1768,6 +1873,25 @@ function buildRecurringProcedureSemanticMetadata(params: {
       detectionSource: params.detectionSource,
       confidence: params.confidence,
       procedureKey: params.procedureKey,
+      evidence: params.evidence,
+    },
+  };
+}
+
+function buildWorkflowImprovementSemanticMetadata(params: {
+  detectionSource: WorkflowImprovementDetectionSource;
+  confidence: WorkflowImprovementSemanticConfidence;
+  evidence: string[];
+  lessonKey: WorkflowImprovementLessonKey;
+  toolKey: WorkflowImprovementToolKey;
+}): Record<string, unknown> {
+  return {
+    semanticDetection: {
+      source: "workflow_improvement_semantic_v1",
+      detectionSource: params.detectionSource,
+      confidence: params.confidence,
+      lessonKey: params.lessonKey,
+      toolKey: params.toolKey,
       evidence: params.evidence,
     },
   };
@@ -1838,6 +1962,31 @@ function buildRecurringProcedurePendingConfirmationMetadata(params: {
   };
 }
 
+function buildWorkflowImprovementPendingConfirmationMetadata(params: {
+  confidence: WorkflowImprovementSemanticConfidence;
+  evidence: string[];
+  lessonKey: WorkflowImprovementLessonKey;
+  toolKey: WorkflowImprovementToolKey;
+  observedAt?: string;
+}): Record<string, unknown> {
+  const observedAt = params.observedAt ?? new Date().toISOString();
+  return {
+    candidateLifecycle: {
+      family: "workflow_improvement",
+      state: "pending_confirmation",
+      confidence: params.confidence,
+      evidenceCount: 1,
+      observedAt,
+      expiresAt: new Date(
+        Date.parse(observedAt) + WORKFLOW_IMPROVEMENT_CONFIRMATION_WINDOW_MS,
+      ).toISOString(),
+      lessonKey: params.lessonKey,
+      toolKey: params.toolKey,
+      evidence: params.evidence,
+    },
+  };
+}
+
 function shouldSkipImmediateConfirmation(createdAt: string, now = Date.now()): boolean {
   const createdAtMs = Date.parse(createdAt);
   return Number.isFinite(createdAtMs) && now - createdAtMs < RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS;
@@ -1854,6 +2003,16 @@ function shouldSkipImmediateRecurringProcedureConfirmation(
 ): boolean {
   const createdAtMs = Date.parse(createdAt);
   return Number.isFinite(createdAtMs) && now - createdAtMs < PROCEDURE_CONFIRMATION_MIN_AGE_MS;
+}
+
+function shouldSkipImmediateWorkflowImprovementConfirmation(
+  createdAt: string,
+  now = Date.now(),
+): boolean {
+  const createdAtMs = Date.parse(createdAt);
+  return (
+    Number.isFinite(createdAtMs) && now - createdAtMs < WORKFLOW_IMPROVEMENT_CONFIRMATION_MIN_AGE_MS
+  );
 }
 
 function buildSubscriberCaptureMetadata(params: {
@@ -1925,6 +2084,11 @@ function buildSubscriberCaptureMetadata(params: {
     case "recurring_procedure_correction":
       metadata.category = "recurring_procedure_correction";
       metadata.source = "conversational_recurring_procedure_correction";
+      metadata.subject_key = match.subjectKey;
+      break;
+    case "workflow_tool_gotcha":
+      metadata.category = "workflow_improvement";
+      metadata.source = "explicit_workflow_improvement";
       metadata.subject_key = match.subjectKey;
       break;
   }
@@ -2339,6 +2503,137 @@ function buildRecurringProcedureAutoPromotionMetadata(params: {
       title: params.match.title,
       value: params.match.value,
       toolName: "memory_candidate_submit",
+      agentExternalKey: params.agentExternalKey,
+      sessionKey: params.sessionKey,
+      transcriptFile: params.transcriptFile,
+      ...(params.timestamp ? { transcriptTimestamp: params.timestamp } : {}),
+    },
+    ...(params.semanticMetadata ?? {}),
+    ...(params.candidateConfirmation
+      ? { candidateConfirmation: params.candidateConfirmation }
+      : {}),
+  };
+}
+
+async function rejectWorkflowImprovementCandidateIfPresent(params: {
+  candidateId: string;
+  subjectKey: string;
+  lessonKey: WorkflowImprovementLessonKey;
+  toolKey: WorkflowImprovementToolKey;
+  rationale: string;
+  reviewerAgentId?: string;
+  logger: PluginLogger;
+  reviewCandidate: OrdinaryTurnAutoCaptureHandlerDeps["reviewCandidate"];
+  source: string;
+}): Promise<void> {
+  const result = await params.reviewCandidate({
+    candidateId: params.candidateId,
+    outcome: "rejected",
+    reviewerAgentId: params.reviewerAgentId,
+    rationale: params.rationale,
+    metadata: {
+      source: params.source,
+      candidateLifecycle: {
+        family: "workflow_improvement",
+        state: "rejected",
+        subjectKey: params.subjectKey,
+        lessonKey: params.lessonKey,
+        toolKey: params.toolKey,
+      },
+    },
+  });
+  if (!result.accepted) {
+    params.logger.warn(
+      formatLog("memory-middleware workflow-improvement candidate rejection failed", {
+        candidateId: params.candidateId,
+        subjectKey: params.subjectKey,
+        lessonKey: params.lessonKey,
+        toolKey: params.toolKey,
+        reason: result.reason ?? "unknown",
+      }),
+    );
+  }
+}
+
+async function autoPromoteWorkflowImprovementCandidate(params: {
+  candidateId: string;
+  reviewerAgentId?: string;
+  logger: PluginLogger;
+  reviewCandidate: OrdinaryTurnAutoCaptureHandlerDeps["reviewCandidate"];
+  promoteToMemory: OrdinaryTurnAutoCaptureHandlerDeps["promoteToMemory"];
+  metadata: Record<string, unknown>;
+  logContext: Record<string, unknown>;
+}): Promise<boolean> {
+  const reviewResult = await params.reviewCandidate({
+    candidateId: params.candidateId,
+    outcome: "accepted",
+    reviewerAgentId: params.reviewerAgentId,
+    metadata: params.metadata,
+  });
+  if (!reviewResult.accepted) {
+    params.logger.warn(
+      formatLog("memory-middleware workflow-improvement auto-promotion review rejected", {
+        ...params.logContext,
+        candidateId: params.candidateId,
+        reason: reviewResult.reason ?? "unknown",
+      }),
+    );
+    return false;
+  }
+
+  const promotionResult = await params.promoteToMemory({
+    candidateId: params.candidateId,
+    promoterAgentId: params.reviewerAgentId,
+    metadata: params.metadata,
+  });
+  if (!promotionResult.accepted) {
+    params.logger.warn(
+      formatLog("memory-middleware workflow-improvement auto-promotion failed", {
+        ...params.logContext,
+        candidateId: params.candidateId,
+        reason: promotionResult.reason ?? "unknown",
+      }),
+    );
+    return false;
+  }
+
+  params.logger.info(
+    formatLog("memory-middleware workflow-improvement auto-promotion accepted", {
+      ...params.logContext,
+      candidateId: params.candidateId,
+      promotedMemoryObjectId: promotionResult.promotedMemoryObjectId,
+    }),
+  );
+  return true;
+}
+
+function buildWorkflowImprovementAutoPromotionMetadata(params: {
+  match: OrdinaryTurnAutoCaptureMatch;
+  lessonKey: WorkflowImprovementLessonKey;
+  toolKey: WorkflowImprovementToolKey;
+  agentExternalKey: string;
+  sessionKey: string;
+  transcriptFile: string;
+  autoPromotionProfile: string;
+  timestamp?: string;
+  semanticMetadata?: Record<string, unknown>;
+  candidateConfirmation?: Record<string, unknown>;
+}): Record<string, unknown> {
+  return {
+    autoPromotion: {
+      source: AUTO_PROMOTION_SOURCE,
+      captureSeam: "transcript_subscriber_fallback",
+      profile: params.autoPromotionProfile,
+      captureProfile: params.match.profile,
+      captureClass: params.match.captureClass,
+      reasonCode: params.match.reasonCode,
+      lessonKey: params.lessonKey,
+      toolKey: params.toolKey,
+      key: params.match.key,
+      subjectKey: params.match.subjectKey,
+      subject: params.match.subject,
+      value: params.match.value,
+      guidanceMode: "guidance_only",
       agentExternalKey: params.agentExternalKey,
       sessionKey: params.sessionKey,
       transcriptFile: params.transcriptFile,
@@ -3212,6 +3507,199 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     return true;
   }
 
+  async function handleWorkflowImprovementDecision(decisionParams: {
+    decision: WorkflowImprovementCaptureDecision;
+    agentExternalKey: string;
+    sessionKey: string;
+    transcriptFile: string;
+    timestamp?: string;
+  }): Promise<boolean> {
+    const match = decisionParams.decision.match;
+    if (inFlightKeys.has(match.key)) {
+      return true;
+    }
+
+    const semanticMetadata = buildWorkflowImprovementSemanticMetadata({
+      detectionSource: decisionParams.decision.detectionSource,
+      confidence: decisionParams.decision.confidence,
+      evidence: decisionParams.decision.evidence,
+      lessonKey: decisionParams.decision.lessonKey,
+      toolKey: decisionParams.decision.toolKey,
+    });
+
+    const attribution = await deps.resolveAttribution({
+      config: params.config,
+      agentExternalKey: decisionParams.agentExternalKey,
+      sessionKey: decisionParams.sessionKey,
+      transcriptFile: decisionParams.transcriptFile,
+    });
+    if (!attribution) {
+      params.logger.warn(
+        formatLog("memory-middleware workflow-improvement capture skipped missing attribution", {
+          agentExternalKey: decisionParams.agentExternalKey,
+          sessionKey: decisionParams.sessionKey,
+          key: match.key,
+        }),
+      );
+      return true;
+    }
+    const inspection = await deps.inspectWorkflowImprovementLifecycle({
+      config: params.config,
+      key: match.key,
+      subjectKey: match.subjectKey,
+      ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
+      logger: params.logger,
+    });
+
+    if (
+      inspection?.pendingCandidate &&
+      isExpiredPendingWorkflowImprovementCandidate(inspection.pendingCandidate)
+    ) {
+      await rejectWorkflowImprovementCandidateIfPresent({
+        candidateId: inspection.pendingCandidate.id,
+        subjectKey: match.subjectKey,
+        lessonKey: decisionParams.decision.lessonKey,
+        toolKey: decisionParams.decision.toolKey,
+        rationale:
+          "workflow-improvement candidate confirmation window expired without later confirming evidence",
+        reviewerAgentId: attribution.agentId,
+        logger: params.logger,
+        reviewCandidate: deps.reviewCandidate,
+        source: "workflow_improvement_candidate_confirmation",
+      });
+    }
+
+    if (inspection?.matchingApprovedObjectId) {
+      params.logger.debug?.(
+        formatLog("memory-middleware workflow-improvement capture skipped existing approved key", {
+          key: match.key,
+          memoryObjectId: inspection.matchingApprovedObjectId,
+        }),
+      );
+      markRecent(match.key);
+      return true;
+    }
+
+    if (recentKeys.has(match.key) && !inspection?.pendingCandidate) {
+      params.logger.debug?.(
+        formatLog("memory-middleware workflow-improvement capture skipped recent duplicate", {
+          key: match.key,
+        }),
+      );
+      return true;
+    }
+
+    const candidateMetadata = buildSubscriberCaptureMetadata({
+      match,
+      agentExternalKey: decisionParams.agentExternalKey,
+      sessionKey: decisionParams.sessionKey,
+      transcriptFile: decisionParams.transcriptFile,
+      ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
+      autoCaptureExtras: {
+        lessonKey: decisionParams.decision.lessonKey,
+        toolKey: decisionParams.decision.toolKey,
+        guidanceMode: "guidance_only",
+      },
+      extraMetadata: {
+        ...semanticMetadata,
+        ...buildWorkflowImprovementPendingConfirmationMetadata({
+          confidence: decisionParams.decision.confidence,
+          evidence: decisionParams.decision.evidence,
+          lessonKey: decisionParams.decision.lessonKey,
+          toolKey: decisionParams.decision.toolKey,
+          ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
+        }),
+      },
+    });
+
+    if (
+      inspection?.pendingCandidate &&
+      !isExpiredPendingWorkflowImprovementCandidate(inspection.pendingCandidate) &&
+      !shouldSkipImmediateWorkflowImprovementConfirmation(inspection.pendingCandidate.createdAt)
+    ) {
+      const promoted = await autoPromoteWorkflowImprovementCandidate({
+        candidateId: inspection.pendingCandidate.id,
+        reviewerAgentId: attribution.agentId,
+        logger: params.logger,
+        reviewCandidate: deps.reviewCandidate,
+        promoteToMemory: deps.promoteToMemory,
+        metadata: buildWorkflowImprovementAutoPromotionMetadata({
+          match,
+          lessonKey: decisionParams.decision.lessonKey,
+          toolKey: decisionParams.decision.toolKey,
+          agentExternalKey: decisionParams.agentExternalKey,
+          sessionKey: decisionParams.sessionKey,
+          transcriptFile: decisionParams.transcriptFile,
+          autoPromotionProfile: "workflow_improvement_confirmation_v1",
+          ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
+          semanticMetadata,
+          candidateConfirmation: {
+            state: "confirmed",
+            method: "repeat_subject_signal",
+            confirmationEvidenceCount: 2,
+            confirmationWindowMs: WORKFLOW_IMPROVEMENT_CONFIRMATION_WINDOW_MS,
+          },
+        }),
+        logContext: {
+          key: match.key,
+          subjectKey: match.subjectKey,
+          lessonKey: decisionParams.decision.lessonKey,
+          toolKey: decisionParams.decision.toolKey,
+          confidence: decisionParams.decision.confidence,
+        },
+      });
+      if (promoted) {
+        markRecent(match.key);
+      }
+      return true;
+    }
+
+    if (
+      inspection?.pendingCandidate &&
+      !isExpiredPendingWorkflowImprovementCandidate(inspection.pendingCandidate) &&
+      shouldSkipImmediateWorkflowImprovementConfirmation(inspection.pendingCandidate.createdAt)
+    ) {
+      params.logger.debug?.(
+        formatLog("memory-middleware workflow-improvement capture skipped immediate duplicate", {
+          key: match.key,
+          candidateId: inspection.pendingCandidate.id,
+        }),
+      );
+      markRecent(match.key);
+      return true;
+    }
+
+    const result = await deps.submitImprovementNote({
+      content: match.content,
+      ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
+      agentId: attribution.agentId,
+      sessionId: attribution.sessionId,
+      metadata: candidateMetadata,
+    });
+    if (!result.accepted) {
+      params.logger.warn(
+        formatLog("memory-middleware workflow-improvement submission rejected", {
+          key: match.key,
+          reason: result.reason ?? "unknown",
+        }),
+      );
+      return true;
+    }
+
+    markRecent(match.key);
+    params.logger.info(
+      formatLog("memory-middleware ordinary-turn workflow-improvement capture accepted", {
+        key: match.key,
+        lessonKey: decisionParams.decision.lessonKey,
+        toolKey: decisionParams.decision.toolKey,
+        confidence: decisionParams.decision.confidence,
+        eventId: result.eventId,
+        memoryObjectId: result.memoryObjectId,
+      }),
+    );
+    return true;
+  }
+
   return async (update) => {
     if (autoCapture.profile === "disabled") {
       return;
@@ -3272,6 +3760,22 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       recurringProcedureDecision &&
       (await handleRecurringProcedureDecision({
         decision: recurringProcedureDecision,
+        agentExternalKey,
+        sessionKey,
+        transcriptFile,
+        ...(timestamp ? { timestamp } : {}),
+      }))
+    ) {
+      return;
+    }
+    const workflowImprovementDecision = detectWorkflowImprovementCaptureDecision(
+      text,
+      autoCapture.profile,
+    );
+    if (
+      workflowImprovementDecision &&
+      (await handleWorkflowImprovementDecision({
+        decision: workflowImprovementDecision,
         agentExternalKey,
         sessionKey,
         transcriptFile,

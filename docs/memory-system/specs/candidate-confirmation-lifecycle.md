@@ -116,12 +116,20 @@ Apply this lifecycle first to low-risk bounded families only:
 2. user correction for already-supported bounded subjects
 3. broader bounded named project facts where the field is supported and
    candidate-only posture already exists
+4. repeated bounded workflow-improvement tool gotchas where the lesson is
+   guidance-only and the subject set is explicitly allowlisted
 
 Do not apply automatic candidate confirmation to:
 
-- workflow-improvement memory in v1
 - recommendation/procurement planning in v1
 - broad procedures in v1 unless explicitly specified later
+
+For workflow-improvement memory in v1:
+
+- allow automatic candidate confirmation only for the first bounded
+  repeated-tool-gotcha slice
+- do not generalize that policy yet to broader workflow lessons, repeated API
+  workarounds, or environment constraints
 
 ## Exact input / output behavior
 

@@ -70,9 +70,11 @@ describe("buildPromptSection", () => {
     expect(result[6]).toContain("exact style in the hybrid-search query");
     expect(result[7]).toContain("named-project fact questions");
     expect(result).toContainEqual(expect.stringContaining("stored checklist may help"));
+    expect(result).toContainEqual(expect.stringContaining("running tests, making scoped commits"));
     expect(result).toContainEqual(expect.stringContaining("directly answers the question"));
     expect(result).toContainEqual(expect.stringContaining("stored checklist exists"));
     expect(result).toContainEqual(expect.stringContaining("suggestion-first as an option"));
+    expect(result).toContainEqual(expect.stringContaining("bounded guidance hint or gotcha"));
     expect(result).toContainEqual(expect.stringContaining("memory_candidate_submit"));
     expect(result).toContainEqual(expect.stringContaining("Actually, No, I meant, Sorry"));
     expect(result).toContainEqual(
@@ -81,6 +83,7 @@ describe("buildPromptSection", () => {
     expect(result).toContainEqual(
       expect.stringContaining("For project Atlas, the staging branch is atlas-staging"),
     );
+    expect(result).toContainEqual(expect.stringContaining("use pnpm test -- <path-or-filter>"));
     expect(result).toContainEqual(expect.stringContaining("store, remember, or save"));
     expect(result).toContainEqual(expect.stringContaining("plain favorite/preferred preference"));
     expect(result).toContainEqual(expect.stringContaining("some low-risk classes auto-promote"));
@@ -113,6 +116,9 @@ describe("buildPromptSection", () => {
     );
     expect(result).toContain(
       "If the user states a tightly bounded named project fact in explicit declarative form, such as For project Atlas, the staging branch is atlas-staging, submit it as a learning candidate.",
+    );
+    expect(result).toContain(
+      "If the user shares a repeated repo-local tool gotcha such as use pnpm test -- <path-or-filter> instead of raw vitest, use scripts/committer for commits, or avoid git stash in multi-agent work, submit it as kind=improvement.",
     );
     expect(result).toContain(
       "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",

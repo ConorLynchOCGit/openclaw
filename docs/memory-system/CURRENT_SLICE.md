@@ -2,37 +2,41 @@
 
 ## Active slice
 
-Recurring procedure behavior UX v1
+Workflow-improvement / tool-gotcha UX v1
 
 ## Objective
 
-Land the next bounded recurring-procedure behavior expansion so reusable named
-checklists feel materially more useful in nearby real asks without broadening
-into generic fuzzy procedure writing or silent background application.
+Land the first bounded workflow-improvement memory slice so repeated
+repo-operating lessons feel materially useful later without broadening into
+autonomous remediation, noisy freeform note capture, or dead candidate
+backlog.
 
 This slice is about:
 
-- preserving the already-landed bounded recurring checklist capture family
-- expanding validated-procedure retrieval beyond only explicit checklist
-  wording
-- nearby deploy/release/triage/investigation asks finding the right stored
-  checklist through bounded procedure-key inference
-- suggestion-first behavior for nearby advice asks
-- preserving direct-use only for clear checklist asks
+- preserving the already-landed response-style, project-memory, and
+  recurring-procedure families
+- landing one bounded repeated tool-gotcha family inside workflow memory
+- repeated repo-operating lessons entering candidate confirmation instead of
+  dead manual backlog
+- later repo-operating asks surfacing approved lessons as bounded guidance
+- preserving guidance-only behavior with no action-taking or silent plan
+  mutation
 - isolated proof plus narrow production proof
 - updating the canonical memory docs to reflect what is now live
 
 ## Required work
 
-1. Expand validated-procedure retrieval so nearby deploy/release/triage or
-   investigation asks can resolve to the right stored checklist even without
-   explicit `checklist` wording.
+1. Land one bounded workflow-improvement subject family:
+   - repeated tool gotchas for:
+     - `pnpm test -- <path-or-filter>`
+     - `scripts/committer`
+     - avoiding `git stash`
 2. Keep the locked v1 posture concrete:
-   - suggestion-first on nearby advice asks
-   - direct-use only on clear checklist asks
-   - no silent background application
-3. Preserve the already-landed candidate-confirmation and correction behavior
-   for this family.
+   - first-seen supported lessons do not become approved memory by default
+   - later confirming evidence can auto-promote
+   - approved memories surface as guidance only
+   - no action-taking or silent plan mutation
+3. Preserve the already-landed behavior of the other memory families.
 4. Run isolated proof and narrow production proof.
 5. Update:
 
@@ -41,15 +45,17 @@ This slice is about:
 - `docs/memory-system/feature-inventory.md`
 - `docs/memory-system/OPERATIONAL_RUNBOOK.md`
 - `docs/memory-system/CURRENT_SLICE.md`
-- `docs/memory-system/specs/recurring-procedure-memory.md`
-- `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_BEHAVIOR_REPORT.md`
+- `docs/memory-system/specs/workflow-improvement-memory.md`
+- `docs/memory-system/specs/candidate-confirmation-lifecycle.md`
+- `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_REPORT.md`
 
 ## Out of scope
 
-- workflow-improvement memory
-- broader procedure families beyond bounded named checklists
+- broader workflow-improvement memory beyond the supported tool gotchas
+- repeated API failure workaround memory
+- repeated environment-constraint memory
+- autonomous remediation or direct operational execution
 - silent background application of stored procedures
-- skill extraction from recurring procedures
 - unmet-need planning
 - phrase induction as live behavior
 - self-improving capture enablement
@@ -59,13 +65,13 @@ This slice is about:
 
 ## Acceptance criteria
 
-- nearby deploy/release/triage/investigation asks can retrieve the right
-  validated stored procedure without explicit checklist wording
-- clear checklist asks still retrieve the right validated stored procedure
-- the prompt/application posture makes suggestion-first behavior explicit for
-  nearby asks
-- direct-use remains limited to clear asks
-- weak ambiguous nearby turns do not become durable write noise
+- repeated supported tool-gotcha lessons can enter pending confirmation
+- later confirming evidence can auto-promote them without manual review
+- later repo-operating asks can retrieve the right approved lesson as bounded
+  guidance
+- weak ambiguous complaints do not become durable write noise
+- duplicate suppression remains intact
+- no action-taking or automation is introduced
 - isolated proof and narrow production proof both exist
 - canonical docs reflect the live boundary accurately
 

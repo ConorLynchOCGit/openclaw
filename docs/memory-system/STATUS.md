@@ -208,6 +208,11 @@ procedure-key-aware validated-procedure retrieval for nearby deploy, release,
 triage, and investigation asks, explicit suggestion-first prompt guidance for
 nearby advice asks, preserved direct-use only on clear checklist asks, and
 narrow production proof without broader automation enablement.
+Fifth user-experience-focused workflow-improvement slice completed on the
+approved live production boundary for its intended scope, with bounded
+tool-gotcha detection, candidate confirmation without manual review for
+supported repeated repo-operating lessons, approved-only guidance retrieval,
+and narrow production proof without broader automation enablement.
 
 ## Compact checkpoint
 
@@ -271,6 +276,18 @@ Current compact state:
     investigation asks
   - suggestion-first behavior guidance for nearby advice asks
   - weak ambiguous ignore instead of dead candidate backlog
+- first workflow-improvement UX slice is now live for its intended scope
+- supported workflow-improvement tool-gotcha subjects now include:
+  - `pnpm test -- <path-or-filter>` instead of raw Vitest
+  - `scripts/committer "<msg>" <file...>` instead of manual
+    `git add` + `git commit`
+  - avoiding `git stash` in this multi-agent repo
+- semantic workflow-improvement capture now supports:
+  - repeated bounded repo-operating tool-gotcha statements
+  - medium-confidence candidate confirmation without manual review
+  - approved-only guidance retrieval for later repo-operating asks
+  - weak ambiguous ignore instead of dead candidate backlog
+  - no action-taking or silent plan mutation
 - latest semantic response-style proof timestamp:
   - `2026-04-05T16:38:19.403Z`
 - latest semantic response-style production proof artifacts:
@@ -322,6 +339,24 @@ Current compact state:
   - `skill_candidates +0`
   - `background_jobs +0`
   - production health remained `ok`
+- latest workflow-improvement production proof artifacts:
+  - `projectId = db5fdd6d-927e-4a1d-a3a8-edd0d4690c25`
+  - `agentId = 1aef21d4-d631-44bf-8c12-cee4a0154f2b`
+  - `sessionId = e414c4a1-f98d-48ff-bb84-15eec93b6b79`
+  - `candidateId = f34c5114-559a-4608-9ae5-4ab713d0b38b`
+  - `candidateEventId = 8258307f-e848-40bf-bfd6-6247c21f01c1`
+  - `approvedObjectId = 50ef7dea-9216-4bfc-9ad4-745b6d52436d`
+  - `reviewId = dd1927ad-4696-41a1-97ba-aba3ce53a6ff`
+  - `rollbackTag = openclaw:pre-workflow-improvement-20260405T235548Z`
+- latest workflow-improvement production proof delta:
+  - `memory_events +1`
+  - `memory_objects +2`
+  - `memory_reviews +1`
+  - repeated confirming evidence caused `+0` additional writes
+  - ambiguous follow-up caused `+0` additional writes
+  - `procedures +0`
+  - `skill_candidates +0`
+  - `background_jobs +0`
 - isolated proof additionally proved:
   - transcript-seam semantic capture for all supported subjects
   - bullet candidate confirmation with later auto-promotion
@@ -384,6 +419,8 @@ Current compact state:
   - `docs/memory-system/PRODUCTION_RESPONSE_STYLE_UX_REPORT.md`
 - recurring-procedure behavior production report now lives in:
   - `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_BEHAVIOR_REPORT.md`
+- workflow-improvement production report now lives in:
+  - `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_REPORT.md`
 - fresh proof delta:
   - `memory_events +1`
   - `memory_objects +1`
@@ -407,7 +444,7 @@ Current compact state:
   - `chief` captured an explicit "please remember" stable preference
   - both stayed within bounded candidate-only writes
 - current active slice:
-  - recurring-procedure behavior expansion is now landed for its intended
+  - workflow-improvement / tool-gotcha UX v1 is now landed for its intended
     scope
 - still intentionally disabled:
   - self-improving capture in production

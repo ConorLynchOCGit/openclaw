@@ -88,6 +88,9 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
         lines.push(
           "For nearby deploy, release, triage, or investigation asks where a stored checklist may help, also prefer memory_object_search_hybrid with kind=procedure and scope=include_validated_procedures even if the user did not say checklist.",
         );
+        lines.push(
+          "For repo-operating asks about running tests, making scoped commits, or git-state safety, prefer memory_object_search_hybrid with kind=project and approved-only scope before falling back to generic memory_search when a remembered workflow hint may matter.",
+        );
       }
       lines.push(
         "If an approved durable memory result directly answers the question, use it in the normal reply without asking the user to restate it. If no approved result exists, answer normally and say you did not find stored memory only when that context matters.",
@@ -97,6 +100,9 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
       );
       lines.push(
         "For nearby advice asks that match a stored checklist, surface it suggestion-first as an option or relevant checklist rather than silently treating it as mandatory workflow.",
+      );
+      lines.push(
+        "If approved workflow-improvement memory exists for a relevant tool or repo-operating ask, surface it as a bounded guidance hint or gotcha to avoid. Do not turn it into an autonomous action or silently mutate the plan.",
       );
     }
 
@@ -115,6 +121,9 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
       );
       lines.push(
         "If the user explicitly teaches a reusable named checklist with bounded steps, such as my deploy checklist or my release checklist followed by numbered or bulleted steps, submit it as kind=procedure.",
+      );
+      lines.push(
+        "If the user shares a repeated repo-local tool gotcha such as use pnpm test -- <path-or-filter> instead of raw vitest, use scripts/committer for commits, or avoid git stash in multi-agent work, submit it as kind=improvement.",
       );
       lines.push(
         "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",

@@ -88,6 +88,20 @@ Current state:
   - prompt guidance now makes suggestion-first behavior explicit for nearby
     advice asks
   - direct-use remains limited to clear checklist asks
+- the first workflow-improvement slice is now live for its intended scope:
+  - semantic tool-gotcha detection is now live for:
+    - using `pnpm test -- <path-or-filter>` instead of raw Vitest
+    - using `scripts/committer "<msg>" <file...>` instead of manual
+      `git add` + `git commit`
+    - avoiding `git stash` in this multi-agent repo
+  - first-seen supported workflow lessons now enter a
+    candidate-with-confirmation lifecycle instead of dead manual backlog
+  - later confirming evidence can auto-promote a bounded workflow lesson
+    without manual review
+  - approved-only hybrid retrieval can now surface the right workflow lesson
+    as bounded guidance for later repo-operating asks
+  - prompt guidance now makes the guidance-only posture explicit for running
+    tests, making scoped commits, and git-state safety asks
 
 Current live limits:
 
@@ -101,7 +115,11 @@ Current live limits:
   feature yet
 - recurring procedures are still bounded to the supported named checklist
   family and do not silently apply in the background
-- workflow-improvement / tool-gotcha memory is not live yet
+- workflow-improvement memory is now live only for the first bounded repeated
+  tool-gotcha family
+- repeated environment-constraint memory is not live yet
+- repeated API failure workaround memory is not live yet
+- broader workflow-improvement memory is not live yet
 - recommendation-only procurement/install artifacts are not live yet
 - self-improving capture remains disabled in production
 - automatic Skill Vetter invocation remains disabled
@@ -754,7 +772,22 @@ to autonomous execution.
 
 ### Scope
 
-Bound this phase to candidate-first operational learnings such as:
+First bounded live tranche:
+
+- repeated tool-gotcha lessons are now live for:
+  - using `pnpm test -- <path-or-filter>` instead of raw Vitest
+  - using `scripts/committer "<msg>" <file...>` instead of manual
+    `git add` + `git commit`
+  - avoiding `git stash` in this multi-agent repo
+- first-seen supported lessons enter pending confirmation rather than
+  immediate approval
+- later confirming evidence can auto-promote an approved workflow lesson
+- later repo-operating asks can surface the approved lesson as bounded
+  guidance only
+- report:
+  - `/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_REPORT`
+
+Bound the broader phase to operational learnings such as:
 
 - a specific tool gotcha
 - a recurring API failure workaround
@@ -765,8 +798,9 @@ Bound this phase to candidate-first operational learnings such as:
 
 - event detection for tool gotcha / workflow improvement
 - canonical improvement-note representation
-- candidate-only or review-first storage
-- retrieval hooks that can surface reviewed operational lessons later
+- candidate confirmation or stricter review-first storage depending on risk
+- retrieval hooks that can surface approved operational lessons later as
+  guidance
 - observability separating:
   - user-facing durable preferences
   - operator/workflow improvements
@@ -778,6 +812,14 @@ Bound this phase to candidate-first operational learnings such as:
 - the system can remember recurring operational lessons
 - these lessons do not silently become autonomous actions
 - review remains in control of broad workflow changes
+
+Current phase note:
+
+- the first bounded workflow-improvement tranche is complete for its intended
+  scope
+- approved workflow lessons currently remain guidance-only
+- broader workflow lessons, repeated API workarounds, and environment
+  constraints still remain future work inside this phase
 
 Primary spec:
 

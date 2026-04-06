@@ -2848,6 +2848,214 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
+  it("promotes a medium-confidence workflow-improvement candidate after later confirming evidence without manual review", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-16s-workflow-medium", {
+      kind: "improvement",
+      content: "raw vitest skips the wrapper here, so use pnpm test",
+      projectId: seeded.projectId,
+    });
+    const candidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const initialRow = await querySingleRow<{
+      review_state: string;
+      lesson_key: string | null;
+      lifecycle_state: string | null;
+      lifecycle_confidence: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'lessonKey' as lesson_key,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'confidence' as lifecycle_confidence
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [candidateId],
+    );
+
+    expect(initialRow).toEqual({
+      review_state: "candidate",
+      lesson_key: "vitest_wrapper_required",
+      lifecycle_state: "pending_confirmation",
+      lifecycle_confidence: "medium",
+    });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-16t-workflow-confirm", {
+      kind: "improvement",
+      content: "Use pnpm test -- src/foo.test.ts instead of raw vitest here.",
+      projectId: seeded.projectId,
+    });
+
+    expect(confirmingSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "improvement",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const promotedMemoryObjectId = (confirmingSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const confirmedRow = await querySingleRow<{
+      candidate_review_state: string;
+      review_state: string;
+      object_count: string;
+      promotion_profile: string | null;
+      confirmation_state: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select review_state::text from memory_middleware.memory_objects where id = $1::uuid) as candidate_review_state,
+          (select review_state::text from memory_middleware.memory_objects where id = $2::uuid) as review_state,
+          (
+            select count(*)::text
+            from memory_middleware.memory_objects
+            where metadata->'candidateMetadata'->'autoCapture'->>'key' =
+              (
+                select metadata->'candidateMetadata'->'autoCapture'->>'key'
+                from memory_middleware.memory_objects
+                where id = $1::uuid
+              )
+          ) as object_count,
+          (select metadata->'promotionMetadata'->'autoPromotion'->>'profile'
+            from memory_middleware.memory_objects where id = $2::uuid) as promotion_profile,
+          (select metadata->'promotionMetadata'->'candidateConfirmation'->>'state'
+            from memory_middleware.memory_objects where id = $2::uuid) as confirmation_state
+      `,
+      [candidateId, promotedMemoryObjectId],
+    );
+
+    expect(confirmedRow).toEqual({
+      candidate_review_state: "candidate",
+      review_state: "approved",
+      object_count: "2",
+      promotion_profile: "workflow_improvement_confirmation_v1",
+      confirmation_state: "confirmed",
+    });
+  });
+
+  it("allows the same bounded workflow-improvement lesson in a different project", async () => {
+    const firstProject = await seedContext(dbEnvironment.connectionString);
+    const secondProject = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const firstSubmitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: firstProject.sessionId,
+        agentId: firstProject.agentId,
+      },
+    });
+    const secondSubmitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: secondProject.sessionId,
+        agentId: secondProject.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: firstProject.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: firstProject.agentId,
+      },
+    });
+
+    const firstSubmit = await firstSubmitTool.execute("call-16u-workflow-project-a", {
+      kind: "improvement",
+      content: "Use pnpm test -- src/foo.test.ts instead of raw vitest here.",
+      projectId: firstProject.projectId,
+    });
+    const firstCandidateId = (firstSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    await reviewTool.execute("call-16u-workflow-project-b", {
+      candidateId: firstCandidateId,
+      outcome: "accepted",
+    });
+    await promoteTool.execute("call-16u-workflow-project-c", {
+      candidateId: firstCandidateId,
+    });
+
+    const secondSubmit = await secondSubmitTool.execute("call-16u-workflow-project-d", {
+      kind: "improvement",
+      content: "raw vitest skips the wrapper here, so use pnpm test",
+      projectId: secondProject.projectId,
+    });
+
+    expect(secondSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "improvement",
+      reviewState: "candidate",
+      memoryObjectId: expect.any(String),
+    });
+
+    const secondCandidateId = (secondSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    const secondRow = await querySingleRow<{
+      project_id: string;
+      review_state: string;
+      lesson_key: string | null;
+      lifecycle_state: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          project_id::text as project_id,
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'lessonKey' as lesson_key,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [secondCandidateId],
+    );
+
+    expect(secondRow).toEqual({
+      project_id: secondProject.projectId,
+      review_state: "candidate",
+      lesson_key: "vitest_wrapper_required",
+      lifecycle_state: "pending_confirmation",
+    });
+  });
+
   it("auto-promotes an explicit recurring checklist into a validated procedure without manual review", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
@@ -3380,6 +3588,98 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
     }
     expect([defaultBranchApprovedId, packageManagerApprovedId]).toContain(records[0]?.id);
+  });
+
+  it("boosts the most relevant approved workflow-improvement lesson in hybrid retrieval", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+
+    const vitestSubmit = await submitTool.execute("call-16wi-a", {
+      kind: "improvement",
+      content: "Use pnpm test -- src/foo.test.ts instead of raw vitest here.",
+      projectId: seeded.projectId,
+    });
+    const vitestCandidateId = (vitestSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    await reviewTool.execute("call-16wi-b", {
+      candidateId: vitestCandidateId,
+      outcome: "accepted",
+    });
+    const vitestPromotion = await promoteTool.execute("call-16wi-c", {
+      candidateId: vitestCandidateId,
+    });
+    const vitestApprovedId = (vitestPromotion.details as { promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const committerSubmit = await submitTool.execute("call-16wi-d", {
+      kind: "improvement",
+      content: "Use scripts/committer for commits here instead of manual git add and git commit.",
+      projectId: seeded.projectId,
+    });
+    const committerCandidateId = (committerSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await reviewTool.execute("call-16wi-e", {
+      candidateId: committerCandidateId,
+      outcome: "accepted",
+    });
+    const committerPromotion = await promoteTool.execute("call-16wi-f", {
+      candidateId: committerCandidateId,
+    });
+    const committerApprovedId = (committerPromotion.details as { promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "use pnpm test instead of raw vitest wrapper",
+      scope: "approved_only",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+    });
+    const records = (
+      hybridSearch as {
+        accepted: true;
+        status: "ok";
+        scope: "approved_only";
+        records: Array<{
+          id: string;
+          score: number;
+          matchedFields: string[];
+        }>;
+      }
+    ).records;
+    expect(records.length).toBeGreaterThanOrEqual(1);
+    expect(records[0]?.id).toBe(vitestApprovedId);
+    expect(records[0]?.matchedFields).toContain("auto_capture_lesson_match");
+    if (records[1]) {
+      expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
+    }
+    expect([vitestApprovedId, committerApprovedId]).toContain(records[0]?.id);
   });
 
   it("rejects bounded memory promotion for accepted procedure candidates", async () => {

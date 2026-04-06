@@ -1563,6 +1563,111 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
       }),
     );
   });
+
+  it("captures a bounded workflow improvement as an improvement candidate and promotes it after later confirming evidence", async () => {
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "memory-improvement-1",
+      outcome: "accepted" as const,
+      reviewId: "review-improvement-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "memory-improvement-1",
+      promotedMemoryObjectId: "approved-improvement-1",
+      sourceEventId: "event-improvement-1",
+      reviewState: "approved" as const,
+    }));
+    const submitImprovementNote = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "improvement" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-improvement-1",
+      memoryObjectId: "memory-improvement-1",
+    }));
+    const inspectWorkflowImprovementLifecycle = vi
+      .fn()
+      .mockResolvedValueOnce({
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: [],
+      })
+      .mockResolvedValueOnce({
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: ["memory-improvement-1"],
+        pendingCandidate: {
+          id: "memory-improvement-1",
+          createdAt: new Date(Date.now() - 10_000).toISOString(),
+          updatedAt: new Date(Date.now() - 10_000).toISOString(),
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          confirmationState: "pending_confirmation",
+        },
+      });
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-4",
+          sessionId: "session-uuid-4",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        submitProcedureSuggestion: vi.fn(),
+        submitImprovementNote,
+        reviewCandidate,
+        promoteToMemory,
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+        inspectWorkflowImprovementLifecycle,
+      },
+    });
+
+    const update = {
+      sessionFile: "/root/.openclaw/agents/main/sessions/workflow-improvement.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: "Use pnpm test -- src/foo.test.ts instead of raw vitest here.",
+        timestamp: Date.parse("2026-04-05T20:10:00Z"),
+      },
+    };
+
+    await handler(update);
+    await handler(update);
+
+    expect(submitImprovementNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "agent-uuid-4",
+        sessionId: "session-uuid-4",
+        content:
+          "Workflow improvement: use pnpm test -- <path-or-filter> [vitest args...] instead of raw vitest so the repo test wrapper stays active.",
+        metadata: expect.objectContaining({
+          autoCapture: expect.objectContaining({
+            captureClass: "workflow_tool_gotcha",
+            lessonKey: "vitest_wrapper_required",
+            toolKey: "vitest",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "workflow_improvement",
+            state: "pending_confirmation",
+          }),
+        }),
+      }),
+    );
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(promoteToMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-improvement-1",
+      }),
+    );
+  });
 });
 
 describe("createOrdinaryTurnAutoCaptureController", () => {

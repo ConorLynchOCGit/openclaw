@@ -1270,6 +1270,10 @@ type RecurringProcedureQueryHint = {
     | "investigation_checklist";
 };
 
+type WorkflowImprovementQueryHint = {
+  lessonKey: "vitest_wrapper_required" | "scripts_committer_required" | "git_stash_unsafe";
+};
+
 function normalizeRetrievalQuery(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -1366,6 +1370,33 @@ function inferRecurringProcedureQueryHint(query: string): RecurringProcedureQuer
     /\bdebug\b/.test(normalized)
   ) {
     return { procedureKey: "investigation_checklist" };
+  }
+  return null;
+}
+
+function inferWorkflowImprovementQueryHint(query: string): WorkflowImprovementQueryHint | null {
+  const normalized = normalizeRetrievalQuery(query);
+  if (!normalized) {
+    return null;
+  }
+  if (
+    normalized.includes("vitest") ||
+    normalized.includes("pnpm test") ||
+    normalized.includes("test wrapper") ||
+    normalized.includes("run tests")
+  ) {
+    return { lessonKey: "vitest_wrapper_required" };
+  }
+  if (
+    normalized.includes("scripts/committer") ||
+    normalized.includes("git add") ||
+    normalized.includes("git commit") ||
+    normalized.includes("scoped commit")
+  ) {
+    return { lessonKey: "scripts_committer_required" };
+  }
+  if (normalized.includes("git stash") || normalized.includes("stash")) {
+    return { lessonKey: "git_stash_unsafe" };
   }
   return null;
 }
@@ -10036,12 +10067,23 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
+  const autoCaptureLessonKeyExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'lessonKey',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'lessonKey',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'lessonKey',",
+    "v.metadata->'autoPromotion'->>'lessonKey',",
+    "''",
+    ")",
+  ].join(" ");
   const responseStyleHint =
     params.input.kind === "project" || params.input.kind === "procedure"
       ? null
       : inferResponseStyleQueryHint(params.input.query);
   const projectFactHint =
     params.input.kind === "project" ? inferProjectFactQueryHint(params.input.query) : null;
+  const workflowImprovementHint =
+    params.input.kind === "project" ? inferWorkflowImprovementQueryHint(params.input.query) : null;
   const conditions = [
     `(
       mo.search_document @@ websearch_to_tsquery('english', $1::text)
@@ -10054,6 +10096,7 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     `${params.input.query}%`,
     responseStyleHint?.template ?? "",
     projectFactHint?.fieldKey ?? "",
+    workflowImprovementHint?.lessonKey ?? "",
   ];
 
   if (params.input.kind) {
@@ -10090,6 +10133,7 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
           + case when ${combinedTextExpression} like lower($2::text) then 90 else 0 end
           + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
           + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
+          + case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
         )::float8 as score,
@@ -10104,6 +10148,9 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
             end,
             case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text
               then 'auto_capture_field_match'
+            end,
+            case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text
+              then 'auto_capture_lesson_match'
             end,
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'
@@ -10157,12 +10204,23 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
+  const autoCaptureLessonKeyExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'lessonKey',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'lessonKey',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'lessonKey',",
+    "v.metadata->'autoPromotion'->>'lessonKey',",
+    "''",
+    ")",
+  ].join(" ");
   const responseStyleHint =
     params.input.kind === "project" || params.input.kind === "procedure"
       ? null
       : inferResponseStyleQueryHint(params.input.query);
   const projectFactHint =
     params.input.kind === "project" ? inferProjectFactQueryHint(params.input.query) : null;
+  const workflowImprovementHint =
+    params.input.kind === "project" ? inferWorkflowImprovementQueryHint(params.input.query) : null;
   const conditions = [
     "v.review_state = 'candidate'",
     `(
@@ -10176,6 +10234,7 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
     `${params.input.query}%`,
     responseStyleHint?.template ?? "",
     projectFactHint?.fieldKey ?? "",
+    workflowImprovementHint?.lessonKey ?? "",
   ];
 
   if (params.input.kind) {
@@ -10212,6 +10271,7 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
           + case when ${combinedTextExpression} like lower($2::text) then 90 else 0 end
           + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
           + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
+          + case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
         )::float8 as score,
@@ -10226,6 +10286,9 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
             end,
             case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text
               then 'auto_capture_field_match'
+            end,
+            case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text
+              then 'auto_capture_lesson_match'
             end,
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'

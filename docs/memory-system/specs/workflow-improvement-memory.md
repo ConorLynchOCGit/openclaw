@@ -43,9 +43,16 @@ Initial bounded subfamilies:
 
 ## Bounded scope for first implementation
 
-Candidate-first only.
+Bound the first live slice to repeated repo-operating tool gotchas only:
 
-No automatic application beyond reviewed retrieval hints.
+- use `pnpm test -- <path-or-filter>` instead of raw Vitest
+- use `scripts/committer "<msg>" <file...>` instead of manual
+  `git add` + `git commit`
+- avoid `git stash` in this multi-agent repo
+
+Candidate confirmation is allowed for this narrow slice.
+
+Automatic application is not allowed beyond reviewed retrieval hints.
 
 ## Exact input / output behavior
 
@@ -58,19 +65,26 @@ Inputs:
 Outputs:
 
 - improvement-note candidate with bounded subtype
+- approved workflow lesson only after bounded confirmation for this narrow
+  slice
 
 ## Candidate vs approved behavior
 
 - do not use a passive manual candidate queue for this family
-- use evidence aggregation first, then either:
-  - `prompt_now` when there is strong repeated evidence and the decision is
-    useful in context
-  - `expire_or_reject` when the signal stays weak, noisy, or stale
+- for the first bounded tool-gotcha slice:
+  - first-seen supported lessons should enter `pending_confirmation`
+  - later compatible evidence may auto-promote when the lesson remains
+    low-risk and bounded
+  - weak or stale lessons should still expire or be rejected rather than
+    lingering
 - approval standards should be stricter than for response-style memory
 
 Normal resolution mode for this family:
 
-- `prompt_now` or `expire_or_reject`
+- first bounded tool-gotcha slice:
+  - `auto_confirm`
+- broader workflow-improvement families:
+  - `prompt_now` or `expire_or_reject`
 
 ## Provenance / metadata requirements
 
@@ -88,11 +102,12 @@ Reviewed workflow improvements may later surface as:
 
 - operator hints
 - retrieved lessons in relevant contexts
+- bounded guidance for later repo-operating asks
 
 They should not trigger actions directly.
 
-If a workflow-improvement signal reaches prompt-now threshold, the system
-should surface a concrete decision such as:
+If a broader workflow-improvement signal reaches prompt-now threshold, the
+system should surface a concrete decision such as:
 
 - "I've seen this workaround come up repeatedly. Should I remember it as a
   workflow hint?"
@@ -120,7 +135,8 @@ Track:
 
 ## Evaluation / proof requirements
 
-- prove at least one prompt-confirmed operational lesson can be retrieved later
+- prove at least one bounded repeated operational lesson can be retrieved
+  later after confirmation
 - prove no direct execution path is created
 - prove weak/noisy lessons expire or are rejected without backlog buildup
 
@@ -134,6 +150,8 @@ Track:
 - noisy candidate buildup
 - lessons become stale fast
 - operational hints leak into unrelated user-facing behavior
+- cross-project lesson bleed if lifecycle and duplicate checks are not project
+  scoped
 
 ## Open questions
 

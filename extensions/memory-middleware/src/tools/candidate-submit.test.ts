@@ -294,6 +294,36 @@ describe("memory candidate submit tool", () => {
     });
   });
 
+  it("normalizes bounded workflow-improvement submissions into managed improvement metadata", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    await tool.execute("call-2b", {
+      kind: "improvement",
+      content: "Use scripts/committer for commits here instead of manual git add and git commit.",
+    });
+
+    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
+      kind: "improvement",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+      metadata: expect.objectContaining({
+        category: "workflow_improvement",
+        source: "explicit_workflow_improvement",
+        autoCapture: expect.objectContaining({
+          captureClass: "workflow_tool_gotcha",
+          lessonKey: "scripts_committer_required",
+          toolKey: "scripts_committer",
+          guidanceMode: "guidance_only",
+        }),
+        candidateLifecycle: expect.objectContaining({
+          family: "workflow_improvement",
+          state: "pending_confirmation",
+        }),
+      }),
+    });
+  });
+
   it("auto-promotes explicit user preference submissions from the tool path", async () => {
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });

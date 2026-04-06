@@ -50,6 +50,17 @@ import {
 } from "../response-style-semantic.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
+  inspectWorkflowImprovementLifecycle,
+  isExpiredPendingWorkflowImprovementCandidate,
+} from "../workflow-improvement-lifecycle.js";
+import {
+  detectWorkflowImprovementSemanticDecision,
+  isSupportedWorkflowImprovementLessonKey,
+  type WorkflowImprovementLessonKey,
+  type WorkflowImprovementSemanticConfidence,
+  type WorkflowImprovementToolKey,
+} from "../workflow-improvement-semantic.js";
+import {
   asJsonToolResult as asJsonToolResultBase,
   readContextUuid,
   readCandidateKind as readCandidateKindBase,
@@ -64,6 +75,7 @@ type CandidateSubmitRawParams = ToolRawParams;
 const RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS = 5_000;
 const PROJECT_FACT_CONFIRMATION_MIN_AGE_MS = 5_000;
 const PROCEDURE_CONFIRMATION_MIN_AGE_MS = 5_000;
+const WORKFLOW_IMPROVEMENT_CONFIRMATION_MIN_AGE_MS = 5_000;
 
 function candidateKindSchema() {
   return Type.Unsafe<CandidateSubmissionKind>({
@@ -494,6 +506,71 @@ function buildToolRecurringProcedureAutoPromotionMetadata(params: {
   };
 }
 
+function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
+  input: CandidateSubmissionInput;
+  autoPromotionProfile: string;
+  confirmationState?: "confirmed";
+}): Record<string, unknown> {
+  const autoCapture = params.input.metadata?.autoCapture;
+  const semanticDetection = params.input.metadata?.semanticDetection;
+  return {
+    autoPromotion: {
+      source: "candidate_submit_auto_promotion",
+      captureSeam: "model_tool_primary",
+      profile: params.autoPromotionProfile,
+      captureProfile: "tool-submitted",
+      captureClass:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { captureClass?: unknown }).captureClass
+          : undefined,
+      reasonCode:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { reasonCode?: unknown }).reasonCode
+          : undefined,
+      lessonKey:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { lessonKey?: unknown }).lessonKey
+          : undefined,
+      toolKey:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { toolKey?: unknown }).toolKey
+          : undefined,
+      key:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { key?: unknown }).key
+          : undefined,
+      subjectKey:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { subjectKey?: unknown }).subjectKey
+          : undefined,
+      subject:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { subject?: unknown }).subject
+          : undefined,
+      value:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { value?: unknown }).value
+          : undefined,
+      guidanceMode: "guidance_only",
+      toolName: "memory_candidate_submit",
+    },
+    ...(semanticDetection &&
+    typeof semanticDetection === "object" &&
+    !Array.isArray(semanticDetection)
+      ? { semanticDetection }
+      : {}),
+    ...(params.confirmationState
+      ? {
+          candidateConfirmation: {
+            state: params.confirmationState,
+            method: "repeat_subject_signal",
+            confirmationEvidenceCount: 2,
+          },
+        }
+      : {}),
+  };
+}
+
 async function maybeResolveExistingProjectFactCandidate(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
@@ -836,6 +913,134 @@ async function maybeResolveExistingRecurringProcedureCandidate(params: {
   return null;
 }
 
+async function maybeResolveExistingWorkflowImprovementCandidate(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: CandidateSubmissionInput;
+}): Promise<CandidateSubmissionResult | null> {
+  if (params.input.kind !== "improvement") {
+    return null;
+  }
+
+  const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
+  const key = readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]);
+  const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
+  const lessonKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "lessonKey"]);
+  if (
+    template !== "workflow_tool_gotcha" ||
+    !key ||
+    !subjectKey ||
+    !lessonKey ||
+    !isSupportedWorkflowImprovementLessonKey(lessonKey)
+  ) {
+    return null;
+  }
+
+  const inspection = await inspectWorkflowImprovementLifecycle({
+    config: params.runtime.config,
+    key,
+    subjectKey,
+    ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+  });
+  if (!inspection) {
+    return null;
+  }
+
+  if (
+    inspection.pendingCandidate &&
+    isExpiredPendingWorkflowImprovementCandidate(inspection.pendingCandidate)
+  ) {
+    await params.runtime.candidateReview.review({
+      candidateId: inspection.pendingCandidate.id,
+      outcome: "rejected",
+      rationale:
+        "workflow-improvement candidate confirmation window expired without later confirming evidence",
+      metadata: {
+        source: "candidate_submit_workflow_improvement_confirmation",
+        candidateLifecycle: {
+          family: "workflow_improvement",
+          state: "rejected",
+          subjectKey,
+          lessonKey,
+        },
+      },
+    });
+  }
+
+  if (inspection.matchingApprovedObjectId) {
+    return {
+      accepted: false,
+      status: "failed",
+      kind: params.input.kind,
+      reason: `approved workflow-improvement memory already exists for key ${key}`,
+    };
+  }
+
+  if (
+    inspection.pendingCandidate &&
+    !isExpiredPendingWorkflowImprovementCandidate(inspection.pendingCandidate)
+  ) {
+    if (shouldSkipImmediateWorkflowImprovementConfirmation(inspection.pendingCandidate.createdAt)) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: `workflow-improvement confirmation candidate ${inspection.pendingCandidate.id} already exists`,
+      };
+    }
+    const autoPromotion =
+      params.runtime.config.autoPromotion ?? DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG;
+    if (autoPromotion.profile !== "explicit-user-preference-v1") {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: `workflow-improvement confirmation candidate ${inspection.pendingCandidate.id} is waiting for later evidence`,
+      };
+    }
+    const promotionMetadata = buildToolWorkflowImprovementAutoPromotionMetadata({
+      input: params.input,
+      autoPromotionProfile: "workflow_improvement_confirmation_v1",
+      confirmationState: "confirmed",
+    });
+    const reviewResult = await params.runtime.candidateReview.review({
+      candidateId: inspection.pendingCandidate.id,
+      outcome: "accepted",
+      metadata: promotionMetadata,
+    });
+    if (!reviewResult.accepted) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: reviewResult.reason,
+      };
+    }
+    const promotionResult = await params.runtime.candidatePromotion.promoteToMemory({
+      candidateId: inspection.pendingCandidate.id,
+      metadata: promotionMetadata,
+    });
+    if (!promotionResult.accepted) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: promotionResult.reason,
+      };
+    }
+    return {
+      accepted: true,
+      status: "accepted",
+      kind: params.input.kind,
+      storage: "database",
+      reviewState: "approved",
+      eventId: promotionResult.sourceEventId ?? inspection.pendingCandidate.sourceEventId,
+      memoryObjectId: promotionResult.promotedMemoryObjectId,
+    };
+  }
+
+  return null;
+}
+
 export async function submitCandidateFromTool(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
@@ -866,7 +1071,19 @@ export async function submitCandidateFromTool(params: {
   if (resolvedExistingRecurringProcedure) {
     return resolvedExistingRecurringProcedure;
   }
-  if (normalizedInput.kind === "learning" || normalizedInput.kind === "correction") {
+  const resolvedExistingWorkflowImprovement =
+    await maybeResolveExistingWorkflowImprovementCandidate({
+      runtime: params.runtime,
+      input: normalizedInput,
+    });
+  if (resolvedExistingWorkflowImprovement) {
+    return resolvedExistingWorkflowImprovement;
+  }
+  if (
+    normalizedInput.kind === "learning" ||
+    normalizedInput.kind === "correction" ||
+    normalizedInput.kind === "improvement"
+  ) {
     const duplicate = await findExistingAutoCaptureManagedDuplicate({
       runtime: params.runtime,
       input: normalizedInput,
@@ -1070,6 +1287,25 @@ function buildRecurringProcedureSemanticMetadata(params: {
   };
 }
 
+function buildWorkflowImprovementSemanticMetadata(params: {
+  detectionSource: "semantic";
+  confidence: WorkflowImprovementSemanticConfidence;
+  evidence: string[];
+  lessonKey: WorkflowImprovementLessonKey;
+  toolKey: WorkflowImprovementToolKey;
+}): Record<string, unknown> {
+  return {
+    semanticDetection: {
+      source: "workflow_improvement_semantic_v1",
+      detectionSource: params.detectionSource,
+      confidence: params.confidence,
+      lessonKey: params.lessonKey,
+      toolKey: params.toolKey,
+      evidence: params.evidence,
+    },
+  };
+}
+
 function buildPendingConfirmationMetadata(params: {
   confidence: ResponseStyleSemanticConfidence;
   evidence: string[];
@@ -1124,6 +1360,28 @@ function buildRecurringProcedurePendingConfirmationMetadata(params: {
       observedAt,
       expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
       procedureKey: params.procedureKey,
+      evidence: params.evidence,
+    },
+  };
+}
+
+function buildWorkflowImprovementPendingConfirmationMetadata(params: {
+  confidence: WorkflowImprovementSemanticConfidence;
+  evidence: string[];
+  lessonKey: WorkflowImprovementLessonKey;
+  toolKey: WorkflowImprovementToolKey;
+}): Record<string, unknown> {
+  const observedAt = new Date().toISOString();
+  return {
+    candidateLifecycle: {
+      family: "workflow_improvement",
+      state: "pending_confirmation",
+      confidence: params.confidence,
+      evidenceCount: 1,
+      observedAt,
+      expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
+      lessonKey: params.lessonKey,
+      toolKey: params.toolKey,
       evidence: params.evidence,
     },
   };
@@ -1225,6 +1483,39 @@ function toOrdinaryTurnRecurringProcedureMatch(match: {
   };
 }
 
+function toOrdinaryTurnWorkflowImprovementMatch(match: {
+  captureClass: "workflow_tool_gotcha";
+  candidateKind: "improvement";
+  reasonCode: "workflow_tool_gotcha_statement";
+  template: "workflow_tool_gotcha";
+  lessonKey: WorkflowImprovementLessonKey;
+  toolKey: WorkflowImprovementToolKey;
+  subject: string;
+  value: string;
+  normalizedSubject: string;
+  normalizedValue: string;
+  content: string;
+  subjectKey: string;
+  key: string;
+}): OrdinaryTurnAutoCaptureMatch {
+  return {
+    profile: "user-preference-v2",
+    captureClass: match.captureClass,
+    candidateKind: match.candidateKind,
+    reasonCode: match.reasonCode,
+    template: match.template,
+    subject: match.subject,
+    value: match.value,
+    normalizedSubject: match.normalizedSubject,
+    normalizedValue: match.normalizedValue,
+    content: match.content,
+    subjectKey: match.subjectKey,
+    key: match.key,
+    lessonKey: match.lessonKey,
+    toolKey: match.toolKey,
+  };
+}
+
 type TranscriptUserMessage = {
   role?: unknown;
   content?: unknown;
@@ -1258,6 +1549,16 @@ type ManagedRecurringProcedureResolution = {
   source: "content" | "raw";
   detectionSource: "semantic";
   confidence: "high" | RecurringProcedureSemanticConfidence;
+  evidence: string[];
+};
+
+type ManagedWorkflowImprovementResolution = {
+  parsed: OrdinaryTurnAutoCaptureMatch;
+  lessonKey: WorkflowImprovementLessonKey;
+  toolKey: WorkflowImprovementToolKey;
+  source: "content" | "raw";
+  detectionSource: "semantic";
+  confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
 };
 
@@ -1418,6 +1719,16 @@ function shouldSkipImmediateRecurringProcedureConfirmation(
 ): boolean {
   const createdAtMs = Date.parse(createdAt);
   return Number.isFinite(createdAtMs) && now - createdAtMs < PROCEDURE_CONFIRMATION_MIN_AGE_MS;
+}
+
+function shouldSkipImmediateWorkflowImprovementConfirmation(
+  createdAt: string,
+  now = Date.now(),
+): boolean {
+  const createdAtMs = Date.parse(createdAt);
+  return (
+    Number.isFinite(createdAtMs) && now - createdAtMs < WORKFLOW_IMPROVEMENT_CONFIRMATION_MIN_AGE_MS
+  );
 }
 
 function isManagedCorrectionMatch(
@@ -1702,6 +2013,52 @@ async function resolveManagedRecurringProcedureSubmission(params: {
     return {
       parsed: toOrdinaryTurnRecurringProcedureMatch(semanticFromRaw.match),
       procedureKey: semanticFromRaw.match.procedureKey,
+      source: "raw",
+      detectionSource: "semantic",
+      confidence: semanticFromRaw.confidence,
+      evidence: semanticFromRaw.evidence,
+    };
+  }
+
+  return null;
+}
+
+async function resolveManagedWorkflowImprovementSubmission(params: {
+  input: CandidateSubmissionInput;
+  context?: OpenClawPluginToolContext;
+}): Promise<ManagedWorkflowImprovementResolution | null> {
+  const { input, context } = params;
+  const contentDecision = detectWorkflowImprovementSemanticDecision(input.content);
+  if (contentDecision.action === "capture") {
+    return {
+      parsed: toOrdinaryTurnWorkflowImprovementMatch(contentDecision.match),
+      lessonKey: contentDecision.match.lessonKey,
+      toolKey: contentDecision.match.toolKey,
+      source: "content",
+      detectionSource: "semantic",
+      confidence: contentDecision.confidence,
+      evidence: contentDecision.evidence,
+    };
+  }
+
+  const rawCandidates: string[] = [];
+  if (typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0) {
+    rawCandidates.push(input.metadata.raw);
+  }
+  const rawFromContext = await resolveLatestUserTurnFromContext(context);
+  if (rawFromContext && !rawCandidates.includes(rawFromContext)) {
+    rawCandidates.push(rawFromContext);
+  }
+
+  for (const rawCandidate of rawCandidates) {
+    const semanticFromRaw = detectWorkflowImprovementSemanticDecision(rawCandidate);
+    if (semanticFromRaw.action !== "capture") {
+      continue;
+    }
+    return {
+      parsed: toOrdinaryTurnWorkflowImprovementMatch(semanticFromRaw.match),
+      lessonKey: semanticFromRaw.match.lessonKey,
+      toolKey: semanticFromRaw.match.toolKey,
       source: "raw",
       detectionSource: "semantic",
       confidence: semanticFromRaw.confidence,
@@ -2013,6 +2370,56 @@ async function normalizeManagedToolCandidateInput(params: {
               procedureKey: procedureResolution.procedureKey,
             })
           : {}),
+      },
+    );
+  }
+
+  if (input.kind === "improvement") {
+    const workflowImprovementResolution = await resolveManagedWorkflowImprovementSubmission({
+      input,
+      context,
+    });
+    if (!workflowImprovementResolution) {
+      return input;
+    }
+    return mergeCandidateMetadata(
+      {
+        ...input,
+        content: workflowImprovementResolution.parsed.content,
+      },
+      {
+        category: "workflow_improvement",
+        source: "explicit_workflow_improvement",
+        subject_key: workflowImprovementResolution.parsed.subjectKey,
+        autoCapture: {
+          source: "model_tool_candidate_submit",
+          captureSeam: "model_tool_primary",
+          profile: workflowImprovementResolution.parsed.profile,
+          captureClass: workflowImprovementResolution.parsed.captureClass,
+          reasonCode: workflowImprovementResolution.parsed.reasonCode,
+          template: workflowImprovementResolution.parsed.template,
+          lessonKey: workflowImprovementResolution.lessonKey,
+          toolKey: workflowImprovementResolution.toolKey,
+          key: workflowImprovementResolution.parsed.key,
+          subjectKey: workflowImprovementResolution.parsed.subjectKey,
+          subject: workflowImprovementResolution.parsed.subject,
+          value: workflowImprovementResolution.parsed.value,
+          guidanceMode: "guidance_only",
+          toolName: "memory_candidate_submit",
+        },
+        ...buildWorkflowImprovementSemanticMetadata({
+          detectionSource: workflowImprovementResolution.detectionSource,
+          confidence: workflowImprovementResolution.confidence,
+          evidence: workflowImprovementResolution.evidence,
+          lessonKey: workflowImprovementResolution.lessonKey,
+          toolKey: workflowImprovementResolution.toolKey,
+        }),
+        ...buildWorkflowImprovementPendingConfirmationMetadata({
+          confidence: workflowImprovementResolution.confidence,
+          evidence: workflowImprovementResolution.evidence,
+          lessonKey: workflowImprovementResolution.lessonKey,
+          toolKey: workflowImprovementResolution.toolKey,
+        }),
       },
     );
   }
@@ -2386,6 +2793,18 @@ function resolveManagedAutoCaptureKey(input: CandidateSubmissionInput): string |
     return parsed?.key ?? null;
   }
 
+  if (input.kind === "improvement") {
+    const semanticDecision =
+      detectWorkflowImprovementSemanticDecision(input.content).action === "capture"
+        ? detectWorkflowImprovementSemanticDecision(input.content)
+        : typeof metadata?.raw === "string"
+          ? detectWorkflowImprovementSemanticDecision(metadata.raw)
+          : null;
+    return semanticDecision && semanticDecision.action === "capture"
+      ? semanticDecision.match.key
+      : null;
+  }
+
   return null;
 }
 
@@ -2401,6 +2820,10 @@ async function findExistingAutoCaptureManagedDuplicate(params: {
 
   const schema = params.runtime.config.database.schema ?? "memory_middleware";
   const client = new Client({ connectionString: databaseUrl });
+  const projectScopedWorkflowImprovement =
+    params.input.kind === "improvement" && typeof params.input.projectId === "string"
+      ? params.input.projectId
+      : null;
   try {
     await client.connect();
     const result = await client.query<{ id: string; review_state: string }>(
@@ -2411,11 +2834,12 @@ async function findExistingAutoCaptureManagedDuplicate(params: {
           metadata->'candidateMetadata'->'autoCapture'->>'key' = $1
           or metadata->'autoCapture'->>'key' = $1
         )
+          and ($2::uuid is null or project_id = $2::uuid)
           and review_state in ('candidate', 'approved', 'corrected')
         order by created_at desc
         limit 1
       `,
-      [key],
+      [key, projectScopedWorkflowImprovement],
     );
     const row = result.rows[0];
     return row ? { id: row.id, reviewState: row.review_state } : null;
