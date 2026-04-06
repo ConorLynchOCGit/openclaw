@@ -56,7 +56,7 @@ function createRuntime(params?: {
 }
 
 describe("memory_self_improving_capture_candidate tool", () => {
-  it("normalizes bounded candidate capture input with trusted context fallbacks", () => {
+  it("normalizes bounded candidate capture input without inheriting trusted context identifiers", () => {
     const normalized = normalizeSelfImprovingCandidateCaptureInput({
       rawParams: {
         kind: "learning",
@@ -74,8 +74,6 @@ describe("memory_self_improving_capture_candidate tool", () => {
       kind: "learning",
       content: "keep this bounded learning",
       requestedOutputPosture: "candidate_only",
-      sessionId: "session-from-context",
-      agentId: "agent-from-context",
       metadata: { source: "test" },
     });
   });
@@ -100,9 +98,6 @@ describe("memory_self_improving_capture_candidate tool", () => {
     expect(runtime.candidateIngress.submitProcedureSuggestion).toHaveBeenCalledWith({
       kind: "procedure",
       content: "Suggest a bounded procedure candidate from repeated success.",
-      projectId: "project-1",
-      sessionId: "session-ctx",
-      agentId: "agent-ctx",
       metadata: {
         source: "unit-test",
         selfImprovingAdaptation: {

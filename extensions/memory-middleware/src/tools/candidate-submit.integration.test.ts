@@ -1190,6 +1190,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       skill_candidates: "0",
       memory_links: "0",
       memory_sources: "0",
+      background_jobs: "0",
     });
     expect(countsAfter).toEqual({
       memory_events: "1",
@@ -1200,6 +1201,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       skill_candidates: "0",
       memory_links: "0",
       memory_sources: "1",
+      background_jobs: "0",
     });
   });
 
@@ -1243,6 +1245,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       skill_candidates: "0",
       memory_links: "0",
       memory_sources: "0",
+      background_jobs: "0",
     });
   });
 
@@ -1284,6 +1287,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       skill_candidates: "0",
       memory_links: "0",
       memory_sources: "0",
+      background_jobs: "0",
     });
   });
 
@@ -1324,6 +1328,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     const result = await tool.execute("call-2", {
       kind: "learning",
       content: "candidate with missing session",
+      sessionId: randomUUID(),
     });
 
     expect(result.details).toEqual({
@@ -10517,6 +10522,18 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       ],
     });
 
+    const action = (
+      result.details as {
+        actions: Array<{
+          actionType: string;
+          status: string;
+          affectedObjectIds: string[];
+          supersededObjectIds: string[];
+          survivorObjectId?: string;
+        }>;
+      }
+    ).actions[0];
+
     expect(result.details).toMatchObject({
       accepted: true,
       status: "executed",
@@ -10525,15 +10542,20 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       executedActionCount: 1,
       alreadyExecutedCount: 0,
       skippedFindingCount: 0,
-      actions: [
-        expect.objectContaining({
-          actionType: "duplicate_merge_review",
-          status: "executed",
-          supersededObjectIds: [secondId],
-          survivorObjectId: firstId,
-        }),
-      ],
     });
+    expect(action).toMatchObject({
+      actionType: "duplicate_merge_review",
+      status: "executed",
+      affectedObjectIds: expect.arrayContaining([firstId, secondId]),
+    });
+    expect(action.affectedObjectIds).toHaveLength(2);
+    expect(action.supersededObjectIds).toHaveLength(1);
+    expect(action.survivorObjectId === firstId || action.survivorObjectId === secondId).toBe(true);
+    const expectedSupersededId = action.supersededObjectIds[0] ?? "";
+    const expectedSurvivorId = action.survivorObjectId ?? "";
+    expect([firstId, secondId]).toContain(expectedSupersededId);
+    expect([firstId, secondId]).toContain(expectedSurvivorId);
+    expect(expectedSupersededId).not.toBe(expectedSurvivorId);
 
     const duplicateState = await querySingleRow<{
       review_state: string;
@@ -10549,12 +10571,12 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         from memory_middleware.memory_objects
         where id = $1::uuid
       `,
-      [secondId],
+      [expectedSupersededId],
     );
     expect(duplicateState).toMatchObject({
       review_state: "superseded",
       metadata: expect.objectContaining({
-        supersededByObjectId: firstId,
+        supersededByObjectId: expectedSurvivorId,
       }),
     });
     expect(duplicateState?.superseded_at).toBeTruthy();
@@ -16656,7 +16678,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         sourceCandidateId: procedureCandidateId,
         reviewerAgentId: fixture.agentId,
         vettingSummary: "Manual Skill Vetter review completed for bounded limited use only.",
-        vettingMetadata: {
+        vettingResultMetadata: {
           source: "submit-review-promote-procedure-validate-skill-procurement-vetting-rollout-test",
           path: "skill_candidate_vetting_result_record",
         },

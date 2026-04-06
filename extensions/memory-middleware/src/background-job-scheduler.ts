@@ -191,6 +191,14 @@ function hasAnySchedulingEnabled(params: {
   );
 }
 
+function summarizeBackgroundJobSchedulerError(error: unknown): string {
+  const reason = error instanceof Error ? error.message : "background job scheduling failed";
+  if (reason.includes("connect") || reason.includes("ECONNREFUSED")) {
+    return "memory middleware database is unavailable";
+  }
+  return reason;
+}
+
 export function createBackgroundJobSchedulerPort(params: {
   db: MemoryMiddlewareDb;
   consolidationExecution: ConsolidationExecutionPort;
@@ -239,7 +247,7 @@ export function createBackgroundJobSchedulerPort(params: {
   }
 
   return {
-    enqueue(input) {
+    async enqueue(input) {
       if (
         input.jobClass !== "proactive_plan" &&
         input.jobClass !== "proactive_execute_run_drift_check" &&
@@ -312,7 +320,16 @@ export function createBackgroundJobSchedulerPort(params: {
         });
       }
 
-      return params.db.queries.enqueueBackgroundJob(input);
+      try {
+        return await params.db.queries.enqueueBackgroundJob(input);
+      } catch (error) {
+        return {
+          accepted: false,
+          status: "failed",
+          jobClass: input.jobClass,
+          reason: summarizeBackgroundJobSchedulerError(error),
+        };
+      }
     },
     async list(input) {
       if (params.inspectionMode !== "enabled") {
@@ -360,7 +377,7 @@ export function createBackgroundJobSchedulerPort(params: {
           allowedJobClasses: enabledRunnableJobClasses(params),
         });
       } catch (error) {
-        const reason = error instanceof Error ? error.message : "background job claim failed";
+        const reason = summarizeBackgroundJobSchedulerError(error);
         return {
           accepted: false,
           status: reason.includes("not configured") ? "not_configured" : "failed",
@@ -595,19 +612,22 @@ export function createBackgroundJobSchedulerPort(params: {
           proactiveExecuteResult,
         };
       } catch (error) {
-        const reason =
-          error instanceof Error ? error.message : "background job execution failed unexpectedly";
-        await params.db.queries.finalizeBackgroundJob({
-          jobId: claimedJob.jobId,
-          status: "failed",
-          lastError: reason,
-          executionMetadata: {
-            source: "memory_background_job_run_next",
-            jobClass: claimedJob.jobClass,
-            ...(input.runnerId ? { runnerId: input.runnerId } : {}),
+        const reason = summarizeBackgroundJobSchedulerError(error);
+        try {
+          await params.db.queries.finalizeBackgroundJob({
+            jobId: claimedJob.jobId,
             status: "failed",
-          },
-        });
+            lastError: reason,
+            executionMetadata: {
+              source: "memory_background_job_run_next",
+              jobClass: claimedJob.jobClass,
+              ...(input.runnerId ? { runnerId: input.runnerId } : {}),
+              status: "failed",
+            },
+          });
+        } catch {
+          // Best-effort finalize only. The tool should still return a bounded failure.
+        }
 
         return {
           accepted: false,
