@@ -50,6 +50,7 @@ import {
 } from "../response-style-semantic.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
+  storeApprovedApiWorkaroundSemanticEmbedding,
   storeApprovedEnvironmentConstraintSemanticEmbedding,
   storeApprovedWorkflowToolGotchaSemanticEmbedding,
 } from "../semantic-retrieval-routing.js";
@@ -90,6 +91,10 @@ const ENVIRONMENT_CONSTRAINT_LESSON_KEYS = new Set([
 const WORKFLOW_TOOL_GOTCHA_SEMANTIC_LESSON_KEYS = new Set([
   "vitest_wrapper_required",
   "scripts_committer_required",
+]);
+const API_WORKAROUND_SEMANTIC_LESSON_KEYS = new Set([
+  "openai_embeddings_api_key_required",
+  "anthropic_context1m_eligible_credential_required",
 ]);
 
 function candidateKindSchema() {
@@ -188,6 +193,14 @@ function isWorkflowToolGotchaSemanticLessonKey(
   lessonKey: string | undefined,
 ): lessonKey is "vitest_wrapper_required" | "scripts_committer_required" {
   return Boolean(lessonKey && WORKFLOW_TOOL_GOTCHA_SEMANTIC_LESSON_KEYS.has(lessonKey));
+}
+
+function isApiWorkaroundSemanticLessonKey(
+  lessonKey: string | undefined,
+): lessonKey is
+  | "openai_embeddings_api_key_required"
+  | "anthropic_context1m_eligible_credential_required" {
+  return Boolean(lessonKey && API_WORKAROUND_SEMANTIC_LESSON_KEYS.has(lessonKey));
 }
 
 function buildToolResponseStyleAutoPromotionMetadata(params: {
@@ -1070,6 +1083,17 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
       promotionResult.promotedMemoryObjectId
     ) {
       await storeApprovedWorkflowToolGotchaSemanticEmbedding({
+        config: params.runtime.config,
+        cfg: params.context?.runtimeConfig ?? params.context?.config,
+        agentId: params.context?.agentId,
+        sessionKey: params.context?.sessionKey,
+        memoryObjectId: promotionResult.promotedMemoryObjectId,
+      });
+    } else if (
+      isApiWorkaroundSemanticLessonKey(lessonKey) &&
+      promotionResult.promotedMemoryObjectId
+    ) {
+      await storeApprovedApiWorkaroundSemanticEmbedding({
         config: params.runtime.config,
         cfg: params.context?.runtimeConfig ?? params.context?.config,
         agentId: params.context?.agentId,

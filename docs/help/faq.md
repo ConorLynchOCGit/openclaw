@@ -1179,10 +1179,16 @@ for usage/billing and raise limits as needed.
   </Accordion>
 
   <Accordion title="Does semantic memory search require an OpenAI API key?">
-    Only if you use **OpenAI embeddings**. Codex OAuth covers chat/completions and
-    does **not** grant embeddings access, so **signing in with Codex (OAuth or the
-    Codex CLI login)** does not help for semantic memory search. OpenAI embeddings
-    still need a real API key (`OPENAI_API_KEY` or `models.providers.openai.apiKey`).
+    Only if you use **OpenAI embeddings**. In OpenClaw today, `openai-codex`
+    OAuth profiles are not used for the embeddings auth path, so OpenAI
+    embeddings still need a configured API key (`OPENAI_API_KEY` or
+    `models.providers.openai.apiKey`).
+
+    Important nuance: OpenAI documents that ChatGPT / Codex sign-in can
+    sometimes provision an API key. If that flow gave you a usable OpenAI API
+    key and you configured it in OpenClaw, embeddings can work. The limitation
+    is narrower than “Codex login never helps” - the OAuth profile itself is
+    not the credential OpenClaw uses for embeddings.
 
     If you don't set a provider explicitly, OpenClaw auto-selects a provider when it
     can resolve an API key (auth profiles, `models.providers.*.apiKey`, or env vars).

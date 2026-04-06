@@ -121,6 +121,10 @@ Retrieval posture for this layer:
 - approved workflow-improvement tool gotchas for
   `vitest_wrapper_required` and `scripts_committer_required` are now the
   third live semantic fallback family
+- approved API workaround guidance for
+  `openai_embeddings_api_key_required` and
+  `anthropic_context1m_eligible_credential_required` is now the fourth live
+  semantic fallback family
 - `git_stash_unsafe` still remains hybrid-first
 - conceptual workflow families remain the next semantic candidates
 

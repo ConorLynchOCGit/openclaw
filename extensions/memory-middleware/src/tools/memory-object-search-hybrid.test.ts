@@ -9,6 +9,9 @@ import {
 const maybeApplyProcedureSemanticFallback = vi.hoisted(() =>
   vi.fn(async ({ hybridResult }) => hybridResult),
 );
+const maybeApplyApiWorkaroundSemanticFallback = vi.hoisted(() =>
+  vi.fn(async ({ hybridResult }) => hybridResult),
+);
 const maybeApplyEnvironmentConstraintSemanticFallback = vi.hoisted(() =>
   vi.fn(async ({ hybridResult }) => hybridResult),
 );
@@ -17,6 +20,7 @@ const maybeApplyWorkflowToolGotchaSemanticFallback = vi.hoisted(() =>
 );
 
 vi.mock("../semantic-retrieval-routing.js", () => ({
+  maybeApplyApiWorkaroundSemanticFallback,
   maybeApplyProcedureSemanticFallback,
   maybeApplyEnvironmentConstraintSemanticFallback,
   maybeApplyWorkflowToolGotchaSemanticFallback,
@@ -116,6 +120,18 @@ describe("memory object hybrid search tool", () => {
       }),
     );
     expect(maybeApplyWorkflowToolGotchaSemanticFallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: {
+          query: "deploy agent",
+          scope: "include_validated_procedures",
+          kind: "procedure",
+        },
+        cfg: undefined,
+        agentId: undefined,
+        sessionKey: undefined,
+      }),
+    );
+    expect(maybeApplyApiWorkaroundSemanticFallback).toHaveBeenCalledWith(
       expect.objectContaining({
         input: {
           query: "deploy agent",
@@ -241,6 +257,13 @@ describe("memory object hybrid search tool", () => {
       }),
     );
     expect(maybeApplyWorkflowToolGotchaSemanticFallback).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        cfg: expect.objectContaining({ plugins: { memory: { provider: "openai" } } }),
+        agentId: "main",
+        sessionKey: "agent:main:main",
+      }),
+    );
+    expect(maybeApplyApiWorkaroundSemanticFallback).toHaveBeenLastCalledWith(
       expect.objectContaining({
         cfg: expect.objectContaining({ plugins: { memory: { provider: "openai" } } }),
         agentId: "main",
@@ -377,6 +400,68 @@ describe("memory object hybrid search tool", () => {
     ).toEqual(
       expect.objectContaining({
         id: "tool-gotcha-semantic-1",
+        matchedFields: ["semantic_embedding", "semantic_fallback"],
+      }),
+    );
+  });
+
+  it("returns semantic fallback ordering when the family router rewrites weak API workaround results", async () => {
+    const runtime = createRuntime();
+    runtime.memoryObjectQuery.searchHybrid = vi.fn(async () => ({
+      accepted: true as const,
+      status: "ok" as const,
+      scope: "approved_only" as const,
+      query: "how do I get semantic memory search working after ChatGPT sign-in",
+      records: [],
+    }));
+    maybeApplyApiWorkaroundSemanticFallback.mockImplementationOnce(async ({ hybridResult }) =>
+      hybridResult.accepted && hybridResult.status === "ok"
+        ? {
+            ...hybridResult,
+            records: [
+              {
+                objectType: "memory_object" as const,
+                readSurface: "approved_memory_view" as const,
+                id: "api-workaround-semantic-1",
+                memoryKind: "project" as const,
+                reviewState: "approved" as const,
+                content:
+                  "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
+                metadata: {
+                  autoCapture: {
+                    lessonKey: "openai_embeddings_api_key_required",
+                  },
+                },
+                createdAt: "2026-04-01T00:00:00.000Z",
+                updatedAt: "2026-04-01T00:00:00.000Z",
+                score: 999,
+                matchedFields: ["semantic_embedding", "semantic_fallback"],
+              },
+            ],
+          }
+        : hybridResult,
+    );
+    const tool = createMemoryObjectSearchHybridTool({ runtime });
+
+    const result = await tool.execute("call-api-workaround", {
+      query: "how do I get semantic memory search working after ChatGPT sign-in",
+      scope: "approved_only",
+      kind: "project",
+    });
+
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "ok",
+    });
+    expect(
+      (
+        result.details as {
+          records: Array<{ id: string; matchedFields: string[] }>;
+        }
+      ).records[0],
+    ).toEqual(
+      expect.objectContaining({
+        id: "api-workaround-semantic-1",
         matchedFields: ["semantic_embedding", "semantic_fallback"],
       }),
     );

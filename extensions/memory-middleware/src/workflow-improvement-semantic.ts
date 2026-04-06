@@ -133,9 +133,9 @@ const WORKFLOW_IMPROVEMENT_SPECS: Record<WorkflowImprovementLessonKey, WorkflowI
     toolKey: "openai_embeddings",
     subject: "OpenAI embeddings auth",
     value:
-      "OpenAI embeddings require a real OPENAI_API_KEY or another embeddings provider; Codex OAuth alone does not enable semantic memory search",
+      "OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings",
     content:
-      "API workaround: OpenAI embeddings require a real OPENAI_API_KEY or another embeddings provider; Codex OAuth alone does not enable semantic memory search.",
+      "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
   },
   anthropic_context1m_eligible_credential_required: {
     captureClass: "workflow_api_workaround",

@@ -8,12 +8,14 @@ import type { MemoryMiddlewareRuntime } from "../runtime.js";
 const inspectWorkflowImprovementLifecycle = vi.hoisted(() =>
   vi.fn(async (): Promise<unknown> => null),
 );
+const storeApprovedApiWorkaroundSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
 const storeApprovedEnvironmentConstraintSemanticEmbedding = vi.hoisted(() =>
   vi.fn(async () => true),
 );
 const storeApprovedWorkflowToolGotchaSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
 
 vi.mock("../semantic-retrieval-routing.js", () => ({
+  storeApprovedApiWorkaroundSemanticEmbedding,
   storeApprovedEnvironmentConstraintSemanticEmbedding,
   storeApprovedWorkflowToolGotchaSemanticEmbedding,
 }));
@@ -390,7 +392,7 @@ describe("memory candidate submit tool", () => {
     expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
       kind: "improvement",
       content:
-        "API workaround: OpenAI embeddings require a real OPENAI_API_KEY or another embeddings provider; Codex OAuth alone does not enable semantic memory search.",
+        "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
       metadata: expect.objectContaining({
         category: "workflow_improvement",
         source: "explicit_workflow_improvement",
@@ -553,8 +555,9 @@ describe("memory candidate submit tool", () => {
     inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);
   });
 
-  it("does not store semantic embeddings for approved API workaround promotion yet", async () => {
+  it("stores an approved API workaround semantic embedding after confirmation promotion", async () => {
     const runtime = createRuntime();
+    storeApprovedApiWorkaroundSemanticEmbedding.mockClear();
     storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
     storeApprovedWorkflowToolGotchaSemanticEmbedding.mockClear();
     inspectWorkflowImprovementLifecycle.mockImplementationOnce(async () => ({
@@ -617,6 +620,13 @@ describe("memory candidate submit tool", () => {
         candidateId: "memory-1",
       }),
     );
+    expect(storeApprovedApiWorkaroundSemanticEmbedding).toHaveBeenCalledWith({
+      config: runtime.config,
+      cfg: { plugins: { memory: { provider: "openai" } } },
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      memoryObjectId: "approved-api-workaround-1",
+    });
     expect(storeApprovedEnvironmentConstraintSemanticEmbedding).not.toHaveBeenCalled();
     expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).not.toHaveBeenCalled();
     inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);

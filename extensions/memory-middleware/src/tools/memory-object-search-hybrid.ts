@@ -8,6 +8,7 @@ import type {
 import { MEMORY_OBJECT_SEARCH_SCOPES } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
+  maybeApplyApiWorkaroundSemanticFallback,
   maybeApplyEnvironmentConstraintSemanticFallback,
   maybeApplyProcedureSemanticFallback,
   maybeApplyWorkflowToolGotchaSemanticFallback,
@@ -120,6 +121,14 @@ export async function searchMemoryObjectsHybridFromTool(params: {
     agentId: params.context?.agentId,
     sessionKey: params.context?.sessionKey,
   });
+  result = await maybeApplyApiWorkaroundSemanticFallback({
+    runtime: params.runtime,
+    input: params.input,
+    hybridResult: result,
+    cfg: params.context?.runtimeConfig ?? params.context?.config,
+    agentId: params.context?.agentId,
+    sessionKey: params.context?.sessionKey,
+  });
   return result;
 }
 
@@ -131,7 +140,7 @@ export function createMemoryObjectSearchHybridTool(params: {
     name: "memory_object_search_hybrid",
     label: "Memory Object Search Hybrid",
     description:
-      "Run bounded ranked text search over approved memory objects, with explicitly requested candidate and validated-procedure scope support. Hybrid stays the default; nearby recurring-procedure asks, approved environment-constraint guidance, and the supported approved workflow tool gotchas may use family-scoped semantic fallback.",
+      "Run bounded ranked text search over approved memory objects, with explicitly requested candidate and validated-procedure scope support. Hybrid stays the default; nearby recurring-procedure asks, approved environment-constraint guidance, the supported approved workflow tool gotchas, and the supported approved API workarounds may use family-scoped semantic fallback.",
     parameters: MemoryObjectSearchHybridToolSchema,
     async execute(_toolCallId: string, rawParams: MemoryObjectSearchHybridRawParams) {
       const input = normalizeMemoryObjectSearchHybridInput(rawParams);

@@ -50,6 +50,7 @@ import {
   type ResponseStyleSemanticConfidence,
 } from "./response-style-semantic.js";
 import {
+  storeApprovedApiWorkaroundSemanticEmbedding,
   storeApprovedEnvironmentConstraintSemanticEmbedding,
   storeApprovedWorkflowToolGotchaSemanticEmbedding,
   storeValidatedProcedureSemanticEmbedding,
@@ -2659,6 +2660,18 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
     promotionResult.promotedMemoryObjectId
   ) {
     await storeApprovedWorkflowToolGotchaSemanticEmbedding({
+      config: params.config,
+      cfg: params.cfg,
+      sessionKey: params.sessionKey,
+      memoryObjectId: promotionResult.promotedMemoryObjectId,
+      logger: params.logger,
+    });
+  } else if (
+    (params.lessonKey === "openai_embeddings_api_key_required" ||
+      params.lessonKey === "anthropic_context1m_eligible_credential_required") &&
+    promotionResult.promotedMemoryObjectId
+  ) {
+    await storeApprovedApiWorkaroundSemanticEmbedding({
       config: params.config,
       cfg: params.cfg,
       sessionKey: params.sessionKey,

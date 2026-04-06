@@ -5,12 +5,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { MemoryMiddlewareConfig } from "./config.js";
 
 const storeValidatedProcedureSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
+const storeApprovedApiWorkaroundSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
 const storeApprovedEnvironmentConstraintSemanticEmbedding = vi.hoisted(() =>
   vi.fn(async () => true),
 );
 const storeApprovedWorkflowToolGotchaSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
 
 vi.mock("./semantic-retrieval-routing.js", () => ({
+  storeApprovedApiWorkaroundSemanticEmbedding,
   storeApprovedEnvironmentConstraintSemanticEmbedding,
   storeApprovedWorkflowToolGotchaSemanticEmbedding,
   storeValidatedProcedureSemanticEmbedding,
@@ -1899,7 +1901,8 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     );
   });
 
-  it("does not store semantic embeddings for approved API workaround auto-promotion yet", async () => {
+  it("stores an approved API workaround semantic embedding after auto-promotion", async () => {
+    storeApprovedApiWorkaroundSemanticEmbedding.mockClear();
     storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
     storeApprovedWorkflowToolGotchaSemanticEmbedding.mockClear();
     const reviewCandidate = vi.fn(async () => ({
@@ -1990,7 +1993,7 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(submitImprovementNote).toHaveBeenCalledWith(
       expect.objectContaining({
         content:
-          "API workaround: OpenAI embeddings require a real OPENAI_API_KEY or another embeddings provider; Codex OAuth alone does not enable semantic memory search.",
+          "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
         metadata: expect.objectContaining({
           autoCapture: expect.objectContaining({
             captureClass: "workflow_api_workaround",
@@ -2005,6 +2008,14 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(promoteToMemory).toHaveBeenCalledWith(
       expect.objectContaining({
         candidateId: "memory-improvement-api-1",
+      }),
+    );
+    expect(storeApprovedApiWorkaroundSemanticEmbedding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: createConfig(),
+        cfg: undefined,
+        sessionKey: "agent:main:main",
+        memoryObjectId: "approved-api-workaround-1",
       }),
     );
     expect(storeApprovedEnvironmentConstraintSemanticEmbedding).not.toHaveBeenCalled();

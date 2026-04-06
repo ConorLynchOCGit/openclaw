@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MemoryObjectSearchHybridResult } from "./db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "./runtime.js";
 import {
+  maybeApplyApiWorkaroundSemanticFallback,
   maybeApplyEnvironmentConstraintSemanticFallback,
   maybeApplyProcedureSemanticFallback,
   maybeApplyWorkflowToolGotchaSemanticFallback,
@@ -141,6 +142,38 @@ function createWeakWorkflowToolGotchaHybridResult(): MemoryObjectSearchHybridRes
         createdAt: "2026-04-01T00:00:00.000Z",
         updatedAt: "2026-04-01T00:00:00.000Z",
         score: 30,
+        matchedFields: ["fts_search_document"],
+      },
+    ],
+  };
+}
+
+function createWeakApiWorkaroundHybridResult(): MemoryObjectSearchHybridResult {
+  return {
+    accepted: true,
+    status: "ok",
+    scope: "approved_only",
+    query: "how do I get semantic memory search working after ChatGPT sign-in",
+    records: [
+      {
+        objectType: "memory_object",
+        readSurface: "approved_memory_view",
+        id: "api-workaround-weak",
+        memoryKind: "project",
+        reviewState: "approved",
+        content:
+          "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
+        metadata: {
+          autoCapture: {
+            lessonKey: "openai_embeddings_api_key_required",
+            subject: "OpenAI embeddings auth",
+            value:
+              "OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings",
+          },
+        },
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+        score: 28,
         matchedFields: ["fts_search_document"],
       },
     ],
@@ -700,6 +733,196 @@ describe("semantic retrieval routing", () => {
 
     expect(embedMemorySearchQuery).not.toHaveBeenCalled();
     expect(runtime.memoryObjectQuery.searchSemantic).not.toHaveBeenCalled();
+    expect(result).toEqual(hybridResult);
+  });
+
+  it("keeps strong typed API workaround matches on the hybrid path", async () => {
+    const runtime = createRuntimeMock();
+    const hybridResult: MemoryObjectSearchHybridResult = {
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+      query: "semantic memory search openai api key",
+      records: [
+        {
+          objectType: "memory_object",
+          readSurface: "approved_memory_view",
+          id: "api-workaround-strong",
+          memoryKind: "project",
+          reviewState: "approved",
+          content:
+            "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
+          metadata: {
+            autoCapture: {
+              lessonKey: "openai_embeddings_api_key_required",
+            },
+          },
+          createdAt: "2026-04-01T00:00:00.000Z",
+          updatedAt: "2026-04-01T00:00:00.000Z",
+          score: 210,
+          matchedFields: ["auto_capture_lesson_match"],
+        },
+      ],
+    };
+
+    const result = await maybeApplyApiWorkaroundSemanticFallback({
+      runtime,
+      input: {
+        query: "semantic memory search openai api key",
+        kind: "project",
+        scope: "approved_only",
+      },
+      hybridResult,
+      cfg: { plugins: {} } as never,
+      agentId: "main",
+      sessionKey: "agent:main:main",
+    });
+
+    expect(embedMemorySearchQuery).not.toHaveBeenCalled();
+    expect(runtime.memoryObjectQuery.searchSemantic).not.toHaveBeenCalled();
+    expect(result).toEqual(hybridResult);
+  });
+
+  it("uses semantic fallback for weak nearby API workaround asks", async () => {
+    const runtime = {
+      config: {
+        database: {
+          driver: "postgres",
+          schema: "memory_middleware",
+          url: "",
+        },
+      },
+      memoryObjectQuery: {
+        searchSemantic: vi.fn(async () => ({
+          accepted: true as const,
+          status: "ok" as const,
+          scope: "approved_only" as const,
+          embeddingModel: "test-embed" as const,
+          embeddingVersion: "v1" as const,
+          records: [
+            {
+              objectType: "memory_object" as const,
+              readSurface: "approved_memory_view" as const,
+              id: "api-workaround-semantic",
+              memoryKind: "project" as const,
+              reviewState: "approved" as const,
+              content:
+                "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
+              metadata: {
+                autoCapture: {
+                  lessonKey: "openai_embeddings_api_key_required",
+                },
+              },
+              createdAt: "2026-04-02T00:00:00.000Z",
+              updatedAt: "2026-04-02T00:00:00.000Z",
+              score: 0.9,
+              distance: 0.1,
+              matchedFields: ["semantic_embedding"],
+              embeddingModel: "test-embed",
+              embeddingVersion: "v1",
+              chunkIndex: 0,
+            },
+          ],
+        })),
+      },
+    } as unknown as MemoryMiddlewareRuntime;
+
+    const result = await maybeApplyApiWorkaroundSemanticFallback({
+      runtime,
+      input: {
+        query: "how do I get semantic memory search working after ChatGPT sign-in",
+        kind: "project",
+        scope: "approved_only",
+      },
+      hybridResult: createWeakApiWorkaroundHybridResult(),
+      cfg: { plugins: {} } as never,
+      agentId: "main",
+      sessionKey: "agent:main:main",
+    });
+
+    expect(embedMemorySearchQuery).toHaveBeenCalledWith({
+      cfg: { plugins: {} },
+      agentId: "main",
+      text: "how do I get semantic memory search working after ChatGPT sign-in",
+    });
+    expect(runtime.memoryObjectQuery.searchSemantic).toHaveBeenCalledWith({
+      embedding: [0.1, 0.2, 0.3],
+      embeddingModel: "test-embed",
+      embeddingVersion: "v1",
+      scope: "approved_only",
+      kind: "project",
+    });
+    expect(result.accepted).toBe(true);
+    if (!result.accepted) {
+      throw new Error("expected accepted result");
+    }
+    expect(result.records[0]).toEqual(
+      expect.objectContaining({
+        id: "api-workaround-semantic",
+        matchedFields: ["semantic_embedding", "semantic_fallback"],
+      }),
+    );
+    expect(result.records[1]?.id).toBe("api-workaround-weak");
+  });
+
+  it("filters semantic fallback to supported approved API workaround lessons only", async () => {
+    const runtime = {
+      config: {
+        database: {
+          driver: "postgres",
+          schema: "memory_middleware",
+          url: "",
+        },
+      },
+      memoryObjectQuery: {
+        searchSemantic: vi.fn(async () => ({
+          accepted: true as const,
+          status: "ok" as const,
+          scope: "approved_only" as const,
+          embeddingModel: "test-embed" as const,
+          embeddingVersion: "v1" as const,
+          records: [
+            {
+              objectType: "memory_object" as const,
+              readSurface: "approved_memory_view" as const,
+              id: "api-workaround-unsupported",
+              memoryKind: "project" as const,
+              reviewState: "approved" as const,
+              content:
+                'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+              metadata: {
+                autoCapture: {
+                  lessonKey: "scripts_committer_required",
+                },
+              },
+              createdAt: "2026-04-02T00:00:00.000Z",
+              updatedAt: "2026-04-02T00:00:00.000Z",
+              score: 0.92,
+              distance: 0.08,
+              matchedFields: ["semantic_embedding"],
+              embeddingModel: "test-embed",
+              embeddingVersion: "v1",
+              chunkIndex: 0,
+            },
+          ],
+        })),
+      },
+    } as unknown as MemoryMiddlewareRuntime;
+
+    const hybridResult = createWeakApiWorkaroundHybridResult();
+    const result = await maybeApplyApiWorkaroundSemanticFallback({
+      runtime,
+      input: {
+        query: "how do I get semantic memory search working after ChatGPT sign-in",
+        kind: "project",
+        scope: "approved_only",
+      },
+      hybridResult,
+      cfg: { plugins: {} } as never,
+      agentId: "main",
+      sessionKey: "agent:main:main",
+    });
+
     expect(result).toEqual(hybridResult);
   });
 });

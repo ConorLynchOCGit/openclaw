@@ -2,38 +2,38 @@
 
 ## Active slice
 
-API workaround UX v1
+Semantic retrieval routing v4
 
 ## Objective
 
-Land the first bounded repeated API workaround memory slice so later-turn
-provider-troubleshooting asks can benefit from remembered approved guidance
-without turning the system into freeform operational note capture or semantic
-search everywhere.
+Land the next bounded semantic retrieval routing slice so approved API
+workaround guidance can help with later-turn provider-troubleshooting asks
+without turning the system into generic semantic search everywhere.
 
 This slice is about:
 
 - preserving the already-landed response-style, project-memory,
   recurring-procedure, workflow-improvement, and semantic-retrieval-routing
   families
-- adding the first bounded API workaround subjects under the existing
-  workflow-improvement candidate-confirmation posture
+- preserving the already-landed bounded API workaround capture posture
 - keeping `memory_object_search_hybrid` as the normal default retrieval path
 - improving approved provider-troubleshooting guidance for the first supported
-  API workaround asks
+  API workaround asks through bounded semantic fallback
 - preserving guidance-only posture and duplicate suppression
 - preserving semantic retrieval routing v1-v3 exactly as already landed
 - isolated proof plus narrow production proof
+- tightening the user-facing OpenAI embeddings auth wording so it matches the
+  current implementation truth
 - updating the canonical memory docs to reflect what is now live
 
 ## Required work
 
-1. Land one bounded workflow-improvement subject family:
+1. Land one bounded semantic retrieval routing family:
    - approved API workaround guidance only
 2. Keep the locked posture concrete:
    - hybrid retrieval remains the default
    - exact typed workflow/API workaround matches remain hybrid-first
-   - no semantic routing for API workaround guidance yet
+   - semantic routing for API workaround guidance is additive fallback only
    - no candidate semantic retrieval
    - no action-taking or silent workflow remediation
 3. Support only the first bounded API workaround subjects:
@@ -49,12 +49,14 @@ This slice is about:
    - `docs/memory-system/CURRENT_SLICE.md`
    - `docs/memory-system/specs/workflow-improvement-memory.md`
    - `docs/memory-system/specs/semantic-retrieval-routing.md`
-   - `docs/memory-system/PRODUCTION_API_WORKAROUND_UX_REPORT.md`
+   - `docs/memory-system/specs/behavior-application.md`
+   - `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V4_REPORT.md`
+   - `docs/help/faq.md`
+   - `docs/reference/memory-config.md`
 
 ## Out of scope
 
 - broader API workaround memory
-- semantic retrieval for approved API workaround guidance
 - semantic retrieval for `git_stash_unsafe`
 - generic embedding-first or semantic-first working-context retrieval
 - autonomous remediation or direct operational execution
@@ -71,10 +73,11 @@ This slice is about:
 - a first supported API workaround statement can enter pending confirmation
 - later confirming evidence can auto-promote the bounded lesson without manual
   review
-- approved-only hybrid retrieval can surface the right approved workaround for a
-  later provider-troubleshooting ask
+- approved-only retrieval can surface the right approved workaround for a later
+  provider-troubleshooting ask
+- a conceptual nearby API workaround ask can gain semantic fallback without
+  displacing stronger exact matches
 - duplicate confirming evidence does not create additional durable writes
-- no semantic retrieval expansion is introduced
 - no action-taking or automation is introduced
 - isolated proof and narrow production proof both exist
 - canonical docs reflect the live boundary accurately
@@ -93,7 +96,9 @@ This slice is now landed for its intended scope:
 - approved API workaround memory is now live for:
   - `openai_embeddings_api_key_required`
   - `anthropic_context1m_eligible_credential_required`
-- approved API workaround guidance is still hybrid-first only
+- approved API workaround guidance is now the fourth live semantic fallback
+  family for the supported lesson keys
 - `git_stash_unsafe` still remains hybrid-first
-- the next likely UX-focused slice is semantic retrieval routing for approved
-  API workaround guidance
+- the next likely UX-focused slice is either semantic routing for
+  `git_stash_unsafe` if the ask shapes stay low-noise, or a bounded
+  project-memory expansion slice

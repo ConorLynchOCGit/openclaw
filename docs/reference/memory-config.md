@@ -57,8 +57,9 @@ auth profiles, `models.providers.*.apiKey`, or environment variables.
 | Mistral  | `MISTRAL_API_KEY`              | `models.providers.mistral.apiKey` |
 | Ollama   | `OLLAMA_API_KEY` (placeholder) | --                                |
 
-Codex OAuth covers chat/completions only and does not satisfy embedding
-requests.
+`openai-codex` OAuth profiles do not satisfy OpenClaw's OpenAI embeddings path
+directly. If a ChatGPT / Codex sign-in also gave you a usable OpenAI API key,
+configure that key explicitly and embeddings can work normally.
 
 ---
 

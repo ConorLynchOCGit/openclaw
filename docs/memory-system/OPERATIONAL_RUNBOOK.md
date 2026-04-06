@@ -507,8 +507,15 @@ Current live behavior:
   - only approved supported tool-gotcha lesson keys are eligible:
     - `vitest_wrapper_required`
     - `scripts_committer_required`
-- approved API workaround guidance remains hybrid-first only in the current
-  live boundary
+- approved API workaround guidance may use semantic fallback only when:
+  - `scope = approved_only`
+  - `kind = project`
+  - hybrid does not already have a strong typed project match such as
+    `auto_capture_field_match`, `auto_capture_lesson_match`, `title_exact`,
+    `content_exact`, `title_prefix`, or `content_prefix`
+  - only approved supported API workaround lesson keys are eligible:
+    - `openai_embeddings_api_key_required`
+    - `anthropic_context1m_eligible_credential_required`
 - matched-field observability should show:
   - `semantic_embedding`
   - `semantic_fallback`
@@ -521,9 +528,9 @@ Embedding posture for this slice:
   semantic embeddings
 - approved workflow-improvement tool-gotcha source memory objects can also
   receive semantic embeddings
+- approved API workaround source memory objects can also receive semantic
+  embeddings for the supported lesson keys
 - embeddings are written only for those bounded families
-- approved API workaround source memory objects do not receive semantic
-  embeddings yet
 - current live proof used:
   - `provider = openai`
   - `model = text-embedding-3-small`
@@ -559,7 +566,10 @@ Current approved boundary note:
   routing in this slice for:
   - `vitest_wrapper_required`
   - `scripts_committer_required`
-- approved API workaround guidance does not use live semantic routing yet
+- approved API workaround guidance now also uses live semantic routing in this
+  slice for:
+  - `openai_embeddings_api_key_required`
+  - `anthropic_context1m_eligible_credential_required`
 - `git_stash_unsafe` remains hybrid-only
 - response-style and explicit named project facts remain hybrid-first
 - this slice does not introduce generic semantic search across memory
@@ -567,7 +577,7 @@ Current approved boundary note:
 
 For the exact proof ids and production evidence for this slice, use:
 
-- `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V3_REPORT.md`
+- `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V4_REPORT.md`
 
 ## Workflow-improvement UX workflow
 
@@ -583,8 +593,9 @@ Supported first-slice workflow lessons:
 - avoid `git stash` in this multi-agent repo
 - Python command unavailable on this host or environment
 - gateway `POST /tools/invoke` forbidden in this environment
-- OpenAI embeddings require a real `OPENAI_API_KEY` or another embeddings
-  provider; Codex OAuth alone does not enable semantic memory search
+- OpenAI embeddings require a configured `OPENAI_API_KEY` or another
+  embeddings provider; `openai-codex` OAuth profiles do not satisfy
+  OpenClaw's embeddings path directly
 - Anthropic `Extra usage is required for long context requests` means the
   credential is not eligible for `context1m`; use an eligible billed API key
   or keep a fallback model configured
@@ -650,7 +661,6 @@ Current approved boundary note:
   family only
 - broader workflow-improvement memory is not live yet
 - broader API workaround memory is not live yet
-- semantic retrieval for approved API workaround guidance is not live yet
 - repair or forgetting is not live yet for this family
 - candidates should not shape user-visible behavior before approval in this
   slice

@@ -119,7 +119,8 @@ Current state:
     bounded guidance for later provider-troubleshooting asks
   - prompt guidance now explicitly covers OpenAI embeddings auth and Anthropic
     long-context eligibility questions
-  - semantic retrieval for approved API workaround guidance is not live yet
+  - semantic retrieval for approved API workaround guidance is now live only
+    for the supported approved lesson keys
 - the first bounded semantic retrieval routing slice is now live:
   - `memory_object_search_hybrid` remains the default working-context
     retrieval path
@@ -154,6 +155,18 @@ Current state:
     bounded semantic embeddings during approved promotion or backfill
   - exact tool-gotcha asks still stay hybrid-first
   - `git_stash_unsafe` still remains hybrid-only
+- the fourth bounded semantic retrieval routing slice is now live:
+  - approved API workaround guidance can now use project-scoped semantic
+    fallback when:
+    - `scope = approved_only`
+    - `kind = project`
+    - hybrid does not already have a strong typed project match
+  - only the supported approved API workaround lesson keys are eligible:
+    - `openai_embeddings_api_key_required`
+    - `anthropic_context1m_eligible_credential_required`
+  - approved API workaround source memory objects can now receive bounded
+    semantic embeddings during approved promotion or backfill
+  - exact API workaround asks still stay hybrid-first
 
 Current live limits:
 
@@ -164,7 +177,8 @@ Current live limits:
 - family-aware semantic retrieval routing is now live only for nearby
   recurring-procedure asks under explicit validated-procedure scope and
   approved environment-constraint guidance plus the supported approved
-  workflow tool gotchas under approved-only project scope
+  workflow tool gotchas and supported approved API workaround guidance under
+  approved-only project scope
 - phrase induction from fuzzy detections into reviewed deterministic patterns
   is not live yet
 - broader structured procedures are not live as a normal remembered user
@@ -175,7 +189,6 @@ Current live limits:
   tool-gotcha and environment-constraint families
 - repeated API failure workaround memory is now live only for the first bounded
   approved guidance family
-- semantic retrieval for approved API workaround guidance is not live yet
 - broader workflow-improvement memory is not live yet
 - recommendation-only procurement/install artifacts are not live yet
 - self-improving capture remains disabled in production

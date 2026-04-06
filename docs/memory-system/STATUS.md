@@ -304,8 +304,9 @@ Current compact state:
   - avoiding `git stash` in this multi-agent repo
   - Python command unavailable on this host or environment
   - gateway `POST /tools/invoke` forbidden in this environment
-  - OpenAI embeddings need a real `OPENAI_API_KEY` or another embeddings
-    provider; Codex OAuth alone does not enable semantic memory search
+  - OpenAI embeddings need a configured `OPENAI_API_KEY` or another embeddings
+    provider; `openai-codex` OAuth profiles do not satisfy OpenClaw's
+    embeddings path directly
   - Anthropic `Extra usage is required for long context requests` means the
     credential is not eligible for `context1m`; use an eligible billed API key
     or keep a fallback model posture
@@ -326,10 +327,12 @@ Current compact state:
     project scope for:
     - `vitest_wrapper_required`
     - `scripts_committer_required`
+  - approved API workaround guidance under approved-only project scope for:
+    - `openai_embeddings_api_key_required`
+    - `anthropic_context1m_eligible_credential_required`
 - semantic retrieval remains hybrid-first for:
   - response-style memory
   - explicit named project facts
-  - approved API workaround guidance
   - `git_stash_unsafe`
 - latest semantic response-style proof timestamp:
   - `2026-04-05T16:38:19.403Z`
@@ -471,6 +474,20 @@ Current compact state:
     `semantic_embedding` + `semantic_fallback`
   - `git_stash_unsafe` remained semantic-out-of-scope
   - approved API workaround guidance remained hybrid-first only
+  - candidate semantic retrieval stayed disabled
+  - health remained `ok`
+- latest semantic retrieval routing v4 proof timestamp:
+  - `2026-04-06T17:00:46.525Z`
+- latest semantic retrieval routing v4 production proof artifacts:
+  - `projectId = a2b0e2f6-71fd-4bff-a153-522ff4d0d3a4`
+  - `approvedObjectId = e4e1e2e1-cb77-4242-b53b-84ad18c8105b`
+  - `embeddingModel = text-embedding-3-small`
+  - `embeddingVersion = c53a957db9784cf10e1b59c12d8766b670f2861e286ecb700894032b4b532e9d`
+  - `rollbackTag = openclaw:pre-semantic-retrieval-routing-v4-20260406T170719Z`
+- latest semantic retrieval routing v4 production proof delta:
+  - exact API workaround ask stayed hybrid-first
+  - conceptual API workaround ask gained
+    `semantic_embedding` + `semantic_fallback`
   - candidate semantic retrieval stayed disabled
   - health remained `ok`
 - isolated proof additionally proved:

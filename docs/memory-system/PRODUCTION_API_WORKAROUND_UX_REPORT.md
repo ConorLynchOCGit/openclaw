@@ -62,9 +62,9 @@ Proof context:
 Proof turns / inputs:
 
 1. `Semantic memory search with Codex OAuth keeps coming back to the OpenAI API key here.`
-2. `Codex OAuth does not help for OpenAI embeddings here; semantic memory search still needs a real OPENAI_API_KEY.`
+2. `OpenAI embeddings here still need a configured OPENAI_API_KEY; openai-codex OAuth profiles do not satisfy the embeddings path directly.`
 3. duplicate confirmation:
-   `For semantic memory search here, Codex OAuth still is not enough; OpenAI embeddings require a real OPENAI_API_KEY.`
+   `For semantic memory search here, openai-codex OAuth profiles still are not enough by themselves; OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider.`
 4. explicit ambiguous cleanup probe:
    `The embeddings setup has been annoying lately.`
 5. retrieval query:
@@ -203,8 +203,10 @@ become dead backlog:
 
 ## Limitations still in force
 
-- approved API workaround guidance remains hybrid-first only
-- no semantic fallback or embeddings are live for this family yet
+- approved API workaround guidance remained hybrid-first only at the v1 slice
+  boundary
+- no semantic fallback or embeddings were live for this family yet at the v1
+  slice boundary
 - broader API workaround subjects are not live
 - direct manual `memory_candidate_submit` remains a broader explicit ingress
   than the bounded transcript-assist semantic slice, so proof ambiguity for

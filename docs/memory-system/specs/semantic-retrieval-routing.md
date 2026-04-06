@@ -361,9 +361,12 @@ Current live posture for API workaround guidance:
 - live support is currently limited to:
   - `openai_embeddings_api_key_required`
   - `anthropic_context1m_eligible_credential_required`
-- approved API workaround guidance does not yet use semantic fallback
-- exact typed lesson matches through hybrid retrieval remain the current
-  working-context path
+- approved API workaround guidance is now live as the fourth semantic fallback
+  family
+- the live path is hybrid-first plus approved-only semantic fallback
+- strong typed lesson matches such as `auto_capture_lesson_match`,
+  `title_exact`, `content_exact`, `title_prefix`, and `content_prefix` still
+  outrank semantic similarity
 
 ### Unmet-need planning
 
@@ -417,6 +420,9 @@ The live semantic-retrieval routing slices are:
 - approved environment-constraint guidance
 - approved workflow-improvement tool-gotcha guidance for
   `vitest_wrapper_required` and `scripts_committer_required`
+- approved API workaround guidance for
+  `openai_embeddings_api_key_required` and
+  `anthropic_context1m_eligible_credential_required`
 
 Exact live routing posture:
 
@@ -436,7 +442,13 @@ Exact live routing posture:
 - exact `auto_capture_lesson_match`, `title_exact`, `content_exact`,
   `title_prefix`, and `content_prefix` still outrank semantic similarity for
   environment constraints
-- approved API workaround guidance is still hybrid-first only
+- semantic fallback is also allowed for approved API workaround guidance when:
+  - `scope = approved_only`
+  - `kind = project`
+  - hybrid does not already have a strong typed API workaround match
+- exact `auto_capture_lesson_match`, `title_exact`, `content_exact`,
+  `title_prefix`, and `content_prefix` still outrank semantic similarity for
+  approved API workaround guidance
 - candidate semantic retrieval remains disabled
 
 ## Recommended next implementation slice
@@ -444,7 +456,8 @@ Exact live routing posture:
 The next recommended implementation slice for normal working-context semantic
 retrieval is:
 
-- approved API workaround guidance
+- `git_stash_unsafe`, but only if proofable low-noise ask shapes emerge
+- otherwise the next broader bounded project-memory expansion slice
 
 That next slice has:
 

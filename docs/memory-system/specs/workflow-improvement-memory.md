@@ -55,8 +55,9 @@ first repeated environment constraints only:
 
 Bound the next live slice to the first repeated API workaround family only:
 
-- OpenAI embeddings require a real `OPENAI_API_KEY` or another embeddings
-  provider; Codex OAuth alone does not enable semantic memory search
+- OpenAI embeddings require a configured `OPENAI_API_KEY` or another
+  embeddings provider; `openai-codex` OAuth profiles do not satisfy
+  OpenClaw's embeddings path directly
 - Anthropic `Extra usage is required for long context requests` means the
   credential is not eligible for `context1m`; use an eligible billed API key
   or keep a fallback model configured
@@ -145,8 +146,9 @@ Implementation clarification from the live API workaround slice:
   candidate-confirmation lifecycle as tool gotchas and environment constraints
 - approved-only hybrid retrieval is now live for later provider-troubleshooting
   asks about those supported workaround subjects
-- semantic retrieval for approved API workaround guidance is still not live;
-  that remains a later retrieval-routing slice
+- approved API workaround guidance now also has family-scoped semantic fallback
+  under approved-only project retrieval when hybrid does not already have a
+  stronger typed lesson match
 - direct manual `memory_candidate_submit` still remains a broader explicit
   `improvement` ingress, so vague manual API complaint notes can still create
   generic candidates and should be rejected immediately if used in proof-only
