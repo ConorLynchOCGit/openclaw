@@ -158,6 +158,7 @@
   - `FAST_COMMIT=1` is appropriate only when equivalent gates already ran on the same tree and post-proof edits did not invalidate them
   - `pnpm check:fast` is the default gate for docs/process-only work and most local iteration
   - add `pnpm check:types` when the change touches runtime or typed code, and use full `pnpm check` as the normal full landing bar for real code changes
+  - maintainer and PR helper paths should treat docs/changelog-only changes the same way: `pnpm check:fast`, no `pnpm build`, and no full-suite `pnpm test`
 
 ## Coding Style & Naming Conventions
 

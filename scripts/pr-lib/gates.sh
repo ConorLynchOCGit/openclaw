@@ -2,9 +2,11 @@ run_prepare_push_retry_gates() {
   local docs_only="${1:-false}"
 
   bootstrap_deps_if_needed
-  run_quiet_logged "pnpm build (lease-retry)" ".local/lease-retry-build.log" pnpm build
-  run_quiet_logged "pnpm check (lease-retry)" ".local/lease-retry-check.log" pnpm check
-  if [ "$docs_only" != "true" ]; then
+  if [ "$docs_only" = "true" ]; then
+    run_quiet_logged "pnpm check:fast (lease-retry)" ".local/lease-retry-check-fast.log" pnpm check:fast
+  else
+    run_quiet_logged "pnpm build (lease-retry)" ".local/lease-retry-build.log" pnpm build
+    run_quiet_logged "pnpm check (lease-retry)" ".local/lease-retry-check.log" pnpm check
     run_quiet_logged "pnpm test (lease-retry)" ".local/lease-retry-test.log" pnpm test
   fi
 }
@@ -95,14 +97,14 @@ prepare_gates() {
     gates_mode="reused_docs_only"
     echo "Docs/changelog-only delta since last verified head $previous_last_verified_head; reusing prior gates."
   else
-    run_quiet_logged "pnpm build" ".local/gates-build.log" pnpm build
-    run_quiet_logged "pnpm check" ".local/gates-check.log" pnpm check
-
     if [ "$docs_only" = "true" ]; then
       gates_mode="docs_only"
-      echo "Docs-only change detected with high confidence; skipping pnpm test."
+      run_quiet_logged "pnpm check:fast" ".local/gates-check-fast.log" pnpm check:fast
+      echo "Docs-only change detected with high confidence; skipping pnpm build and pnpm test."
     else
       gates_mode="full"
+      run_quiet_logged "pnpm build" ".local/gates-build.log" pnpm build
+      run_quiet_logged "pnpm check" ".local/gates-check.log" pnpm check
       local prepare_unit_fast_batch_target_ms
       prepare_unit_fast_batch_target_ms="${OPENCLAW_PREPARE_TEST_UNIT_FAST_BATCH_TARGET_MS:-5000}"
       echo "Running pnpm test with OPENCLAW_TEST_UNIT_FAST_BATCH_TARGET_MS=$prepare_unit_fast_batch_target_ms for shorter-lived unit-fast workers."

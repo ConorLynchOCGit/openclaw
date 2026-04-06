@@ -182,6 +182,8 @@ when to pay them.
 - Default validation tier: `pnpm check:fast`
 - No `pnpm build` unless generated or build-sensitive artifacts changed
 - Run only the smallest relevant validation plus `git diff --check`
+- Helper paths that detect docs or changelog-only changes should follow the same
+  rule: `pnpm check:fast`, no `pnpm build`, and no full-suite `pnpm test`
 
 ### Test only
 
@@ -278,3 +280,15 @@ Current VPS caveat:
   host.
 - That caveat justifies the tier split.
 - It does not justify skipping the type tier for real code changes.
+
+## Deferred after memory implementation
+
+The remaining likely workflow and validation improvements are intentionally
+deferred until after memory implementation is complete because they require more
+serious work than the bounded workflow slices already landed.
+
+- make `pnpm tsgo` itself faster or more reliable
+- make hooks and commit tooling auto-select validation tiers from changed-file
+  scope
+- add partial or per-surface type checking instead of one repo-wide type pass
+- change CI and local parity more aggressively
