@@ -658,6 +658,52 @@ Expected operator checks:
 - later repo-operating or provider-troubleshooting asks can retrieve the right
   approved workflow lesson first through:
   - `auto_capture_lesson_match`
+
+## Proof runner v1
+
+The delivery enablement pause now includes one repo-owned proof runner for
+bounded memory proof work.
+
+Use it when a memory slice needs repeatable isolated proof or narrow
+production-style retrieval proof without hand-assembling bootstrap steps.
+
+Command shape:
+
+```bash
+pnpm memory:proof -- \
+  --plan /tmp/memory-proof-plan.json \
+  --config /root/.openclaw-slice7-proof/openclaw.json \
+  --env-file /root/.openclaw-slice7-proof/.env \
+  --gateway-base-url http://127.0.0.1:37789 \
+  --out /tmp/memory-proof-report.json
+```
+
+Current bounded step kinds:
+
+- `transcript_capture`
+- `candidate_review`
+- `candidate_promote_memory`
+- `candidate_promote_procedure`
+- `procedure_validate`
+- `hybrid_search`
+
+Current runner behavior:
+
+- resolves memory SecretRefs and built-in embedding providers through the
+  shared bootstrap helper before the proof run starts
+- emits machine-readable JSON with:
+  - step ids
+  - captured candidate, review, promotion, and procedure ids when applicable
+  - matched fields for retrieval checks
+  - `/healthz` and `/readyz` snapshots before and after the run
+- supports isolated mutating rehearsal and production retrieval-style rehearsal
+
+Current v1 limits:
+
+- proof plans are still authored manually as bounded JSON
+- final human proof reports are still written manually
+- production mutation flows still require explicit operator judgment and any
+  needed cleanup planning
 - repeated confirming evidence should not create duplicate durable writes
 - weak ambiguous nearby environment text should not create additional durable
   writes on the transcript assist seam

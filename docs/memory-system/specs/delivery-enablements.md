@@ -119,3 +119,38 @@ landed in v1 form:
 
 That is the point where the memory roadmap can resume user-facing slices
 without repeatedly re-paying the same operational taxes.
+
+## Current tranche state
+
+Already landed:
+
+- shared memory runtime bootstrap helper
+- repo-owned memory proof runner v1
+
+Proof runner v1 is intentionally bounded:
+
+- it accepts typed proof plans instead of freeform scripts
+- it supports:
+  - `transcript_capture`
+  - `candidate_review`
+  - `candidate_promote_memory`
+  - `candidate_promote_procedure`
+  - `procedure_validate`
+  - `hybrid_search`
+- it captures `/healthz` and `/readyz` before and after each run
+- it can do:
+  - isolated mutating rehearsal
+  - narrow production retrieval-style rehearsal
+
+What remains manual after proof runner v1:
+
+- choosing the exact proof plan JSON for a given slice
+- deciding whether production proof should be retrieval-only or cleanup-backed
+  mutation
+- writing the final human proof report
+- any extra evidence gathering beyond ids, matched fields, and health snapshots
+
+Remaining order:
+
+1. enforced clean-tree landing assertion
+2. Docker health/readiness alignment

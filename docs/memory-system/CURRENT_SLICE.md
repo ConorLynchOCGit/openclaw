@@ -4,25 +4,28 @@
 
 Pre-feature delivery enablement tranche v1
 
-First bounded slice: shared memory runtime bootstrap helper
+Second bounded slice: repo-owned memory proof runner v1
 
 ## Objective
 
-Pause user-facing memory expansion long enough to remove the most repeated
-memory-proof bootstrap friction before the next feature slice.
+Pause user-facing memory expansion long enough to replace bespoke memory proof
+setup with one bounded repo-owned proof entrypoint before the next feature
+slice.
 
 This slice is about:
 
-- recording the new delivery enablement tranche explicitly in the memory
+- keeping the pre-feature delivery enablement tranche explicit in the memory
   roadmap and spec pack
-- choosing the first bounded enablement slice in the right order
-- landing one shared memory runtime bootstrap helper that:
-  - resolves memory SecretRefs through the supported command/runtime path
-  - ensures built-in memory embedding providers are registered
-  - gives proof scripts, evals, and repair tools one reusable bootstrap entry
-    point
-- reusing that helper in the current proof-facing memory CLI path so the seam
-  is already live before the proof-runner slice
+- landing one repo-owned memory proof runner that:
+  - loads proof or production config and env explicitly
+  - uses the shared runtime bootstrap helper
+  - runs bounded capture, review, promotion, procedure-validation, and hybrid
+    retrieval proof steps
+  - emits structured JSON with ids, matched fields, and health snapshots
+- proving the new runner with:
+  - one isolated mutating rehearsal
+  - one narrow production retrieval-style rehearsal
+- documenting the new proof path in the memory operator runbook
 
 ## Required work
 
@@ -30,20 +33,20 @@ This slice is about:
    - `docs/memory-system/memory-roadmap.md`
    - `docs/memory-system/specs/implementation-sequencing.md`
    - one dedicated supporting spec
-2. Classify and order the four intended enablement improvements:
+2. Keep the four intended enablement improvements ordered and explicit:
    - shared memory runtime bootstrap helper
    - repo-owned memory proof runner
    - enforced clean-tree landing assertion
    - Docker health/readiness alignment
-3. Land the first slice now:
-   - shared memory runtime bootstrap helper
-4. Wire the helper into the immediate proof-facing path.
-5. Update the canonical memory docs to reflect the new tranche and the landed
-   first slice.
+3. Land the second slice now:
+   - repo-owned memory proof runner v1
+4. Reuse the shared bootstrap helper instead of duplicating secret/provider
+   bootstrap logic.
+5. Update the canonical memory docs to reflect the landed proof runner and the
+   remaining enablement order.
 
 ## Out of scope
 
-- repo-owned proof runner implementation
 - Docker health/readiness alignment
 - clean-tree landing assertion implementation
 - any new user-facing memory family
@@ -53,22 +56,21 @@ This slice is about:
 
 ## Acceptance criteria
 
-- the memory roadmap and spec pack now explicitly include the delivery
-  enablement tranche
-- the tranche defines goals, non-goals, classifications, and bounded order
-- one shared memory runtime bootstrap helper exists under the memory stack
-- the helper resolves memory SecretRefs and ensures built-in memory embedding
-  providers are registered
-- the current memory CLI proof-facing path uses that helper
-- docs reflect the new tranche and the landed first slice accurately
+- the memory roadmap and spec pack still reflect the delivery enablement
+  tranche accurately
+- one repo-owned memory proof runner exists under the memory stack
+- the proof runner reuses the shared runtime bootstrap helper
+- the proof runner supports bounded isolated and production-style proof plans
+- the proof runner emits structured JSON with ids, matched fields, and health
+  snapshots
+- the operator runbook now documents the proof-runner path accurately
 
 ## Notes
 
-This slice is intentionally enabling later memory work rather than expanding a
-new remembered-behavior family.
+This slice is still enabling later memory work rather than expanding a new
+remembered-behavior family.
 
 The currently recommended remaining order after this slice is:
 
-1. repo-owned memory proof runner
-2. enforced clean-tree landing assertion
-3. Docker health/readiness alignment
+1. enforced clean-tree landing assertion
+2. Docker health/readiness alignment

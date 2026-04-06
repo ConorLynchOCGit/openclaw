@@ -1053,6 +1053,7 @@
     "mac:open": "open dist/OpenClaw.app",
     "mac:package": "bash scripts/package-mac-app.sh",
     "mac:restart": "bash scripts/restart-mac.sh",
+    "memory:proof": "node --import tsx scripts/memory-proof-runner.ts",
     "moltbot:rpc": "node scripts/run-node.mjs agent --mode rpc --json",
     "openclaw": "node scripts/run-node.mjs",
     "openclaw:rpc": "node scripts/run-node.mjs agent --mode rpc --json",

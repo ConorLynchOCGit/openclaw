@@ -251,6 +251,10 @@ First delivery enablement slice completed with a shared memory runtime
 bootstrap helper that resolves memory command SecretRefs through the supported
 gateway snapshot path, ensures built-in memory embedding providers are
 registered, and is already reused by the current memory CLI proof-facing path.
+Second delivery enablement slice completed with a repo-owned memory proof
+runner v1 that reuses the shared bootstrap helper, runs bounded capture or
+retrieval proof plans, and emits structured JSON with ids, matched fields, and
+gateway health snapshots for isolated and production-style rehearsals.
 
 ## Compact checkpoint
 
