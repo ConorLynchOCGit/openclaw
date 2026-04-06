@@ -19,6 +19,15 @@ It is for operators who need to:
 
 This runbook does not enable any new automation.
 
+Repo workflow note:
+
+- the default repo-wide slice workflow now lives in
+  - [Slice Landing Workflow](/help/slice-workflow)
+- use that global workflow for validation, proof order, commit timing, push
+  timing, and closeout minimums
+- this runbook stays focused on memory-specific runtime surfaces, proof
+  targets, and rollback posture
+
 Production operator note:
 
 - this runbook covers the approved posture and rollback order now running in

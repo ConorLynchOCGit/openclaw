@@ -150,6 +150,11 @@
 - Default rule: do not land changes with failing format, lint, type, build, or required test checks when those failures are caused by the change or plausibly related to the touched surface. Fast-commit mode changes how verification is sequenced; it does not lower the requirement to validate and clean up the touched surface before final landing.
 - For narrowly scoped changes, if unrelated failures already exist on latest `origin/main`, state that clearly, report the scoped tests you ran, and ask before broadening scope into unrelated fixes or landing despite those failures.
 - Do not use scoped tests as permission to ignore plausibly related failures.
+- Repo workflow default:
+  - follow `docs/help/slice-workflow.md` for the standard phase order: implementation loop, pre-proof gate, isolated proof when required, pre-production gate when required, production proof when required, pre-landing gate, then commit/push
+  - do not rerun the same expensive gate after proof unless a later code change invalidated it
+  - commit after required proof and final docs/evidence by default; push only after the required proof and pre-landing gate are complete
+  - `FAST_COMMIT=1` is appropriate only when equivalent gates already ran on the same tree and post-proof edits did not invalidate them
 
 ## Coding Style & Naming Conventions
 

@@ -18,17 +18,30 @@ This doc is a “how we test” guide:
 - How live tests discover credentials and select models/providers
 - How to add regressions for real-world model/provider issues
 
+For the repo-wide order of operations around validation, isolated proof,
+production proof, commit, push, and closeout, use
+[Slice Landing Workflow](/help/slice-workflow).
+
 ## Quick start
 
 Most days:
 
-- Full gate (expected before push): `pnpm build && pnpm check && pnpm test`
+- Default local loop: `pnpm check` plus the strongest nearby targeted tests
+- Use the smallest honest landing gate for the touched surface rather than
+  defaulting every push to `pnpm build && pnpm check && pnpm test`
 - Faster local full-suite run on a roomy machine: `pnpm test:max`
 
 When you touch tests or want extra confidence:
 
 - Coverage gate: `pnpm test:coverage`
 - E2E suite: `pnpm test:e2e`
+
+When the slice changes runtime behavior or production posture:
+
+- Follow [Slice Landing Workflow](/help/slice-workflow) for isolated proof,
+  production proof, commit timing, and push timing
+- Run `pnpm build` only when the change is build-sensitive or published-surface
+  sensitive
 
 When debugging real providers/models (requires real creds):
 
