@@ -173,5 +173,5 @@ Tranche completion:
 
 - the pre-feature delivery enablement tranche is now complete enough to resume
   explicit user-facing memory slice selection
-- the next user-facing candidate to reconsider is a narrowly bounded
-  project-memory expansion v3 slice
+- the next user-facing candidate that was queued after this pause, a narrowly
+  bounded project-memory expansion v3 slice, is now landed

@@ -92,6 +92,8 @@ const PROJECT_FACT_FIELD_LABEL_TO_KEY: Record<string, ProjectFactFieldKey> = {
   "staging branch": "staging_branch",
   "repository url": "repository_url",
   "deployment url": "deployment_url",
+  "documentation url": "documentation_url",
+  "runbook url": "runbook_url",
   "primary package manager": "primary_package_manager",
   "primary environment name": "primary_environment_name",
 };
@@ -847,7 +849,12 @@ function hasProcedureLikeSubject(subject: string): boolean {
 
 function isProjectUrlFieldSubject(subject: string): boolean {
   const normalized = normalizeLower(subject);
-  return normalized === "repository url" || normalized === "deployment url";
+  return (
+    normalized === "repository url" ||
+    normalized === "deployment url" ||
+    normalized === "documentation url" ||
+    normalized === "runbook url"
+  );
 }
 
 function hasSupportedRole(value: unknown): value is "user" {

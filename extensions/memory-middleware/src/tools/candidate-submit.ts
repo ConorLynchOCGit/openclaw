@@ -1649,11 +1649,15 @@ function inferProjectFactFieldKeyFromSubject(subject: string): ProjectFactFieldK
         ? "repository_url"
         : fieldLabel === "deployment url"
           ? "deployment_url"
-          : fieldLabel === "primary package manager"
-            ? "primary_package_manager"
-            : fieldLabel === "primary environment name"
-              ? "primary_environment_name"
-              : null;
+          : fieldLabel === "documentation url"
+            ? "documentation_url"
+            : fieldLabel === "runbook url"
+              ? "runbook_url"
+              : fieldLabel === "primary package manager"
+                ? "primary_package_manager"
+                : fieldLabel === "primary environment name"
+                  ? "primary_environment_name"
+                  : null;
 }
 
 function extractTranscriptUserText(message: TranscriptUserMessage | null): string | null {

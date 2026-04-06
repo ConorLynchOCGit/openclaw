@@ -2,64 +2,60 @@
 
 ## Active slice
 
-Pre-feature delivery enablement tranche v1
+Third bounded project-memory UX slice
 
-Completed after four bounded slices
+Completed after one bounded slice
 
 ## Objective
 
-Pause user-facing memory expansion long enough to finish the final operational
-alignment work before resuming the next user-facing memory slice.
+Expand the bounded explicit named-project profile with one more low-risk URL
+tranche now that the delivery enablement pause is complete.
 
-This tranche now landed:
+This slice now landed:
 
-- shared memory runtime bootstrap helper
-- repo-owned memory proof runner v1
-- enforced clean-tree landing assertion
-- Docker health/readiness alignment
+- `documentation_url`
+- `runbook_url`
+- the same project-scoped candidate-confirmation lifecycle already used for
+  the earlier URL fields
+- the same approved-only hybrid retrieval posture for direct project
+  questions
+- deterministic ignore for unsupported generic labels like plain `docs`
 
 ## Required work
 
-1. Add the pre-feature delivery enablement tranche to:
-   - `docs/memory-system/memory-roadmap.md`
-   - `docs/memory-system/specs/implementation-sequencing.md`
-   - one dedicated supporting spec
-2. Keep the four intended enablement improvements ordered and explicit:
-   - shared memory runtime bootstrap helper
-   - repo-owned memory proof runner
-   - enforced clean-tree landing assertion
-   - Docker health/readiness alignment
-3. Keep the landed bounded improvements explicit and accurate in the roadmap
-   and runbook.
-4. Resume the next user-facing memory slice with the enablement pause closed
-   out rather than partially open.
+1. Extend the bounded project-fact field registry with the next explicit
+   low-risk URL fields only.
+2. Preserve the existing candidate-confirmation lifecycle, project-scoped
+   duplicate handling, and approved-only hybrid retrieval posture.
+3. Prove isolated and production capture-confirm-retrieve loops for the new
+   fields with the repo-owned proof runner.
+4. Keep broader project-state inference, generic semantic search, and broader
+   workflow automation out of scope.
 
 ## Out of scope
 
-- any new user-facing memory family inside this enablement tranche
+- speculative project state
+- broader workflow-improvement or unmet-need families
+- project-fact semantic retrieval
 - production pairing/auth changes
-- broad release-framework work
-- generic semantic search or broader automation
 
 ## Acceptance criteria
 
-- the memory roadmap and spec pack reflect the delivery enablement tranche as
-  complete
-- the repo-global proof/landing helper posture is now materially cleaner:
-  - bootstrap is reusable
-  - proof is repo-owned
-  - closeout cleanliness is enforced
-  - readiness is operationally clearer
-- the next user-facing memory slice can resume without re-paying the same
-  proof, closeout, and readiness taxes
+- the supported explicit named-project field set now also includes
+  documentation and runbook URLs
+- later confirming evidence can auto-promote those fields without manual
+  review
+- direct approved-only hybrid retrieval can rank the right support URL field
+  first for later project questions
+- weak generic docs phrasing still stays ignored instead of creating memory
+  trash
 
 ## Notes
 
-This tranche stayed bounded delivery work rather than expanding a new
-remembered-behavior family.
+This slice stays inside the explicit named-project fact family rather than
+opening broader project-state memory.
 
-The next step after this tranche is to resume explicit user-facing slice
-selection.
+The next strongest bounded candidates to reconsider are:
 
-The first user-facing candidate to reconsider is a narrowly bounded
-project-memory expansion v3 slice.
+- a broader workflow-improvement memory v2 slice, if it stays guidance-only
+- unmet-need planning v1, if the recommendation-only artifact shape is ready

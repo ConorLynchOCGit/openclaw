@@ -28,6 +28,18 @@ describe("detectProjectFactSemanticDecision", () => {
       "high",
     ],
     [
+      "For project atlas forge, the documentation URL is https://docs.openclaw.ai/getting-started.",
+      "explicit_project_fact",
+      "documentation_url",
+      "high",
+    ],
+    [
+      "For project atlas forge, the runbook URL is https://ops.openclaw.ai/runbooks/atlas-forge.",
+      "explicit_project_fact",
+      "runbook_url",
+      "high",
+    ],
+    [
       "For project atlas forge, we use pnpm.",
       "explicit_project_fact",
       "primary_package_manager",
@@ -51,6 +63,12 @@ describe("detectProjectFactSemanticDecision", () => {
       "repository_url",
       "high",
     ],
+    [
+      "Actually, for project atlas forge, the documentation URL is https://docs.openclaw.ai/atlas-forge.",
+      "project_fact_correction",
+      "documentation_url",
+      "high",
+    ],
   ])("captures bounded project-fact phrasing: %s", (text, captureClass, fieldKey, confidence) => {
     expect(detectProjectFactSemanticDecision(text)).toMatchObject({
       action: "capture",
@@ -68,6 +86,8 @@ describe("detectProjectFactSemanticDecision", () => {
     "The environment is kind of weird right now.",
     "Project atlas forge might need a new branch setup.",
     "For project atlas forge, the repo is probably somewhere on GitHub.",
+    "For project atlas forge, the docs are somewhere online.",
+    "For project atlas forge, the runbook is in notion.",
   ])("ignores unsupported or ambiguous project-fact phrasing: %s", (text) => {
     expect(detectProjectFactSemanticDecision(text)).toMatchObject({
       action: "ignore",

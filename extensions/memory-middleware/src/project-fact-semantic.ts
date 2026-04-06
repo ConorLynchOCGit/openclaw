@@ -5,6 +5,8 @@ export const PROJECT_FACT_FIELD_KEYS = [
   "staging_branch",
   "repository_url",
   "deployment_url",
+  "documentation_url",
+  "runbook_url",
   "primary_package_manager",
   "primary_environment_name",
 ] as const;
@@ -59,6 +61,12 @@ const PROJECT_FACT_FIELD_SPECS: Record<ProjectFactFieldKey, ProjectFactFieldSpec
   },
   deployment_url: {
     label: "deployment URL",
+  },
+  documentation_url: {
+    label: "documentation URL",
+  },
+  runbook_url: {
+    label: "runbook URL",
   },
   primary_package_manager: {
     label: "primary package manager",
@@ -239,6 +247,24 @@ function extractFieldMatch(remainder: string): {
   });
   if (deploymentUrl) {
     return deploymentUrl;
+  }
+
+  const documentationUrl = matchProjectFactUrl(remainder, {
+    fieldKey: "documentation_url",
+    subjectPattern: "(?:documentation|docs) url",
+    evidencePrefix: "documentation_url_phrase",
+  });
+  if (documentationUrl) {
+    return documentationUrl;
+  }
+
+  const runbookUrl = matchProjectFactUrl(remainder, {
+    fieldKey: "runbook_url",
+    subjectPattern: "runbook url",
+    evidencePrefix: "runbook_url_phrase",
+  });
+  if (runbookUrl) {
+    return runbookUrl;
   }
 
   const packageManagerExplicit = normalized.match(

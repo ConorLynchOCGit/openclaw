@@ -51,6 +51,8 @@ Current live tranche:
 - `primary_environment_name`
 - `repository_url`
 - `deployment_url`
+- `documentation_url`
+- `runbook_url`
 
 ## Exact input / output behavior
 
@@ -82,8 +84,10 @@ Current live resolution split:
   - `primary_environment_name`
   - `repository_url`
   - `deployment_url`
+  - `documentation_url`
+  - `runbook_url`
 
-The first live URL tranche uses the same bounded confirmation lifecycle as the
+The live URL tranches use the same bounded confirmation lifecycle as the
 earlier explicit project-fact fields because:
 
 - the input remains fully explicit
@@ -116,8 +120,8 @@ Later direct project questions should retrieve:
 Current live retrieval posture:
 
 - hybrid retrieval remains the default
-- direct repository/deployment URL asks now use the same field-aware hybrid
-  ranking posture as the first project-fact tranche
+- direct repository/deployment/documentation/runbook URL asks now use the same
+  field-aware hybrid ranking posture as the first project-fact tranche
 - project-fact lifecycle inspection and duplicate suppression stay
   project-scoped for supported fields
 
@@ -159,6 +163,6 @@ Track:
 
 ## Open questions
 
-- should later URL-like fields stay on the same confirmation path, or should a
-  stricter confirmation mode appear only if a clearly riskier field class is
-  added?
+- should later non-URL project-fact classes still share the current
+  confirmation posture, or should a stricter mode appear only when a clearly
+  riskier field class is added?

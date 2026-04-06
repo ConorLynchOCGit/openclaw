@@ -84,6 +84,16 @@ Current state:
     project-scoped for supported fields
   - unsupported generic deterministic labels like plain `repo` and `deploy`
     stay outside the bounded project-fact family
+- the third bounded project-memory slice is now live for its intended scope:
+  - semantic explicit named-project detection is now also live for:
+    - documentation URL
+    - runbook URL
+  - later confirming evidence can auto-promote those support URL facts without
+    manual review
+  - approved-only hybrid retrieval now ranks the right support URL field for
+    direct fresh-session project questions
+  - unsupported generic deterministic labels like plain `docs` stay outside
+    the bounded project-fact family
 - Slice 7 is now landed for its intended scope:
   - `I meant plain English, not jargon.` can land as a bounded correction
   - `No, use bullet points for me.` can be accepted through bounded fallback
@@ -211,8 +221,16 @@ Current live limits:
   tool-gotcha and environment-constraint families
 - repeated API failure workaround memory is now live only for the first bounded
   approved guidance family
-- broader project memory is still limited to the first bounded explicit
-  field set and does not include speculative state
+- broader project memory is still limited to explicit named-project facts for:
+  - default branch
+  - staging branch
+  - primary package manager
+  - primary environment name
+  - repository URL
+  - deployment URL
+  - documentation URL
+  - runbook URL
+    and does not include speculative state
 - broader workflow-improvement memory is not live yet
 - recommendation-only procurement/install artifacts are not live yet
 - self-improving capture remains disabled in production
@@ -263,10 +281,11 @@ Delivery enablement pause:
   - repo-owned memory proof runner v1
   - enforced clean-tree landing assertion
   - Docker health/readiness alignment
-- the delivery enablement pause is now complete enough to resume explicit
-  user-facing slice selection
-- first user-facing candidate to reconsider:
-  - narrowly bounded project-memory expansion v3
+- the delivery enablement pause is now complete and the first resumed
+  user-facing bounded project-memory v3 slice is also now landed
+- next strongest bounded candidates to choose between explicitly:
+  - broader workflow-improvement memory v2
+  - unmet-need planning v1
 - primary spec:
   - `/memory-system/specs/delivery-enablements`
 

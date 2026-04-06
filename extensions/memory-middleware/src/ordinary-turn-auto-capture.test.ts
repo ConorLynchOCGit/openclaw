@@ -318,6 +318,24 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
     });
   });
 
+  it("matches an explicit project documentation URL in the broader profile", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "For project atlas forge, the documentation URL is https://docs.openclaw.ai/getting-started.",
+        "user-preference-v2",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_project_fact",
+      candidateKind: "learning",
+      template: "project_fact_named_scope",
+      subject: "atlas forge / documentation URL",
+      value: "https://docs.openclaw.ai/getting-started",
+      projectScope: "atlas forge",
+      content:
+        "Project fact [atlas forge]: documentation URL is https://docs.openclaw.ai/getting-started.",
+    });
+  });
+
   it("ignores unsupported generic repo labels in deterministic project-fact parsing", () => {
     expect(
       parseOrdinaryTurnAutoCapturePreference(
@@ -495,6 +513,21 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
       template: "project_fact_named_scope",
       subject: "cedar harbor / deployment URL",
       value: "https://cedar.example.com/app",
+      projectScope: "cedar harbor",
+    });
+  });
+
+  it("parses project runbook URL content from the model tool path", () => {
+    expect(
+      parseAutoCaptureManagedCandidateContent(
+        "For project cedar harbor, the runbook URL is https://ops.example.com/runbooks/cedar.",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_project_fact",
+      candidateKind: "learning",
+      template: "project_fact_named_scope",
+      subject: "cedar harbor / runbook URL",
+      value: "https://ops.example.com/runbooks/cedar",
       projectScope: "cedar harbor",
     });
   });
@@ -1273,6 +1306,71 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
             fieldKey: "repository_url",
             subject: "atlas forge / repository URL",
             value: "https://github.com/openclaw/openclaw",
+          }),
+        }),
+      }),
+    );
+    expect(inspectProjectFactLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-uuid-1",
+        subjectKey: expect.any(String),
+      }),
+    );
+  });
+
+  it("routes explicit project documentation URLs through learning submission without auto-promotion", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-project-fact-4",
+      memoryObjectId: "memory-project-fact-4",
+    }));
+    const inspectProjectFactLifecycle = vi.fn(async () => null);
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          projectId: "project-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        inspectProjectFactLifecycle,
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content:
+          "For project atlas forge, the documentation URL is https://docs.openclaw.ai/getting-started.",
+        timestamp: Date.parse("2026-04-06T12:00:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          "Project fact [atlas forge]: documentation URL is https://docs.openclaw.ai/getting-started.",
+        projectId: "project-uuid-1",
+        metadata: expect.objectContaining({
+          category: "project_fact",
+          source: "explicit_project_fact",
+          autoCapture: expect.objectContaining({
+            fieldKey: "documentation_url",
+            subject: "atlas forge / documentation URL",
+            value: "https://docs.openclaw.ai/getting-started",
           }),
         }),
       }),

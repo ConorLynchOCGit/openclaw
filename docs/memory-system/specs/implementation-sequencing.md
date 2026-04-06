@@ -32,10 +32,11 @@ for:
 
 Current sequencing note:
 
-- the pre-feature delivery enablement tranche is now complete enough to resume
-  explicit user-facing slice selection
-- the first user-facing candidate to reconsider after that pause is a narrowly
-  bounded project-memory expansion v3 slice
+- the pre-feature delivery enablement tranche is complete
+- the narrowly bounded project-memory expansion v3 slice is now also landed
+- the next strongest bounded candidates to choose between explicitly are:
+  - broader workflow-improvement memory v2
+  - unmet-need planning v1
 
 ## Why this order is recommended
 

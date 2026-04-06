@@ -3961,6 +3961,129 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     expect([repositoryApprovedId, deploymentApprovedId]).toContain(records[0]?.id);
   });
 
+  it("boosts the most relevant approved project support URL fact in hybrid retrieval when overlapping support URL fields exist", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+
+    const documentationSubmit = await submitTool.execute("call-16pf-support-a", {
+      kind: "learning",
+      content:
+        "Project fact [atlas forge]: documentation URL is https://docs.openclaw.ai/getting-started.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "project_fact",
+        source: "explicit_project_fact",
+        autoCapture: {
+          captureClass: "explicit_project_fact",
+          template: "project_fact_named_scope",
+          fieldKey: "documentation_url",
+          subjectKey: "atlas-forge-documentation-url",
+          key: "atlas-forge-documentation-url-getting-started",
+          subject: "atlas forge / documentation URL",
+          value: "https://docs.openclaw.ai/getting-started",
+          projectScope: "atlas forge",
+        },
+      },
+    });
+    const documentationCandidateId = (documentationSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await reviewTool.execute("call-16pf-support-b", {
+      candidateId: documentationCandidateId,
+      outcome: "accepted",
+    });
+    const documentationPromotion = await promoteTool.execute("call-16pf-support-c", {
+      candidateId: documentationCandidateId,
+    });
+    const documentationApprovedId = (
+      documentationPromotion.details as { promotedMemoryObjectId: string }
+    ).promotedMemoryObjectId;
+
+    const runbookSubmit = await submitTool.execute("call-16pf-support-d", {
+      kind: "learning",
+      content:
+        "Project fact [atlas forge]: runbook URL is https://ops.openclaw.ai/runbooks/atlas-forge.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "project_fact",
+        source: "explicit_project_fact",
+        autoCapture: {
+          captureClass: "explicit_project_fact",
+          template: "project_fact_named_scope",
+          fieldKey: "runbook_url",
+          subjectKey: "atlas-forge-runbook-url",
+          key: "atlas-forge-runbook-url-ops",
+          subject: "atlas forge / runbook URL",
+          value: "https://ops.openclaw.ai/runbooks/atlas-forge",
+          projectScope: "atlas forge",
+        },
+      },
+    });
+    const runbookCandidateId = (runbookSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    await reviewTool.execute("call-16pf-support-e", {
+      candidateId: runbookCandidateId,
+      outcome: "accepted",
+    });
+    const runbookPromotion = await promoteTool.execute("call-16pf-support-f", {
+      candidateId: runbookCandidateId,
+    });
+    const runbookApprovedId = (runbookPromotion.details as { promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "what is the documentation url for project atlas forge",
+      scope: "approved_only",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+    });
+    const records = (
+      hybridSearch as {
+        accepted: true;
+        status: "ok";
+        scope: "approved_only";
+        records: Array<{
+          id: string;
+          score: number;
+          matchedFields: string[];
+        }>;
+      }
+    ).records;
+    expect(records.length).toBeGreaterThanOrEqual(2);
+    expect(records[0]?.id).toBe(documentationApprovedId);
+    expect(records[0]?.matchedFields).toContain("auto_capture_field_match");
+    if (records[1]) {
+      expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
+    }
+    expect([documentationApprovedId, runbookApprovedId]).toContain(records[0]?.id);
+  });
+
   it("allows the same approved project URL fact in a different project", async () => {
     const firstProject = await seedContext(dbEnvironment.connectionString);
     const secondProject = await seedContext(dbEnvironment.connectionString);

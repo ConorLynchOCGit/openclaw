@@ -239,6 +239,12 @@ deployment URL capture, candidate confirmation without manual review for the
 new URL fields, project-scoped lifecycle or duplicate enforcement, direct
 approved retrieval for later project questions, and narrow production proof
 without broader automation enablement.
+Ninth user-experience-focused project-memory slice completed on the approved
+live production boundary for its intended scope, with bounded documentation
+and runbook URL capture, candidate confirmation without manual review for the
+new support URL fields, direct approved retrieval for later project
+questions, and narrow isolated plus production proof without broader
+automation enablement.
 Fifth family-aware semantic retrieval routing slice completed on the approved
 live production boundary for its intended scope, with approved-only
 project-scoped semantic fallback for `git_stash_unsafe`, approved source
@@ -304,6 +310,8 @@ Current compact state:
   - staging branch
   - repository URL
   - deployment URL
+  - documentation URL
+  - runbook URL
   - primary package manager
   - primary environment name
 - semantic project-memory capture now supports:
@@ -549,26 +557,25 @@ Current compact state:
   - overlap-aware retrieval choosing numbered steps correctly
   - targetable conversational forget superseding the no-tables preference
 - latest semantic project-memory proof timestamp:
-  - `2026-04-05T18:05:38.694Z`
+  - `2026-04-06T23:40:54.170Z`
 - latest semantic project-memory production proof artifacts:
-  - `projectId = 00c98f31-5783-4ac9-9ea0-186e939987a4`
-  - `agentId = fc635192-6bfd-461d-b013-b04bbea29f9a`
-  - `sessionId = d3c37b42-5f3e-4590-addf-75ef62ddc4a6`
-  - `candidateId = d277ee41-dc0d-4c82-ac3c-09ba3953f9c5`
-  - `candidateEventId = 9f3be059-999c-4344-9543-feeca0fbf22f`
-  - `approvedObjectId = 4c493fe1-df27-4e60-8de7-a26885b88b5b`
-  - `reviewId = f2bed2c1-aa85-4496-8e86-d2e2bad1845e`
+  - `projectId = 2fbcec81-165d-4207-ac0d-3653800bdda1`
+  - `agentId = 73e7e59a-6eaa-42bf-b442-43ebfc4b128c`
+  - `sessionId = 1dab970c-7507-460b-9352-5443d60d91eb`
+  - `candidateId = 34f7cddc-5c2e-4aac-950e-701ad172cd9e`
+  - `candidateEventId = 6c49f66f-c42a-4301-b985-82e110978278`
+  - `approvedObjectId = 7dee1db4-0d72-457b-8867-83cb568989f8`
+  - `reviewId = a961a211-7f39-40c1-843e-03204426abd0`
 - latest semantic project-memory production proof delta:
   - `memory_events +1`
   - `memory_objects +2`
   - `memory_reviews +1`
-  - ambiguous follow-up caused `+0` additional writes
+  - duplicate follow-up caused `+0` additional writes
 - isolated project-memory proof additionally proved:
-  - default-branch confirmation into approved memory
-  - default-branch correction superseding stale approved memory
-  - field-aware retrieval ranking the right approved project fact first
-  - transcript-seam ambiguity ignore and duplicate suppression for project
-    facts
+  - documentation URL confirmation into approved memory
+  - field-aware retrieval ranking the right support URL first
+  - transcript-seam ambiguity ignore for unsupported generic `docs` phrasing
+  - duplicate suppression for explicit project-fact URL replays
 - latest quick-win production proof timestamp:
   - `2026-04-05T15:18:19.270Z`
 - latest quick-win production proof artifacts:

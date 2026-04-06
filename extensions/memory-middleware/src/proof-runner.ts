@@ -263,6 +263,11 @@ type SubmittedCaptureRecord = {
   memoryObjectId?: string;
 };
 
+type AcceptedCaptureSubmission = {
+  eventId: string;
+  memoryObjectId: string;
+};
+
 function summarizeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -491,7 +496,7 @@ async function runTranscriptCaptureStep(params: {
   let submittedCapture: SubmittedCaptureRecord | undefined;
   const rememberSubmission = (input: {
     metadata?: Record<string, unknown>;
-    result: { eventId?: string; memoryObjectId?: string };
+    result: AcceptedCaptureSubmission;
   }) => {
     submittedCapture = {
       ...(input.metadata ? { metadata: input.metadata } : {}),
@@ -508,22 +513,30 @@ async function runTranscriptCaptureStep(params: {
       resolveAttribution: async () => params.step.attribution,
       submitCorrectionSuggestion: async (input) => {
         const result = await params.runtime.candidateIngress.submitCorrectionSuggestion(input);
-        rememberSubmission({ metadata: input.metadata, result });
+        if (result.accepted) {
+          rememberSubmission({ metadata: input.metadata, result });
+        }
         return result;
       },
       submitLearning: async (input) => {
         const result = await params.runtime.candidateIngress.submitLearning(input);
-        rememberSubmission({ metadata: input.metadata, result });
+        if (result.accepted) {
+          rememberSubmission({ metadata: input.metadata, result });
+        }
         return result;
       },
       submitProcedureSuggestion: async (input) => {
         const result = await params.runtime.candidateIngress.submitProcedureSuggestion(input);
-        rememberSubmission({ metadata: input.metadata, result });
+        if (result.accepted) {
+          rememberSubmission({ metadata: input.metadata, result });
+        }
         return result;
       },
       submitImprovementNote: async (input) => {
         const result = await params.runtime.candidateIngress.submitImprovementNote(input);
-        rememberSubmission({ metadata: input.metadata, result });
+        if (result.accepted) {
+          rememberSubmission({ metadata: input.metadata, result });
+        }
         return result;
       },
       reviewCandidate: (input) => params.runtime.candidateReview.review(input),
@@ -613,12 +626,12 @@ async function runCandidateReviewStep(params: {
     kind: "candidate_review",
     artifacts: {
       candidateId,
-      ...(result.reviewId ? { reviewId: result.reviewId } : {}),
+      ...(result.accepted ? { reviewId: result.reviewId } : {}),
     },
     outcome: params.step.outcome,
     accepted: result.accepted,
     ...(result.status ? { status: result.status } : {}),
-    ...(result.reason ? { reason: result.reason } : {}),
+    ...(!result.accepted && result.reason ? { reason: result.reason } : {}),
   };
 }
 
@@ -641,13 +654,13 @@ async function runCandidatePromoteMemoryStep(params: {
     kind: "candidate_promote_memory",
     artifacts: {
       candidateId,
-      ...(result.promotedMemoryObjectId
+      ...(result.accepted && result.promotedMemoryObjectId
         ? { promotedMemoryObjectId: result.promotedMemoryObjectId }
         : {}),
     },
     accepted: result.accepted,
     ...(result.status ? { status: result.status } : {}),
-    ...(result.reason ? { reason: result.reason } : {}),
+    ...(!result.accepted && result.reason ? { reason: result.reason } : {}),
   };
 }
 
@@ -671,11 +684,11 @@ async function runCandidatePromoteProcedureStep(params: {
     kind: "candidate_promote_procedure",
     artifacts: {
       candidateId,
-      ...(result.procedureId ? { procedureId: result.procedureId } : {}),
+      ...(result.accepted && result.procedureId ? { procedureId: result.procedureId } : {}),
     },
     accepted: result.accepted,
     ...(result.status ? { status: result.status } : {}),
-    ...(result.reason ? { reason: result.reason } : {}),
+    ...(!result.accepted && result.reason ? { reason: result.reason } : {}),
   };
 }
 
@@ -698,12 +711,14 @@ async function runProcedureValidateStep(params: {
     kind: "procedure_validate",
     artifacts: {
       procedureId,
-      ...(result.procedureId ? { validatedProcedureId: result.procedureId } : {}),
+      ...(result.accepted && result.procedureId
+        ? { validatedProcedureId: result.procedureId }
+        : {}),
     },
     accepted: result.accepted,
     ...(result.status ? { status: result.status } : {}),
-    ...(result.reason ? { reason: result.reason } : {}),
-    ...(result.procedureRunId ? { procedureRunId: result.procedureRunId } : {}),
+    ...(!result.accepted && result.reason ? { reason: result.reason } : {}),
+    ...(result.accepted && result.procedureRunId ? { procedureRunId: result.procedureRunId } : {}),
   };
 }
 
@@ -735,6 +750,9 @@ async function runHybridSearchStep(params: {
     input: buildSearchInput(params.step),
     context: toolContext as OpenClawPluginToolContext,
   });
+  if (!result.accepted) {
+    throw new Error(`hybrid_search ${params.step.id} failed: ${result.reason}`);
+  }
   const expectedRecordId = resolveExpectedSearchRecordId({
     step: params.step,
     resultsById: params.resultsById,
@@ -747,7 +765,9 @@ async function runHybridSearchStep(params: {
     );
   }
   if (expectedRecordId) {
-    const matchingRecord = result.records.find((record) => record.id === expectedRecordId);
+    const matchingRecord = result.records.find(
+      (record: (typeof result.records)[number]) => record.id === expectedRecordId,
+    );
     assert(
       matchingRecord,
       `hybrid_search ${params.step.id} did not return expected record ${expectedRecordId}`,

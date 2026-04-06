@@ -337,15 +337,19 @@ For the exact proof ids and production evidence for this slice, use:
 
 ## Project-memory semantic UX workflow
 
-The second user-facing semantic memory slice is now live for a bounded
-explicit named-project fact family only.
+The bounded explicit named-project fact family is now live across three
+bounded project-memory tranches.
 
-Supported first-slice fields:
+Supported current fields:
 
 - default branch
 - staging branch
 - primary package manager
 - primary environment name
+- repository URL
+- deployment URL
+- documentation URL
+- runbook URL
 
 Current live behavior:
 
@@ -391,7 +395,8 @@ Expected operator checks:
 Current approved boundary note:
 
 - this slice is limited to explicit named-project facts only
-- repository URL and deployment URL memory are not live yet
+- unsupported generic labels like plain `repo`, `deploy`, or `docs` are still
+  intentionally not live
 - speculative project inference is not live
 - candidates should not shape user-visible behavior before approval in this
   slice
@@ -399,6 +404,8 @@ Current approved boundary note:
 For the exact proof ids and production evidence for this slice, use:
 
 - `docs/memory-system/PRODUCTION_PROJECT_MEMORY_UX_REPORT.md`
+- `docs/memory-system/PRODUCTION_PROJECT_MEMORY_UX_V2_REPORT.md`
+- `docs/memory-system/PRODUCTION_PROJECT_MEMORY_UX_V3_REPORT.md`
 
 ## Recurring-procedure semantic UX workflow
 
@@ -670,7 +677,7 @@ production-style retrieval proof without hand-assembling bootstrap steps.
 Command shape:
 
 ```bash
-pnpm memory:proof -- \
+pnpm memory:proof \
   --plan /tmp/memory-proof-plan.json \
   --config /root/.openclaw-slice7-proof/openclaw.json \
   --env-file /root/.openclaw-slice7-proof/.env \

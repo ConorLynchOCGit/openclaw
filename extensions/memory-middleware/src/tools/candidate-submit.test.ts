@@ -1173,6 +1173,48 @@ describe("memory candidate submit tool", () => {
     expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
   });
 
+  it("normalizes explicit project documentation URLs from the tool path without auto-promotion", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-8-docs", {
+      kind: "learning",
+      content:
+        "Project fact [atlas forge]: documentation URL is https://docs.openclaw.ai/getting-started.",
+      metadata: {
+        raw: "For project atlas forge, the documentation URL is https://docs.openclaw.ai/getting-started.",
+      },
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("learning"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("learning"),
+    });
+    expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "project_fact",
+          source: "explicit_project_fact",
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_project_fact",
+            captureSeam: "model_tool_primary",
+            fieldKey: "documentation_url",
+            projectScope: "atlas forge",
+            subject: "atlas forge / documentation URL",
+            value: "https://docs.openclaw.ai/getting-started",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateReview.review).not.toHaveBeenCalled();
+    expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
+  });
+
   it("normalizes semantic project facts from the tool path as pending-confirmation candidates", async () => {
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });
