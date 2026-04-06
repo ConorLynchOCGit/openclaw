@@ -127,7 +127,19 @@ Current state:
   - approved environment-constraint source memory objects can now receive
     bounded semantic embeddings during approved promotion or backfill
   - exact environment-constraint asks still stay hybrid-first
-  - workflow-improvement tool-gotcha guidance still remains hybrid-only
+- the third bounded semantic retrieval routing slice is now live:
+  - approved workflow-improvement tool-gotcha guidance can now use
+    project-scoped semantic fallback when:
+    - `scope = approved_only`
+    - `kind = project`
+    - hybrid does not already have a strong typed project match
+  - only the supported approved tool-gotcha lesson keys are eligible:
+    - `vitest_wrapper_required`
+    - `scripts_committer_required`
+  - approved workflow tool-gotcha source memory objects can now receive
+    bounded semantic embeddings during approved promotion or backfill
+  - exact tool-gotcha asks still stay hybrid-first
+  - `git_stash_unsafe` still remains hybrid-only
 
 Current live limits:
 
@@ -137,7 +149,8 @@ Current live limits:
 - broader semantic learning-event detection is not live yet
 - family-aware semantic retrieval routing is now live only for nearby
   recurring-procedure asks under explicit validated-procedure scope and
-  approved environment-constraint guidance under approved-only project scope
+  approved environment-constraint guidance plus the supported approved
+  workflow tool gotchas under approved-only project scope
 - phrase induction from fuzzy detections into reviewed deterministic patterns
   is not live yet
 - broader structured procedures are not live as a normal remembered user
@@ -257,10 +270,14 @@ Current direction:
   - nearby recurring-procedure asks under validated-procedure scope
 - the second live family-aware semantic routing slice is now:
   - approved environment-constraint guidance under approved-only project scope
+- the third live family-aware semantic routing slice is now:
+  - approved workflow-improvement tool-gotcha guidance for
+    `vitest_wrapper_required` and `scripts_committer_required`
 - introduce semantic rerank or fallback next for:
-  - workflow-improvement tool gotchas
   - later API workaround memory
   - later broader workflow-improvement memory
+  - remaining workflow-improvement guidance only if a lower-noise bounded
+    retrieval shape emerges
 - consider semantic retrieval later for:
   - bounded narrative project-memory expansion
   - unmet-need recommendation artifacts

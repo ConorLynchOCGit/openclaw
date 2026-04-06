@@ -497,6 +497,16 @@ Current live behavior:
     such as `auto_capture_lesson_match`, `title_exact`, `content_exact`,
     `title_prefix`, or `content_prefix`
   - only approved supported environment constraints are eligible
+- approved workflow-improvement tool-gotcha guidance may use semantic
+  fallback only when:
+  - `scope = approved_only`
+  - `kind = project`
+  - hybrid does not already have a strong typed project match such as
+    `auto_capture_field_match`, `auto_capture_lesson_match`, `title_exact`,
+    `content_exact`, `title_prefix`, or `content_prefix`
+  - only approved supported tool-gotcha lesson keys are eligible:
+    - `vitest_wrapper_required`
+    - `scripts_committer_required`
 - matched-field observability should show:
   - `semantic_embedding`
   - `semantic_fallback`
@@ -507,6 +517,8 @@ Embedding posture for this slice:
 - validated procedure source memory objects can receive semantic embeddings
 - approved environment-constraint source memory objects can also receive
   semantic embeddings
+- approved workflow-improvement tool-gotcha source memory objects can also
+  receive semantic embeddings
 - embeddings are written only for those bounded families
 - current live proof used:
   - `provider = openai`
@@ -539,14 +551,18 @@ Current approved boundary note:
 - nearby recurring-procedure asks use live semantic routing in this slice
 - approved environment-constraint guidance also uses live semantic routing in
   this slice
-- workflow-improvement tool gotchas remain hybrid-only
+- approved workflow-improvement tool gotchas now also use live semantic
+  routing in this slice for:
+  - `vitest_wrapper_required`
+  - `scripts_committer_required`
+- `git_stash_unsafe` remains hybrid-only
 - response-style and explicit named project facts remain hybrid-first
 - this slice does not introduce generic semantic search across memory
   families
 
 For the exact proof ids and production evidence for this slice, use:
 
-- `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V2_REPORT.md`
+- `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V3_REPORT.md`
 
 ## Workflow-improvement UX workflow
 

@@ -51,6 +51,7 @@ import {
 } from "./response-style-semantic.js";
 import {
   storeApprovedEnvironmentConstraintSemanticEmbedding,
+  storeApprovedWorkflowToolGotchaSemanticEmbedding,
   storeValidatedProcedureSemanticEmbedding,
 } from "./semantic-retrieval-routing.js";
 import {
@@ -2642,6 +2643,18 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
     promotionResult.promotedMemoryObjectId
   ) {
     await storeApprovedEnvironmentConstraintSemanticEmbedding({
+      config: params.config,
+      cfg: params.cfg,
+      sessionKey: params.sessionKey,
+      memoryObjectId: promotionResult.promotedMemoryObjectId,
+      logger: params.logger,
+    });
+  } else if (
+    (params.lessonKey === "vitest_wrapper_required" ||
+      params.lessonKey === "scripts_committer_required") &&
+    promotionResult.promotedMemoryObjectId
+  ) {
+    await storeApprovedWorkflowToolGotchaSemanticEmbedding({
       config: params.config,
       cfg: params.cfg,
       sessionKey: params.sessionKey,

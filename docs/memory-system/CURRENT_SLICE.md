@@ -2,14 +2,13 @@
 
 ## Active slice
 
-Semantic retrieval routing v2
+Semantic retrieval routing v3
 
 ## Objective
 
 Land the next bounded working-context semantic retrieval slice so later-turn
-workflow guidance improves for the safest conceptual environment-constraint
-asks without turning the system into a generic embedding-first memory
-retriever.
+workflow guidance improves for the safest conceptual tool-gotcha asks without
+turning the system into a generic embedding-first memory retriever.
 
 This slice is about:
 
@@ -18,9 +17,9 @@ This slice is about:
 - keeping `memory_object_search_hybrid` as the normal default retrieval path
 - adding the next bounded semantic fallback only where the routing spec says it
   is safe
-- improving approved environment-constraint guidance asks when hybrid lexical
-  recall is too weak
-- preserving exact typed wins for strong lesson-key environment matches
+- improving approved workflow tool-gotcha asks when hybrid lexical recall is
+  too weak
+- preserving exact typed wins for strong lesson-key tool-gotcha matches
 - preserving approved-only and guidance-only posture
 - preserving candidate exclusion and explainable matched-field observability
 - isolated proof plus narrow production proof
@@ -29,8 +28,8 @@ This slice is about:
 ## Required work
 
 1. Land one bounded semantic-retrieval routing subject family:
-   - approved environment-constraint guidance only
-2. Keep the locked v2 posture concrete:
+   - approved workflow-improvement tool-gotcha guidance only
+2. Keep the locked v3 posture concrete:
    - hybrid retrieval remains the default
    - strong typed workflow-lesson matches remain hybrid-first
    - semantic routing is additive, family-scoped, and approved-only
@@ -38,7 +37,7 @@ This slice is about:
    - no action-taking or silent workflow remediation
 3. Add only the smallest bounded embedding-generation seam required for this
    slice:
-   - approved environment-constraint source memory embeddings only
+   - approved workflow tool-gotcha source memory embeddings only
 4. Preserve the already-landed behavior of the other memory families.
 5. Run isolated proof and narrow production proof.
 6. Update:
@@ -49,12 +48,12 @@ This slice is about:
    - `docs/memory-system/CURRENT_SLICE.md`
    - `docs/memory-system/specs/semantic-retrieval-routing.md`
    - `docs/memory-system/specs/behavior-application.md`
-   - `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V2_REPORT.md`
+   - `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V3_REPORT.md`
 
 ## Out of scope
 
-- workflow-improvement tool-gotcha semantic retrieval
 - repeated API failure workaround memory
+- semantic retrieval for `git_stash_unsafe`
 - generic embedding-first working-context retrieval
 - autonomous remediation or direct operational execution
 - silent background application of stored procedures
@@ -67,10 +66,10 @@ This slice is about:
 
 ## Acceptance criteria
 
-- a conceptual environment-constraint ask that hybrid alone misses or ranks
+- a conceptual approved tool-gotcha ask that hybrid alone misses or ranks
   weakly can be improved by semantic fallback
-- a strong exact environment-constraint ask still keeps the typed approved
-  memory result on top
+- a strong exact tool-gotcha ask still keeps the typed approved memory result
+  on top
 - only approved project memory remains eligible for this slice
 - candidate semantic retrieval remains disabled
 - matched-field observability makes the routing explainable
@@ -86,5 +85,8 @@ This slice is now landed for its intended scope:
   family
 - approved environment-constraint guidance is now the second live semantic
   fallback family
-- workflow-improvement tool gotchas still remain hybrid-first
+- approved workflow tool gotchas for `vitest_wrapper_required` and
+  `scripts_committer_required` are now the third live semantic fallback
+  family
+- `git_stash_unsafe` still remains hybrid-first
 - the next UX-focused memory slice has not been chosen yet

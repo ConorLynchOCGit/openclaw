@@ -49,6 +49,10 @@ recurring-procedure asks under bounded validated-procedure-only fallback.
 Second family-aware semantic retrieval routing slice completed for approved
 environment-constraint guidance under bounded approved-only project-scoped
 fallback.
+Third family-aware semantic retrieval routing slice completed for approved
+workflow-improvement tool-gotcha guidance under bounded approved-only
+project-scoped fallback for the supported `vitest_wrapper_required` and
+`scripts_committer_required` lesson keys only.
 Controlled validation completed for the drafted security and retrieval
 substrate on top of schema-v1 in a disposable local Postgres lane.
 Runtime adoption completed for the validated retrieval substrate in the live
@@ -305,10 +309,14 @@ Current compact state:
 - family-aware semantic retrieval routing is now live for:
   - nearby recurring-procedure asks under explicit validated-procedure scope
   - approved environment-constraint guidance under approved-only project scope
+  - approved workflow-improvement tool-gotcha guidance under approved-only
+    project scope for:
+    - `vitest_wrapper_required`
+    - `scripts_committer_required`
 - semantic retrieval remains hybrid-first for:
   - response-style memory
   - explicit named project facts
-  - workflow-improvement tool gotchas
+  - `git_stash_unsafe`
 - latest semantic response-style proof timestamp:
   - `2026-04-05T16:38:19.403Z`
 - latest semantic response-style production proof artifacts:
@@ -411,6 +419,20 @@ Current compact state:
   - exact environment-constraint ask stayed hybrid-first
   - conceptual environment-constraint ask gained
     `semantic_embedding` + `semantic_fallback`
+  - candidate semantic retrieval stayed disabled
+  - health remained `ok`
+- latest semantic retrieval routing v3 proof timestamp:
+  - `2026-04-06T04:10:25.789589+00`
+- latest semantic retrieval routing v3 production proof artifacts:
+  - `projectId = db5fdd6d-927e-4a1d-a3a8-edd0d4690c25`
+  - `approvedObjectId = 50ef7dea-9216-4bfc-9ad4-745b6d52436d`
+  - `embeddingModel = text-embedding-3-small`
+  - `embeddingVersion = c53a957db9784cf10e1b59c12d8766b670f2861e286ecb700894032b4b532e9d`
+- latest semantic retrieval routing v3 production proof delta:
+  - exact tool-gotcha ask stayed hybrid-first
+  - conceptual tool-gotcha ask gained
+    `semantic_embedding` + `semantic_fallback`
+  - `git_stash_unsafe` remained semantic-out-of-scope
   - candidate semantic retrieval stayed disabled
   - health remained `ok`
 - isolated proof additionally proved:

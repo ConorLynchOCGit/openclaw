@@ -11,9 +11,11 @@ const inspectWorkflowImprovementLifecycle = vi.hoisted(() =>
 const storeApprovedEnvironmentConstraintSemanticEmbedding = vi.hoisted(() =>
   vi.fn(async () => true),
 );
+const storeApprovedWorkflowToolGotchaSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
 
 vi.mock("../semantic-retrieval-routing.js", () => ({
   storeApprovedEnvironmentConstraintSemanticEmbedding,
+  storeApprovedWorkflowToolGotchaSemanticEmbedding,
 }));
 vi.mock("../workflow-improvement-lifecycle.js", async () => {
   const actual = await vi.importActual<typeof import("../workflow-improvement-lifecycle.js")>(
@@ -444,6 +446,77 @@ describe("memory candidate submit tool", () => {
       agentId: "main",
       sessionKey: "agent:main:main",
       memoryObjectId: "approved-env-1",
+    });
+    inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);
+  });
+
+  it("stores an approved workflow-tool-gotcha semantic embedding after confirmation promotion", async () => {
+    const runtime = createRuntime();
+    storeApprovedWorkflowToolGotchaSemanticEmbedding.mockClear();
+    inspectWorkflowImprovementLifecycle.mockImplementationOnce(async () => ({
+      activeApprovedSubjectObjectIds: [],
+      pendingSubjectCandidateIds: [],
+      pendingCandidate: {
+        id: "memory-1",
+        key: "workflow-key-1",
+        subjectKey: "workflow-subject-1",
+        lessonKey: "scripts_committer_required",
+        createdAt: new Date(Date.now() - 10_000).toISOString(),
+        updatedAt: new Date(Date.now() - 10_000).toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        confirmationState: "pending_confirmation",
+        sourceEventId: "event-1",
+      },
+    }));
+    runtime.candidateReview.review = vi.fn(async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "memory-1",
+      outcome: "accepted" as const,
+      reviewId: "review-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    }));
+    runtime.candidatePromotion.promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "memory-1",
+      promotedMemoryObjectId: "approved-tool-gotcha-1",
+      promotedMemoryKind: "project" as const,
+      promotedReviewState: "approved" as const,
+      sourceEventId: "event-1",
+    }));
+    const tool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        config: { plugins: {} },
+        runtimeConfig: { plugins: { memory: { provider: "openai" } } },
+        agentId: "main",
+        sessionKey: "agent:main:main",
+      } as never,
+    });
+
+    await tool.execute("call-2f", {
+      kind: "improvement",
+      content: "scripts/committer keeps commit staging scoped here.",
+    });
+    await tool.execute("call-2g", {
+      kind: "improvement",
+      content: 'Use scripts/committer "<msg>" <file...> instead of manual git add and git commit.',
+    });
+
+    expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
+    expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-1",
+      }),
+    );
+    expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).toHaveBeenCalledWith({
+      config: runtime.config,
+      cfg: { plugins: { memory: { provider: "openai" } } },
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      memoryObjectId: "approved-tool-gotcha-1",
     });
     inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);
   });

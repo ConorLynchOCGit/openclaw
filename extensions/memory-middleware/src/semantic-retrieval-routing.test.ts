@@ -4,6 +4,7 @@ import type { MemoryMiddlewareRuntime } from "./runtime.js";
 import {
   maybeApplyEnvironmentConstraintSemanticFallback,
   maybeApplyProcedureSemanticFallback,
+  maybeApplyWorkflowToolGotchaSemanticFallback,
 } from "./semantic-retrieval-routing.js";
 
 const embedMemorySearchQuery = vi.hoisted(() =>
@@ -109,6 +110,37 @@ function createWeakEnvironmentConstraintHybridResult(): MemoryObjectSearchHybrid
         createdAt: "2026-04-01T00:00:00.000Z",
         updatedAt: "2026-04-01T00:00:00.000Z",
         score: 35,
+        matchedFields: ["fts_search_document"],
+      },
+    ],
+  };
+}
+
+function createWeakWorkflowToolGotchaHybridResult(): MemoryObjectSearchHybridResult {
+  return {
+    accepted: true,
+    status: "ok",
+    scope: "approved_only",
+    query: "how should I keep staging narrow here",
+    records: [
+      {
+        objectType: "memory_object",
+        readSurface: "approved_memory_view",
+        id: "tool-gotcha-weak",
+        memoryKind: "project",
+        reviewState: "approved",
+        content:
+          'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+        metadata: {
+          autoCapture: {
+            lessonKey: "scripts_committer_required",
+            subject: "scoped commit workflow",
+            value: 'use scripts/committer "<msg>" <file...> instead of manual git add / git commit',
+          },
+        },
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+        score: 30,
         matchedFields: ["fts_search_document"],
       },
     ],
@@ -424,6 +456,242 @@ describe("semantic retrieval routing", () => {
         kind: "project",
         scope: "include_candidates",
       } as never,
+      hybridResult,
+      cfg: { plugins: {} } as never,
+      agentId: "main",
+      sessionKey: "agent:main:main",
+    });
+
+    expect(embedMemorySearchQuery).not.toHaveBeenCalled();
+    expect(runtime.memoryObjectQuery.searchSemantic).not.toHaveBeenCalled();
+    expect(result).toEqual(hybridResult);
+  });
+
+  it("keeps strong typed workflow tool-gotcha matches on the hybrid path", async () => {
+    const runtime = createRuntimeMock();
+    const hybridResult: MemoryObjectSearchHybridResult = {
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+      query: "scoped commit workflow",
+      records: [
+        {
+          objectType: "memory_object",
+          readSurface: "approved_memory_view",
+          id: "tool-gotcha-strong",
+          memoryKind: "project",
+          reviewState: "approved",
+          content:
+            'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+          metadata: {
+            autoCapture: {
+              lessonKey: "scripts_committer_required",
+            },
+          },
+          createdAt: "2026-04-01T00:00:00.000Z",
+          updatedAt: "2026-04-01T00:00:00.000Z",
+          score: 200,
+          matchedFields: ["auto_capture_lesson_match"],
+        },
+      ],
+    };
+
+    const result = await maybeApplyWorkflowToolGotchaSemanticFallback({
+      runtime,
+      input: {
+        query: "scoped commit workflow",
+        kind: "project",
+        scope: "approved_only",
+      },
+      hybridResult,
+      cfg: { plugins: {} } as never,
+      agentId: "main",
+      sessionKey: "agent:main:main",
+    });
+
+    expect(embedMemorySearchQuery).not.toHaveBeenCalled();
+    expect(runtime.memoryObjectQuery.searchSemantic).not.toHaveBeenCalled();
+    expect(result).toEqual(hybridResult);
+  });
+
+  it("uses semantic fallback for weak nearby workflow tool-gotcha asks", async () => {
+    const runtime = {
+      config: {
+        database: {
+          driver: "postgres",
+          schema: "memory_middleware",
+          url: "",
+        },
+      },
+      memoryObjectQuery: {
+        searchSemantic: vi.fn(async () => ({
+          accepted: true as const,
+          status: "ok" as const,
+          scope: "approved_only" as const,
+          embeddingModel: "test-embed",
+          embeddingVersion: "v1",
+          records: [
+            {
+              objectType: "memory_object" as const,
+              readSurface: "approved_memory_view" as const,
+              id: "tool-gotcha-semantic",
+              memoryKind: "project" as const,
+              reviewState: "approved" as const,
+              content:
+                'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+              metadata: {
+                autoCapture: {
+                  lessonKey: "scripts_committer_required",
+                },
+              },
+              createdAt: "2026-04-02T00:00:00.000Z",
+              updatedAt: "2026-04-02T00:00:00.000Z",
+              score: 0.91,
+              distance: 0.09,
+              matchedFields: ["semantic_embedding"],
+              embeddingModel: "test-embed",
+              embeddingVersion: "v1",
+              chunkIndex: 0,
+            },
+          ],
+        })),
+      },
+    } as unknown as MemoryMiddlewareRuntime;
+
+    const result = await maybeApplyWorkflowToolGotchaSemanticFallback({
+      runtime,
+      input: {
+        query: "how should I keep staging narrow here",
+        kind: "project",
+        scope: "approved_only",
+      },
+      hybridResult: createWeakWorkflowToolGotchaHybridResult(),
+      cfg: { plugins: {} } as never,
+      agentId: "main",
+      sessionKey: "agent:main:main",
+    });
+
+    expect(embedMemorySearchQuery).toHaveBeenCalledWith({
+      cfg: { plugins: {} },
+      agentId: "main",
+      text: "how should I keep staging narrow here",
+    });
+    expect(runtime.memoryObjectQuery.searchSemantic).toHaveBeenCalledWith({
+      embedding: [0.1, 0.2, 0.3],
+      embeddingModel: "test-embed",
+      embeddingVersion: "v1",
+      scope: "approved_only",
+      kind: "project",
+    });
+    expect(result.accepted).toBe(true);
+    if (!result.accepted) {
+      throw new Error("expected accepted result");
+    }
+    expect(result.records[0]).toEqual(
+      expect.objectContaining({
+        id: "tool-gotcha-semantic",
+        matchedFields: ["semantic_embedding", "semantic_fallback"],
+      }),
+    );
+    expect(result.records[1]?.id).toBe("tool-gotcha-weak");
+  });
+
+  it("filters semantic fallback to supported approved workflow tool gotchas only", async () => {
+    const runtime = {
+      config: {
+        database: {
+          driver: "postgres",
+          schema: "memory_middleware",
+          url: "",
+        },
+      },
+      memoryObjectQuery: {
+        searchSemantic: vi.fn(async () => ({
+          accepted: true as const,
+          status: "ok" as const,
+          scope: "approved_only" as const,
+          embeddingModel: "test-embed",
+          embeddingVersion: "v1",
+          records: [
+            {
+              objectType: "memory_object" as const,
+              readSurface: "approved_memory_view" as const,
+              id: "tool-gotcha-unsupported",
+              memoryKind: "project" as const,
+              reviewState: "approved" as const,
+              content:
+                "Workflow improvement: do not use git stash during multi-agent repo work because it can disturb concurrent work.",
+              metadata: {
+                autoCapture: {
+                  lessonKey: "git_stash_unsafe",
+                },
+              },
+              createdAt: "2026-04-02T00:00:00.000Z",
+              updatedAt: "2026-04-02T00:00:00.000Z",
+              score: 0.91,
+              distance: 0.09,
+              matchedFields: ["semantic_embedding"],
+              embeddingModel: "test-embed",
+              embeddingVersion: "v1",
+              chunkIndex: 0,
+            },
+          ],
+        })),
+      },
+    } as unknown as MemoryMiddlewareRuntime;
+
+    const hybridResult = createWeakWorkflowToolGotchaHybridResult();
+    const result = await maybeApplyWorkflowToolGotchaSemanticFallback({
+      runtime,
+      input: {
+        query: "how should I keep staging narrow here",
+        kind: "project",
+        scope: "approved_only",
+      },
+      hybridResult,
+      cfg: { plugins: {} } as never,
+      agentId: "main",
+      sessionKey: "agent:main:main",
+    });
+
+    expect(result).toEqual(hybridResult);
+  });
+
+  it("keeps strong typed project-fact matches ahead of workflow tool-gotcha fallback", async () => {
+    const runtime = createRuntimeMock();
+    const hybridResult: MemoryObjectSearchHybridResult = {
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+      query: "default branch",
+      records: [
+        {
+          objectType: "memory_object",
+          readSurface: "approved_memory_view",
+          id: "project-fact-strong",
+          memoryKind: "project",
+          reviewState: "approved",
+          content: "Project fact: default branch is main.",
+          metadata: {
+            autoCapture: {
+              fieldKey: "default_branch",
+            },
+          },
+          createdAt: "2026-04-01T00:00:00.000Z",
+          updatedAt: "2026-04-01T00:00:00.000Z",
+          score: 220,
+          matchedFields: ["auto_capture_field_match"],
+        },
+      ],
+    };
+
+    const result = await maybeApplyWorkflowToolGotchaSemanticFallback({
+      runtime,
+      input: {
+        query: "default branch",
+        kind: "project",
+        scope: "approved_only",
+      },
       hybridResult,
       cfg: { plugins: {} } as never,
       agentId: "main",

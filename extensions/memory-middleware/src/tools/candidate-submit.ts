@@ -49,7 +49,10 @@ import {
   type ResponseStyleSemanticConfidence,
 } from "../response-style-semantic.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
-import { storeApprovedEnvironmentConstraintSemanticEmbedding } from "../semantic-retrieval-routing.js";
+import {
+  storeApprovedEnvironmentConstraintSemanticEmbedding,
+  storeApprovedWorkflowToolGotchaSemanticEmbedding,
+} from "../semantic-retrieval-routing.js";
 import {
   inspectWorkflowImprovementLifecycle,
   isExpiredPendingWorkflowImprovementCandidate,
@@ -83,6 +86,10 @@ const WORKFLOW_IMPROVEMENT_CONFIRMATION_MIN_AGE_MS = 5_000;
 const ENVIRONMENT_CONSTRAINT_LESSON_KEYS = new Set([
   "python_command_unavailable",
   "gateway_tools_invoke_forbidden",
+]);
+const WORKFLOW_TOOL_GOTCHA_SEMANTIC_LESSON_KEYS = new Set([
+  "vitest_wrapper_required",
+  "scripts_committer_required",
 ]);
 
 function candidateKindSchema() {
@@ -175,6 +182,12 @@ function isEnvironmentConstraintLessonKey(
   lessonKey: string | undefined,
 ): lessonKey is "python_command_unavailable" | "gateway_tools_invoke_forbidden" {
   return Boolean(lessonKey && ENVIRONMENT_CONSTRAINT_LESSON_KEYS.has(lessonKey));
+}
+
+function isWorkflowToolGotchaSemanticLessonKey(
+  lessonKey: string | undefined,
+): lessonKey is "vitest_wrapper_required" | "scripts_committer_required" {
+  return Boolean(lessonKey && WORKFLOW_TOOL_GOTCHA_SEMANTIC_LESSON_KEYS.has(lessonKey));
 }
 
 function buildToolResponseStyleAutoPromotionMetadata(params: {
@@ -1044,6 +1057,17 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     }
     if (isEnvironmentConstraintLessonKey(lessonKey) && promotionResult.promotedMemoryObjectId) {
       await storeApprovedEnvironmentConstraintSemanticEmbedding({
+        config: params.runtime.config,
+        cfg: params.context?.runtimeConfig ?? params.context?.config,
+        agentId: params.context?.agentId,
+        sessionKey: params.context?.sessionKey,
+        memoryObjectId: promotionResult.promotedMemoryObjectId,
+      });
+    } else if (
+      isWorkflowToolGotchaSemanticLessonKey(lessonKey) &&
+      promotionResult.promotedMemoryObjectId
+    ) {
+      await storeApprovedWorkflowToolGotchaSemanticEmbedding({
         config: params.runtime.config,
         cfg: params.context?.runtimeConfig ?? params.context?.config,
         agentId: params.context?.agentId,

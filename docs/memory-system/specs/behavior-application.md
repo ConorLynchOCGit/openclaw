@@ -118,7 +118,10 @@ Retrieval posture for this layer:
   family
 - approved environment-constraint guidance is now the second live semantic
   fallback family
-- workflow-improvement tool gotchas still remain hybrid-first
+- approved workflow-improvement tool gotchas for
+  `vitest_wrapper_required` and `scripts_committer_required` are now the
+  third live semantic fallback family
+- `git_stash_unsafe` still remains hybrid-first
 - conceptual workflow families remain the next semantic candidates
 
 It should define precedence such as:

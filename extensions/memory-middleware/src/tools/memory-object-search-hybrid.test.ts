@@ -12,10 +12,14 @@ const maybeApplyProcedureSemanticFallback = vi.hoisted(() =>
 const maybeApplyEnvironmentConstraintSemanticFallback = vi.hoisted(() =>
   vi.fn(async ({ hybridResult }) => hybridResult),
 );
+const maybeApplyWorkflowToolGotchaSemanticFallback = vi.hoisted(() =>
+  vi.fn(async ({ hybridResult }) => hybridResult),
+);
 
 vi.mock("../semantic-retrieval-routing.js", () => ({
   maybeApplyProcedureSemanticFallback,
   maybeApplyEnvironmentConstraintSemanticFallback,
+  maybeApplyWorkflowToolGotchaSemanticFallback,
 }));
 
 function createAcceptedSearchResult(): MemoryObjectSearchHybridResult {
@@ -100,6 +104,18 @@ describe("memory object hybrid search tool", () => {
       }),
     );
     expect(maybeApplyEnvironmentConstraintSemanticFallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: {
+          query: "deploy agent",
+          scope: "include_validated_procedures",
+          kind: "procedure",
+        },
+        cfg: undefined,
+        agentId: undefined,
+        sessionKey: undefined,
+      }),
+    );
+    expect(maybeApplyWorkflowToolGotchaSemanticFallback).toHaveBeenCalledWith(
       expect.objectContaining({
         input: {
           query: "deploy agent",
@@ -224,6 +240,13 @@ describe("memory object hybrid search tool", () => {
         sessionKey: "agent:main:main",
       }),
     );
+    expect(maybeApplyWorkflowToolGotchaSemanticFallback).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        cfg: expect.objectContaining({ plugins: { memory: { provider: "openai" } } }),
+        agentId: "main",
+        sessionKey: "agent:main:main",
+      }),
+    );
   });
 
   it("returns semantic fallback ordering when the family router rewrites weak environment guidance results", async () => {
@@ -292,6 +315,68 @@ describe("memory object hybrid search tool", () => {
     ).toEqual(
       expect.objectContaining({
         id: "env-semantic-1",
+        matchedFields: ["semantic_embedding", "semantic_fallback"],
+      }),
+    );
+  });
+
+  it("returns semantic fallback ordering when the family router rewrites weak workflow tool-gotcha results", async () => {
+    const runtime = createRuntime();
+    runtime.memoryObjectQuery.searchHybrid = vi.fn(async () => ({
+      accepted: true as const,
+      status: "ok" as const,
+      scope: "approved_only" as const,
+      query: "how should I keep staging narrow here",
+      records: [],
+    }));
+    maybeApplyWorkflowToolGotchaSemanticFallback.mockImplementationOnce(async ({ hybridResult }) =>
+      hybridResult.accepted && hybridResult.status === "ok"
+        ? {
+            ...hybridResult,
+            records: [
+              {
+                objectType: "memory_object" as const,
+                readSurface: "approved_memory_view" as const,
+                id: "tool-gotcha-semantic-1",
+                memoryKind: "project" as const,
+                reviewState: "approved" as const,
+                content:
+                  'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+                metadata: {
+                  autoCapture: {
+                    lessonKey: "scripts_committer_required",
+                  },
+                },
+                createdAt: "2026-04-01T00:00:00.000Z",
+                updatedAt: "2026-04-01T00:00:00.000Z",
+                score: 999,
+                matchedFields: ["semantic_embedding", "semantic_fallback"],
+              },
+            ],
+          }
+        : hybridResult,
+    );
+    const tool = createMemoryObjectSearchHybridTool({ runtime });
+
+    const result = await tool.execute("call-tool-gotcha", {
+      query: "how should I keep staging narrow here",
+      scope: "approved_only",
+      kind: "project",
+    });
+
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "ok",
+    });
+    expect(
+      (
+        result.details as {
+          records: Array<{ id: string; matchedFields: string[] }>;
+        }
+      ).records[0],
+    ).toEqual(
+      expect.objectContaining({
+        id: "tool-gotcha-semantic-1",
         matchedFields: ["semantic_embedding", "semantic_fallback"],
       }),
     );
