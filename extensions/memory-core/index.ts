@@ -16,6 +16,7 @@ export {
   DEFAULT_MEMORY_FLUSH_PROMPT,
   DEFAULT_MEMORY_FLUSH_SOFT_TOKENS,
 } from "./src/flush-plan.js";
+export { bootstrapMemoryCoreRuntime } from "./src/runtime-bootstrap.js";
 export { buildPromptSection } from "./src/prompt-section.js";
 
 export default definePluginEntry({

@@ -7,7 +7,6 @@ import {
   defaultRuntime,
   formatErrorMessage,
   isRich,
-  resolveCommandSecretRefsViaGateway,
   setVerbose,
   shortenHomeInString,
   shortenHomePath,
@@ -17,7 +16,6 @@ import {
   withProgressTotals,
 } from "openclaw/plugin-sdk/memory-core-host-runtime-cli";
 import {
-  loadConfig,
   resolveDefaultAgentId,
   resolveSessionTranscriptsDirForAgent,
   resolveStateDir,
@@ -30,6 +28,7 @@ import {
 import { buildAgentSessionKey } from "openclaw/plugin-sdk/routing";
 import type { MemoryCommandOptions, MemorySearchCommandOptions } from "./cli.types.js";
 import { getMemorySearchManager } from "./memory/index.js";
+import { bootstrapMemoryCoreRuntime } from "./runtime-bootstrap.js";
 
 type MemoryManager = NonNullable<Awaited<ReturnType<typeof getMemorySearchManager>>["manager"]>;
 type MemoryManagerPurpose = Parameters<typeof getMemorySearchManager>[0]["purpose"];
@@ -47,30 +46,6 @@ type MemorySourceScan = {
   totalFiles: number | null;
   issues: string[];
 };
-
-type LoadedMemoryCommandConfig = {
-  config: OpenClawConfig;
-  diagnostics: string[];
-};
-
-function getMemoryCommandSecretTargetIds(): Set<string> {
-  return new Set([
-    "agents.defaults.memorySearch.remote.apiKey",
-    "agents.list[].memorySearch.remote.apiKey",
-  ]);
-}
-
-async function loadMemoryCommandConfig(commandName: string): Promise<LoadedMemoryCommandConfig> {
-  const { resolvedConfig, diagnostics } = await resolveCommandSecretRefsViaGateway({
-    config: loadConfig(),
-    commandName,
-    targetIds: getMemoryCommandSecretTargetIds(),
-  });
-  return {
-    config: resolvedConfig,
-    diagnostics,
-  };
-}
 
 function emitMemorySecretResolveDiagnostics(
   diagnostics: string[],
@@ -352,7 +327,9 @@ async function scanMemorySources(params: {
 
 export async function runMemoryStatus(opts: MemoryCommandOptions) {
   setVerbose(Boolean(opts.verbose));
-  const { config: cfg, diagnostics } = await loadMemoryCommandConfig("memory status");
+  const { config: cfg, diagnostics } = await bootstrapMemoryCoreRuntime({
+    commandName: "memory status",
+  });
   emitMemorySecretResolveDiagnostics(diagnostics, { json: Boolean(opts.json) });
   const agentIds = resolveAgentIds(cfg, opts.agent);
   const allResults: Array<{
@@ -593,7 +570,9 @@ export async function runMemoryStatus(opts: MemoryCommandOptions) {
 
 export async function runMemoryIndex(opts: MemoryCommandOptions) {
   setVerbose(Boolean(opts.verbose));
-  const { config: cfg, diagnostics } = await loadMemoryCommandConfig("memory index");
+  const { config: cfg, diagnostics } = await bootstrapMemoryCoreRuntime({
+    commandName: "memory index",
+  });
   emitMemorySecretResolveDiagnostics(diagnostics);
   const agentIds = resolveAgentIds(cfg, opts.agent);
   for (const agentId of agentIds) {
@@ -729,7 +708,9 @@ export async function runMemorySearch(
     process.exitCode = 1;
     return;
   }
-  const { config: cfg, diagnostics } = await loadMemoryCommandConfig("memory search");
+  const { config: cfg, diagnostics } = await bootstrapMemoryCoreRuntime({
+    commandName: "memory search",
+  });
   emitMemorySecretResolveDiagnostics(diagnostics, { json: Boolean(opts.json) });
   const agentId = resolveAgent(cfg, opts.agent);
   await withMemoryManagerForAgent({

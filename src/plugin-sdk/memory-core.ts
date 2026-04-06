@@ -6,6 +6,7 @@ export {
   getMemorySearchManager,
   MemoryIndexManager,
 } from "./memory-core-engine-runtime.js";
+export { bootstrapMemoryCoreRuntime } from "../../extensions/memory-core/src/runtime-bootstrap.js";
 export {
   DEFAULT_PI_COMPACTION_RESERVE_TOKENS_FLOOR,
   emptyPluginConfigSchema,

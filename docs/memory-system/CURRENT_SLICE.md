@@ -2,101 +2,73 @@
 
 ## Active slice
 
-Semantic retrieval routing v5
+Pre-feature delivery enablement tranche v1
+
+First bounded slice: shared memory runtime bootstrap helper
 
 ## Objective
 
-Land the next bounded semantic-retrieval-routing slice so approved
-`git_stash_unsafe` workflow guidance can surface on loose stash-safety asks
-without broadening hybrid search into a generic semantic-first path.
+Pause user-facing memory expansion long enough to remove the most repeated
+memory-proof bootstrap friction before the next feature slice.
 
 This slice is about:
 
-- preserving the already-landed response-style, project-memory,
-  recurring-procedure, workflow-improvement, API workaround, and earlier
-  semantic-retrieval-routing families
-- extending approved-only workflow tool-gotcha semantic fallback to one more
-  bounded low-noise lesson key only:
-  - `git_stash_unsafe`
-- keeping `memory_object_search_hybrid` as the normal working-context path
-- preserving exact typed hybrid matches over semantic fallback
-- preserving approved-only, project-scoped, guidance-only posture
-- proving the new tool-gotcha semantic route in isolated proof and narrow
-  production proof
-- updating the canonical memory docs to reflect what is now live
+- recording the new delivery enablement tranche explicitly in the memory
+  roadmap and spec pack
+- choosing the first bounded enablement slice in the right order
+- landing one shared memory runtime bootstrap helper that:
+  - resolves memory SecretRefs through the supported command/runtime path
+  - ensures built-in memory embedding providers are registered
+  - gives proof scripts, evals, and repair tools one reusable bootstrap entry
+    point
+- reusing that helper in the current proof-facing memory CLI path so the seam
+  is already live before the proof-runner slice
 
 ## Required work
 
-1. Land one bounded semantic-retrieval-routing tranche:
-   - approved workflow tool-gotcha semantic fallback for
-     `git_stash_unsafe`
-2. Keep the locked posture concrete:
-   - hybrid remains the default retrieval path
-   - semantic fallback is still family-scoped, approved-only, and
-     project-scoped
-   - strong typed project matches still win
-   - candidate semantic retrieval remains disabled
-   - no action-taking or silent workflow changes
-3. Preserve the already-landed behavior of the other memory families.
-4. Run isolated proof and narrow production proof.
-5. Update:
-   - `docs/memory-system/STATUS.md`
+1. Add the pre-feature delivery enablement tranche to:
    - `docs/memory-system/memory-roadmap.md`
-   - `docs/memory-system/feature-inventory.md`
-   - `docs/memory-system/CURRENT_SLICE.md`
-   - `docs/memory-system/specs/semantic-retrieval-routing.md`
-   - `docs/memory-system/OPERATIONAL_RUNBOOK.md`
-   - `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V5_REPORT.md`
+   - `docs/memory-system/specs/implementation-sequencing.md`
+   - one dedicated supporting spec
+2. Classify and order the four intended enablement improvements:
+   - shared memory runtime bootstrap helper
+   - repo-owned memory proof runner
+   - enforced clean-tree landing assertion
+   - Docker health/readiness alignment
+3. Land the first slice now:
+   - shared memory runtime bootstrap helper
+4. Wire the helper into the immediate proof-facing path.
+5. Update the canonical memory docs to reflect the new tranche and the landed
+   first slice.
 
 ## Out of scope
 
-- generic embedding-first or semantic-first working-context retrieval
-- semantic retrieval for response-style memory
-- semantic retrieval for explicit named project facts
-- broader workflow-improvement semantic routing beyond the approved bounded
-  tool-gotcha, environment-constraint, and API workaround lesson sets
-- candidate semantic retrieval
-- autonomous remediation or direct operational execution
-- unmet-need planning
-- phrase induction as live behavior
-- self-improving capture enablement
-- UI memory inspection surfaces
+- repo-owned proof runner implementation
+- Docker health/readiness alignment
+- clean-tree landing assertion implementation
+- any new user-facing memory family
 - production pairing/auth changes
-- procurement, vetting, approval, or install automation
+- broad release-framework work
+- generic semantic search or broader automation
 
 ## Acceptance criteria
 
-- approved `git_stash_unsafe` memory objects receive bounded semantic
-  embeddings during approved promotion or backfill
-- approved-only project-scoped hybrid search can surface the right approved
-  stash-safety guidance on low-noise conceptual stash-safety asks
-- strong typed hybrid matches still stay ahead of semantic fallback when they
-  exist
-- candidate semantic retrieval remains disabled
-- no broader workflow automation or freeform semantic routing is introduced
-- isolated proof and narrow production proof both exist
-- canonical docs reflect the live boundary accurately
+- the memory roadmap and spec pack now explicitly include the delivery
+  enablement tranche
+- the tranche defines goals, non-goals, classifications, and bounded order
+- one shared memory runtime bootstrap helper exists under the memory stack
+- the helper resolves memory SecretRefs and ensures built-in memory embedding
+  providers are registered
+- the current memory CLI proof-facing path uses that helper
+- docs reflect the new tranche and the landed first slice accurately
 
 ## Notes
 
-This slice is now landed for its intended scope:
+This slice is intentionally enabling later memory work rather than expanding a
+new remembered-behavior family.
 
-- nearby recurring-procedure asks remain the first live semantic fallback
-  family
-- approved environment-constraint guidance remains the second live semantic
-  fallback family
-- approved workflow tool gotchas for `vitest_wrapper_required` and
-  `scripts_committer_required` remain live semantic fallback subjects
-- approved `git_stash_unsafe` guidance is now also live under the same
-  bounded workflow tool-gotcha semantic family
-- approved API workaround guidance remains the fourth live semantic fallback
-  family for:
-  - `openai_embeddings_api_key_required`
-  - `anthropic_context1m_eligible_credential_required`
-- bounded named-project memory still includes:
-  - `repository_url`
-  - `deployment_url`
-- response-style and explicit named project facts remain hybrid-first
-- the next likely bounded slice is a broader bounded workflow-improvement
-  follow-on, a narrow project-memory follow-on, or unmet-need planning only if
-  it stays equally explainable
+The currently recommended remaining order after this slice is:
+
+1. repo-owned memory proof runner
+2. enforced clean-tree landing assertion
+3. Docker health/readiness alignment

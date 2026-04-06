@@ -12,6 +12,10 @@ export { loadConfig } from "../../../src/config/config.js";
 export { resolveStateDir } from "../../../src/config/paths.js";
 export { resolveSessionTranscriptsDirForAgent } from "../../../src/config/sessions/paths.js";
 export { emptyPluginConfigSchema } from "../../../src/plugins/config-schema.js";
+export {
+  listMemoryEmbeddingProviders,
+  registerMemoryEmbeddingProvider,
+} from "../../../src/plugins/memory-embedding-providers.js";
 export { parseAgentSessionKey } from "../../../src/routing/session-key.js";
 export type { OpenClawConfig } from "../../../src/config/config.js";
 export type { MemoryCitationsMode } from "../../../src/config/types.memory.js";
@@ -22,3 +26,4 @@ export type {
   MemoryPromptSectionBuilder,
 } from "../../../src/plugins/memory-state.js";
 export type { OpenClawPluginApi } from "../../../src/plugins/types.js";
+export type { MemoryEmbeddingProviderAdapter } from "../../../src/plugins/memory-embedding-providers.js";

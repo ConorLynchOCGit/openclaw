@@ -32,6 +32,7 @@ partially built family still needs a deliberate productionization plan.
 - `/memory-system/specs/messy-language-eval`
 - `/memory-system/specs/governance-surface-productionization`
 - `/memory-system/specs/implementation-sequencing`
+- `/memory-system/specs/delivery-enablements`
 - `/memory-system/specs/premortem`
 - `/memory-system/specs/architecture-fit-review`
 

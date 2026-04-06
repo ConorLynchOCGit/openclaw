@@ -246,6 +246,21 @@ Production safety posture:
 - Slice work must use the isolated proof environment first
 - production acceptance should be narrow, late, and rollback-backed
 
+Delivery enablement pause:
+
+- semantic retrieval v5 proved that the current memory roadmap is now being
+  slowed down more by proof and rollout friction than by missing feature
+  design
+- a short pre-feature delivery enablement tranche is now part of the roadmap
+  before the next user-facing memory family resumes
+- scope:
+  - shared memory runtime bootstrap helper
+  - repo-owned memory proof runner
+  - enforced clean-tree landing assertion
+  - Docker health/readiness alignment
+- primary spec:
+  - `/memory-system/specs/delivery-enablements`
+
 Fast re-entry reading order:
 
 1. `docs/memory-system/STATUS.md`

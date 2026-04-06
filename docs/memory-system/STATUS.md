@@ -244,6 +244,13 @@ live production boundary for its intended scope, with approved-only
 project-scoped semantic fallback for `git_stash_unsafe`, approved source
 embedding writes during confirmation promotion, and narrow isolated plus
 production proof without broader retrieval broadening.
+Pre-feature delivery enablement tranche specified for the remaining memory
+program so repeated proof and rollout friction is now treated as roadmap work
+instead of ad hoc cleanup.
+First delivery enablement slice completed with a shared memory runtime
+bootstrap helper that resolves memory command SecretRefs through the supported
+gateway snapshot path, ensures built-in memory embedding providers are
+registered, and is already reused by the current memory CLI proof-facing path.
 
 ## Compact checkpoint
 

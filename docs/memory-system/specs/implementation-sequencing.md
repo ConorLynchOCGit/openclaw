@@ -24,10 +24,11 @@ for:
 10. broader project memory expansion
 11. workflow improvement / tool-gotcha memory
 12. family-aware semantic retrieval routing
-13. unmet-need planning
-14. wait-tranche governance productionization
-15. reduced-profile self-improving capture enablement
-16. any broader automation discussion
+13. pre-feature delivery enablement tranche
+14. unmet-need planning
+15. wait-tranche governance productionization
+16. reduced-profile self-improving capture enablement
+17. any broader automation discussion
 
 ## Why this order is recommended
 
@@ -43,6 +44,10 @@ for:
 - procedure memory is a strong second visible win
 - family-aware semantic retrieval routing becomes more useful only after the
   first bounded semantic families are already live
+- once the early semantic-routing and workflow slices are live, the next
+  source of delay shifts from missing feature design to repeated proof and
+  rollout friction; the delivery enablement tranche is meant to remove that
+  drag before the remaining user-facing families continue
 - phrase induction is more valuable after the first semantic families exist
 - workflow improvements and unmet-need planning are useful but lower direct
   user value
@@ -93,6 +98,8 @@ Safe parallel tracks after the shared prerequisites are met:
 - family-aware semantic retrieval routing spec work + later conceptual family
   design
 - governance productionization docs + runbook updates
+- repo-global landing hygiene work + memory-program proof harness work, once
+  the delivery enablement tranche is active
 
 ## What must not proceed in parallel
 
