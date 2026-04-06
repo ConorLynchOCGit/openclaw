@@ -405,6 +405,68 @@ describe("memory object hybrid search tool", () => {
     );
   });
 
+  it("returns semantic fallback ordering for nearby git stash safety asks", async () => {
+    const runtime = createRuntime();
+    runtime.memoryObjectQuery.searchHybrid = vi.fn(async () => ({
+      accepted: true as const,
+      status: "ok" as const,
+      scope: "approved_only" as const,
+      query: "is it safe to stash my work while another agent is editing here",
+      records: [],
+    }));
+    maybeApplyWorkflowToolGotchaSemanticFallback.mockImplementationOnce(async ({ hybridResult }) =>
+      hybridResult.accepted && hybridResult.status === "ok"
+        ? {
+            ...hybridResult,
+            records: [
+              {
+                objectType: "memory_object" as const,
+                readSurface: "approved_memory_view" as const,
+                id: "tool-gotcha-stash-semantic-1",
+                memoryKind: "project" as const,
+                reviewState: "approved" as const,
+                content:
+                  "Workflow improvement: do not use git stash during multi-agent repo work because it can disturb concurrent work.",
+                metadata: {
+                  autoCapture: {
+                    lessonKey: "git_stash_unsafe",
+                  },
+                },
+                createdAt: "2026-04-01T00:00:00.000Z",
+                updatedAt: "2026-04-01T00:00:00.000Z",
+                score: 999,
+                matchedFields: ["semantic_embedding", "semantic_fallback"],
+              },
+            ],
+          }
+        : hybridResult,
+    );
+    const tool = createMemoryObjectSearchHybridTool({ runtime });
+
+    const result = await tool.execute("call-tool-gotcha-stash", {
+      query: "is it safe to stash my work while another agent is editing here",
+      scope: "approved_only",
+      kind: "project",
+    });
+
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "ok",
+    });
+    expect(
+      (
+        result.details as {
+          records: Array<{ id: string; matchedFields: string[] }>;
+        }
+      ).records[0],
+    ).toEqual(
+      expect.objectContaining({
+        id: "tool-gotcha-stash-semantic-1",
+        matchedFields: ["semantic_embedding", "semantic_fallback"],
+      }),
+    );
+  });
+
   it("returns semantic fallback ordering when the family router rewrites weak API workaround results", async () => {
     const runtime = createRuntime();
     runtime.memoryObjectQuery.searchHybrid = vi.fn(async () => ({

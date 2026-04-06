@@ -140,7 +140,7 @@ export function createMemoryObjectSearchHybridTool(params: {
     name: "memory_object_search_hybrid",
     label: "Memory Object Search Hybrid",
     description:
-      "Run bounded ranked text search over approved memory objects, with explicitly requested candidate and validated-procedure scope support. Hybrid stays the default; nearby recurring-procedure asks, approved environment-constraint guidance, the supported approved workflow tool gotchas, and the supported approved API workarounds may use family-scoped semantic fallback.",
+      "Run bounded ranked text search over approved memory objects, with explicitly requested candidate and validated-procedure scope support. Hybrid stays the default; nearby recurring-procedure asks, approved environment-constraint guidance, the supported approved workflow tool gotchas including git stash safety, and the supported approved API workarounds may use family-scoped semantic fallback.",
     parameters: MemoryObjectSearchHybridToolSchema,
     async execute(_toolCallId: string, rawParams: MemoryObjectSearchHybridRawParams) {
       const input = normalizeMemoryObjectSearchHybridInput(rawParams);

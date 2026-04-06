@@ -555,6 +555,77 @@ describe("memory candidate submit tool", () => {
     inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);
   });
 
+  it("stores an approved git-stash workflow-tool-gotcha semantic embedding after confirmation promotion", async () => {
+    const runtime = createRuntime();
+    storeApprovedWorkflowToolGotchaSemanticEmbedding.mockClear();
+    inspectWorkflowImprovementLifecycle.mockImplementationOnce(async () => ({
+      activeApprovedSubjectObjectIds: [],
+      pendingSubjectCandidateIds: [],
+      pendingCandidate: {
+        id: "memory-stash-1",
+        key: "workflow-stash-key-1",
+        subjectKey: "workflow-stash-subject-1",
+        lessonKey: "git_stash_unsafe",
+        createdAt: new Date(Date.now() - 10_000).toISOString(),
+        updatedAt: new Date(Date.now() - 10_000).toISOString(),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        confirmationState: "pending_confirmation",
+        sourceEventId: "event-stash-1",
+      },
+    }));
+    runtime.candidateReview.review = vi.fn(async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "memory-stash-1",
+      outcome: "accepted" as const,
+      reviewId: "review-stash-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    }));
+    runtime.candidatePromotion.promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "memory-stash-1",
+      promotedMemoryObjectId: "approved-tool-gotcha-stash-1",
+      promotedMemoryKind: "project" as const,
+      promotedReviewState: "approved" as const,
+      sourceEventId: "event-stash-1",
+    }));
+    const tool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        config: { plugins: {} },
+        runtimeConfig: { plugins: { memory: { provider: "openai" } } },
+        agentId: "main",
+        sessionKey: "agent:main:main",
+      } as never,
+    });
+
+    await tool.execute("call-2f-stash", {
+      kind: "improvement",
+      content: "Do not use git stash in this repo during multi agent work.",
+    });
+    await tool.execute("call-2g-stash", {
+      kind: "improvement",
+      content: "git stash is unsafe here because it can disturb concurrent work.",
+    });
+
+    expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
+    expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-stash-1",
+      }),
+    );
+    expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).toHaveBeenCalledWith({
+      config: runtime.config,
+      cfg: { plugins: { memory: { provider: "openai" } } },
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      memoryObjectId: "approved-tool-gotcha-stash-1",
+    });
+    inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);
+  });
+
   it("stores an approved API workaround semantic embedding after confirmation promotion", async () => {
     const runtime = createRuntime();
     storeApprovedApiWorkaroundSemanticEmbedding.mockClear();

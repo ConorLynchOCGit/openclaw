@@ -516,6 +516,7 @@ Current live behavior:
   - only approved supported tool-gotcha lesson keys are eligible:
     - `vitest_wrapper_required`
     - `scripts_committer_required`
+    - `git_stash_unsafe`
 - approved API workaround guidance may use semantic fallback only when:
   - `scope = approved_only`
   - `kind = project`
@@ -575,18 +576,18 @@ Current approved boundary note:
   routing in this slice for:
   - `vitest_wrapper_required`
   - `scripts_committer_required`
+  - `git_stash_unsafe`
 - approved API workaround guidance now also uses live semantic routing in this
   slice for:
   - `openai_embeddings_api_key_required`
   - `anthropic_context1m_eligible_credential_required`
-- `git_stash_unsafe` remains hybrid-only
 - response-style and explicit named project facts remain hybrid-first
 - this slice does not introduce generic semantic search across memory
   families
 
 For the exact proof ids and production evidence for this slice, use:
 
-- `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V4_REPORT.md`
+- `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V5_REPORT.md`
 
 ## Workflow-improvement UX workflow
 

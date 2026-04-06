@@ -166,7 +166,6 @@ Current state:
   - approved workflow tool-gotcha source memory objects can now receive
     bounded semantic embeddings during approved promotion or backfill
   - exact tool-gotcha asks still stay hybrid-first
-  - `git_stash_unsafe` still remains hybrid-only
 - the fourth bounded semantic retrieval routing slice is now live:
   - approved API workaround guidance can now use project-scoped semantic
     fallback when:
@@ -179,6 +178,16 @@ Current state:
   - approved API workaround source memory objects can now receive bounded
     semantic embeddings during approved promotion or backfill
   - exact API workaround asks still stay hybrid-first
+- the fifth bounded semantic retrieval routing slice is now live:
+  - approved `git_stash_unsafe` workflow guidance can now use project-scoped
+    semantic fallback when:
+    - `scope = approved_only`
+    - `kind = project`
+    - hybrid does not already have a strong typed project match
+  - approved `git_stash_unsafe` source memory objects can now receive bounded
+    semantic embeddings during approved promotion or backfill
+  - strong typed stash-safety project matches still stay hybrid-first when
+    they exist
 
 Current live limits:
 
@@ -189,8 +198,9 @@ Current live limits:
 - family-aware semantic retrieval routing is now live only for nearby
   recurring-procedure asks under explicit validated-procedure scope and
   approved environment-constraint guidance plus the supported approved
-  workflow tool gotchas and supported approved API workaround guidance under
-  approved-only project scope
+  workflow tool gotchas (`vitest_wrapper_required`,
+  `scripts_committer_required`, `git_stash_unsafe`) and supported approved
+  API workaround guidance under approved-only project scope
 - phrase induction from fuzzy detections into reviewed deterministic patterns
   is not live yet
 - broader structured procedures are not live as a normal remembered user

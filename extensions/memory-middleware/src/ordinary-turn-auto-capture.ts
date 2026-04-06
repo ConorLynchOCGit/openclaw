@@ -2676,7 +2676,8 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
     });
   } else if (
     (params.lessonKey === "vitest_wrapper_required" ||
-      params.lessonKey === "scripts_committer_required") &&
+      params.lessonKey === "scripts_committer_required" ||
+      params.lessonKey === "git_stash_unsafe") &&
     promotionResult.promotedMemoryObjectId
   ) {
     await storeApprovedWorkflowToolGotchaSemanticEmbedding({

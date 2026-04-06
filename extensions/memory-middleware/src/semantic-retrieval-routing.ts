@@ -46,7 +46,8 @@ type SupportedEnvironmentConstraintLessonKey =
 
 type SupportedWorkflowToolGotchaLessonKey =
   | "vitest_wrapper_required"
-  | "scripts_committer_required";
+  | "scripts_committer_required"
+  | "git_stash_unsafe";
 
 type SupportedApiWorkaroundLessonKey =
   | "openai_embeddings_api_key_required"
@@ -61,6 +62,7 @@ const SUPPORTED_ENVIRONMENT_CONSTRAINT_LESSON_KEYS =
 const SUPPORTED_WORKFLOW_TOOL_GOTCHA_LESSON_KEYS = new Set<SupportedWorkflowToolGotchaLessonKey>([
   "vitest_wrapper_required",
   "scripts_committer_required",
+  "git_stash_unsafe",
 ]);
 
 const SUPPORTED_API_WORKAROUND_LESSON_KEYS = new Set<SupportedApiWorkaroundLessonKey>([
@@ -734,7 +736,7 @@ export async function storeApprovedWorkflowToolGotchaSemanticEmbedding(params: {
     embeddingModel: queryEmbedding.embeddingModel,
     embeddingVersion: queryEmbedding.embeddingVersion,
     metadata: {
-      source: "semantic_retrieval_routing_v3",
+      source: "semantic_retrieval_routing_v5",
       family: "workflow_tool_gotcha",
       lessonKey: source.lessonKey,
       mode: "approved_memory_source_embedding",
@@ -931,7 +933,7 @@ async function ensureApprovedWorkflowToolGotchaSemanticEmbeddings(params: {
       embeddingModel: queryEmbedding.embeddingModel,
       embeddingVersion: queryEmbedding.embeddingVersion,
       metadata: {
-        source: "semantic_retrieval_routing_v3",
+        source: "semantic_retrieval_routing_v5",
         family: "workflow_tool_gotcha",
         lessonKey: source.lessonKey,
         mode: "approved_memory_backfill_embedding",

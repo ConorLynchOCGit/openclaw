@@ -239,6 +239,11 @@ deployment URL capture, candidate confirmation without manual review for the
 new URL fields, project-scoped lifecycle or duplicate enforcement, direct
 approved retrieval for later project questions, and narrow production proof
 without broader automation enablement.
+Fifth family-aware semantic retrieval routing slice completed on the approved
+live production boundary for its intended scope, with approved-only
+project-scoped semantic fallback for `git_stash_unsafe`, approved source
+embedding writes during confirmation promotion, and narrow isolated plus
+production proof without broader retrieval broadening.
 
 ## Compact checkpoint
 
@@ -336,13 +341,13 @@ Current compact state:
     project scope for:
     - `vitest_wrapper_required`
     - `scripts_committer_required`
+    - `git_stash_unsafe`
   - approved API workaround guidance under approved-only project scope for:
     - `openai_embeddings_api_key_required`
     - `anthropic_context1m_eligible_credential_required`
 - semantic retrieval remains hybrid-first for:
   - response-style memory
   - explicit named project facts
-  - `git_stash_unsafe`
 - latest semantic response-style proof timestamp:
   - `2026-04-05T16:38:19.403Z`
 - latest semantic response-style production proof artifacts:
@@ -496,6 +501,26 @@ Current compact state:
 - latest semantic retrieval routing v4 production proof delta:
   - exact API workaround ask stayed hybrid-first
   - conceptual API workaround ask gained
+    `semantic_embedding` + `semantic_fallback`
+  - candidate semantic retrieval stayed disabled
+  - health remained `ok`
+- latest semantic retrieval routing v5 proof timestamp:
+  - `2026-04-06T21:47:50.790Z`
+- latest semantic retrieval routing v5 production proof artifacts:
+  - `projectId = 3b715f5d-4ca5-472d-a7c2-c6de06936878`
+  - `agentId = e7878b71-290b-4e17-a91d-9aa87a106e07`
+  - `sessionId = 1ff34ca9-b9db-48b6-b859-5fbd187d2080`
+  - `candidateId = dd93537b-ac26-4abe-a544-068b73124e26`
+  - `candidateEventId = 19fd2e89-4b07-4260-b1e4-9e9fa5b9d29f`
+  - `approvedObjectId = 284e9f91-366f-4ed8-8b1e-a4cc623b099f`
+  - `reviewId = ccb0394a-237c-40f2-a26b-eeb71cfa91b3`
+  - `embeddingId = 24b65709-e925-463b-ad33-0370cb53fc79`
+  - `rollbackTag = openclaw:pre-semantic-retrieval-routing-v5-20260406T212451Z`
+- latest semantic retrieval routing v5 production proof delta:
+  - first-seen `git_stash_unsafe` evidence entered pending confirmation
+  - later confirming evidence auto-promoted the approved workflow lesson
+  - approved source memory wrote one `semantic_retrieval_routing_v5` embedding
+  - short stash-safety ask and loose conceptual stash-safety ask both gained
     `semantic_embedding` + `semantic_fallback`
   - candidate semantic retrieval stayed disabled
   - health remained `ok`

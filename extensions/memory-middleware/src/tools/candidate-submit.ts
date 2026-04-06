@@ -91,6 +91,7 @@ const ENVIRONMENT_CONSTRAINT_LESSON_KEYS = new Set([
 const WORKFLOW_TOOL_GOTCHA_SEMANTIC_LESSON_KEYS = new Set([
   "vitest_wrapper_required",
   "scripts_committer_required",
+  "git_stash_unsafe",
 ]);
 const API_WORKAROUND_SEMANTIC_LESSON_KEYS = new Set([
   "openai_embeddings_api_key_required",
@@ -191,7 +192,7 @@ function isEnvironmentConstraintLessonKey(
 
 function isWorkflowToolGotchaSemanticLessonKey(
   lessonKey: string | undefined,
-): lessonKey is "vitest_wrapper_required" | "scripts_committer_required" {
+): lessonKey is "vitest_wrapper_required" | "scripts_committer_required" | "git_stash_unsafe" {
   return Boolean(lessonKey && WORKFLOW_TOOL_GOTCHA_SEMANTIC_LESSON_KEYS.has(lessonKey));
 }
 
