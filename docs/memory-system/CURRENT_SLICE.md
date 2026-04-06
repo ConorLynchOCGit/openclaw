@@ -4,24 +4,19 @@
 
 Pre-feature delivery enablement tranche v1
 
-Third bounded slice: enforced clean-tree landing assertion
+Completed after four bounded slices
 
 ## Objective
 
-Pause user-facing memory expansion long enough to tighten landing hygiene with
-one repo-global closeout assertion before the final readiness-alignment slice.
+Pause user-facing memory expansion long enough to finish the final operational
+alignment work before resuming the next user-facing memory slice.
 
-This slice is about:
+This tranche now landed:
 
-- keeping the pre-feature delivery enablement tranche explicit in the memory
-  roadmap and spec pack
-- landing one repo-global clean-landing assertion that:
-  - fails if `scripts/committer` leaves the requested landing surface dirty
-  - fails if push helper paths leave the full landing tree dirty after push
-  - fails if a push helper path ends with local `HEAD` out of sync with the
-    pushed upstream ref
-- proving the new assertion with targeted helper validation
-- documenting the enforced closeout rule in the repo workflow docs
+- shared memory runtime bootstrap helper
+- repo-owned memory proof runner v1
+- enforced clean-tree landing assertion
+- Docker health/readiness alignment
 
 ## Required work
 
@@ -34,36 +29,37 @@ This slice is about:
    - repo-owned memory proof runner
    - enforced clean-tree landing assertion
    - Docker health/readiness alignment
-3. Land the third slice now:
-   - enforced clean-tree landing assertion
-4. Keep the rule repo-global rather than memory-local.
-5. Update the canonical memory docs to reflect the landed assertion and the
-   final remaining enablement step.
+3. Keep the landed bounded improvements explicit and accurate in the roadmap
+   and runbook.
+4. Resume the next user-facing memory slice with the enablement pause closed
+   out rather than partially open.
 
 ## Out of scope
 
-- Docker health/readiness alignment implementation
-- any new user-facing memory family
+- any new user-facing memory family inside this enablement tranche
 - production pairing/auth changes
 - broad release-framework work
 - generic semantic search or broader automation
 
 ## Acceptance criteria
 
-- the memory roadmap and spec pack still reflect the delivery enablement
-  tranche accurately
-- one enforced clean-landing assertion exists in the repo-global helper path
-- commit-only helper usage now fails when the requested landing surface is
-  still dirty after commit
-- push helper usage now fails when the worktree is dirty after push or local
-  `HEAD` no longer matches the pushed upstream ref
-- the repo workflow docs now document the enforced closeout rule accurately
+- the memory roadmap and spec pack reflect the delivery enablement tranche as
+  complete
+- the repo-global proof/landing helper posture is now materially cleaner:
+  - bootstrap is reusable
+  - proof is repo-owned
+  - closeout cleanliness is enforced
+  - readiness is operationally clearer
+- the next user-facing memory slice can resume without re-paying the same
+  proof, closeout, and readiness taxes
 
 ## Notes
 
-This slice is still enabling later memory work rather than expanding a new
+This tranche stayed bounded delivery work rather than expanding a new
 remembered-behavior family.
 
-The currently recommended remaining order after this slice is:
+The next step after this tranche is to resume explicit user-facing slice
+selection.
 
-1. Docker health/readiness alignment
+The first user-facing candidate to reconsider is a narrowly bounded
+project-memory expansion v3 slice.

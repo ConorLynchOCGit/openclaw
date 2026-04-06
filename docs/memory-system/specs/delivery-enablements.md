@@ -127,6 +127,7 @@ Already landed:
 - shared memory runtime bootstrap helper
 - repo-owned memory proof runner v1
 - enforced clean-tree landing assertion
+- Docker health/readiness alignment
 
 Proof runner v1 is intentionally bounded:
 
@@ -160,6 +161,17 @@ Clean-landing assertion v1 is intentionally narrow:
   ref after push
 - broader git policy work remains deferred
 
-Remaining order:
+Docker health/readiness alignment v1 is intentionally narrow:
 
-1. Docker health/readiness alignment
+- repo Docker surfaces now use `/readyz` for container health checks
+- `/readyz` is the readiness signal to trust for proof and rollout
+- `/healthz` remains the shallower liveness signal
+- proof and runbook docs now call out that distinction explicitly
+- broader lifecycle or orchestration redesign remains deferred
+
+Tranche completion:
+
+- the pre-feature delivery enablement tranche is now complete enough to resume
+  explicit user-facing memory slice selection
+- the next user-facing candidate to reconsider is a narrowly bounded
+  project-memory expansion v3 slice

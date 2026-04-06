@@ -698,6 +698,13 @@ Current runner behavior:
   - `/healthz` and `/readyz` snapshots before and after the run
 - supports isolated mutating rehearsal and production retrieval-style rehearsal
 
+Read those health snapshots this way:
+
+- `/readyz` is the proof and rollout readiness gate
+- `/healthz` is only a shallower liveness signal
+- on repo Docker surfaces, container health now follows `/readyz` so Docker
+  status matches the readiness signal operators should trust
+
 Current v1 limits:
 
 - proof plans are still authored manually as bounded JSON

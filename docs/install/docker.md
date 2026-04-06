@@ -146,9 +146,15 @@ curl -fsS http://127.0.0.1:18789/healthz   # liveness
 curl -fsS http://127.0.0.1:18789/readyz     # readiness
 ```
 
-The Docker image includes a built-in `HEALTHCHECK` that pings `/healthz`.
-If checks keep failing, Docker marks the container as `unhealthy` and
-orchestration systems can restart or replace it.
+The Docker image and the repo `docker-compose.yml` healthcheck both ping
+`/readyz`.
+
+- `/readyz` is the readiness signal to trust for rollout and proof.
+- `/healthz` stays available as a shallower liveness check when you only need
+  to know whether the process is up.
+
+If the readiness check keeps failing, Docker marks the container as
+`unhealthy` and orchestration systems can restart or replace it.
 
 Authenticated deep health snapshot:
 

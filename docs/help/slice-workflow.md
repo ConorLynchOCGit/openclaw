@@ -270,6 +270,13 @@ The closeout check is now partially enforced by helper paths:
   - commit-only flows verify the requested landing surface
   - push flows verify the full landing tree plus upstream sync
 
+For Docker-backed proof or rollout:
+
+- trust `/readyz` as the actual readiness gate
+- treat `/healthz` as shallow liveness only
+- where repo Docker surfaces expose container health, that health now tracks
+  readiness rather than shallow liveness
+
 ## Validation tier reference
 
 - `pnpm check:fast`

@@ -259,6 +259,10 @@ Third delivery enablement slice completed with a repo-global clean-landing
 assertion that now fails `scripts/committer` when the requested landing paths
 stay dirty after commit and fails push helper paths when the post-push tree is
 dirty or local `HEAD` no longer matches the pushed upstream ref.
+Fourth delivery enablement slice completed with Docker health/readiness
+alignment so repo Docker surfaces now track `/readyz` as readiness while
+`/healthz` remains the shallow liveness signal for proof and rollout
+interpretation.
 
 ## Compact checkpoint
 

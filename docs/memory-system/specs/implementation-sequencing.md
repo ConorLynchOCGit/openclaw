@@ -30,6 +30,13 @@ for:
 16. reduced-profile self-improving capture enablement
 17. any broader automation discussion
 
+Current sequencing note:
+
+- the pre-feature delivery enablement tranche is now complete enough to resume
+  explicit user-facing slice selection
+- the first user-facing candidate to reconsider after that pause is a narrowly
+  bounded project-memory expansion v3 slice
+
 ## Why this order is recommended
 
 - some governance families are already built enough to produce quick
