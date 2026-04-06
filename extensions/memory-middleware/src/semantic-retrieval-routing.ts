@@ -22,6 +22,25 @@ type ValidatedProcedureSemanticSource = {
   body: string;
 };
 
+type ApprovedEnvironmentConstraintSemanticSource = {
+  memoryObjectId: string;
+  lessonKey: SupportedEnvironmentConstraintLessonKey;
+  subject?: string;
+  value?: string;
+  title?: string;
+  content: string;
+};
+
+type SupportedEnvironmentConstraintLessonKey =
+  | "python_command_unavailable"
+  | "gateway_tools_invoke_forbidden";
+
+const SUPPORTED_ENVIRONMENT_CONSTRAINT_LESSON_KEYS =
+  new Set<SupportedEnvironmentConstraintLessonKey>([
+    "python_command_unavailable",
+    "gateway_tools_invoke_forbidden",
+  ]);
+
 function quoteIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
@@ -36,6 +55,83 @@ function hasStrongProcedureHybridMatch(record: RankedRetrievedMemoryRecord | und
   );
 }
 
+function readNestedMetadataString(
+  metadata: Record<string, unknown> | undefined,
+  path: string[],
+): string | undefined {
+  let cursor: unknown = metadata;
+  for (const segment of path) {
+    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) {
+      return undefined;
+    }
+    cursor = (cursor as Record<string, unknown>)[segment];
+  }
+  return typeof cursor === "string" && cursor.trim().length > 0 ? cursor.trim() : undefined;
+}
+
+function extractWorkflowImprovementLessonKey(
+  metadata: Record<string, unknown> | undefined,
+): string | undefined {
+  return (
+    readNestedMetadataString(metadata, ["autoCapture", "lessonKey"]) ??
+    readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "lessonKey"]) ??
+    readNestedMetadataString(metadata, ["promotionMetadata", "autoPromotion", "lessonKey"]) ??
+    readNestedMetadataString(metadata, ["autoPromotion", "lessonKey"])
+  );
+}
+
+function extractWorkflowImprovementSubject(
+  metadata: Record<string, unknown> | undefined,
+): string | undefined {
+  return (
+    readNestedMetadataString(metadata, ["autoCapture", "subject"]) ??
+    readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "subject"]) ??
+    readNestedMetadataString(metadata, ["promotionMetadata", "autoPromotion", "subject"]) ??
+    readNestedMetadataString(metadata, ["autoPromotion", "subject"])
+  );
+}
+
+function extractWorkflowImprovementValue(
+  metadata: Record<string, unknown> | undefined,
+): string | undefined {
+  return (
+    readNestedMetadataString(metadata, ["autoCapture", "value"]) ??
+    readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "value"]) ??
+    readNestedMetadataString(metadata, ["promotionMetadata", "autoPromotion", "value"]) ??
+    readNestedMetadataString(metadata, ["autoPromotion", "value"])
+  );
+}
+
+function isEnvironmentConstraintLessonKey(
+  value: string | undefined,
+): value is SupportedEnvironmentConstraintLessonKey {
+  return Boolean(
+    value &&
+    SUPPORTED_ENVIRONMENT_CONSTRAINT_LESSON_KEYS.has(
+      value as SupportedEnvironmentConstraintLessonKey,
+    ),
+  );
+}
+
+function hasStrongEnvironmentConstraintHybridMatch(
+  record: RankedRetrievedMemoryRecord | undefined,
+): boolean {
+  if (!record || record.objectType !== "memory_object" || record.memoryKind !== "project") {
+    return false;
+  }
+  if (!isEnvironmentConstraintLessonKey(extractWorkflowImprovementLessonKey(record.metadata))) {
+    return false;
+  }
+  return record.matchedFields.some(
+    (field) =>
+      field === "auto_capture_lesson_match" ||
+      field === "title_exact" ||
+      field === "content_exact" ||
+      field === "title_prefix" ||
+      field === "content_prefix",
+  );
+}
+
 function resolveAgentId(params: {
   cfg: OpenClawConfig;
   agentId?: string;
@@ -47,6 +143,24 @@ function resolveAgentId(params: {
 
 function buildProcedureSemanticText(params: { title: string; body: string }): string {
   return `${params.title.trim()}\n\n${params.body.trim()}`.trim();
+}
+
+function buildEnvironmentConstraintSemanticText(params: {
+  lessonKey: string;
+  subject?: string;
+  value?: string;
+  title?: string;
+  content: string;
+}): string {
+  const parts = [
+    "Environment constraint",
+    params.title?.trim(),
+    params.subject?.trim(),
+    params.value?.trim(),
+    params.content.trim(),
+    `Lesson key: ${params.lessonKey}`,
+  ];
+  return parts.filter((value) => value && value.length > 0).join("\n\n");
 }
 
 async function loadValidatedProcedureSemanticSource(params: {
@@ -94,6 +208,145 @@ async function loadValidatedProcedureSemanticSource(params: {
   }
 }
 
+async function loadApprovedEnvironmentConstraintSemanticSourceById(params: {
+  config: MemoryMiddlewareConfig;
+  memoryObjectId: string;
+}): Promise<ApprovedEnvironmentConstraintSemanticSource | null> {
+  const connectionString = params.config.database.url;
+  if (!connectionString) {
+    return null;
+  }
+  const schema = params.config.database.schema ?? "memory_middleware";
+  const approvedMemoryView = `${quoteIdentifier(schema)}.${quoteIdentifier("internal_approved_memory_v")}`;
+  const client = new Client({ connectionString });
+
+  try {
+    await client.connect();
+    const result = await client.query<{
+      id: string;
+      title: string | null;
+      content: string;
+      metadata: Record<string, unknown> | null;
+    }>(
+      `
+        select
+          id::text as id,
+          title,
+          content,
+          metadata
+        from ${approvedMemoryView}
+        where id = $1::uuid
+          and memory_kind::text = 'project'
+        limit 1
+      `,
+      [params.memoryObjectId],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return null;
+    }
+    const lessonKey = extractWorkflowImprovementLessonKey(row.metadata ?? undefined);
+    if (!isEnvironmentConstraintLessonKey(lessonKey)) {
+      return null;
+    }
+    const environmentLessonKey = lessonKey;
+    return {
+      memoryObjectId: row.id,
+      lessonKey: environmentLessonKey,
+      ...(extractWorkflowImprovementSubject(row.metadata ?? undefined)
+        ? { subject: extractWorkflowImprovementSubject(row.metadata ?? undefined) }
+        : {}),
+      ...(extractWorkflowImprovementValue(row.metadata ?? undefined)
+        ? { value: extractWorkflowImprovementValue(row.metadata ?? undefined) }
+        : {}),
+      ...(row.title ? { title: row.title } : {}),
+      content: row.content,
+    };
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+async function loadApprovedEnvironmentConstraintSourcesMissingEmbedding(params: {
+  config: MemoryMiddlewareConfig;
+  embeddingModel: string;
+  embeddingVersion: string;
+  projectId?: string;
+}): Promise<ApprovedEnvironmentConstraintSemanticSource[]> {
+  const connectionString = params.config.database.url;
+  if (!connectionString) {
+    return [];
+  }
+  const schema = params.config.database.schema ?? "memory_middleware";
+  const approvedMemoryView = `${quoteIdentifier(schema)}.${quoteIdentifier("internal_approved_memory_v")}`;
+  const memoryEmbeddingsTable = `${quoteIdentifier(schema)}.${quoteIdentifier("memory_embeddings")}`;
+  const client = new Client({ connectionString });
+
+  try {
+    await client.connect();
+    const result = await client.query<{
+      id: string;
+      title: string | null;
+      content: string;
+      metadata: Record<string, unknown> | null;
+    }>(
+      `
+        select
+          v.id::text as id,
+          v.title,
+          v.content,
+          v.metadata
+        from ${approvedMemoryView} v
+        left join ${memoryEmbeddingsTable} me
+          on me.memory_object_id = v.id
+          and me.embedding_model = $1::text
+          and me.embedding_version = $2::text
+          and me.chunk_index = 0
+        where v.memory_kind::text = 'project'
+          and me.memory_object_id is null
+          and coalesce(
+            v.metadata->'autoCapture'->>'lessonKey',
+            v.metadata->'candidateMetadata'->'autoCapture'->>'lessonKey',
+            v.metadata->'promotionMetadata'->'autoPromotion'->>'lessonKey',
+            v.metadata->'autoPromotion'->>'lessonKey',
+            ''
+          ) = any($3::text[])
+          and ($4::uuid is null or v.project_id = $4::uuid)
+        order by v.updated_at desc
+      `,
+      [
+        params.embeddingModel,
+        params.embeddingVersion,
+        [...SUPPORTED_ENVIRONMENT_CONSTRAINT_LESSON_KEYS],
+        params.projectId ?? null,
+      ],
+    );
+    return result.rows.flatMap((row) => {
+      const lessonKey = extractWorkflowImprovementLessonKey(row.metadata ?? undefined);
+      if (!isEnvironmentConstraintLessonKey(lessonKey)) {
+        return [];
+      }
+      const environmentLessonKey = lessonKey;
+      return [
+        {
+          memoryObjectId: row.id,
+          lessonKey: environmentLessonKey,
+          ...(extractWorkflowImprovementSubject(row.metadata ?? undefined)
+            ? { subject: extractWorkflowImprovementSubject(row.metadata ?? undefined) }
+            : {}),
+          ...(extractWorkflowImprovementValue(row.metadata ?? undefined)
+            ? { value: extractWorkflowImprovementValue(row.metadata ?? undefined) }
+            : {}),
+          ...(row.title ? { title: row.title } : {}),
+          content: row.content,
+        },
+      ];
+    });
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
 async function upsertMemoryObjectSemanticEmbedding(params: {
   config: MemoryMiddlewareConfig;
   memoryObjectId: string;
@@ -101,6 +354,7 @@ async function upsertMemoryObjectSemanticEmbedding(params: {
   embedding: number[];
   embeddingModel: string;
   embeddingVersion: string;
+  metadata: Record<string, unknown>;
 }): Promise<void> {
   const connectionString = params.config.database.url;
   if (!connectionString) {
@@ -141,11 +395,7 @@ async function upsertMemoryObjectSemanticEmbedding(params: {
         params.embeddingVersion,
         params.chunkText,
         `[${params.embedding.join(",")}]`,
-        JSON.stringify({
-          source: "semantic_retrieval_routing_v1",
-          family: "recurring_procedure",
-          mode: "validated_procedure_source_embedding",
-        }),
+        JSON.stringify(params.metadata),
       ],
     );
   } finally {
@@ -154,6 +404,25 @@ async function upsertMemoryObjectSemanticEmbedding(params: {
 }
 
 function normalizeSemanticProcedureFallbackRecord(params: {
+  record: SemanticRetrievedMemoryRecord;
+  existing?: RankedRetrievedMemoryRecord;
+  scoreBase: number;
+  index: number;
+}): RankedRetrievedMemoryRecord {
+  const matchedFields = new Set<string>([
+    ...(params.existing?.matchedFields ?? []),
+    ...params.record.matchedFields,
+    "semantic_fallback",
+  ]);
+
+  return {
+    ...(params.record as RankedRetrievedMemoryRecord),
+    score: params.scoreBase - params.index + params.record.score,
+    matchedFields: [...matchedFields],
+  };
+}
+
+function normalizeSemanticEnvironmentConstraintFallbackRecord(params: {
   record: SemanticRetrievedMemoryRecord;
   existing?: RankedRetrievedMemoryRecord;
   scoreBase: number;
@@ -213,6 +482,11 @@ export async function storeValidatedProcedureSemanticEmbedding(params: {
     embedding: queryEmbedding.embedding,
     embeddingModel: queryEmbedding.embeddingModel,
     embeddingVersion: queryEmbedding.embeddingVersion,
+    metadata: {
+      source: "semantic_retrieval_routing_v1",
+      family: "recurring_procedure",
+      mode: "validated_procedure_source_embedding",
+    },
   });
   params.logger?.debug?.(
     [
@@ -224,6 +498,132 @@ export async function storeValidatedProcedureSemanticEmbedding(params: {
     ].join(" "),
   );
   return true;
+}
+
+export async function storeApprovedEnvironmentConstraintSemanticEmbedding(params: {
+  config: MemoryMiddlewareConfig;
+  cfg?: OpenClawConfig;
+  agentId?: string;
+  sessionKey?: string;
+  memoryObjectId: string;
+  logger?: PluginLogger;
+}): Promise<boolean> {
+  if (!params.cfg) {
+    return false;
+  }
+  const source = await loadApprovedEnvironmentConstraintSemanticSourceById({
+    config: params.config,
+    memoryObjectId: params.memoryObjectId,
+  });
+  if (!source) {
+    return false;
+  }
+  const chunkText = buildEnvironmentConstraintSemanticText({
+    lessonKey: source.lessonKey,
+    ...(source.subject ? { subject: source.subject } : {}),
+    ...(source.value ? { value: source.value } : {}),
+    ...(source.title ? { title: source.title } : {}),
+    content: source.content,
+  });
+  const queryEmbedding = await embedMemorySearchQuery({
+    cfg: params.cfg,
+    agentId: resolveAgentId({
+      cfg: params.cfg,
+      agentId: params.agentId,
+      sessionKey: params.sessionKey,
+    }),
+    text: chunkText,
+  });
+  if (!queryEmbedding) {
+    return false;
+  }
+  await upsertMemoryObjectSemanticEmbedding({
+    config: params.config,
+    memoryObjectId: source.memoryObjectId,
+    chunkText,
+    embedding: queryEmbedding.embedding,
+    embeddingModel: queryEmbedding.embeddingModel,
+    embeddingVersion: queryEmbedding.embeddingVersion,
+    metadata: {
+      source: "semantic_retrieval_routing_v2",
+      family: "workflow_environment_constraint",
+      lessonKey: source.lessonKey,
+      mode: "approved_memory_source_embedding",
+    },
+  });
+  params.logger?.debug?.(
+    [
+      "memory-middleware environment-constraint semantic embedding upserted",
+      `memoryObjectId=${source.memoryObjectId}`,
+      `lessonKey=${source.lessonKey}`,
+      `embeddingModel=${queryEmbedding.embeddingModel}`,
+      `embeddingVersion=${queryEmbedding.embeddingVersion}`,
+    ].join(" "),
+  );
+  return true;
+}
+
+async function ensureApprovedEnvironmentConstraintSemanticEmbeddings(params: {
+  config: MemoryMiddlewareConfig;
+  cfg: OpenClawConfig;
+  embeddingModel: string;
+  embeddingVersion: string;
+  projectId?: string;
+  agentId?: string;
+  sessionKey?: string;
+  logger?: PluginLogger;
+}): Promise<void> {
+  const missingSources = await loadApprovedEnvironmentConstraintSourcesMissingEmbedding({
+    config: params.config,
+    embeddingModel: params.embeddingModel,
+    embeddingVersion: params.embeddingVersion,
+    ...(params.projectId ? { projectId: params.projectId } : {}),
+  });
+
+  for (const source of missingSources) {
+    const chunkText = buildEnvironmentConstraintSemanticText({
+      lessonKey: source.lessonKey,
+      ...(source.subject ? { subject: source.subject } : {}),
+      ...(source.value ? { value: source.value } : {}),
+      ...(source.title ? { title: source.title } : {}),
+      content: source.content,
+    });
+    const queryEmbedding = await embedMemorySearchQuery({
+      cfg: params.cfg,
+      agentId: resolveAgentId({
+        cfg: params.cfg,
+        agentId: params.agentId,
+        sessionKey: params.sessionKey,
+      }),
+      text: chunkText,
+    });
+    if (!queryEmbedding) {
+      return;
+    }
+    await upsertMemoryObjectSemanticEmbedding({
+      config: params.config,
+      memoryObjectId: source.memoryObjectId,
+      chunkText,
+      embedding: queryEmbedding.embedding,
+      embeddingModel: queryEmbedding.embeddingModel,
+      embeddingVersion: queryEmbedding.embeddingVersion,
+      metadata: {
+        source: "semantic_retrieval_routing_v2",
+        family: "workflow_environment_constraint",
+        lessonKey: source.lessonKey,
+        mode: "approved_memory_backfill_embedding",
+      },
+    });
+    params.logger?.debug?.(
+      [
+        "memory-middleware environment-constraint semantic embedding backfilled",
+        `memoryObjectId=${source.memoryObjectId}`,
+        `lessonKey=${source.lessonKey}`,
+        `embeddingModel=${queryEmbedding.embeddingModel}`,
+        `embeddingVersion=${queryEmbedding.embeddingVersion}`,
+      ].join(" "),
+    );
+  }
 }
 
 export async function maybeApplyProcedureSemanticFallback(params: {
@@ -292,6 +692,115 @@ export async function maybeApplyProcedureSemanticFallback(params: {
   semanticResult.records.forEach((record, index) => {
     records.push(
       normalizeSemanticProcedureFallbackRecord({
+        record,
+        existing: existingById.get(record.id),
+        scoreBase,
+        index,
+      }),
+    );
+    seen.add(record.id);
+  });
+
+  for (const record of params.hybridResult.records) {
+    if (!seen.has(record.id)) {
+      records.push(record);
+    }
+  }
+
+  return {
+    ...params.hybridResult,
+    records,
+  };
+}
+
+export async function maybeApplyEnvironmentConstraintSemanticFallback(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: MemoryObjectSearchHybridInput;
+  hybridResult: MemoryObjectSearchHybridResult;
+  cfg?: OpenClawConfig;
+  agentId?: string;
+  sessionKey?: string;
+  logger?: PluginLogger;
+}): Promise<MemoryObjectSearchHybridResult> {
+  if (!params.hybridResult.accepted || params.hybridResult.status !== "ok") {
+    return params.hybridResult;
+  }
+  const scope = params.input.scope ?? "approved_only";
+  if (
+    !params.cfg ||
+    params.input.kind !== "project" ||
+    scope !== "approved_only" ||
+    hasStrongEnvironmentConstraintHybridMatch(params.hybridResult.records[0])
+  ) {
+    return params.hybridResult;
+  }
+
+  const queryEmbedding = await embedMemorySearchQuery({
+    cfg: params.cfg,
+    agentId: resolveAgentId({
+      cfg: params.cfg,
+      agentId: params.agentId,
+      sessionKey: params.sessionKey,
+    }),
+    text: params.input.query,
+  });
+  if (!queryEmbedding) {
+    return params.hybridResult;
+  }
+
+  await ensureApprovedEnvironmentConstraintSemanticEmbeddings({
+    config: params.runtime.config,
+    cfg: params.cfg,
+    embeddingModel: queryEmbedding.embeddingModel,
+    embeddingVersion: queryEmbedding.embeddingVersion,
+    ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+    ...(params.agentId ? { agentId: params.agentId } : {}),
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+    ...(params.logger ? { logger: params.logger } : {}),
+  });
+
+  const semanticResult = await params.runtime.memoryObjectQuery.searchSemantic({
+    embedding: queryEmbedding.embedding,
+    embeddingModel: queryEmbedding.embeddingModel,
+    embeddingVersion: queryEmbedding.embeddingVersion,
+    scope: "approved_only",
+    kind: "project",
+    ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+    ...(params.input.limit !== undefined ? { limit: params.input.limit } : {}),
+  });
+  if (
+    !semanticResult.accepted ||
+    semanticResult.status !== "ok" ||
+    semanticResult.records.length === 0
+  ) {
+    return params.hybridResult;
+  }
+
+  const semanticEnvironmentRecords = semanticResult.records.filter(
+    (record) =>
+      record.objectType === "memory_object" &&
+      record.memoryKind === "project" &&
+      isEnvironmentConstraintLessonKey(extractWorkflowImprovementLessonKey(record.metadata)),
+  );
+  if (semanticEnvironmentRecords.length === 0) {
+    return params.hybridResult;
+  }
+
+  const existingById = new Map(params.hybridResult.records.map((record) => [record.id, record]));
+  const scoreBase =
+    Math.max(
+      1,
+      ...params.hybridResult.records.map((record) => record.score),
+      semanticEnvironmentRecords.length,
+    ) +
+    semanticEnvironmentRecords.length +
+    1;
+  const records: RankedRetrievedMemoryRecord[] = [];
+  const seen = new Set<string>();
+
+  semanticEnvironmentRecords.forEach((record, index) => {
+    records.push(
+      normalizeSemanticEnvironmentConstraintFallbackRecord({
         record,
         existing: existingById.get(record.id),
         scoreBase,

@@ -116,6 +116,9 @@ Retrieval posture for this layer:
 - response-style and explicit named project facts remain hybrid-first
 - nearby recurring-procedure asks are now the first live semantic fallback
   family
+- approved environment-constraint guidance is now the second live semantic
+  fallback family
+- workflow-improvement tool gotchas still remain hybrid-first
 - conceptual workflow families remain the next semantic candidates
 
 It should define precedence such as:

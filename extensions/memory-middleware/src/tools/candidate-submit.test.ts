@@ -5,6 +5,26 @@ import { describe, expect, it, vi } from "vitest";
 import type { OpenClawPluginToolContext } from "../../api.js";
 import type { CandidateSubmissionAcceptedResult, CandidateSubmissionInput } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
+const inspectWorkflowImprovementLifecycle = vi.hoisted(() =>
+  vi.fn(async (): Promise<unknown> => null),
+);
+const storeApprovedEnvironmentConstraintSemanticEmbedding = vi.hoisted(() =>
+  vi.fn(async () => true),
+);
+
+vi.mock("../semantic-retrieval-routing.js", () => ({
+  storeApprovedEnvironmentConstraintSemanticEmbedding,
+}));
+vi.mock("../workflow-improvement-lifecycle.js", async () => {
+  const actual = await vi.importActual<typeof import("../workflow-improvement-lifecycle.js")>(
+    "../workflow-improvement-lifecycle.js",
+  );
+  return {
+    ...actual,
+    inspectWorkflowImprovementLifecycle,
+  };
+});
+
 import {
   createCandidateSubmitTool,
   normalizeCandidateSubmissionInput,
@@ -353,6 +373,79 @@ describe("memory candidate submit tool", () => {
         }),
       }),
     });
+  });
+
+  it("stores an approved environment-constraint semantic embedding after confirmation promotion", async () => {
+    storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
+    inspectWorkflowImprovementLifecycle.mockReset();
+    inspectWorkflowImprovementLifecycle
+      .mockResolvedValueOnce({
+        matchingApprovedObjectId: null,
+        pendingCandidate: null,
+      })
+      .mockResolvedValueOnce({
+        matchingApprovedObjectId: null,
+        pendingCandidate: {
+          id: "memory-1",
+          sourceEventId: "event-1",
+          createdAt: new Date(Date.now() - 10_000).toISOString(),
+          updatedAt: new Date(Date.now() - 10_000).toISOString(),
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          confirmationState: "pending_confirmation",
+        },
+      });
+    const runtime = createRuntime();
+    runtime.candidateReview.review = vi.fn(async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "memory-1",
+      outcome: "accepted" as const,
+      reviewId: "review-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    }));
+    runtime.candidatePromotion.promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "memory-1",
+      promotedMemoryObjectId: "approved-env-1",
+      promotedMemoryKind: "project" as const,
+      promotedReviewState: "approved" as const,
+      sourceEventId: "event-1",
+    }));
+    const tool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        config: { plugins: {} },
+        runtimeConfig: { plugins: { memory: { provider: "openai" } } },
+        agentId: "main",
+        sessionKey: "agent:main:main",
+      } as never,
+    });
+
+    await tool.execute("call-2d", {
+      kind: "improvement",
+      content: "python is not available here, so use node --input-type=module or tsx instead.",
+    });
+    await tool.execute("call-2e", {
+      kind: "improvement",
+      content: "Use node --input-type=module or tsx here because python command is not available.",
+    });
+
+    expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
+    expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-1",
+      }),
+    );
+    expect(storeApprovedEnvironmentConstraintSemanticEmbedding).toHaveBeenCalledWith({
+      config: runtime.config,
+      cfg: { plugins: { memory: { provider: "openai" } } },
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      memoryObjectId: "approved-env-1",
+    });
+    inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);
   });
 
   it("auto-promotes explicit user preference submissions from the tool path", async () => {

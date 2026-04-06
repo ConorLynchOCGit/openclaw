@@ -5,8 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { MemoryMiddlewareConfig } from "./config.js";
 
 const storeValidatedProcedureSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
+const storeApprovedEnvironmentConstraintSemanticEmbedding = vi.hoisted(() =>
+  vi.fn(async () => true),
+);
 
 vi.mock("./semantic-retrieval-routing.js", () => ({
+  storeApprovedEnvironmentConstraintSemanticEmbedding,
   storeValidatedProcedureSemanticEmbedding,
 }));
 
@@ -1582,6 +1586,7 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
   });
 
   it("captures a bounded workflow improvement as an improvement candidate and promotes it after later confirming evidence", async () => {
+    storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
     const reviewCandidate = vi.fn(async () => ({
       accepted: true as const,
       status: "recorded" as const,
@@ -1682,6 +1687,102 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(promoteToMemory).toHaveBeenCalledWith(
       expect.objectContaining({
         candidateId: "memory-improvement-1",
+      }),
+    );
+    expect(storeApprovedEnvironmentConstraintSemanticEmbedding).not.toHaveBeenCalled();
+  });
+
+  it("stores an approved environment-constraint semantic embedding after auto-promotion", async () => {
+    storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "memory-improvement-env-1",
+      outcome: "accepted" as const,
+      reviewId: "review-improvement-env-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "memory-improvement-env-1",
+      promotedMemoryObjectId: "approved-environment-1",
+      sourceEventId: "event-improvement-env-1",
+      reviewState: "approved" as const,
+    }));
+    const submitImprovementNote = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "improvement" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-improvement-env-1",
+      memoryObjectId: "memory-improvement-env-1",
+    }));
+    const inspectWorkflowImprovementLifecycle = vi
+      .fn()
+      .mockResolvedValueOnce({
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: [],
+      })
+      .mockResolvedValueOnce({
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: ["memory-improvement-env-1"],
+        pendingCandidate: {
+          id: "memory-improvement-env-1",
+          createdAt: new Date(Date.now() - 10_000).toISOString(),
+          updatedAt: new Date(Date.now() - 10_000).toISOString(),
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          confirmationState: "pending_confirmation",
+        },
+      });
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-6",
+          sessionId: "session-uuid-6",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        submitProcedureSuggestion: vi.fn(),
+        submitImprovementNote,
+        reviewCandidate,
+        promoteToMemory,
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+        inspectWorkflowImprovementLifecycle,
+      },
+    });
+
+    const update = {
+      sessionFile: "/root/.openclaw/agents/main/sessions/workflow-environment.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: "python isn't available on this host, so use node instead.",
+        timestamp: Date.parse("2026-04-06T00:20:00Z"),
+      },
+    };
+
+    await handler(update);
+    await handler(update);
+
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(promoteToMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-improvement-env-1",
+      }),
+    );
+    expect(storeApprovedEnvironmentConstraintSemanticEmbedding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: createConfig(),
+        cfg: undefined,
+        sessionKey: "agent:main:main",
+        memoryObjectId: "approved-environment-1",
       }),
     );
   });

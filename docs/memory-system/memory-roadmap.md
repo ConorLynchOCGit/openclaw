@@ -118,8 +118,16 @@ Current state:
     semantic embeddings during validation or equivalent validated promotion
   - exact checklist asks still stay hybrid-first
   - candidate semantic retrieval is still disabled
-  - environment constraints and workflow-improvement lessons still remain
-    hybrid-only for now
+- the second bounded semantic retrieval routing slice is now live:
+  - approved environment-constraint guidance can now use project-scoped
+    semantic fallback when:
+    - `scope = approved_only`
+    - `kind = project`
+    - hybrid does not already have a strong typed environment-constraint match
+  - approved environment-constraint source memory objects can now receive
+    bounded semantic embeddings during approved promotion or backfill
+  - exact environment-constraint asks still stay hybrid-first
+  - workflow-improvement tool-gotcha guidance still remains hybrid-only
 
 Current live limits:
 
@@ -128,7 +136,8 @@ Current live limits:
   matching is doing too much of the first-pass interpretation work
 - broader semantic learning-event detection is not live yet
 - family-aware semantic retrieval routing is now live only for nearby
-  recurring-procedure asks under explicit validated-procedure scope
+  recurring-procedure asks under explicit validated-procedure scope and
+  approved environment-constraint guidance under approved-only project scope
 - phrase induction from fuzzy detections into reviewed deterministic patterns
   is not live yet
 - broader structured procedures are not live as a normal remembered user
@@ -246,8 +255,10 @@ Current direction:
   - internal governance lineage surfaces
 - the first live family-aware semantic routing slice is now:
   - nearby recurring-procedure asks under validated-procedure scope
+- the second live family-aware semantic routing slice is now:
+  - approved environment-constraint guidance under approved-only project scope
 - introduce semantic rerank or fallback next for:
-  - environment constraints
+  - workflow-improvement tool gotchas
   - later API workaround memory
   - later broader workflow-improvement memory
 - consider semantic retrieval later for:
@@ -878,6 +889,8 @@ Current phase note:
 - the first bounded workflow-improvement tranche is complete for its intended
   scope
 - approved workflow lessons currently remain guidance-only
+- semantic retrieval is now live only for approved environment constraints
+  inside this phase
 - broader workflow lessons and repeated API workarounds still remain future
   work inside this phase
 

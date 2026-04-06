@@ -49,7 +49,10 @@ import {
   type ResponseStyleCanonicalMatch,
   type ResponseStyleSemanticConfidence,
 } from "./response-style-semantic.js";
-import { storeValidatedProcedureSemanticEmbedding } from "./semantic-retrieval-routing.js";
+import {
+  storeApprovedEnvironmentConstraintSemanticEmbedding,
+  storeValidatedProcedureSemanticEmbedding,
+} from "./semantic-retrieval-routing.js";
 import {
   type WorkflowImprovementLifecycleInspection,
   inspectWorkflowImprovementLifecycle,
@@ -2595,6 +2598,10 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
   promoteToMemory: OrdinaryTurnAutoCaptureHandlerDeps["promoteToMemory"];
   metadata: Record<string, unknown>;
   logContext: Record<string, unknown>;
+  config: MemoryMiddlewareConfig;
+  cfg?: OpenClawConfig;
+  sessionKey?: string;
+  lessonKey: WorkflowImprovementLessonKey;
 }): Promise<boolean> {
   const reviewResult = await params.reviewCandidate({
     candidateId: params.candidateId,
@@ -2627,6 +2634,20 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
       }),
     );
     return false;
+  }
+
+  if (
+    (params.lessonKey === "python_command_unavailable" ||
+      params.lessonKey === "gateway_tools_invoke_forbidden") &&
+    promotionResult.promotedMemoryObjectId
+  ) {
+    await storeApprovedEnvironmentConstraintSemanticEmbedding({
+      config: params.config,
+      cfg: params.cfg,
+      sessionKey: params.sessionKey,
+      memoryObjectId: promotionResult.promotedMemoryObjectId,
+      logger: params.logger,
+    });
   }
 
   params.logger.info(
@@ -3662,6 +3683,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         logger: params.logger,
         reviewCandidate: deps.reviewCandidate,
         promoteToMemory: deps.promoteToMemory,
+        config: params.config,
+        cfg: params.cfg,
+        sessionKey: decisionParams.sessionKey,
+        lessonKey: decisionParams.decision.lessonKey,
         metadata: buildWorkflowImprovementAutoPromotionMetadata({
           match,
           lessonKey: decisionParams.decision.lessonKey,

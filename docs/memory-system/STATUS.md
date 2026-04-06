@@ -46,6 +46,9 @@ Bounded hybrid retrieval upgrade completed for ranked text search over
 approved memory objects and explicitly requested validated procedures.
 First family-aware semantic retrieval routing slice completed for nearby
 recurring-procedure asks under bounded validated-procedure-only fallback.
+Second family-aware semantic retrieval routing slice completed for approved
+environment-constraint guidance under bounded approved-only project-scoped
+fallback.
 Controlled validation completed for the drafted security and retrieval
 substrate on top of schema-v1 in a disposable local Postgres lane.
 Runtime adoption completed for the validated retrieval substrate in the live
@@ -299,6 +302,13 @@ Current compact state:
   - weak ambiguous ignore instead of dead candidate backlog on the transcript
     assist seam
   - no action-taking or silent plan mutation
+- family-aware semantic retrieval routing is now live for:
+  - nearby recurring-procedure asks under explicit validated-procedure scope
+  - approved environment-constraint guidance under approved-only project scope
+- semantic retrieval remains hybrid-first for:
+  - response-style memory
+  - explicit named project facts
+  - workflow-improvement tool gotchas
 - latest semantic response-style proof timestamp:
   - `2026-04-05T16:38:19.403Z`
 - latest semantic response-style production proof artifacts:
@@ -389,6 +399,20 @@ Current compact state:
   - `procedures +0`
   - `skill_candidates +0`
   - `background_jobs +0`
+- latest semantic retrieval routing v2 proof timestamp:
+  - `2026-04-06T03:43:15.629278+00`
+- latest semantic retrieval routing v2 production proof artifacts:
+  - `projectId = fe109afb-fce1-44d6-b5df-78060f900968`
+  - `approvedObjectId = 040d161c-7cf9-4ec0-8138-574d9677e9ee`
+  - `embeddingModel = text-embedding-3-small`
+  - `embeddingVersion = c53a957db9784cf10e1b59c12d8766b670f2861e286ecb700894032b4b532e9d`
+  - `rollbackTag = openclaw:pre-semantic-retrieval-routing-v2-20260406T031528Z`
+- latest semantic retrieval routing v2 production proof delta:
+  - exact environment-constraint ask stayed hybrid-first
+  - conceptual environment-constraint ask gained
+    `semantic_embedding` + `semantic_fallback`
+  - candidate semantic retrieval stayed disabled
+  - health remained `ok`
 - isolated proof additionally proved:
   - transcript-seam semantic capture for all supported subjects
   - bullet candidate confirmation with later auto-promotion

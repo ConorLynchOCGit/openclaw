@@ -489,6 +489,14 @@ Current live behavior:
 - semantic fallback can only surface validated procedures
 - `approved_only` scope still hides validated procedures even when semantic
   retrieval could conceptually match them
+- approved environment-constraint guidance may use semantic fallback only
+  when:
+  - `scope = approved_only`
+  - `kind = project`
+  - hybrid does not already have a strong typed environment-constraint match
+    such as `auto_capture_lesson_match`, `title_exact`, `content_exact`,
+    `title_prefix`, or `content_prefix`
+  - only approved supported environment constraints are eligible
 - matched-field observability should show:
   - `semantic_embedding`
   - `semantic_fallback`
@@ -497,7 +505,9 @@ Current live behavior:
 Embedding posture for this slice:
 
 - validated procedure source memory objects can receive semantic embeddings
-- embeddings are written only for this family
+- approved environment-constraint source memory objects can also receive
+  semantic embeddings
+- embeddings are written only for those bounded families
 - current live proof used:
   - `provider = openai`
   - `model = text-embedding-3-small`
@@ -526,8 +536,9 @@ Expected operator checks:
 
 Current approved boundary note:
 
-- only nearby recurring-procedure asks use live semantic routing in this slice
-- environment constraints remain hybrid-only
+- nearby recurring-procedure asks use live semantic routing in this slice
+- approved environment-constraint guidance also uses live semantic routing in
+  this slice
 - workflow-improvement tool gotchas remain hybrid-only
 - response-style and explicit named project facts remain hybrid-first
 - this slice does not introduce generic semantic search across memory
@@ -535,7 +546,7 @@ Current approved boundary note:
 
 For the exact proof ids and production evidence for this slice, use:
 
-- `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_REPORT.md`
+- `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V2_REPORT.md`
 
 ## Workflow-improvement UX workflow
 

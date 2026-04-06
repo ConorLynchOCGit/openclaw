@@ -48,6 +48,16 @@ The first live family-aware slice now also exists:
   embeddings when that family validates or equivalent promotion completes
 - validated procedures remain hidden unless the scope explicitly allows them
 
+The second live family-aware slice now also exists:
+
+- approved environment-constraint guidance can use semantic fallback through
+  `memory_object_search_hybrid`
+- strong typed environment-constraint matches still stay hybrid-first
+- only approved project memory rows with the supported environment-constraint
+  lesson keys are eligible
+- approved environment-constraint source memory objects can receive bounded
+  semantic embeddings when that family promotes or backfills them
+
 This means semantic retrieval now exists both as a substrate and as a narrow
 normal working-context strategy for one bounded family.
 
@@ -121,19 +131,19 @@ semantic tool.
 
 ## Family map
 
-| Family                                       | Current working-context retrieval          | Semantic retrieval value                             | Safe posture                                                                                                                                                           |
-| -------------------------------------------- | ------------------------------------------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Response-style memory                        | Hybrid with response-style template boosts | Low for direct asks, medium for indirect paraphrases | Keep hybrid-first. Do not make semantic retrieval the default. Consider semantic rerank later only for indirect style asks after a bounded query canonicalizer exists. |
-| Explicit named project facts                 | Hybrid with field-key boosts               | Low                                                  | Keep hybrid-only for explicit fields like default branch, package manager, and environment name.                                                                       |
-| Broader project memory expansion             | Not live yet                               | Medium                                               | Use semantic retrieval only for later narrative or summary-style project artifacts, not for exact fields.                                                              |
-| Recurring procedures on clear checklist asks | Hybrid with procedure-key boosts           | Low to medium                                        | Keep hybrid-first and direct-use on clear asks.                                                                                                                        |
-| Recurring procedures on nearby asks          | Hybrid with procedure-key inference        | Medium                                               | Early safe semantic candidate. Add semantic rerank only for nearby procedural asks, while preserving suggestion-first behavior.                                        |
-| Workflow-improvement tool gotchas            | Hybrid with lesson-key boosts              | Medium                                               | Keep hybrid-first, with semantic rerank allowed when the ask is conceptually adjacent and lexical overlap is weak.                                                     |
-| Environment constraints                      | Hybrid with lesson-key boosts              | High                                                 | Early safe semantic candidate because wording drifts more than the current exact lesson labels. Guidance-only posture must remain.                                     |
-| API failure workaround memory                | Not live yet                               | High                                                 | Strong semantic-retrieval family once workaround artifacts exist. Error wording and user asks will drift heavily.                                                      |
-| Broader workflow-improvement memory          | Not live yet                               | High                                                 | Good semantic family after canonical lesson classes exist. Guidance-only posture must remain.                                                                          |
-| Unmet-need / recommendation-only planning    | Not live yet                               | Medium to high                                       | Semantic retrieval is useful only after typed unmet-need artifacts exist. Keep recommendation-only posture and do not spill into execution.                            |
-| Governance manual/internal families          | Exact lineage and internal review surfaces | Low and usually unsafe                               | Keep exact or hybrid typed retrieval only. Do not route these families through default semantic retrieval.                                                             |
+| Family                                       | Current working-context retrieval                    | Semantic retrieval value                             | Safe posture                                                                                                                                                           |
+| -------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Response-style memory                        | Hybrid with response-style template boosts           | Low for direct asks, medium for indirect paraphrases | Keep hybrid-first. Do not make semantic retrieval the default. Consider semantic rerank later only for indirect style asks after a bounded query canonicalizer exists. |
+| Explicit named project facts                 | Hybrid with field-key boosts                         | Low                                                  | Keep hybrid-only for explicit fields like default branch, package manager, and environment name.                                                                       |
+| Broader project memory expansion             | Not live yet                                         | Medium                                               | Use semantic retrieval only for later narrative or summary-style project artifacts, not for exact fields.                                                              |
+| Recurring procedures on clear checklist asks | Hybrid with procedure-key boosts                     | Low to medium                                        | Keep hybrid-first and direct-use on clear asks.                                                                                                                        |
+| Recurring procedures on nearby asks          | Hybrid with procedure-key inference                  | Medium                                               | Early safe semantic candidate. Add semantic rerank only for nearby procedural asks, while preserving suggestion-first behavior.                                        |
+| Workflow-improvement tool gotchas            | Hybrid with lesson-key boosts                        | Medium                                               | Keep hybrid-first, with semantic rerank allowed when the ask is conceptually adjacent and lexical overlap is weak.                                                     |
+| Environment constraints                      | Hybrid with lesson-key boosts plus semantic fallback | High                                                 | Live safe semantic family under approved-only project scope. Guidance-only posture remains and strong typed lesson matches still outrank semantic similarity.          |
+| API failure workaround memory                | Not live yet                                         | High                                                 | Strong semantic-retrieval family once workaround artifacts exist. Error wording and user asks will drift heavily.                                                      |
+| Broader workflow-improvement memory          | Not live yet                                         | High                                                 | Good semantic family after canonical lesson classes exist. Guidance-only posture must remain.                                                                          |
+| Unmet-need / recommendation-only planning    | Not live yet                                         | Medium to high                                       | Semantic retrieval is useful only after typed unmet-need artifacts exist. Keep recommendation-only posture and do not spill into execution.                            |
+| Governance manual/internal families          | Exact lineage and internal review surfaces           | Low and usually unsafe                               | Keep exact or hybrid typed retrieval only. Do not route these families through default semantic retrieval.                                                             |
 
 ## Recommended rollout order
 
@@ -157,8 +167,11 @@ These families already benefit from:
 The first safe semantic-retrieval routing targets are:
 
 - nearby recurring-procedure asks
-- approved environment-constraint guidance
 - approved API workaround memory once that family exists
+
+One of these is now live:
+
+- approved environment-constraint guidance
 
 Why these come first:
 
@@ -302,6 +315,19 @@ Safe posture:
 - guidance-only
 - hybrid exact lesson matches still outrank pure semantic similarity
 
+Current live adoption for environment constraints:
+
+- approved environment-constraint guidance is now live as the second semantic
+  fallback family
+- live fallback is limited to the supported approved lesson keys:
+  - `python_command_unavailable`
+  - `gateway_tools_invoke_forbidden`
+- the live path is hybrid-first plus approved-only semantic fallback
+- strong typed lesson matches such as `auto_capture_lesson_match`,
+  `title_exact`, `content_exact`, `title_prefix`, and `content_prefix` still
+  outrank semantic similarity
+- workflow-improvement tool gotchas still remain hybrid-first for now
+
 ### Unmet-need planning
 
 Semantic retrieval is reasonable only after typed unmet-need artifacts exist.
@@ -348,9 +374,10 @@ prove:
 
 ## Current live slice
 
-The first live semantic-retrieval routing slice is:
+The live semantic-retrieval routing slices are:
 
-- nearby recurring-procedure asks only
+- nearby recurring-procedure asks
+- approved environment-constraint guidance
 
 Exact live routing posture:
 
@@ -363,6 +390,13 @@ Exact live routing posture:
 - exact `procedure_key_match`, `title_exact`, and `title_prefix` still outrank
   semantic similarity
 - `approved_only` scope still hides validated procedures
+- semantic fallback is also allowed for approved environment constraints when:
+  - `scope = approved_only`
+  - `kind = project`
+  - hybrid does not already have a strong typed environment-constraint match
+- exact `auto_capture_lesson_match`, `title_exact`, `content_exact`,
+  `title_prefix`, and `content_prefix` still outrank semantic similarity for
+  environment constraints
 - candidate semantic retrieval remains disabled
 
 ## Recommended next implementation slice
@@ -370,7 +404,7 @@ Exact live routing posture:
 The next recommended implementation slice for normal working-context semantic
 retrieval is:
 
-- approved environment-constraint guidance
+- approved workflow-improvement tool-gotcha guidance
 - or approved API workaround guidance once that family exists
 
 That next slice has:

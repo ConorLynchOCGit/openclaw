@@ -2,25 +2,26 @@
 
 ## Active slice
 
-Semantic retrieval routing v1
+Semantic retrieval routing v2
 
 ## Objective
 
-Land the first real working-context semantic retrieval slice so later-turn
-memory use improves for the safest nearby conceptual asks without turning the
-system into a generic embedding-first memory retriever.
+Land the next bounded working-context semantic retrieval slice so later-turn
+workflow guidance improves for the safest conceptual environment-constraint
+asks without turning the system into a generic embedding-first memory
+retriever.
 
 This slice is about:
 
 - preserving the already-landed response-style, project-memory,
-  recurring-procedure, and workflow-improvement families
+  recurring-procedure, workflow-improvement, and project-memory families
 - keeping `memory_object_search_hybrid` as the normal default retrieval path
-- adding the first bounded semantic fallback only where the routing spec says
-  it is safe
-- improving nearby recurring-procedure asks when hybrid lexical recall is too
-  weak
-- preserving exact typed wins for clear checklist asks
-- preserving validated-only and suggestion-first posture
+- adding the next bounded semantic fallback only where the routing spec says it
+  is safe
+- improving approved environment-constraint guidance asks when hybrid lexical
+  recall is too weak
+- preserving exact typed wins for strong lesson-key environment matches
+- preserving approved-only and guidance-only posture
 - preserving candidate exclusion and explainable matched-field observability
 - isolated proof plus narrow production proof
 - updating the canonical memory docs to reflect what is now live
@@ -28,33 +29,31 @@ This slice is about:
 ## Required work
 
 1. Land one bounded semantic-retrieval routing subject family:
-   - nearby recurring-procedure asks only
-2. Keep the locked v1 posture concrete:
+   - approved environment-constraint guidance only
+2. Keep the locked v2 posture concrete:
    - hybrid retrieval remains the default
-   - clear checklist asks remain hybrid-first
-   - semantic routing is additive, family-scoped, and validated-only
+   - strong typed workflow-lesson matches remain hybrid-first
+   - semantic routing is additive, family-scoped, and approved-only
    - no candidate semantic retrieval
-   - no action-taking or silent background procedure use
+   - no action-taking or silent workflow remediation
 3. Add only the smallest bounded embedding-generation seam required for this
    slice:
-   - validated procedure source memory embeddings only
+   - approved environment-constraint source memory embeddings only
 4. Preserve the already-landed behavior of the other memory families.
 5. Run isolated proof and narrow production proof.
 6. Update:
-
-- `docs/memory-system/STATUS.md`
-- `docs/memory-system/memory-roadmap.md`
-- `docs/memory-system/feature-inventory.md`
-- `docs/memory-system/OPERATIONAL_RUNBOOK.md`
-- `docs/memory-system/CURRENT_SLICE.md`
-- `docs/memory-system/specs/semantic-retrieval-routing.md`
-- `docs/memory-system/specs/behavior-application.md`
-- `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_REPORT.md`
+   - `docs/memory-system/STATUS.md`
+   - `docs/memory-system/memory-roadmap.md`
+   - `docs/memory-system/feature-inventory.md`
+   - `docs/memory-system/OPERATIONAL_RUNBOOK.md`
+   - `docs/memory-system/CURRENT_SLICE.md`
+   - `docs/memory-system/specs/semantic-retrieval-routing.md`
+   - `docs/memory-system/specs/behavior-application.md`
+   - `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V2_REPORT.md`
 
 ## Out of scope
 
-- broader semantic routing across workflow-improvement or environment
-  constraints
+- workflow-improvement tool-gotcha semantic retrieval
 - repeated API failure workaround memory
 - generic embedding-first working-context retrieval
 - autonomous remediation or direct operational execution
@@ -68,11 +67,11 @@ This slice is about:
 
 ## Acceptance criteria
 
-- a nearby conceptual recurring-procedure ask that hybrid alone misses can be
-  improved by semantic fallback
-- a clear checklist ask still keeps the exact typed validated procedure on top
-- validated procedures remain hidden when the scope does not explicitly allow
-  them
+- a conceptual environment-constraint ask that hybrid alone misses or ranks
+  weakly can be improved by semantic fallback
+- a strong exact environment-constraint ask still keeps the typed approved
+  memory result on top
+- only approved project memory remains eligible for this slice
 - candidate semantic retrieval remains disabled
 - matched-field observability makes the routing explainable
 - no action-taking or automation is introduced
@@ -81,6 +80,11 @@ This slice is about:
 
 ## Notes
 
-This slice is now landed for its intended scope.
+This slice is now landed for its intended scope:
 
-The next UX-focused memory slice has not been chosen yet.
+- nearby recurring-procedure asks remain the first live semantic fallback
+  family
+- approved environment-constraint guidance is now the second live semantic
+  fallback family
+- workflow-improvement tool gotchas still remain hybrid-first
+- the next UX-focused memory slice has not been chosen yet
