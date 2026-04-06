@@ -233,6 +233,12 @@ workaround detection, candidate confirmation without manual review for the
 first supported provider-troubleshooting lessons, approved-only hybrid
 guidance retrieval, and narrow production proof without broader automation
 enablement.
+Eighth user-experience-focused project-memory slice completed on the approved
+live production boundary for its intended scope, with bounded repository and
+deployment URL capture, candidate confirmation without manual review for the
+new URL fields, project-scoped lifecycle or duplicate enforcement, direct
+approved retrieval for later project questions, and narrow production proof
+without broader automation enablement.
 
 ## Compact checkpoint
 
@@ -272,6 +278,8 @@ Current compact state:
 - supported semantic project-fact subjects now include:
   - default branch
   - staging branch
+  - repository URL
+  - deployment URL
   - primary package manager
   - primary environment name
 - semantic project-memory capture now supports:
@@ -280,6 +288,7 @@ Current compact state:
   - bounded project-fact correction or supersede
   - weak ambiguous ignore instead of dead candidate backlog
   - field-aware approved retrieval for direct project questions
+  - project-scoped lifecycle and duplicate enforcement for supported fields
 - first recurring-procedure semantic UX slice is now live for its intended
   scope
 - supported recurring-procedure subjects now include:

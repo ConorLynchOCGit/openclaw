@@ -300,6 +300,33 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
     });
   });
 
+  it("matches an explicit project repository URL in the broader profile", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "For project atlas forge, the repository URL is https://github.com/openclaw/openclaw.",
+        "user-preference-v2",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_project_fact",
+      candidateKind: "learning",
+      template: "project_fact_named_scope",
+      subject: "atlas forge / repository URL",
+      value: "https://github.com/openclaw/openclaw",
+      projectScope: "atlas forge",
+      content:
+        "Project fact [atlas forge]: repository URL is https://github.com/openclaw/openclaw.",
+    });
+  });
+
+  it("ignores unsupported generic repo labels in deterministic project-fact parsing", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "For project atlas forge, the repo is probably somewhere on GitHub.",
+        "user-preference-v2",
+      ),
+    ).toBeNull();
+  });
+
   it("matches a natural project fact correction in the broader profile", () => {
     expect(
       parseOrdinaryTurnAutoCapturePreference(
@@ -453,6 +480,21 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
       template: "project_fact_named_scope",
       subject: "cedar harbor / staging branch",
       value: "harbor-staging",
+      projectScope: "cedar harbor",
+    });
+  });
+
+  it("parses project deployment URL content from the model tool path", () => {
+    expect(
+      parseAutoCaptureManagedCandidateContent(
+        "For project cedar harbor, the deployment URL is https://cedar.example.com/app.",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_project_fact",
+      candidateKind: "learning",
+      template: "project_fact_named_scope",
+      subject: "cedar harbor / deployment URL",
+      value: "https://cedar.example.com/app",
       projectScope: "cedar harbor",
     });
   });
@@ -1176,6 +1218,71 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     );
     expect(reviewCandidate).not.toHaveBeenCalled();
     expect(promoteToMemory).not.toHaveBeenCalled();
+  });
+
+  it("routes explicit project repository URLs through learning submission without auto-promotion", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-project-fact-3",
+      memoryObjectId: "memory-project-fact-3",
+    }));
+    const inspectProjectFactLifecycle = vi.fn(async () => null);
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          projectId: "project-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        inspectProjectFactLifecycle,
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content:
+          "For project atlas forge, the repository URL is https://github.com/openclaw/openclaw.",
+        timestamp: Date.parse("2026-04-06T12:00:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          "Project fact [atlas forge]: repository URL is https://github.com/openclaw/openclaw.",
+        projectId: "project-uuid-1",
+        metadata: expect.objectContaining({
+          category: "project_fact",
+          source: "explicit_project_fact",
+          autoCapture: expect.objectContaining({
+            fieldKey: "repository_url",
+            subject: "atlas forge / repository URL",
+            value: "https://github.com/openclaw/openclaw",
+          }),
+        }),
+      }),
+    );
+    expect(inspectProjectFactLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-uuid-1",
+        subjectKey: expect.any(String),
+      }),
+    );
   });
 
   it("captures medium-confidence semantic project facts as pending-confirmation candidates", async () => {

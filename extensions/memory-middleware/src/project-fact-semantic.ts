@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 export const PROJECT_FACT_FIELD_KEYS = [
   "default_branch",
   "staging_branch",
+  "repository_url",
+  "deployment_url",
   "primary_package_manager",
   "primary_environment_name",
 ] as const;
@@ -51,6 +53,12 @@ const PROJECT_FACT_FIELD_SPECS: Record<ProjectFactFieldKey, ProjectFactFieldSpec
   },
   staging_branch: {
     label: "staging branch",
+  },
+  repository_url: {
+    label: "repository URL",
+  },
+  deployment_url: {
+    label: "deployment URL",
   },
   primary_package_manager: {
     label: "primary package manager",
@@ -154,6 +162,35 @@ function normalizeProjectFactValue(value: string): string {
     .replace(/^["']+|["']+$/g, "");
 }
 
+function matchProjectFactUrl(
+  remainder: string,
+  params: {
+    fieldKey: ProjectFactFieldKey;
+    subjectPattern: string;
+    evidencePrefix: string;
+  },
+): {
+  fieldKey: ProjectFactFieldKey;
+  value: string;
+  confidence: ProjectFactSemanticConfidence;
+  evidence: string[];
+} | null {
+  const pattern = new RegExp(
+    `^(?:the\\s+)?${params.subjectPattern} is (https?:\\/\\/[^\\s"')]+)$`,
+    "i",
+  );
+  const matched = remainder.match(pattern);
+  if (!matched) {
+    return null;
+  }
+  return {
+    fieldKey: params.fieldKey,
+    value: normalizeProjectFactValue(matched[1] ?? ""),
+    confidence: "high",
+    evidence: [params.evidencePrefix, "url_is_pattern"],
+  };
+}
+
 function extractFieldMatch(remainder: string): {
   fieldKey: ProjectFactFieldKey;
   value: string;
@@ -184,6 +221,24 @@ function extractFieldMatch(remainder: string): {
       confidence: "high",
       evidence: ["staging_branch_phrase", "is_pattern"],
     };
+  }
+
+  const repositoryUrl = matchProjectFactUrl(remainder, {
+    fieldKey: "repository_url",
+    subjectPattern: "(?:repository|repo) url",
+    evidencePrefix: "repository_url_phrase",
+  });
+  if (repositoryUrl) {
+    return repositoryUrl;
+  }
+
+  const deploymentUrl = matchProjectFactUrl(remainder, {
+    fieldKey: "deployment_url",
+    subjectPattern: "(?:deployment|deploy) url",
+    evidencePrefix: "deployment_url_phrase",
+  });
+  if (deploymentUrl) {
+    return deploymentUrl;
   }
 
   const packageManagerExplicit = normalized.match(
@@ -233,7 +288,7 @@ export function detectProjectFactSemanticDecision(
   text: string,
 ): ProjectFactSemanticCaptureDecision {
   const normalized = normalizeText(text);
-  if (!normalized || normalized.length < 18 || normalized.length > 160) {
+  if (!normalized || normalized.length < 18 || normalized.length > 240) {
     return {
       action: "ignore",
       reason: "out_of_bounds",

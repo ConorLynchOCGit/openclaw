@@ -2,65 +2,63 @@
 
 ## Active slice
 
-Semantic retrieval routing v4
+Project memory UX v2
 
 ## Objective
 
-Land the next bounded semantic retrieval routing slice so approved API
-workaround guidance can help with later-turn provider-troubleshooting asks
-without turning the system into generic semantic search everywhere.
+Land the next bounded project-memory expansion slice so users can teach and
+retrieve project repository and deployment URLs with the same bounded
+candidate-confirmation posture already used for the first named-project fact
+fields.
 
 This slice is about:
 
 - preserving the already-landed response-style, project-memory,
-  recurring-procedure, workflow-improvement, and semantic-retrieval-routing
-  families
-- preserving the already-landed bounded API workaround capture posture
-- keeping `memory_object_search_hybrid` as the normal default retrieval path
-- improving approved provider-troubleshooting guidance for the first supported
-  API workaround asks through bounded semantic fallback
-- preserving guidance-only posture and duplicate suppression
-- preserving semantic retrieval routing v1-v3 exactly as already landed
-- isolated proof plus narrow production proof
-- tightening the user-facing OpenAI embeddings auth wording so it matches the
-  current implementation truth
+  recurring-procedure, workflow-improvement, API workaround, and
+  semantic-retrieval-routing families
+- extending bounded named-project memory to the next explicit URL fields only
+- keeping hybrid retrieval as the normal working-context path
+- preserving explicit named-project scope, explainability, and duplicate
+  suppression
+- keeping project memory non-speculative and non-autonomous
+- fixing project scoping so project-fact lifecycle inspection and duplicate
+  checks stay project-local instead of leaking across projects
+- proving the bounded URL field tranche in isolated proof and narrow
+  production proof
 - updating the canonical memory docs to reflect what is now live
 
 ## Required work
 
-1. Land one bounded semantic retrieval routing family:
-   - approved API workaround guidance only
+1. Land one bounded project-memory expansion tranche:
+   - `repository_url`
+   - `deployment_url`
 2. Keep the locked posture concrete:
-   - hybrid retrieval remains the default
-   - exact typed workflow/API workaround matches remain hybrid-first
-   - semantic routing for API workaround guidance is additive fallback only
-   - no candidate semantic retrieval
-   - no action-taking or silent workflow remediation
-3. Support only the first bounded API workaround subjects:
-   - `openai_embeddings_api_key_required`
-   - `anthropic_context1m_eligible_credential_required`
+   - only explicit named-project facts and explicit corrections are supported
+   - candidate confirmation remains the approval path
+   - retrieval remains hybrid-first and field-aware
+   - no speculative project inference
+   - no action-taking or silent workflow changes
+3. Preserve project locality:
+   - ordinary-turn project-fact capture must pass `projectId`
+   - project-fact lifecycle inspection must stay project-scoped
+   - project-fact duplicate checks must stay project-scoped
 4. Preserve the already-landed behavior of the other memory families.
 5. Run isolated proof and narrow production proof.
 6. Update:
    - `docs/memory-system/STATUS.md`
    - `docs/memory-system/memory-roadmap.md`
    - `docs/memory-system/feature-inventory.md`
-   - `docs/memory-system/OPERATIONAL_RUNBOOK.md`
    - `docs/memory-system/CURRENT_SLICE.md`
-   - `docs/memory-system/specs/workflow-improvement-memory.md`
-   - `docs/memory-system/specs/semantic-retrieval-routing.md`
-   - `docs/memory-system/specs/behavior-application.md`
-   - `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V4_REPORT.md`
-   - `docs/help/faq.md`
-   - `docs/reference/memory-config.md`
+   - `docs/memory-system/specs/project-memory-expansion.md`
+   - `docs/memory-system/PRODUCTION_PROJECT_MEMORY_UX_V2_REPORT.md`
 
 ## Out of scope
 
-- broader API workaround memory
+- broader project-memory narrative/state inference
+- semantic retrieval for project facts
 - semantic retrieval for `git_stash_unsafe`
 - generic embedding-first or semantic-first working-context retrieval
 - autonomous remediation or direct operational execution
-- silent background application of stored procedures
 - unmet-need planning
 - phrase induction as live behavior
 - self-improving capture enablement
@@ -70,14 +68,15 @@ This slice is about:
 
 ## Acceptance criteria
 
-- a first supported API workaround statement can enter pending confirmation
-- later confirming evidence can auto-promote the bounded lesson without manual
-  review
-- approved-only retrieval can surface the right approved workaround for a later
-  provider-troubleshooting ask
-- a conceptual nearby API workaround ask can gain semantic fallback without
-  displacing stronger exact matches
+- supported explicit repository/deployment URL statements can enter pending
+  confirmation
+- later confirming evidence can auto-promote the bounded project fact without
+  manual review
+- approved-only retrieval can surface the right approved URL field for a later
+  direct project question
+- unsupported generic labels like plain `repo` or `deploy` stay ignored
 - duplicate confirming evidence does not create additional durable writes
+- the same project-fact key can exist independently in different projects
 - no action-taking or automation is introduced
 - isolated proof and narrow production proof both exist
 - canonical docs reflect the live boundary accurately
@@ -98,7 +97,15 @@ This slice is now landed for its intended scope:
   - `anthropic_context1m_eligible_credential_required`
 - approved API workaround guidance is now the fourth live semantic fallback
   family for the supported lesson keys
+- bounded named-project memory now also includes:
+  - `repository_url`
+  - `deployment_url`
+- transcript-subscriber project-fact capture now keeps lifecycle inspection,
+  submission, and duplicate suppression project-scoped for supported fields
+- unsupported generic deterministic labels like plain `repo` stay out of the
+  bounded project-fact family
 - `git_stash_unsafe` still remains hybrid-first
-- the next likely UX-focused slice is either semantic routing for
-  `git_stash_unsafe` if the ask shapes stay low-noise, or a bounded
-  project-memory expansion slice
+- the next likely bounded slice is either semantic routing for
+  `git_stash_unsafe` if the ask shapes stay low-noise, or a broader bounded
+  workflow-improvement/project-memory follow-on only if it stays equally
+  explainable

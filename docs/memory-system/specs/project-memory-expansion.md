@@ -43,6 +43,15 @@ Initial bounded field set:
 Only support explicit named-project statements and corrections for the above
 fields.
 
+Current live tranche:
+
+- `default_branch`
+- `staging_branch`
+- `primary_package_manager`
+- `primary_environment_name`
+- `repository_url`
+- `deployment_url`
+
 ## Exact input / output behavior
 
 Inputs:
@@ -64,19 +73,27 @@ Outputs:
 - ambiguous or unsupported fields should expire or be rejected rather than
   lingering indefinitely
 
-Initial resolution split:
+Current live resolution split:
 
-- `auto_confirm` candidates after repeated explicit evidence:
+- `candidate_confirmation` after repeated explicit evidence:
   - `default_branch`
   - `staging_branch`
   - `primary_package_manager`
   - `primary_environment_name`
-- `prompt_now` before approval:
   - `repository_url`
   - `deployment_url`
 
-If a prompted field is not confirmed, it should stay unapproved and later
-expire instead of sitting in a manual queue.
+The first live URL tranche uses the same bounded confirmation lifecycle as the
+earlier explicit project-fact fields because:
+
+- the input remains fully explicit
+- the field set remains narrowly typed
+- later confirmation is still required before approval
+- project-scoped duplicate and lifecycle inspection now keep identical field
+  keys from leaking across projects
+
+There is still no manual-review backlog target for these fields. If a field is
+not confirmed, it should stay unapproved and later expire rather than linger.
 
 ## Provenance / metadata requirements
 
@@ -95,6 +112,14 @@ Later direct project questions should retrieve:
 - the right field
 - for the right named project
 - with project-scoped precedence over global adjacent memory
+
+Current live retrieval posture:
+
+- hybrid retrieval remains the default
+- direct repository/deployment URL asks now use the same field-aware hybrid
+  ranking posture as the first project-fact tranche
+- project-fact lifecycle inspection and duplicate suppression stay
+  project-scoped for supported fields
 
 ## Ambiguity / abstain / clarify rules
 
@@ -134,5 +159,6 @@ Track:
 
 ## Open questions
 
-- should any URL-like fields later graduate from prompt-now to auto-confirm if
-  evidence quality is strong enough?
+- should later URL-like fields stay on the same confirmation path, or should a
+  stricter confirmation mode appear only if a clearly riskier field class is
+  added?

@@ -98,6 +98,7 @@ export async function inspectProjectFactLifecycle(params: {
   config: MemoryMiddlewareConfig;
   key: string;
   subjectKey: string;
+  projectId?: string;
   logger?: PluginLogger;
 }): Promise<ProjectFactLifecycleInspection | null> {
   if (!params.config.database.url) {
@@ -135,20 +136,23 @@ export async function inspectProjectFactLifecycle(params: {
           ) as resolved_subject_key
         from ${memoryObjectsTable}
         where
-          coalesce(
-            metadata->'autoCapture'->>'key',
-            metadata->'candidateMetadata'->'autoCapture'->>'key',
-            metadata->'promotionMetadata'->'autoPromotion'->>'key'
-          ) = $1::text
-          or coalesce(
-            metadata->'autoCapture'->>'subjectKey',
-            metadata->'candidateMetadata'->'autoCapture'->>'subjectKey',
-            metadata->'promotionMetadata'->'autoPromotion'->>'subjectKey',
-            metadata->>'subject_key'
-          ) = $2::text
+          (
+            coalesce(
+              metadata->'autoCapture'->>'key',
+              metadata->'candidateMetadata'->'autoCapture'->>'key',
+              metadata->'promotionMetadata'->'autoPromotion'->>'key'
+            ) = $1::text
+            or coalesce(
+              metadata->'autoCapture'->>'subjectKey',
+              metadata->'candidateMetadata'->'autoCapture'->>'subjectKey',
+              metadata->'promotionMetadata'->'autoPromotion'->>'subjectKey',
+              metadata->>'subject_key'
+            ) = $2::text
+          )
+          and ($3::uuid is null or project_id = $3::uuid)
         order by created_at desc, id desc
       `,
-      [params.key, params.subjectKey],
+      [params.key, params.subjectKey, params.projectId ?? null],
     );
 
     const rows = result.rows;

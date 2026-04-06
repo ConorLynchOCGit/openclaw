@@ -3834,6 +3834,248 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     expect([defaultBranchApprovedId, packageManagerApprovedId]).toContain(records[0]?.id);
   });
 
+  it("boosts the most relevant approved project URL fact in hybrid retrieval when overlapping URL fields exist", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+
+    const repositorySubmit = await submitTool.execute("call-16pf-url-a", {
+      kind: "learning",
+      content:
+        "Project fact [atlas forge]: repository URL is https://github.com/openclaw/openclaw.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "project_fact",
+        source: "explicit_project_fact",
+        autoCapture: {
+          captureClass: "explicit_project_fact",
+          template: "project_fact_named_scope",
+          fieldKey: "repository_url",
+          subjectKey: "atlas-forge-repository-url",
+          key: "atlas-forge-repository-url-github",
+          subject: "atlas forge / repository URL",
+          value: "https://github.com/openclaw/openclaw",
+          projectScope: "atlas forge",
+        },
+      },
+    });
+    const repositoryCandidateId = (repositorySubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await reviewTool.execute("call-16pf-url-b", {
+      candidateId: repositoryCandidateId,
+      outcome: "accepted",
+    });
+    const repositoryPromotion = await promoteTool.execute("call-16pf-url-c", {
+      candidateId: repositoryCandidateId,
+    });
+    const repositoryApprovedId = (repositoryPromotion.details as { promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const deploymentSubmit = await submitTool.execute("call-16pf-url-d", {
+      kind: "learning",
+      content: "Project fact [atlas forge]: deployment URL is https://openclaw.ai/app.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "project_fact",
+        source: "explicit_project_fact",
+        autoCapture: {
+          captureClass: "explicit_project_fact",
+          template: "project_fact_named_scope",
+          fieldKey: "deployment_url",
+          subjectKey: "atlas-forge-deployment-url",
+          key: "atlas-forge-deployment-url-app",
+          subject: "atlas forge / deployment URL",
+          value: "https://openclaw.ai/app",
+          projectScope: "atlas forge",
+        },
+      },
+    });
+    const deploymentCandidateId = (deploymentSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await reviewTool.execute("call-16pf-url-e", {
+      candidateId: deploymentCandidateId,
+      outcome: "accepted",
+    });
+    const deploymentPromotion = await promoteTool.execute("call-16pf-url-f", {
+      candidateId: deploymentCandidateId,
+    });
+    const deploymentApprovedId = (deploymentPromotion.details as { promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "what is the repository url for project atlas forge",
+      scope: "approved_only",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+    });
+    const records = (
+      hybridSearch as {
+        accepted: true;
+        status: "ok";
+        scope: "approved_only";
+        records: Array<{
+          id: string;
+          score: number;
+          matchedFields: string[];
+        }>;
+      }
+    ).records;
+    expect(records.length).toBeGreaterThanOrEqual(2);
+    expect(records[0]?.id).toBe(repositoryApprovedId);
+    expect(records[0]?.matchedFields).toContain("auto_capture_field_match");
+    if (records[1]) {
+      expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
+    }
+    expect([repositoryApprovedId, deploymentApprovedId]).toContain(records[0]?.id);
+  });
+
+  it("allows the same approved project URL fact in a different project", async () => {
+    const firstProject = await seedContext(dbEnvironment.connectionString);
+    const secondProject = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const firstSubmitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: firstProject.sessionId,
+        agentId: firstProject.agentId,
+      },
+    });
+    const secondSubmitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: secondProject.sessionId,
+        agentId: secondProject.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: firstProject.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: firstProject.agentId,
+      },
+    });
+
+    const firstSubmit = await firstSubmitTool.execute("call-16pf-url-project-a", {
+      kind: "learning",
+      content:
+        "Project fact [atlas forge]: repository URL is https://github.com/openclaw/openclaw.",
+      projectId: firstProject.projectId,
+      metadata: {
+        category: "project_fact",
+        source: "explicit_project_fact",
+        autoCapture: {
+          captureClass: "explicit_project_fact",
+          template: "project_fact_named_scope",
+          fieldKey: "repository_url",
+          subjectKey: "atlas-forge-repository-url",
+          key: "atlas-forge-repository-url-github",
+          subject: "atlas forge / repository URL",
+          value: "https://github.com/openclaw/openclaw",
+          projectScope: "atlas forge",
+        },
+      },
+    });
+    const firstCandidateId = (firstSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    await reviewTool.execute("call-16pf-url-project-b", {
+      candidateId: firstCandidateId,
+      outcome: "accepted",
+    });
+    await promoteTool.execute("call-16pf-url-project-c", {
+      candidateId: firstCandidateId,
+    });
+
+    const secondSubmit = await secondSubmitTool.execute("call-16pf-url-project-d", {
+      kind: "learning",
+      content:
+        "Project fact [atlas forge]: repository URL is https://github.com/openclaw/openclaw.",
+      projectId: secondProject.projectId,
+      metadata: {
+        category: "project_fact",
+        source: "explicit_project_fact",
+        autoCapture: {
+          captureClass: "explicit_project_fact",
+          template: "project_fact_named_scope",
+          fieldKey: "repository_url",
+          subjectKey: "atlas-forge-repository-url",
+          key: "atlas-forge-repository-url-github",
+          subject: "atlas forge / repository URL",
+          value: "https://github.com/openclaw/openclaw",
+          projectScope: "atlas forge",
+        },
+      },
+    });
+
+    expect(secondSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "learning",
+      reviewState: "candidate",
+      memoryObjectId: expect.any(String),
+    });
+
+    const secondCandidateId = (secondSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    const secondRow = await querySingleRow<{
+      project_id: string;
+      review_state: string;
+      field_key: string | null;
+      lifecycle_state: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          project_id::text as project_id,
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'fieldKey' as field_key,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [secondCandidateId],
+    );
+
+    expect(secondRow).toEqual({
+      project_id: secondProject.projectId,
+      review_state: "candidate",
+      field_key: "repository_url",
+      lifecycle_state: "pending_confirmation",
+    });
+  });
+
   it("boosts the most relevant approved workflow-improvement lesson in hybrid retrieval", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

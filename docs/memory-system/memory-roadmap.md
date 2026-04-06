@@ -72,6 +72,18 @@ Current state:
     subjects
   - approved-only hybrid retrieval now ranks the right project fact more
     cleanly for direct fresh-session project questions
+- the next bounded project-memory slice is now live for its intended scope:
+  - semantic explicit named-project detection is now also live for:
+    - repository URL
+    - deployment URL
+  - later confirming evidence can auto-promote those URL facts without manual
+    review
+  - approved-only hybrid retrieval now ranks the right URL field for direct
+    fresh-session project questions
+  - project-fact lifecycle inspection and duplicate suppression are now
+    project-scoped for supported fields
+  - unsupported generic deterministic labels like plain `repo` and `deploy`
+    stay outside the bounded project-fact family
 - Slice 7 is now landed for its intended scope:
   - `I meant plain English, not jargon.` can land as a bounded correction
   - `No, use bullet points for me.` can be accepted through bounded fallback
@@ -189,6 +201,8 @@ Current live limits:
   tool-gotcha and environment-constraint families
 - repeated API failure workaround memory is now live only for the first bounded
   approved guidance family
+- broader project memory is still limited to the first bounded explicit
+  field set and does not include speculative state
 - broader workflow-improvement memory is not live yet
 - recommendation-only procurement/install artifacts are not live yet
 - self-improving capture remains disabled in production

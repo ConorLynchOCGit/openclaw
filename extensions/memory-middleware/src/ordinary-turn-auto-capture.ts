@@ -90,9 +90,12 @@ const RESPONSE_STYLE_TEMPLATE_SET = new Set<string>(RESPONSE_STYLE_TEMPLATES);
 const PROJECT_FACT_FIELD_LABEL_TO_KEY: Record<string, ProjectFactFieldKey> = {
   "default branch": "default_branch",
   "staging branch": "staging_branch",
+  "repository url": "repository_url",
+  "deployment url": "deployment_url",
   "primary package manager": "primary_package_manager",
   "primary environment name": "primary_environment_name",
 };
+const PROJECT_FACT_VALUE_PATTERN = `([a-z0-9][a-z0-9 _./:?&=%#~-]{0,191})`;
 const PREFERENCE_PATTERNS = [
   {
     template: "my_preferred_is" as const,
@@ -220,15 +223,17 @@ const REQUIREMENT_CORRECTION_PATTERNS = [
 const PROJECT_FACT_PATTERNS = [
   {
     template: "project_fact_named_scope" as const,
-    pattern:
-      /^(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ([a-z0-9][a-z0-9 _./:-]{0,63})[.!?]?$/i,
+    pattern: new RegExp(
+      `^(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ${PROJECT_FACT_VALUE_PATTERN}[.!?]?$`,
+      "i",
+    ),
   },
 ] as const;
 const PROJECT_FACT_CORRECTION_PATTERNS = [
   {
     template: "project_fact_named_scope" as const,
     pattern: new RegExp(
-      `^${CORRECTION_PREFIX}(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ([a-z0-9][a-z0-9 _./:-]{0,63})[.!?]?$`,
+      `^${CORRECTION_PREFIX}(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ${PROJECT_FACT_VALUE_PATTERN}[.!?]?$`,
       "i",
     ),
   },
@@ -346,13 +351,17 @@ const REQUIREMENT_CANDIDATE_CONTENT_PATTERNS = [
 const PROJECT_FACT_CANDIDATE_CONTENT_PATTERNS = [
   {
     template: "project_fact_named_scope" as const,
-    pattern:
-      /^project fact \[([a-z0-9][a-z0-9 -]{0,47})\]: ([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?([a-z0-9][a-z0-9 _./:-]{0,63})["']?[.!?]?$/i,
+    pattern: new RegExp(
+      `^project fact \\[([a-z0-9][a-z0-9 -]{0,47})\\]: ([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?${PROJECT_FACT_VALUE_PATTERN}["']?[.!?]?$`,
+      "i",
+    ),
   },
   {
     template: "project_fact_named_scope" as const,
-    pattern:
-      /^(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?([a-z0-9][a-z0-9 _./:-]{0,63})["']?[.!?]?$/i,
+    pattern: new RegExp(
+      `^(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?${PROJECT_FACT_VALUE_PATTERN}["']?[.!?]?$`,
+      "i",
+    ),
   },
 ] as const;
 const PREFERENCE_CORRECTION_CANDIDATE_CONTENT_PATTERNS = [
@@ -384,13 +393,15 @@ const PREFERENCE_CORRECTION_CANDIDATE_CONTENT_PATTERNS = [
 const PROJECT_FACT_CORRECTION_CANDIDATE_CONTENT_PATTERNS = [
   {
     template: "project_fact_named_scope" as const,
-    pattern:
-      /^project correction \[([a-z0-9][a-z0-9 -]{0,47})\]: ([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?([a-z0-9][a-z0-9 _./:-]{0,63})["']?[.!?]?$/i,
+    pattern: new RegExp(
+      `^project correction \\[([a-z0-9][a-z0-9 -]{0,47})\\]: ([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?${PROJECT_FACT_VALUE_PATTERN}["']?[.!?]?$`,
+      "i",
+    ),
   },
   {
     template: "project_fact_named_scope" as const,
     pattern: new RegExp(
-      `^${CORRECTION_PREFIX}(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?([a-z0-9][a-z0-9 _./:-]{0,63})["']?(?:\\s*\\(not [^)]+\\))?[.!?]?$`,
+      `^${CORRECTION_PREFIX}(?:for|in) project ([a-z0-9][a-z0-9 -]{0,47}), (?:the )?([a-z0-9][a-z0-9 _/-]{0,47}) is ["']?${PROJECT_FACT_VALUE_PATTERN}["']?(?:\\s*\\(not [^)]+\\))?[.!?]?$`,
       "i",
     ),
   },
@@ -691,6 +702,7 @@ type OrdinaryTurnAutoCaptureHandlerDeps = {
     config: MemoryMiddlewareConfig;
     key: string;
     subjectKey: string;
+    projectId?: string;
     logger?: PluginLogger;
   }) => Promise<ProjectFactLifecycleInspection | null>;
   inspectRecurringProcedureLifecycle: (params: {
@@ -831,6 +843,11 @@ function hasExplicitMemoryRequest(value: string): boolean {
 function hasProcedureLikeSubject(subject: string): boolean {
   const words = normalizeLower(subject).split(" ");
   return words.some((word) => SUBJECT_DENYLIST.has(word));
+}
+
+function isProjectUrlFieldSubject(subject: string): boolean {
+  const normalized = normalizeLower(subject);
+  return normalized === "repository url" || normalized === "deployment url";
 }
 
 function hasSupportedRole(value: unknown): value is "user" {
@@ -1124,6 +1141,9 @@ function buildProjectFactMatch(params: {
   if (!projectScope || !subject || !value) {
     return null;
   }
+  if (!PROJECT_FACT_FIELD_LABEL_TO_KEY[normalizedSubject]) {
+    return null;
+  }
   if (
     normalizedProjectScope.split(" ").length > 5 ||
     normalizedSubject.split(" ").length > 5 ||
@@ -1134,7 +1154,7 @@ function buildProjectFactMatch(params: {
   if (
     containsSensitiveTerm(projectScope) ||
     containsSensitiveTerm(subject) ||
-    looksLikeSensitiveValue(value)
+    (looksLikeSensitiveValue(value) && !isProjectUrlFieldSubject(subject))
   ) {
     return null;
   }
@@ -3090,12 +3110,6 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           })
         : undefined;
 
-    const inspection = await deps.inspectProjectFactLifecycle({
-      config: params.config,
-      key: match.key,
-      subjectKey: match.subjectKey,
-      logger: params.logger,
-    });
     const attribution = await deps.resolveAttribution({
       config: params.config,
       agentExternalKey: decisionParams.agentExternalKey,
@@ -3112,6 +3126,13 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       );
       return true;
     }
+    const inspection = await deps.inspectProjectFactLifecycle({
+      config: params.config,
+      key: match.key,
+      subjectKey: match.subjectKey,
+      ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
+      logger: params.logger,
+    });
 
     if (
       inspection?.pendingCandidate &&
@@ -3253,6 +3274,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       match.candidateKind === "correction" ? deps.submitCorrectionSuggestion : deps.submitLearning;
     const result = await submit({
       content: match.content,
+      ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
       agentId: attribution.agentId,
       sessionId: attribution.sessionId,
       metadata: candidateMetadata,

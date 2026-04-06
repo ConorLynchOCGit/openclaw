@@ -636,6 +636,7 @@ async function maybeResolveExistingProjectFactCandidate(params: {
     config: params.runtime.config,
     key,
     subjectKey,
+    ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
   });
   if (!inspection) {
     return null;
@@ -1643,11 +1644,15 @@ function inferProjectFactFieldKeyFromSubject(subject: string): ProjectFactFieldK
     ? "default_branch"
     : fieldLabel === "staging branch"
       ? "staging_branch"
-      : fieldLabel === "primary package manager"
-        ? "primary_package_manager"
-        : fieldLabel === "primary environment name"
-          ? "primary_environment_name"
-          : null;
+      : fieldLabel === "repository url"
+        ? "repository_url"
+        : fieldLabel === "deployment url"
+          ? "deployment_url"
+          : fieldLabel === "primary package manager"
+            ? "primary_package_manager"
+            : fieldLabel === "primary environment name"
+              ? "primary_environment_name"
+              : null;
 }
 
 function extractTranscriptUserText(message: TranscriptUserMessage | null): string | null {
@@ -2725,6 +2730,7 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
     config: params.runtime.config,
     key,
     subjectKey,
+    ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
   });
   if (!inspection || inspection.activeApprovedSubjectObjectIds.length === 0) {
     return params.result;
@@ -2895,8 +2901,12 @@ async function findExistingAutoCaptureManagedDuplicate(params: {
 
   const schema = params.runtime.config.database.schema ?? "memory_middleware";
   const client = new Client({ connectionString: databaseUrl });
-  const projectScopedWorkflowImprovement =
-    params.input.kind === "improvement" && typeof params.input.projectId === "string"
+  const inputCategory = readNestedMetadataString(params.input.metadata, ["category"]);
+  const projectScopedAutoCaptureProjectId =
+    typeof params.input.projectId === "string" &&
+    (params.input.kind === "improvement" ||
+      inputCategory === "project_fact" ||
+      inputCategory === "project_fact_correction")
       ? params.input.projectId
       : null;
   try {
@@ -2914,7 +2924,7 @@ async function findExistingAutoCaptureManagedDuplicate(params: {
         order by created_at desc
         limit 1
       `,
-      [key, projectScopedWorkflowImprovement],
+      [key, projectScopedAutoCaptureProjectId],
     );
     const row = result.rows[0];
     return row ? { id: row.id, reviewState: row.review_state } : null;

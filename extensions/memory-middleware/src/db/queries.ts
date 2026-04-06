@@ -1258,6 +1258,8 @@ type ProjectFactQueryHint = {
   fieldKey:
     | "default_branch"
     | "staging_branch"
+    | "repository_url"
+    | "deployment_url"
     | "primary_package_manager"
     | "primary_environment_name";
 };
@@ -1323,6 +1325,22 @@ function inferProjectFactQueryHint(query: string): ProjectFactQueryHint | null {
   }
   if (normalized.includes("staging branch")) {
     return { fieldKey: "staging_branch" };
+  }
+  if (
+    normalized.includes("repository url") ||
+    normalized.includes("repo url") ||
+    normalized.includes("repository link") ||
+    normalized.includes("repo link")
+  ) {
+    return { fieldKey: "repository_url" };
+  }
+  if (
+    normalized.includes("deployment url") ||
+    normalized.includes("deploy url") ||
+    normalized.includes("deployed url") ||
+    normalized.includes("deployment link")
+  ) {
+    return { fieldKey: "deployment_url" };
   }
   if (
     normalized.includes("package manager") ||
