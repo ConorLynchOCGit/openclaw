@@ -55,9 +55,12 @@ import {
 } from "../workflow-improvement-lifecycle.js";
 import {
   detectWorkflowImprovementSemanticDecision,
+  type WorkflowImprovementCaptureClass,
   isSupportedWorkflowImprovementLessonKey,
   type WorkflowImprovementLessonKey,
+  type WorkflowImprovementReasonCode,
   type WorkflowImprovementSemanticConfidence,
+  type WorkflowImprovementTemplate,
   type WorkflowImprovementToolKey,
 } from "../workflow-improvement-semantic.js";
 import {
@@ -926,7 +929,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
   const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
   const lessonKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "lessonKey"]);
   if (
-    template !== "workflow_tool_gotcha" ||
+    (template !== "workflow_tool_gotcha" && template !== "workflow_environment_constraint") ||
     !key ||
     !subjectKey ||
     !lessonKey ||
@@ -1484,10 +1487,10 @@ function toOrdinaryTurnRecurringProcedureMatch(match: {
 }
 
 function toOrdinaryTurnWorkflowImprovementMatch(match: {
-  captureClass: "workflow_tool_gotcha";
+  captureClass: WorkflowImprovementCaptureClass;
   candidateKind: "improvement";
-  reasonCode: "workflow_tool_gotcha_statement";
-  template: "workflow_tool_gotcha";
+  reasonCode: WorkflowImprovementReasonCode;
+  template: WorkflowImprovementTemplate;
   lessonKey: WorkflowImprovementLessonKey;
   toolKey: WorkflowImprovementToolKey;
   subject: string;

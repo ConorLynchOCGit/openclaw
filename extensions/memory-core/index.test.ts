@@ -70,11 +70,16 @@ describe("buildPromptSection", () => {
     expect(result[6]).toContain("exact style in the hybrid-search query");
     expect(result[7]).toContain("named-project fact questions");
     expect(result).toContainEqual(expect.stringContaining("stored checklist may help"));
-    expect(result).toContainEqual(expect.stringContaining("running tests, making scoped commits"));
+    expect(result).toContainEqual(
+      expect.stringContaining(
+        "running tests, making scoped commits, git-state safety, or known host/runtime constraints",
+      ),
+    );
     expect(result).toContainEqual(expect.stringContaining("directly answers the question"));
     expect(result).toContainEqual(expect.stringContaining("stored checklist exists"));
     expect(result).toContainEqual(expect.stringContaining("suggestion-first as an option"));
     expect(result).toContainEqual(expect.stringContaining("bounded guidance hint or gotcha"));
+    expect(result).toContainEqual(expect.stringContaining("known environment constraint"));
     expect(result).toContainEqual(expect.stringContaining("memory_candidate_submit"));
     expect(result).toContainEqual(expect.stringContaining("Actually, No, I meant, Sorry"));
     expect(result).toContainEqual(
@@ -118,7 +123,7 @@ describe("buildPromptSection", () => {
       "If the user states a tightly bounded named project fact in explicit declarative form, such as For project Atlas, the staging branch is atlas-staging, submit it as a learning candidate.",
     );
     expect(result).toContain(
-      "If the user shares a repeated repo-local tool gotcha such as use pnpm test -- <path-or-filter> instead of raw vitest, use scripts/committer for commits, or avoid git stash in multi-agent work, submit it as kind=improvement.",
+      "If the user shares a repeated repo-local tool gotcha or environment constraint such as use pnpm test -- <path-or-filter> instead of raw vitest, use scripts/committer for commits, avoid git stash in multi-agent work, python is not available here so use node/tsx, or gateway POST /tools/invoke is forbidden here so use direct runtime invocation, submit it as kind=improvement.",
     );
     expect(result).toContain(
       "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",

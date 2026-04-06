@@ -1271,7 +1271,12 @@ type RecurringProcedureQueryHint = {
 };
 
 type WorkflowImprovementQueryHint = {
-  lessonKey: "vitest_wrapper_required" | "scripts_committer_required" | "git_stash_unsafe";
+  lessonKey:
+    | "vitest_wrapper_required"
+    | "scripts_committer_required"
+    | "git_stash_unsafe"
+    | "python_command_unavailable"
+    | "gateway_tools_invoke_forbidden";
 };
 
 function normalizeRetrievalQuery(value: string): string {
@@ -1397,6 +1402,23 @@ function inferWorkflowImprovementQueryHint(query: string): WorkflowImprovementQu
   }
   if (normalized.includes("git stash") || normalized.includes("stash")) {
     return { lessonKey: "git_stash_unsafe" };
+  }
+  if (
+    (normalized.includes("python") &&
+      (normalized.includes("not available") ||
+        normalized.includes("unavailable") ||
+        normalized.includes("without python") ||
+        normalized.includes("python command"))) ||
+    normalized.includes("tsx")
+  ) {
+    return { lessonKey: "python_command_unavailable" };
+  }
+  if (
+    normalized.includes("/tools/invoke") ||
+    normalized.includes("tools invoke") ||
+    (normalized.includes("gateway") && normalized.includes("runtime invocation"))
+  ) {
+    return { lessonKey: "gateway_tools_invoke_forbidden" };
   }
   return null;
 }

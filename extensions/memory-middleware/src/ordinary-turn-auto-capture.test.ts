@@ -1668,6 +1668,89 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
       }),
     );
   });
+
+  it("captures a bounded environment constraint as an improvement candidate", async () => {
+    const submitImprovementNote = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "improvement" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-improvement-2",
+      memoryObjectId: "memory-improvement-2",
+    }));
+    const inspectWorkflowImprovementLifecycle = vi.fn().mockResolvedValueOnce({
+      activeApprovedSubjectObjectIds: [],
+      pendingSubjectCandidateIds: [],
+    });
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-5",
+          sessionId: "session-uuid-5",
+        })),
+        submitLearning: vi.fn(async () => ({
+          accepted: false as const,
+          status: "failed" as const,
+          kind: "learning" as const,
+          reason: "unused in this test",
+        })),
+        submitCorrectionSuggestion: vi.fn(async () => ({
+          accepted: false as const,
+          status: "failed" as const,
+          kind: "correction" as const,
+          reason: "unused in this test",
+        })),
+        submitProcedureSuggestion: vi.fn(async () => ({
+          accepted: false as const,
+          status: "failed" as const,
+          kind: "procedure" as const,
+          reason: "unused in this test",
+        })),
+        submitImprovementNote,
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+        inspectWorkflowImprovementLifecycle,
+      },
+    });
+
+    const firstUpdate = {
+      sessionFile: "/root/.openclaw/agents/main/sessions/workflow-constraint.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: "python isn't available on this host, so use node instead.",
+        timestamp: Date.parse("2026-04-06T00:20:00Z"),
+      },
+    };
+    await handler(firstUpdate);
+
+    expect(submitImprovementNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "agent-uuid-5",
+        sessionId: "session-uuid-5",
+        content:
+          "Environment constraint: python command is not available in this environment; use node --input-type=module or tsx instead.",
+        metadata: expect.objectContaining({
+          autoCapture: expect.objectContaining({
+            captureClass: "workflow_environment_constraint",
+            template: "workflow_environment_constraint",
+            lessonKey: "python_command_unavailable",
+            toolKey: "python_runtime",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "workflow_improvement",
+            state: "pending_confirmation",
+          }),
+        }),
+      }),
+    );
+  });
 });
 
 describe("createOrdinaryTurnAutoCaptureController", () => {

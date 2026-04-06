@@ -213,6 +213,11 @@ approved live production boundary for its intended scope, with bounded
 tool-gotcha detection, candidate confirmation without manual review for
 supported repeated repo-operating lessons, approved-only guidance retrieval,
 and narrow production proof without broader automation enablement.
+Sixth user-experience-focused workflow-improvement slice completed on the
+approved live production boundary for its intended scope, with bounded
+environment-constraint detection, candidate confirmation without manual review
+for supported host and runtime constraints, approved-only guidance retrieval,
+and narrow production proof without broader automation enablement.
 
 ## Compact checkpoint
 
@@ -276,17 +281,21 @@ Current compact state:
     investigation asks
   - suggestion-first behavior guidance for nearby advice asks
   - weak ambiguous ignore instead of dead candidate backlog
-- first workflow-improvement UX slice is now live for its intended scope
-- supported workflow-improvement tool-gotcha subjects now include:
+- workflow-improvement UX slices are now live for their intended scope
+- supported workflow-improvement subjects now include:
   - `pnpm test -- <path-or-filter>` instead of raw Vitest
   - `scripts/committer "<msg>" <file...>` instead of manual
     `git add` + `git commit`
   - avoiding `git stash` in this multi-agent repo
+  - Python command unavailable on this host or environment
+  - gateway `POST /tools/invoke` forbidden in this environment
 - semantic workflow-improvement capture now supports:
   - repeated bounded repo-operating tool-gotcha statements
+  - repeated bounded host or runtime constraint statements
   - medium-confidence candidate confirmation without manual review
   - approved-only guidance retrieval for later repo-operating asks
-  - weak ambiguous ignore instead of dead candidate backlog
+  - weak ambiguous ignore instead of dead candidate backlog on the transcript
+    assist seam
   - no action-taking or silent plan mutation
 - latest semantic response-style proof timestamp:
   - `2026-04-05T16:38:19.403Z`
@@ -357,6 +366,27 @@ Current compact state:
   - `procedures +0`
   - `skill_candidates +0`
   - `background_jobs +0`
+- latest environment-constraint proof timestamp:
+  - `2026-04-06T00:59:05.632Z`
+- latest environment-constraint production proof artifacts:
+  - `projectId = fe109afb-fce1-44d6-b5df-78060f900968`
+  - `agentId = e5d69dc9-8821-4f1f-8ae0-68b7546660eb`
+  - `sessionId = 865f237a-0a64-41fc-ae92-8a5f97e8d595`
+  - `candidateId = 6e38707c-f018-446d-979c-7838c9ffe4c8`
+  - `candidateEventId = a483d7c8-3d74-4ad8-8b2c-7d0bdbcc1139`
+  - `approvedObjectId = 040d161c-7cf9-4ec0-8138-574d9677e9ee`
+  - `reviewId = bedb5d45-4b5f-4674-b405-98de96e06885`
+  - `cleanupReviewId = a383f9aa-9e07-497a-8f09-f6fdf6e4afa0`
+  - `rollbackTag = openclaw:pre-environment-constraint-20260406T005126Z`
+- latest environment-constraint production proof delta:
+  - `memory_events +1`
+  - `memory_objects +2`
+  - `memory_reviews +1`
+  - repeated confirming evidence caused `+0` additional writes
+  - transcript-seam ambiguous follow-up caused `+0` additional writes
+  - `procedures +0`
+  - `skill_candidates +0`
+  - `background_jobs +0`
 - isolated proof additionally proved:
   - transcript-seam semantic capture for all supported subjects
   - bullet candidate confirmation with later auto-promotion
@@ -421,6 +451,7 @@ Current compact state:
   - `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_BEHAVIOR_REPORT.md`
 - workflow-improvement production report now lives in:
   - `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_REPORT.md`
+  - `docs/memory-system/PRODUCTION_ENVIRONMENT_CONSTRAINT_UX_REPORT.md`
 - fresh proof delta:
   - `memory_events +1`
   - `memory_objects +1`
@@ -444,8 +475,7 @@ Current compact state:
   - `chief` captured an explicit "please remember" stable preference
   - both stayed within bounded candidate-only writes
 - current active slice:
-  - workflow-improvement / tool-gotcha UX v1 is now landed for its intended
-    scope
+  - environment-constraint UX v1 is now landed for its intended scope
 - still intentionally disabled:
   - self-improving capture in production
   - automatic Skill Vetter invocation

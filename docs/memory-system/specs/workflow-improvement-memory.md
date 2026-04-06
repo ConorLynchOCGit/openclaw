@@ -43,12 +43,15 @@ Initial bounded subfamilies:
 
 ## Bounded scope for first implementation
 
-Bound the first live slice to repeated repo-operating tool gotchas only:
+Bound the first live slices to repeated repo-operating tool gotchas and the
+first repeated environment constraints only:
 
 - use `pnpm test -- <path-or-filter>` instead of raw Vitest
 - use `scripts/committer "<msg>" <file...>` instead of manual
   `git add` + `git commit`
 - avoid `git stash` in this multi-agent repo
+- Python command unavailable on this host or environment
+- gateway `POST /tools/invoke` forbidden in this environment
 
 Candidate confirmation is allowed for this narrow slice.
 
@@ -119,6 +122,14 @@ becoming dead candidate clutter.
 
 - if the lesson is just a one-off failure with no durable implication, ignore
 - if the improvement is too vague, candidate-only at most
+
+Implementation clarification from the live environment-constraint slice:
+
+- weak ambiguity / no-write proof for the bounded environment-constraint
+  family is anchored to the transcript assist seam
+- direct manual `memory_candidate_submit` still remains a broader explicit
+  `improvement` ingress, so generic manual improvement notes are not the proof
+  surface for ambiguity-ignore in this family
 
 ## User repair / supersede / forgetting implications
 

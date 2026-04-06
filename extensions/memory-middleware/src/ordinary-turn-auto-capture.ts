@@ -55,8 +55,11 @@ import {
 } from "./workflow-improvement-lifecycle.js";
 import {
   detectWorkflowImprovementSemanticDecision,
+  type WorkflowImprovementCaptureClass,
   type WorkflowImprovementLessonKey,
+  type WorkflowImprovementReasonCode,
   type WorkflowImprovementSemanticConfidence,
+  type WorkflowImprovementTemplate,
   type WorkflowImprovementToolKey,
 } from "./workflow-improvement-semantic.js";
 
@@ -557,7 +560,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "project_fact_correction"
     | "explicit_recurring_procedure"
     | "recurring_procedure_correction"
-    | "workflow_tool_gotcha";
+    | "workflow_tool_gotcha"
+    | "workflow_environment_constraint";
   candidateKind: "learning" | "correction" | "procedure" | "improvement";
   reasonCode:
     | "explicit_preference_statement"
@@ -568,7 +572,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "explicit_project_fact_correction"
     | "explicit_recurring_procedure_statement"
     | "recurring_procedure_correction"
-    | "workflow_tool_gotcha_statement";
+    | "workflow_tool_gotcha_statement"
+    | "workflow_environment_constraint_statement";
   template:
     | "my_preferred_is"
     | "my_favorite_is"
@@ -579,7 +584,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "responses_numbered_steps"
     | "project_fact_named_scope"
     | "named_recurring_checklist"
-    | "workflow_tool_gotcha";
+    | "workflow_tool_gotcha"
+    | "workflow_environment_constraint";
   subject: string;
   value: string;
   normalizedSubject: string;
@@ -1491,10 +1497,10 @@ function toOrdinaryTurnRecurringProcedureMatch(
 }
 
 function toOrdinaryTurnWorkflowImprovementMatch(match: {
-  captureClass: "workflow_tool_gotcha";
+  captureClass: WorkflowImprovementCaptureClass;
   candidateKind: "improvement";
-  reasonCode: "workflow_tool_gotcha_statement";
-  template: "workflow_tool_gotcha";
+  reasonCode: WorkflowImprovementReasonCode;
+  template: WorkflowImprovementTemplate;
   lessonKey: WorkflowImprovementLessonKey;
   toolKey: WorkflowImprovementToolKey;
   subject: string;
@@ -2087,6 +2093,7 @@ function buildSubscriberCaptureMetadata(params: {
       metadata.subject_key = match.subjectKey;
       break;
     case "workflow_tool_gotcha":
+    case "workflow_environment_constraint":
       metadata.category = "workflow_improvement";
       metadata.source = "explicit_workflow_improvement";
       metadata.subject_key = match.subjectKey;

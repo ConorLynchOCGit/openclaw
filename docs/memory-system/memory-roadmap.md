@@ -779,13 +779,19 @@ First bounded live tranche:
   - using `scripts/committer "<msg>" <file...>` instead of manual
     `git add` + `git commit`
   - avoiding `git stash` in this multi-agent repo
+- repeated environment constraints are now live for:
+  - Python command unavailable on this host or environment
+  - gateway `POST /tools/invoke` forbidden in this environment
 - first-seen supported lessons enter pending confirmation rather than
   immediate approval
 - later confirming evidence can auto-promote an approved workflow lesson
 - later repo-operating asks can surface the approved lesson as bounded
   guidance only
+- weak ambiguous environment phrasing is now production-proven as a no-write
+  path on the transcript assist seam
 - report:
   - `/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_REPORT`
+  - `/memory-system/PRODUCTION_ENVIRONMENT_CONSTRAINT_UX_REPORT`
 
 Bound the broader phase to operational learnings such as:
 
@@ -818,8 +824,8 @@ Current phase note:
 - the first bounded workflow-improvement tranche is complete for its intended
   scope
 - approved workflow lessons currently remain guidance-only
-- broader workflow lessons, repeated API workarounds, and environment
-  constraints still remain future work inside this phase
+- broader workflow lessons and repeated API workarounds still remain future
+  work inside this phase
 
 Primary spec:
 

@@ -3056,6 +3056,127 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
+  it("promotes a medium-confidence environment-constraint candidate after later confirming evidence without manual review", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-16u-env-medium", {
+      kind: "improvement",
+      content: "python isn't available on this host, so use node instead.",
+      projectId: seeded.projectId,
+    });
+    const candidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const initialRow = await querySingleRow<{
+      review_state: string;
+      lesson_key: string | null;
+      lifecycle_state: string | null;
+      lifecycle_confidence: string | null;
+      capture_class: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'lessonKey' as lesson_key,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'confidence' as lifecycle_confidence,
+          metadata->'candidateMetadata'->'autoCapture'->>'captureClass' as capture_class
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [candidateId],
+    );
+
+    expect(initialRow).toEqual({
+      review_state: "candidate",
+      lesson_key: "python_command_unavailable",
+      lifecycle_state: "pending_confirmation",
+      lifecycle_confidence: "medium",
+      capture_class: "workflow_environment_constraint",
+    });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-16u-env-confirm", {
+      kind: "improvement",
+      content: "Use node --input-type=module or tsx here because python command is not available.",
+      projectId: seeded.projectId,
+    });
+
+    expect(confirmingSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "improvement",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const promotedMemoryObjectId = (confirmingSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const confirmedRow = await querySingleRow<{
+      candidate_review_state: string;
+      review_state: string;
+      object_count: string;
+      promotion_profile: string | null;
+      confirmation_state: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select review_state::text from memory_middleware.memory_objects where id = $1::uuid) as candidate_review_state,
+          (select review_state::text from memory_middleware.memory_objects where id = $2::uuid) as review_state,
+          (
+            select count(*)::text
+            from memory_middleware.memory_objects
+            where metadata->'candidateMetadata'->'autoCapture'->>'key' =
+              (
+                select metadata->'candidateMetadata'->'autoCapture'->>'key'
+                from memory_middleware.memory_objects
+                where id = $1::uuid
+              )
+          ) as object_count,
+          (select metadata->'promotionMetadata'->'autoPromotion'->>'profile'
+            from memory_middleware.memory_objects where id = $2::uuid) as promotion_profile,
+          (select metadata->'promotionMetadata'->'candidateConfirmation'->>'state'
+            from memory_middleware.memory_objects where id = $2::uuid) as confirmation_state
+      `,
+      [candidateId, promotedMemoryObjectId],
+    );
+
+    expect(confirmedRow).toEqual({
+      candidate_review_state: "candidate",
+      review_state: "approved",
+      object_count: "2",
+      promotion_profile: "workflow_improvement_confirmation_v1",
+      confirmation_state: "confirmed",
+    });
+  });
+
   it("auto-promotes an explicit recurring checklist into a validated procedure without manual review", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
@@ -3680,6 +3801,92 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
     }
     expect([vitestApprovedId, committerApprovedId]).toContain(records[0]?.id);
+  });
+
+  it("boosts the most relevant approved environment-constraint lesson in hybrid retrieval", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+
+    const pythonSubmit = await submitTool.execute("call-16wj-a", {
+      kind: "improvement",
+      content: "Use node --input-type=module or tsx here because python command is not available.",
+      projectId: seeded.projectId,
+    });
+    const pythonCandidateId = (pythonSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    await reviewTool.execute("call-16wj-b", {
+      candidateId: pythonCandidateId,
+      outcome: "accepted",
+    });
+    const pythonPromotion = await promoteTool.execute("call-16wj-c", {
+      candidateId: pythonCandidateId,
+    });
+    const pythonApprovedId = (pythonPromotion.details as { promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const gatewaySubmit = await submitTool.execute("call-16wj-d", {
+      kind: "improvement",
+      content:
+        "Use direct runtime invocation instead of gateway POST /tools/invoke in this environment.",
+      projectId: seeded.projectId,
+    });
+    const gatewayCandidateId = (gatewaySubmit.details as { memoryObjectId: string }).memoryObjectId;
+    await reviewTool.execute("call-16wj-e", {
+      candidateId: gatewayCandidateId,
+      outcome: "accepted",
+    });
+    await promoteTool.execute("call-16wj-f", {
+      candidateId: gatewayCandidateId,
+    });
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "python command not available use node tsx here",
+      scope: "approved_only",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+    });
+    const records = (
+      hybridSearch as {
+        accepted: true;
+        status: "ok";
+        scope: "approved_only";
+        records: Array<{
+          id: string;
+          score: number;
+          matchedFields: string[];
+        }>;
+      }
+    ).records;
+    expect(records.length).toBeGreaterThanOrEqual(1);
+    expect(records[0]?.id).toBe(pythonApprovedId);
+    expect(records[0]?.matchedFields).toContain("auto_capture_lesson_match");
   });
 
   it("rejects bounded memory promotion for accepted procedure candidates", async () => {

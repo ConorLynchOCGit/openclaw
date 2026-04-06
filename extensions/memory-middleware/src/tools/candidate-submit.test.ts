@@ -324,6 +324,37 @@ describe("memory candidate submit tool", () => {
     });
   });
 
+  it("normalizes bounded environment-constraint submissions into managed improvement metadata", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    await tool.execute("call-2c", {
+      kind: "improvement",
+      content: "python is not available here, so use node --input-type=module or tsx instead.",
+    });
+
+    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
+      kind: "improvement",
+      content:
+        "Environment constraint: python command is not available in this environment; use node --input-type=module or tsx instead.",
+      metadata: expect.objectContaining({
+        category: "workflow_improvement",
+        source: "explicit_workflow_improvement",
+        autoCapture: expect.objectContaining({
+          captureClass: "workflow_environment_constraint",
+          template: "workflow_environment_constraint",
+          lessonKey: "python_command_unavailable",
+          toolKey: "python_runtime",
+          guidanceMode: "guidance_only",
+        }),
+        candidateLifecycle: expect.objectContaining({
+          family: "workflow_improvement",
+          state: "pending_confirmation",
+        }),
+      }),
+    });
+  });
+
   it("auto-promotes explicit user preference submissions from the tool path", async () => {
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });

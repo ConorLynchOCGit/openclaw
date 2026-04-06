@@ -61,8 +61,46 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
     });
   });
 
+  it("captures the python-unavailable environment constraint", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision(
+        "python isn't available on this host, so use node --input-type=module or tsx instead.",
+      ),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        lessonKey: "python_command_unavailable",
+        toolKey: "python_runtime",
+        captureClass: "workflow_environment_constraint",
+      },
+    });
+  });
+
+  it("captures the gateway tools-invoke environment constraint", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision(
+        "Don't try POST /tools/invoke here; it is forbidden on this gateway, so use direct runtime invocation instead.",
+      ),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        lessonKey: "gateway_tools_invoke_forbidden",
+        toolKey: "gateway_tools_invoke",
+        captureClass: "workflow_environment_constraint",
+      },
+    });
+  });
+
   it("ignores a one-off tool complaint without durable guidance", () => {
     expect(detectWorkflowImprovementSemanticDecision("Vitest was slow today.")).toMatchObject({
+      action: "ignore",
+    });
+  });
+
+  it("ignores a vague environment complaint without a bounded constraint", () => {
+    expect(detectWorkflowImprovementSemanticDecision("This host is weird today.")).toMatchObject({
       action: "ignore",
     });
   });

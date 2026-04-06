@@ -473,8 +473,8 @@ For the exact proof ids and production evidence for this slice, use:
 
 ## Workflow-improvement UX workflow
 
-The fifth user-facing semantic memory slice is now live for a bounded
-tool-gotcha family only.
+The fifth and sixth user-facing semantic workflow-memory slices are now live
+for bounded tool-gotcha and environment-constraint families only.
 
 Supported first-slice workflow lessons:
 
@@ -482,11 +482,13 @@ Supported first-slice workflow lessons:
 - use `scripts/committer "<msg>" <file...>` instead of manual
   `git add` + `git commit`
 - avoid `git stash` in this multi-agent repo
+- Python command unavailable on this host or environment
+- gateway `POST /tools/invoke` forbidden in this environment
 
 Current live behavior:
 
 - bounded natural-language workflow-improvement detection is allowed only for
-  the supported repeated tool-gotcha subjects
+  the supported repeated tool-gotcha and environment-constraint subjects
 - first-seen supported workflow lessons enter a pending-confirmation
   lifecycle instead of immediate approval or a dead manual-review queue
 - later confirming evidence can auto-promote those pending candidates without
@@ -498,7 +500,7 @@ Current live behavior:
   - no silent plan mutation
   - no autonomous remediation
 - weak ambiguous complaints should be ignored instead of creating memory
-  trash
+  trash on the transcript assist seam
 
 Relevant surfaces:
 
@@ -518,6 +520,8 @@ Expected operator checks:
 
 - supported repeated tool-gotcha phrasing can create bounded improvement
   candidates without introducing freeform workflow memory
+- supported repeated environment-constraint phrasing can create bounded
+  improvement candidates without introducing freeform workflow memory
 - a supported workflow-improvement candidate can later show:
   - bounded pending-confirmation metadata
   - a later approved row with:
@@ -527,23 +531,28 @@ Expected operator checks:
   first through:
   - `auto_capture_lesson_match`
 - repeated confirming evidence should not create duplicate durable writes
-- weak ambiguous nearby text should not create additional durable writes
+- weak ambiguous nearby environment text should not create additional durable
+  writes on the transcript assist seam
 - approved-only retrieval remains the only user-visible read source for this
   slice
 
 Current approved boundary note:
 
-- this slice is limited to the supported repeated tool-gotcha family only
+- this slice is limited to the supported repeated tool-gotcha and
+  environment-constraint families only
 - broader workflow-improvement memory is not live yet
-- repeated environment-constraint memory is not live yet
 - repeated API failure workaround memory is not live yet
 - repair or forgetting is not live yet for this family
 - candidates should not shape user-visible behavior before approval in this
   slice
+- direct manual `memory_candidate_submit` remains a broader explicit
+  `improvement` ingress, so ambiguity-ignore checks for this family should use
+  the transcript assist seam rather than generic manual note submission
 
 For the exact proof ids and production evidence for this slice, use:
 
 - `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_REPORT.md`
+- `docs/memory-system/PRODUCTION_ENVIRONMENT_CONSTRAINT_UX_REPORT.md`
 
 ## Background-job inspection
 
