@@ -41,7 +41,8 @@ The goal is to keep the right gates at the right time:
 Use while code is still moving.
 
 - Run nearby targeted tests only.
-- Run `pnpm check` when it is cheap and useful for the touched surface.
+- Run `pnpm check:fast` when it is cheap and useful for the touched surface.
+- Add `pnpm check:types` only when the change touches runtime or typed code.
 - Do not pay for broad sweeps, builds, or proof yet unless the change is hard
   to iterate without them.
 
@@ -54,7 +55,11 @@ Run this once the code is stable enough for real proof.
 - Run the strongest targeted tests for the touched surface.
 - Add a broader owned-surface sweep only when the change crosses a shared
   boundary or the nearby tests are not enough.
-- Run `pnpm check`.
+- Run the smallest honest validation tier:
+  - `pnpm check:fast` for docs/process-only and similarly narrow non-runtime
+    work
+  - `pnpm check:fast && pnpm check:types` or `pnpm check` for real runtime or
+    typed-code changes
 - Run `pnpm build` only if the touched surface can affect build output,
   packaging, lazy-loading or module boundaries, or a published runtime.
 
@@ -114,7 +119,8 @@ Always run:
 Also run any gate that was invalidated after proof. Typical examples:
 
 - rerun targeted tests if code changed after proof
-- rerun `pnpm check` if code or typed script logic changed after proof
+- rerun the previously required validation tier if code or typed script logic
+  changed after proof
 - rerun `pnpm build` if build-sensitive code changed after proof
 
 If the only post-proof edits were docs or proof notes, do not repeat the same
@@ -173,24 +179,28 @@ when to pay them.
 
 - No isolated proof
 - No production proof
+- Default validation tier: `pnpm check:fast`
 - No `pnpm build` unless generated or build-sensitive artifacts changed
 - Run only the smallest relevant validation plus `git diff --check`
 
 ### Test only
 
 - Run the touched tests
-- Add `pnpm check` if typed helper or script surfaces changed
+- Add `pnpm check:fast` by default
+- Add `pnpm check:types` if typed helper or script surfaces changed
 - No production proof unless the test change is paired with a real runtime fix
 
 ### Runtime change without production rollout
 
 - Pre-proof gate is required
+- Include `pnpm check:types`
 - Isolated proof is recommended when the behavior is stateful or risky
 - Production proof is not required if the slice is not claiming live rollout
 
 ### Live production behavior change
 
 - Pre-proof gate is required
+- Include full `pnpm check`
 - Isolated proof is required
 - Pre-production gate is required
 - Production proof is required
@@ -201,8 +211,9 @@ when to pay them.
 After the code is stable enough for proof:
 
 - nearby targeted tests can run in parallel with docs drafting
-- `pnpm check` and `pnpm build` can run in parallel when the machine has the
-  headroom and the two commands do not depend on each other
+- `pnpm check:fast` and docs drafting can run in parallel
+- `pnpm check:types` and `pnpm build` can run in parallel when the machine has
+  the headroom and the two commands do not depend on each other
 - proof-environment health checks can run in parallel with rollback-reference
   capture
 
@@ -232,7 +243,8 @@ For a typical bounded production slice:
 2. Run pre-proof gate:
    - targeted tests
    - broader owned-surface sweep only if needed
-   - `pnpm check`
+   - `pnpm check:fast`
+   - `pnpm check:types` if required for the change class
    - `pnpm build` if required
 3. Run isolated proof.
 4. Capture rollback reference and pre-proof health.
@@ -245,3 +257,24 @@ For a typical bounded production slice:
 10. Verify upstream sync and clean worktree.
 
 That is the default repo workflow unless a stricter surface rule overrides it.
+
+## Validation tier reference
+
+- `pnpm check:fast`
+  - cheap repo hygiene and lint checks
+  - default for docs/process-only work and most local iteration
+- `pnpm check:types`
+  - explicit type-check tier
+  - currently runs `pnpm tsgo`
+  - required for real runtime or typed-code changes
+- `pnpm check`
+  - full repo check
+  - currently runs `pnpm check:fast && pnpm check:types`
+  - normal full landing bar for real code changes
+
+Current VPS caveat:
+
+- `pnpm check:types` can still be the slowest or least stable tier on this
+  host.
+- That caveat justifies the tier split.
+- It does not justify skipping the type tier for real code changes.

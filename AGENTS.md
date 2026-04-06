@@ -122,16 +122,17 @@
 - Node remains supported for running built output (`dist/*`) and production installs.
 - Mac packaging (dev): `scripts/package-mac-app.sh` defaults to current arch.
 - Type-check/build: `pnpm build`
-- TypeScript checks: `pnpm tsgo`
-- Lint/format: `pnpm check`
+- Fast repo checks: `pnpm check:fast`
+- TypeScript checks: `pnpm check:types` (currently `pnpm tsgo`)
+- Full repo check: `pnpm check`
 - Format check: `pnpm format` (oxfmt --check)
 - Format fix: `pnpm format:fix` (oxfmt --write)
 - Terminology:
   - "gate" means a verification command or command set that must be green for the decision you are making.
-  - A local dev gate is the fast default loop, usually `pnpm check` plus any scoped test you actually need.
+  - A local dev gate is the fast default loop, usually `pnpm check:fast` plus any scoped test you actually need.
   - A landing gate is the broader bar before pushing `main`, usually `pnpm check`, `pnpm test`, and `pnpm build` when the touched surface can affect build output, packaging, lazy-loading/module boundaries, or published surfaces.
   - A CI gate is whatever the relevant workflow enforces for that lane (for example `check`, `check-additional`, `build-smoke`, or release validation).
-- Local dev gate: prefer `pnpm check` for the normal edit loop. It keeps the repo-architecture policy guards out of the default local loop.
+- Local dev gate: prefer `pnpm check:fast` for the normal edit loop. It keeps the common repo hygiene/lint checks cheap while leaving `pnpm check:types` explicit.
 - CI architecture gate: `check-additional` enforces architecture and boundary policy guards that are intentionally kept out of the default local loop.
 - Formatting gate: the pre-commit hook runs `pnpm format` before `pnpm check`. If you want a formatting-only preflight locally, run `pnpm format` explicitly.
 - If you need a fast commit loop, `FAST_COMMIT=1 git commit ...` skips the hook’s repo-wide `pnpm format` and `pnpm check`; use that only when you are deliberately covering the touched surface some other way.
@@ -155,6 +156,8 @@
   - do not rerun the same expensive gate after proof unless a later code change invalidated it
   - commit after required proof and final docs/evidence by default; push only after the required proof and pre-landing gate are complete
   - `FAST_COMMIT=1` is appropriate only when equivalent gates already ran on the same tree and post-proof edits did not invalidate them
+  - `pnpm check:fast` is the default gate for docs/process-only work and most local iteration
+  - add `pnpm check:types` when the change touches runtime or typed code, and use full `pnpm check` as the normal full landing bar for real code changes
 
 ## Coding Style & Naming Conventions
 

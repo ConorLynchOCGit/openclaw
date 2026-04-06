@@ -33,7 +33,8 @@ title: "Tests"
 
 For local PR land/gate checks, run:
 
-- `pnpm check`
+- `pnpm check:fast`
+- `pnpm check:types` for real runtime or typed-code changes
 - `pnpm build`
 - `pnpm test`
 - `pnpm check:docs`

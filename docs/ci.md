@@ -17,7 +17,7 @@ The CI runs on every push to `main` and every pull request. It uses smart scopin
 | `preflight`       | Docs scope, change scope, key scan, workflow audit, prod dependency audit | Always; node-based audit only on non-doc changes |
 | `docs-scope`      | Detect docs-only changes                                                  | Always                                           |
 | `changed-scope`   | Detect which areas changed (node/macos/android/windows)                   | Non-doc changes                                  |
-| `check`           | TypeScript types, lint, format                                            | Non-docs, node changes                           |
+| `check`           | Full repo check (`check:fast` + `check:types`) plus strict TS smoke       | Non-docs, node changes                           |
 | `check-docs`      | Markdown lint + broken link check                                         | Docs changed                                     |
 | `secrets`         | Detect leaked secrets                                                     | Always                                           |
 | `build-artifacts` | Build dist once, share with `release-check`                               | Pushes to `main`, node changes                   |
@@ -50,7 +50,9 @@ The same shared scope module also drives the separate `install-smoke` workflow t
 ## Local Equivalents
 
 ```bash
-pnpm check          # types + lint + format
+pnpm check:fast     # cheap repo hygiene + lint
+pnpm check:types    # explicit type-check tier (tsgo)
+pnpm check          # full repo check
 pnpm test           # vitest tests
 pnpm check:docs     # docs format + lint + broken links
 pnpm release:check  # validate npm pack

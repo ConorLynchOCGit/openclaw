@@ -26,10 +26,16 @@ production proof, commit, push, and closeout, use
 
 Most days:
 
-- Default local loop: `pnpm check` plus the strongest nearby targeted tests
+- Default local loop: `pnpm check:fast` plus the strongest nearby targeted tests
 - Use the smallest honest landing gate for the touched surface rather than
   defaulting every push to `pnpm build && pnpm check && pnpm test`
 - Faster local full-suite run on a roomy machine: `pnpm test:max`
+
+Validation tiers:
+
+- `pnpm check:fast`: cheap repo hygiene + lint checks
+- `pnpm check:types`: explicit TypeScript type-check tier (`pnpm tsgo`)
+- `pnpm check`: full repo check (`check:fast` + `check:types`)
 
 When you touch tests or want extra confidence:
 
@@ -40,8 +46,18 @@ When the slice changes runtime behavior or production posture:
 
 - Follow [Slice Landing Workflow](/help/slice-workflow) for isolated proof,
   production proof, commit timing, and push timing
+- Add `pnpm check:types` for real runtime or typed-code changes
 - Run `pnpm build` only when the change is build-sensitive or published-surface
   sensitive
+
+Host note:
+
+- On the current live VPS, `pnpm check:types` may still be the slowest or least
+  stable part of validation because it runs `pnpm tsgo`.
+- That is a host/runtime caveat, not a reason to skip type checks for real code
+  changes.
+- For docs/process-only work, use `pnpm check:fast` instead of paying for the
+  type tier by default.
 
 When debugging real providers/models (requires real creds):
 
