@@ -126,6 +126,7 @@ Already landed:
 
 - shared memory runtime bootstrap helper
 - repo-owned memory proof runner v1
+- enforced clean-tree landing assertion
 
 Proof runner v1 is intentionally bounded:
 
@@ -150,7 +151,15 @@ What remains manual after proof runner v1:
 - writing the final human proof report
 - any extra evidence gathering beyond ids, matched fields, and health snapshots
 
+Clean-landing assertion v1 is intentionally narrow:
+
+- `scripts/committer` verifies the requested landing paths are clean after the
+  commit it creates
+- repo push helper paths verify the full landing tree is clean after push
+- repo push helper paths verify local `HEAD` still matches the pushed upstream
+  ref after push
+- broader git policy work remains deferred
+
 Remaining order:
 
-1. enforced clean-tree landing assertion
-2. Docker health/readiness alignment
+1. Docker health/readiness alignment

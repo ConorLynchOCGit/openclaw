@@ -18,6 +18,31 @@ resolve_head_push_url() {
   return 1
 }
 
+assert_clean_landing_worktree() {
+  local dirty
+  dirty=$(git status --short --untracked-files=all || true)
+  if [ -n "$dirty" ]; then
+    echo "Landing verification failed: worktree/index is not clean after landing." >&2
+    echo "Remaining changes:" >&2
+    printf '%s\n' "$dirty" >&2
+    echo "Clean or commit the remaining changes before closeout." >&2
+    return 1
+  fi
+}
+
+assert_local_head_matches_expected_sha() {
+  local expected_sha="$1"
+  local actual_sha
+  actual_sha=$(git rev-parse HEAD)
+  if [ "$actual_sha" != "$expected_sha" ]; then
+    echo "Landing verification failed: local HEAD does not match the pushed upstream ref." >&2
+    echo "expected=$expected_sha" >&2
+    echo "actual=$actual_sha" >&2
+    echo "Refresh the branch or rerun the landing flow before closeout." >&2
+    return 1
+  fi
+}
+
 # Push to a fork PR branch via GitHub GraphQL createCommitOnBranch.
 # This uses the same permission model as the GitHub web editor, bypassing
 # the git-protocol 403 that occurs even when maintainer_can_modify is true.
@@ -288,9 +313,11 @@ push_prep_head_to_pr_branch() {
     exit 1
   }
   git branch -D "pr-$pr-verify" 2>/dev/null || true
+  assert_local_head_matches_expected_sha "$pr_head_sha_after" || exit 1
   cat > "$result_env_path" <<EOF_ENV
 PUSH_PREP_HEAD_SHA=$prep_head_sha
 PUSHED_FROM_SHA=$pushed_from_sha
 PR_HEAD_SHA_AFTER_PUSH=$pr_head_sha_after
 EOF_ENV
+  assert_clean_landing_worktree || exit 1
 }

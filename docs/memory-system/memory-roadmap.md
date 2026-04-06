@@ -261,8 +261,8 @@ Delivery enablement pause:
 - landed so far in this pause:
   - shared memory runtime bootstrap helper
   - repo-owned memory proof runner v1
-- remaining order before user-facing slices resume:
   - enforced clean-tree landing assertion
+- remaining order before user-facing slices resume:
   - Docker health/readiness alignment
 - primary spec:
   - `/memory-system/specs/delivery-enablements`

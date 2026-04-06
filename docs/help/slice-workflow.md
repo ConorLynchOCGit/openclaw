@@ -260,6 +260,16 @@ For a typical bounded production slice:
 
 That is the default repo workflow unless a stricter surface rule overrides it.
 
+The closeout check is now partially enforced by helper paths:
+
+- `scripts/committer` fails if the requested landing paths are still dirty
+  after the commit it just created.
+- repo push helper paths fail if the worktree is still dirty after landing or
+  if local `HEAD` no longer matches the pushed upstream ref.
+- The rule is still intentionally narrow:
+  - commit-only flows verify the requested landing surface
+  - push flows verify the full landing tree plus upstream sync
+
 ## Validation tier reference
 
 - `pnpm check:fast`

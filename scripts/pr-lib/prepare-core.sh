@@ -171,6 +171,7 @@ prepare_push() {
 - Gate mode: ${GATES_MODE:-unknown}.
 - Verified PR head SHA matches local prep HEAD.
 - Verified PR head contains origin/main.
+- Verified post-push clean landing state.
 EOF_PREP
 
   cat > .local/prep.env <<EOF_ENV
@@ -242,6 +243,7 @@ prepare_sync_head() {
 - Rebased onto origin/main: $rebased.
 - Verified PR head SHA matches local prep HEAD.
 - Verified PR head contains origin/main.
+- Verified post-push clean landing state.
 - Prepare gates reran automatically when the sync rebase changed the prep head.
 EOF_PREP
 

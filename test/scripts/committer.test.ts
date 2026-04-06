@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -114,5 +114,23 @@ describe("scripts/committer", () => {
 
     expect(committedPaths(repo)).toEqual(["CHANGELOG.md"]);
     expect(git(repo, "status", "--short")).toContain("M unrelated.ts");
+  });
+
+  it("fails when the requested landing surface is still dirty after commit", () => {
+    const repo = createRepo();
+    writeRepoFile(repo, "tracked.txt", "before\n");
+    git(repo, "add", "tracked.txt");
+    git(repo, "commit", "-qm", "seed tracked");
+
+    writeRepoFile(repo, "tracked.txt", "during commit\n");
+    const hookPath = path.join(repo, ".git", "hooks", "post-commit");
+    writeFileSync(hookPath, "#!/usr/bin/env bash\nprintf 'after commit\\n' > tracked.txt\n");
+    chmodSync(hookPath, 0o755);
+
+    expect(() => commitWithHelper(repo, "test: dirty after commit", "tracked.txt")).toThrow(
+      /requested paths are still dirty after commit/,
+    );
+    expect(git(repo, "log", "-1", "--pretty=%s")).toBe("test: dirty after commit");
+    expect(git(repo, "status", "--short")).toContain("M tracked.txt");
   });
 });

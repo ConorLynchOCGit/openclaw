@@ -255,6 +255,10 @@ Second delivery enablement slice completed with a repo-owned memory proof
 runner v1 that reuses the shared bootstrap helper, runs bounded capture or
 retrieval proof plans, and emits structured JSON with ids, matched fields, and
 gateway health snapshots for isolated and production-style rehearsals.
+Third delivery enablement slice completed with a repo-global clean-landing
+assertion that now fails `scripts/committer` when the requested landing paths
+stay dirty after commit and fails push helper paths when the post-push tree is
+dirty or local `HEAD` no longer matches the pushed upstream ref.
 
 ## Compact checkpoint
 

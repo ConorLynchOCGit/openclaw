@@ -181,6 +181,18 @@ for file in "${files[@]}"; do
   fi
 done
 
+assert_scoped_paths_clean_after_commit() {
+  local dirty
+  dirty=$(git status --short --untracked-files=all -- "${files[@]}" || true)
+  if [ -n "$dirty" ]; then
+    printf 'Landing verification failed: requested paths are still dirty after commit.\n' >&2
+    printf 'Commit was created, but these paths still have staged/worktree drift:\n' >&2
+    printf '%s\n' "$dirty" >&2
+    printf 'Clean or include the remaining changes before closeout.\n' >&2
+    exit 1
+  fi
+}
+
 run_git_with_lock_retry "unstaging files" git restore --staged :/
 run_git_with_lock_retry "staging files" git add --force -- "${files[@]}"
 
@@ -197,5 +209,7 @@ fi
 if [ "$committed" = false ]; then
   exit 1
 fi
+
+assert_scoped_paths_clean_after_commit
 
 printf 'Committed "%s" with %d files\n' "$commit_message" "${#files[@]}"

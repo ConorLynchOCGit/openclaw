@@ -4,28 +4,24 @@
 
 Pre-feature delivery enablement tranche v1
 
-Second bounded slice: repo-owned memory proof runner v1
+Third bounded slice: enforced clean-tree landing assertion
 
 ## Objective
 
-Pause user-facing memory expansion long enough to replace bespoke memory proof
-setup with one bounded repo-owned proof entrypoint before the next feature
-slice.
+Pause user-facing memory expansion long enough to tighten landing hygiene with
+one repo-global closeout assertion before the final readiness-alignment slice.
 
 This slice is about:
 
 - keeping the pre-feature delivery enablement tranche explicit in the memory
   roadmap and spec pack
-- landing one repo-owned memory proof runner that:
-  - loads proof or production config and env explicitly
-  - uses the shared runtime bootstrap helper
-  - runs bounded capture, review, promotion, procedure-validation, and hybrid
-    retrieval proof steps
-  - emits structured JSON with ids, matched fields, and health snapshots
-- proving the new runner with:
-  - one isolated mutating rehearsal
-  - one narrow production retrieval-style rehearsal
-- documenting the new proof path in the memory operator runbook
+- landing one repo-global clean-landing assertion that:
+  - fails if `scripts/committer` leaves the requested landing surface dirty
+  - fails if push helper paths leave the full landing tree dirty after push
+  - fails if a push helper path ends with local `HEAD` out of sync with the
+    pushed upstream ref
+- proving the new assertion with targeted helper validation
+- documenting the enforced closeout rule in the repo workflow docs
 
 ## Required work
 
@@ -38,17 +34,15 @@ This slice is about:
    - repo-owned memory proof runner
    - enforced clean-tree landing assertion
    - Docker health/readiness alignment
-3. Land the second slice now:
-   - repo-owned memory proof runner v1
-4. Reuse the shared bootstrap helper instead of duplicating secret/provider
-   bootstrap logic.
-5. Update the canonical memory docs to reflect the landed proof runner and the
-   remaining enablement order.
+3. Land the third slice now:
+   - enforced clean-tree landing assertion
+4. Keep the rule repo-global rather than memory-local.
+5. Update the canonical memory docs to reflect the landed assertion and the
+   final remaining enablement step.
 
 ## Out of scope
 
-- Docker health/readiness alignment
-- clean-tree landing assertion implementation
+- Docker health/readiness alignment implementation
 - any new user-facing memory family
 - production pairing/auth changes
 - broad release-framework work
@@ -58,12 +52,12 @@ This slice is about:
 
 - the memory roadmap and spec pack still reflect the delivery enablement
   tranche accurately
-- one repo-owned memory proof runner exists under the memory stack
-- the proof runner reuses the shared runtime bootstrap helper
-- the proof runner supports bounded isolated and production-style proof plans
-- the proof runner emits structured JSON with ids, matched fields, and health
-  snapshots
-- the operator runbook now documents the proof-runner path accurately
+- one enforced clean-landing assertion exists in the repo-global helper path
+- commit-only helper usage now fails when the requested landing surface is
+  still dirty after commit
+- push helper usage now fails when the worktree is dirty after push or local
+  `HEAD` no longer matches the pushed upstream ref
+- the repo workflow docs now document the enforced closeout rule accurately
 
 ## Notes
 
@@ -72,5 +66,4 @@ remembered-behavior family.
 
 The currently recommended remaining order after this slice is:
 
-1. enforced clean-tree landing assertion
-2. Docker health/readiness alignment
+1. Docker health/readiness alignment

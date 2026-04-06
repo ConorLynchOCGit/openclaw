@@ -156,6 +156,8 @@
   - do not rerun the same expensive gate after proof unless a later code change invalidated it
   - commit after required proof and final docs/evidence by default; push only after the required proof and pre-landing gate are complete
   - `FAST_COMMIT=1` is appropriate only when equivalent gates already ran on the same tree and post-proof edits did not invalidate them
+  - `scripts/committer` now fails if the requested landing paths are still dirty after the commit it creates
+  - repo push helper paths now fail if the full landing tree is still dirty after push or if local `HEAD` no longer matches the pushed upstream ref
   - `pnpm check:fast` is the default gate for docs/process-only work and most local iteration
   - add `pnpm check:types` when the change touches runtime or typed code, and use full `pnpm check` as the normal full landing bar for real code changes
   - maintainer and PR helper paths should treat docs/changelog-only changes the same way: `pnpm check:fast`, no `pnpm build`, and no full-suite `pnpm test`
