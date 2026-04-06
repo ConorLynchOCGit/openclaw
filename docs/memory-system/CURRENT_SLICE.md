@@ -2,58 +2,61 @@
 
 ## Active slice
 
-Environment-constraint UX v1
+Semantic retrieval routing v1
 
 ## Objective
 
-Land the first bounded environment-constraint memory slice so repeated host
-and runtime constraints feel materially useful later without broadening into
-autonomous remediation, noisy freeform note capture, or dead candidate
-backlog.
+Land the first real working-context semantic retrieval slice so later-turn
+memory use improves for the safest nearby conceptual asks without turning the
+system into a generic embedding-first memory retriever.
 
 This slice is about:
 
-- preserving the already-landed response-style, project-memory, and
-  recurring-procedure families
-- landing one bounded repeated environment-constraint family inside workflow
-  memory
-- repeated environment constraints entering candidate confirmation instead of
-  dead manual backlog
-- later repo-operating asks surfacing approved environment constraints as
-  bounded guidance
-- preserving guidance-only behavior with no action-taking or silent plan
-  mutation
+- preserving the already-landed response-style, project-memory,
+  recurring-procedure, and workflow-improvement families
+- keeping `memory_object_search_hybrid` as the normal default retrieval path
+- adding the first bounded semantic fallback only where the routing spec says
+  it is safe
+- improving nearby recurring-procedure asks when hybrid lexical recall is too
+  weak
+- preserving exact typed wins for clear checklist asks
+- preserving validated-only and suggestion-first posture
+- preserving candidate exclusion and explainable matched-field observability
 - isolated proof plus narrow production proof
 - updating the canonical memory docs to reflect what is now live
 
 ## Required work
 
-1. Land one bounded workflow-improvement subject family:
-   - repeated environment constraints for:
-     - Python command unavailable on this host or environment
-     - gateway `POST /tools/invoke` forbidden in this environment
+1. Land one bounded semantic-retrieval routing subject family:
+   - nearby recurring-procedure asks only
 2. Keep the locked v1 posture concrete:
-   - first-seen supported lessons do not become approved memory by default
-   - later confirming evidence can auto-promote
-   - approved memories surface as guidance only
-   - no action-taking or silent plan mutation
-3. Preserve the already-landed behavior of the other memory families.
-4. Run isolated proof and narrow production proof.
-5. Update:
+   - hybrid retrieval remains the default
+   - clear checklist asks remain hybrid-first
+   - semantic routing is additive, family-scoped, and validated-only
+   - no candidate semantic retrieval
+   - no action-taking or silent background procedure use
+3. Add only the smallest bounded embedding-generation seam required for this
+   slice:
+   - validated procedure source memory embeddings only
+4. Preserve the already-landed behavior of the other memory families.
+5. Run isolated proof and narrow production proof.
+6. Update:
 
 - `docs/memory-system/STATUS.md`
 - `docs/memory-system/memory-roadmap.md`
 - `docs/memory-system/feature-inventory.md`
 - `docs/memory-system/OPERATIONAL_RUNBOOK.md`
 - `docs/memory-system/CURRENT_SLICE.md`
-- `docs/memory-system/specs/workflow-improvement-memory.md`
-- `docs/memory-system/PRODUCTION_ENVIRONMENT_CONSTRAINT_UX_REPORT.md`
+- `docs/memory-system/specs/semantic-retrieval-routing.md`
+- `docs/memory-system/specs/behavior-application.md`
+- `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_REPORT.md`
 
 ## Out of scope
 
-- broader workflow-improvement memory beyond the supported environment
-  constraints and tool gotchas
+- broader semantic routing across workflow-improvement or environment
+  constraints
 - repeated API failure workaround memory
+- generic embedding-first working-context retrieval
 - autonomous remediation or direct operational execution
 - silent background application of stored procedures
 - unmet-need planning
@@ -65,13 +68,13 @@ This slice is about:
 
 ## Acceptance criteria
 
-- repeated supported environment constraints can enter pending confirmation
-- later confirming evidence can auto-promote them without manual review
-- later repo-operating asks can retrieve the right approved environment
-  constraint as bounded guidance
-- weak ambiguous environment phrasing does not become durable write noise on
-  the transcript assist seam
-- duplicate suppression remains intact
+- a nearby conceptual recurring-procedure ask that hybrid alone misses can be
+  improved by semantic fallback
+- a clear checklist ask still keeps the exact typed validated procedure on top
+- validated procedures remain hidden when the scope does not explicitly allow
+  them
+- candidate semantic retrieval remains disabled
+- matched-field observability makes the routing explainable
 - no action-taking or automation is introduced
 - isolated proof and narrow production proof both exist
 - canonical docs reflect the live boundary accurately

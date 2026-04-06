@@ -49,6 +49,11 @@ function createManagerMock(params: {
 }) {
   return {
     search: vi.fn(async () => params.searchResults ?? []),
+    embedSemanticQuery: vi.fn(async () => ({
+      embedding: [0.2, 0.3, 0.4],
+      embeddingModel: params.model,
+      embeddingVersion: `${params.provider}:${params.model}`,
+    })),
     readFile: vi.fn(async () => ({ text: "", path: "MEMORY.md" })),
     status: vi.fn(() =>
       createManagerStatus({
@@ -120,7 +125,11 @@ vi.mock("./manager-runtime.js", () => ({
 }));
 
 import { QmdMemoryManager } from "./qmd-manager.js";
-import { closeAllMemorySearchManagers, getMemorySearchManager } from "./search-manager.js";
+import {
+  closeAllMemorySearchManagers,
+  embedMemorySearchQuery,
+  getMemorySearchManager,
+} from "./search-manager.js";
 const createQmdManagerMock = vi.mocked(QmdMemoryManager.create);
 
 type SearchManagerResult = Awaited<ReturnType<typeof getMemorySearchManager>>;
@@ -158,6 +167,7 @@ beforeEach(async () => {
   mockPrimary.probeVectorAvailability.mockClear();
   mockPrimary.close.mockClear();
   fallbackSearch.mockClear();
+  fallbackManager.embedSemanticQuery.mockClear();
   fallbackManager.readFile.mockClear();
   fallbackManager.status.mockClear();
   fallbackManager.sync.mockClear();
@@ -218,6 +228,30 @@ describe("getMemorySearchManager caching", () => {
     expect(createQmdManagerMock).not.toHaveBeenCalled();
     expect(mockMemoryIndexGet).toHaveBeenCalled();
     expect(searchResults).toHaveLength(1);
+  });
+
+  it("embeds semantic queries through the builtin runtime seam", async () => {
+    const cfg = createQmdCfg("embed-agent");
+
+    const result = await embedMemorySearchQuery({
+      cfg,
+      agentId: "embed-agent",
+      text: "how should I carefully put this live",
+    });
+
+    expect(mockMemoryIndexGet).toHaveBeenCalledWith({
+      cfg,
+      agentId: "embed-agent",
+      purpose: "default",
+    });
+    expect(fallbackManager.embedSemanticQuery).toHaveBeenCalledWith(
+      "how should I carefully put this live",
+    );
+    expect(result).toEqual({
+      embedding: [0.2, 0.3, 0.4],
+      embeddingModel: "text-embedding-3-small",
+      embeddingVersion: "openai:text-embedding-3-small",
+    });
   });
 
   it("probes qmd availability from the agent workspace", async () => {

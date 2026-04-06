@@ -44,6 +44,8 @@ Bounded live retrieval surface completed for approved memory objects,
 explicitly requested candidate objects, and validated procedures.
 Bounded hybrid retrieval upgrade completed for ranked text search over
 approved memory objects and explicitly requested validated procedures.
+First family-aware semantic retrieval routing slice completed for nearby
+recurring-procedure asks under bounded validated-procedure-only fallback.
 Controlled validation completed for the drafted security and retrieval
 substrate on top of schema-v1 in a disposable local Postgres lane.
 Runtime adoption completed for the validated retrieval substrate in the live
@@ -1702,10 +1704,12 @@ Fast re-entry reading order:
 32. The security and retrieval migration now validates in a disposable local
     lane, but production execution, policy-aware RPC exposure, and runtime use
     of the drafted substrate are still not implemented.
-33. The first bounded semantic retrieval prototype now exists, but it depends
-    on caller-supplied embeddings, searches approved memory by default, only
-    includes validated procedures when explicitly requested, and does not yet
-    include candidate semantic retrieval or any embedding-generation pipeline.
+33. The first bounded family-aware semantic retrieval slice now exists as a
+    live working-context path for nearby recurring-procedure asks, but it is
+    still limited to validated procedures, keeps hybrid retrieval as the
+    default baseline, exposes no candidate semantic retrieval, and does not
+    broaden into generic embedding-first search across the other memory
+    families.
 34. The first bounded installed-skill record surface now exists, but it only
     records manual installation outcomes as internal middleware artifacts and
     does not perform installation, mutate runtime skill state, or trigger

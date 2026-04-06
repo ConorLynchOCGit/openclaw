@@ -426,6 +426,30 @@ export class MemoryIndexManager extends MemoryManagerEmbeddingOps implements Mem
     );
   }
 
+  async embedSemanticQuery(text: string): Promise<{
+    embedding: number[];
+    embeddingModel: string;
+    embeddingVersion: string;
+  } | null> {
+    const cleaned = text.trim();
+    if (!cleaned) {
+      return null;
+    }
+    await this.ensureProviderInitialized();
+    if (!this.provider) {
+      return null;
+    }
+    const embedding = await this.embedQueryWithTimeout(cleaned);
+    if (embedding.length === 0 || embedding.every((value) => value === 0)) {
+      return null;
+    }
+    return {
+      embedding,
+      embeddingModel: this.provider.model,
+      embeddingVersion: this.providerKey,
+    };
+  }
+
   private selectScoredResults<T extends MemorySearchResult & { score: number }>(
     results: T[],
     maxResults: number,

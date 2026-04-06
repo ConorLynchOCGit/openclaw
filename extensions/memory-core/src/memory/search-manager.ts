@@ -42,6 +42,12 @@ export type MemorySearchManagerResult = {
   error?: string;
 };
 
+export type MemorySearchQueryEmbeddingResult = {
+  embedding: number[];
+  embeddingModel: string;
+  embeddingVersion: string;
+};
+
 export async function getMemorySearchManager(params: {
   cfg: OpenClawConfig;
   agentId: string;
@@ -118,6 +124,27 @@ export async function getMemorySearchManager(params: {
     const message = err instanceof Error ? err.message : String(err);
     return { manager: null, error: message };
   }
+}
+
+export async function embedMemorySearchQuery(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+  text: string;
+}): Promise<MemorySearchQueryEmbeddingResult | null> {
+  const cleaned = params.text.trim();
+  if (!cleaned) {
+    return null;
+  }
+  const { MemoryIndexManager } = await loadManagerRuntime();
+  const manager = await MemoryIndexManager.get({
+    cfg: params.cfg,
+    agentId: params.agentId,
+    purpose: "default",
+  });
+  if (!manager) {
+    return null;
+  }
+  return await manager.embedSemanticQuery(cleaned);
 }
 
 class BorrowedMemoryManager implements MemorySearchManager {

@@ -283,6 +283,7 @@ export interface PluginSdkFacadeTypeMap {
     };
     types: {
       BuiltinMemoryEmbeddingProviderDoctorMetadata: import("@openclaw/memory-core/runtime-api.js").BuiltinMemoryEmbeddingProviderDoctorMetadata;
+      MemorySearchQueryEmbeddingResult: import("@openclaw/memory-core/runtime-api.js").MemorySearchQueryEmbeddingResult;
     };
   };
   "mattermost-policy": {

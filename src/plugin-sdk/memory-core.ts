@@ -1,7 +1,11 @@
 // Narrow plugin-sdk surface for the bundled memory-core plugin.
 // Keep this list additive and scoped to the bundled memory-core surface.
 
-export { getMemorySearchManager, MemoryIndexManager } from "./memory-core-engine-runtime.js";
+export {
+  embedMemorySearchQuery,
+  getMemorySearchManager,
+  MemoryIndexManager,
+} from "./memory-core-engine-runtime.js";
 export {
   DEFAULT_PI_COMPACTION_RESERVE_TOKENS_FLOOR,
   emptyPluginConfigSchema,

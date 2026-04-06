@@ -35,6 +35,7 @@ Then consult as needed:
 - `SECURITY_AND_RETRIEVAL.md`
 - `specs/README.md`
 - `specs/semantic-event-detector.md`
+- `specs/semantic-retrieval-routing.md`
 - `specs/ambiguity-and-clarification.md`
 - `specs/phrase-induction.md`
 - `specs/behavior-application.md`

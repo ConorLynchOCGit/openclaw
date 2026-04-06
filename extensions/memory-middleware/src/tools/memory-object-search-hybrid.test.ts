@@ -6,6 +6,14 @@ import {
   normalizeMemoryObjectSearchHybridInput,
 } from "./memory-object-search-hybrid.js";
 
+const maybeApplyProcedureSemanticFallback = vi.hoisted(() =>
+  vi.fn(async ({ hybridResult }) => hybridResult),
+);
+
+vi.mock("../semantic-retrieval-routing.js", () => ({
+  maybeApplyProcedureSemanticFallback,
+}));
+
 function createAcceptedSearchResult(): MemoryObjectSearchHybridResult {
   return {
     accepted: true,
@@ -75,6 +83,18 @@ describe("memory object hybrid search tool", () => {
       scope: "include_validated_procedures",
       kind: "procedure",
     });
+    expect(maybeApplyProcedureSemanticFallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: {
+          query: "deploy agent",
+          scope: "include_validated_procedures",
+          kind: "procedure",
+        },
+        cfg: undefined,
+        agentId: undefined,
+        sessionKey: undefined,
+      }),
+    );
     expect(result.details).toEqual(createAcceptedSearchResult());
   });
 
@@ -102,6 +122,51 @@ describe("memory object hybrid search tool", () => {
     });
   });
 
+  it("returns semantic fallback ordering when the family router rewrites weak procedure results", async () => {
+    const runtime = createRuntime();
+    maybeApplyProcedureSemanticFallback.mockImplementationOnce(async ({ hybridResult }) =>
+      hybridResult.accepted && hybridResult.status === "ok"
+        ? {
+            ...hybridResult,
+            records: [
+              {
+                ...hybridResult.records[0],
+                id: "procedure-semantic-1",
+                title: "Careful rollout checklist",
+                score: 999,
+                matchedFields: ["semantic_embedding", "semantic_fallback"],
+              },
+              ...hybridResult.records,
+            ],
+          }
+        : hybridResult,
+    );
+    const tool = createMemoryObjectSearchHybridTool({ runtime });
+
+    const result = await tool.execute("call-semantic", {
+      query: "how should I carefully put this live",
+      scope: "include_validated_procedures",
+      kind: "procedure",
+    });
+
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "ok",
+    });
+    expect(
+      (
+        result.details as {
+          records: Array<{ id: string; matchedFields: string[] }>;
+        }
+      ).records[0],
+    ).toEqual(
+      expect.objectContaining({
+        id: "procedure-semantic-1",
+        matchedFields: ["semantic_embedding", "semantic_fallback"],
+      }),
+    );
+  });
+
   it("rejects unsupported ranked-search payloads", () => {
     expect(() =>
       normalizeMemoryObjectSearchHybridInput({
@@ -109,5 +174,32 @@ describe("memory object hybrid search tool", () => {
         kind: "memory",
       }),
     ).toThrow("kind must be one of");
+  });
+
+  it("passes tool context into family-scoped semantic fallback routing", async () => {
+    const runtime = createRuntime();
+    const tool = createMemoryObjectSearchHybridTool({
+      runtime,
+      context: {
+        config: { plugins: {} },
+        runtimeConfig: { plugins: { memory: { provider: "openai" } } },
+        agentId: "main",
+        sessionKey: "agent:main:main",
+      } as never,
+    });
+
+    await tool.execute("call-3", {
+      query: "how should I carefully put this live",
+      scope: "include_validated_procedures",
+      kind: "procedure",
+    });
+
+    expect(maybeApplyProcedureSemanticFallback).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        cfg: expect.objectContaining({ plugins: { memory: { provider: "openai" } } }),
+        agentId: "main",
+        sessionKey: "agent:main:main",
+      }),
+    );
   });
 });

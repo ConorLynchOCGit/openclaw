@@ -3,6 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { MemoryMiddlewareConfig } from "./config.js";
+
+const storeValidatedProcedureSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
+
+vi.mock("./semantic-retrieval-routing.js", () => ({
+  storeValidatedProcedureSemanticEmbedding,
+}));
+
 import {
   createOrdinaryTurnAutoCaptureController,
   createOrdinaryTurnAutoCaptureHandler,
@@ -1459,6 +1466,7 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(promoteToMemory).toHaveBeenCalledTimes(1);
   });
   it("auto-promotes a bounded recurring checklist through draft and validation", async () => {
+    storeValidatedProcedureSemanticEmbedding.mockClear();
     const submitProcedureSuggestion = vi.fn(async () => ({
       accepted: true as const,
       status: "accepted" as const,
@@ -1559,6 +1567,15 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     );
     expect(validateProcedure).toHaveBeenCalledWith(
       expect.objectContaining({
+        procedureId: "procedure-1",
+      }),
+    );
+    expect(storeValidatedProcedureSemanticEmbedding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: createConfig(),
+        cfg: undefined,
+        agentId: "main",
+        sessionKey: "agent:main:main",
         procedureId: "procedure-1",
       }),
     );

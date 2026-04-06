@@ -34,6 +34,15 @@ It must not bypass:
 - retrieval scopes
 - project scoping
 
+The default working-context retrieval posture remains typed hybrid retrieval.
+
+Family-aware semantic retrieval should be introduced only where it materially
+improves conceptual recall without displacing stronger exact or typed matches.
+
+That routing policy is specified in:
+
+- `/memory-system/specs/semantic-retrieval-routing`
+
 ## Domain model / concepts
 
 Introduce an `ActiveBehaviorProfile` concept with bounded categories:
@@ -98,6 +107,16 @@ rather than storing the active profile itself as canonical state.
 ## Retrieval / application behavior
 
 This is the primary spec for later-turn memory use.
+
+Retrieval posture for this layer:
+
+- hybrid retrieval remains the normal default
+- semantic retrieval is additive and family-scoped
+- exact typed matches should usually outrank pure semantic similarity
+- response-style and explicit named project facts remain hybrid-first
+- nearby recurring-procedure asks are now the first live semantic fallback
+  family
+- conceptual workflow families remain the next semantic candidates
 
 It should define precedence such as:
 

@@ -23,6 +23,7 @@ partially built family still needs a deliberate productionization plan.
 ### Cross-cutting architecture and planning
 
 - `/memory-system/specs/semantic-event-detector`
+- `/memory-system/specs/semantic-retrieval-routing`
 - `/memory-system/specs/ambiguity-and-clarification`
 - `/memory-system/specs/candidate-confirmation-lifecycle`
 - `/memory-system/specs/phrase-induction`

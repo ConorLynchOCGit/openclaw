@@ -23,10 +23,11 @@ for:
 9. recurring procedure memory
 10. broader project memory expansion
 11. workflow improvement / tool-gotcha memory
-12. unmet-need planning
-13. wait-tranche governance productionization
-14. reduced-profile self-improving capture enablement
-15. any broader automation discussion
+12. family-aware semantic retrieval routing
+13. unmet-need planning
+14. wait-tranche governance productionization
+15. reduced-profile self-improving capture enablement
+16. any broader automation discussion
 
 ## Why this order is recommended
 
@@ -40,6 +41,8 @@ for:
   and evals is too risky
 - response-style memory is the highest-frequency visible win
 - procedure memory is a strong second visible win
+- family-aware semantic retrieval routing becomes more useful only after the
+  first bounded semantic families are already live
 - phrase induction is more valuable after the first semantic families exist
 - workflow improvements and unmet-need planning are useful but lower direct
   user value
@@ -73,12 +76,22 @@ for:
 - messy-language eval is already in use
 - candidate noise is acceptably low
 
+### Before family-aware semantic retrieval routing
+
+- at least two bounded semantic families are already live
+- hybrid retrieval is stable for those families
+- approved-only behavior rules are already proven
+- semantic retrieval remains approved-only plus explicit validated-procedure
+  scope
+
 ## What can proceed in parallel
 
 Safe parallel tracks after the shared prerequisites are met:
 
 - phrase induction + messy-language eval
 - project-memory expansion + workflow-improvement-memory
+- family-aware semantic retrieval routing spec work + later conceptual family
+  design
 - governance productionization docs + runbook updates
 
 ## What must not proceed in parallel

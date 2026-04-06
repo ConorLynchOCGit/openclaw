@@ -6,6 +6,12 @@ import {
   normalizeProcedureValidationInput,
 } from "./procedure-validate.js";
 
+const storeValidatedProcedureSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
+
+vi.mock("../semantic-retrieval-routing.js", () => ({
+  storeValidatedProcedureSemanticEmbedding,
+}));
+
 function createValidationResult(): ProcedureValidationResult {
   return {
     accepted: true,
@@ -19,6 +25,12 @@ function createValidationResult(): ProcedureValidationResult {
 
 function createRuntime() {
   return {
+    config: {
+      database: {
+        driver: "postgres",
+        url: "postgres://example.test/openclaw",
+      },
+    },
     procedureValidation: {
       validate: vi.fn(async () => createValidationResult()),
     },
@@ -87,6 +99,31 @@ describe("memory procedure validate tool", () => {
     });
 
     expect(result.details).toEqual(ineligibleResult);
+  });
+
+  it("stores a validated procedure embedding when runtime config and session context are available", async () => {
+    storeValidatedProcedureSemanticEmbedding.mockClear();
+    const runtime = createRuntime();
+    const tool = createProcedureValidateTool({
+      runtime,
+      context: {
+        agentId: "agent-1",
+        sessionKey: "agent:main:main",
+        config: { plugins: {} },
+      } as never,
+    });
+
+    await tool.execute("call-3", {
+      procedureId: "procedure-1",
+    });
+
+    expect(storeValidatedProcedureSemanticEmbedding).toHaveBeenCalledWith({
+      config: runtime.config,
+      cfg: { plugins: {} },
+      agentId: "agent-1",
+      sessionKey: "agent:main:main",
+      procedureId: "procedure-1",
+    });
   });
 
   it("rejects missing procedure ids", () => {

@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool, OpenClawPluginToolContext } from "../../api.js";
 import type { ProcedureValidationInput, ProcedureValidationResult } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
+import { storeValidatedProcedureSemanticEmbedding } from "../semantic-retrieval-routing.js";
 import {
   asJsonToolResult,
   readOptionalObject,
@@ -58,8 +59,27 @@ export function normalizeProcedureValidationInput(params: {
 export async function validateProcedureFromTool(params: {
   runtime: MemoryMiddlewareRuntime;
   input: ProcedureValidationInput;
+  context?: OpenClawPluginToolContext;
 }): Promise<ProcedureValidationResult> {
-  return params.runtime.procedureValidation.validate(params.input);
+  const result = await params.runtime.procedureValidation.validate(params.input);
+  if (
+    result.accepted &&
+    (result.status === "validated" || result.status === "already_validated") &&
+    params.context?.sessionKey
+  ) {
+    try {
+      await storeValidatedProcedureSemanticEmbedding({
+        config: params.runtime.config,
+        cfg: params.context.runtimeConfig ?? params.context.config,
+        agentId: params.context.agentId,
+        sessionKey: params.context.sessionKey,
+        procedureId: result.procedureId,
+      });
+    } catch {
+      // Keep procedure validation authoritative even when semantic support is unavailable.
+    }
+  }
+  return result;
 }
 
 export function createProcedureValidateTool(params: {
@@ -80,6 +100,7 @@ export function createProcedureValidateTool(params: {
       const result = await validateProcedureFromTool({
         runtime: params.runtime,
         input,
+        context: params.context,
       });
       return asJsonToolResult(result);
     },

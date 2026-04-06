@@ -471,6 +471,72 @@ For the exact proof ids and production evidence for this slice, use:
 - `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_UX_REPORT.md`
 - `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_BEHAVIOR_REPORT.md`
 
+## Semantic retrieval routing workflow
+
+The next retrieval-focused slice is now live for a single bounded family:
+
+- nearby recurring-procedure asks
+
+Current live behavior:
+
+- `memory_object_search_hybrid` remains the normal default retrieval path
+- clear checklist asks still rely on hybrid typed ranking
+- nearby recurring-procedure asks may use semantic fallback only when:
+  - `scope = include_validated_procedures`
+  - `kind = procedure`
+  - hybrid does not already have a strong validated-procedure match such as
+    `procedure_key_match`, `title_exact`, or `title_prefix`
+- semantic fallback can only surface validated procedures
+- `approved_only` scope still hides validated procedures even when semantic
+  retrieval could conceptually match them
+- matched-field observability should show:
+  - `semantic_embedding`
+  - `semantic_fallback`
+    when semantic routing actually wins
+
+Embedding posture for this slice:
+
+- validated procedure source memory objects can receive semantic embeddings
+- embeddings are written only for this family
+- current live proof used:
+  - `provider = openai`
+  - `model = text-embedding-3-small`
+  - OpenRouter-compatible remote base URL
+- if the configured `memorySearch` provider is unavailable, retrieval should
+  fall back to normal hybrid behavior instead of broadening scope or surfacing
+  candidates
+
+Relevant surfaces:
+
+- `extensions/memory-middleware/src/tools/memory-object-search-hybrid.ts`
+- `extensions/memory-middleware/src/semantic-retrieval-routing.ts`
+- `extensions/memory-middleware/src/tools/procedure-validate.ts`
+- `extensions/memory-middleware/src/ordinary-turn-auto-capture.ts`
+- `extensions/memory-middleware/src/db/queries.ts`
+
+Expected operator checks:
+
+- a nearby conceptual recurring-procedure ask that hybrid alone misses can
+  retrieve the right validated procedure through semantic fallback
+- a clear checklist ask still keeps the hybrid exact result on top
+- `approved_only` scope still returns no validated procedure for the same
+  nearby conceptual ask
+- candidate semantic retrieval remains disabled
+- health stays green before and after the proof
+
+Current approved boundary note:
+
+- only nearby recurring-procedure asks use live semantic routing in this slice
+- environment constraints remain hybrid-only
+- workflow-improvement tool gotchas remain hybrid-only
+- response-style and explicit named project facts remain hybrid-first
+- this slice does not introduce generic semantic search across memory
+  families
+
+For the exact proof ids and production evidence for this slice, use:
+
+- `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_REPORT.md`
+
 ## Workflow-improvement UX workflow
 
 The fifth and sixth user-facing semantic workflow-memory slices are now live

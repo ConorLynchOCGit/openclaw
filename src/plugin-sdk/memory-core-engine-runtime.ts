@@ -18,6 +18,8 @@ export const getBuiltinMemoryEmbeddingProviderDoctorMetadata: FacadeModule["getB
     loadFacadeModule()["getBuiltinMemoryEmbeddingProviderDoctorMetadata"](
       ...args,
     )) as FacadeModule["getBuiltinMemoryEmbeddingProviderDoctorMetadata"];
+export const embedMemorySearchQuery: FacadeModule["embedMemorySearchQuery"] = ((...args) =>
+  loadFacadeModule()["embedMemorySearchQuery"](...args)) as FacadeModule["embedMemorySearchQuery"];
 export const getMemorySearchManager: FacadeModule["getMemorySearchManager"] = ((...args) =>
   loadFacadeModule()["getMemorySearchManager"](...args)) as FacadeModule["getMemorySearchManager"];
 export const listBuiltinAutoSelectMemoryEmbeddingProviderDoctorMetadata: FacadeModule["listBuiltinAutoSelectMemoryEmbeddingProviderDoctorMetadata"] =
@@ -30,3 +32,5 @@ export const MemoryIndexManager: FacadeModule["MemoryIndexManager"] = createLazy
 ) as FacadeModule["MemoryIndexManager"];
 export type BuiltinMemoryEmbeddingProviderDoctorMetadata =
   FacadeEntry["types"]["BuiltinMemoryEmbeddingProviderDoctorMetadata"];
+export type MemorySearchQueryEmbeddingResult =
+  FacadeEntry["types"]["MemorySearchQueryEmbeddingResult"];

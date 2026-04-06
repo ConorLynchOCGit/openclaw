@@ -23,6 +23,7 @@ export function createMemoryMiddlewarePluginService(
       }
       ordinaryTurnAutoCapture = createOrdinaryTurnAutoCaptureController({
         config: runtime.config,
+        cfg: ctx.config,
         logger: ctx.logger,
         candidateIngress: runtime.candidateIngress,
         subscribe: subscribeToTranscriptUpdates,

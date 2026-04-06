@@ -94,6 +94,9 @@ Current state:
     - using `scripts/committer "<msg>" <file...>` instead of manual
       `git add` + `git commit`
     - avoiding `git stash` in this multi-agent repo
+    - recognizing bounded environment constraints for:
+      - `python_command_unavailable`
+      - `gateway_tools_invoke_forbidden`
   - first-seen supported workflow lessons now enter a
     candidate-with-confirmation lifecycle instead of dead manual backlog
   - later confirming evidence can auto-promote a bounded workflow lesson
@@ -101,7 +104,22 @@ Current state:
   - approved-only hybrid retrieval can now surface the right workflow lesson
     as bounded guidance for later repo-operating asks
   - prompt guidance now makes the guidance-only posture explicit for running
-    tests, making scoped commits, and git-state safety asks
+    tests, making scoped commits, git-state safety asks, and known environment
+    constraint asks
+- the first bounded semantic retrieval routing slice is now live:
+  - `memory_object_search_hybrid` remains the default working-context
+    retrieval path
+  - nearby recurring-procedure asks can now use procedure-only semantic
+    fallback when:
+    - `scope = include_validated_procedures`
+    - `kind = procedure`
+    - hybrid does not already have a strong typed validated-procedure match
+  - validated procedure source memory objects can now receive bounded
+    semantic embeddings during validation or equivalent validated promotion
+  - exact checklist asks still stay hybrid-first
+  - candidate semantic retrieval is still disabled
+  - environment constraints and workflow-improvement lessons still remain
+    hybrid-only for now
 
 Current live limits:
 
@@ -109,6 +127,8 @@ Current live limits:
   families, but still too brittle outside those families because deterministic
   matching is doing too much of the first-pass interpretation work
 - broader semantic learning-event detection is not live yet
+- family-aware semantic retrieval routing is now live only for nearby
+  recurring-procedure asks under explicit validated-procedure scope
 - phrase induction from fuzzy detections into reviewed deterministic patterns
   is not live yet
 - broader structured procedures are not live as a normal remembered user
@@ -116,8 +136,7 @@ Current live limits:
 - recurring procedures are still bounded to the supported named checklist
   family and do not silently apply in the background
 - workflow-improvement memory is now live only for the first bounded repeated
-  tool-gotcha family
-- repeated environment-constraint memory is not live yet
+  tool-gotcha and environment-constraint families
 - repeated API failure workaround memory is not live yet
 - broader workflow-improvement memory is not live yet
 - recommendation-only procurement/install artifacts are not live yet
@@ -181,6 +200,8 @@ architecture each time:
   - `/memory-system/specs/premortem`
 - architecture-fit review:
   - `/memory-system/specs/architecture-fit-review`
+- semantic retrieval routing:
+  - `/memory-system/specs/semantic-retrieval-routing`
 
 ## Architectural direction
 
@@ -203,6 +224,39 @@ In other words:
 - fuzzy detection is allowed
 - fuzzy storage is not
 - remembered behavior should feel consistent to the user, not just well-stored
+
+### Retrieval direction
+
+Working-context retrieval should remain hybrid and typed by default.
+
+The semantic retrieval question is no longer “should semantic retrieval exist?”
+because a bounded prototype already exists.
+
+The real roadmap question is:
+
+- where should semantic retrieval become part of the normal working-context
+  path
+- and where should hybrid-first or hybrid-only remain the correct posture
+
+Current direction:
+
+- keep hybrid-first or hybrid-only for:
+  - response-style memory
+  - explicit named project facts
+  - internal governance lineage surfaces
+- the first live family-aware semantic routing slice is now:
+  - nearby recurring-procedure asks under validated-procedure scope
+- introduce semantic rerank or fallback next for:
+  - environment constraints
+  - later API workaround memory
+  - later broader workflow-improvement memory
+- consider semantic retrieval later for:
+  - bounded narrative project-memory expansion
+  - unmet-need recommendation artifacts
+
+Detailed routing guidance lives in:
+
+- `/memory-system/specs/semantic-retrieval-routing`
 
 ### The three-layer ingress model
 

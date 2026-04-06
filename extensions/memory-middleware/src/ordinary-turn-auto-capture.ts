@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/memory-core";
 import { Client } from "pg";
 import type { PluginLogger } from "../api.js";
 import type { CandidateIngressPort } from "./candidate-ingress.js";
@@ -48,6 +49,7 @@ import {
   type ResponseStyleCanonicalMatch,
   type ResponseStyleSemanticConfidence,
 } from "./response-style-semantic.js";
+import { storeValidatedProcedureSemanticEmbedding } from "./semantic-retrieval-routing.js";
 import {
   type WorkflowImprovementLifecycleInspection,
   inspectWorkflowImprovementLifecycle,
@@ -2317,10 +2319,13 @@ async function rejectRecurringProcedureCandidateIfPresent(params: {
 
 async function autoPromoteRecurringProcedureCandidate(params: {
   config: MemoryMiddlewareConfig;
+  cfg?: OpenClawConfig;
   candidateId: string;
   title: string;
   subjectKey: string;
   captureClass: OrdinaryTurnAutoCaptureMatch["captureClass"];
+  agentExternalKey: string;
+  sessionKey: string;
   reviewerAgentId?: string;
   logger: PluginLogger;
   reviewCandidate: OrdinaryTurnAutoCaptureHandlerDeps["reviewCandidate"];
@@ -2379,6 +2384,26 @@ async function autoPromoteRecurringProcedureCandidate(params: {
       }),
     );
     return false;
+  }
+
+  try {
+    await storeValidatedProcedureSemanticEmbedding({
+      config: params.config,
+      cfg: params.cfg,
+      agentId: params.agentExternalKey,
+      sessionKey: params.sessionKey,
+      procedureId: validationResult.procedureId,
+      logger: params.logger,
+    });
+  } catch (error) {
+    params.logger.warn(
+      formatLog("memory-middleware recurring-procedure semantic embedding update failed", {
+        ...params.logContext,
+        candidateId: params.candidateId,
+        procedureId: validationResult.procedureId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
   }
 
   if (params.captureClass === "recurring_procedure_correction") {
@@ -2655,6 +2680,7 @@ function buildWorkflowImprovementAutoPromotionMetadata(params: {
 
 export function createOrdinaryTurnAutoCaptureHandler(params: {
   config: MemoryMiddlewareConfig;
+  cfg?: OpenClawConfig;
   logger: PluginLogger;
   candidateIngress: CandidateIngressPort;
   deps?: Partial<OrdinaryTurnAutoCaptureHandlerDeps>;
@@ -3386,10 +3412,13 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     ) {
       const promoted = await autoPromoteRecurringProcedureCandidate({
         config: params.config,
+        cfg: params.cfg,
         candidateId: inspection.pendingCandidate.id,
         title: match.title ?? getRecurringProcedureTitle(decisionParams.decision.procedureKey),
         subjectKey: match.subjectKey,
         captureClass: match.captureClass,
+        agentExternalKey: decisionParams.agentExternalKey,
+        sessionKey: decisionParams.sessionKey,
         reviewerAgentId: attribution.agentId,
         logger: params.logger,
         reviewCandidate: deps.reviewCandidate,
@@ -3468,10 +3497,13 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     if (shouldDirectPromote && result.memoryObjectId) {
       await autoPromoteRecurringProcedureCandidate({
         config: params.config,
+        cfg: params.cfg,
         candidateId: result.memoryObjectId,
         title: match.title ?? getRecurringProcedureTitle(decisionParams.decision.procedureKey),
         subjectKey: match.subjectKey,
         captureClass: match.captureClass,
+        agentExternalKey: decisionParams.agentExternalKey,
+        sessionKey: decisionParams.sessionKey,
         reviewerAgentId: attribution.agentId,
         logger: params.logger,
         reviewCandidate: deps.reviewCandidate,
@@ -3950,6 +3982,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
 
 export function createOrdinaryTurnAutoCaptureController(params: {
   config: MemoryMiddlewareConfig;
+  cfg?: OpenClawConfig;
   logger: PluginLogger;
   candidateIngress: CandidateIngressPort;
   subscribe: (listener: (update: SessionTranscriptUpdateLike) => void) => () => void;
@@ -3962,6 +3995,7 @@ export function createOrdinaryTurnAutoCaptureController(params: {
     params.config.autoPromotion ?? DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG;
   const handleUpdate = createOrdinaryTurnAutoCaptureHandler({
     config: params.config,
+    cfg: params.cfg,
     logger: params.logger,
     candidateIngress: params.candidateIngress,
     deps: params.deps,
