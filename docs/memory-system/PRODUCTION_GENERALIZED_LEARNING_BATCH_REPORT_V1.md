@@ -377,7 +377,7 @@ environment. That is recorded as-is rather than masked.
 
 ### Commit
 
-The slice 4 landing commit is the commit that adds this report.
+- `adb5800013` `Memory: land unmet-need planning v1`
 
 ## Post-batch architecture posture
 
