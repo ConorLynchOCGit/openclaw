@@ -76,11 +76,12 @@ Live today:
 - approved workflow-guidance memories can surface as repo-operating guidance
 - approved generalized workflow lessons can also surface through the same
   guidance path
+- approved generalized project rules can surface through the same
+  guidance-only path for direct named-project operating asks
 
 Not live today:
 
 - a full explicit active-profile layer across all families
-- broader generic project-rule behavior application
 - learned-guidance advisory planning
 
 ## Exact input / output behavior
@@ -141,6 +142,7 @@ Retrieval posture for this layer:
   `anthropic_context1m_eligible_credential_required` are the fourth live
   semantic fallback family
 - approved generalized workflow lessons remain hybrid-first
+- approved generalized project rules remain hybrid-first
 - broader approved generic lessons should remain hybrid-first until
   `/memory-system/specs/generalized-lesson-retrieval-and-application`
   explicitly proves a broader need

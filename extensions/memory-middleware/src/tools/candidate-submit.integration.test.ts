@@ -3441,6 +3441,150 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     );
   });
 
+  it("auto-promotes a project-rule cluster after later compatible evidence and retrieves it through approved-only hybrid", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const searchTool = createMemoryObjectSearchHybridTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      } as never,
+    });
+
+    const initialSubmit = await submitTool.execute("call-project-rule-auto-review-1", {
+      kind: "improvement",
+      content:
+        "For project Atlas, use generated audit IDs for audit events instead of client timestamps.",
+      projectId: seeded.projectId,
+    });
+    const candidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const initialRow = await querySingleRow<{
+      review_state: string;
+      lesson_family: string | null;
+      lifecycle_state: string | null;
+      cluster_key: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'lessonFamily' as lesson_family,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'clusterKey' as cluster_key
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [candidateId],
+    );
+
+    expect(initialRow).toEqual({
+      review_state: "candidate",
+      lesson_family: "generalized_project_rule",
+      lifecycle_state: "hold_for_more_evidence",
+      cluster_key: expect.any(String),
+    });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-project-rule-auto-review-2", {
+      kind: "improvement",
+      content:
+        "For project Atlas, prefer generated audit IDs for audit events instead of client timestamps.",
+      projectId: seeded.projectId,
+    });
+
+    expect(confirmingSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "improvement",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const approvedMemoryObjectId = (confirmingSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const approvedRow = await querySingleRow<{
+      review_state: string;
+      promotion_profile: string | null;
+      confirmation_method: string | null;
+      auto_review_outcome: string | null;
+      normalized_project_scope: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'promotionMetadata'->'autoPromotion'->>'profile' as promotion_profile,
+          metadata->'promotionMetadata'->'candidateConfirmation'->>'method' as confirmation_method,
+          metadata->'promotionMetadata'->'workflowAutoReview'->>'outcome' as auto_review_outcome,
+          metadata->'promotionMetadata'->'autoPromotion'->>'normalizedProjectScope' as normalized_project_scope
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [approvedMemoryObjectId],
+    );
+
+    expect(approvedRow).toEqual({
+      review_state: "approved",
+      promotion_profile: "project_rule_auto_review_v1",
+      confirmation_method: "generalized_cluster_auto_review",
+      auto_review_outcome: "approve",
+      normalized_project_scope: "atlas",
+    });
+
+    const searchResult = await searchTool.execute("call-project-rule-auto-review-search", {
+      query: "for project atlas audit events should i use generated audit ids or client timestamps",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+    const records = (
+      searchResult.details as {
+        accepted: boolean;
+        status: string;
+        records: Array<{ id: string; matchedFields: string[] }>;
+      }
+    ).records;
+
+    expect(records[0]).toEqual(
+      expect.objectContaining({
+        id: approvedMemoryObjectId,
+        matchedFields: expect.arrayContaining([
+          "project_rule_scope_match",
+          "project_rule_subject_match",
+          "project_rule_recommended_action_match",
+          "project_rule_avoid_action_match",
+          "project_rule_guidance_pattern_match",
+        ]),
+      }),
+    );
+  });
+
   it("auto-approves a repeated phrase pattern for an approved generic workflow lesson and keeps the artifact out of hybrid retrieval", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

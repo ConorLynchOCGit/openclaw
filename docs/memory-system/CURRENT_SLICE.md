@@ -2,65 +2,65 @@
 
 ## Active slice
 
-Broader project-rule learning
+Unmet-need planning
 
 ## Objective
 
-Make approved generalized workflow lessons apply more reliably in later
-repo-operating asks through the existing hybrid-first guidance path.
+Teach the same generalized supervised-learning pipeline to remember repeated
+missing capabilities or missing workflow support as recommendation-only
+planning artifacts.
 
 The previous slice just landed:
 
-- generalized lesson retrieval/application expansion
-- approved-only hybrid ranking boosts for generic workflow lessons using:
-  - normalized subject overlap
-  - normalized recommended-action overlap
-  - normalized avoid-action overlap
-  - guidance-pattern intent matching
-- prompt guidance that tells the model to include the scoped competing
-  actions or signals in hybrid queries
-- prompt guidance that limits generic workflow application to the top directly
-  relevant hint or two
-- isolated plus production proof that the right approved generic workflow
-  lesson now outranks adjacent approved generic lessons without semantic
-  broadening
+- broader project-rule learning on the same generic lesson pipeline
+- a bounded `generalized_project_rule` family for named-project operating
+  guidance
+- held-cluster auto-review and promotion for project rules through the existing
+  machine-review substrate
+- approved-only hybrid retrieval with project-rule scope, subject, preferred,
+  avoided-action, and guidance-pattern ranking boosts
+- prompt guidance that tells the model to use named-project operating hybrid
+  queries rather than coercing rules into project facts
+- isolated plus production proof that a project rule can be learned and later
+  retrieved without broadening into speculative project state
 
 ## Required work
 
-1. Extend the generic supervised-learning pipeline from workflow guidance into
-   one bounded project-rule family without reverting to one-field-at-a-time
-   project-memory expansion.
-2. Define a durable project-rule shape that is distinct from one-off project
-   facts and still remains guidance-only.
+1. Extend the same generic supervised-learning pipeline into one bounded
+   unmet-need family.
+2. Define a recommendation-only unmet-need artifact shape that stays distinct
+   from workflow guidance and project rules.
 3. Reuse bounded normalization, machine review/promotion, and approved-only
-   hybrid retrieval on the same generic substrate.
-4. Preserve the existing named project-fact path for explicit stable project
-   facts.
-5. Prove that a real project rule can be learned, approved, and later applied
-   without broadening into speculative project state.
+   retrieval on the same substrate.
+4. Keep unmet-need behavior recommendation-only with no procurement, install,
+   or approval automation.
+5. Prove that a repeated unmet need can be learned, approved, and later
+   surfaced as a bounded recommendation without broadening into autonomy.
 
 ## Out of scope
 
-- unmet-need planning
 - reduced-profile self-improving capture
-- generic semantic fallback for generalized lessons or project rules
+- generic semantic fallback for generalized lessons, project rules, or unmet
+  needs
+- procurement, install, vetting, or approval automation
 - autonomous remediation or silent plan mutation
 - production pairing/auth changes
 
 ## Acceptance criteria
 
-- one bounded project-rule family can be captured without hand-registering a
-  named project field
-- the same generic lifecycle can approve and retrieve those project rules
-- named project facts and generic project rules stay distinct and explainable
+- one bounded unmet-need family can be captured without inventing a separate
+  planning pipeline
+- the same generic lifecycle can approve and retrieve those unmet-need
+  artifacts
+- workflow guidance, project rules, and unmet-need artifacts stay distinct and
+  explainable
 - hybrid-first retrieval remains the default path
-- the workflow-generic and project-rule families stay part of the same
-  layered supervised-learning system
+- the post-pivot families stay part of the same layered supervised-learning
+  system
 
 ## Notes
 
-The post-pivot pipeline now has its first closed supervised-learning loop for
-generic workflow guidance:
+The post-pivot pipeline now has five landed supervised-learning steps:
 
 1. generalized lesson capture
 2. generalized lesson auto-review and promotion
@@ -73,4 +73,4 @@ generic workflow guidance:
 
 The next implementation slice should be:
 
-- broader project-rule learning
+- unmet-need planning

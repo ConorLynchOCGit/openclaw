@@ -2030,6 +2030,127 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     );
   });
 
+  it("captures a project rule as a held cluster and auto-promotes it after later compatible evidence", async () => {
+    const submitImprovementNote = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "improvement" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-project-rule-1",
+      memoryObjectId: "memory-project-rule-1",
+    }));
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "memory-project-rule-1",
+      outcome: "accepted" as const,
+      reviewId: "review-project-rule-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "memory-project-rule-1",
+      promotedMemoryObjectId: "approved-project-rule-1",
+      sourceEventId: "event-project-rule-1",
+      reviewState: "approved" as const,
+    }));
+    const inspectWorkflowImprovementLifecycle = vi
+      .fn()
+      .mockResolvedValueOnce({
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: [],
+      })
+      .mockResolvedValueOnce({
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: ["memory-project-rule-1"],
+        pendingCandidate: {
+          id: "memory-project-rule-1",
+          createdAt: new Date(Date.now() - 10_000).toISOString(),
+          updatedAt: new Date(Date.now() - 10_000).toISOString(),
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          confirmationState: "hold_for_more_evidence",
+        },
+      });
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-project-rule",
+          sessionId: "session-uuid-project-rule",
+          projectId: "00000000-0000-4000-8000-000000000777",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        submitProcedureSuggestion: vi.fn(),
+        submitImprovementNote,
+        reviewCandidate,
+        promoteToMemory,
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+        inspectWorkflowImprovementLifecycle,
+      },
+    });
+
+    const update = {
+      sessionFile: "/root/.openclaw/agents/main/sessions/project-rule-generic.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content:
+          "For project Atlas, use generated audit IDs for audit events instead of client timestamps.",
+        timestamp: Date.parse("2026-04-06T03:12:00Z"),
+      },
+    };
+
+    await handler(update);
+    await handler({
+      ...update,
+      message: {
+        role: "user",
+        content:
+          "For project Atlas, prefer generated audit IDs for audit events instead of client timestamps.",
+        timestamp: Date.parse("2026-04-06T03:12:10Z"),
+      },
+    });
+
+    expect(submitImprovementNote).toHaveBeenCalledTimes(1);
+    expect(submitImprovementNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          "Project rule [Atlas]: for project Atlas, use generated audit IDs for audit events instead of client timestamps.",
+        metadata: expect.objectContaining({
+          category: "project_rule",
+          source: "explicit_project_rule",
+          autoCapture: expect.objectContaining({
+            captureClass: "project_rule_guidance",
+            template: "project_rule_guidance",
+            lessonFamily: "generalized_project_rule",
+            projectScope: "Atlas",
+            guidancePattern: "use_instead_of",
+            recommendedAction: "generated audit IDs",
+            avoidAction: "client timestamps",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "workflow_improvement",
+            state: "hold_for_more_evidence",
+            lessonFamily: "generalized_project_rule",
+          }),
+        }),
+      }),
+    );
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(promoteToMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-project-rule-1",
+      }),
+    );
+  });
+
   it("induces a reviewed phrase pattern when a later paraphrase hits an already approved generalized lesson", async () => {
     maybeInduceWorkflowPhrasePattern.mockClear();
     const handler = createOrdinaryTurnAutoCaptureHandler({

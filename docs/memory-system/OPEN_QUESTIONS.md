@@ -21,9 +21,11 @@ pivot.
 5. What compact prompt representation should the application layer use for
    approved generic lessons so retrieval stays useful without causing prompt
    bloat?
-6. Should the first broader generic family after workflow guidance be:
-   - project-rule learning
-   - or unmet-need planning
+6. What exact bounded unmet-need artifact shape should land first now that
+   broader project-rule learning is live:
+   - missing tool or capability recommendation
+   - missing workflow support recommendation
+   - or missing project artifact recommendation
 7. What exact bounded input set should the first enabled reduced-profile
    self-improving capture source consume:
    - transcript-derived lesson candidates only

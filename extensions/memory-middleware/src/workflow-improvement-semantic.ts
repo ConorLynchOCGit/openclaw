@@ -33,18 +33,24 @@ export type WorkflowImprovementCaptureClass =
   | "workflow_tool_gotcha"
   | "workflow_environment_constraint"
   | "workflow_api_workaround"
-  | "workflow_generalized_guidance";
+  | "workflow_generalized_guidance"
+  | "project_rule_guidance";
 export type WorkflowImprovementReasonCode =
   | "workflow_tool_gotcha_statement"
   | "workflow_environment_constraint_statement"
   | "workflow_api_workaround_statement"
-  | "workflow_generalized_guidance_statement";
+  | "workflow_generalized_guidance_statement"
+  | "project_rule_guidance_statement";
 export type WorkflowImprovementTemplate =
   | "workflow_tool_gotcha"
   | "workflow_environment_constraint"
   | "workflow_api_workaround"
-  | "workflow_generalized_guidance";
-export type WorkflowImprovementLessonFamily = "supported_lesson" | "generalized_workflow_lesson";
+  | "workflow_generalized_guidance"
+  | "project_rule_guidance";
+export type WorkflowImprovementLessonFamily =
+  | "supported_lesson"
+  | "generalized_workflow_lesson"
+  | "generalized_project_rule";
 export type WorkflowImprovementGuidancePattern =
   | "use_instead_of"
   | "trust_for_scope"

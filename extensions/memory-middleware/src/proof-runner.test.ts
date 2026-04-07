@@ -124,6 +124,42 @@ describe("parseMemoryProofPlan", () => {
     });
   });
 
+  it("accepts project-rule transcript capture expectations", () => {
+    const plan = parseMemoryProofPlan({
+      mode: "isolated",
+      label: "project rule proof",
+      steps: [
+        {
+          id: "capture_project_rule",
+          kind: "transcript_capture",
+          text: "For project Atlas, use generated audit IDs for audit events instead of client timestamps.",
+          sessionFile: "/tmp/proof.jsonl",
+          sessionKey: "agent:test:proof",
+          agentExternalKey: "chief",
+          attribution: {
+            agentId: "agent-1",
+            sessionId: "session-1",
+            projectId: "project-1",
+          },
+          expectation: {
+            family: "project_rule",
+            key: "project-rule-key-1",
+            subjectKey: "project-rule-subject-key-1",
+            projectId: "project-1",
+          },
+        },
+      ],
+    });
+
+    expect(plan.steps[0]).toMatchObject({
+      kind: "transcript_capture",
+      expectation: {
+        family: "project_rule",
+        key: "project-rule-key-1",
+      },
+    });
+  });
+
   it("rejects duplicate step ids", () => {
     expect(() =>
       parseMemoryProofPlan({

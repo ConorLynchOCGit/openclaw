@@ -10268,6 +10268,15 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
+  const autoCaptureNormalizedProjectScopeExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'normalizedProjectScope',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedProjectScope',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedProjectScope',",
+    "v.metadata->'autoPromotion'->>'normalizedProjectScope',",
+    "''",
+    ")",
+  ].join(" ");
   const autoCaptureNormalizedRecommendedActionExpression = [
     "coalesce(",
     "v.metadata->'autoCapture'->>'normalizedRecommendedAction',",
@@ -10356,7 +10365,19 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
               and ${autoCaptureNormalizedSubjectExpression} <> ''
               and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
             then 170 else 0 end
+          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
+              and ${autoCaptureNormalizedProjectScopeExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
+            then 210 else 0 end
+          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
+              and ${autoCaptureNormalizedSubjectExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
+            then 165 else 0 end
           + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
+              and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
+            then 95 else 0 end
+          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
               and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
               and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
             then 95 else 0 end
@@ -10364,7 +10385,15 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
               and ${autoCaptureNormalizedAvoidActionExpression} <> ''
               and $6::text like '%' || ${autoCaptureNormalizedAvoidActionExpression} || '%'
             then 90 else 0 end
+          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
+              and ${autoCaptureNormalizedAvoidActionExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedAvoidActionExpression} || '%'
+            then 90 else 0 end
           + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
+              and $7::text <> ''
+              and ${autoCaptureGuidancePatternExpression} = $7::text
+            then 40 else 0 end
+          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
               and $7::text <> ''
               and ${autoCaptureGuidancePatternExpression} = $7::text
             then 40 else 0 end
@@ -10391,20 +10420,45 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
                 and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
               then 'generalized_subject_match'
             end,
+            case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
+                and ${autoCaptureNormalizedProjectScopeExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
+              then 'project_rule_scope_match'
+            end,
+            case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
+                and ${autoCaptureNormalizedSubjectExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
+              then 'project_rule_subject_match'
+            end,
             case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
                 and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
                 and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
               then 'generalized_recommended_action_match'
+            end,
+            case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
+                and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
+              then 'project_rule_recommended_action_match'
             end,
             case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
                 and ${autoCaptureNormalizedAvoidActionExpression} <> ''
                 and $6::text like '%' || ${autoCaptureNormalizedAvoidActionExpression} || '%'
               then 'generalized_avoid_action_match'
             end,
+            case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
+                and ${autoCaptureNormalizedAvoidActionExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedAvoidActionExpression} || '%'
+              then 'project_rule_avoid_action_match'
+            end,
             case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
                 and $7::text <> ''
                 and ${autoCaptureGuidancePatternExpression} = $7::text
               then 'generalized_guidance_pattern_match'
+            end,
+            case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
+                and $7::text <> ''
+                and ${autoCaptureGuidancePatternExpression} = $7::text
+              then 'project_rule_guidance_pattern_match'
             end,
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'

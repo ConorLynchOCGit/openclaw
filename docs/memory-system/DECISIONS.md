@@ -3723,6 +3723,21 @@ If reduced-profile self-improving capture is enabled later, it should feed:
 - the same normalized clustering
 - the same auto-review or review rules
 
+---
+
+### 16DF. Broader project rules are a sibling generalized lesson family, not a project-fact field expansion
+
+After the first project-rule slice, named-project operating rules should:
+
+- reuse the generalized lesson pipeline
+- stay guidance-only
+- remain distinct from named project facts
+
+Reason:
+Project rules answer "how should this named project be operated" questions.
+They should not be forced into the project-fact registry or back into the old
+workflow lesson-key expansion path.
+
 It must not create:
 
 - a separate approval path

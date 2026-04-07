@@ -35,11 +35,23 @@ Live today:
   actions or signals in hybrid queries for generic workflow asks
 - the prompt layer already limits generic workflow application to the top
   directly relevant hint or two
+- approved generalized project rules now also retrieve through the same
+  approved-only hybrid path
+- approved generalized project rules now receive explicit hybrid ranking boosts
+  for:
+  - normalized project-scope overlap
+  - normalized subject overlap
+  - normalized recommended-action overlap
+  - normalized avoid-action overlap
+  - guidance-pattern intent overlap
+- the prompt layer now tells the model to use named-project operating queries
+  when the user is asking how a specific project should be operated, queried,
+  or trusted
 - no new family-specific semantic router was added
 
 Not live today:
 
-- cross-family generic lesson retrieval
+- unmet-need planning retrieval and application
 - semantic fallback for generic lessons
 - proactive or autonomous follow-through
 
@@ -99,6 +111,8 @@ asks such as:
 - "for this scope, what should I avoid"
 - "which source should I trust here"
 - "what did we learn about this workflow area"
+- "for project Atlas, what should we use for audit events"
+- "for project Cedar Orbit, which rollout signal should we trust"
 
 ## Retrieval posture
 
@@ -246,8 +260,10 @@ The first implementation slice following this spec must prove:
 ## Rollout posture
 
 - keep the first rollout inside generalized workflow lessons
+- keep the first broadening limited to generalized workflow lessons plus the
+  first bounded project-rule family
 - prove hybrid-first retrieval quality before considering semantic broadening
-- do not broaden to project-rule generic lessons in the same retrieval slice
+- do not broaden to unmet-need artifacts in the same retrieval slice
 
 ## Slice v1 landed behavior
 

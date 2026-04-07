@@ -32,8 +32,8 @@ without allowing silent execution.
 
 ## Current live posture
 
-The first generalized slice is live only inside the workflow-improvement
-family.
+The generalized supervised-learning path is now live across two bounded
+guidance families.
 
 Live now:
 
@@ -46,12 +46,15 @@ Live now:
 - stale held clusters can auto-reject
 - stronger newer conflicting clusters can supersede older approved generic
   lessons on the same scoped subject
-- approved generic lessons retrieve later through approved-only hybrid
+- approved generic workflow lessons now have reviewed phrase induction
+- approved generic workflow lessons retrieve later through approved-only hybrid
+- named-project operating rules can now use the same generic pipeline through
+  the first bounded `generalized_project_rule` family
+- approved generic project rules also retrieve later through approved-only
+  hybrid
 
 Not live yet:
 
-- phrase induction for approved generic lessons
-- broader project-rule learning on the same path
 - unmet-need planning on the same path
 - self-improving capture into the same path
 - advisory planning from approved learned guidance
@@ -120,9 +123,9 @@ In the landed auto-review posture they:
   instead of creating backlog spray
 - stale held clusters reject instead of lingering
 
-The next scaling step is no longer auto-review or phrase induction. Those are
-now live for the approved generic workflow path. The next step is
-retrieval/application expansion.
+The next scaling step is no longer auto-review, phrase induction, retrieval,
+or the first project-rule family. Those are now live. The next step is
+unmet-need planning on the same pipeline.
 
 ## Retrieval / application posture
 
@@ -160,9 +163,10 @@ The intended scaling path is now:
 2. generalized lesson auto-review and promotion
 3. phrase induction for approved generic lessons
 4. generalized lesson retrieval/application expansion
-5. broader project-rule and unmet-need families on the same pipeline
-6. reduced-profile self-improving capture as another candidate source
-7. later advisory planning from approved learned lessons
+5. broader project-rule learning on the same pipeline
+6. unmet-need planning on the same pipeline
+7. reduced-profile self-improving capture as another candidate source
+8. later advisory planning from approved learned lessons
 
 This is one layered system, not several unrelated feature families.
 
@@ -183,16 +187,12 @@ pipeline rather than reverting to keyed expansion.
 
 ## Next follow-up sequence
 
-The next implementation slices after this first generalized step should be:
+The next implementation slices after the currently landed generalized slices
+should be:
 
-1. generalized lesson retrieval/application expansion
-2. broader project-rule learning on the same generic pipeline
-
-Only after those should the system broaden into:
-
-- broader project-rule learning
-- unmet-need planning
-- reduced-profile self-improving capture integration
+1. unmet-need planning
+2. reduced-profile self-improving capture integration
+3. later learned-guidance advisory planning
 
 ## Risks / failure modes
 

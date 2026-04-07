@@ -28,12 +28,12 @@ Historical completed order:
 12. pre-feature delivery enablement tranche
 13. generalized supervised lesson learning v1
 14. generalized lesson auto-review and promotion v1
-
-Recommended next execution order after the generalized-learning pivot:
-
 15. reviewed phrase induction for approved generic lessons
 16. generalized lesson retrieval/application expansion
 17. broader project-rule learning on the same generic lesson pipeline
+
+Recommended next execution order after the generalized-learning pivot:
+
 18. unmet-need planning v1 on the same generic lesson pipeline
 19. reduced-profile self-improving capture integration
 20. later learned-guidance advisory planning
@@ -48,14 +48,17 @@ Current sequencing note:
 - generalized lesson auto-review and promotion v1 is now also landed
 - reviewed phrase induction for approved generic lessons is now also landed
 - generalized lesson retrieval/application expansion is now also landed
+- broader project-rule learning on the same generic lesson pipeline is now
+  also landed
 - the program is no longer primarily advancing by enumerating one lesson key
   at a time
 - the next implementation slice should be:
-  - broader project-rule learning on the same generic lesson pipeline
-- the next follow-up slices after that should be:
   - unmet-need planning v1 on the same generic lesson pipeline
+- the next follow-up slices after that should be:
   - reduced-profile self-improving capture only after the broader generic
     families reuse the same candidate and retrieval posture
+  - later learned-guidance advisory planning after unmet-need retrieval and
+    auto-review are mature enough
 
 ## Why this order is recommended
 
@@ -85,6 +88,9 @@ Current sequencing note:
 - broader project-rule learning and unmet-need planning should reuse the
   generic lesson pipeline rather than starting from new bespoke candidate
   models
+- once project-rule learning is live, unmet-need planning becomes the next
+  broader family because it extends the same substrate without broadening into
+  autonomy
 - self-improving capture should wait until native taxonomy, auto-review, and
   backlog control are strong
 

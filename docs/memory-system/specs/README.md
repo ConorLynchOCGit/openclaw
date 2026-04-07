@@ -47,6 +47,7 @@ partially built family still needs a deliberate productionization plan.
 - `/memory-system/specs/recurring-procedure-memory`
 - `/memory-system/specs/workflow-improvement-memory`
 - `/memory-system/specs/project-memory-expansion`
+- `/memory-system/specs/project-rule-learning`
 - `/memory-system/specs/unmet-need-planning`
 
 ## Rules for using this spec pack

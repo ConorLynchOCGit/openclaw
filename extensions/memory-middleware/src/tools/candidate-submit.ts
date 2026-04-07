@@ -26,6 +26,7 @@ import {
   type ProjectFactFieldKey,
   type ProjectFactSemanticConfidence,
 } from "../project-fact-semantic.js";
+import { detectProjectRuleSemanticDecision } from "../project-rule-semantic.js";
 import {
   inspectRecurringProcedureLifecycle,
   isExpiredPendingRecurringProcedureCandidate,
@@ -610,6 +611,14 @@ function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { subject?: unknown }).subject
           : undefined,
+      projectScope:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { projectScope?: unknown }).projectScope
+          : undefined,
+      normalizedProjectScope:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { normalizedProjectScope?: unknown }).normalizedProjectScope
+          : undefined,
       normalizedSubject:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { normalizedSubject?: unknown }).normalizedSubject
@@ -1093,9 +1102,14 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     template === "workflow_environment_constraint" ||
     template === "workflow_api_workaround";
   const isGenericTemplate = template === "workflow_generalized_guidance";
-  const isGenericLesson = isGenericTemplate && lessonFamily === "generalized_workflow_lesson";
+  const isProjectRuleTemplate = template === "project_rule_guidance";
+  const isGenericLesson =
+    (isGenericTemplate && lessonFamily === "generalized_workflow_lesson") ||
+    (isProjectRuleTemplate && lessonFamily === "generalized_project_rule");
+  const supportsPhraseInduction =
+    isGenericTemplate && lessonFamily === "generalized_workflow_lesson";
   if (
-    (!isSupportedTemplate && !isGenericTemplate) ||
+    (!isSupportedTemplate && !isGenericTemplate && !isProjectRuleTemplate) ||
     !key ||
     !subjectKey ||
     (isSupportedTemplate && (!lessonKey || !isSupportedWorkflowImprovementLessonKey(lessonKey))) ||
@@ -1168,14 +1182,13 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
 
   const conflictingApprovedGeneralizedEntries = isGenericLesson
     ? inspection.activeApprovedSubjectEntries.filter(
-        (entry) =>
-          entry.lessonFamily === "generalized_workflow_lesson" && entry.key && entry.key !== key,
+        (entry) => entry.lessonFamily === lessonFamily && entry.key && entry.key !== key,
       )
     : [];
   const conflictingPendingGeneralizedEntries = isGenericLesson
     ? inspection.pendingSubjectCandidates.filter(
         (entry) =>
-          entry.lessonFamily === "generalized_workflow_lesson" &&
+          entry.lessonFamily === lessonFamily &&
           entry.key &&
           entry.key !== key &&
           entry.id !== inspection.pendingCandidate?.id,
@@ -1191,14 +1204,19 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         candidateId: pendingEntry.id,
         outcome: "rejected",
         rationale:
-          "older generalized workflow lesson cluster expired without enough compatible evidence",
+          lessonFamily === "generalized_project_rule"
+            ? "older project-rule cluster expired without enough compatible evidence"
+            : "older generalized workflow lesson cluster expired without enough compatible evidence",
         metadata: {
-          source: "candidate_submit_workflow_improvement_generic_auto_review",
+          source:
+            lessonFamily === "generalized_project_rule"
+              ? "candidate_submit_project_rule_auto_review"
+              : "candidate_submit_workflow_improvement_generic_auto_review",
           candidateLifecycle: {
             family: "workflow_improvement",
             state: "rejected",
             subjectKey,
-            lessonFamily: "generalized_workflow_lesson",
+            lessonFamily,
           },
         },
       });
@@ -1206,7 +1224,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
   }
 
   if (inspection.matchingApprovedObjectId) {
-    if (params.input.projectId && isGenericLesson && canonicalMatchForPhraseInduction) {
+    if (params.input.projectId && supportsPhraseInduction && canonicalMatchForPhraseInduction) {
       await maybeInduceWorkflowPhrasePattern({
         config: params.runtime.config,
         candidateIngress: params.runtime.candidateIngress,
@@ -1231,7 +1249,10 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
       accepted: false,
       status: "failed",
       kind: params.input.kind,
-      reason: `approved workflow-improvement memory already exists for key ${key}`,
+      reason:
+        lessonFamily === "generalized_project_rule"
+          ? `approved project rule already exists for key ${key}`
+          : `approved workflow-improvement memory already exists for key ${key}`,
     };
   }
 
@@ -1245,7 +1266,9 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         status: "failed",
         kind: params.input.kind,
         reason: isGenericLesson
-          ? `generalized workflow lesson cluster ${inspection.pendingCandidate.id} is still gathering evidence`
+          ? lessonFamily === "generalized_project_rule"
+            ? `project-rule cluster ${inspection.pendingCandidate.id} is still gathering evidence`
+            : `generalized workflow lesson cluster ${inspection.pendingCandidate.id} is still gathering evidence`
           : `workflow-improvement confirmation candidate ${inspection.pendingCandidate.id} already exists`,
       };
     }
@@ -1257,7 +1280,9 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         status: "failed",
         kind: params.input.kind,
         reason: isGenericLesson
-          ? `generalized workflow lesson cluster ${inspection.pendingCandidate.id} is waiting for later evidence`
+          ? lessonFamily === "generalized_project_rule"
+            ? `project-rule cluster ${inspection.pendingCandidate.id} is waiting for later evidence`
+            : `generalized workflow lesson cluster ${inspection.pendingCandidate.id} is waiting for later evidence`
           : `workflow-improvement confirmation candidate ${inspection.pendingCandidate.id} is waiting for later evidence`,
       };
     }
@@ -1270,14 +1295,19 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
           candidateId,
           outcome: "rejected",
           rationale:
-            "older generalized workflow lesson cluster was replaced by stronger newer conflicting evidence for the same scoped subject",
+            lessonFamily === "generalized_project_rule"
+              ? "older project-rule cluster was replaced by stronger newer conflicting evidence for the same scoped subject"
+              : "older generalized workflow lesson cluster was replaced by stronger newer conflicting evidence for the same scoped subject",
           metadata: {
-            source: "candidate_submit_workflow_improvement_generic_auto_review",
+            source:
+              lessonFamily === "generalized_project_rule"
+                ? "candidate_submit_project_rule_auto_review"
+                : "candidate_submit_workflow_improvement_generic_auto_review",
             candidateLifecycle: {
               family: "workflow_improvement",
               state: "rejected",
               subjectKey,
-              lessonFamily: "generalized_workflow_lesson",
+              lessonFamily,
             },
           },
         });
@@ -1289,7 +1319,9 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     const promotionMetadata = buildToolWorkflowImprovementAutoPromotionMetadata({
       input: params.input,
       autoPromotionProfile: isGenericLesson
-        ? "workflow_generalized_auto_review_v1"
+        ? lessonFamily === "generalized_project_rule"
+          ? "project_rule_auto_review_v1"
+          : "workflow_generalized_auto_review_v1"
         : "workflow_improvement_confirmation_v1",
       confirmationState: "confirmed",
       ...(isGenericLesson
@@ -1394,7 +1426,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     }
     if (
       params.input.projectId &&
-      isGenericLesson &&
+      supportsPhraseInduction &&
       promotionResult.promotedMemoryObjectId &&
       canonicalMatchForPhraseInduction
     ) {
@@ -1694,7 +1726,9 @@ function buildWorkflowImprovementSemanticMetadata(params: {
       source:
         params.detectionSource === "deterministic"
           ? "workflow_phrase_induction_v1"
-          : "workflow_improvement_semantic_v2",
+          : params.lessonFamily === "generalized_project_rule"
+            ? "project_rule_semantic_v1"
+            : "workflow_improvement_semantic_v2",
       detectionSource: params.detectionSource,
       confidence: params.confidence,
       lessonFamily: params.lessonFamily,
@@ -1900,6 +1934,8 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
   reasonCode: WorkflowImprovementReasonCode;
   template: WorkflowImprovementTemplate;
   lessonFamily: WorkflowImprovementLessonFamily;
+  projectScope?: string;
+  normalizedProjectScope?: string;
   lessonKey?: WorkflowImprovementLessonKey;
   toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
@@ -1931,6 +1967,10 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
     content: match.content,
     subjectKey: match.subjectKey,
     key: match.key,
+    ...(match.projectScope ? { projectScope: match.projectScope } : {}),
+    ...(match.normalizedProjectScope
+      ? { normalizedProjectScope: match.normalizedProjectScope }
+      : {}),
     ...(match.lessonKey ? { lessonKey: match.lessonKey } : {}),
     ...(match.toolKey ? { toolKey: match.toolKey } : {}),
     ...(match.guidancePattern ? { guidancePattern: match.guidancePattern } : {}),
@@ -2492,15 +2532,29 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
       };
     }
   }
+  const projectRuleFromContent = detectProjectRuleSemanticDecision(input.content);
+  if (projectRuleFromContent.action === "capture") {
+    return {
+      parsed: toOrdinaryTurnWorkflowImprovementMatch(projectRuleFromContent.match),
+      lessonFamily: projectRuleFromContent.match.lessonFamily,
+      reviewMode: "hold_for_more_evidence",
+      guidancePattern: projectRuleFromContent.match.guidancePattern,
+      source: "content",
+      detectionSource: "semantic",
+      confidence: projectRuleFromContent.confidence,
+      evidence: projectRuleFromContent.evidence,
+      observedText: input.content,
+    };
+  }
   const contentDecision = detectWorkflowImprovementSemanticDecision(input.content);
   if (contentDecision.action === "capture") {
     return {
       parsed: toOrdinaryTurnWorkflowImprovementMatch(contentDecision.match),
       lessonFamily: contentDecision.match.lessonFamily,
       reviewMode:
-        contentDecision.match.lessonFamily === "generalized_workflow_lesson"
-          ? "hold_for_more_evidence"
-          : "pending_confirmation",
+        contentDecision.match.lessonFamily === "supported_lesson"
+          ? "pending_confirmation"
+          : "hold_for_more_evidence",
       ...(contentDecision.match.lessonKey ? { lessonKey: contentDecision.match.lessonKey } : {}),
       ...(contentDecision.match.toolKey ? { toolKey: contentDecision.match.toolKey } : {}),
       ...(contentDecision.match.guidancePattern
@@ -2546,6 +2600,20 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
         };
       }
     }
+    const projectRuleFromRaw = detectProjectRuleSemanticDecision(rawCandidate);
+    if (projectRuleFromRaw.action === "capture") {
+      return {
+        parsed: toOrdinaryTurnWorkflowImprovementMatch(projectRuleFromRaw.match),
+        lessonFamily: projectRuleFromRaw.match.lessonFamily,
+        reviewMode: "hold_for_more_evidence",
+        guidancePattern: projectRuleFromRaw.match.guidancePattern,
+        source: "raw",
+        detectionSource: "semantic",
+        confidence: projectRuleFromRaw.confidence,
+        evidence: projectRuleFromRaw.evidence,
+        observedText: rawCandidate,
+      };
+    }
     const semanticFromRaw = detectWorkflowImprovementSemanticDecision(rawCandidate);
     if (semanticFromRaw.action !== "capture") {
       continue;
@@ -2554,9 +2622,9 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
       parsed: toOrdinaryTurnWorkflowImprovementMatch(semanticFromRaw.match),
       lessonFamily: semanticFromRaw.match.lessonFamily,
       reviewMode:
-        semanticFromRaw.match.lessonFamily === "generalized_workflow_lesson"
-          ? "hold_for_more_evidence"
-          : "pending_confirmation",
+        semanticFromRaw.match.lessonFamily === "supported_lesson"
+          ? "pending_confirmation"
+          : "hold_for_more_evidence",
       ...(semanticFromRaw.match.lessonKey ? { lessonKey: semanticFromRaw.match.lessonKey } : {}),
       ...(semanticFromRaw.match.toolKey ? { toolKey: semanticFromRaw.match.toolKey } : {}),
       ...(semanticFromRaw.match.guidancePattern
@@ -2896,8 +2964,14 @@ async function normalizeManagedToolCandidateInput(params: {
         content: workflowImprovementResolution.parsed.content,
       },
       {
-        category: "workflow_improvement",
-        source: "explicit_workflow_improvement",
+        category:
+          workflowImprovementResolution.lessonFamily === "generalized_project_rule"
+            ? "project_rule"
+            : "workflow_improvement",
+        source:
+          workflowImprovementResolution.lessonFamily === "generalized_project_rule"
+            ? "explicit_project_rule"
+            : "explicit_workflow_improvement",
         subject_key: workflowImprovementResolution.parsed.subjectKey,
         workflowPhraseInduction: {
           observedText: workflowImprovementResolution.observedText,
@@ -2922,6 +2996,14 @@ async function normalizeManagedToolCandidateInput(params: {
           key: workflowImprovementResolution.parsed.key,
           subjectKey: workflowImprovementResolution.parsed.subjectKey,
           subject: workflowImprovementResolution.parsed.subject,
+          ...(workflowImprovementResolution.parsed.projectScope
+            ? { projectScope: workflowImprovementResolution.parsed.projectScope }
+            : {}),
+          ...(workflowImprovementResolution.parsed.normalizedProjectScope
+            ? {
+                normalizedProjectScope: workflowImprovementResolution.parsed.normalizedProjectScope,
+              }
+            : {}),
           normalizedSubject: workflowImprovementResolution.parsed.normalizedSubject,
           value: workflowImprovementResolution.parsed.value,
           normalizedValue: workflowImprovementResolution.parsed.normalizedValue,
@@ -2980,7 +3062,7 @@ async function normalizeManagedToolCandidateInput(params: {
           ...(workflowImprovementResolution.guidancePattern
             ? { guidancePattern: workflowImprovementResolution.guidancePattern }
             : {}),
-          ...(workflowImprovementResolution.lessonFamily === "generalized_workflow_lesson"
+          ...(workflowImprovementResolution.lessonFamily !== "supported_lesson"
             ? { clusterKey: workflowImprovementResolution.parsed.key }
             : {}),
         }),

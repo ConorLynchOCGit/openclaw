@@ -2044,8 +2044,20 @@ Fast re-entry reading order:
     - bounded disablement and restore checks succeeded
 58. The approved production boundary is now live on the confirmed VPS runtime
     with no feature-boundary expansion.
+59. Broader project-rule learning is now also landed on the same generalized
+    supervised-learning pipeline:
+    - named-project operating guidance can now be captured without adding a
+      new project-fact field
+    - the first compatible evidence enters `hold_for_more_evidence`
+    - later compatible evidence can auto-promote through the existing
+      review and promotion substrate
+    - approved project rules retrieve later through approved-only hybrid using
+      project-scope, subject, preferred-action, avoided-action, and
+      guidance-pattern overlap
+    - named project facts and project rules remain distinct and guidance-only
 
 ## Next expected action
 
-Implement broader project-rule learning on the same generic supervised
-pipeline, then follow with unmet-need planning on that same substrate.
+Implement unmet-need planning on the same generic supervised pipeline, then
+follow with reduced-profile self-improving capture integration only after the
+broader generic families reuse the same candidate and retrieval posture.

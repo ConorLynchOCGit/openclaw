@@ -32,6 +32,7 @@ const MemoryProofModeSchema = z.enum(["isolated", "production"]);
 const MemoryProofFamilySchema = z.enum([
   "response_style",
   "project_fact",
+  "project_rule",
   "recurring_procedure",
   "workflow_improvement",
   "workflow_phrase_pattern",
@@ -188,6 +189,10 @@ type LifecycleInspection =
       inspection: RecurringProcedureLifecycleInspection;
     }
   | {
+      family: "project_rule";
+      inspection: WorkflowImprovementLifecycleInspection;
+    }
+  | {
       family: "workflow_improvement";
       inspection: WorkflowImprovementLifecycleInspection;
     }
@@ -321,6 +326,7 @@ function summarizeLifecycleArtifacts(lifecycle: LifecycleInspection): MemoryProo
   switch (lifecycle.family) {
     case "response_style":
     case "project_fact":
+    case "project_rule":
     case "workflow_improvement":
       return {
         ...(lifecycle.inspection.pendingCandidate?.id
@@ -386,6 +392,18 @@ async function inspectLifecycle(params: {
       });
       assert(inspection, "project-fact lifecycle inspection unavailable");
       return { family: "project_fact", inspection };
+    }
+    case "project_rule": {
+      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
+      const inspection = await inspectWorkflowImprovementLifecycle({
+        config: params.config,
+        key: params.expectation.key,
+        subjectKey: params.expectation.subjectKey,
+        projectId: params.expectation.projectId,
+        logger: params.logger,
+      });
+      assert(inspection, "project-rule lifecycle inspection unavailable");
+      return { family: "project_rule", inspection };
     }
     case "recurring_procedure": {
       assert(params.expectation.subjectKey, "capture expectation subjectKey is required");

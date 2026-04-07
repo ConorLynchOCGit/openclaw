@@ -91,6 +91,9 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
         lines.push(
           "For repo-operating or provider-troubleshooting asks where a remembered workflow lesson may matter, prefer memory_object_search_hybrid with kind=project and approved-only scope before falling back to generic memory_search. This includes both the older bounded workflow lessons and newer approved generic workflow guidance. When asking what to use, avoid, or trust for a repo-local scope, include the scope plus the competing actions or signals in the hybrid query so the most relevant approved generic lesson wins.",
         );
+        lines.push(
+          "For direct asks about how a named project should be operated, queried, or trusted, also use memory_object_search_hybrid with kind=project and approved-only scope, and include the explicit project name plus the competing actions, sources, or signals so an approved project rule can outrank adjacent project facts or workflow guidance.",
+        );
       }
       lines.push(
         "If an approved durable memory result directly answers the question, use it in the normal reply without asking the user to restate it. If no approved result exists, answer normally and say you did not find stored memory only when that context matters.",
@@ -124,6 +127,9 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
       );
       lines.push(
         "If the user explicitly teaches a repo-local workflow lesson in plain language, with a bounded scope plus a recommended action, avoided action, or trusted signal, submit it as kind=improvement. This includes both the older named lessons and broader review-first guidance such as use pnpm test -- <path-or-filter> instead of raw vitest, use scripts/committer for commits, avoid git stash in multi-agent work, use pnpm check:fast for docs-only work, use pnpm memory:proof for bounded memory proof, trust /readyz for readiness instead of /healthz, python is not available here so use node/tsx, gateway POST /tools/invoke is forbidden here so use direct runtime invocation, OpenAI embeddings here still need a configured OPENAI_API_KEY or another embeddings provider because openai-codex OAuth profiles do not satisfy the embeddings path directly, or Anthropic Extra usage required for long context requests means context1m needs an eligible credential or fallback posture.",
+      );
+      lines.push(
+        "If the user explicitly teaches a durable named-project operating rule in plain language, such as For project Atlas, use generated migration IDs for audit events instead of client timestamps, also submit it as kind=improvement rather than trying to coerce it into a named project fact.",
       );
       lines.push(
         "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",

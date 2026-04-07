@@ -495,6 +495,43 @@ describe("memory candidate submit tool", () => {
     });
   });
 
+  it("normalizes project rules into held-cluster managed improvement metadata", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    await tool.execute("call-2c-project-rule", {
+      kind: "improvement",
+      content:
+        "For project Atlas, use generated audit IDs for audit events instead of client timestamps.",
+    });
+
+    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
+      kind: "improvement",
+      content:
+        "Project rule [Atlas]: for project Atlas, use generated audit IDs for audit events instead of client timestamps.",
+      metadata: expect.objectContaining({
+        category: "project_rule",
+        source: "explicit_project_rule",
+        autoCapture: expect.objectContaining({
+          captureClass: "project_rule_guidance",
+          template: "project_rule_guidance",
+          lessonFamily: "generalized_project_rule",
+          projectScope: "Atlas",
+          normalizedProjectScope: "atlas",
+          guidancePattern: "use_instead_of",
+          recommendedAction: "generated audit IDs",
+          avoidAction: "client timestamps",
+          guidanceMode: "guidance_only",
+        }),
+        candidateLifecycle: expect.objectContaining({
+          family: "workflow_improvement",
+          state: "hold_for_more_evidence",
+          lessonFamily: "generalized_project_rule",
+        }),
+      }),
+    });
+  });
+
   it("uses an approved phrase pattern as deterministic workflow-improvement evidence", async () => {
     findApprovedWorkflowPhrasePatternMatch.mockResolvedValueOnce({
       approvedObjectId: "approved-pattern-1",

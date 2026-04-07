@@ -100,11 +100,19 @@ Generic workflow guidance remains:
 Automatic application is not allowed beyond reviewed retrieval hints.
 
 The next scaling step for this family is no longer "add more lesson keys."
-It is:
+It was:
 
 - generalized lesson auto-review and promotion
 - phrase induction for approved generic lessons
 - broader project-rule or unmet-need families reusing the same pipeline
+
+The workflow-improvement family now keeps:
+
+- the older bounded keyed lessons
+- the broader generalized workflow-guidance family
+
+Broader project rules now live as a sibling generic family rather than being
+folded back into workflow-improvement itself.
 
 ## Exact input / output behavior
 
@@ -196,9 +204,10 @@ Implementation clarification from the generalized lesson-learning pivot slice:
   approved-only hybrid path rather than new per-lesson routing
 - weak vague workflow complaints should still stay ignored instead of creating
   pending review backlog
-- approved-generic phrase induction is now live, so the next scaling step is
-  generalized lesson retrieval/application expansion rather than
-  re-expanding the lesson-key registry
+- approved-generic phrase induction is now live, and retrieval/application is
+  now also live for the broader workflow-guidance family, so the next scaling
+  work happens in sibling generic families rather than re-expanding the
+  lesson-key registry
 
 ## Ambiguity / abstain / clarify rules
 
@@ -267,6 +276,3 @@ Track:
 
 - should this family eventually have its own memory kind, or continue to live
   inside bounded improvement/candidate pathways?
-- after generalized workflow auto-review is stable, should broader project-rule
-  memory still live inside the workflow-improvement family or split into a new
-  generic lesson family?

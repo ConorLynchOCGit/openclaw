@@ -21,6 +21,7 @@ import {
   type ProjectFactFieldKey,
   type ProjectFactSemanticConfidence,
 } from "./project-fact-semantic.js";
+import { detectProjectRuleSemanticDecision } from "./project-rule-semantic.js";
 import {
   type RecurringProcedureLifecycleInspection,
   inspectRecurringProcedureLifecycle,
@@ -593,7 +594,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "workflow_tool_gotcha"
     | "workflow_environment_constraint"
     | "workflow_api_workaround"
-    | "workflow_generalized_guidance";
+    | "workflow_generalized_guidance"
+    | "project_rule_guidance";
   candidateKind: "learning" | "correction" | "procedure" | "improvement";
   reasonCode:
     | "explicit_preference_statement"
@@ -607,7 +609,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "workflow_tool_gotcha_statement"
     | "workflow_environment_constraint_statement"
     | "workflow_api_workaround_statement"
-    | "workflow_generalized_guidance_statement";
+    | "workflow_generalized_guidance_statement"
+    | "project_rule_guidance_statement";
   template:
     | "my_preferred_is"
     | "my_favorite_is"
@@ -621,7 +624,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "workflow_tool_gotcha"
     | "workflow_environment_constraint"
     | "workflow_api_workaround"
-    | "workflow_generalized_guidance";
+    | "workflow_generalized_guidance"
+    | "project_rule_guidance";
   subject: string;
   value: string;
   normalizedSubject: string;
@@ -1564,6 +1568,8 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
   reasonCode: WorkflowImprovementReasonCode;
   template: WorkflowImprovementTemplate;
   lessonFamily: WorkflowImprovementLessonFamily;
+  projectScope?: string;
+  normalizedProjectScope?: string;
   lessonKey?: WorkflowImprovementLessonKey;
   toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
@@ -1595,6 +1601,10 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
     content: match.content,
     subjectKey: match.subjectKey,
     key: match.key,
+    ...(match.projectScope ? { projectScope: match.projectScope } : {}),
+    ...(match.normalizedProjectScope
+      ? { normalizedProjectScope: match.normalizedProjectScope }
+      : {}),
     ...(match.lessonKey ? { lessonKey: match.lessonKey } : {}),
     ...(match.toolKey ? { toolKey: match.toolKey } : {}),
     ...(match.guidancePattern ? { guidancePattern: match.guidancePattern } : {}),
@@ -1737,6 +1747,20 @@ function detectWorkflowImprovementCaptureDecision(
     return null;
   }
 
+  const projectRuleDecision = detectProjectRuleSemanticDecision(text);
+  if (projectRuleDecision.action === "capture") {
+    return {
+      action: "capture",
+      confidence: projectRuleDecision.confidence,
+      detectionSource: "semantic",
+      evidence: projectRuleDecision.evidence,
+      reviewMode: "hold_for_more_evidence",
+      lessonFamily: projectRuleDecision.match.lessonFamily,
+      guidancePattern: projectRuleDecision.match.guidancePattern,
+      match: toOrdinaryTurnWorkflowImprovementMatch(projectRuleDecision.match),
+    };
+  }
+
   const semanticDecision = detectWorkflowImprovementSemanticDecision(text);
   if (semanticDecision.action === "ignore") {
     return null;
@@ -1748,9 +1772,9 @@ function detectWorkflowImprovementCaptureDecision(
     detectionSource: "semantic",
     evidence: semanticDecision.evidence,
     reviewMode:
-      semanticDecision.match.lessonFamily === "generalized_workflow_lesson"
-        ? "hold_for_more_evidence"
-        : "pending_confirmation",
+      semanticDecision.match.lessonFamily === "supported_lesson"
+        ? "pending_confirmation"
+        : "hold_for_more_evidence",
     lessonFamily: semanticDecision.match.lessonFamily,
     ...(semanticDecision.match.lessonKey ? { lessonKey: semanticDecision.match.lessonKey } : {}),
     ...(semanticDecision.match.toolKey ? { toolKey: semanticDecision.match.toolKey } : {}),
@@ -1986,7 +2010,9 @@ function buildWorkflowImprovementSemanticMetadata(params: {
       source:
         params.detectionSource === "deterministic"
           ? "workflow_phrase_induction_v1"
-          : "workflow_improvement_semantic_v2",
+          : params.lessonFamily === "generalized_project_rule"
+            ? "project_rule_semantic_v1"
+            : "workflow_improvement_semantic_v2",
       detectionSource: params.detectionSource,
       confidence: params.confidence,
       lessonFamily: params.lessonFamily,
@@ -2152,6 +2178,9 @@ function buildSubscriberCaptureMetadata(params: {
       value: match.value,
       normalizedValue: match.normalizedValue,
       ...(match.projectScope ? { projectScope: match.projectScope } : {}),
+      ...(match.normalizedProjectScope
+        ? { normalizedProjectScope: match.normalizedProjectScope }
+        : {}),
       agentExternalKey: params.agentExternalKey,
       sessionKey: params.sessionKey,
       transcriptFile: params.transcriptFile,
@@ -2203,8 +2232,14 @@ function buildSubscriberCaptureMetadata(params: {
     case "workflow_tool_gotcha":
     case "workflow_environment_constraint":
     case "workflow_api_workaround":
+    case "workflow_generalized_guidance":
       metadata.category = "workflow_improvement";
       metadata.source = "explicit_workflow_improvement";
+      metadata.subject_key = match.subjectKey;
+      break;
+    case "project_rule_guidance":
+      metadata.category = "project_rule";
+      metadata.source = "explicit_project_rule";
       metadata.subject_key = match.subjectKey;
       break;
   }
@@ -2840,6 +2875,10 @@ function buildWorkflowImprovementAutoPromotionMetadata(params: {
       subjectKey: params.match.subjectKey,
       subject: params.match.subject,
       value: params.match.value,
+      ...(params.match.projectScope ? { projectScope: params.match.projectScope } : {}),
+      ...(params.match.normalizedProjectScope
+        ? { normalizedProjectScope: params.match.normalizedProjectScope }
+        : {}),
       ...(params.match.guidancePattern ? { guidancePattern: params.match.guidancePattern } : {}),
       ...(params.match.recommendedAction
         ? { recommendedAction: params.match.recommendedAction }
@@ -2859,30 +2898,29 @@ function buildWorkflowImprovementAutoPromotionMetadata(params: {
   };
 }
 
-function isGeneralizedWorkflowLessonDecision(
-  decision: WorkflowImprovementCaptureDecision,
-): boolean {
-  return decision.lessonFamily === "generalized_workflow_lesson";
+function isAutoReviewedGuidanceDecision(decision: WorkflowImprovementCaptureDecision): boolean {
+  return decision.lessonFamily !== "supported_lesson";
 }
 
-function findConflictingApprovedGeneralizedWorkflowLessons(params: {
+function findConflictingApprovedGeneralizedGuidanceEntries(params: {
   inspection: WorkflowImprovementLifecycleInspection | null | undefined;
   key: string;
+  lessonFamily: WorkflowImprovementLessonFamily;
 }): WorkflowImprovementSubjectEntry[] {
   return (params.inspection?.activeApprovedSubjectEntries ?? []).filter(
-    (entry) =>
-      entry.lessonFamily === "generalized_workflow_lesson" && entry.key && entry.key !== params.key,
+    (entry) => entry.lessonFamily === params.lessonFamily && entry.key && entry.key !== params.key,
   );
 }
 
-function findConflictingPendingGeneralizedWorkflowLessons(params: {
+function findConflictingPendingGeneralizedGuidanceEntries(params: {
   inspection: WorkflowImprovementLifecycleInspection | null | undefined;
   key: string;
+  lessonFamily: WorkflowImprovementLessonFamily;
   pendingCandidateId?: string;
 }): WorkflowImprovementSubjectEntry[] {
   return (params.inspection?.pendingSubjectCandidates ?? []).filter(
     (entry) =>
-      entry.lessonFamily === "generalized_workflow_lesson" &&
+      entry.lessonFamily === params.lessonFamily &&
       entry.key &&
       entry.key !== params.key &&
       entry.id !== params.pendingCandidateId,
@@ -2919,6 +2957,10 @@ function buildWorkflowImprovementAutoReviewMetadata(params: {
       normalizedSubject: params.match.normalizedSubject,
       value: params.match.value,
       normalizedValue: params.match.normalizedValue,
+      ...(params.match.projectScope ? { projectScope: params.match.projectScope } : {}),
+      ...(params.match.normalizedProjectScope
+        ? { normalizedProjectScope: params.match.normalizedProjectScope }
+        : {}),
       ...(params.match.guidancePattern ? { guidancePattern: params.match.guidancePattern } : {}),
       ...(params.match.recommendedAction
         ? { recommendedAction: params.match.recommendedAction }
@@ -3902,9 +3944,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
       logger: params.logger,
     });
-    const isGeneralized = isGeneralizedWorkflowLessonDecision(effectiveDecision);
+    const isGeneralized = isAutoReviewedGuidanceDecision(effectiveDecision);
+    const supportsPhraseInduction =
+      effectiveDecision.lessonFamily === "generalized_workflow_lesson";
     const canonicalMatchForPhraseInduction: WorkflowImprovementCanonicalMatch | null =
-      isGeneralized && effectiveDecision.guidancePattern
+      supportsPhraseInduction && effectiveDecision.guidancePattern
         ? createGeneralizedWorkflowImprovementMatch({
             guidancePattern: effectiveDecision.guidancePattern,
             subject: match.subject,
@@ -3914,15 +3958,17 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           })
         : null;
     const conflictingApprovedGeneralizedEntries = isGeneralized
-      ? findConflictingApprovedGeneralizedWorkflowLessons({
+      ? findConflictingApprovedGeneralizedGuidanceEntries({
           inspection,
           key: match.key,
+          lessonFamily: effectiveDecision.lessonFamily,
         })
       : [];
     const conflictingPendingGeneralizedEntries = isGeneralized
-      ? findConflictingPendingGeneralizedWorkflowLessons({
+      ? findConflictingPendingGeneralizedGuidanceEntries({
           inspection,
           key: match.key,
+          lessonFamily: effectiveDecision.lessonFamily,
           pendingCandidateId: inspection?.pendingCandidate?.id,
         })
       : [];
@@ -3941,13 +3987,17 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           ? { guidancePattern: effectiveDecision.guidancePattern }
           : {}),
         rationale: isGeneralized
-          ? "generalized workflow lesson cluster expired without enough compatible evidence"
+          ? effectiveDecision.lessonFamily === "generalized_project_rule"
+            ? "project-rule cluster expired without enough compatible evidence"
+            : "generalized workflow lesson cluster expired without enough compatible evidence"
           : "workflow-improvement candidate confirmation window expired without later confirming evidence",
         reviewerAgentId: attribution.agentId,
         logger: params.logger,
         reviewCandidate: deps.reviewCandidate,
         source: isGeneralized
-          ? "workflow_improvement_generic_auto_review"
+          ? effectiveDecision.lessonFamily === "generalized_project_rule"
+            ? "project_rule_generic_auto_review"
+            : "workflow_improvement_generic_auto_review"
           : "workflow_improvement_candidate_confirmation",
       });
     }
@@ -3963,18 +4013,23 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
               ? { guidancePattern: effectiveDecision.guidancePattern }
               : {}),
             rationale:
-              "older generalized workflow lesson cluster expired without enough compatible evidence",
+              effectiveDecision.lessonFamily === "generalized_project_rule"
+                ? "older project-rule cluster expired without enough compatible evidence"
+                : "older generalized workflow lesson cluster expired without enough compatible evidence",
             reviewerAgentId: attribution.agentId,
             logger: params.logger,
             reviewCandidate: deps.reviewCandidate,
-            source: "workflow_improvement_generic_auto_review",
+            source:
+              effectiveDecision.lessonFamily === "generalized_project_rule"
+                ? "project_rule_generic_auto_review"
+                : "workflow_improvement_generic_auto_review",
           });
         }
       }
     }
 
     if (inspection?.matchingApprovedObjectId) {
-      if (isGeneralized && attribution.projectId && canonicalMatchForPhraseInduction) {
+      if (supportsPhraseInduction && attribution.projectId && canonicalMatchForPhraseInduction) {
         await maybeInduceWorkflowPhrasePattern({
           config: params.config,
           candidateIngress: {
@@ -4042,6 +4097,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           : {}),
         ...(match.rationale ? { rationale: match.rationale } : {}),
         ...(match.normalizedRationale ? { normalizedRationale: match.normalizedRationale } : {}),
+        ...(match.projectScope ? { projectScope: match.projectScope } : {}),
+        ...(match.normalizedProjectScope
+          ? { normalizedProjectScope: match.normalizedProjectScope }
+          : {}),
         guidanceMode: "guidance_only",
       },
       extraMetadata: {
@@ -4089,11 +4148,16 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             ? { guidancePattern: effectiveDecision.guidancePattern }
             : {}),
           rationale:
-            "older generalized workflow lesson cluster was replaced by stronger newer conflicting evidence for the same scoped subject",
+            effectiveDecision.lessonFamily === "generalized_project_rule"
+              ? "older project-rule cluster was replaced by stronger newer conflicting evidence for the same scoped subject"
+              : "older generalized workflow lesson cluster was replaced by stronger newer conflicting evidence for the same scoped subject",
           reviewerAgentId: attribution.agentId,
           logger: params.logger,
           reviewCandidate: deps.reviewCandidate,
-          source: "workflow_improvement_generic_auto_review",
+          source:
+            effectiveDecision.lessonFamily === "generalized_project_rule"
+              ? "project_rule_generic_auto_review"
+              : "workflow_improvement_generic_auto_review",
         });
       }
 
@@ -4114,7 +4178,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           agentExternalKey: decisionParams.agentExternalKey,
           sessionKey: decisionParams.sessionKey,
           transcriptFile: decisionParams.transcriptFile,
-          autoPromotionProfile: "workflow_generalized_auto_review_v1",
+          autoPromotionProfile:
+            effectiveDecision.lessonFamily === "generalized_project_rule"
+              ? "project_rule_auto_review_v1"
+              : "workflow_generalized_auto_review_v1",
           outcome: supersedeTargetIds.length > 0 ? "supersede_existing" : "approve",
           evidenceCount: 2,
           contradictionCount: supersedeTargetIds.length + contradictoryPendingCandidateIds.length,
@@ -4148,16 +4215,21 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         });
         if (!supersedeResult.accepted) {
           params.logger.warn(
-            formatLog("memory-middleware generalized workflow supersede failed", {
-              key: match.key,
-              promotedMemoryObjectId,
-              reason: supersedeResult.reason ?? "unknown",
-            }),
+            formatLog(
+              effectiveDecision.lessonFamily === "generalized_project_rule"
+                ? "memory-middleware project-rule supersede failed"
+                : "memory-middleware generalized workflow supersede failed",
+              {
+                key: match.key,
+                promotedMemoryObjectId,
+                reason: supersedeResult.reason ?? "unknown",
+              },
+            ),
           );
         }
       }
       if (promotedMemoryObjectId) {
-        if (attribution.projectId && canonicalMatchForPhraseInduction) {
+        if (supportsPhraseInduction && attribution.projectId && canonicalMatchForPhraseInduction) {
           await maybeInduceWorkflowPhrasePattern({
             config: params.config,
             candidateIngress: {

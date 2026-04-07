@@ -326,13 +326,21 @@ Delivery enablement pause:
   - prompt guidance now limits generic workflow application to the top
     directly relevant hint or two
   - semantic routing for generic lessons is still not live
+- broader project-rule learning is now also landed:
+  - named-project operating rules can now be captured without expanding the
+    project-fact field registry
+  - project rules now normalize project scope plus subject and preferred or
+    avoided actions into reusable generic lesson shapes
+  - the same bounded machine review path can auto-promote approved
+    `generalized_project_rule` lessons
+  - approved project rules now retrieve through approved-only hybrid with
+    project-rule ranking boosts and still remain guidance-only
 - post-pivot execution path:
-  1. broader project-rule learning on the same generic lesson pipeline
-  2. unmet-need planning on the same generic lesson pipeline
-  3. reduced-profile self-improving capture integration
-  4. later learned-guidance advisory planning
+  1. unmet-need planning on the same generic lesson pipeline
+  2. reduced-profile self-improving capture integration
+  3. later learned-guidance advisory planning
 - primary spec:
-  - `/memory-system/specs/delivery-enablements`
+  - `/memory-system/specs/unmet-need-planning`
 
 Fast re-entry reading order:
 
@@ -1075,11 +1083,13 @@ Current phase note:
   - retrieval stays on the approved-only hybrid path with normalized generic
     workflow ranking boosts
   - semantic routing remains limited to the older bounded approved families
-  - broader project-rule learning still remains future work
+  - the first bounded project-rule family is now live on the same generic
+    learning substrate
+  - unmet-need planning still remains future work
 - the next work in this phase is no longer more lesson-key expansion; it is:
-  - broader project-rule learning on the same generic pipeline
-  - unmet-need planning on the same generic pipeline after retrieval behavior
-    is clearer
+  - unmet-need planning on the same generic pipeline
+  - reduced-profile self-improving capture integration after the broader
+    generic families share the same retrieval posture
 
 Primary spec:
 
@@ -1087,6 +1097,7 @@ Primary spec:
 - `/memory-system/specs/generalized-lesson-learning`
 - `/memory-system/specs/generalized-lesson-auto-review`
 - `/memory-system/specs/generalized-lesson-retrieval-and-application`
+- `/memory-system/specs/project-rule-learning`
 
 ---
 
