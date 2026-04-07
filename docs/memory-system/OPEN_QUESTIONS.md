@@ -47,8 +47,7 @@ pivot.
    - recurring deployment/runtime constraint
    - recurring debugging preference
    - recurring review preference
-     become standalone families, or be absorbed into broader domain-neutral
-     families?
+     stay standalone, or be absorbed into broader domain-neutral families?
 3. What exact line should separate:
    - fact vs observation
    - rule vs decision

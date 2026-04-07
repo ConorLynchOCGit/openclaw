@@ -38,21 +38,12 @@ Recommended next execution order after the generalized-learning pivot:
 19. reduced-profile self-improving capture integration
 20. later learned-guidance advisory planning
 21. cross-domain family expansion tranche 1:
-
-- decision + rationale
-- observation / result / finding
-- terminology / ontology / canonical definition
-- entity profile
-
+    decision + rationale, observation / result / finding, terminology /
+    ontology / canonical definition, and entity profile
 22. cross-domain family expansion tranche 2:
-
-- risk / hazard / safety constraint
-- metric / baseline / threshold
-- hypothesis / open question
-- audience / stakeholder model
-- source trust / authority ranking
-- exception / edge-case rule
-
+    risk / hazard / safety constraint, metric / baseline / threshold,
+    hypothesis / open question, audience / stakeholder model, source trust /
+    authority ranking, and exception / edge-case rule
 23. any broader automation discussion
 
 Current sequencing note:
