@@ -5133,6 +5133,226 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
+  it("auto-promotes a generalized project-fact cluster after later compatible evidence and retrieves it through approved-only hybrid", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const searchTool = createMemoryObjectSearchHybridTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-project-fact-generic-1", {
+      kind: "learning",
+      content: "For project Atlas, the evidence dashboard is #atlas-rollout-evidence.",
+      projectId: seeded.projectId,
+    });
+    const candidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const initialRow = await querySingleRow<{
+      review_state: string;
+      fact_family: string | null;
+      lifecycle_state: string | null;
+      cluster_key: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'factFamily' as fact_family,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'clusterKey' as cluster_key
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [candidateId],
+    );
+
+    expect(initialRow).toEqual({
+      review_state: "candidate",
+      fact_family: "generalized_reference",
+      lifecycle_state: "hold_for_more_evidence",
+      cluster_key: expect.any(String),
+    });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-project-fact-generic-2", {
+      kind: "learning",
+      content: "For project Atlas, the evidence dashboard is #atlas-rollout-evidence.",
+      projectId: seeded.projectId,
+    });
+
+    expect(confirmingSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "learning",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const approvedMemoryObjectId = (confirmingSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const approvedRow = await querySingleRow<{
+      review_state: string;
+      promotion_profile: string | null;
+      confirmation_method: string | null;
+      fact_family: string | null;
+      normalized_project_scope: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'promotionMetadata'->'autoPromotion'->>'profile' as promotion_profile,
+          metadata->'promotionMetadata'->'candidateConfirmation'->>'method' as confirmation_method,
+          metadata->'promotionMetadata'->'autoPromotion'->>'factFamily' as fact_family,
+          metadata->'promotionMetadata'->'autoPromotion'->>'normalizedProjectScope' as normalized_project_scope
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [approvedMemoryObjectId],
+    );
+
+    expect(approvedRow).toEqual({
+      review_state: "approved",
+      promotion_profile: "project_fact_generalized_confirmation_v1",
+      confirmation_method: "generalized_cluster_auto_review",
+      fact_family: "generalized_reference",
+      normalized_project_scope: "atlas",
+    });
+
+    const searchResult = await searchTool.execute("call-project-fact-generic-search", {
+      query: "for project atlas where is the evidence dashboard",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+    const records = (
+      searchResult.details as {
+        accepted: boolean;
+        status: string;
+        records: Array<{ id: string; matchedFields: string[] }>;
+      }
+    ).records;
+
+    expect(records[0]).toEqual(
+      expect.objectContaining({
+        id: approvedMemoryObjectId,
+        matchedFields: expect.arrayContaining([
+          "project_fact_scope_match",
+          "project_fact_subject_match",
+        ]),
+      }),
+    );
+  });
+
+  it("auto-promotes generalized project-fact corrections and supersedes the older approved fact", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-project-fact-generic-correction-1", {
+      kind: "learning",
+      content: "For project Atlas, the evidence dashboard is #atlas-rollout-evidence.",
+      projectId: seeded.projectId,
+    });
+    const initialCandidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [initialCandidateId],
+      );
+    } finally {
+      await client.end();
+    }
+    const initialConfirm = await submitTool.execute("call-project-fact-generic-correction-2", {
+      kind: "learning",
+      content: "For project Atlas, the evidence dashboard is #atlas-rollout-evidence.",
+      projectId: seeded.projectId,
+    });
+    const originalApprovedId = (initialConfirm.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const correctionSubmit = await submitTool.execute("call-project-fact-generic-correction-3", {
+      kind: "correction",
+      content: "Actually, for project Atlas, the evidence dashboard is #atlas-rollout-evidence-v2.",
+      projectId: seeded.projectId,
+    });
+
+    expect(correctionSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "correction",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const correctedApprovedId = (correctionSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const supersession = await querySingleRow<{
+      original_review_state: string;
+      original_superseded_by: string | null;
+      corrected_review_state: string;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select review_state::text from memory_middleware.memory_objects where id = $1::uuid) as original_review_state,
+          (select metadata->>'supersededByObjectId' from memory_middleware.memory_objects where id = $1::uuid) as original_superseded_by,
+          (select review_state::text from memory_middleware.memory_objects where id = $2::uuid) as corrected_review_state
+      `,
+      [originalApprovedId, correctedApprovedId],
+    );
+
+    expect(supersession).toEqual({
+      original_review_state: "superseded",
+      original_superseded_by: correctedApprovedId,
+      corrected_review_state: "approved",
+    });
+  });
+
   it("boosts the most relevant approved workflow-improvement lesson in hybrid retrieval", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

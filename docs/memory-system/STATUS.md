@@ -282,6 +282,15 @@ to the most directly relevant hint or two, preserved hybrid-first and
 guidance-only posture, and isolated plus narrow production proof that the
 right approved generic workflow lesson now outranks adjacent lessons without
 generic semantic fallback.
+First existing-family parity tranche completed on the approved live production
+boundary for its intended scope, with bounded generic named-project reference
+fact capture beyond the older fixed field registry, held-cluster auto-review
+and promotion through the existing project-fact lifecycle substrate, explicit
+generic correction and supersede on the same project-scoped subject,
+approved-only hybrid retrieval boosts for generic named-project reference
+facts, and isolated plus narrow production proof that a repeated generic
+project fact can be held, approved, retrieved, and corrected without
+speculative project summarization.
 Fifth family-aware semantic retrieval routing slice completed on the approved
 live production boundary for its intended scope, with approved-only
 project-scoped semantic fallback for `git_stash_unsafe`, approved source
@@ -358,6 +367,8 @@ Current compact state:
   - weak ambiguous ignore instead of dead candidate backlog
   - field-aware approved retrieval for direct project questions
   - project-scoped lifecycle and duplicate enforcement for supported fields
+  - bounded generic named-project reference-fact capture with held-cluster
+    auto-review and approved-only retrieval
 - first recurring-procedure semantic UX slice is now live for its intended
   scope
 - supported recurring-procedure subjects now include:
@@ -602,25 +613,26 @@ Current compact state:
   - overlap-aware retrieval choosing numbered steps correctly
   - targetable conversational forget superseding the no-tables preference
 - latest semantic project-memory proof timestamp:
-  - `2026-04-06T23:40:54.170Z`
+  - `2026-04-07T14:33:39.895Z`
 - latest semantic project-memory production proof artifacts:
-  - `projectId = 2fbcec81-165d-4207-ac0d-3653800bdda1`
-  - `agentId = 73e7e59a-6eaa-42bf-b442-43ebfc4b128c`
-  - `sessionId = 1dab970c-7507-460b-9352-5443d60d91eb`
-  - `candidateId = 34f7cddc-5c2e-4aac-950e-701ad172cd9e`
-  - `candidateEventId = 6c49f66f-c42a-4301-b985-82e110978278`
-  - `approvedObjectId = 7dee1db4-0d72-457b-8867-83cb568989f8`
-  - `reviewId = a961a211-7f39-40c1-843e-03204426abd0`
+  - `projectId = 437d43ff-1c9d-4757-8d44-cd8e0aeb241b`
+  - `agentId = 9d8f2956-a081-4135-be61-8fe7f2fe8070`
+  - `sessionId = cd670787-8e50-427d-9b14-cb1176408238`
+  - `candidateId = 7dd9548b-42af-457b-972e-9af12f4bcbe5`
+  - `candidateEventId = 0f9235d1-16f5-4225-ae31-67ca46353551`
+  - `approvedObjectId = 06bd9e30-9923-422f-9d4b-07673a59eedd`
 - latest semantic project-memory production proof delta:
   - `memory_events +1`
-  - `memory_objects +2`
+  - `memory_objects +1`
   - `memory_reviews +1`
-  - duplicate follow-up caused `+0` additional writes
+  - later confirming evidence reused the same held cluster instead of creating
+    a second candidate
 - isolated project-memory proof additionally proved:
-  - documentation URL confirmation into approved memory
-  - field-aware retrieval ranking the right support URL first
-  - transcript-seam ambiguity ignore for unsupported generic `docs` phrasing
-  - duplicate suppression for explicit project-fact URL replays
+  - first generic project-fact evidence entered `hold_for_more_evidence`
+  - later compatible evidence auto-promoted the held generic cluster
+  - approved-only hybrid retrieval ranked the right generic project fact first
+  - explicit generic correction superseded the older approved generic fact
+  - transcript-seam ambiguity ignore for unsupported broad project narrative
 - latest quick-win production proof timestamp:
   - `2026-04-05T15:18:19.270Z`
 - latest quick-win production proof artifacts:

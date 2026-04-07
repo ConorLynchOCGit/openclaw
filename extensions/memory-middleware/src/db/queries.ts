@@ -10232,6 +10232,21 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
+  const autoCaptureFactFamilyExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'factFamily',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'factFamily',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'factFamily',",
+    "v.metadata->'autoPromotion'->>'factFamily',",
+    "case when coalesce(",
+    "v.metadata->'autoCapture'->>'fieldKey',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'fieldKey',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'fieldKey',",
+    "v.metadata->'autoPromotion'->>'fieldKey',",
+    "''",
+    ") <> '' then 'supported_field' else '' end",
+    ")",
+  ].join(" ");
   const autoCaptureLessonKeyExpression = [
     "coalesce(",
     "v.metadata->'autoCapture'->>'lessonKey',",
@@ -10268,6 +10283,13 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
+  const autoCaptureNormalizedProjectFactLabelExpression = [
+    "case",
+    `when position(' :: ' in ${autoCaptureNormalizedSubjectExpression}) > 0`,
+    `then split_part(${autoCaptureNormalizedSubjectExpression}, ' :: ', 2)`,
+    `else ${autoCaptureNormalizedSubjectExpression}`,
+    "end",
+  ].join(" ");
   const autoCaptureNormalizedProjectScopeExpression = [
     "coalesce(",
     "v.metadata->'autoCapture'->>'normalizedProjectScope',",
@@ -10301,6 +10323,15 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedNeededCapability',",
     "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedNeededCapability',",
     "v.metadata->'autoPromotion'->>'normalizedNeededCapability',",
+    "''",
+    ")",
+  ].join(" ");
+  const autoCaptureNormalizedValueExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'normalizedValue',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedValue',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedValue',",
+    "v.metadata->'autoPromotion'->>'normalizedValue',",
     "''",
     ")",
   ].join(" ");
@@ -10370,6 +10401,18 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
           + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
           + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
           + case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
+          + case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
+              and ${autoCaptureNormalizedProjectScopeExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
+            then 205 else 0 end
+          + case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
+              and ${autoCaptureNormalizedProjectFactLabelExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedProjectFactLabelExpression} || '%'
+            then 180 else 0 end
+          + case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
+              and ${autoCaptureNormalizedValueExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedValueExpression} || '%'
+            then 100 else 0 end
           + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
               and ${autoCaptureNormalizedSubjectExpression} <> ''
               and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
@@ -10435,6 +10478,21 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
             end,
             case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text
               then 'auto_capture_lesson_match'
+            end,
+            case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
+                and ${autoCaptureNormalizedProjectScopeExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
+              then 'project_fact_scope_match'
+            end,
+            case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
+                and ${autoCaptureNormalizedProjectFactLabelExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedProjectFactLabelExpression} || '%'
+              then 'project_fact_subject_match'
+            end,
+            case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
+                and ${autoCaptureNormalizedValueExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedValueExpression} || '%'
+              then 'project_fact_value_match'
             end,
             case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
                 and ${autoCaptureNormalizedSubjectExpression} <> ''

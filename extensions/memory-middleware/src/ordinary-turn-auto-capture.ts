@@ -16,8 +16,11 @@ import {
   isExpiredPendingProjectFactCandidate,
 } from "./project-fact-lifecycle.js";
 import {
+  detectGenericProjectFactSemanticDecision,
   detectProjectFactSemanticDecision,
+  isBoundedGenericProjectFactReference,
   type ProjectFactCanonicalMatch,
+  type ProjectFactFamily,
   type ProjectFactFieldKey,
   type ProjectFactSemanticConfidence,
 } from "./project-fact-semantic.js";
@@ -624,6 +627,7 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "responses_no_tables"
     | "responses_numbered_steps"
     | "project_fact_named_scope"
+    | "project_fact_generalized_named_scope"
     | "named_recurring_checklist"
     | "workflow_tool_gotcha"
     | "workflow_environment_constraint"
@@ -640,6 +644,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
   key: string;
   projectScope?: string;
   normalizedProjectScope?: string;
+  factFamily?: ProjectFactFamily;
+  fieldKey?: ProjectFactFieldKey;
   procedureKey?: RecurringProcedureKey;
   title?: string;
   steps?: string[];
@@ -813,7 +819,9 @@ type ProjectFactCaptureDecision = {
   confidence: "high" | "medium";
   detectionSource: ProjectFactDetectionSource;
   evidence: string[];
-  fieldKey: ProjectFactFieldKey;
+  reviewMode: "pending_confirmation" | "hold_for_more_evidence";
+  factFamily: ProjectFactFamily;
+  fieldKey?: ProjectFactFieldKey;
   match: OrdinaryTurnAutoCaptureMatch;
 };
 
@@ -1168,7 +1176,6 @@ function buildProjectFactMatch(params: {
   reasonCode: "explicit_project_fact_statement" | "explicit_project_fact_correction";
   normalized: string;
   pattern: RegExp;
-  template: "project_fact_named_scope";
 }): OrdinaryTurnAutoCaptureMatch | null {
   const matched = params.normalized.match(params.pattern);
   if (!matched) {
@@ -1185,9 +1192,6 @@ function buildProjectFactMatch(params: {
   if (!projectScope || !subject || !value) {
     return null;
   }
-  if (!PROJECT_FACT_FIELD_LABEL_TO_KEY[normalizedSubject]) {
-    return null;
-  }
   if (
     normalizedProjectScope.split(" ").length > 5 ||
     normalizedSubject.split(" ").length > 5 ||
@@ -1202,9 +1206,21 @@ function buildProjectFactMatch(params: {
   ) {
     return null;
   }
+  const fieldKey = PROJECT_FACT_FIELD_LABEL_TO_KEY[normalizedSubject];
+  const factFamily: ProjectFactFamily = fieldKey ? "supported_field" : "generalized_reference";
+  if (
+    factFamily === "generalized_reference" &&
+    !isBoundedGenericProjectFactReference({ subjectLabel: subject, value })
+  ) {
+    return null;
+  }
+  const template =
+    factFamily === "supported_field"
+      ? "project_fact_named_scope"
+      : "project_fact_generalized_named_scope";
   const normalizedCompositeSubject = `${normalizedProjectScope} :: ${normalizedSubject}`;
   const subjectKey = buildAutoCaptureSubjectKey({
-    template: params.template,
+    template,
     normalizedSubject: normalizedCompositeSubject,
   });
   return {
@@ -1212,7 +1228,7 @@ function buildProjectFactMatch(params: {
     captureClass: params.captureClass,
     candidateKind: params.candidateKind,
     reasonCode: params.reasonCode,
-    template: params.template,
+    template,
     subject: `${projectScope} / ${subject}`,
     value,
     normalizedSubject: normalizedCompositeSubject,
@@ -1223,12 +1239,14 @@ function buildProjectFactMatch(params: {
         : `Project fact [${projectScope}]: ${subject} is ${value}.`,
     subjectKey,
     key: buildAutoCaptureKey({
-      template: params.template,
+      template,
       normalizedSubject: normalizedCompositeSubject,
       normalizedValue,
     }),
     projectScope,
     normalizedProjectScope,
+    factFamily,
+    ...(fieldKey ? { fieldKey } : {}),
   };
 }
 
@@ -1270,7 +1288,7 @@ export function parseOrdinaryTurnAutoCapturePreference(
       }
     }
 
-    for (const { pattern, template } of PROJECT_FACT_CORRECTION_PATTERNS) {
+    for (const { pattern } of PROJECT_FACT_CORRECTION_PATTERNS) {
       const match = buildProjectFactMatch({
         profile,
         captureClass: "project_fact_correction",
@@ -1278,7 +1296,6 @@ export function parseOrdinaryTurnAutoCapturePreference(
         reasonCode: "explicit_project_fact_correction",
         normalized,
         pattern,
-        template,
       });
       if (match) {
         return match;
@@ -1323,7 +1340,7 @@ export function parseOrdinaryTurnAutoCapturePreference(
   }
 
   if (profile === "user-preference-v2") {
-    for (const { pattern, template } of PROJECT_FACT_PATTERNS) {
+    for (const { pattern } of PROJECT_FACT_PATTERNS) {
       const match = buildProjectFactMatch({
         profile,
         captureClass: "explicit_project_fact",
@@ -1331,7 +1348,6 @@ export function parseOrdinaryTurnAutoCapturePreference(
         reasonCode: "explicit_project_fact_statement",
         normalized,
         pattern,
-        template,
       });
       if (match) {
         return match;
@@ -1406,7 +1422,7 @@ export function parseAutoCaptureManagedCandidateContent(
     }
   }
 
-  for (const { pattern, template } of PROJECT_FACT_CANDIDATE_CONTENT_PATTERNS) {
+  for (const { pattern } of PROJECT_FACT_CANDIDATE_CONTENT_PATTERNS) {
     const match = buildProjectFactMatch({
       profile: "user-preference-v2",
       captureClass: "explicit_project_fact",
@@ -1414,7 +1430,6 @@ export function parseAutoCaptureManagedCandidateContent(
       reasonCode: "explicit_project_fact_statement",
       normalized,
       pattern,
-      template,
     });
     if (match) {
       return match;
@@ -1476,7 +1491,7 @@ export function parseManagedCorrectionCandidateContent(
     }
   }
 
-  for (const { pattern, template } of PROJECT_FACT_CORRECTION_CANDIDATE_CONTENT_PATTERNS) {
+  for (const { pattern } of PROJECT_FACT_CORRECTION_CANDIDATE_CONTENT_PATTERNS) {
     const match = buildProjectFactMatch({
       profile: "user-preference-v2",
       captureClass: "project_fact_correction",
@@ -1484,7 +1499,6 @@ export function parseManagedCorrectionCandidateContent(
       reasonCode: "explicit_project_fact_correction",
       normalized,
       pattern,
-      template,
     });
     if (match) {
       return match;
@@ -1527,6 +1541,13 @@ function inferSupportedProjectFactFieldKey(
   return PROJECT_FACT_FIELD_LABEL_TO_KEY[fieldLabel] ?? null;
 }
 
+function isGeneralizedProjectFactMatch(match: OrdinaryTurnAutoCaptureMatch): boolean {
+  return (
+    match.template === "project_fact_generalized_named_scope" ||
+    match.factFamily === "generalized_reference"
+  );
+}
+
 function toOrdinaryTurnProjectFactMatch(
   match: ProjectFactCanonicalMatch,
 ): OrdinaryTurnAutoCaptureMatch {
@@ -1545,6 +1566,8 @@ function toOrdinaryTurnProjectFactMatch(
     key: match.key,
     projectScope: match.projectScope,
     normalizedProjectScope: match.normalizedProjectScope,
+    factFamily: match.factFamily,
+    ...(match.fieldKey ? { fieldKey: match.fieldKey } : {}),
   };
 }
 
@@ -1712,24 +1735,41 @@ function detectProjectFactCaptureDecision(
       confidence: "high",
       detectionSource: "deterministic",
       evidence: ["deterministic_pattern_match"],
+      reviewMode: "pending_confirmation",
+      factFamily: "supported_field",
       fieldKey: exactFieldKey,
       match: exactMatch,
     };
   }
 
   const semanticDecision = detectProjectFactSemanticDecision(text);
-  if (semanticDecision.action === "ignore") {
-    return null;
+  if (semanticDecision.action === "capture") {
+    return {
+      action: "capture",
+      confidence: semanticDecision.confidence,
+      detectionSource: "semantic",
+      evidence: semanticDecision.evidence,
+      reviewMode: "pending_confirmation",
+      factFamily: semanticDecision.match.factFamily,
+      fieldKey: semanticDecision.match.fieldKey,
+      match: toOrdinaryTurnProjectFactMatch(semanticDecision.match),
+    };
   }
 
-  return {
-    action: "capture",
-    confidence: semanticDecision.confidence,
-    detectionSource: "semantic",
-    evidence: semanticDecision.evidence,
-    fieldKey: semanticDecision.match.fieldKey,
-    match: toOrdinaryTurnProjectFactMatch(semanticDecision.match),
-  };
+  const genericDecision = detectGenericProjectFactSemanticDecision(text);
+  if (genericDecision.action === "capture") {
+    return {
+      action: "capture",
+      confidence: genericDecision.confidence,
+      detectionSource: "semantic",
+      evidence: genericDecision.evidence,
+      reviewMode: "hold_for_more_evidence",
+      factFamily: genericDecision.match.factFamily,
+      match: toOrdinaryTurnProjectFactMatch(genericDecision.match),
+    };
+  }
+
+  return null;
 }
 
 function detectRecurringProcedureCaptureDecision(
@@ -1995,14 +2035,16 @@ function buildProjectFactSemanticMetadata(params: {
   detectionSource: ProjectFactDetectionSource;
   confidence: ProjectFactSemanticConfidence | "high";
   evidence: string[];
-  fieldKey: ProjectFactFieldKey;
+  factFamily: ProjectFactFamily;
+  fieldKey?: ProjectFactFieldKey;
 }): Record<string, unknown> {
   return {
     semanticDetection: {
       source: "project_fact_semantic_v1",
       detectionSource: params.detectionSource,
       confidence: params.confidence,
-      fieldKey: params.fieldKey,
+      factFamily: params.factFamily,
+      ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
       evidence: params.evidence,
     },
   };
@@ -2079,19 +2121,24 @@ function buildPendingConfirmationMetadata(params: {
 function buildProjectFactPendingConfirmationMetadata(params: {
   confidence: ProjectFactSemanticConfidence;
   evidence: string[];
-  fieldKey: ProjectFactFieldKey;
+  factFamily: ProjectFactFamily;
+  state?: "pending_confirmation" | "hold_for_more_evidence";
+  fieldKey?: ProjectFactFieldKey;
+  clusterKey?: string;
   observedAt?: string;
 }): Record<string, unknown> {
   const observedAt = params.observedAt ?? new Date().toISOString();
   return {
     candidateLifecycle: {
       family: "project_fact",
-      state: "pending_confirmation",
+      state: params.state ?? "pending_confirmation",
       confidence: params.confidence,
       evidenceCount: 1,
       observedAt,
       expiresAt: new Date(Date.parse(observedAt) + PROCEDURE_CONFIRMATION_WINDOW_MS).toISOString(),
-      fieldKey: params.fieldKey,
+      factFamily: params.factFamily,
+      ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
+      ...(params.clusterKey ? { clusterKey: params.clusterKey } : {}),
       evidence: params.evidence,
     },
   };
@@ -2377,7 +2424,8 @@ async function autoPromoteResponseStyleCandidate(params: {
 async function rejectProjectFactCandidateIfPresent(params: {
   candidateId: string;
   subjectKey: string;
-  fieldKey: ProjectFactFieldKey;
+  factFamily: ProjectFactFamily;
+  fieldKey?: ProjectFactFieldKey;
   rationale: string;
   reviewerAgentId?: string;
   logger: PluginLogger;
@@ -2395,7 +2443,8 @@ async function rejectProjectFactCandidateIfPresent(params: {
         family: "project_fact",
         state: "rejected",
         subjectKey: params.subjectKey,
-        fieldKey: params.fieldKey,
+        factFamily: params.factFamily,
+        ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
       },
     },
   });
@@ -2404,7 +2453,8 @@ async function rejectProjectFactCandidateIfPresent(params: {
       formatLog("memory-middleware project-fact candidate rejection failed", {
         candidateId: params.candidateId,
         subjectKey: params.subjectKey,
-        fieldKey: params.fieldKey,
+        factFamily: params.factFamily,
+        ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
         reason: result.reason ?? "unknown",
       }),
     );
@@ -2657,7 +2707,8 @@ function buildResponseStyleAutoPromotionMetadata(params: {
 
 function buildProjectFactAutoPromotionMetadata(params: {
   match: OrdinaryTurnAutoCaptureMatch;
-  fieldKey: ProjectFactFieldKey;
+  factFamily: ProjectFactFamily;
+  fieldKey?: ProjectFactFieldKey;
   agentExternalKey: string;
   sessionKey: string;
   transcriptFile: string;
@@ -2665,6 +2716,11 @@ function buildProjectFactAutoPromotionMetadata(params: {
   timestamp?: string;
   semanticMetadata?: Record<string, unknown>;
   candidateConfirmation?: Record<string, unknown>;
+  autoReview?: {
+    outcome: "approve" | "supersede_existing";
+    supersedeTargetIds: string[];
+    rejectedCandidateIds: string[];
+  };
 }): Record<string, unknown> {
   return {
     autoPromotion: {
@@ -2674,12 +2730,18 @@ function buildProjectFactAutoPromotionMetadata(params: {
       captureProfile: params.match.profile,
       captureClass: params.match.captureClass,
       reasonCode: params.match.reasonCode,
-      fieldKey: params.fieldKey,
+      factFamily: params.factFamily,
+      ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
       key: params.match.key,
       subjectKey: params.match.subjectKey,
       subject: params.match.subject,
       value: params.match.value,
       ...(params.match.projectScope ? { projectScope: params.match.projectScope } : {}),
+      ...(params.match.normalizedProjectScope
+        ? { normalizedProjectScope: params.match.normalizedProjectScope }
+        : {}),
+      normalizedSubject: params.match.normalizedSubject,
+      normalizedValue: params.match.normalizedValue,
       agentExternalKey: params.agentExternalKey,
       sessionKey: params.sessionKey,
       transcriptFile: params.transcriptFile,
@@ -2688,6 +2750,17 @@ function buildProjectFactAutoPromotionMetadata(params: {
     ...(params.semanticMetadata ?? {}),
     ...(params.candidateConfirmation
       ? { candidateConfirmation: params.candidateConfirmation }
+      : {}),
+    ...(params.autoReview
+      ? {
+          projectFactAutoReview: {
+            family: "project_fact",
+            factFamily: params.factFamily,
+            outcome: params.autoReview.outcome,
+            supersedeTargetIds: params.autoReview.supersedeTargetIds,
+            rejectedCandidateIds: params.autoReview.rejectedCandidateIds,
+          },
+        }
       : {}),
   };
 }
@@ -3417,7 +3490,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             detectionSource: decisionParams.decision.detectionSource,
             confidence: decisionParams.decision.confidence,
             evidence: decisionParams.decision.evidence,
-            fieldKey: decisionParams.decision.fieldKey,
+            factFamily: decisionParams.decision.factFamily,
+            ...(decisionParams.decision.fieldKey
+              ? { fieldKey: decisionParams.decision.fieldKey }
+              : {}),
           })
         : undefined;
 
@@ -3452,7 +3528,8 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       await rejectProjectFactCandidateIfPresent({
         candidateId: inspection.pendingCandidate.id,
         subjectKey: match.subjectKey,
-        fieldKey: decisionParams.decision.fieldKey,
+        factFamily: decisionParams.decision.factFamily,
+        ...(decisionParams.decision.fieldKey ? { fieldKey: decisionParams.decision.fieldKey } : {}),
         rationale:
           "project-fact candidate confirmation window expired without later confirming evidence",
         reviewerAgentId: attribution.agentId,
@@ -3493,7 +3570,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         await rejectProjectFactCandidateIfPresent({
           candidateId,
           subjectKey: match.subjectKey,
-          fieldKey: decisionParams.decision.fieldKey,
+          factFamily: decisionParams.decision.factFamily,
+          ...(decisionParams.decision.fieldKey
+            ? { fieldKey: decisionParams.decision.fieldKey }
+            : {}),
           rationale: "high-confidence project-fact correction superseded pending candidate state",
           reviewerAgentId: attribution.agentId,
           logger: params.logger,
@@ -3510,7 +3590,8 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       transcriptFile: decisionParams.transcriptFile,
       ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
       autoCaptureExtras: {
-        fieldKey: decisionParams.decision.fieldKey,
+        factFamily: decisionParams.decision.factFamily,
+        ...(decisionParams.decision.fieldKey ? { fieldKey: decisionParams.decision.fieldKey } : {}),
       },
       extraMetadata: {
         ...(semanticMetadata ?? {}),
@@ -3518,12 +3599,37 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           ? buildProjectFactPendingConfirmationMetadata({
               confidence: decisionParams.decision.confidence,
               evidence: decisionParams.decision.evidence,
-              fieldKey: decisionParams.decision.fieldKey,
+              factFamily: decisionParams.decision.factFamily,
+              state: decisionParams.decision.reviewMode,
+              ...(decisionParams.decision.fieldKey
+                ? { fieldKey: decisionParams.decision.fieldKey }
+                : {}),
+              ...(isGeneralizedProjectFactMatch(match) ? { clusterKey: match.key } : {}),
               ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
             })
           : {}),
       },
     });
+
+    if (
+      isGeneralizedProjectFactMatch(match) &&
+      match.captureClass === "explicit_project_fact" &&
+      inspection?.activeApprovedSubjectObjectIds.length &&
+      !inspection.matchingApprovedObjectId
+    ) {
+      params.logger.debug?.(
+        formatLog(
+          "memory-middleware generic project-fact capture blocked conflicting approved subject",
+          {
+            key: match.key,
+            subjectKey: match.subjectKey,
+            activeApprovedSubjectObjectIds: inspection.activeApprovedSubjectObjectIds,
+          },
+        ),
+      );
+      markRecent(match.key);
+      return true;
+    }
 
     if (
       inspection?.pendingCandidate &&
@@ -3538,25 +3644,38 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         promoteToMemory: deps.promoteToMemory,
         metadata: buildProjectFactAutoPromotionMetadata({
           match,
-          fieldKey: decisionParams.decision.fieldKey,
+          factFamily: decisionParams.decision.factFamily,
+          ...(decisionParams.decision.fieldKey
+            ? { fieldKey: decisionParams.decision.fieldKey }
+            : {}),
           agentExternalKey: decisionParams.agentExternalKey,
           sessionKey: decisionParams.sessionKey,
           transcriptFile: decisionParams.transcriptFile,
-          autoPromotionProfile: "project_fact_confirmation_v1",
+          autoPromotionProfile: isGeneralizedProjectFactMatch(match)
+            ? "project_fact_generalized_confirmation_v1"
+            : "project_fact_confirmation_v1",
           ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
           ...(semanticMetadata ? { semanticMetadata } : {}),
           candidateConfirmation: {
             state: "confirmed",
-            method: "repeat_subject_signal",
+            method: isGeneralizedProjectFactMatch(match)
+              ? "generalized_cluster_auto_review"
+              : "repeat_subject_signal",
             confirmationEvidenceCount: 2,
             confirmationWindowMs: PROJECT_FACT_CONFIRMATION_WINDOW_MS,
+            ...(isGeneralizedProjectFactMatch(match) ? { clusterKey: match.key } : {}),
           },
         }),
         logContext: {
           key: match.key,
           subjectKey: match.subjectKey,
-          fieldKey: decisionParams.decision.fieldKey,
-          confirmationMode: "repeat_subject_signal",
+          factFamily: decisionParams.decision.factFamily,
+          ...(decisionParams.decision.fieldKey
+            ? { fieldKey: decisionParams.decision.fieldKey }
+            : {}),
+          confirmationMode: isGeneralizedProjectFactMatch(match)
+            ? "generalized_cluster_auto_review"
+            : "repeat_subject_signal",
           confidence: decisionParams.decision.confidence,
         },
       });
@@ -3618,18 +3737,26 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         promoteToMemory: deps.promoteToMemory,
         metadata: buildProjectFactAutoPromotionMetadata({
           match,
-          fieldKey: decisionParams.decision.fieldKey,
+          factFamily: decisionParams.decision.factFamily,
+          ...(decisionParams.decision.fieldKey
+            ? { fieldKey: decisionParams.decision.fieldKey }
+            : {}),
           agentExternalKey: decisionParams.agentExternalKey,
           sessionKey: decisionParams.sessionKey,
           transcriptFile: decisionParams.transcriptFile,
-          autoPromotionProfile: "project_fact_correction_v1",
+          autoPromotionProfile: isGeneralizedProjectFactMatch(match)
+            ? "project_fact_generalized_correction_v1"
+            : "project_fact_correction_v1",
           ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
           ...(semanticMetadata ? { semanticMetadata } : {}),
         }),
         logContext: {
           key: match.key,
           subjectKey: match.subjectKey,
-          fieldKey: decisionParams.decision.fieldKey,
+          factFamily: decisionParams.decision.factFamily,
+          ...(decisionParams.decision.fieldKey
+            ? { fieldKey: decisionParams.decision.fieldKey }
+            : {}),
           confidence: decisionParams.decision.confidence,
           correctionPromotion: true,
         },
@@ -3639,11 +3766,13 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     params.logger.info(
       formatLog("memory-middleware ordinary-turn project-fact capture accepted", {
         key: match.key,
-        fieldKey: decisionParams.decision.fieldKey,
+        factFamily: decisionParams.decision.factFamily,
+        ...(decisionParams.decision.fieldKey ? { fieldKey: decisionParams.decision.fieldKey } : {}),
         profile: match.profile,
         captureClass: match.captureClass,
         candidateKind: match.candidateKind,
         confidence: decisionParams.decision.confidence,
+        reviewMode: decisionParams.decision.reviewMode,
         eventId: result.eventId,
         memoryObjectId: result.memoryObjectId,
       }),

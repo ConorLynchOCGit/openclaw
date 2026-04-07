@@ -348,10 +348,37 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
     });
   });
 
+  it("matches a bounded generic project reference fact in the broader profile", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "For project atlas forge, the evidence dashboard is #atlas-rollout-evidence.",
+        "user-preference-v2",
+      ),
+    ).toMatchObject({
+      captureClass: "explicit_project_fact",
+      candidateKind: "learning",
+      template: "project_fact_generalized_named_scope",
+      factFamily: "generalized_reference",
+      subject: "atlas forge / evidence dashboard",
+      value: "#atlas-rollout-evidence",
+      projectScope: "atlas forge",
+      content: "Project fact [atlas forge]: evidence dashboard is #atlas-rollout-evidence.",
+    });
+  });
+
   it("ignores unsupported generic repo labels in deterministic project-fact parsing", () => {
     expect(
       parseOrdinaryTurnAutoCapturePreference(
         "For project atlas forge, the repo is probably somewhere on GitHub.",
+        "user-preference-v2",
+      ),
+    ).toBeNull();
+  });
+
+  it("ignores over-broad generic project facts in deterministic parsing", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "For project atlas forge, the rollout plan is still messy.",
         "user-preference-v2",
       ),
     ).toBeNull();
@@ -1460,6 +1487,158 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
         }),
       }),
     );
+  });
+
+  it("captures bounded generic project facts as held clusters before later evidence arrives", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-project-fact-generic-1",
+      memoryObjectId: "memory-project-fact-generic-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectProjectFactLifecycle: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          projectId: "project-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "For project atlas forge, the evidence dashboard is #atlas-rollout-evidence.",
+        timestamp: Date.parse("2026-04-07T08:11:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Project fact [atlas forge]: evidence dashboard is #atlas-rollout-evidence.",
+        projectId: "project-uuid-1",
+        metadata: expect.objectContaining({
+          category: "project_fact",
+          source: "explicit_project_fact",
+          autoCapture: expect.objectContaining({
+            template: "project_fact_generalized_named_scope",
+            factFamily: "generalized_reference",
+            normalizedProjectScope: "atlas forge",
+            normalizedSubject: "atlas forge :: evidence dashboard",
+            normalizedValue: "#atlas-rollout-evidence",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "project_fact",
+            state: "hold_for_more_evidence",
+            factFamily: "generalized_reference",
+            clusterKey: expect.any(String),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("auto-promotes a held generic project-fact cluster after later compatible evidence arrives", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-project-fact-generic-1",
+      memoryObjectId: "memory-project-fact-generic-1",
+    }));
+    const inspectProjectFactLifecycle = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        pendingCandidate: {
+          id: "memory-project-fact-generic-1",
+          sourceEventId: "event-project-fact-generic-1",
+          createdAt: "2026-04-07T08:00:00.000Z",
+          updatedAt: "2026-04-07T08:00:00.000Z",
+          confirmationState: "hold_for_more_evidence",
+        },
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: ["memory-project-fact-generic-1"],
+      });
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      reviewId: "review-project-fact-generic-1",
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      promotedMemoryObjectId: "memory-approved-project-fact-generic-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectProjectFactLifecycle,
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "For project atlas forge, the evidence dashboard is #atlas-rollout-evidence.",
+        timestamp: Date.parse("2026-04-07T08:00:00Z"),
+      },
+    });
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "For project atlas forge, the evidence dashboard is #atlas-rollout-evidence.",
+        timestamp: Date.parse("2026-04-07T08:07:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(1);
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(reviewCandidate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          candidateConfirmation: expect.objectContaining({
+            method: "generalized_cluster_auto_review",
+            clusterKey: expect.any(String),
+          }),
+          autoPromotion: expect.objectContaining({
+            profile: "project_fact_generalized_confirmation_v1",
+            factFamily: "generalized_reference",
+          }),
+        }),
+      }),
+    );
+    expect(promoteToMemory).toHaveBeenCalledTimes(1);
   });
 
   it("promotes a pending project-fact candidate when later confirming evidence arrives", async () => {

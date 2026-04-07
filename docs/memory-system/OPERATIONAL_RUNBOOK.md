@@ -337,8 +337,8 @@ For the exact proof ids and production evidence for this slice, use:
 
 ## Project-memory semantic UX workflow
 
-The bounded explicit named-project fact family is now live across three
-bounded project-memory tranches.
+The project-memory family is now live across three bounded typed tranches plus
+the first family-parity generic reference-fact tranche.
 
 Supported current fields:
 
@@ -351,17 +351,25 @@ Supported current fields:
 - documentation URL
 - runbook URL
 
+Supported first generic named-project reference-fact tranche:
+
+- evidence dashboard
+- similarly explicit named-project reference anchors that stay bounded,
+  reference-like, and non-speculative
+
 Current live behavior:
 
-- bounded natural-language project-fact detection is allowed only for explicit
-  named-project turns in the supported field set
-- medium-confidence project-fact turns can enter a pending-confirmation
-  lifecycle instead of a dead manual-review queue
-- later confirming evidence can auto-promote those pending candidates without
-  manual review
-- supported project-fact corrections can supersede stale approved rows
-- approved-only hybrid retrieval can rank the right field-specific project
-  fact first for direct project questions
+- bounded natural-language project-fact detection is allowed for:
+  - explicit named-project turns in the supported typed field set
+  - explicit named-project reference facts in the new bounded generic lane
+- supported typed project facts still use `pending_confirmation`
+- bounded generic named-project reference facts now use
+  `hold_for_more_evidence`
+- later compatible evidence can auto-promote both paths without manual review
+- supported project-fact corrections can supersede stale approved rows,
+  including approved generic project facts on the same scoped subject
+- approved-only hybrid retrieval can rank the right field-specific or generic
+  named-project fact first for direct project questions
 - weak ambiguous turns should be ignored instead of creating memory trash
 
 Relevant surfaces:
@@ -380,14 +388,22 @@ Expected operator checks:
 - supported named-project phrasing can create bounded project-fact candidates
   or approved rows without introducing freeform project memory
 - a medium-confidence project-fact candidate can later show:
-  - bounded pending-confirmation metadata
+  - bounded `pending_confirmation` metadata for supported typed fields
+  - bounded `hold_for_more_evidence` metadata for supported generic
+    reference facts
   - a later approved row with:
-    - `promotionProfile = project_fact_confirmation_v1`
+    - `promotionProfile = project_fact_confirmation_v1` for supported typed
+      fields
+    - `promotionProfile = project_fact_generalized_confirmation_v1` for the
+      bounded generic reference-fact lane
     - `confirmationState = confirmed`
 - a supported project-fact correction can produce an approved row with:
-  - `promotionProfile = project_fact_correction_v1`
-- approved hybrid retrieval can rank the right field-specific project fact
-  first for direct project questions
+  - `promotionProfile = project_fact_correction_v1` for supported typed
+    fields
+  - `promotionProfile = project_fact_generalized_correction_v1` for the
+    bounded generic reference-fact lane
+- approved hybrid retrieval can rank the right field-specific or generic
+  project fact first for direct project questions
 - weak ambiguous nearby text should not create additional durable writes
 - approved-only retrieval remains the only user-visible read source for this
   slice
@@ -395,7 +411,9 @@ Expected operator checks:
 Current approved boundary note:
 
 - this slice is limited to explicit named-project facts only
-- unsupported generic labels like plain `repo`, `deploy`, or `docs` are still
+- the bounded generic lane is limited to explicit reference-like project facts
+  such as evidence dashboards or similar named anchors
+- unsupported loose generic labels and speculative summaries are still
   intentionally not live
 - speculative project inference is not live
 - candidates should not shape user-visible behavior before approval in this
@@ -406,6 +424,7 @@ For the exact proof ids and production evidence for this slice, use:
 - `docs/memory-system/PRODUCTION_PROJECT_MEMORY_UX_REPORT.md`
 - `docs/memory-system/PRODUCTION_PROJECT_MEMORY_UX_V2_REPORT.md`
 - `docs/memory-system/PRODUCTION_PROJECT_MEMORY_UX_V3_REPORT.md`
+- `docs/memory-system/PRODUCTION_PROJECT_FACT_PARITY_V1_REPORT.md`
 
 ## Recurring-procedure semantic UX workflow
 

@@ -35,16 +35,17 @@ Historical completed order:
 
 Recommended next execution order after the generalized-learning pivot:
 
-19. reduced-profile self-improving capture integration
-20. later learned-guidance advisory planning
-21. cross-domain family expansion tranche 1:
+19. existing-family parity and genericization completion
+20. reduced-profile self-improving capture integration
+21. later learned-guidance advisory planning
+22. cross-domain family expansion tranche 1:
     decision + rationale, observation / result / finding, terminology /
     ontology / canonical definition, and entity profile
-22. cross-domain family expansion tranche 2:
+23. cross-domain family expansion tranche 2:
     risk / hazard / safety constraint, metric / baseline / threshold,
     hypothesis / open question, audience / stakeholder model, source trust /
     authority ranking, and exception / edge-case rule
-23. any broader automation discussion
+24. any broader automation discussion
 
 Current sequencing note:
 
@@ -62,8 +63,11 @@ Current sequencing note:
 - the program is no longer primarily advancing by enumerating one lesson key
   at a time
 - the next implementation slice should be:
-  - reduced-profile self-improving capture integration
+  - recurring-procedure generalization and repair parity after the first
+    project-fact parity tranche
 - the next follow-up slices after that should be:
+  - reduced-profile self-improving capture integration after the already
+    landed families are closer to parity
   - later learned-guidance advisory planning after self-improving candidate
     provenance and generic retrieval posture are mature enough
   - then domain-neutral family expansion guided by
@@ -100,11 +104,19 @@ Current sequencing note:
 - once project-rule learning is live, unmet-need planning becomes the next
   broader family because it extends the same substrate without broadening into
   autonomy
-- self-improving capture should wait until native taxonomy, auto-review, and
-  backlog control are strong
-- after self-improving capture and learned-guidance advisory planning are
-  live, future expansion should prefer domain-neutral families over longer
-  software-only tails
+- before self-improving capture or cross-domain expansion, the already-landed
+  families should be brought closer to the same maturity level across:
+  - natural-language capture
+  - canonicalization
+  - clustering and dedupe
+  - machine review and promotion
+  - repair and supersede
+  - retrieval and application quality
+- self-improving capture should wait until native taxonomy, auto-review,
+  backlog control, and existing-family parity are stronger
+- after family parity, self-improving capture, and learned-guidance advisory
+  planning are live, future expansion should prefer domain-neutral families
+  over longer software-only tails
 - decision, finding, terminology, and entity families should land before more
   specialized long-tail lesson families because they travel better across
   multiple knowledge domains
@@ -155,6 +167,8 @@ Current sequencing note:
 - phrase induction exists or a deliberate alternative is documented
 - messy-language eval is already in use
 - candidate noise is acceptably low
+- the currently landed families are closer to parity on lifecycle and
+  retrieval/application quality than they are today
 
 ### Before family-aware semantic retrieval routing
 

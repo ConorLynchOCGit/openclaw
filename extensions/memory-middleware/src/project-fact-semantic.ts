@@ -12,6 +12,7 @@ export const PROJECT_FACT_FIELD_KEYS = [
 ] as const;
 
 export type ProjectFactFieldKey = (typeof PROJECT_FACT_FIELD_KEYS)[number];
+export type ProjectFactFamily = "supported_field" | "generalized_reference";
 
 export type ProjectFactSemanticConfidence = "high" | "medium";
 
@@ -19,8 +20,9 @@ export type ProjectFactCanonicalMatch = {
   captureClass: "explicit_project_fact" | "project_fact_correction";
   candidateKind: "learning" | "correction";
   reasonCode: "explicit_project_fact_statement" | "explicit_project_fact_correction";
-  template: "project_fact_named_scope";
-  fieldKey: ProjectFactFieldKey;
+  template: "project_fact_named_scope" | "project_fact_generalized_named_scope";
+  factFamily: ProjectFactFamily;
+  fieldKey?: ProjectFactFieldKey;
   projectScope: string;
   normalizedProjectScope: string;
   subject: string;
@@ -87,6 +89,49 @@ const CORRECTION_PREFIX_PATTERNS = [
 ];
 
 const PACKAGE_MANAGERS = ["npm", "pnpm", "yarn", "bun"] as const;
+const GENERIC_PROJECT_FACT_SUBJECT_DENYLIST = new Set([
+  "approach",
+  "default branch",
+  "deploy",
+  "deploy url",
+  "deployment",
+  "deployment url",
+  "docs",
+  "docs url",
+  "documentation",
+  "documentation url",
+  "environment",
+  "environment name",
+  "fix",
+  "issue",
+  "lesson",
+  "missing",
+  "main environment",
+  "main environment name",
+  "need",
+  "package manager",
+  "plan",
+  "policy",
+  "preference",
+  "primary environment",
+  "primary environment name",
+  "primary package manager",
+  "procedure",
+  "process",
+  "repo",
+  "repo url",
+  "repository",
+  "repository url",
+  "rule",
+  "runbook",
+  "runbook url",
+  "staging branch",
+  "strategy",
+  "task",
+  "workflow",
+]);
+const GENERIC_PROJECT_FACT_SUBJECT_BLOCKLIST_PATTERN =
+  /\b(?:need|missing|prefer|use|avoid|trust|should|must|please|remember|save|workflow|rule|plan|procedure|process)\b/i;
 
 function normalizeText(value: string): string {
   return value.trim().replace(/\s+/g, " ");
@@ -168,6 +213,112 @@ function normalizeProjectFactValue(value: string): string {
   return normalizeText(value)
     .replace(/[.!?]+$/, "")
     .replace(/^["']+|["']+$/g, "");
+}
+
+function normalizeProjectFactSubjectLabel(value: string): string {
+  return normalizeProjectFactValue(value)
+    .replace(/^(?:the\s+)?/i, "")
+    .replace(/\s+/g, " ");
+}
+
+export function isReferenceLikeProjectFactValue(value: string): boolean {
+  const normalized = normalizeProjectFactValue(value);
+  if (!normalized || normalized.length > 160) {
+    return false;
+  }
+  if (/\s{2,}/.test(normalized)) {
+    return false;
+  }
+  if (
+    /^https?:\/\/\S+$/i.test(normalized) ||
+    /^[a-z]+:\/\/\S+$/i.test(normalized) ||
+    /^[@#][a-z0-9._/-]{2,96}$/i.test(normalized) ||
+    /^[a-z0-9][a-z0-9._/:@#-]{1,127}$/i.test(normalized)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function normalizeGenericProjectFactSubjectLabel(value: string): string {
+  return normalizeProjectFactSubjectLabel(value);
+}
+
+export function isAllowedGenericProjectFactSubject(value: string): boolean {
+  const normalized = normalizeLower(normalizeProjectFactSubjectLabel(value));
+  if (!normalized || normalized.length < 3 || normalized.length > 48) {
+    return false;
+  }
+  if (GENERIC_PROJECT_FACT_SUBJECT_BLOCKLIST_PATTERN.test(normalized)) {
+    return false;
+  }
+  if (GENERIC_PROJECT_FACT_SUBJECT_DENYLIST.has(normalized)) {
+    return false;
+  }
+  if (!/^[a-z0-9][a-z0-9 _/-]{1,47}$/.test(normalized)) {
+    return false;
+  }
+  return true;
+}
+
+export function isBoundedGenericProjectFactReference(params: {
+  subjectLabel: string;
+  value: string;
+}): boolean {
+  return (
+    isAllowedGenericProjectFactSubject(params.subjectLabel) &&
+    isReferenceLikeProjectFactValue(params.value)
+  );
+}
+
+function buildProjectFactMatch(params: {
+  correction: boolean;
+  projectScope: string;
+  subjectLabel: string;
+  value: string;
+  factFamily: ProjectFactFamily;
+  fieldKey?: ProjectFactFieldKey;
+}): ProjectFactCanonicalMatch {
+  const projectScope = normalizeText(params.projectScope);
+  const normalizedProjectScope = normalizeLower(projectScope);
+  const normalizedSubjectLabel = normalizeProjectFactSubjectLabel(params.subjectLabel);
+  const subjectLabel = params.fieldKey
+    ? (PROJECT_FACT_FIELD_SPECS[params.fieldKey]?.label ?? normalizedSubjectLabel)
+    : normalizedSubjectLabel;
+  const subject = `${projectScope} / ${subjectLabel}`;
+  const normalizedSubject = `${normalizedProjectScope} :: ${normalizeLower(subjectLabel)}`;
+  const value = normalizeProjectFactValue(params.value);
+  const normalizedValue = normalizeLower(value);
+  const template =
+    params.factFamily === "supported_field"
+      ? "project_fact_named_scope"
+      : "project_fact_generalized_named_scope";
+  const contentPrefix = params.correction ? "Project correction" : "Project fact";
+
+  return {
+    captureClass: params.correction ? "project_fact_correction" : "explicit_project_fact",
+    candidateKind: params.correction ? "correction" : "learning",
+    reasonCode: params.correction
+      ? "explicit_project_fact_correction"
+      : "explicit_project_fact_statement",
+    template,
+    factFamily: params.factFamily,
+    ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
+    projectScope,
+    normalizedProjectScope,
+    subject,
+    value,
+    normalizedSubject,
+    normalizedValue,
+    content: `${contentPrefix} [${projectScope}]: ${subjectLabel} is ${value}.`,
+    subjectKey: buildAutoCaptureSubjectKey({
+      normalizedSubject,
+    }),
+    key: buildAutoCaptureKey({
+      normalizedSubject,
+      normalizedValue,
+    }),
+  };
 }
 
 function matchProjectFactUrl(
@@ -341,43 +492,89 @@ export function detectProjectFactSemanticDecision(
     };
   }
 
-  const fieldSpec = getProjectFactFieldSpec(fieldMatch.fieldKey);
-  const normalizedProjectScope = normalizeLower(scoped.projectScope);
-  const normalizedSubject = `${normalizedProjectScope} :: ${fieldSpec.label}`;
-  const normalizedValue = normalizeLower(fieldMatch.value);
-  const subjectKey = buildAutoCaptureSubjectKey({
-    normalizedSubject,
-  });
-
   return {
     action: "capture",
     confidence: fieldMatch.confidence,
     evidence: correction.corrected
       ? [...fieldMatch.evidence, "correction_prefix"]
       : fieldMatch.evidence,
-    match: {
-      captureClass: correction.corrected ? "project_fact_correction" : "explicit_project_fact",
-      candidateKind: correction.corrected ? "correction" : "learning",
-      reasonCode: correction.corrected
-        ? "explicit_project_fact_correction"
-        : "explicit_project_fact_statement",
-      template: "project_fact_named_scope",
-      fieldKey: fieldMatch.fieldKey,
+    match: buildProjectFactMatch({
+      correction: correction.corrected,
       projectScope: scoped.projectScope,
-      normalizedProjectScope,
-      subject: `${scoped.projectScope} / ${fieldSpec.label}`,
+      subjectLabel: PROJECT_FACT_FIELD_SPECS[fieldMatch.fieldKey].label,
       value: fieldMatch.value,
-      normalizedSubject,
-      normalizedValue,
-      content: correction.corrected
-        ? `Project correction [${scoped.projectScope}]: ${fieldSpec.label} is ${fieldMatch.value}.`
-        : `Project fact [${scoped.projectScope}]: ${fieldSpec.label} is ${fieldMatch.value}.`,
-      subjectKey,
-      key: buildAutoCaptureKey({
-        normalizedSubject,
-        normalizedValue,
-      }),
-    },
+      factFamily: "supported_field",
+      fieldKey: fieldMatch.fieldKey,
+    }),
+  };
+}
+
+export function detectGenericProjectFactSemanticDecision(
+  text: string,
+): ProjectFactSemanticCaptureDecision {
+  const normalized = normalizeText(text);
+  if (!normalized || normalized.length < 20 || normalized.length > 240) {
+    return {
+      action: "ignore",
+      reason: "out_of_bounds",
+      evidence: [],
+    };
+  }
+
+  const correction = stripCorrectionPrefix(normalized);
+  const scoped = extractProjectScope(correction.normalized);
+  if (!scoped) {
+    return {
+      action: "ignore",
+      reason: "missing_explicit_project_scope",
+      evidence: [],
+    };
+  }
+
+  const genericMatch = scoped.remainder.match(/^(?:the\s+)?([a-z0-9][a-z0-9 _/-]{1,47}) is (.+)$/i);
+  if (!genericMatch) {
+    return {
+      action: "ignore",
+      reason: "no_generic_project_fact_pattern",
+      evidence: [],
+    };
+  }
+
+  const subjectLabel = normalizeGenericProjectFactSubjectLabel(genericMatch[1] ?? "");
+  const value = normalizeProjectFactValue(genericMatch[2] ?? "");
+  const supportedFieldKey =
+    PROJECT_FACT_FIELD_KEYS.find(
+      (fieldKey) =>
+        normalizeLower(PROJECT_FACT_FIELD_SPECS[fieldKey].label) === normalizeLower(subjectLabel),
+    ) ?? null;
+  if (supportedFieldKey) {
+    return {
+      action: "ignore",
+      reason: "supported_field_should_use_typed_path",
+      evidence: [],
+    };
+  }
+  if (!isBoundedGenericProjectFactReference({ subjectLabel, value })) {
+    return {
+      action: "ignore",
+      reason: "generic_project_fact_not_reference_like",
+      evidence: [],
+    };
+  }
+
+  return {
+    action: "capture",
+    confidence: "high",
+    evidence: correction.corrected
+      ? ["generic_project_fact_pattern", "reference_like_value", "correction_prefix"]
+      : ["generic_project_fact_pattern", "reference_like_value"],
+    match: buildProjectFactMatch({
+      correction: correction.corrected,
+      projectScope: scoped.projectScope,
+      subjectLabel,
+      value,
+      factFamily: "generalized_reference",
+    }),
   };
 }
 

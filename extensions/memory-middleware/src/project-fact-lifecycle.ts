@@ -14,6 +14,13 @@ type ProjectFactLifecycleRow = {
   updated_at: string;
   resolved_key: string | null;
   resolved_subject_key: string | null;
+  resolved_template: string | null;
+  resolved_field_key: string | null;
+  resolved_fact_family: string | null;
+  resolved_project_scope: string | null;
+  resolved_normalized_project_scope: string | null;
+  resolved_value: string | null;
+  resolved_normalized_value: string | null;
 };
 
 export type ProjectFactPendingCandidate = {
@@ -25,11 +32,35 @@ export type ProjectFactPendingCandidate = {
   confirmationState?: string;
 };
 
+export type ProjectFactSubjectEntry = {
+  id: string;
+  reviewState: ProjectFactLifecycleRow["review_state"];
+  createdAt: string;
+  updatedAt: string;
+  sourceEventId?: string;
+  supersededAt?: string;
+  key?: string;
+  subjectKey?: string;
+  template?: string;
+  fieldKey?: string;
+  factFamily?: string;
+  projectScope?: string;
+  normalizedProjectScope?: string;
+  value?: string;
+  normalizedValue?: string;
+  confirmationState?: string;
+  expiresAt?: string;
+};
+
+const PROJECT_FACT_PENDING_STATES = new Set(["pending_confirmation", "hold_for_more_evidence"]);
+
 export type ProjectFactLifecycleInspection = {
   matchingApprovedObjectId?: string;
   pendingCandidate?: ProjectFactPendingCandidate;
   activeApprovedSubjectObjectIds: string[];
   pendingSubjectCandidateIds: string[];
+  activeApprovedSubjectEntries: ProjectFactSubjectEntry[];
+  pendingSubjectCandidates: ProjectFactSubjectEntry[];
 };
 
 function quoteIdentifier(value: string): string {
@@ -83,6 +114,35 @@ function summarizeLifecycleError(error: unknown): string {
   return error instanceof Error ? error.message : "unknown project-fact lifecycle failure";
 }
 
+function toProjectFactSubjectEntry(row: ProjectFactLifecycleRow): ProjectFactSubjectEntry {
+  const metadata = row.metadata ?? undefined;
+  return {
+    id: row.id,
+    reviewState: row.review_state,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    ...(row.source_event_id ? { sourceEventId: row.source_event_id } : {}),
+    ...(row.superseded_at ? { supersededAt: row.superseded_at } : {}),
+    ...(row.resolved_key ? { key: row.resolved_key } : {}),
+    ...(row.resolved_subject_key ? { subjectKey: row.resolved_subject_key } : {}),
+    ...(row.resolved_template ? { template: row.resolved_template } : {}),
+    ...(row.resolved_field_key ? { fieldKey: row.resolved_field_key } : {}),
+    ...(row.resolved_fact_family ? { factFamily: row.resolved_fact_family } : {}),
+    ...(row.resolved_project_scope ? { projectScope: row.resolved_project_scope } : {}),
+    ...(row.resolved_normalized_project_scope
+      ? { normalizedProjectScope: row.resolved_normalized_project_scope }
+      : {}),
+    ...(row.resolved_value ? { value: row.resolved_value } : {}),
+    ...(row.resolved_normalized_value ? { normalizedValue: row.resolved_normalized_value } : {}),
+    ...(extractCandidateConfirmationState(metadata)
+      ? { confirmationState: extractCandidateConfirmationState(metadata) }
+      : {}),
+    ...(extractCandidateExpiresAt(metadata)
+      ? { expiresAt: extractCandidateExpiresAt(metadata) }
+      : {}),
+  };
+}
+
 export function isExpiredPendingProjectFactCandidate(
   candidate: ProjectFactPendingCandidate,
   now = new Date(),
@@ -133,7 +193,59 @@ export async function inspectProjectFactLifecycle(params: {
             metadata->'candidateMetadata'->'autoCapture'->>'subjectKey',
             metadata->'promotionMetadata'->'autoPromotion'->>'subjectKey',
             metadata->>'subject_key'
-          ) as resolved_subject_key
+          ) as resolved_subject_key,
+          coalesce(
+            metadata->'autoCapture'->>'template',
+            metadata->'candidateMetadata'->'autoCapture'->>'template',
+            metadata->'promotionMetadata'->'autoPromotion'->>'template',
+            metadata->'autoPromotion'->>'template'
+          ) as resolved_template,
+          coalesce(
+            metadata->'autoCapture'->>'fieldKey',
+            metadata->'candidateMetadata'->'autoCapture'->>'fieldKey',
+            metadata->'promotionMetadata'->'autoPromotion'->>'fieldKey',
+            metadata->'autoPromotion'->>'fieldKey'
+          ) as resolved_field_key,
+          coalesce(
+            metadata->'autoCapture'->>'factFamily',
+            metadata->'candidateMetadata'->'autoCapture'->>'factFamily',
+            metadata->'promotionMetadata'->'autoPromotion'->>'factFamily',
+            metadata->'autoPromotion'->>'factFamily',
+            case
+              when coalesce(
+                metadata->'autoCapture'->>'fieldKey',
+                metadata->'candidateMetadata'->'autoCapture'->>'fieldKey',
+                metadata->'promotionMetadata'->'autoPromotion'->>'fieldKey',
+                metadata->'autoPromotion'->>'fieldKey'
+              ) <> ''
+              then 'supported_field'
+              else ''
+            end
+          ) as resolved_fact_family,
+          coalesce(
+            metadata->'autoCapture'->>'projectScope',
+            metadata->'candidateMetadata'->'autoCapture'->>'projectScope',
+            metadata->'promotionMetadata'->'autoPromotion'->>'projectScope',
+            metadata->'autoPromotion'->>'projectScope'
+          ) as resolved_project_scope,
+          coalesce(
+            metadata->'autoCapture'->>'normalizedProjectScope',
+            metadata->'candidateMetadata'->'autoCapture'->>'normalizedProjectScope',
+            metadata->'promotionMetadata'->'autoPromotion'->>'normalizedProjectScope',
+            metadata->'autoPromotion'->>'normalizedProjectScope'
+          ) as resolved_normalized_project_scope,
+          coalesce(
+            metadata->'autoCapture'->>'value',
+            metadata->'candidateMetadata'->'autoCapture'->>'value',
+            metadata->'promotionMetadata'->'autoPromotion'->>'value',
+            metadata->'autoPromotion'->>'value'
+          ) as resolved_value,
+          coalesce(
+            metadata->'autoCapture'->>'normalizedValue',
+            metadata->'candidateMetadata'->'autoCapture'->>'normalizedValue',
+            metadata->'promotionMetadata'->'autoPromotion'->>'normalizedValue',
+            metadata->'autoPromotion'->>'normalizedValue'
+          ) as resolved_normalized_value
         from ${memoryObjectsTable}
         where
           (
@@ -156,6 +268,24 @@ export async function inspectProjectFactLifecycle(params: {
     );
 
     const rows = result.rows;
+    const activeApprovedSubjectEntries = rows
+      .filter(
+        (row) =>
+          row.resolved_subject_key === params.subjectKey &&
+          row.review_state === "approved" &&
+          !row.superseded_at,
+      )
+      .map(toProjectFactSubjectEntry);
+    const pendingSubjectCandidates = rows
+      .filter(
+        (row) =>
+          row.resolved_subject_key === params.subjectKey &&
+          row.review_state === "candidate" &&
+          PROJECT_FACT_PENDING_STATES.has(
+            extractCandidateConfirmationState(row.metadata ?? undefined) ?? "",
+          ),
+      )
+      .map(toProjectFactSubjectEntry);
     const matchingApprovedObjectId = rows.find(
       (row) =>
         row.resolved_key === params.key && row.review_state === "approved" && !row.superseded_at,
@@ -164,7 +294,9 @@ export async function inspectProjectFactLifecycle(params: {
       (row) =>
         row.resolved_key === params.key &&
         row.review_state === "candidate" &&
-        extractCandidateConfirmationState(row.metadata ?? undefined) === "pending_confirmation",
+        PROJECT_FACT_PENDING_STATES.has(
+          extractCandidateConfirmationState(row.metadata ?? undefined) ?? "",
+        ),
     );
 
     return {
@@ -193,20 +325,10 @@ export async function inspectProjectFactLifecycle(params: {
             },
           }
         : {}),
-      activeApprovedSubjectObjectIds: rows
-        .filter(
-          (row) =>
-            row.resolved_subject_key === params.subjectKey &&
-            row.review_state === "approved" &&
-            !row.superseded_at,
-        )
-        .map((row) => row.id),
-      pendingSubjectCandidateIds: rows
-        .filter(
-          (row) =>
-            row.resolved_subject_key === params.subjectKey && row.review_state === "candidate",
-        )
-        .map((row) => row.id),
+      activeApprovedSubjectObjectIds: activeApprovedSubjectEntries.map((row) => row.id),
+      pendingSubjectCandidateIds: pendingSubjectCandidates.map((row) => row.id),
+      activeApprovedSubjectEntries,
+      pendingSubjectCandidates,
     };
   } catch (error) {
     params.logger?.warn?.(

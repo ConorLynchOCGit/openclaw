@@ -34,6 +34,22 @@ Cross-domain expansion note:
 - the canonical matrix for that expansion now lives in:
   - `/memory-system/specs/cross-domain-memory-families`
 
+Family-parity gate:
+
+- before self-improving capture, advisory planning, or cross-domain family
+  expansion, the already-existing families should be brought to a more
+  consistent maturity level
+- the system should not stack new families on top of a mixed substrate where
+  some families remain rigid, some are semantic-only, and some already have
+  broader generic learning plus stronger retrieval/application
+- the current family set that should reach a common build-out level first is:
+  - response-style preference / requirement
+  - project facts
+  - recurring procedures
+  - workflow lessons
+  - project rules
+  - unmet needs
+
 ## Cross-domain family matrix
 
 Use the matrix to separate:
@@ -83,6 +99,8 @@ Long-run family-expansion rule:
   "geology memory" or "marketing memory"
 - instead, map new domains onto the smallest useful set of domain-neutral
   families from the matrix
+- but do not start that broader expansion until the already-landed family set
+  is closer to parity
 
 ## Current compact checkpoint
 
@@ -151,8 +169,8 @@ Current state:
     fresh-session project questions
   - project-fact lifecycle inspection and duplicate suppression are now
     project-scoped for supported fields
-  - unsupported generic deterministic labels like plain `repo` and `deploy`
-    stay outside the bounded project-fact family
+  - unsupported loose generic deterministic labels still stay outside the
+    bounded project-fact family
 - the third bounded project-memory slice is now live for its intended scope:
   - semantic explicit named-project detection is now also live for:
     - documentation URL
@@ -161,8 +179,20 @@ Current state:
     manual review
   - approved-only hybrid retrieval now ranks the right support URL field for
     direct fresh-session project questions
-  - unsupported generic deterministic labels like plain `docs` stay outside
-    the bounded project-fact family
+  - unsupported loose generic deterministic labels still stay outside the
+    bounded project-fact family
+- the first project-fact parity tranche is now live for its intended scope:
+  - explicit named-project reference facts such as evidence dashboards can now
+    normalize into bounded generic project-fact shapes
+  - first evidence holds in a project-scoped cluster instead of requiring one
+    more typed field key
+  - later compatible evidence can auto-promote the same cluster without manual
+    review
+  - approved-only hybrid retrieval now ranks the right generic project fact
+    for direct fresh-session project questions
+  - explicit correction can supersede an older approved generic project fact
+  - speculative summaries and unsupported loose labels still stay outside the
+    bounded project-fact family
 - Slice 7 is now landed for its intended scope:
   - `I meant plain English, not jargon.` can land as a bounded correction
   - `No, use bullet points for me.` can be accepted through bounded fallback
@@ -301,6 +331,8 @@ Current live limits:
   - deployment URL
   - documentation URL
   - runbook URL
+  - bounded generic named-project reference facts such as evidence dashboards
+    and similar explicit reference anchors
     and does not include speculative state
 - broader workflow-improvement memory is no longer limited to supported lesson
   keys only:
@@ -406,12 +438,29 @@ Delivery enablement pause:
   - unmet-need artifacts remain recommendation-only and distinct from workflow
     guidance, project rules, procurement, install, and approval flows
 - post-pivot execution path:
-  1. reduced-profile self-improving capture integration
-  2. later learned-guidance advisory planning
-  3. cross-domain family expansion using
+  1. existing-family parity and genericization completion
+  2. reduced-profile self-improving capture integration
+  3. later learned-guidance advisory planning
+  4. cross-domain family expansion using
      `/memory-system/specs/cross-domain-memory-families`
-- recommended first cross-domain expansion tranche after self-improving and
-  advisory planning:
+- first landed parity tranche inside step 1:
+  - project-fact generalization and lifecycle parity v1
+- next recommended parity tranche inside step 1:
+  - recurring-procedure generalization and repair parity
+- existing-family parity means, for the current landed families:
+  - natural-language capture is no longer overly rigid where the family is
+    intended to generalize
+  - canonicalization is explicit
+  - duplicate suppression / clustering is in place
+  - machine review or promotion is in place where intended
+  - repair / supersede is explicit
+  - retrieval/application is strong enough not to lag badly behind the other
+    landed families
+  - phrase induction is added where it materially improves recall
+  - the family is ready to participate in later self-improving capture and
+    advisory planning without bespoke special cases
+- recommended first cross-domain expansion tranche only after parity,
+  self-improving, and advisory planning:
   - decision + rationale
   - observation / result / finding
   - terminology / ontology / canonical definition
@@ -424,6 +473,7 @@ Delivery enablement pause:
   - source trust / authority ranking
   - exception / edge-case rule
 - primary spec:
+  - `/memory-system/specs/implementation-sequencing`
   - `/memory-system/specs/self-improving-capture-integration`
   - `/memory-system/specs/cross-domain-memory-families`
 
@@ -1183,7 +1233,10 @@ Current phase note:
     learning substrate
   - unmet-need planning still remains future work
 - the next work in this phase is no longer more lesson-key expansion; it is:
-  - unmet-need planning on the same generic pipeline
+  - existing-family parity and genericization completion, starting with the
+    landed project-fact parity tranche
+  - recurring-procedure generalization and repair parity as the next parity
+    slice
   - reduced-profile self-improving capture integration after the broader
     generic families share the same retrieval posture
 
@@ -1212,6 +1265,15 @@ First bounded live tranche:
 - report:
   - `/memory-system/PRODUCTION_PROJECT_MEMORY_UX_REPORT`
 
+Current landed expansion tranches:
+
+- repository URL and deployment URL:
+  - `/memory-system/PRODUCTION_PROJECT_MEMORY_UX_V2_REPORT`
+- documentation URL and runbook URL:
+  - `/memory-system/PRODUCTION_PROJECT_MEMORY_UX_V3_REPORT`
+- bounded generic named-project reference-fact parity tranche:
+  - `/memory-system/PRODUCTION_PROJECT_FACT_PARITY_V1_REPORT`
+
 ### Goal
 
 Expand project memory from a few narrow facts into a small but meaningfully
@@ -1225,6 +1287,10 @@ useful bounded project profile.
 - deployment URL
 - primary package manager
 - primary environment name
+- documentation URL
+- runbook URL
+- bounded generic named-project reference anchors such as evidence dashboards
+  when they remain explicit, reference-like, and non-speculative
 
 ### Deliverables
 
@@ -1235,12 +1301,15 @@ useful bounded project profile.
 - correction and supersede flow for supported project facts
 - explicit project-scope precedence rules so global memories do not override the
   active project fact incorrectly
+- bounded generic project-fact clustering and auto-review for reference-like
+  project anchors
 
 ### Exit criteria
 
 - at least several bounded project-fact fields are reliable
 - later project questions retrieve the right approved fact in fresh sessions
 - project memory remains explicit and non-speculative
+- unsupported loose labels and speculative project summaries stay out
 
 Primary spec:
 

@@ -2,67 +2,72 @@
 
 ## Active slice
 
-Reduced-profile self-improving capture integration
+Existing-family parity and genericization completion
 
 ## Objective
 
-Plug the already-built reduced-profile self-improving capture seam into the now
-landed generalized learning pipeline without creating a second learning system
-or bypassing bounded review.
+Bring the already-landed families closer to a common maturity level before
+turning on self-improving capture or widening the taxonomy further.
 
 The previous slice just landed:
 
-- unmet-need planning on the same generic lesson pipeline
-- a bounded `generalized_unmet_need` family for named-project missing workflow
-  support
-- held-cluster auto-review and promotion for unmet needs through the existing
-  machine-review substrate
-- approved-only hybrid retrieval with unmet-need scope, subject, and
-  capability ranking boosts
-- prompt guidance that tells the model to use named-project missing-capability
-  hybrid queries and keep the result recommendation-only
-- isolated plus production proof that a repeated unmet need can be learned and
-  later surfaced without broadening into procurement, install, or approval
-  automation
+- project-fact generalization and lifecycle parity v1
+- a bounded `generalized_reference` path for explicit named-project reference
+  facts such as evidence dashboards without adding one more typed field key
+- held-cluster project-fact auto-review through the existing candidate,
+  review, and promotion substrate
+- explicit correction and supersede flow for approved generic project facts on
+  the same project-scoped subject
+- approved-only hybrid retrieval boosts for generic named-project reference
+  facts while preserving stronger typed-field matches
+- isolated plus production proof that a repeated generic project fact can be
+  held, approved, retrieved, and corrected without broadening into
+  speculative project summaries
 
 ## Required work
 
-1. Feed reduced-profile self-improving candidate capture into the same
-   generalized lesson candidate substrate instead of leaving it as a parallel
-   disabled note.
-2. Preserve candidate-only posture, provenance, and auditability.
-3. Reuse the same normalization, clustering, and auto-review path already live
-   for workflow guidance, project rules, and unmet needs.
-4. Keep the seam reduced-profile and bounded so it broadens candidate coverage
-   without creating noisy hidden promotion.
-5. Prove that self-improving capture can contribute candidates to the same
-   generic pipeline without bypassing review, retrieval, or guidance-only
-   behavior.
+1. Audit the currently landed families against one shared maturity rubric:
+   - natural-language capture
+   - canonicalization
+   - clustering and duplicate suppression
+   - machine review or promotion
+   - repair or supersede
+   - retrieval and application quality
+2. Finish the still-rigid or still-uneven portions of the currently landed
+   families before adding new candidate sources.
+3. Make the existing family set less mixed:
+   - fewer rigid keyed-only pockets where broader generalization is intended
+   - fewer retrieval/application gaps between families
+   - fewer special cases that would complicate later self-improving capture
+4. Leave the family set in a state where reduced-profile self-improving
+   capture can plug into one more consistent substrate.
 
 ## Out of scope
 
 - broader autonomous planning or execution
-- generic semantic fallback for generalized lessons, project rules, or unmet
-  needs
+- reduced-profile self-improving capture enablement before family parity is
+  stronger
+- cross-domain family expansion before the currently landed families are
+  closer to parity
 - procurement, install, vetting, or approval automation
 - autonomous remediation or silent plan mutation
 - production pairing/auth changes
 
 ## Acceptance criteria
 
-- reduced-profile self-improving capture becomes another candidate source
-  instead of a separate adoption path
-- the same generic lifecycle continues to own approval, rejection, and
-  retrieval shaping
-- workflow guidance, project rules, unmet-need artifacts, and self-improving
-  candidates stay distinct and explainable
+- the currently landed families are closer to the same maturity level across
+  capture, lifecycle quality, and retrieval/application quality
+- future self-improving integration no longer needs to compensate for obvious
+  family-specific maturity gaps
+- the current family set is more coherent before any further taxonomy
+  expansion
 - hybrid-first retrieval remains the default path
 - the post-pivot families stay part of the same layered supervised-learning
   system
 
 ## Notes
 
-The post-pivot pipeline now has six landed supervised-learning steps:
+The post-pivot pipeline now tracks these landed and next sequenced steps:
 
 1. generalized lesson capture
 2. generalized lesson auto-review and promotion
@@ -70,17 +75,19 @@ The post-pivot pipeline now has six landed supervised-learning steps:
 4. generic retrieval/application expansion
 5. broader project-rule learning on the same pipeline
 6. unmet-need planning on the same pipeline
-7. reduced-profile self-improving capture as another candidate source
-8. later advisory planning from approved learned lessons
+7. existing-family parity and genericization completion
+8. reduced-profile self-improving capture as another candidate source
+9. later advisory planning from approved learned lessons
 
 The next implementation slice should be:
 
-- reduced-profile self-improving capture integration
+- recurring-procedure generalization and repair parity
 
 Cross-domain roadmap note:
 
-- after reduced-profile self-improving capture integration and later
-  learned-guidance advisory planning, future family expansion should follow
+- after existing-family parity, reduced-profile self-improving capture
+  integration, and later learned-guidance advisory planning, future family
+  expansion should follow
   `/memory-system/specs/cross-domain-memory-families`
 - the roadmap is no longer "finish the software-only family tail"
 - the next broad family tranches after the near-term path should be

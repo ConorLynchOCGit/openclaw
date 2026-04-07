@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { detectProjectFactSemanticDecision } from "./project-fact-semantic.js";
+import {
+  detectGenericProjectFactSemanticDecision,
+  detectProjectFactSemanticDecision,
+} from "./project-fact-semantic.js";
 
 describe("detectProjectFactSemanticDecision", () => {
   it.each([
@@ -90,6 +93,35 @@ describe("detectProjectFactSemanticDecision", () => {
     "For project atlas forge, the runbook is in notion.",
   ])("ignores unsupported or ambiguous project-fact phrasing: %s", (text) => {
     expect(detectProjectFactSemanticDecision(text)).toMatchObject({
+      action: "ignore",
+    });
+  });
+
+  it("captures bounded generic project reference facts with explicit scope", () => {
+    expect(
+      detectGenericProjectFactSemanticDecision(
+        "For project atlas forge, the evidence dashboard is #atlas-rollout-evidence.",
+      ),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        captureClass: "explicit_project_fact",
+        factFamily: "generalized_reference",
+        template: "project_fact_generalized_named_scope",
+        projectScope: "atlas forge",
+        subject: "atlas forge / evidence dashboard",
+        value: "#atlas-rollout-evidence",
+      },
+    });
+  });
+
+  it.each([
+    "For project atlas forge, the rollout plan is still messy.",
+    "For project atlas forge, the preferred workflow is approvals first.",
+    "For project atlas forge, the evidence dashboard is a shared page in notion.",
+  ])("ignores over-broad generic project facts: %s", (text) => {
+    expect(detectGenericProjectFactSemanticDecision(text)).toMatchObject({
       action: "ignore",
     });
   });

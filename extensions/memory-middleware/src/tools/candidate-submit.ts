@@ -21,8 +21,12 @@ import {
   isExpiredPendingProjectFactCandidate,
 } from "../project-fact-lifecycle.js";
 import {
+  detectGenericProjectFactSemanticDecision,
   detectProjectFactSemanticDecision,
+  isBoundedGenericProjectFactReference,
   isSupportedProjectFactField,
+  normalizeGenericProjectFactSubjectLabel,
+  type ProjectFactFamily,
   type ProjectFactFieldKey,
   type ProjectFactSemanticConfidence,
 } from "../project-fact-semantic.js";
@@ -431,6 +435,7 @@ function buildToolProjectFactAutoPromotionMetadata(params: {
   input: CandidateSubmissionInput;
   autoPromotionProfile: string;
   confirmationState?: "confirmed";
+  confirmationMethod?: "repeat_subject_signal" | "generalized_cluster_auto_review";
 }): Record<string, unknown> {
   const autoCapture = params.input.metadata?.autoCapture;
   const semanticDetection = params.input.metadata?.semanticDetection;
@@ -451,6 +456,10 @@ function buildToolProjectFactAutoPromotionMetadata(params: {
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { reasonCode?: unknown }).reasonCode
           : undefined,
+      factFamily:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { factFamily?: unknown }).factFamily
+          : undefined,
       fieldKey:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { fieldKey?: unknown }).fieldKey
@@ -467,13 +476,25 @@ function buildToolProjectFactAutoPromotionMetadata(params: {
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { projectScope?: unknown }).projectScope
           : undefined,
+      normalizedProjectScope:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { normalizedProjectScope?: unknown }).normalizedProjectScope
+          : undefined,
       subject:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { subject?: unknown }).subject
           : undefined,
+      normalizedSubject:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { normalizedSubject?: unknown }).normalizedSubject
+          : undefined,
       value:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { value?: unknown }).value
+          : undefined,
+      normalizedValue:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { normalizedValue?: unknown }).normalizedValue
           : undefined,
       toolName: "memory_candidate_submit",
     },
@@ -486,8 +507,16 @@ function buildToolProjectFactAutoPromotionMetadata(params: {
       ? {
           candidateConfirmation: {
             state: params.confirmationState,
-            method: "repeat_subject_signal",
+            method: params.confirmationMethod ?? "repeat_subject_signal",
             confirmationEvidenceCount: 2,
+            ...(params.confirmationMethod === "generalized_cluster_auto_review"
+              ? {
+                  clusterKey:
+                    autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+                      ? (autoCapture as { key?: unknown }).key
+                      : undefined,
+                }
+              : {}),
           },
         }
       : {}),
@@ -728,13 +757,22 @@ async function maybeResolveExistingProjectFactCandidate(params: {
   const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
   const key = readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]);
   const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
+  const normalizedValue =
+    readNestedMetadataString(params.input.metadata, ["autoCapture", "normalizedValue"]) ??
+    readNestedMetadataString(params.input.metadata, ["autoCapture", "value"]);
+  const factFamily =
+    readNestedMetadataString(params.input.metadata, ["autoCapture", "factFamily"]) ??
+    (readNestedMetadataString(params.input.metadata, ["autoCapture", "fieldKey"])
+      ? "supported_field"
+      : undefined);
   const fieldKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "fieldKey"]);
   if (
-    template !== "project_fact_named_scope" ||
+    (template !== "project_fact_named_scope" &&
+      template !== "project_fact_generalized_named_scope") ||
     !key ||
     !subjectKey ||
-    !fieldKey ||
-    !isSupportedProjectFactField(fieldKey)
+    !factFamily ||
+    (fieldKey && !isSupportedProjectFactField(fieldKey))
   ) {
     return null;
   }
@@ -749,12 +787,21 @@ async function maybeResolveExistingProjectFactCandidate(params: {
     return null;
   }
 
-  if (
-    inspection.pendingCandidate &&
-    isExpiredPendingProjectFactCandidate(inspection.pendingCandidate)
-  ) {
+  const matchingPendingCandidate =
+    inspection.pendingCandidate ??
+    inspection.pendingSubjectCandidates.find(
+      (candidate) =>
+        candidate.reviewState === "candidate" &&
+        (candidate.factFamily ?? (candidate.fieldKey ? "supported_field" : undefined)) ===
+          factFamily &&
+        (!fieldKey || candidate.fieldKey === fieldKey) &&
+        normalizedValue !== undefined &&
+        candidate.normalizedValue === normalizedValue,
+    );
+
+  if (matchingPendingCandidate && isExpiredPendingProjectFactCandidate(matchingPendingCandidate)) {
     await params.runtime.candidateReview.review({
-      candidateId: inspection.pendingCandidate.id,
+      candidateId: matchingPendingCandidate.id,
       outcome: "rejected",
       rationale:
         "project-fact candidate confirmation window expired without later confirming evidence",
@@ -764,7 +811,8 @@ async function maybeResolveExistingProjectFactCandidate(params: {
           family: "project_fact",
           state: "rejected",
           subjectKey,
-          fieldKey,
+          factFamily,
+          ...(fieldKey ? { fieldKey } : {}),
         },
       },
     });
@@ -779,16 +827,13 @@ async function maybeResolveExistingProjectFactCandidate(params: {
     };
   }
 
-  if (
-    inspection.pendingCandidate &&
-    !isExpiredPendingProjectFactCandidate(inspection.pendingCandidate)
-  ) {
-    if (shouldSkipImmediateProjectFactConfirmation(inspection.pendingCandidate.createdAt)) {
+  if (matchingPendingCandidate && !isExpiredPendingProjectFactCandidate(matchingPendingCandidate)) {
+    if (shouldSkipImmediateProjectFactConfirmation(matchingPendingCandidate.createdAt)) {
       return {
         accepted: false,
         status: "failed",
         kind: params.input.kind,
-        reason: `project-fact confirmation candidate ${inspection.pendingCandidate.id} already exists`,
+        reason: `project-fact confirmation candidate ${matchingPendingCandidate.id} already exists`,
       };
     }
     const autoPromotion =
@@ -798,16 +843,23 @@ async function maybeResolveExistingProjectFactCandidate(params: {
         accepted: false,
         status: "failed",
         kind: params.input.kind,
-        reason: `project-fact confirmation candidate ${inspection.pendingCandidate.id} is waiting for later evidence`,
+        reason: `project-fact confirmation candidate ${matchingPendingCandidate.id} is waiting for later evidence`,
       };
     }
     const promotionMetadata = buildToolProjectFactAutoPromotionMetadata({
       input: params.input,
-      autoPromotionProfile: "project_fact_confirmation_v1",
+      autoPromotionProfile:
+        factFamily === "generalized_reference"
+          ? "project_fact_generalized_confirmation_v1"
+          : "project_fact_confirmation_v1",
       confirmationState: "confirmed",
+      confirmationMethod:
+        factFamily === "generalized_reference"
+          ? "generalized_cluster_auto_review"
+          : "repeat_subject_signal",
     });
     const reviewResult = await params.runtime.candidateReview.review({
-      candidateId: inspection.pendingCandidate.id,
+      candidateId: matchingPendingCandidate.id,
       outcome: "accepted",
       metadata: promotionMetadata,
     });
@@ -820,7 +872,7 @@ async function maybeResolveExistingProjectFactCandidate(params: {
       };
     }
     const promotionResult = await params.runtime.candidatePromotion.promoteToMemory({
-      candidateId: inspection.pendingCandidate.id,
+      candidateId: matchingPendingCandidate.id,
       metadata: promotionMetadata,
     });
     if (!promotionResult.accepted) {
@@ -837,8 +889,22 @@ async function maybeResolveExistingProjectFactCandidate(params: {
       kind: params.input.kind,
       storage: "database",
       reviewState: "approved",
-      eventId: promotionResult.sourceEventId ?? inspection.pendingCandidate.sourceEventId,
+      eventId: promotionResult.sourceEventId ?? matchingPendingCandidate.sourceEventId,
       memoryObjectId: promotionResult.promotedMemoryObjectId,
+    };
+  }
+
+  if (
+    params.input.kind === "learning" &&
+    factFamily === "generalized_reference" &&
+    inspection.activeApprovedSubjectObjectIds.length > 0 &&
+    !inspection.matchingApprovedObjectId
+  ) {
+    return {
+      accepted: false,
+      status: "failed",
+      kind: params.input.kind,
+      reason: `conflicting approved generic project fact already exists for subject ${subjectKey}; use correction phrasing to replace it`,
     };
   }
 
@@ -1752,14 +1818,16 @@ function buildProjectFactSemanticMetadata(params: {
   detectionSource: "deterministic" | "semantic";
   confidence: "high" | ProjectFactSemanticConfidence;
   evidence: string[];
-  fieldKey: ProjectFactFieldKey;
+  factFamily: ProjectFactFamily;
+  fieldKey?: ProjectFactFieldKey;
 }): Record<string, unknown> {
   return {
     semanticDetection: {
       source: "project_fact_semantic_v1",
       detectionSource: params.detectionSource,
       confidence: params.confidence,
-      fieldKey: params.fieldKey,
+      factFamily: params.factFamily,
+      ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
       evidence: params.evidence,
     },
   };
@@ -1833,18 +1901,23 @@ function buildPendingConfirmationMetadata(params: {
 function buildProjectFactPendingConfirmationMetadata(params: {
   confidence: ProjectFactSemanticConfidence;
   evidence: string[];
-  fieldKey: ProjectFactFieldKey;
+  factFamily: ProjectFactFamily;
+  state?: "pending_confirmation" | "hold_for_more_evidence";
+  fieldKey?: ProjectFactFieldKey;
+  clusterKey?: string;
 }): Record<string, unknown> {
   const observedAt = new Date().toISOString();
   return {
     candidateLifecycle: {
       family: "project_fact",
-      state: "pending_confirmation",
+      state: params.state ?? "pending_confirmation",
       confidence: params.confidence,
       evidenceCount: 1,
       observedAt,
       expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
-      fieldKey: params.fieldKey,
+      factFamily: params.factFamily,
+      ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
+      ...(params.clusterKey ? { clusterKey: params.clusterKey } : {}),
       evidence: params.evidence,
     },
   };
@@ -2085,7 +2158,8 @@ type ManagedResponseStyleResolution = {
 
 type ManagedProjectFactResolution = {
   parsed: OrdinaryTurnAutoCaptureMatch;
-  fieldKey: ProjectFactFieldKey;
+  factFamily: ProjectFactFamily;
+  fieldKey?: ProjectFactFieldKey;
   source: "content" | "raw";
   detectionSource: "deterministic" | "semantic";
   confidence: "high" | ProjectFactSemanticConfidence;
@@ -2134,6 +2208,32 @@ function inferProjectFactFieldKeyFromSubject(subject: string): ProjectFactFieldK
                 : fieldLabel === "primary environment name"
                   ? "primary_environment_name"
                   : null;
+}
+
+function inferGenericProjectFactSubjectLabel(subject: string): string | null {
+  const fieldLabel = subject.split("/").pop()?.trim() ?? "";
+  if (!fieldLabel) {
+    return null;
+  }
+  return normalizeGenericProjectFactSubjectLabel(fieldLabel);
+}
+
+function isGeneralizedProjectFactMatch(match: OrdinaryTurnAutoCaptureMatch): boolean {
+  return (
+    match.template === "project_fact_generalized_named_scope" ||
+    match.factFamily === "generalized_reference"
+  );
+}
+
+function isBoundedGenericProjectFactMatch(match: OrdinaryTurnAutoCaptureMatch): boolean {
+  const subjectLabel = inferGenericProjectFactSubjectLabel(match.subject);
+  if (!subjectLabel) {
+    return false;
+  }
+  return isBoundedGenericProjectFactReference({
+    subjectLabel,
+    value: match.value,
+  });
 }
 
 function extractTranscriptUserText(message: TranscriptUserMessage | null): string | null {
@@ -2369,7 +2469,8 @@ function isManagedProjectFactMatch(
 ): parsed is OrdinaryTurnAutoCaptureMatch {
   return Boolean(
     parsed &&
-    parsed.template === "project_fact_named_scope" &&
+    (parsed.template === "project_fact_named_scope" ||
+      parsed.template === "project_fact_generalized_named_scope") &&
     (parsed.captureClass === "explicit_project_fact" ||
       parsed.captureClass === "project_fact_correction"),
   );
@@ -2387,7 +2488,21 @@ function resolveManagedProjectFactLearning(
     if (fieldKey && isSupportedProjectFactField(fieldKey)) {
       return {
         parsed: parsedFromContent,
+        factFamily: "supported_field",
         fieldKey,
+        source: "content",
+        detectionSource: "deterministic",
+        confidence: "high",
+        evidence: ["managed_content_pattern_match"],
+      };
+    }
+    if (
+      isGeneralizedProjectFactMatch(parsedFromContent) &&
+      isBoundedGenericProjectFactMatch(parsedFromContent)
+    ) {
+      return {
+        parsed: parsedFromContent,
+        factFamily: "generalized_reference",
         source: "content",
         detectionSource: "deterministic",
         confidence: "high",
@@ -2409,7 +2524,21 @@ function resolveManagedProjectFactLearning(
       if (fieldKey && isSupportedProjectFactField(fieldKey)) {
         return {
           parsed: parsedFromRaw,
+          factFamily: "supported_field",
           fieldKey,
+          source: "raw",
+          detectionSource: "deterministic",
+          confidence: "high",
+          evidence: ["raw_turn_pattern_match"],
+        };
+      }
+      if (
+        isGeneralizedProjectFactMatch(parsedFromRaw) &&
+        isBoundedGenericProjectFactMatch(parsedFromRaw)
+      ) {
+        return {
+          parsed: parsedFromRaw,
+          factFamily: "generalized_reference",
           source: "raw",
           detectionSource: "deterministic",
           confidence: "high",
@@ -2425,11 +2554,27 @@ function resolveManagedProjectFactLearning(
     ) {
       return {
         parsed: toOrdinaryTurnProjectFactMatch(semanticFromRaw.match),
-        fieldKey: semanticFromRaw.match.fieldKey,
+        factFamily: semanticFromRaw.match.factFamily,
+        ...(semanticFromRaw.match.fieldKey ? { fieldKey: semanticFromRaw.match.fieldKey } : {}),
         source: "raw",
         detectionSource: "semantic",
         confidence: semanticFromRaw.confidence,
         evidence: semanticFromRaw.evidence,
+      };
+    }
+
+    const genericFromRaw = detectGenericProjectFactSemanticDecision(input.metadata.raw);
+    if (
+      genericFromRaw.action === "capture" &&
+      genericFromRaw.match.captureClass === "explicit_project_fact"
+    ) {
+      return {
+        parsed: toOrdinaryTurnProjectFactMatch(genericFromRaw.match),
+        factFamily: genericFromRaw.match.factFamily,
+        source: "raw",
+        detectionSource: "semantic",
+        confidence: genericFromRaw.confidence,
+        evidence: genericFromRaw.evidence,
       };
     }
   }
@@ -2441,11 +2586,29 @@ function resolveManagedProjectFactLearning(
   ) {
     return {
       parsed: toOrdinaryTurnProjectFactMatch(semanticFromContent.match),
-      fieldKey: semanticFromContent.match.fieldKey,
+      factFamily: semanticFromContent.match.factFamily,
+      ...(semanticFromContent.match.fieldKey
+        ? { fieldKey: semanticFromContent.match.fieldKey }
+        : {}),
       source: "content",
       detectionSource: "semantic",
       confidence: semanticFromContent.confidence,
       evidence: semanticFromContent.evidence,
+    };
+  }
+
+  const genericFromContent = detectGenericProjectFactSemanticDecision(input.content);
+  if (
+    genericFromContent.action === "capture" &&
+    genericFromContent.match.captureClass === "explicit_project_fact"
+  ) {
+    return {
+      parsed: toOrdinaryTurnProjectFactMatch(genericFromContent.match),
+      factFamily: genericFromContent.match.factFamily,
+      source: "content",
+      detectionSource: "semantic",
+      confidence: genericFromContent.confidence,
+      evidence: genericFromContent.evidence,
     };
   }
 
@@ -2466,7 +2629,21 @@ async function resolveManagedProjectFactCorrection(params: {
     if (fieldKey && isSupportedProjectFactField(fieldKey)) {
       return {
         parsed: parsedFromContent,
+        factFamily: "supported_field",
         fieldKey,
+        source: "content",
+        detectionSource: "deterministic",
+        confidence: "high",
+        evidence: ["managed_content_pattern_match"],
+      };
+    }
+    if (
+      isGeneralizedProjectFactMatch(parsedFromContent) &&
+      isBoundedGenericProjectFactMatch(parsedFromContent)
+    ) {
+      return {
+        parsed: parsedFromContent,
+        factFamily: "generalized_reference",
         source: "content",
         detectionSource: "deterministic",
         confidence: "high",
@@ -2497,7 +2674,21 @@ async function resolveManagedProjectFactCorrection(params: {
       if (fieldKey && isSupportedProjectFactField(fieldKey)) {
         return {
           parsed: parsedFromRaw,
+          factFamily: "supported_field",
           fieldKey,
+          source: "raw",
+          detectionSource: "deterministic",
+          confidence: "high",
+          evidence: ["raw_turn_pattern_match"],
+        };
+      }
+      if (
+        isGeneralizedProjectFactMatch(parsedFromRaw) &&
+        isBoundedGenericProjectFactMatch(parsedFromRaw)
+      ) {
+        return {
+          parsed: parsedFromRaw,
+          factFamily: "generalized_reference",
           source: "raw",
           detectionSource: "deterministic",
           confidence: "high",
@@ -2513,11 +2704,27 @@ async function resolveManagedProjectFactCorrection(params: {
     ) {
       return {
         parsed: toOrdinaryTurnProjectFactMatch(semanticFromRaw.match),
-        fieldKey: semanticFromRaw.match.fieldKey,
+        factFamily: semanticFromRaw.match.factFamily,
+        ...(semanticFromRaw.match.fieldKey ? { fieldKey: semanticFromRaw.match.fieldKey } : {}),
         source: "raw",
         detectionSource: "semantic",
         confidence: semanticFromRaw.confidence,
         evidence: semanticFromRaw.evidence,
+      };
+    }
+
+    const genericFromRaw = detectGenericProjectFactSemanticDecision(rawCandidate);
+    if (
+      genericFromRaw.action === "capture" &&
+      genericFromRaw.match.captureClass === "project_fact_correction"
+    ) {
+      return {
+        parsed: toOrdinaryTurnProjectFactMatch(genericFromRaw.match),
+        factFamily: genericFromRaw.match.factFamily,
+        source: "raw",
+        detectionSource: "semantic",
+        confidence: genericFromRaw.confidence,
+        evidence: genericFromRaw.evidence,
       };
     }
   }
@@ -2529,11 +2736,29 @@ async function resolveManagedProjectFactCorrection(params: {
   ) {
     return {
       parsed: toOrdinaryTurnProjectFactMatch(semanticFromContent.match),
-      fieldKey: semanticFromContent.match.fieldKey,
+      factFamily: semanticFromContent.match.factFamily,
+      ...(semanticFromContent.match.fieldKey
+        ? { fieldKey: semanticFromContent.match.fieldKey }
+        : {}),
       source: "content",
       detectionSource: "semantic",
       confidence: semanticFromContent.confidence,
       evidence: semanticFromContent.evidence,
+    };
+  }
+
+  const genericFromContent = detectGenericProjectFactSemanticDecision(input.content);
+  if (
+    genericFromContent.action === "capture" &&
+    genericFromContent.match.captureClass === "project_fact_correction"
+  ) {
+    return {
+      parsed: toOrdinaryTurnProjectFactMatch(genericFromContent.match),
+      factFamily: genericFromContent.match.factFamily,
+      source: "content",
+      detectionSource: "semantic",
+      confidence: genericFromContent.confidence,
+      evidence: genericFromContent.evidence,
     };
   }
 
@@ -2933,13 +3158,19 @@ async function normalizeManagedToolCandidateInput(params: {
           captureClass: projectFactResolution.parsed.captureClass,
           reasonCode: projectFactResolution.parsed.reasonCode,
           template: projectFactResolution.parsed.template,
-          fieldKey: projectFactResolution.fieldKey,
+          factFamily: projectFactResolution.factFamily,
+          ...(projectFactResolution.fieldKey ? { fieldKey: projectFactResolution.fieldKey } : {}),
           key: projectFactResolution.parsed.key,
           subjectKey: projectFactResolution.parsed.subjectKey,
           subject: projectFactResolution.parsed.subject,
+          normalizedSubject: projectFactResolution.parsed.normalizedSubject,
           value: projectFactResolution.parsed.value,
+          normalizedValue: projectFactResolution.parsed.normalizedValue,
           ...(projectFactResolution.parsed.projectScope
             ? { projectScope: projectFactResolution.parsed.projectScope }
+            : {}),
+          ...(projectFactResolution.parsed.normalizedProjectScope
+            ? { normalizedProjectScope: projectFactResolution.parsed.normalizedProjectScope }
             : {}),
           toolName: "memory_candidate_submit",
         },
@@ -2948,13 +3179,24 @@ async function normalizeManagedToolCandidateInput(params: {
               detectionSource: projectFactResolution.detectionSource,
               confidence: projectFactResolution.confidence,
               evidence: projectFactResolution.evidence,
-              fieldKey: projectFactResolution.fieldKey,
+              factFamily: projectFactResolution.factFamily,
+              ...(projectFactResolution.fieldKey
+                ? { fieldKey: projectFactResolution.fieldKey }
+                : {}),
             })
           : {}),
         ...buildProjectFactPendingConfirmationMetadata({
           confidence: projectFactResolution.confidence,
           evidence: projectFactResolution.evidence,
-          fieldKey: projectFactResolution.fieldKey,
+          factFamily: projectFactResolution.factFamily,
+          state:
+            projectFactResolution.factFamily === "generalized_reference"
+              ? "hold_for_more_evidence"
+              : "pending_confirmation",
+          ...(projectFactResolution.fieldKey ? { fieldKey: projectFactResolution.fieldKey } : {}),
+          ...(projectFactResolution.factFamily === "generalized_reference"
+            ? { clusterKey: projectFactResolution.parsed.key }
+            : {}),
         }),
       });
     }
@@ -3211,13 +3453,19 @@ async function normalizeManagedToolCandidateInput(params: {
           captureClass: projectFactCorrection.parsed.captureClass,
           reasonCode: projectFactCorrection.parsed.reasonCode,
           template: projectFactCorrection.parsed.template,
-          fieldKey: projectFactCorrection.fieldKey,
+          factFamily: projectFactCorrection.factFamily,
+          ...(projectFactCorrection.fieldKey ? { fieldKey: projectFactCorrection.fieldKey } : {}),
           key: projectFactCorrection.parsed.key,
           subjectKey: projectFactCorrection.parsed.subjectKey,
           subject: projectFactCorrection.parsed.subject,
+          normalizedSubject: projectFactCorrection.parsed.normalizedSubject,
           value: projectFactCorrection.parsed.value,
+          normalizedValue: projectFactCorrection.parsed.normalizedValue,
           ...(projectFactCorrection.parsed.projectScope
             ? { projectScope: projectFactCorrection.parsed.projectScope }
+            : {}),
+          ...(projectFactCorrection.parsed.normalizedProjectScope
+            ? { normalizedProjectScope: projectFactCorrection.parsed.normalizedProjectScope }
             : {}),
           toolName: "memory_candidate_submit",
         },
@@ -3226,7 +3474,10 @@ async function normalizeManagedToolCandidateInput(params: {
               detectionSource: projectFactCorrection.detectionSource,
               confidence: projectFactCorrection.confidence,
               evidence: projectFactCorrection.evidence,
-              fieldKey: projectFactCorrection.fieldKey,
+              factFamily: projectFactCorrection.factFamily,
+              ...(projectFactCorrection.fieldKey
+                ? { fieldKey: projectFactCorrection.fieldKey }
+                : {}),
             })
           : {}),
       });
@@ -3405,13 +3656,19 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
   const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
   const key = readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]);
   const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
+  const factFamily =
+    readNestedMetadataString(params.input.metadata, ["autoCapture", "factFamily"]) ??
+    (readNestedMetadataString(params.input.metadata, ["autoCapture", "fieldKey"])
+      ? "supported_field"
+      : undefined);
   const fieldKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "fieldKey"]);
   if (
-    template !== "project_fact_named_scope" ||
+    (template !== "project_fact_named_scope" &&
+      template !== "project_fact_generalized_named_scope") ||
     !key ||
     !subjectKey ||
-    !fieldKey ||
-    !isSupportedProjectFactField(fieldKey)
+    !factFamily ||
+    (fieldKey && !isSupportedProjectFactField(fieldKey))
   ) {
     return params.result;
   }
@@ -3428,7 +3685,10 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
 
   const promotionMetadata = buildToolProjectFactAutoPromotionMetadata({
     input: params.input,
-    autoPromotionProfile: "project_fact_correction_v1",
+    autoPromotionProfile:
+      factFamily === "generalized_reference"
+        ? "project_fact_generalized_correction_v1"
+        : "project_fact_correction_v1",
   });
   const reviewResult = await params.runtime.candidateReview.review({
     candidateId: params.result.memoryObjectId,

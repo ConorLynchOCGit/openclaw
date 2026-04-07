@@ -1480,6 +1480,59 @@ describe("memory candidate submit tool", () => {
     expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
   });
 
+  it("normalizes bounded generic project reference facts from the tool path as held clusters", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-8b-generic", {
+      kind: "learning",
+      content: "For project atlas forge, the evidence dashboard is #atlas-rollout-evidence.",
+    });
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(createAcceptedResult("learning"), null, 2),
+        },
+      ],
+      details: createAcceptedResult("learning"),
+    });
+    expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          category: "project_fact",
+          source: "explicit_project_fact",
+          subject_key: expect.any(String),
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_project_fact",
+            captureSeam: "model_tool_primary",
+            template: "project_fact_generalized_named_scope",
+            factFamily: "generalized_reference",
+            projectScope: "atlas forge",
+            subject: "atlas forge / evidence dashboard",
+            normalizedSubject: "atlas forge :: evidence dashboard",
+            value: "#atlas-rollout-evidence",
+            normalizedValue: "#atlas-rollout-evidence",
+          }),
+          semanticDetection: expect.objectContaining({
+            source: "project_fact_semantic_v1",
+            confidence: "high",
+            factFamily: "generalized_reference",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "project_fact",
+            state: "hold_for_more_evidence",
+            factFamily: "generalized_reference",
+            clusterKey: expect.any(String),
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidateReview.review).not.toHaveBeenCalled();
+    expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
+  });
+
   it("normalizes natural project fact corrections from the tool path without auto-promotion", async () => {
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });

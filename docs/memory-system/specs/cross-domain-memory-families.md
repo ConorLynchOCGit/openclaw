@@ -126,17 +126,18 @@ marketing, geology, and physical science, the remaining likely family set is:
 
 ## Near-term roadmap impact
 
-The near-term roadmap does not change:
+The near-term roadmap now has an explicit parity gate:
 
-1. reduced-profile self-improving capture integration
-2. learned-guidance advisory planning
+1. existing-family parity and genericization completion
+2. reduced-profile self-improving capture integration
+3. learned-guidance advisory planning
 
-After those two slices, family expansion should prefer domain-neutral families
+Only after those three steps should family expansion prefer domain-neutral families
 from this matrix rather than replaying a software-only long tail.
 
 ## Suggested post-advisory family order
 
-After self-improving capture and advisory planning are live, the best
+After family parity, self-improving capture, and advisory planning are live, the best
 cross-domain expansion order is likely:
 
 1. decision + rationale

@@ -80,7 +80,7 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
           "When the question is about a specific response-style requirement, include the exact style in the hybrid-search query, such as plain English, bullet points, no tables, concise replies, or numbered steps, so the most relevant approved memory wins over adjacent style memories.",
         );
         lines.push(
-          "For direct named-project fact questions, prefer memory_object_search_hybrid with kind=project and approved-only scope before falling back to generic memory_search.",
+          "For direct named-project fact questions, prefer memory_object_search_hybrid with kind=project and approved-only scope before falling back to generic memory_search. This includes both the older typed project fields and newer approved generic named-project reference facts.",
         );
         lines.push(
           "For clear asks about a stored checklist or recurring procedure, prefer memory_object_search_hybrid with kind=procedure and scope=include_validated_procedures before falling back to generic memory_search.",
@@ -123,7 +123,7 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
         "If the user states a bounded recurring response requirement in plain language, such as keep replies concise, use bullet points when listing items, use plain English, do not use tables unless asked, or use numbered steps when giving instructions, submit it as a learning candidate.",
       );
       lines.push(
-        "If the user states a tightly bounded named project fact in explicit declarative form, such as For project Atlas, the staging branch is atlas-staging, submit it as a learning candidate.",
+        "If the user states a tightly bounded named project fact in explicit declarative form, such as For project Atlas, the staging branch is atlas-staging or For project Atlas, the evidence dashboard is atlas-rollout, submit it as a learning candidate. Keep the broader generic path bounded to explicit reference-like project facts rather than speculative summaries.",
       );
       lines.push(
         "If the user explicitly teaches a reusable named checklist with bounded steps, such as my deploy checklist or my release checklist followed by numbered or bulleted steps, submit it as kind=procedure.",
