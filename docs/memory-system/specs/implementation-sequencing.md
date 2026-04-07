@@ -62,12 +62,12 @@ Current sequencing note:
   landed
 - the program is no longer primarily advancing by enumerating one lesson key
   at a time
+- cross-family retrieval/application parity closeout is now also landed as
+  the fourth parity tranche inside existing-family parity
 - the next implementation slice should be:
-  - cross-family retrieval/application parity closeout after the
-    response-style parity tranche
-- the next follow-up slices after that should be:
   - reduced-profile self-improving capture integration after the already
     landed families are closer to parity
+- the next follow-up slices after that should be:
   - later learned-guidance advisory planning after self-improving candidate
     provenance and generic retrieval posture are mature enough
   - then domain-neutral family expansion guided by

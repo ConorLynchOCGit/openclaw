@@ -81,6 +81,9 @@ Live today:
 - approved generalized unmet-need artifacts can surface through the same
   approved-only path as recommendation-only missing-capability reminders for
   direct named-project asks
+- direct named-project project-fact, project-rule, and unmet-need asks now
+  use one shared family-aligned project-selection posture instead of freely
+  blending adjacent approved project memories from other families
 
 Not live today:
 
@@ -159,6 +162,9 @@ It should define precedence such as:
 4. exact named workflow lesson over adjacent generic workflow guidance for the
    same question
 5. explicit superseding approved lesson over older conflicting approved lesson
+6. for direct named-project asks, the top family-aligned project result over
+   adjacent project memories from other families unless they directly
+   corroborate the same answer
 
 The locked v1 procedure posture is:
 
@@ -183,6 +189,19 @@ For approved generalized unmet-need artifacts, the locked v1 posture is:
 - surface as "still missing" or "still needed" guidance only when the current
   ask is explicitly about missing capability or next support
 - do not trigger procurement, install, approval, or autonomous remediation
+
+For direct named-project cross-family selection, the locked v1 posture is:
+
+- fact-like asks such as "where is", "what is the", "which branch", "url",
+  "dashboard", "report", and "runbook" should prefer the top fact-like
+  approved project result
+- operating-rule asks such as "what should I use", "what should I trust",
+  "what should I avoid", or "instead of" should prefer the top approved
+  project-rule result
+- unmet-need asks such as "what do we still need", "what are we missing", or
+  "are we still missing" should prefer the top approved unmet-need result
+- adjacent project memories from other families should be omitted unless they
+  directly corroborate the same answer
 
 ## Ambiguity / abstain / clarify rules
 

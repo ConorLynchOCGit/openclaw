@@ -82,6 +82,9 @@ describe("buildPromptSection", () => {
       expect.stringContaining("direct asks about how a named project should be operated"),
     );
     expect(result).toContainEqual(expect.stringContaining("what a named project is still missing"));
+    expect(result).toContainEqual(expect.stringContaining("top fact-like project result"));
+    expect(result).toContainEqual(expect.stringContaining("top project-rule result"));
+    expect(result).toContainEqual(expect.stringContaining("top unmet-need result"));
     expect(result).toContainEqual(expect.stringContaining("directly answers the question"));
     expect(result).toContainEqual(expect.stringContaining("stored checklist exists"));
     expect(result).toContainEqual(expect.stringContaining("suggestion-first as an option"));
@@ -129,7 +132,7 @@ describe("buildPromptSection", () => {
       "If the user states a bounded recurring response requirement in plain language, such as keep replies concise, use bullet points when listing items, use plain English, do not use tables unless asked, or use numbered steps when giving instructions, submit it as a learning candidate.",
     );
     expect(result).toContain(
-      "If the user states a tightly bounded named project fact in explicit declarative form, such as For project Atlas, the staging branch is atlas-staging, submit it as a learning candidate.",
+      "If the user states a tightly bounded named project fact in explicit declarative form, such as For project Atlas, the staging branch is atlas-staging or For project Atlas, the evidence dashboard is atlas-rollout, submit it as a learning candidate. Keep the broader generic path bounded to explicit reference-like project facts rather than speculative summaries.",
     );
     expect(result).toContainEqual(
       expect.stringContaining(

@@ -2,71 +2,66 @@
 
 ## Active slice
 
-Existing-family parity and genericization completion
+Reduced-profile self-improving capture integration
 
 ## Objective
 
-Bring the already-landed families closer to a common maturity level before
-turning on self-improving capture or widening the taxonomy further.
+Integrate reduced-profile self-improving capture on top of the now-closer
+existing-family substrate without widening retrieval scope, broadening the
+taxonomy, or enabling autonomous behavior.
 
 The previous slice just landed:
 
-- response-style genericization and retrieval parity v1
-- a bounded `response_style_generalized_guidance` lane now exists for explicit
-  durable response opening, response structure, and response tone guidance
-  without adding one more supported response-style subject
-- supported response-style templates remain the precision fast path
-- first-evidence generic response-style capture now uses
-  `hold_for_more_evidence` on the existing response-style lifecycle seam
-- later compatible evidence can promote approved generic response-style
-  memory through the same response-style candidate review + promotion
-  substrate
-- approved-only hybrid retrieval now recognizes normalized generic
-  response-style subject and value overlap
-- isolated plus narrow production proof now shows repeated generic
-  response-style guidance can be held, approved, and retrieved without
-  broadening into generic semantic fallback or self-improving capture
-- transcript-driven generic response-style correction remains conservative in
-  this tranche and still holds for later confirming evidence instead of
-  immediately superseding on first mention
+- cross-family retrieval/application parity closeout
+- direct named-project fact asks now boost fact-like project results without
+  widening semantic retrieval or exposing candidates
+- direct named-project operating-rule asks now boost project-rule results
+  instead of blending adjacent project facts or unmet-need artifacts
+- direct named-project unmet-need asks now boost unmet-need results and can
+  suppress adjacent project rules once the top family-aligned result wins
+- approved-only hybrid retrieval now applies one shared intent-aware shaping
+  layer across project facts, project rules, and unmet needs inside the mixed
+  `kind=project` pool
+- prompt guidance now tells the model to use the top family-aligned project
+  result for direct named-project asks and to avoid blending adjacent project
+  memories unless they directly corroborate the same answer
+- isolated plus narrow production proof now show the new ranking/application
+  behavior without broadening into self-improving capture or advisory planning
 
 ## Required work
 
-1. Audit the currently landed families against one shared maturity rubric:
-   - natural-language capture
-   - canonicalization
-   - clustering and duplicate suppression
-   - machine review or promotion
-   - repair or supersede
-   - retrieval and application quality
-2. Finish the still-rigid or still-uneven portions of the currently landed
-   families before adding new candidate sources.
-3. Make the existing family set less mixed:
-   - fewer rigid keyed-only pockets where broader generalization is intended
-   - fewer retrieval/application gaps between families
-   - fewer special cases that would complicate later self-improving capture
-4. Leave the family set in a state where reduced-profile self-improving
-   capture can plug into one more consistent substrate.
+1. Reuse the already-landed candidate substrate instead of creating a second
+   self-learning path.
+2. Keep reduced-profile self-improving capture candidate-only and provenance-
+   aware.
+3. Plug self-improving capture into the now more consistent family set:
+   - response style
+   - project facts
+   - recurring procedures
+   - workflow lessons
+   - project rules
+   - unmet needs
+4. Preserve current approved-only hybrid retrieval, guidance-only behavior,
+   and operator-safe boundaries while broadening candidate coverage.
 
 ## Out of scope
 
 - broader autonomous planning or execution
-- reduced-profile self-improving capture enablement before family parity is
-  stronger
-- cross-domain family expansion before the currently landed families are
-  closer to parity
+- learned-guidance advisory planning before reduced-profile self-improving
+  capture is production-proven
+- cross-domain family expansion before reduced-profile self-improving capture
+  and learned-guidance advisory planning are both stronger
 - procurement, install, vetting, or approval automation
 - autonomous remediation or silent plan mutation
 - production pairing/auth changes
 
 ## Acceptance criteria
 
-- the currently landed families are closer to the same maturity level across
-  capture, lifecycle quality, and retrieval/application quality
-- future self-improving integration no longer needs to compensate for obvious
-  family-specific maturity gaps
-- the current family set is more coherent before any further taxonomy
-  expansion
+- reduced-profile self-improving capture plugs into the current families
+  through the same candidate, review, and retrieval substrate
+- the self-improving seam stays candidate-only, bounded, and provenance-aware
+- later advisory planning can build on the same approved-memory posture rather
+  than compensating for family-specific special cases
 - hybrid-first retrieval remains the default path
 - the post-pivot families stay part of the same layered supervised-learning
   system
@@ -87,7 +82,7 @@ The post-pivot pipeline now tracks these landed and next sequenced steps:
 
 The next implementation slice should be:
 
-- cross-family retrieval/application parity closeout
+- reduced-profile self-improving capture integration
 
 Cross-domain roadmap note:
 

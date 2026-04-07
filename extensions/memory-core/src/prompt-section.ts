@@ -97,6 +97,9 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
         lines.push(
           "For direct asks about what a named project is still missing, still needs, or should have next, also use memory_object_search_hybrid with kind=project and approved-only scope, and include the explicit project name plus the missing capability or gap subject so approved unmet-need recommendations can surface without falling back to generic search.",
         );
+        lines.push(
+          "When a direct named-project ask is clearly about where or what something is, use the top fact-like project result. When it is clearly about what to use, trust, or avoid, use the top project-rule result. When it is clearly about what is still missing or needed, use the top unmet-need result. Do not blend adjacent project memories from other families unless they directly corroborate the same answer.",
+        );
       }
       lines.push(
         "If an approved durable memory result directly answers the question, use it in the normal reply without asking the user to restate it. If no approved result exists, answer normally and say you did not find stored memory only when that context matters.",

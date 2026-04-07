@@ -2117,10 +2117,23 @@ Fast re-entry reading order:
       using project-scope, subject, and needed-capability overlap
     - unmet needs remain recommendation-only and do not broaden into
       procurement, install, or approval automation
+61. Cross-family retrieval/application parity closeout is now landed:
+    - direct named-project fact asks now boost fact-like approved project
+      results inside the mixed `kind=project` retrieval pool
+    - direct named-project operating-rule asks now boost project-rule results
+      instead of blending adjacent project facts or unmet-need artifacts
+    - direct named-project unmet-need asks now boost unmet-need results and
+      can suppress adjacent approved project rules once the top family-aligned
+      result wins
+    - prompt guidance now tells the model to use the top family-aligned
+      project result and avoid blending adjacent project memories unless they
+      directly corroborate the same answer
+    - hybrid remains the default working-context path and generic semantic
+      broadening is still not live
 
 ## Next expected action
 
 Implement reduced-profile self-improving capture integration on the same
-generic supervised pipeline, then follow with learned-guidance advisory
-planning only after the broader generic families reuse the same candidate and
-retrieval posture.
+generic supervised pipeline now that the existing-family parity closeout is
+landed, then follow with learned-guidance advisory planning only after the
+broader generic families reuse the same candidate and retrieval posture.

@@ -1338,6 +1338,8 @@ type GeneralizedWorkflowGuidancePatternHint =
   | "trust_for_scope"
   | "avoid_only";
 
+type ProjectMemoryIntentFamily = "" | "project_fact" | "project_rule" | "unmet_need";
+
 function normalizeRetrievalQuery(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -1373,6 +1375,65 @@ function inferGeneralizedWorkflowGuidancePatternHint(
     normalized.includes("instead of")
   ) {
     return "use_instead_of";
+  }
+  return "";
+}
+
+function inferProjectMemoryIntentFamily(query: string): ProjectMemoryIntentFamily {
+  const normalized = normalizeRetrievalQuery(query);
+  if (!normalized) {
+    return "";
+  }
+  if (
+    normalized.includes("still missing") ||
+    normalized.includes("still need") ||
+    normalized.includes("still needed") ||
+    normalized.includes("what do we need") ||
+    normalized.includes("what are we missing") ||
+    normalized.includes("what is missing") ||
+    normalized.includes("what's missing") ||
+    normalized.includes("are we missing") ||
+    normalized.includes("do we need") ||
+    normalized.includes("what do we still need") ||
+    normalized.includes("what are we still missing") ||
+    normalized.includes("should have next")
+  ) {
+    return "unmet_need";
+  }
+  if (
+    normalized.includes("should i use") ||
+    normalized.includes("what should i use") ||
+    normalized.includes("what should we use") ||
+    normalized.includes("which should i use") ||
+    normalized.includes("which should we use") ||
+    normalized.includes("what should i trust") ||
+    normalized.includes("what should we trust") ||
+    normalized.includes("which signal should i trust") ||
+    normalized.includes("which source should i trust") ||
+    normalized.includes("what should i avoid") ||
+    normalized.includes("what should we avoid") ||
+    normalized.includes("instead of") ||
+    normalized.includes("rely on") ||
+    normalized.includes("trust") ||
+    normalized.includes("avoid") ||
+    normalized.includes("prefer ")
+  ) {
+    return "project_rule";
+  }
+  if (
+    normalized.includes("where is") ||
+    normalized.includes("what is the") ||
+    normalized.includes("what's the") ||
+    normalized.includes("which branch") ||
+    normalized.includes("url") ||
+    normalized.includes("link") ||
+    normalized.includes("dashboard") ||
+    normalized.includes("report") ||
+    normalized.includes("runbook") ||
+    normalized.includes("docs") ||
+    normalized.includes("documentation")
+  ) {
+    return "project_fact";
   }
   return "";
 }
@@ -2008,6 +2069,117 @@ function normalizeRankedProcedureObjectRecord(
     score: row.score,
     matchedFields: row.matched_fields,
   };
+}
+
+type ProjectRetrievedFamily =
+  | "project_fact"
+  | "workflow_guidance"
+  | "project_rule"
+  | "unmet_need"
+  | "other";
+
+function classifyProjectRetrievedFamily(
+  record: RankedRetrievedMemoryRecord,
+): ProjectRetrievedFamily {
+  if (record.objectType !== "memory_object" || record.memoryKind !== "project") {
+    return "other";
+  }
+  const lessonFamily =
+    readNestedMetadataString(record.metadata, ["autoCapture", "lessonFamily"]) ??
+    readNestedMetadataString(record.metadata, [
+      "candidateMetadata",
+      "autoCapture",
+      "lessonFamily",
+    ]) ??
+    readNestedMetadataString(record.metadata, [
+      "promotionMetadata",
+      "autoPromotion",
+      "lessonFamily",
+    ]) ??
+    readNestedMetadataString(record.metadata, ["autoPromotion", "lessonFamily"]);
+  if (lessonFamily === "generalized_project_rule") {
+    return "project_rule";
+  }
+  if (lessonFamily === "generalized_unmet_need") {
+    return "unmet_need";
+  }
+  if (lessonFamily === "generalized_workflow_lesson") {
+    return "workflow_guidance";
+  }
+  const factFamily =
+    readNestedMetadataString(record.metadata, ["autoCapture", "factFamily"]) ??
+    readNestedMetadataString(record.metadata, ["candidateMetadata", "autoCapture", "factFamily"]) ??
+    readNestedMetadataString(record.metadata, [
+      "promotionMetadata",
+      "autoPromotion",
+      "factFamily",
+    ]) ??
+    readNestedMetadataString(record.metadata, ["autoPromotion", "factFamily"]);
+  if (factFamily === "generalized_reference" || factFamily === "supported_field") {
+    return "project_fact";
+  }
+  const fieldKey =
+    readNestedMetadataString(record.metadata, ["autoCapture", "fieldKey"]) ??
+    readNestedMetadataString(record.metadata, ["candidateMetadata", "autoCapture", "fieldKey"]) ??
+    readNestedMetadataString(record.metadata, ["promotionMetadata", "autoPromotion", "fieldKey"]) ??
+    readNestedMetadataString(record.metadata, ["autoPromotion", "fieldKey"]);
+  if (fieldKey) {
+    return "project_fact";
+  }
+  const lessonKey =
+    readNestedMetadataString(record.metadata, ["autoCapture", "lessonKey"]) ??
+    readNestedMetadataString(record.metadata, ["candidateMetadata", "autoCapture", "lessonKey"]) ??
+    readNestedMetadataString(record.metadata, [
+      "promotionMetadata",
+      "autoPromotion",
+      "lessonKey",
+    ]) ??
+    readNestedMetadataString(record.metadata, ["autoPromotion", "lessonKey"]);
+  if (lessonKey) {
+    return "workflow_guidance";
+  }
+  return "other";
+}
+
+function shapeProjectIntentRankedRecords(params: {
+  records: RankedRetrievedMemoryRecord[];
+  query: string;
+  scope: MemoryObjectSearchScope;
+  kind?: "project" | "feedback" | "procedure";
+}): RankedRetrievedMemoryRecord[] {
+  if (params.kind !== "project" || scopeIncludesCandidates(params.scope)) {
+    return params.records;
+  }
+  const targetFamily = inferProjectMemoryIntentFamily(params.query);
+  if (!targetFamily) {
+    return params.records;
+  }
+  const targetFamilyRecords = params.records.filter(
+    (record) =>
+      record.objectType === "memory_object" &&
+      record.memoryKind === "project" &&
+      classifyProjectRetrievedFamily(record) === targetFamily,
+  );
+  if (targetFamilyRecords.length === 0) {
+    return params.records;
+  }
+  const nonProjectOrSameFamilyRecords = params.records.filter((record) => {
+    if (record.objectType !== "memory_object" || record.memoryKind !== "project") {
+      return true;
+    }
+    return classifyProjectRetrievedFamily(record) === targetFamily;
+  });
+  return [
+    ...targetFamilyRecords,
+    ...nonProjectOrSameFamilyRecords.filter(
+      (record) =>
+        !(
+          record.objectType === "memory_object" &&
+          record.memoryKind === "project" &&
+          classifyProjectRetrievedFamily(record) === targetFamily
+        ),
+    ),
+  ];
 }
 
 function normalizeSemanticMemoryObjectRecord(
@@ -10397,6 +10569,8 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
   const workflowImprovementHint =
     params.input.kind === "project" ? inferWorkflowImprovementQueryHint(params.input.query) : null;
   const normalizedQuery = normalizeRetrievalQuery(params.input.query);
+  const projectMemoryIntentFamily =
+    params.input.kind === "project" ? inferProjectMemoryIntentFamily(params.input.query) : "";
   const generalizedWorkflowPatternHint =
     params.input.kind === "project"
       ? inferGeneralizedWorkflowGuidancePatternHint(params.input.query)
@@ -10416,6 +10590,7 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     projectFactHint?.fieldKey ?? "",
     workflowImprovementHint?.lessonKey ?? "",
     normalizedQuery,
+    projectMemoryIntentFamily,
     generalizedWorkflowPatternHint,
   ];
 
@@ -10454,6 +10629,15 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
           + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
           + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
           + case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
+          + case when $7::text = 'project_fact'
+              and ${autoCaptureFactFamilyExpression} in ('supported_field', 'generalized_reference')
+            then 90 else 0 end
+          + case when $7::text = 'project_rule'
+              and ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
+            then 95 else 0 end
+          + case when $7::text = 'unmet_need'
+              and ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
+            then 130 else 0 end
           + case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
               and ${autoCaptureNormalizedSubjectExpression} <> ''
               and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
@@ -10515,12 +10699,12 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
               and $6::text like '%' || ${autoCaptureNormalizedAvoidActionExpression} || '%'
             then 90 else 0 end
           + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
-              and $7::text <> ''
-              and ${autoCaptureGuidancePatternExpression} = $7::text
+              and $8::text <> ''
+              and ${autoCaptureGuidancePatternExpression} = $8::text
             then 40 else 0 end
           + case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-              and $7::text <> ''
-              and ${autoCaptureGuidancePatternExpression} = $7::text
+              and $8::text <> ''
+              and ${autoCaptureGuidancePatternExpression} = $8::text
             then 40 else 0 end
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
@@ -10539,6 +10723,18 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
             end,
             case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text
               then 'auto_capture_lesson_match'
+            end,
+            case when $7::text = 'project_fact'
+                and ${autoCaptureFactFamilyExpression} in ('supported_field', 'generalized_reference')
+              then 'project_fact_intent_match'
+            end,
+            case when $7::text = 'project_rule'
+                and ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
+              then 'project_rule_intent_match'
+            end,
+            case when $7::text = 'unmet_need'
+                and ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
+              then 'unmet_need_intent_match'
             end,
             case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
                 and ${autoCaptureNormalizedSubjectExpression} <> ''
@@ -10616,13 +10812,13 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
               then 'project_rule_avoid_action_match'
             end,
             case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
-                and $7::text <> ''
-                and ${autoCaptureGuidancePatternExpression} = $7::text
+                and $8::text <> ''
+                and ${autoCaptureGuidancePatternExpression} = $8::text
               then 'generalized_guidance_pattern_match'
             end,
             case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-                and $7::text <> ''
-                and ${autoCaptureGuidancePatternExpression} = $7::text
+                and $8::text <> ''
+                and ${autoCaptureGuidancePatternExpression} = $8::text
               then 'project_rule_guidance_pattern_match'
             end,
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
@@ -11456,13 +11652,19 @@ async function searchMemoryObjectsHybridInConfiguredDatabase(params: {
         ]);
       },
     });
+    const shapedRecords = shapeProjectIntentRankedRecords({
+      records,
+      query: params.input.query,
+      scope,
+      kind: params.input.kind,
+    });
 
     params.logger.debug?.(
       [
         "memory-middleware memory object hybrid search completed",
         `scope=${scope}`,
         `query=${params.input.query}`,
-        `count=${String(records.length)}`,
+        `count=${String(shapedRecords.length)}`,
       ].join(" "),
     );
 
@@ -11471,7 +11673,7 @@ async function searchMemoryObjectsHybridInConfiguredDatabase(params: {
       status: "ok",
       scope,
       query: params.input.query,
-      records,
+      records: shapedRecords,
     };
   } catch (error) {
     const reason = summarizeMemoryObjectQueryError(error);

@@ -3932,6 +3932,241 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     );
   });
 
+  it("keeps direct named-project unmet-need asks focused on unmet-need results over adjacent project rules", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    async function backdateCandidate(candidateId: string): Promise<void> {
+      const client = await connectClient(dbEnvironment.connectionString);
+      try {
+        await client.query(
+          `
+            update memory_middleware.memory_objects
+            set
+              created_at = now() - interval '10 seconds',
+              updated_at = now() - interval '10 seconds'
+            where id = $1::uuid
+          `,
+          [candidateId],
+        );
+      } finally {
+        await client.end();
+      }
+    }
+
+    async function approveProjectRule(params: {
+      firstContent: string;
+      secondContent: string;
+      baseCallId: string;
+    }): Promise<string> {
+      const firstSubmit = await submitTool.execute(`${params.baseCallId}-1`, {
+        kind: "improvement",
+        content: params.firstContent,
+        projectId: seeded.projectId,
+      });
+      const candidateId = (firstSubmit.details as { memoryObjectId: string }).memoryObjectId;
+      await backdateCandidate(candidateId);
+      const secondSubmit = await submitTool.execute(`${params.baseCallId}-2`, {
+        kind: "improvement",
+        content: params.secondContent,
+        projectId: seeded.projectId,
+      });
+      return (secondSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    }
+
+    async function approveUnmetNeed(params: {
+      firstContent: string;
+      secondContent: string;
+      baseCallId: string;
+    }): Promise<string> {
+      const firstSubmit = await submitTool.execute(`${params.baseCallId}-1`, {
+        kind: "improvement",
+        content: params.firstContent,
+        projectId: seeded.projectId,
+      });
+      const candidateId = (firstSubmit.details as { memoryObjectId: string }).memoryObjectId;
+      await backdateCandidate(candidateId);
+      const secondSubmit = await submitTool.execute(`${params.baseCallId}-2`, {
+        kind: "improvement",
+        content: params.secondContent,
+        projectId: seeded.projectId,
+      });
+      return (secondSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    }
+
+    const projectRuleId = await approveProjectRule({
+      baseCallId: "call-project-kind-closeout-rule",
+      firstContent:
+        "For project Atlas, use generated audit IDs for rollout audits instead of client timestamps.",
+      secondContent:
+        "For project Atlas, prefer generated audit IDs for rollout audits instead of client timestamps.",
+    });
+    const unmetNeedId = await approveUnmetNeed({
+      baseCallId: "call-project-kind-closeout-unmet-need",
+      firstContent: "For project Atlas, we need a release evidence template for rollout audits.",
+      secondContent:
+        "For project Atlas, we're missing a release evidence template for rollout audits.",
+    });
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "for project atlas rollout audits what do we still need",
+      scope: "approved_only",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+    });
+    const records = (
+      hybridSearch as {
+        accepted: true;
+        records: Array<{ id: string; matchedFields: string[] }>;
+      }
+    ).records;
+
+    expect(records[0]).toEqual(
+      expect.objectContaining({
+        id: unmetNeedId,
+        matchedFields: expect.arrayContaining([
+          "unmet_need_intent_match",
+          "unmet_need_scope_match",
+          "unmet_need_subject_match",
+        ]),
+      }),
+    );
+    expect(records.map((record) => record.id)).not.toContain(projectRuleId);
+  });
+
+  it("keeps direct named-project fact lookups focused on project facts over adjacent project rules", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    async function backdateCandidate(candidateId: string): Promise<void> {
+      const client = await connectClient(dbEnvironment.connectionString);
+      try {
+        await client.query(
+          `
+            update memory_middleware.memory_objects
+            set
+              created_at = now() - interval '10 seconds',
+              updated_at = now() - interval '10 seconds'
+            where id = $1::uuid
+          `,
+          [candidateId],
+        );
+      } finally {
+        await client.end();
+      }
+    }
+
+    async function approveProjectFact(params: {
+      firstContent: string;
+      secondContent: string;
+      baseCallId: string;
+    }): Promise<string> {
+      const firstSubmit = await submitTool.execute(`${params.baseCallId}-1`, {
+        kind: "learning",
+        content: params.firstContent,
+        projectId: seeded.projectId,
+      });
+      const candidateId = (firstSubmit.details as { memoryObjectId: string }).memoryObjectId;
+      await backdateCandidate(candidateId);
+      const secondSubmit = await submitTool.execute(`${params.baseCallId}-2`, {
+        kind: "learning",
+        content: params.secondContent,
+        projectId: seeded.projectId,
+      });
+      return (secondSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    }
+
+    async function approveProjectRule(params: {
+      firstContent: string;
+      secondContent: string;
+      baseCallId: string;
+    }): Promise<string> {
+      const firstSubmit = await submitTool.execute(`${params.baseCallId}-1`, {
+        kind: "improvement",
+        content: params.firstContent,
+        projectId: seeded.projectId,
+      });
+      const candidateId = (firstSubmit.details as { memoryObjectId: string }).memoryObjectId;
+      await backdateCandidate(candidateId);
+      const secondSubmit = await submitTool.execute(`${params.baseCallId}-2`, {
+        kind: "improvement",
+        content: params.secondContent,
+        projectId: seeded.projectId,
+      });
+      return (secondSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    }
+
+    const projectFactId = await approveProjectFact({
+      baseCallId: "call-project-kind-closeout-fact",
+      firstContent:
+        "For project Atlas, the harbor signoff proof report is atlas-harbor-signoff-report.",
+      secondContent:
+        "For project Atlas, the harbor signoff proof report is atlas-harbor-signoff-report.",
+    });
+    const projectRuleId = await approveProjectRule({
+      baseCallId: "call-project-kind-closeout-fact-rule",
+      firstContent:
+        "For project Atlas, trust the harbor signoff proof report for rollout audits; raw container health is only liveness noise.",
+      secondContent:
+        "For project Atlas, use the harbor signoff proof report for rollout audits; raw container health is only liveness noise.",
+    });
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "for project atlas where is the harbor signoff proof report",
+      scope: "approved_only",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+    });
+    const records = (
+      hybridSearch as {
+        accepted: true;
+        records: Array<{ id: string; matchedFields: string[] }>;
+      }
+    ).records;
+
+    expect(records[0]).toEqual(
+      expect.objectContaining({
+        id: projectFactId,
+        matchedFields: expect.arrayContaining(["project_fact_intent_match"]),
+      }),
+    );
+    expect(records.map((record) => record.id)).not.toContain(projectRuleId);
+  });
+
   it("auto-approves a repeated phrase pattern for an approved generic workflow lesson and keeps the artifact out of hybrid retrieval", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

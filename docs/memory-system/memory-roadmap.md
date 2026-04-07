@@ -464,6 +464,18 @@ Delivery enablement pause:
     with project-scope, subject, and needed-capability boosts
   - unmet-need artifacts remain recommendation-only and distinct from workflow
     guidance, project rules, procurement, install, and approval flows
+- cross-family retrieval/application parity closeout is now also landed:
+  - direct named-project fact asks now boost fact-like project results inside
+    the mixed approved-only `kind=project` retrieval pool
+  - direct named-project operating-rule asks now boost project-rule results
+    instead of blending adjacent project facts or unmet-need artifacts
+  - direct named-project unmet-need asks now boost unmet-need results and can
+    suppress adjacent approved project rules once the top family-aligned
+    result wins
+  - prompt guidance now tells the model to use the top family-aligned project
+    result and avoid blending adjacent project memories unless they directly
+    corroborate the same answer
+  - hybrid remains the default path and semantic broadening is still not live
 - post-pivot execution path:
   1. existing-family parity and genericization completion
   2. reduced-profile self-improving capture integration
@@ -476,8 +488,10 @@ Delivery enablement pause:
   - recurring-procedure generalization and repair parity v1
 - third landed parity tranche inside step 1:
   - response-style genericization and retrieval parity v1
-- next recommended parity tranche inside step 1:
+- fourth landed parity tranche inside step 1:
   - cross-family retrieval/application parity closeout
+- next recommended implementation slice after step 1:
+  - reduced-profile self-improving capture integration
 - existing-family parity means, for the current landed families:
   - natural-language capture is no longer overly rigid where the family is
     intended to generalize
