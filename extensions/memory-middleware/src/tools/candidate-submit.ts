@@ -10,6 +10,8 @@ import {
   type CandidateSubmissionKind,
   type CandidateSubmissionResult,
 } from "../db/runtime.js";
+import { getCaptureMetadataByWorkflowLessonFamily } from "../memory-family-registry.js";
+import { resolveWorkflowImprovementIngestion } from "../memory-ingestion-resolver.js";
 import {
   parseAutoCaptureManagedCandidateContent,
   parseManagedCorrectionCandidateContent,
@@ -30,7 +32,6 @@ import {
   type ProjectFactFieldKey,
   type ProjectFactSemanticConfidence,
 } from "../project-fact-semantic.js";
-import { detectProjectRuleSemanticDecision } from "../project-rule-semantic.js";
 import {
   inspectRecurringProcedureLifecycle,
   isExpiredPendingRecurringProcedureCandidate,
@@ -66,30 +67,22 @@ import {
   storeApprovedEnvironmentConstraintSemanticEmbedding,
   storeApprovedWorkflowToolGotchaSemanticEmbedding,
 } from "../semantic-retrieval-routing.js";
-import { detectUnmetNeedSemanticDecision } from "../unmet-need-semantic.js";
 import {
   inspectWorkflowImprovementLifecycle,
   isExpiredPendingWorkflowImprovementCandidate,
   supersedeApprovedWorkflowImprovementSubjectEntries,
 } from "../workflow-improvement-lifecycle.js";
 import {
-  detectWorkflowImprovementSemanticDecision,
   type WorkflowImprovementCanonicalMatch,
-  type WorkflowImprovementCaptureClass,
   type WorkflowImprovementGuidancePattern,
   type WorkflowImprovementLessonFamily,
   isSupportedWorkflowImprovementLessonKey,
   type WorkflowImprovementLessonKey,
   type WorkflowImprovementNeedCategory,
-  type WorkflowImprovementReasonCode,
   type WorkflowImprovementSemanticConfidence,
-  type WorkflowImprovementTemplate,
   type WorkflowImprovementToolKey,
 } from "../workflow-improvement-semantic.js";
-import {
-  findApprovedWorkflowPhrasePatternMatch,
-  maybeInduceWorkflowPhrasePattern,
-} from "../workflow-phrase-induction.js";
+import { maybeInduceWorkflowPhrasePattern } from "../workflow-phrase-induction.js";
 import {
   asJsonToolResult as asJsonToolResultBase,
   readContextUuid,
@@ -1779,6 +1772,7 @@ export async function submitCandidateFromTool(params: {
     const duplicate = await findExistingAutoCaptureManagedDuplicate({
       runtime: params.runtime,
       input: normalizedInput,
+      context: params.context,
     });
     if (duplicate) {
       return {
@@ -2211,71 +2205,6 @@ function toOrdinaryTurnRecurringProcedureMatch(match: {
     ...(match.procedureKey ? { procedureKey: match.procedureKey } : {}),
     title: match.title,
     steps: match.steps,
-  };
-}
-
-function toOrdinaryTurnWorkflowImprovementMatch(match: {
-  captureClass: WorkflowImprovementCaptureClass;
-  candidateKind: "improvement";
-  reasonCode: WorkflowImprovementReasonCode;
-  template: WorkflowImprovementTemplate;
-  lessonFamily: WorkflowImprovementLessonFamily;
-  projectScope?: string;
-  normalizedProjectScope?: string;
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
-  guidancePattern?: WorkflowImprovementGuidancePattern;
-  needCategory?: WorkflowImprovementNeedCategory;
-  subject: string;
-  value: string;
-  normalizedSubject: string;
-  normalizedValue: string;
-  content: string;
-  subjectKey: string;
-  key: string;
-  neededCapability?: string;
-  normalizedNeededCapability?: string;
-  recommendedAction?: string;
-  normalizedRecommendedAction?: string;
-  avoidAction?: string;
-  normalizedAvoidAction?: string;
-  rationale?: string;
-  normalizedRationale?: string;
-}): OrdinaryTurnAutoCaptureMatch {
-  return {
-    profile: "user-preference-v2",
-    captureClass: match.captureClass,
-    candidateKind: match.candidateKind,
-    reasonCode: match.reasonCode,
-    template: match.template,
-    lessonFamily: match.lessonFamily,
-    subject: match.subject,
-    value: match.value,
-    normalizedSubject: match.normalizedSubject,
-    normalizedValue: match.normalizedValue,
-    content: match.content,
-    subjectKey: match.subjectKey,
-    key: match.key,
-    ...(match.projectScope ? { projectScope: match.projectScope } : {}),
-    ...(match.normalizedProjectScope
-      ? { normalizedProjectScope: match.normalizedProjectScope }
-      : {}),
-    ...(match.lessonKey ? { lessonKey: match.lessonKey } : {}),
-    ...(match.toolKey ? { toolKey: match.toolKey } : {}),
-    ...(match.guidancePattern ? { guidancePattern: match.guidancePattern } : {}),
-    ...(match.needCategory ? { needCategory: match.needCategory } : {}),
-    ...(match.neededCapability ? { neededCapability: match.neededCapability } : {}),
-    ...(match.normalizedNeededCapability
-      ? { normalizedNeededCapability: match.normalizedNeededCapability }
-      : {}),
-    ...(match.recommendedAction ? { recommendedAction: match.recommendedAction } : {}),
-    ...(match.normalizedRecommendedAction
-      ? { normalizedRecommendedAction: match.normalizedRecommendedAction }
-      : {}),
-    ...(match.avoidAction ? { avoidAction: match.avoidAction } : {}),
-    ...(match.normalizedAvoidAction ? { normalizedAvoidAction: match.normalizedAvoidAction } : {}),
-    ...(match.rationale ? { rationale: match.rationale } : {}),
-    ...(match.normalizedRationale ? { normalizedRationale: match.normalizedRationale } : {}),
   };
 }
 
@@ -3061,77 +2990,6 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
   context?: OpenClawPluginToolContext;
 }): Promise<ManagedWorkflowImprovementResolution | null> {
   const { input, context } = params;
-  if (input.projectId) {
-    const deterministicFromContent = await findApprovedWorkflowPhrasePatternMatch({
-      config: params.runtime.config,
-      text: input.content,
-      projectId: input.projectId,
-    });
-    if (deterministicFromContent) {
-      return {
-        parsed: toOrdinaryTurnWorkflowImprovementMatch(deterministicFromContent.match),
-        lessonFamily: deterministicFromContent.match.lessonFamily,
-        reviewMode: "hold_for_more_evidence",
-        ...(deterministicFromContent.match.guidancePattern
-          ? { guidancePattern: deterministicFromContent.match.guidancePattern }
-          : {}),
-        source: "content",
-        detectionSource: "deterministic",
-        confidence: "high",
-        evidence: ["approved_phrase_pattern_match"],
-        observedText: input.content,
-      };
-    }
-  }
-  const projectRuleFromContent = detectProjectRuleSemanticDecision(input.content);
-  if (projectRuleFromContent.action === "capture") {
-    return {
-      parsed: toOrdinaryTurnWorkflowImprovementMatch(projectRuleFromContent.match),
-      lessonFamily: projectRuleFromContent.match.lessonFamily,
-      reviewMode: "hold_for_more_evidence",
-      guidancePattern: projectRuleFromContent.match.guidancePattern,
-      source: "content",
-      detectionSource: "semantic",
-      confidence: projectRuleFromContent.confidence,
-      evidence: projectRuleFromContent.evidence,
-      observedText: input.content,
-    };
-  }
-  const unmetNeedFromContent = detectUnmetNeedSemanticDecision(input.content);
-  if (unmetNeedFromContent.action === "capture") {
-    return {
-      parsed: toOrdinaryTurnWorkflowImprovementMatch(unmetNeedFromContent.match),
-      lessonFamily: unmetNeedFromContent.match.lessonFamily,
-      reviewMode: "hold_for_more_evidence",
-      source: "content",
-      detectionSource: "semantic",
-      confidence: unmetNeedFromContent.confidence,
-      evidence: unmetNeedFromContent.evidence,
-      observedText: input.content,
-    };
-  }
-  const contentDecision = detectWorkflowImprovementSemanticDecision(input.content);
-  if (contentDecision.action === "capture") {
-    return {
-      parsed: toOrdinaryTurnWorkflowImprovementMatch(contentDecision.match),
-      lessonFamily: contentDecision.match.lessonFamily,
-      reviewMode:
-        contentDecision.match.lessonFamily === "supported_lesson"
-          ? "pending_confirmation"
-          : "hold_for_more_evidence",
-      ...(contentDecision.match.lessonKey ? { lessonKey: contentDecision.match.lessonKey } : {}),
-      ...(contentDecision.match.toolKey ? { toolKey: contentDecision.match.toolKey } : {}),
-      ...(contentDecision.match.guidancePattern
-        ? { guidancePattern: contentDecision.match.guidancePattern }
-        : {}),
-      source: "content",
-      detectionSource: "semantic",
-      confidence: contentDecision.confidence,
-      evidence: contentDecision.evidence,
-      observedText: input.content,
-    };
-  }
-
   const rawCandidates: string[] = [];
   if (typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0) {
     rawCandidates.push(input.metadata.raw);
@@ -3140,82 +2998,31 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
   if (rawFromContext && !rawCandidates.includes(rawFromContext)) {
     rawCandidates.push(rawFromContext);
   }
-
-  for (const rawCandidate of rawCandidates) {
-    if (input.projectId) {
-      const deterministicFromRaw = await findApprovedWorkflowPhrasePatternMatch({
-        config: params.runtime.config,
-        text: rawCandidate,
-        projectId: input.projectId,
-      });
-      if (deterministicFromRaw) {
-        return {
-          parsed: toOrdinaryTurnWorkflowImprovementMatch(deterministicFromRaw.match),
-          lessonFamily: deterministicFromRaw.match.lessonFamily,
-          reviewMode: "hold_for_more_evidence",
-          ...(deterministicFromRaw.match.guidancePattern
-            ? { guidancePattern: deterministicFromRaw.match.guidancePattern }
-            : {}),
-          source: "raw",
-          detectionSource: "deterministic",
-          confidence: "high",
-          evidence: ["approved_phrase_pattern_match"],
-          observedText: rawCandidate,
-        };
-      }
-    }
-    const projectRuleFromRaw = detectProjectRuleSemanticDecision(rawCandidate);
-    if (projectRuleFromRaw.action === "capture") {
-      return {
-        parsed: toOrdinaryTurnWorkflowImprovementMatch(projectRuleFromRaw.match),
-        lessonFamily: projectRuleFromRaw.match.lessonFamily,
-        reviewMode: "hold_for_more_evidence",
-        guidancePattern: projectRuleFromRaw.match.guidancePattern,
-        source: "raw",
-        detectionSource: "semantic",
-        confidence: projectRuleFromRaw.confidence,
-        evidence: projectRuleFromRaw.evidence,
-        observedText: rawCandidate,
-      };
-    }
-    const unmetNeedFromRaw = detectUnmetNeedSemanticDecision(rawCandidate);
-    if (unmetNeedFromRaw.action === "capture") {
-      return {
-        parsed: toOrdinaryTurnWorkflowImprovementMatch(unmetNeedFromRaw.match),
-        lessonFamily: unmetNeedFromRaw.match.lessonFamily,
-        reviewMode: "hold_for_more_evidence",
-        source: "raw",
-        detectionSource: "semantic",
-        confidence: unmetNeedFromRaw.confidence,
-        evidence: unmetNeedFromRaw.evidence,
-        observedText: rawCandidate,
-      };
-    }
-    const semanticFromRaw = detectWorkflowImprovementSemanticDecision(rawCandidate);
-    if (semanticFromRaw.action !== "capture") {
-      continue;
-    }
-    return {
-      parsed: toOrdinaryTurnWorkflowImprovementMatch(semanticFromRaw.match),
-      lessonFamily: semanticFromRaw.match.lessonFamily,
-      reviewMode:
-        semanticFromRaw.match.lessonFamily === "supported_lesson"
-          ? "pending_confirmation"
-          : "hold_for_more_evidence",
-      ...(semanticFromRaw.match.lessonKey ? { lessonKey: semanticFromRaw.match.lessonKey } : {}),
-      ...(semanticFromRaw.match.toolKey ? { toolKey: semanticFromRaw.match.toolKey } : {}),
-      ...(semanticFromRaw.match.guidancePattern
-        ? { guidancePattern: semanticFromRaw.match.guidancePattern }
-        : {}),
-      source: "raw",
-      detectionSource: "semantic",
-      confidence: semanticFromRaw.confidence,
-      evidence: semanticFromRaw.evidence,
-      observedText: rawCandidate,
-    };
+  const resolution = await resolveWorkflowImprovementIngestion({
+    config: params.runtime.config,
+    content: input.content,
+    primarySource: "content",
+    rawCandidates,
+    projectId: input.projectId,
+    allowPhrasePatternMatch: true,
+  });
+  if (!resolution) {
+    return null;
   }
 
-  return null;
+  return {
+    parsed: resolution.parsed,
+    lessonFamily: resolution.lessonFamily,
+    reviewMode: resolution.reviewMode,
+    ...(resolution.lessonKey ? { lessonKey: resolution.lessonKey } : {}),
+    ...(resolution.toolKey ? { toolKey: resolution.toolKey } : {}),
+    ...(resolution.guidancePattern ? { guidancePattern: resolution.guidancePattern } : {}),
+    source: resolution.source === "transcript" ? "content" : resolution.source,
+    detectionSource: resolution.detectionSource,
+    confidence: resolution.confidence,
+    evidence: resolution.evidence,
+    observedText: resolution.observedText,
+  };
 }
 
 async function resolveManagedCorrectionSubmission(params: {
@@ -3571,24 +3378,24 @@ async function normalizeManagedToolCandidateInput(params: {
     if (!workflowImprovementResolution) {
       return input;
     }
+    const workflowCaptureMetadata = getCaptureMetadataByWorkflowLessonFamily(
+      workflowImprovementResolution.lessonFamily,
+    );
     return mergeCandidateMetadata(
       {
         ...input,
         content: workflowImprovementResolution.parsed.content,
       },
       {
-        category:
-          workflowImprovementResolution.lessonFamily === "generalized_project_rule"
-            ? "project_rule"
-            : workflowImprovementResolution.lessonFamily === "generalized_unmet_need"
-              ? "unmet_need"
-              : "workflow_improvement",
-        source:
-          workflowImprovementResolution.lessonFamily === "generalized_project_rule"
-            ? "explicit_project_rule"
-            : workflowImprovementResolution.lessonFamily === "generalized_unmet_need"
-              ? "explicit_unmet_need"
-              : "explicit_workflow_improvement",
+        ...(workflowCaptureMetadata
+          ? {
+              category: workflowCaptureMetadata.category,
+              source: workflowCaptureMetadata.source,
+            }
+          : {
+              category: "workflow_improvement",
+              source: "explicit_workflow_improvement",
+            }),
         subject_key: workflowImprovementResolution.parsed.subjectKey,
         workflowPhraseInduction: {
           observedText: workflowImprovementResolution.observedText,
@@ -4089,7 +3896,12 @@ async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {
   });
 }
 
-function resolveManagedAutoCaptureKey(input: CandidateSubmissionInput): string | null {
+async function resolveManagedAutoCaptureKey(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: CandidateSubmissionInput;
+  context?: OpenClawPluginToolContext;
+}): Promise<string | null> {
+  const { input, context } = params;
   const metadata = input.metadata;
   const directKey = extractAutoCaptureKey(metadata);
   if (directKey) {
@@ -4115,15 +3927,23 @@ function resolveManagedAutoCaptureKey(input: CandidateSubmissionInput): string |
   }
 
   if (input.kind === "improvement") {
-    const semanticDecision =
-      detectWorkflowImprovementSemanticDecision(input.content).action === "capture"
-        ? detectWorkflowImprovementSemanticDecision(input.content)
-        : typeof metadata?.raw === "string"
-          ? detectWorkflowImprovementSemanticDecision(metadata.raw)
-          : null;
-    return semanticDecision && semanticDecision.action === "capture"
-      ? semanticDecision.match.key
-      : null;
+    const rawCandidates: string[] = [];
+    if (typeof metadata?.raw === "string" && metadata.raw.trim().length > 0) {
+      rawCandidates.push(metadata.raw);
+    }
+    const rawFromContext = await resolveLatestUserTurnFromContext(context);
+    if (rawFromContext && !rawCandidates.includes(rawFromContext)) {
+      rawCandidates.push(rawFromContext);
+    }
+    const resolution = await resolveWorkflowImprovementIngestion({
+      config: params.runtime.config,
+      content: input.content,
+      primarySource: "content",
+      rawCandidates,
+      projectId: input.projectId,
+      allowPhrasePatternMatch: true,
+    });
+    return resolution?.parsed.key ?? null;
   }
 
   return null;
@@ -4132,8 +3952,13 @@ function resolveManagedAutoCaptureKey(input: CandidateSubmissionInput): string |
 async function findExistingAutoCaptureManagedDuplicate(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
+  context?: OpenClawPluginToolContext;
 }): Promise<{ id: string; reviewState: string } | null> {
-  const key = resolveManagedAutoCaptureKey(params.input);
+  const key = await resolveManagedAutoCaptureKey({
+    runtime: params.runtime,
+    input: params.input,
+    context: params.context,
+  });
   const databaseUrl = params.runtime.config.database.url;
   if (!key || !databaseUrl) {
     return null;

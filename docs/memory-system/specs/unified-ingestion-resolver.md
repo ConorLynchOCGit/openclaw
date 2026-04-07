@@ -26,6 +26,25 @@ having to re-implement family resolution twice for each new family.
 Before major family expansion, ingress must become one resolver with two source
 adapters.
 
+## Current implementation status
+
+Batch v1 is now live in `extensions/memory-middleware/src/memory-ingestion-resolver.ts`.
+
+The current shared resolver covers:
+
+- workflow lessons
+- project rules
+- unmet needs
+
+It is already consumed by:
+
+- `extensions/memory-middleware/src/ordinary-turn-auto-capture.ts`
+- `extensions/memory-middleware/src/tools/candidate-submit.ts`
+
+Tool-side duplicate-key derivation for improvement candidates now also uses the
+same resolver, so normalization and duplicate suppression no longer re-parse
+the workflow-family cluster separately.
+
 ## Current parallel systems this replaces or reduces
 
 - ordered family parsing in `ordinary-turn-auto-capture.ts`
@@ -153,9 +172,16 @@ type FamilyIngestionAdapter = {
 
 ## Rollout posture
 
-Land the unified resolver as a new shared layer. Initially keep the old family
-functions behind adapter wrappers so behavior stays stable while call sites are
-swapped over.
+The first ingestion slice is now landed for the workflow-family cluster.
+
+Current posture:
+
+- transcript capture and tool submission share the same workflow-family
+  resolution path
+- approved phrase patterns remain deterministic inputs rather than semantic
+  fallback
+- response style, project facts, and recurring procedures still have older
+  local resolution paths and remain future migration work
 
 ## Proof / evaluation requirements
 
@@ -180,7 +206,6 @@ Implementation must prove:
 
 ## Follow-up implementation slices
 
-1. add resolver skeleton and adapter interface
-2. migrate transcript capture
-3. migrate candidate-submit normalization
-4. delete duplicated family resolution code
+1. expand the shared resolver beyond the workflow-family cluster
+2. migrate response-style, project-fact, and recurring-procedure resolution
+3. delete remaining duplicated family resolution code

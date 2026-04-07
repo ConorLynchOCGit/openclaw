@@ -26,6 +26,20 @@ family needs:
 The lifecycle should be generic, with family policies deciding what the cluster
 means.
 
+## Current implementation status
+
+Batch v1 is now live in `extensions/memory-middleware/src/clustered-memory-lifecycle.ts`.
+
+The shared memory-object inspection engine is currently adopted by:
+
+- `extensions/memory-middleware/src/response-style-lifecycle.ts`
+- `extensions/memory-middleware/src/project-fact-lifecycle.ts`
+- `extensions/memory-middleware/src/workflow-improvement-lifecycle.ts`
+
+Recurring procedures still keep a separate validated-procedure inspection path,
+but now reuse shared lifecycle utility helpers for pending-state and expiry
+logic.
+
 ## Current parallel systems this replaces or reduces
 
 - `response-style-lifecycle.ts`
@@ -140,11 +154,14 @@ type ClusterLifecycleDecision =
 
 ## Rollout posture
 
-The first implementation slice should:
+The first lifecycle slice is now landed for memory-object inspection.
 
-1. introduce the generic lifecycle engine
-2. move one memory-object family and one procedure family onto it
-3. keep old module names as wrappers until all families move
+Current posture:
+
+1. one shared inspection engine serves multiple memory-object families
+2. old module names remain as wrappers so callers did not need to change
+3. recurring procedures remain split at the validated target, with only honest
+   utility sharing so far
 
 ## Proof / evaluation requirements
 
@@ -169,7 +186,7 @@ Prove:
 
 ## Follow-up implementation slices
 
-1. generic cluster engine introduction
-2. migrate memory-object families
-3. migrate recurring procedures with explicit validated-procedure target
-4. delete family-specific lifecycle duplication
+1. expand the shared lifecycle engine into correction / supersede targeting
+2. decide whether recurring procedures can share more than utilities without
+   flattening the validated target
+3. delete remaining family-specific lifecycle duplication

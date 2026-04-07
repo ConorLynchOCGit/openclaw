@@ -30,16 +30,16 @@ This inventory tracks:
 
 ## Flattening-phase substrate inventory
 
-| Substrate seam                   | Status      | Why it matters now                                                              | Category          |
-| -------------------------------- | ----------- | ------------------------------------------------------------------------------- | ----------------- |
-| Family-definition registry       | `not_built` | family policy is still scattered across runtime seams                           | architecture debt |
-| Unified ingestion resolver       | `not_built` | transcript and tool-side capture still resolve families separately              | architecture debt |
-| Unified clustered lifecycle      | `not_built` | clustered lifecycle behavior is still partly reimplemented by family            | architecture debt |
-| Unified correction / supersede   | `not_built` | explicit correction targeting and supersede logic are still too family-specific | architecture debt |
-| Unified phrase-pattern engine    | `not_built` | phrase-capable families should not each own a local phrase subsystem            | architecture debt |
-| Retrieval feature framework      | `not_built` | family-specific ranking logic in `db/queries.ts` will not scale                 | architecture debt |
-| Behavior-profile layer           | `not_built` | prompt rendering still carries too much application policy                      | architecture debt |
-| Registry-driven proof inspection | `not_built` | proof-runner family switches will grow with each new family                     | architecture debt |
+| Substrate seam                   | Status          | Why it matters now                                                                                                               | Category          |
+| -------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| Family-definition registry       | `built_partial` | six-family registry is live, but more runtime seams still need to consume it                                                     | architecture debt |
+| Unified ingestion resolver       | `built_partial` | workflow-family transcript and tool ingestion now share one resolver; other families still need migration                        | architecture debt |
+| Unified clustered lifecycle      | `built_partial` | memory-object lifecycle inspection is shared for multiple families; correction and procedure-target paths still remain           | architecture debt |
+| Unified correction / supersede   | `not_built`     | explicit correction targeting and supersede logic are still too family-specific                                                  | architecture debt |
+| Unified phrase-pattern engine    | `not_built`     | phrase-capable families should not each own a local phrase subsystem                                                             | architecture debt |
+| Retrieval feature framework      | `not_built`     | family-specific ranking logic in `db/queries.ts` will not scale                                                                  | architecture debt |
+| Behavior-profile layer           | `not_built`     | prompt rendering still carries too much application policy                                                                       | architecture debt |
+| Registry-driven proof inspection | `built_partial` | proof-runner now uses registry-defined inspection modes for the six main families, but proofing is not fully registry-driven yet | architecture debt |
 
 ## Deliberate policy differences versus backlog
 
@@ -54,17 +54,18 @@ Deliberate policy differences:
 Backlog / flattening debt:
 
 - policy scattered across multiple runtime seams
-- duplicated ingestion resolution
-- duplicated lifecycle and correction plumbing
+- ingestion still duplicated for response style, project facts, and recurring
+  procedures
+- correction plumbing still duplicated by family
 - growing family-specific retrieval scoring logic
 - prompt-policy sprawl
-- proof-runner family switches
+- proof-runner still has remaining non-registry paths
 
 ## Not live yet
 
 Still not live:
 
-- flattened family substrate implementation
+- later flattening slices after batch v1
 - reduced-profile self-improving capture on top of the flattened substrate
 - learned-guidance advisory planning
 - new cross-domain families

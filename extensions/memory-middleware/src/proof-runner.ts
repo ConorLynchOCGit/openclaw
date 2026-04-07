@@ -4,6 +4,12 @@ import { z } from "zod";
 import type { OpenClawPluginToolContext, PluginLogger } from "../api.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
 import { MEMORY_OBJECT_SEARCH_SCOPES, type MemoryObjectSearchHybridInput } from "./db/runtime.js";
+import {
+  getMemoryFamilyDefinition,
+  isMemoryProofInspectableFamily,
+  MEMORY_PROOF_INSPECTABLE_FAMILY_IDS,
+  type MemoryProofInspectableFamilyId,
+} from "./memory-family-registry.js";
 import { createOrdinaryTurnAutoCaptureHandler } from "./ordinary-turn-auto-capture.js";
 import {
   inspectProjectFactLifecycle,
@@ -34,12 +40,7 @@ import {
 
 const MemoryProofModeSchema = z.enum(["isolated", "production"]);
 const MemoryProofFamilySchema = z.enum([
-  "response_style",
-  "project_fact",
-  "project_rule",
-  "unmet_need",
-  "recurring_procedure",
-  "workflow_improvement",
+  ...MEMORY_PROOF_INSPECTABLE_FAMILY_IDS,
   "workflow_phrase_pattern",
   "response_style_phrase_pattern",
 ]);
@@ -385,77 +386,15 @@ async function inspectLifecycle(params: {
   expectation: MemoryProofCaptureExpectation;
 }): Promise<LifecycleInspection> {
   assert(params.expectation.key, "capture expectation key is required");
+  if (isMemoryProofInspectableFamily(params.expectation.family)) {
+    return inspectRegisteredLifecycle({
+      config: params.config,
+      logger: params.logger,
+      expectation: params.expectation,
+      family: params.expectation.family,
+    });
+  }
   switch (params.expectation.family) {
-    case "response_style": {
-      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
-      const inspection = await inspectResponseStyleLifecycle({
-        config: params.config,
-        key: params.expectation.key,
-        subjectKey: params.expectation.subjectKey,
-        logger: params.logger,
-      });
-      assert(inspection, "response-style lifecycle inspection unavailable");
-      return { family: "response_style", inspection };
-    }
-    case "project_fact": {
-      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
-      const inspection = await inspectProjectFactLifecycle({
-        config: params.config,
-        key: params.expectation.key,
-        subjectKey: params.expectation.subjectKey,
-        projectId: params.expectation.projectId,
-        logger: params.logger,
-      });
-      assert(inspection, "project-fact lifecycle inspection unavailable");
-      return { family: "project_fact", inspection };
-    }
-    case "project_rule": {
-      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
-      const inspection = await inspectWorkflowImprovementLifecycle({
-        config: params.config,
-        key: params.expectation.key,
-        subjectKey: params.expectation.subjectKey,
-        projectId: params.expectation.projectId,
-        logger: params.logger,
-      });
-      assert(inspection, "project-rule lifecycle inspection unavailable");
-      return { family: "project_rule", inspection };
-    }
-    case "unmet_need": {
-      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
-      const inspection = await inspectWorkflowImprovementLifecycle({
-        config: params.config,
-        key: params.expectation.key,
-        subjectKey: params.expectation.subjectKey,
-        projectId: params.expectation.projectId,
-        logger: params.logger,
-      });
-      assert(inspection, "unmet-need lifecycle inspection unavailable");
-      return { family: "unmet_need", inspection };
-    }
-    case "recurring_procedure": {
-      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
-      const inspection = await inspectRecurringProcedureLifecycle({
-        config: params.config,
-        key: params.expectation.key,
-        subjectKey: params.expectation.subjectKey,
-        logger: params.logger,
-      });
-      assert(inspection, "recurring-procedure lifecycle inspection unavailable");
-      return { family: "recurring_procedure", inspection };
-    }
-    case "workflow_improvement": {
-      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
-      const inspection = await inspectWorkflowImprovementLifecycle({
-        config: params.config,
-        key: params.expectation.key,
-        subjectKey: params.expectation.subjectKey,
-        projectId: params.expectation.projectId,
-        logger: params.logger,
-      });
-      assert(inspection, "workflow-improvement lifecycle inspection unavailable");
-      return { family: "workflow_improvement", inspection };
-    }
     case "workflow_phrase_pattern": {
       assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
       assert(
@@ -488,6 +427,75 @@ async function inspectLifecycle(params: {
       });
       assert(inspection, "response-style phrase-pattern lifecycle inspection unavailable");
       return { family: "response_style_phrase_pattern", inspection };
+    }
+  }
+}
+
+async function inspectRegisteredLifecycle(params: {
+  config: MemoryMiddlewareConfig;
+  logger: PluginLogger;
+  expectation: MemoryProofCaptureExpectation;
+  family: MemoryProofInspectableFamilyId;
+}): Promise<LifecycleInspection> {
+  const definition = getMemoryFamilyDefinition(params.family);
+  const key = params.expectation.key;
+  assert(key, "capture expectation key is required");
+  switch (definition.proofPolicy.inspectionMode) {
+    case "response_style_lifecycle": {
+      const subjectKey = params.expectation.subjectKey;
+      assert(subjectKey, "capture expectation subjectKey is required");
+      const inspection = await inspectResponseStyleLifecycle({
+        config: params.config,
+        key,
+        subjectKey,
+        logger: params.logger,
+      });
+      assert(inspection, "response-style lifecycle inspection unavailable");
+      return { family: "response_style", inspection };
+    }
+    case "project_fact_lifecycle": {
+      const subjectKey = params.expectation.subjectKey;
+      assert(subjectKey, "capture expectation subjectKey is required");
+      const inspection = await inspectProjectFactLifecycle({
+        config: params.config,
+        key,
+        subjectKey,
+        projectId: params.expectation.projectId,
+        logger: params.logger,
+      });
+      assert(inspection, "project-fact lifecycle inspection unavailable");
+      return { family: "project_fact", inspection };
+    }
+    case "workflow_improvement_lifecycle": {
+      const subjectKey = params.expectation.subjectKey;
+      assert(subjectKey, "capture expectation subjectKey is required");
+      const inspection = await inspectWorkflowImprovementLifecycle({
+        config: params.config,
+        key,
+        subjectKey,
+        projectId: params.expectation.projectId,
+        logger: params.logger,
+      });
+      assert(inspection, `${params.family} lifecycle inspection unavailable`);
+      if (params.family === "project_rule") {
+        return { family: "project_rule", inspection };
+      }
+      if (params.family === "unmet_need") {
+        return { family: "unmet_need", inspection };
+      }
+      return { family: "workflow_improvement", inspection };
+    }
+    case "recurring_procedure_lifecycle": {
+      const subjectKey = params.expectation.subjectKey;
+      assert(subjectKey, "capture expectation subjectKey is required");
+      const inspection = await inspectRecurringProcedureLifecycle({
+        config: params.config,
+        key,
+        subjectKey,
+        logger: params.logger,
+      });
+      assert(inspection, "recurring-procedure lifecycle inspection unavailable");
+      return { family: "recurring_procedure", inspection };
     }
   }
 }

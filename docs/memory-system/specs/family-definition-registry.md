@@ -33,6 +33,17 @@ encodes them as partly separate systems. Without a registry:
 Flattening must start by giving the system one place to declare what a family
 is and how it should behave.
 
+## Current implementation status
+
+Batch v1 is now live in `extensions/memory-middleware/src/memory-family-registry.ts`.
+
+The registry currently covers the six landed families and is already consumed
+by:
+
+- `extensions/memory-middleware/src/proof-runner.ts`
+- `extensions/memory-middleware/src/ordinary-turn-auto-capture.ts`
+- `extensions/memory-middleware/src/tools/candidate-submit.ts`
+
 ## Current parallel systems this replaces or reduces
 
 - ordered family chains in `ordinary-turn-auto-capture.ts`
@@ -152,6 +163,7 @@ type MemoryFamilyDefinition = {
     mode: LifecycleMode;
     clusterKeyFields: CanonicalField[];
     subjectKeyFields: CanonicalField[];
+    pendingCandidateStates: string[];
     approvalThreshold: number;
     staleWindowDays: number;
   };
@@ -254,6 +266,14 @@ Create one registry module in `memory-middleware` that exports:
 - lookup by storage kind
 - lookup by proof mode
 
+Batch v1 live exports now include:
+
+- lookup by family id
+- lookup by capture class
+- lookup by workflow-family lesson family
+- proof-family guards
+- capture metadata helpers for transcript and tool ingestion
+
 ### No hidden policy rule
 
 If a runtime seam needs family policy, it must query the registry. It must not
@@ -277,9 +297,20 @@ The registry does not erase these differences:
 
 ## Rollout posture
 
-Roll out the registry before or alongside the first flattening implementation
-slice. The first slice should move read-only policy consumers onto the registry
-before deleting older branch logic.
+The first registry slice is now landed.
+
+Current registry-driven consumers:
+
+- proof inspection selection
+- transcript capture metadata lookup
+- workflow-family metadata lookup in tool submission
+
+Next registry-driven consumers should be:
+
+- ingestion eligibility and family resolution ordering
+- lifecycle pending-state policy
+- retrieval feature configuration
+- behavior-profile selection
 
 ## Proof / evaluation requirements
 
@@ -308,6 +339,7 @@ The first registry slice must prove:
 
 ## Follow-up implementation slices
 
-1. introduce the concrete registry and move static family policy into it
-2. move ingestion selection onto registry-driven family eligibility
-3. move proof inspection and retrieval planning to registry-driven lookup
+1. expand ingestion selection onto registry-driven family eligibility
+2. expand lifecycle and correction policy lookup onto the registry
+3. move retrieval planning and behavior-profile selection to registry-driven
+   lookup

@@ -3,7 +3,7 @@
 ## Current status snapshot
 
 The memory system has completed the practical existing-family parity phase and
-has now entered the flattening architecture/spec phase.
+has now entered flattening implementation.
 
 ## What is live now
 
@@ -23,6 +23,9 @@ Live substrate properties:
 - bounded clustered hold/approve/reject behavior where appropriate
 - explicit correction / supersede paths where appropriate
 - bounded reviewed phrase induction where justified
+- declarative family registry for the six landed families
+- shared workflow-family ingestion resolution across transcript and tool paths
+- shared memory-object clustered lifecycle inspection
 
 ## What practical parity means
 
@@ -41,15 +44,24 @@ Practical parity does not mean:
 
 ## What happens next
 
-The next major roadmap phase is flattening the family substrate.
+The next major roadmap phase remains flattening the family substrate.
+
+The first implementation batch is now landed:
+
+- family-definition registry
+- unified ingestion resolver for the workflow-family cluster
+- unified clustered lifecycle inspection for memory-object families
 
 That means:
 
-- family policy moves toward one declarative registry
-- ingestion, lifecycle, correction, retrieval, application, and proofing
-  become less family-branch-heavy
-- future families should land on shared substrate instead of new parallel
-  systems
+- family policy has started moving into one declarative registry
+- ingestion and lifecycle are less family-branch-heavy than before
+- future flattening slices now target correction, retrieval/application, and
+  proofing
+
+## What the next flattening slice is
+
+- unified correction / supersede engine
 
 ## Why flattening comes before future expansion
 
@@ -75,7 +87,7 @@ The reason is architectural, not just schedule-driven:
 
 Still not live:
 
-- flattened family substrate implementation
+- fully flattened family substrate implementation
 - reduced-profile self-improving capture on top of the flattened substrate
 - learned-guidance advisory planning
 - new cross-domain families beyond the current six

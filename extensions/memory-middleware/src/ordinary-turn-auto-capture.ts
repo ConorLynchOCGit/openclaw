@@ -10,6 +10,8 @@ import {
   DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG,
   type MemoryMiddlewareConfig,
 } from "./config.js";
+import { getCaptureMetadataByCaptureClass } from "./memory-family-registry.js";
+import { resolveWorkflowImprovementIngestion } from "./memory-ingestion-resolver.js";
 import {
   type ProjectFactLifecycleInspection,
   inspectProjectFactLifecycle,
@@ -24,7 +26,6 @@ import {
   type ProjectFactFieldKey,
   type ProjectFactSemanticConfidence,
 } from "./project-fact-semantic.js";
-import { detectProjectRuleSemanticDecision } from "./project-rule-semantic.js";
 import {
   type RecurringProcedureLifecycleInspection,
   inspectRecurringProcedureLifecycle,
@@ -66,7 +67,6 @@ import {
   storeApprovedWorkflowToolGotchaSemanticEmbedding,
   storeValidatedProcedureSemanticEmbedding,
 } from "./semantic-retrieval-routing.js";
-import { detectUnmetNeedSemanticDecision } from "./unmet-need-semantic.js";
 import {
   type WorkflowImprovementLifecycleInspection,
   type WorkflowImprovementSubjectEntry,
@@ -76,7 +76,6 @@ import {
 } from "./workflow-improvement-lifecycle.js";
 import {
   createGeneralizedWorkflowImprovementMatch,
-  detectWorkflowImprovementSemanticDecision,
   type WorkflowImprovementCanonicalMatch,
   type WorkflowImprovementCaptureClass,
   type WorkflowImprovementGuidancePattern,
@@ -119,7 +118,7 @@ const PROJECT_FACT_FIELD_LABEL_TO_KEY: Record<string, ProjectFactFieldKey> = {
   "primary package manager": "primary_package_manager",
   "primary environment name": "primary_environment_name",
 };
-const PROJECT_FACT_VALUE_PATTERN = `([a-z0-9][a-z0-9 _./:?&=%#~-]{0,191})`;
+const PROJECT_FACT_VALUE_PATTERN = `([a-z0-9#][a-z0-9 _./:?&=%#~-]{0,191})`;
 const PREFERENCE_PATTERNS = [
   {
     template: "my_preferred_is" as const,
@@ -1815,62 +1814,36 @@ function detectRecurringProcedureCaptureDecision(
   };
 }
 
-function detectWorkflowImprovementCaptureDecision(
+async function detectWorkflowImprovementCaptureDecision(
   text: string,
   profile: "user-preference-v1" | "user-preference-v2",
-): WorkflowImprovementCaptureDecision | null {
+  config: MemoryMiddlewareConfig,
+): Promise<WorkflowImprovementCaptureDecision | null> {
   if (profile !== "user-preference-v2") {
     return null;
   }
 
-  const projectRuleDecision = detectProjectRuleSemanticDecision(text);
-  if (projectRuleDecision.action === "capture") {
-    return {
-      action: "capture",
-      confidence: projectRuleDecision.confidence,
-      detectionSource: "semantic",
-      evidence: projectRuleDecision.evidence,
-      reviewMode: "hold_for_more_evidence",
-      lessonFamily: projectRuleDecision.match.lessonFamily,
-      guidancePattern: projectRuleDecision.match.guidancePattern,
-      match: toOrdinaryTurnWorkflowImprovementMatch(projectRuleDecision.match),
-    };
-  }
-
-  const unmetNeedDecision = detectUnmetNeedSemanticDecision(text);
-  if (unmetNeedDecision.action === "capture") {
-    return {
-      action: "capture",
-      confidence: unmetNeedDecision.confidence,
-      detectionSource: "semantic",
-      evidence: unmetNeedDecision.evidence,
-      reviewMode: "hold_for_more_evidence",
-      lessonFamily: unmetNeedDecision.match.lessonFamily,
-      match: toOrdinaryTurnWorkflowImprovementMatch(unmetNeedDecision.match),
-    };
-  }
-
-  const semanticDecision = detectWorkflowImprovementSemanticDecision(text);
-  if (semanticDecision.action === "ignore") {
+  const resolution = await resolveWorkflowImprovementIngestion({
+    config,
+    content: text,
+    primarySource: "transcript",
+    allowPhrasePatternMatch: false,
+  });
+  if (!resolution) {
     return null;
   }
 
   return {
     action: "capture",
-    confidence: semanticDecision.confidence,
-    detectionSource: "semantic",
-    evidence: semanticDecision.evidence,
-    reviewMode:
-      semanticDecision.match.lessonFamily === "supported_lesson"
-        ? "pending_confirmation"
-        : "hold_for_more_evidence",
-    lessonFamily: semanticDecision.match.lessonFamily,
-    ...(semanticDecision.match.lessonKey ? { lessonKey: semanticDecision.match.lessonKey } : {}),
-    ...(semanticDecision.match.toolKey ? { toolKey: semanticDecision.match.toolKey } : {}),
-    ...(semanticDecision.match.guidancePattern
-      ? { guidancePattern: semanticDecision.match.guidancePattern }
-      : {}),
-    match: toOrdinaryTurnWorkflowImprovementMatch(semanticDecision.match),
+    confidence: resolution.confidence,
+    detectionSource: resolution.detectionSource,
+    evidence: resolution.evidence,
+    reviewMode: resolution.reviewMode,
+    lessonFamily: resolution.lessonFamily,
+    ...(resolution.lessonKey ? { lessonKey: resolution.lessonKey } : {}),
+    ...(resolution.toolKey ? { toolKey: resolution.toolKey } : {}),
+    ...(resolution.guidancePattern ? { guidancePattern: resolution.guidancePattern } : {}),
+    match: resolution.parsed,
   };
 }
 
@@ -2301,6 +2274,15 @@ function buildSubscriberCaptureMetadata(params: {
     },
   };
 
+  const familyCaptureMetadata = getCaptureMetadataByCaptureClass(match.captureClass);
+  if (familyCaptureMetadata) {
+    metadata.category = familyCaptureMetadata.category;
+    metadata.source = familyCaptureMetadata.source;
+    if (familyCaptureMetadata.subjectKeyMetadata === "subject_key") {
+      metadata.subject_key = match.subjectKey;
+    }
+  }
+
   switch (match.captureClass) {
     case "explicit_preference":
       metadata.category = "user_preference";
@@ -2322,9 +2304,6 @@ function buildSubscriberCaptureMetadata(params: {
       metadata.subject_key = match.subjectKey;
       break;
     case "explicit_project_fact":
-      metadata.category = "project_fact";
-      metadata.source = "explicit_project_fact";
-      metadata.subject_key = match.subjectKey;
       break;
     case "project_fact_correction":
       metadata.category = "project_fact_correction";
@@ -2332,9 +2311,6 @@ function buildSubscriberCaptureMetadata(params: {
       metadata.subject_key = match.subjectKey;
       break;
     case "explicit_recurring_procedure":
-      metadata.category = "recurring_procedure";
-      metadata.source = "explicit_recurring_procedure";
-      metadata.subject_key = match.subjectKey;
       break;
     case "recurring_procedure_correction":
       metadata.category = "recurring_procedure_correction";
@@ -2345,19 +2321,8 @@ function buildSubscriberCaptureMetadata(params: {
     case "workflow_environment_constraint":
     case "workflow_api_workaround":
     case "workflow_generalized_guidance":
-      metadata.category = "workflow_improvement";
-      metadata.source = "explicit_workflow_improvement";
-      metadata.subject_key = match.subjectKey;
-      break;
     case "project_rule_guidance":
-      metadata.category = "project_rule";
-      metadata.source = "explicit_project_rule";
-      metadata.subject_key = match.subjectKey;
-      break;
     case "unmet_need_recommendation":
-      metadata.category = "unmet_need";
-      metadata.source = "explicit_unmet_need";
-      metadata.subject_key = match.subjectKey;
       break;
   }
 
@@ -4894,9 +4859,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     ) {
       return;
     }
-    const workflowImprovementDecision = detectWorkflowImprovementCaptureDecision(
+    const workflowImprovementDecision = await detectWorkflowImprovementCaptureDecision(
       text,
       autoCapture.profile,
+      params.config,
     );
     if (
       workflowImprovementDecision &&

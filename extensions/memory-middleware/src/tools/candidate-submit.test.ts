@@ -27,6 +27,7 @@ const maybeInduceWorkflowPhrasePattern = vi.hoisted(() =>
 const maybeInduceResponseStylePhrasePattern = vi.hoisted(() =>
   vi.fn(async () => ({ status: "existing" })),
 );
+const resolveWorkflowImprovementIngestion = vi.hoisted(() => vi.fn());
 
 vi.mock("../semantic-retrieval-routing.js", () => ({
   storeApprovedApiWorkaroundSemanticEmbedding,
@@ -60,6 +61,18 @@ vi.mock("../workflow-improvement-lifecycle.js", async () => {
   return {
     ...actual,
     inspectWorkflowImprovementLifecycle,
+  };
+});
+vi.mock("../memory-ingestion-resolver.js", async () => {
+  const actual = await vi.importActual<typeof import("../memory-ingestion-resolver.js")>(
+    "../memory-ingestion-resolver.js",
+  );
+  resolveWorkflowImprovementIngestion.mockImplementation(
+    actual.resolveWorkflowImprovementIngestion,
+  );
+  return {
+    ...actual,
+    resolveWorkflowImprovementIngestion,
   };
 });
 
@@ -513,6 +526,7 @@ describe("memory candidate submit tool", () => {
   });
 
   it("normalizes project rules into held-cluster managed improvement metadata", async () => {
+    resolveWorkflowImprovementIngestion.mockClear();
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });
 
@@ -547,9 +561,18 @@ describe("memory candidate submit tool", () => {
         }),
       }),
     });
+    expect(resolveWorkflowImprovementIngestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          "For project Atlas, use generated audit IDs for audit events instead of client timestamps.",
+        primarySource: "content",
+        allowPhrasePatternMatch: true,
+      }),
+    );
   });
 
   it("normalizes unmet needs into held-cluster managed improvement metadata", async () => {
+    resolveWorkflowImprovementIngestion.mockClear();
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });
 
@@ -583,6 +606,13 @@ describe("memory candidate submit tool", () => {
         }),
       }),
     });
+    expect(resolveWorkflowImprovementIngestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "For project Atlas, we need a release evidence template for rollout audits.",
+        primarySource: "content",
+        allowPhrasePatternMatch: true,
+      }),
+    );
   });
 
   it("uses an approved phrase pattern as deterministic workflow-improvement evidence", async () => {
@@ -1577,14 +1607,11 @@ describe("memory candidate submit tool", () => {
             value: "#atlas-rollout-evidence",
             normalizedValue: "#atlas-rollout-evidence",
           }),
-          semanticDetection: expect.objectContaining({
-            source: "project_fact_semantic_v1",
-            confidence: "high",
-            factFamily: "generalized_reference",
-          }),
           candidateLifecycle: expect.objectContaining({
             family: "project_fact",
             state: "hold_for_more_evidence",
+            confidence: "high",
+            evidence: ["managed_content_pattern_match"],
             factFamily: "generalized_reference",
             clusterKey: expect.any(String),
           }),

@@ -2,19 +2,19 @@
 
 ## Active slice
 
-Memory substrate flattening architecture/spec phase
+Memory substrate flattening implementation phase
 
 ## Objective
 
-Fully specify the flattening phase that comes after practical existing-family
-parity and before:
+Land the first flattening implementation batch after practical existing-family
+parity:
 
-- reduced-profile self-improving capture
-- learned-guidance advisory planning
-- cross-domain family expansion
+- family-definition registry
+- unified ingestion resolver
+- unified clustered lifecycle
 
-The goal of this slice is documentation and architecture alignment only. It
-does not change runtime behavior.
+This batch changed runtime substrate shape while preserving current family
+behavior.
 
 ## Why this slice exists
 
@@ -39,22 +39,33 @@ The repo still carries too much accidental family-specific branching across:
 - prompt application
 - proof inspection
 
-## Required deliverables
+## Landed in batch v1
 
-1. Insert a concrete flattening phase into the roadmap.
-2. Create shared-substrate specs for:
-   - family-definition registry
-   - unified ingestion resolver
-   - unified clustered lifecycle
-   - unified correction / supersede
-   - unified phrase-pattern engine
-   - retrieval feature framework
-   - behavior-profile layer
-   - registry-driven proof inspection
-3. Overhaul existing family and generalized-learning specs so they depend on
-   shared substrate instead of implying permanent local stacks.
-4. Add a tactical flattening execution plan.
-5. Add a durable six-family flattening analysis doc.
+- `extensions/memory-middleware/src/memory-family-registry.ts`
+  - six-family declarative registry
+  - runtime consumers in proof inspection, transcript capture metadata, and
+    tool-side workflow family metadata
+- `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
+  - shared workflow-family resolver used by transcript capture and tool-side
+    improvement submission
+  - same resolver also feeds tool-side duplicate-key detection for improvement
+    notes
+- `extensions/memory-middleware/src/clustered-memory-lifecycle.ts`
+  - shared memory-object lifecycle inspection engine
+  - adopted by response style, project facts, and workflow improvements
+  - recurring procedures now reuse shared lifecycle utilities while keeping
+    validated-procedure inspection distinct
+
+## Duplicate seams removed in batch v1
+
+- proof-runner family inspection selection no longer hardcodes the six main
+  families
+- transcript capture no longer owns a separate workflow/project-rule/unmet-need
+  family-resolution chain
+- tool-side improvement submission no longer owns a separate
+  workflow/project-rule/unmet-need family-resolution chain
+- response-style, project-fact, and workflow-improvement lifecycle inspection
+  no longer each own a fully separate memory-object inspection implementation
 
 ## Explicitly not next
 
@@ -65,6 +76,14 @@ The next major roadmap step is not:
 - new cross-domain families
 
 Those remain later phases after the flattening phase.
+
+## What remains next inside flattening
+
+- unified correction / supersede engine
+- unified phrase-pattern engine
+- retrieval feature framework
+- behavior-profile layer
+- registry-driven proof inspection closeout
 
 ## Accepted architectural decisions
 
@@ -96,6 +115,6 @@ Those remain later phases after the flattening phase.
 - response style remains bounded
 - semantic routing remains hybrid-first and family-gated
 
-## The next implementation slice after this docs phase
+## The next implementation slice after batch v1
 
-- family-definition registry
+- unified correction / supersede

@@ -16,6 +16,7 @@ const findApprovedResponseStylePhrasePatternMatch = vi.hoisted(() => vi.fn(async
 const maybeInduceResponseStylePhrasePattern = vi.hoisted(() =>
   vi.fn(async () => ({ status: "held" })),
 );
+const resolveWorkflowImprovementIngestion = vi.hoisted(() => vi.fn());
 
 vi.mock("./semantic-retrieval-routing.js", () => ({
   storeApprovedApiWorkaroundSemanticEmbedding,
@@ -41,6 +42,18 @@ vi.mock("./response-style-phrase-induction.js", async () => {
     ...actual,
     findApprovedResponseStylePhrasePatternMatch,
     maybeInduceResponseStylePhrasePattern,
+  };
+});
+vi.mock("./memory-ingestion-resolver.js", async () => {
+  const actual = await vi.importActual<typeof import("./memory-ingestion-resolver.js")>(
+    "./memory-ingestion-resolver.js",
+  );
+  resolveWorkflowImprovementIngestion.mockImplementation(
+    actual.resolveWorkflowImprovementIngestion,
+  );
+  return {
+    ...actual,
+    resolveWorkflowImprovementIngestion,
   };
 });
 
@@ -2660,6 +2673,7 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
   });
 
   it("captures a project rule as a held cluster and auto-promotes it after later compatible evidence", async () => {
+    resolveWorkflowImprovementIngestion.mockClear();
     const submitImprovementNote = vi.fn(async () => ({
       accepted: true as const,
       status: "accepted" as const,
@@ -2778,9 +2792,18 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
         candidateId: "memory-project-rule-1",
       }),
     );
+    expect(resolveWorkflowImprovementIngestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          "For project Atlas, use generated audit IDs for audit events instead of client timestamps.",
+        primarySource: "transcript",
+        allowPhrasePatternMatch: false,
+      }),
+    );
   });
 
   it("captures an unmet need as a held cluster and auto-promotes it after later compatible evidence", async () => {
+    resolveWorkflowImprovementIngestion.mockClear();
     const submitImprovementNote = vi.fn(async () => ({
       accepted: true as const,
       status: "accepted" as const,
@@ -2895,6 +2918,13 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(promoteToMemory).toHaveBeenCalledWith(
       expect.objectContaining({
         candidateId: "memory-unmet-need-1",
+      }),
+    );
+    expect(resolveWorkflowImprovementIngestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "For project Atlas, we need a release evidence template for rollout audits.",
+        primarySource: "transcript",
+        allowPhrasePatternMatch: false,
       }),
     );
   });

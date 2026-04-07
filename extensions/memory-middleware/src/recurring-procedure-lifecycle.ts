@@ -1,8 +1,13 @@
 import { Client } from "pg";
 import type { PluginLogger } from "../api.js";
+import {
+  extractCandidateConfirmationState,
+  extractCandidateExpiresAt,
+  isExpiredPendingClusteredMemoryCandidate,
+  quoteQualifiedTable,
+  summarizeClusteredLifecycleError,
+} from "./clustered-memory-lifecycle.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
-
-const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 type ProcedureCandidateLifecycleRow = {
   id: string;
@@ -53,66 +58,11 @@ export type RecurringProcedureSupersedeResult =
       reason: string;
     };
 
-function quoteIdentifier(value: string): string {
-  if (!SAFE_IDENTIFIER_PATTERN.test(value)) {
-    throw new Error(`unsafe SQL identifier: ${value}`);
-  }
-  return `"${value}"`;
-}
-
-function quoteQualifiedTable(params: { schema: string; table: string }): string {
-  return `${quoteIdentifier(params.schema)}.${quoteIdentifier(params.table)}`;
-}
-
-function readNestedMetadataString(
-  metadata: Record<string, unknown> | undefined,
-  path: string[],
-): string | undefined {
-  let cursor: unknown = metadata;
-  for (const segment of path) {
-    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) {
-      return undefined;
-    }
-    cursor = (cursor as Record<string, unknown>)[segment];
-  }
-  return typeof cursor === "string" && cursor.trim().length > 0 ? cursor.trim() : undefined;
-}
-
-function extractCandidateConfirmationState(
-  metadata: Record<string, unknown> | undefined,
-): string | undefined {
-  return (
-    readNestedMetadataString(metadata, ["candidateLifecycle", "state"]) ??
-    readNestedMetadataString(metadata, ["candidateConfirmation", "state"]) ??
-    readNestedMetadataString(metadata, ["candidateMetadata", "candidateLifecycle", "state"]) ??
-    readNestedMetadataString(metadata, ["candidateMetadata", "candidateConfirmation", "state"])
-  );
-}
-
-function extractCandidateExpiresAt(
-  metadata: Record<string, unknown> | undefined,
-): string | undefined {
-  return (
-    readNestedMetadataString(metadata, ["candidateLifecycle", "expiresAt"]) ??
-    readNestedMetadataString(metadata, ["candidateConfirmation", "expiresAt"]) ??
-    readNestedMetadataString(metadata, ["candidateMetadata", "candidateLifecycle", "expiresAt"]) ??
-    readNestedMetadataString(metadata, ["candidateMetadata", "candidateConfirmation", "expiresAt"])
-  );
-}
-
-function summarizeLifecycleError(error: unknown): string {
-  return error instanceof Error ? error.message : "unknown recurring-procedure lifecycle failure";
-}
-
 export function isExpiredPendingRecurringProcedureCandidate(
   candidate: RecurringProcedurePendingCandidate,
   now = new Date(),
 ): boolean {
-  if (!candidate.expiresAt) {
-    return false;
-  }
-  const expiresAt = Date.parse(candidate.expiresAt);
-  return Number.isFinite(expiresAt) && expiresAt <= now.getTime();
+  return isExpiredPendingClusteredMemoryCandidate(candidate, now);
 }
 
 export async function inspectRecurringProcedureLifecycle(params: {
@@ -266,7 +216,7 @@ export async function inspectRecurringProcedureLifecycle(params: {
   } catch (error) {
     params.logger?.warn?.(
       `memory-middleware recurring-procedure lifecycle inspection failed ${JSON.stringify({
-        error: summarizeLifecycleError(error),
+        error: summarizeClusteredLifecycleError("recurring-procedure", error),
         key: params.key,
       })}`,
     );
@@ -362,7 +312,7 @@ export async function supersedeValidatedProceduresBySubjectKey(params: {
     return {
       accepted: false,
       status: "failed",
-      reason: summarizeLifecycleError(error),
+      reason: summarizeClusteredLifecycleError("recurring-procedure", error),
     };
   } finally {
     await client.end().catch(() => {});

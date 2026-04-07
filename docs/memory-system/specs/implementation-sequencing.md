@@ -40,8 +40,11 @@ Historical completed order:
 
 1. flattening phase:
    - family-definition registry
+     - landed in batch v1
    - unified ingestion resolver
+     - landed in batch v1 for the workflow-family cluster
    - unified clustered lifecycle
+     - landed in batch v1 for memory-object lifecycle inspection
    - unified correction / supersede engine
    - unified phrase-pattern engine
    - retrieval feature framework
@@ -86,6 +89,13 @@ the near-term execution core:
 
 These directly reduce the cost of future families.
 
+Current completion inside that core:
+
+- registry: landed
+- ingestion: landed for the workflow-family cluster
+- clustered lifecycle: landed for memory-object inspection
+- correction / supersede: next
+
 ## Can flatten later inside the same phase
 
 - unified phrase-pattern engine
@@ -116,9 +126,10 @@ later implementation slice needs tighter staging.
 ## Hard prerequisites before reduced-profile self-improving capture
 
 - family-definition registry is live
-- ingestion no longer depends on two divergent family-resolution stacks
+- ingestion no longer depends on two divergent family-resolution stacks for the
+  active families
 - clustered lifecycle and correction behavior are no longer spread across near-
-  duplicate paths
+  duplicate paths for the active families
 - retrieval/application policy is flatter than it is today
 
 ## Hard prerequisites before learned-guidance advisory planning

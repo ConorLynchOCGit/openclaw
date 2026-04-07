@@ -84,6 +84,35 @@ This order is deliberate:
 - proof inspection should flatten after runtime policy has become registry-
   driven
 
+## Current execution status
+
+Batch v1 is now landed.
+
+Completed:
+
+1. family-definition registry
+   - `extensions/memory-middleware/src/memory-family-registry.ts`
+   - live consumers in `proof-runner.ts`, `ordinary-turn-auto-capture.ts`, and
+     `tools/candidate-submit.ts`
+2. unified ingestion resolver
+   - `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
+   - live for workflow lessons, project rules, and unmet needs across transcript
+     capture, tool submission, and tool-side duplicate-key derivation
+3. unified clustered lifecycle
+   - `extensions/memory-middleware/src/clustered-memory-lifecycle.ts`
+   - live for response-style, project-fact, and workflow-improvement
+     memory-object inspection
+   - recurring procedures now share lifecycle utility helpers while keeping the
+     validated-procedure inspection split
+
+Still next:
+
+4. unified correction / supersede
+5. unified phrase-pattern engine
+6. retrieval feature framework
+7. behavior-profile layer
+8. registry-driven proof inspection closeout
+
 ## What each implementation slice should accomplish
 
 ### Slice 1 — family-definition registry
@@ -91,23 +120,28 @@ This order is deliberate:
 - create concrete registry entries for the six landed families
 - move static family policy out of ad hoc branch logic
 - prove at least two runtime seams read registry policy
+  - landed in batch v1
 
 ### Slice 2 — unified ingestion resolver
 
 - unify transcript and tool-submitted resolution
 - preserve typed fast paths and bounded phrase-pattern feeds
 - delete duplicated normalization branches only after parity is proven
+  - landed in batch v1 for the workflow-family cluster
 
 ### Slice 3 — unified clustered lifecycle
 
 - move memory-object families to shared cluster policy
 - keep validated-procedure targets distinct
 - preserve hold, approve, reject, supersede behavior
+  - landed in batch v1 for memory-object inspection; recurring procedures remain
+    distinct at the validated target
 
 ### Slice 4 — unified correction / supersede
 
 - centralize correction intent handling
 - preserve explicit lineage and family-specific correction modes
+  - next
 
 ### Slice 5 — unified phrase-pattern engine
 

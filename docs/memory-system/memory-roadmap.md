@@ -89,9 +89,17 @@ family-policy differences.
 ### Must flatten now
 
 1. family-definition registry
+   - landed in batch v1 for the six current families
 2. unified ingestion resolver
+   - landed in batch v1 for the workflow lesson / project-rule / unmet-need
+     family cluster
 3. unified clustered lifecycle engine
+   - landed in batch v1 for response-style, project-fact, and
+     workflow-improvement memory-object lifecycle inspection
+   - recurring procedures now reuse shared lifecycle utilities while retaining
+     validated-procedure inspection
 4. unified correction / supersede engine
+   - next
 5. retrieval feature framework
 6. behavior-profile / application layer
 
@@ -139,6 +147,21 @@ Recommended order:
 
 The first four flatten the highest-leverage shared seams. Retrieval/application
 and proofing flatten after the registry and lifecycle policy exist.
+
+### Current flattening status
+
+The flattening phase is now underway in code, not just in specs.
+
+Batch v1 completed:
+
+- registry-driven family policy lookups in proof inspection and capture metadata
+- shared workflow-family ingestion resolution across transcript and tool
+  submission
+- shared memory-object lifecycle inspection across more than one family
+
+The next recommended slice is:
+
+- unified correction / supersede
 
 ## Phase C — reduced-profile self-improving capture
 
