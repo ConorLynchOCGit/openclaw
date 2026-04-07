@@ -171,6 +171,7 @@ const DEFAULT_PROACTIVE_PLAN_MAX_ACTIONS = 6;
 const MAX_PROACTIVE_PLAN_MAX_ACTIONS = 20;
 const DEFAULT_BACKGROUND_JOB_MAX_ATTEMPTS = 3;
 const MAX_BACKGROUND_JOB_MAX_ATTEMPTS = 10;
+const NON_USER_VISIBLE_APPROVED_ARTIFACT_FAMILIES = ["workflow_phrase_pattern"] as const;
 
 type CandidatePersistencePlan = {
   schema: string;
@@ -1205,6 +1206,21 @@ function parseProcedureStatus(value: string): ProcedureStatus {
     return value;
   }
   throw new Error(`procedure row contains unsupported status: ${value}`);
+}
+
+function buildApprovedMemoryArtifactVisibilityCondition(alias: string): string {
+  const hiddenArtifacts = NON_USER_VISIBLE_APPROVED_ARTIFACT_FAMILIES.map(
+    (value) => `'${value}'`,
+  ).join(", ");
+  const artifactFamilyExpression = [
+    "coalesce(",
+    `${alias}.metadata->>'artifactFamily',`,
+    `${alias}.metadata->'candidateMetadata'->>'artifactFamily',`,
+    `${alias}.metadata->'promotionMetadata'->>'artifactFamily',`,
+    "''",
+    ")",
+  ].join(" ");
+  return `${artifactFamilyExpression} not in (${hiddenArtifacts})`;
 }
 
 function normalizeCandidateRecord(row: CandidateRow): CandidateRecord {
@@ -9703,23 +9719,24 @@ async function listApprovedMemorySurfaceRows(params: {
     table: "internal_approved_memory_v",
   });
   const conditions = ["true"];
+  conditions.push(buildApprovedMemoryArtifactVisibilityCondition("v"));
   const values: unknown[] = [];
 
   if (params.input.kind) {
     values.push(params.input.kind);
-    conditions.push(`memory_kind::text = $${values.length}::text`);
+    conditions.push(`v.memory_kind::text = $${values.length}::text`);
   }
   if (params.input.projectId) {
     values.push(params.input.projectId);
-    conditions.push(`project_id = $${values.length}::uuid`);
+    conditions.push(`v.project_id = $${values.length}::uuid`);
   }
   if (params.input.agentId) {
     values.push(params.input.agentId);
-    conditions.push(`agent_id = $${values.length}::uuid`);
+    conditions.push(`v.agent_id = $${values.length}::uuid`);
   }
   if (params.input.sessionId) {
     values.push(params.input.sessionId);
-    conditions.push(`session_id = $${values.length}::uuid`);
+    conditions.push(`v.session_id = $${values.length}::uuid`);
   }
 
   values.push(normalizeMemoryObjectListLimit(params.input.limit));
@@ -9729,20 +9746,20 @@ async function listApprovedMemorySurfaceRows(params: {
       select
         'memory_object'::text as object_type,
         'approved_memory_view'::text as read_surface,
-        id::text as id,
-        memory_kind::text as memory_kind,
+        v.id::text as id,
+        v.memory_kind::text as memory_kind,
         'approved'::text as review_state,
-        content,
-        project_id::text as project_id,
-        agent_id::text as agent_id,
-        session_id::text as session_id,
+        v.content,
+        v.project_id::text as project_id,
+        v.agent_id::text as agent_id,
+        v.session_id::text as session_id,
         null::text as source_event_id,
-        metadata,
-        created_at::text as created_at,
-        updated_at::text as updated_at
-      from ${approvedMemoryView}
+        v.metadata,
+        v.created_at::text as created_at,
+        v.updated_at::text as updated_at
+      from ${approvedMemoryView} v
       where ${conditions.join("\n        and ")}
-      order by updated_at desc
+      order by v.updated_at desc
       limit $${values.length}::int
     `,
     values,
@@ -9962,6 +9979,7 @@ async function searchApprovedMemorySurfaceRowsBasic(params: {
   const combinedTextExpression = "lower(coalesce(v.title, '') || ' ' || coalesce(v.content, ''))";
   const conditions = [
     `(mo.search_document @@ websearch_to_tsquery('english', $1::text) or ${combinedTextExpression} like lower($2::text))`,
+    buildApprovedMemoryArtifactVisibilityCondition("v"),
   ];
   const values: unknown[] = [params.input.query, `%${params.input.query}%`];
 
@@ -10196,6 +10214,7 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
       or ${combinedTextExpression} like lower($2::text)
       or similarity(${combinedTextExpression}, lower($1::text)) >= 0.15
     )`,
+    buildApprovedMemoryArtifactVisibilityCondition("v"),
   ];
   const values: unknown[] = [
     params.input.query,
@@ -10566,6 +10585,7 @@ async function searchApprovedMemorySurfaceRowsSemantic(params: {
     "me.embedding is not null",
     "me.embedding_model = $2::text",
     "me.embedding_version = $3::text",
+    buildApprovedMemoryArtifactVisibilityCondition("v"),
   ];
   const values: unknown[] = [
     serializeVectorLiteral(params.input.embedding),

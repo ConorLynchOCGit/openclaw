@@ -63,7 +63,9 @@ import {
   supersedeApprovedWorkflowImprovementSubjectEntries,
 } from "./workflow-improvement-lifecycle.js";
 import {
+  createGeneralizedWorkflowImprovementMatch,
   detectWorkflowImprovementSemanticDecision,
+  type WorkflowImprovementCanonicalMatch,
   type WorkflowImprovementCaptureClass,
   type WorkflowImprovementGuidancePattern,
   type WorkflowImprovementLessonFamily,
@@ -73,6 +75,10 @@ import {
   type WorkflowImprovementTemplate,
   type WorkflowImprovementToolKey,
 } from "./workflow-improvement-semantic.js";
+import {
+  findApprovedWorkflowPhrasePatternMatch,
+  maybeInduceWorkflowPhrasePattern,
+} from "./workflow-phrase-induction.js";
 
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const AUTO_CAPTURE_SOURCE = "ordinary_turn_auto_capture";
@@ -677,6 +683,7 @@ type OrdinaryTurnAutoCaptureHandlerDeps = {
   }) => Promise<{ accepted: boolean; reason?: string; eventId?: string; memoryObjectId?: string }>;
   submitImprovementNote: (input: {
     content: string;
+    projectId?: string;
     agentId: string;
     sessionId: string;
     metadata: Record<string, unknown>;
@@ -761,7 +768,7 @@ export type OrdinaryTurnAutoCaptureController = {
 type ResponseStyleDetectionSource = "deterministic" | "semantic";
 type ProjectFactDetectionSource = "deterministic" | "semantic";
 type RecurringProcedureDetectionSource = "semantic";
-type WorkflowImprovementDetectionSource = "semantic";
+type WorkflowImprovementDetectionSource = "semantic" | "deterministic";
 
 type ResponseStyleCaptureDecision =
   | {
@@ -1976,7 +1983,10 @@ function buildWorkflowImprovementSemanticMetadata(params: {
 }): Record<string, unknown> {
   return {
     semanticDetection: {
-      source: "workflow_improvement_semantic_v2",
+      source:
+        params.detectionSource === "deterministic"
+          ? "workflow_phrase_induction_v1"
+          : "workflow_improvement_semantic_v2",
       detectionSource: params.detectionSource,
       confidence: params.confidence,
       lessonFamily: params.lessonFamily,
@@ -3794,29 +3804,17 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
 
   async function handleWorkflowImprovementDecision(decisionParams: {
     decision: WorkflowImprovementCaptureDecision;
+    text: string;
     agentExternalKey: string;
     sessionKey: string;
     transcriptFile: string;
     timestamp?: string;
   }): Promise<boolean> {
-    const match = decisionParams.decision.match;
+    let effectiveDecision = decisionParams.decision;
+    let match = effectiveDecision.match;
     if (inFlightKeys.has(match.key)) {
       return true;
     }
-
-    const semanticMetadata = buildWorkflowImprovementSemanticMetadata({
-      detectionSource: decisionParams.decision.detectionSource,
-      confidence: decisionParams.decision.confidence,
-      evidence: decisionParams.decision.evidence,
-      lessonFamily: decisionParams.decision.lessonFamily,
-      ...(decisionParams.decision.lessonKey
-        ? { lessonKey: decisionParams.decision.lessonKey }
-        : {}),
-      ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
-      ...(decisionParams.decision.guidancePattern
-        ? { guidancePattern: decisionParams.decision.guidancePattern }
-        : {}),
-    });
 
     const attribution = await deps.resolveAttribution({
       config: params.config,
@@ -3834,6 +3832,40 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       );
       return true;
     }
+    if (effectiveDecision.lessonFamily === "generalized_workflow_lesson" && attribution.projectId) {
+      const deterministicPattern = await findApprovedWorkflowPhrasePatternMatch({
+        config: params.config,
+        text: decisionParams.text,
+        projectId: attribution.projectId,
+        logger: params.logger,
+      });
+      if (deterministicPattern) {
+        effectiveDecision = {
+          action: "capture",
+          confidence: "high",
+          detectionSource: "deterministic",
+          evidence: ["approved_phrase_pattern_match"],
+          reviewMode: "hold_for_more_evidence",
+          lessonFamily: deterministicPattern.match.lessonFamily,
+          ...(deterministicPattern.match.guidancePattern
+            ? { guidancePattern: deterministicPattern.match.guidancePattern }
+            : {}),
+          match: toOrdinaryTurnWorkflowImprovementMatch(deterministicPattern.match),
+        };
+        match = effectiveDecision.match;
+      }
+    }
+    const semanticMetadata = buildWorkflowImprovementSemanticMetadata({
+      detectionSource: effectiveDecision.detectionSource,
+      confidence: effectiveDecision.confidence,
+      evidence: effectiveDecision.evidence,
+      lessonFamily: effectiveDecision.lessonFamily,
+      ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
+      ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
+      ...(effectiveDecision.guidancePattern
+        ? { guidancePattern: effectiveDecision.guidancePattern }
+        : {}),
+    });
     const inspection = await deps.inspectWorkflowImprovementLifecycle({
       config: params.config,
       key: match.key,
@@ -3841,7 +3873,17 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
       logger: params.logger,
     });
-    const isGeneralized = isGeneralizedWorkflowLessonDecision(decisionParams.decision);
+    const isGeneralized = isGeneralizedWorkflowLessonDecision(effectiveDecision);
+    const canonicalMatchForPhraseInduction: WorkflowImprovementCanonicalMatch | null =
+      isGeneralized && effectiveDecision.guidancePattern
+        ? createGeneralizedWorkflowImprovementMatch({
+            guidancePattern: effectiveDecision.guidancePattern,
+            subject: match.subject,
+            ...(match.recommendedAction ? { recommendedAction: match.recommendedAction } : {}),
+            ...(match.avoidAction ? { avoidAction: match.avoidAction } : {}),
+            ...(match.rationale ? { rationale: match.rationale } : {}),
+          })
+        : null;
     const conflictingApprovedGeneralizedEntries = isGeneralized
       ? findConflictingApprovedGeneralizedWorkflowLessons({
           inspection,
@@ -3863,13 +3905,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       await rejectWorkflowImprovementCandidateIfPresent({
         candidateId: inspection.pendingCandidate.id,
         subjectKey: match.subjectKey,
-        lessonFamily: decisionParams.decision.lessonFamily,
-        ...(decisionParams.decision.lessonKey
-          ? { lessonKey: decisionParams.decision.lessonKey }
-          : {}),
-        ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
-        ...(decisionParams.decision.guidancePattern
-          ? { guidancePattern: decisionParams.decision.guidancePattern }
+        lessonFamily: effectiveDecision.lessonFamily,
+        ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
+        ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
+        ...(effectiveDecision.guidancePattern
+          ? { guidancePattern: effectiveDecision.guidancePattern }
           : {}),
         rationale: isGeneralized
           ? "generalized workflow lesson cluster expired without enough compatible evidence"
@@ -3889,9 +3929,9 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           await rejectWorkflowImprovementCandidateIfPresent({
             candidateId: pendingEntry.id,
             subjectKey: match.subjectKey,
-            lessonFamily: decisionParams.decision.lessonFamily,
-            ...(decisionParams.decision.guidancePattern
-              ? { guidancePattern: decisionParams.decision.guidancePattern }
+            lessonFamily: effectiveDecision.lessonFamily,
+            ...(effectiveDecision.guidancePattern
+              ? { guidancePattern: effectiveDecision.guidancePattern }
               : {}),
             rationale:
               "older generalized workflow lesson cluster expired without enough compatible evidence",
@@ -3905,6 +3945,32 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     }
 
     if (inspection?.matchingApprovedObjectId) {
+      if (isGeneralized && attribution.projectId && canonicalMatchForPhraseInduction) {
+        await maybeInduceWorkflowPhrasePattern({
+          config: params.config,
+          candidateIngress: {
+            submitImprovementNote: async (input) =>
+              deps.submitImprovementNote({
+                content: input.content,
+                projectId: input.projectId ?? attribution.projectId,
+                agentId: input.agentId ?? attribution.agentId,
+                sessionId: input.sessionId ?? attribution.sessionId,
+                metadata: input.metadata ?? {},
+              }),
+          },
+          candidateReview: { review: deps.reviewCandidate },
+          candidatePromotion: { promoteToMemory: deps.promoteToMemory },
+          text: decisionParams.text,
+          projectId: attribution.projectId,
+          sessionId: attribution.sessionId,
+          agentId: attribution.agentId,
+          detectionSource: effectiveDecision.detectionSource,
+          targetMatch: canonicalMatchForPhraseInduction,
+          logger: params.logger,
+          source: "workflow_phrase_induction_transcript_auto_capture",
+          ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
+        });
+      }
       params.logger.debug?.(
         formatLog("memory-middleware workflow-improvement capture skipped existing approved key", {
           key: match.key,
@@ -3931,13 +3997,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       transcriptFile: decisionParams.transcriptFile,
       ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
       autoCaptureExtras: {
-        lessonFamily: decisionParams.decision.lessonFamily,
-        ...(decisionParams.decision.lessonKey
-          ? { lessonKey: decisionParams.decision.lessonKey }
-          : {}),
-        ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
-        ...(decisionParams.decision.guidancePattern
-          ? { guidancePattern: decisionParams.decision.guidancePattern }
+        lessonFamily: effectiveDecision.lessonFamily,
+        ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
+        ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
+        ...(effectiveDecision.guidancePattern
+          ? { guidancePattern: effectiveDecision.guidancePattern }
           : {}),
         ...(match.recommendedAction ? { recommendedAction: match.recommendedAction } : {}),
         ...(match.normalizedRecommendedAction
@@ -3954,16 +4018,14 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       extraMetadata: {
         ...semanticMetadata,
         ...buildWorkflowImprovementPendingConfirmationMetadata({
-          confidence: decisionParams.decision.confidence,
-          evidence: decisionParams.decision.evidence,
-          lessonFamily: decisionParams.decision.lessonFamily,
-          state: decisionParams.decision.reviewMode,
-          ...(decisionParams.decision.lessonKey
-            ? { lessonKey: decisionParams.decision.lessonKey }
-            : {}),
-          ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
-          ...(decisionParams.decision.guidancePattern
-            ? { guidancePattern: decisionParams.decision.guidancePattern }
+          confidence: effectiveDecision.confidence,
+          evidence: effectiveDecision.evidence,
+          lessonFamily: effectiveDecision.lessonFamily,
+          state: effectiveDecision.reviewMode,
+          ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
+          ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
+          ...(effectiveDecision.guidancePattern
+            ? { guidancePattern: effectiveDecision.guidancePattern }
             : {}),
           ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
           ...(isGeneralized ? { clusterKey: match.key } : {}),
@@ -3993,9 +4055,9 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         await rejectWorkflowImprovementCandidateIfPresent({
           candidateId,
           subjectKey: match.subjectKey,
-          lessonFamily: decisionParams.decision.lessonFamily,
-          ...(decisionParams.decision.guidancePattern
-            ? { guidancePattern: decisionParams.decision.guidancePattern }
+          lessonFamily: effectiveDecision.lessonFamily,
+          ...(effectiveDecision.guidancePattern
+            ? { guidancePattern: effectiveDecision.guidancePattern }
             : {}),
           rationale:
             "older generalized workflow lesson cluster was replaced by stronger newer conflicting evidence for the same scoped subject",
@@ -4016,10 +4078,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         config: params.config,
         cfg: params.cfg,
         sessionKey: decisionParams.sessionKey,
-        lessonFamily: decisionParams.decision.lessonFamily,
+        lessonFamily: effectiveDecision.lessonFamily,
         metadata: buildWorkflowImprovementAutoReviewMetadata({
           match,
-          lessonFamily: decisionParams.decision.lessonFamily,
+          lessonFamily: effectiveDecision.lessonFamily,
           agentExternalKey: decisionParams.agentExternalKey,
           sessionKey: decisionParams.sessionKey,
           transcriptFile: decisionParams.transcriptFile,
@@ -4035,9 +4097,9 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         logContext: {
           key: match.key,
           subjectKey: match.subjectKey,
-          lessonFamily: decisionParams.decision.lessonFamily,
-          guidancePattern: decisionParams.decision.guidancePattern,
-          confidence: decisionParams.decision.confidence,
+          lessonFamily: effectiveDecision.lessonFamily,
+          guidancePattern: effectiveDecision.guidancePattern,
+          confidence: effectiveDecision.confidence,
           outcome: supersedeTargetIds.length > 0 ? "supersede_existing" : "approve",
         },
       });
@@ -4051,7 +4113,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           metadata: {
             clusterKey: match.key,
             subjectKey: match.subjectKey,
-            guidancePattern: decisionParams.decision.guidancePattern,
+            guidancePattern: effectiveDecision.guidancePattern,
             evidenceCount: 2,
           },
         });
@@ -4066,13 +4128,39 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         }
       }
       if (promotedMemoryObjectId) {
+        if (attribution.projectId && canonicalMatchForPhraseInduction) {
+          await maybeInduceWorkflowPhrasePattern({
+            config: params.config,
+            candidateIngress: {
+              submitImprovementNote: async (input) =>
+                deps.submitImprovementNote({
+                  content: input.content,
+                  projectId: input.projectId ?? attribution.projectId,
+                  agentId: input.agentId ?? attribution.agentId,
+                  sessionId: input.sessionId ?? attribution.sessionId,
+                  metadata: input.metadata ?? {},
+                }),
+            },
+            candidateReview: { review: deps.reviewCandidate },
+            candidatePromotion: { promoteToMemory: deps.promoteToMemory },
+            text: decisionParams.text,
+            projectId: attribution.projectId,
+            sessionId: attribution.sessionId,
+            agentId: attribution.agentId,
+            detectionSource: effectiveDecision.detectionSource,
+            targetMatch: canonicalMatchForPhraseInduction,
+            logger: params.logger,
+            source: "workflow_phrase_induction_transcript_auto_capture",
+            ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
+          });
+        }
         markRecent(match.key);
       }
       return true;
     }
 
     if (
-      decisionParams.decision.reviewMode === "pending_confirmation" &&
+      effectiveDecision.reviewMode === "pending_confirmation" &&
       inspection?.pendingCandidate &&
       !isExpiredPendingWorkflowImprovementCandidate(inspection.pendingCandidate) &&
       !shouldSkipImmediateWorkflowImprovementConfirmation(inspection.pendingCandidate.createdAt)
@@ -4086,17 +4174,13 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         config: params.config,
         cfg: params.cfg,
         sessionKey: decisionParams.sessionKey,
-        lessonFamily: decisionParams.decision.lessonFamily,
-        ...(decisionParams.decision.lessonKey
-          ? { lessonKey: decisionParams.decision.lessonKey }
-          : {}),
+        lessonFamily: effectiveDecision.lessonFamily,
+        ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
         metadata: buildWorkflowImprovementAutoPromotionMetadata({
           match,
-          lessonFamily: decisionParams.decision.lessonFamily,
-          ...(decisionParams.decision.lessonKey
-            ? { lessonKey: decisionParams.decision.lessonKey }
-            : {}),
-          ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
+          lessonFamily: effectiveDecision.lessonFamily,
+          ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
+          ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
           agentExternalKey: decisionParams.agentExternalKey,
           sessionKey: decisionParams.sessionKey,
           transcriptFile: decisionParams.transcriptFile,
@@ -4113,12 +4197,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         logContext: {
           key: match.key,
           subjectKey: match.subjectKey,
-          lessonFamily: decisionParams.decision.lessonFamily,
-          ...(decisionParams.decision.lessonKey
-            ? { lessonKey: decisionParams.decision.lessonKey }
-            : {}),
-          ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
-          confidence: decisionParams.decision.confidence,
+          lessonFamily: effectiveDecision.lessonFamily,
+          ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
+          ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
+          confidence: effectiveDecision.confidence,
         },
       });
       if (promotedMemoryObjectId) {
@@ -4130,18 +4212,18 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     if (
       inspection?.pendingCandidate &&
       !isExpiredPendingWorkflowImprovementCandidate(inspection.pendingCandidate) &&
-      (decisionParams.decision.reviewMode === "hold_for_more_evidence" ||
+      (effectiveDecision.reviewMode === "hold_for_more_evidence" ||
         shouldSkipImmediateWorkflowImprovementConfirmation(inspection.pendingCandidate.createdAt))
     ) {
       params.logger.debug?.(
         formatLog(
-          decisionParams.decision.reviewMode === "hold_for_more_evidence"
+          effectiveDecision.reviewMode === "hold_for_more_evidence"
             ? "memory-middleware workflow-improvement capture skipped existing held cluster"
             : "memory-middleware workflow-improvement capture skipped immediate duplicate",
           {
             key: match.key,
             candidateId: inspection.pendingCandidate.id,
-            lessonFamily: decisionParams.decision.lessonFamily,
+            lessonFamily: effectiveDecision.lessonFamily,
           },
         ),
       );
@@ -4170,16 +4252,14 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     params.logger.info(
       formatLog("memory-middleware ordinary-turn workflow-improvement capture accepted", {
         key: match.key,
-        lessonFamily: decisionParams.decision.lessonFamily,
-        ...(decisionParams.decision.lessonKey
-          ? { lessonKey: decisionParams.decision.lessonKey }
+        lessonFamily: effectiveDecision.lessonFamily,
+        ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
+        ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
+        ...(effectiveDecision.guidancePattern
+          ? { guidancePattern: effectiveDecision.guidancePattern }
           : {}),
-        ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
-        ...(decisionParams.decision.guidancePattern
-          ? { guidancePattern: decisionParams.decision.guidancePattern }
-          : {}),
-        reviewMode: decisionParams.decision.reviewMode,
-        confidence: decisionParams.decision.confidence,
+        reviewMode: effectiveDecision.reviewMode,
+        confidence: effectiveDecision.confidence,
         eventId: result.eventId,
         memoryObjectId: result.memoryObjectId,
       }),
@@ -4263,6 +4343,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       workflowImprovementDecision &&
       (await handleWorkflowImprovementDecision({
         decision: workflowImprovementDecision,
+        text,
         agentExternalKey,
         sessionKey,
         transcriptFile,

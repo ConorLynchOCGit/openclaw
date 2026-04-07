@@ -46,12 +46,12 @@ Current sequencing note:
 - the broader workflow-improvement memory v2 slice is now also landed
 - the first generalized supervised lesson learning slice is now also landed
 - generalized lesson auto-review and promotion v1 is now also landed
+- reviewed phrase induction for approved generic lessons is now also landed
 - the program is no longer primarily advancing by enumerating one lesson key
   at a time
 - the next implementation slice should be:
-  - reviewed phrase induction for approved generic lessons
-- the next follow-up slices after that should be:
   - generalized lesson retrieval/application expansion
+- the next follow-up slices after that should be:
   - broader project-rule learning only if it can reuse the same generic
     lesson pipeline
   - unmet-need planning v1 after the generalized pipeline can already absorb

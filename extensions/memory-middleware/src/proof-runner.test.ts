@@ -85,6 +85,45 @@ describe("parseMemoryProofPlan", () => {
     });
   });
 
+  it("accepts workflow phrase-pattern transcript capture expectations", () => {
+    const plan = parseMemoryProofPlan({
+      mode: "isolated",
+      label: "workflow phrase induction proof",
+      steps: [
+        {
+          id: "capture_phrase",
+          kind: "transcript_capture",
+          text: "Prefer bulletized proof IDs for release proof notes instead of paraphrased rollout summaries.",
+          sessionFile: "/tmp/proof.jsonl",
+          sessionKey: "agent:test:proof",
+          agentExternalKey: "chief",
+          attribution: {
+            agentId: "agent-1",
+            sessionId: "session-1",
+            projectId: "project-1",
+          },
+          expectation: {
+            family: "workflow_phrase_pattern",
+            key: "pattern-key-1",
+            subjectKey: "target-key-1",
+            normalizedPhrase:
+              "prefer bulletized proof ids for release proof notes instead of paraphrased rollout summaries.",
+            projectId: "project-1",
+          },
+        },
+      ],
+    });
+
+    expect(plan.steps).toHaveLength(1);
+    expect(plan.steps[0]).toMatchObject({
+      kind: "transcript_capture",
+      expectation: {
+        family: "workflow_phrase_pattern",
+        key: "pattern-key-1",
+      },
+    });
+  });
+
   it("rejects duplicate step ids", () => {
     expect(() =>
       parseMemoryProofPlan({

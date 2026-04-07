@@ -120,8 +120,9 @@ In the landed auto-review posture they:
   instead of creating backlog spray
 - stale held clusters reject instead of lingering
 
-The next scaling step is no longer auto-review. It is phrase induction and
-retrieval/application expansion for the approved generic path.
+The next scaling step is no longer auto-review or phrase induction. Those are
+now live for the approved generic workflow path. The next step is
+retrieval/application expansion.
 
 ## Retrieval / application posture
 
@@ -184,9 +185,8 @@ pipeline rather than reverting to keyed expansion.
 
 The next implementation slices after this first generalized step should be:
 
-1. reviewed phrase induction for approved generic lessons
-2. generalized lesson retrieval/application expansion
-3. broader project-rule learning on the same generic pipeline
+1. generalized lesson retrieval/application expansion
+2. broader project-rule learning on the same generic pipeline
 
 Only after those should the system broaden into:
 

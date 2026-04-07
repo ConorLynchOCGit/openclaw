@@ -2,39 +2,40 @@
 
 ## Active slice
 
-Reviewed phrase induction for approved generic lessons
+Generalized lesson retrieval/application expansion
 
 ## Objective
 
-Reduce future misses for approved generic workflow lessons by turning repeated
-approved phrasing into reviewed deterministic trigger expansions.
+Make approved generalized workflow lessons apply more reliably in later
+repo-operating asks through the existing hybrid-first guidance path.
 
 The previous slice just landed:
 
-- generalized workflow-lesson auto-review and promotion
-- bounded machine resolution into:
-  - `approve`
+- reviewed phrase induction for approved generic workflow lessons
+- a bounded phrase-pattern candidate store on the existing candidate
+  substrate
+- bounded machine outcomes for approved-generic phrase patterns:
   - `hold_for_more_evidence`
+  - `approve`
   - `reject`
-  - `supersede_existing`
-- duplicate clustering and stale-held rejection
-- approved durable lesson retrieval through the existing hybrid-first path
-  without new per-lesson routers
-- explicit proof that a non-keyed lesson can become approved without manual
-  review in both isolated and narrow production proof
+- deterministic phrase-pattern matching for later approved generic workflow
+  capture
+- approved phrase-pattern artifacts fenced out of normal hybrid retrieval
+- explicit proof that repeated phrasing can become a durable deterministic
+  trigger without adding a new lesson key
 
 ## Required work
 
-1. Propose reviewed deterministic trigger phrases from approved generic
-   lessons.
-2. Keep approved-generic phrase induction scoped to the same family and
-   approved-only retrieval posture.
-3. Preserve hybrid-first retrieval as the main path while reducing misses from
-   messy recurring phrasing.
-4. Keep phrase induction auditable and bounded instead of turning it into a
-   hidden second semantic detector.
-5. Prove that approved generic lessons become easier to match later without
-   broadening into generic semantic routing.
+1. Improve selection and ranking for approved generic workflow lessons through
+   the existing approved-only hybrid path.
+2. Make prompt application of approved generic lessons more consistent without
+   per-lesson routing.
+3. Preserve hybrid-first retrieval as the main path and keep exact typed
+   matches winning when stronger.
+4. Keep guidance-only posture and avoid generic semantic broadening by
+   default.
+5. Prove that approved generic lessons show up more reliably in later
+   sessions without broadening into autonomous action-taking.
 
 ## Out of scope
 
@@ -46,13 +47,12 @@ The previous slice just landed:
 
 ## Acceptance criteria
 
-- approved generalized workflow lessons can seed reviewed deterministic phrase
-  proposals
-- approved generic lessons become easier to match later without per-lesson
-  router growth
-- phrase induction remains reviewable, bounded, and guidance-only
-- the older keyed lessons and the new generic path stay part of the same
-  layered workflow-learning system
+- approved generic workflow lessons retrieve and rank more consistently in
+  later repo-operating asks
+- prompt application stays guidance-only and bounded
+- hybrid-first retrieval remains the default path
+- the older keyed lessons, new generic lessons, and approved phrase patterns
+  stay part of the same layered workflow-learning system
 
 ## Notes
 
@@ -69,4 +69,4 @@ generic workflow guidance:
 
 The next implementation slice should be:
 
-- reviewed phrase induction for approved generic lessons
+- generalized lesson retrieval/application expansion

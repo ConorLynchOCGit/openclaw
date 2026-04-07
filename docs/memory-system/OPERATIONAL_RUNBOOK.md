@@ -325,7 +325,7 @@ Expected operator checks:
 
 Current approved boundary note:
 
-- no phrase induction behavior is live
+- approved-generic phrase induction is live for generalized workflow lessons
 - no broader semantic learning-event families are live
 - no UI memory browser or inspection surface exists
 - candidates should not shape user-visible behavior before approval in this
@@ -755,7 +755,7 @@ Current approved boundary note:
   - stale held clusters reject cleanly instead of lingering
   - stronger newer conflicting lessons on the same subject can supersede older
     approved lessons with explicit lineage
-  - phrase induction for approved generic lessons is still not live
+  - phrase induction for approved generic lessons is now live
   - generic semantic fallback for those lessons is still not live
 - broader API workaround memory is not live yet
 - repair or forgetting is not live yet for this family

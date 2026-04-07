@@ -10,6 +10,8 @@ const storeApprovedEnvironmentConstraintSemanticEmbedding = vi.hoisted(() =>
   vi.fn(async () => true),
 );
 const storeApprovedWorkflowToolGotchaSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
+const findApprovedWorkflowPhrasePatternMatch = vi.hoisted(() => vi.fn(async () => null));
+const maybeInduceWorkflowPhrasePattern = vi.hoisted(() => vi.fn(async () => ({ status: "held" })));
 
 vi.mock("./semantic-retrieval-routing.js", () => ({
   storeApprovedApiWorkaroundSemanticEmbedding,
@@ -17,6 +19,16 @@ vi.mock("./semantic-retrieval-routing.js", () => ({
   storeApprovedWorkflowToolGotchaSemanticEmbedding,
   storeValidatedProcedureSemanticEmbedding,
 }));
+vi.mock("./workflow-phrase-induction.js", async () => {
+  const actual = await vi.importActual<typeof import("./workflow-phrase-induction.js")>(
+    "./workflow-phrase-induction.js",
+  );
+  return {
+    ...actual,
+    findApprovedWorkflowPhrasePatternMatch,
+    maybeInduceWorkflowPhrasePattern,
+  };
+});
 
 import {
   createOrdinaryTurnAutoCaptureController,
@@ -2014,6 +2026,61 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(promoteToMemory).toHaveBeenCalledWith(
       expect.objectContaining({
         candidateId: "memory-generic-improvement-1",
+      }),
+    );
+  });
+
+  it("induces a reviewed phrase pattern when a later paraphrase hits an already approved generalized lesson", async () => {
+    maybeInduceWorkflowPhrasePattern.mockClear();
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-generic",
+          sessionId: "session-uuid-generic",
+          projectId: "00000000-0000-4000-8000-000000000321",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        submitProcedureSuggestion: vi.fn(),
+        submitImprovementNote: vi.fn(),
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+        inspectWorkflowImprovementLifecycle: vi.fn(async () => ({
+          matchingApprovedObjectId: "approved-generic-improvement-1",
+          activeApprovedSubjectObjectIds: ["approved-generic-improvement-1"],
+          pendingSubjectCandidateIds: [],
+          activeApprovedSubjectEntries: [],
+          pendingSubjectCandidates: [],
+        })),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/workflow-improvement-generic.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content:
+          "Use bulletized proof IDs for release proof notes instead of paraphrased rollout summaries.",
+        timestamp: Date.parse("2026-04-06T03:11:00Z"),
+      },
+    });
+
+    expect(maybeInduceWorkflowPhrasePattern).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Use bulletized proof IDs for release proof notes instead of paraphrased rollout summaries.",
+        projectId: "00000000-0000-4000-8000-000000000321",
+        detectionSource: "semantic",
+        targetMatch: expect.objectContaining({
+          lessonFamily: "generalized_workflow_lesson",
+          guidancePattern: "use_instead_of",
+          subject: "release proof notes",
+        }),
       }),
     );
   });

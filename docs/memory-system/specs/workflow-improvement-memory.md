@@ -196,7 +196,8 @@ Implementation clarification from the generalized lesson-learning pivot slice:
   approved-only hybrid path rather than new per-lesson routing
 - weak vague workflow complaints should still stay ignored instead of creating
   pending review backlog
-- the next scaling step is approved-generic phrase induction rather than
+- approved-generic phrase induction is now live, so the next scaling step is
+  generalized lesson retrieval/application expansion rather than
   re-expanding the lesson-key registry
 
 ## Ambiguity / abstain / clarify rules

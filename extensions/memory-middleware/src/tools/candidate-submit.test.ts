@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { OpenClawPluginToolContext } from "../../api.js";
 import type { CandidateSubmissionAcceptedResult, CandidateSubmissionInput } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
+import type { ApprovedWorkflowPhrasePatternMatch } from "../workflow-phrase-induction.js";
 const inspectWorkflowImprovementLifecycle = vi.hoisted(() =>
   vi.fn(async (): Promise<unknown> => null),
 );
@@ -13,12 +14,28 @@ const storeApprovedEnvironmentConstraintSemanticEmbedding = vi.hoisted(() =>
   vi.fn(async () => true),
 );
 const storeApprovedWorkflowToolGotchaSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
+const findApprovedWorkflowPhrasePatternMatch = vi.hoisted(() =>
+  vi.fn<() => Promise<ApprovedWorkflowPhrasePatternMatch | null>>(async () => null),
+);
+const maybeInduceWorkflowPhrasePattern = vi.hoisted(() =>
+  vi.fn(async () => ({ status: "existing" })),
+);
 
 vi.mock("../semantic-retrieval-routing.js", () => ({
   storeApprovedApiWorkaroundSemanticEmbedding,
   storeApprovedEnvironmentConstraintSemanticEmbedding,
   storeApprovedWorkflowToolGotchaSemanticEmbedding,
 }));
+vi.mock("../workflow-phrase-induction.js", async () => {
+  const actual = await vi.importActual<typeof import("../workflow-phrase-induction.js")>(
+    "../workflow-phrase-induction.js",
+  );
+  return {
+    ...actual,
+    findApprovedWorkflowPhrasePatternMatch,
+    maybeInduceWorkflowPhrasePattern,
+  };
+});
 vi.mock("../workflow-improvement-lifecycle.js", async () => {
   const actual = await vi.importActual<typeof import("../workflow-improvement-lifecycle.js")>(
     "../workflow-improvement-lifecycle.js",
@@ -476,6 +493,64 @@ describe("memory candidate submit tool", () => {
         }),
       }),
     });
+  });
+
+  it("uses an approved phrase pattern as deterministic workflow-improvement evidence", async () => {
+    findApprovedWorkflowPhrasePatternMatch.mockResolvedValueOnce({
+      approvedObjectId: "approved-pattern-1",
+      normalizedPhrase:
+        "for release proof notes should i list proof ids as bullets instead of paraphrasing rollout summaries?",
+      match: {
+        captureClass: "workflow_generalized_guidance",
+        candidateKind: "improvement",
+        reasonCode: "workflow_generalized_guidance_statement",
+        template: "workflow_generalized_guidance",
+        lessonFamily: "generalized_workflow_lesson",
+        guidancePattern: "use_instead_of",
+        subject: "release proof notes",
+        value:
+          "for release proof notes, use bulletized proof IDs instead of paraphrased rollout summaries",
+        normalizedSubject: "release proof notes",
+        normalizedValue:
+          "for release proof notes, use bulletized proof ids instead of paraphrased rollout summaries",
+        content:
+          "Workflow improvement: for release proof notes, use bulletized proof IDs instead of paraphrased rollout summaries.",
+        subjectKey: "subject-key-1",
+        key: "cluster-key-1",
+        recommendedAction: "bulletized proof IDs",
+        normalizedRecommendedAction: "bulletized proof ids",
+        avoidAction: "paraphrased rollout summaries",
+        normalizedAvoidAction: "paraphrased rollout summaries",
+      },
+    } satisfies ApprovedWorkflowPhrasePatternMatch);
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    await tool.execute("call-2c-deterministic", {
+      kind: "improvement",
+      content:
+        "For release proof notes, should I list proof IDs as bullets instead of paraphrasing rollout summaries?",
+      projectId: "00000000-0000-4000-8000-000000000123",
+    });
+
+    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          workflowPhraseInduction: expect.objectContaining({
+            observedText:
+              "For release proof notes, should I list proof IDs as bullets instead of paraphrasing rollout summaries?",
+          }),
+          semanticDetection: expect.objectContaining({
+            detectionSource: "deterministic",
+            evidence: ["approved_phrase_pattern_match"],
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "workflow_improvement",
+            state: "hold_for_more_evidence",
+          }),
+        }),
+      }),
+    );
   });
 
   it("stores an approved environment-constraint semantic embedding after confirmation promotion", async () => {

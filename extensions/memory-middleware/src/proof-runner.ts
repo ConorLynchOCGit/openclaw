@@ -23,6 +23,10 @@ import {
   inspectWorkflowImprovementLifecycle,
   type WorkflowImprovementLifecycleInspection,
 } from "./workflow-improvement-lifecycle.js";
+import {
+  inspectWorkflowPhrasePatternLifecycle,
+  type WorkflowPhraseLifecycleInspection,
+} from "./workflow-phrase-induction.js";
 
 const MemoryProofModeSchema = z.enum(["isolated", "production"]);
 const MemoryProofFamilySchema = z.enum([
@@ -30,6 +34,7 @@ const MemoryProofFamilySchema = z.enum([
   "project_fact",
   "recurring_procedure",
   "workflow_improvement",
+  "workflow_phrase_pattern",
 ]);
 const MemoryProofSearchScopeSchema = z.enum(MEMORY_OBJECT_SEARCH_SCOPES);
 
@@ -37,6 +42,7 @@ const MemoryProofCaptureExpectationSchema = z.object({
   family: MemoryProofFamilySchema,
   key: z.string().min(1).optional(),
   subjectKey: z.string().min(1).optional(),
+  normalizedPhrase: z.string().min(1).optional(),
   projectId: z.string().min(1).optional(),
 });
 
@@ -184,6 +190,10 @@ type LifecycleInspection =
   | {
       family: "workflow_improvement";
       inspection: WorkflowImprovementLifecycleInspection;
+    }
+  | {
+      family: "workflow_phrase_pattern";
+      inspection: WorkflowPhraseLifecycleInspection;
     };
 
 export type MemoryProofHealthSnapshot = {
@@ -323,6 +333,15 @@ function summarizeLifecycleArtifacts(lifecycle: LifecycleInspection): MemoryProo
           ? { approvedObjectId: lifecycle.inspection.matchingApprovedObjectId }
           : {}),
       };
+    case "workflow_phrase_pattern":
+      return {
+        ...(lifecycle.inspection.pendingCandidate?.id
+          ? { candidateId: lifecycle.inspection.pendingCandidate.id }
+          : {}),
+        ...(lifecycle.inspection.matchingApprovedObjectId
+          ? { approvedObjectId: lifecycle.inspection.matchingApprovedObjectId }
+          : {}),
+      };
     case "recurring_procedure":
       return {
         ...(lifecycle.inspection.pendingCandidate?.id
@@ -344,9 +363,9 @@ async function inspectLifecycle(params: {
   expectation: MemoryProofCaptureExpectation;
 }): Promise<LifecycleInspection> {
   assert(params.expectation.key, "capture expectation key is required");
-  assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
   switch (params.expectation.family) {
     case "response_style": {
+      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
       const inspection = await inspectResponseStyleLifecycle({
         config: params.config,
         key: params.expectation.key,
@@ -357,6 +376,7 @@ async function inspectLifecycle(params: {
       return { family: "response_style", inspection };
     }
     case "project_fact": {
+      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
       const inspection = await inspectProjectFactLifecycle({
         config: params.config,
         key: params.expectation.key,
@@ -368,6 +388,7 @@ async function inspectLifecycle(params: {
       return { family: "project_fact", inspection };
     }
     case "recurring_procedure": {
+      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
       const inspection = await inspectRecurringProcedureLifecycle({
         config: params.config,
         key: params.expectation.key,
@@ -378,6 +399,7 @@ async function inspectLifecycle(params: {
       return { family: "recurring_procedure", inspection };
     }
     case "workflow_improvement": {
+      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
       const inspection = await inspectWorkflowImprovementLifecycle({
         config: params.config,
         key: params.expectation.key,
@@ -387,6 +409,23 @@ async function inspectLifecycle(params: {
       });
       assert(inspection, "workflow-improvement lifecycle inspection unavailable");
       return { family: "workflow_improvement", inspection };
+    }
+    case "workflow_phrase_pattern": {
+      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
+      assert(
+        params.expectation.normalizedPhrase,
+        "capture expectation normalizedPhrase is required",
+      );
+      const inspection = await inspectWorkflowPhrasePatternLifecycle({
+        config: params.config,
+        patternKey: params.expectation.key,
+        targetKey: params.expectation.subjectKey,
+        normalizedPhrase: params.expectation.normalizedPhrase,
+        projectId: params.expectation.projectId,
+        logger: params.logger,
+      });
+      assert(inspection, "workflow phrase-pattern lifecycle inspection unavailable");
+      return { family: "workflow_phrase_pattern", inspection };
     }
   }
 }
@@ -587,18 +626,36 @@ async function runTranscriptCaptureStep(params: {
     !Array.isArray(submittedCapture.metadata.autoCapture)
       ? (submittedCapture.metadata.autoCapture as Record<string, unknown>)
       : undefined;
+  const phraseInductionMetadata =
+    submittedCapture?.metadata?.phraseInduction &&
+    typeof submittedCapture.metadata.phraseInduction === "object" &&
+    !Array.isArray(submittedCapture.metadata.phraseInduction)
+      ? (submittedCapture.metadata.phraseInduction as Record<string, unknown>)
+      : undefined;
   const derivedExpectation: MemoryProofCaptureExpectation = {
     ...params.step.expectation,
     ...(params.step.expectation.key
       ? {}
-      : typeof autoCaptureMetadata?.key === "string" && autoCaptureMetadata.key.trim().length > 0
-        ? { key: autoCaptureMetadata.key.trim() }
-        : {}),
+      : typeof phraseInductionMetadata?.patternKey === "string" &&
+          phraseInductionMetadata.patternKey.trim().length > 0
+        ? { key: phraseInductionMetadata.patternKey.trim() }
+        : typeof autoCaptureMetadata?.key === "string" && autoCaptureMetadata.key.trim().length > 0
+          ? { key: autoCaptureMetadata.key.trim() }
+          : {}),
     ...(params.step.expectation.subjectKey
       ? {}
-      : typeof autoCaptureMetadata?.subjectKey === "string" &&
-          autoCaptureMetadata.subjectKey.trim().length > 0
-        ? { subjectKey: autoCaptureMetadata.subjectKey.trim() }
+      : typeof phraseInductionMetadata?.targetKey === "string" &&
+          phraseInductionMetadata.targetKey.trim().length > 0
+        ? { subjectKey: phraseInductionMetadata.targetKey.trim() }
+        : typeof autoCaptureMetadata?.subjectKey === "string" &&
+            autoCaptureMetadata.subjectKey.trim().length > 0
+          ? { subjectKey: autoCaptureMetadata.subjectKey.trim() }
+          : {}),
+    ...(params.step.expectation.normalizedPhrase
+      ? {}
+      : typeof phraseInductionMetadata?.normalizedPhrase === "string" &&
+          phraseInductionMetadata.normalizedPhrase.trim().length > 0
+        ? { normalizedPhrase: phraseInductionMetadata.normalizedPhrase.trim() }
         : {}),
   };
   const lifecycle = await inspectLifecycle({

@@ -211,7 +211,7 @@ function normalizeLower(value: string): string {
   return normalizeText(value).toLowerCase();
 }
 
-function normalizeSemanticText(value: string): string {
+export function normalizeWorkflowImprovementSemanticText(value: string): string {
   return normalizeLower(value)
     .replace(/[’']/g, "")
     .replace(/\bpython3\b/g, "python")
@@ -375,7 +375,7 @@ function createMatch(lessonKey: WorkflowImprovementLessonKey): WorkflowImproveme
   };
 }
 
-function createGeneralizedMatch(params: {
+export function createGeneralizedWorkflowImprovementMatch(params: {
   guidancePattern: WorkflowImprovementGuidancePattern;
   subject: string;
   recommendedAction?: string;
@@ -838,7 +838,7 @@ function detectGeneralizedWorkflowLesson(text: string): {
       return {
         confidence: hasRepoLocalMarker(normalized) ? "high" : "medium",
         evidence: ["generalized_workflow_pattern", "use_instead_of", "explicit_scope"],
-        match: createGeneralizedMatch({
+        match: createGeneralizedWorkflowImprovementMatch({
           guidancePattern: "use_instead_of",
           subject: scope,
           recommendedAction,
@@ -852,7 +852,7 @@ function detectGeneralizedWorkflowLesson(text: string): {
       return {
         confidence: "high",
         evidence: ["generalized_workflow_pattern", "use_instead_of", "explicit_scope"],
-        match: createGeneralizedMatch({
+        match: createGeneralizedWorkflowImprovementMatch({
           guidancePattern: "use_instead_of",
           subject: scope,
           recommendedAction,
@@ -865,7 +865,7 @@ function detectGeneralizedWorkflowLesson(text: string): {
     return {
       confidence: hasRepoLocalMarker(normalized) || Boolean(scope) ? "high" : "medium",
       evidence: ["generalized_workflow_pattern", "avoid_then_use"],
-      match: createGeneralizedMatch({
+      match: createGeneralizedWorkflowImprovementMatch({
         guidancePattern: "use_instead_of",
         subject: scope || "repo workflow",
         recommendedAction,
@@ -883,7 +883,7 @@ function detectGeneralizedWorkflowLesson(text: string): {
     return {
       confidence: "high",
       evidence: ["generalized_workflow_pattern", "trust_for_scope", "signal_distinction"],
-      match: createGeneralizedMatch({
+      match: createGeneralizedWorkflowImprovementMatch({
         guidancePattern: "trust_for_scope",
         subject: scope,
         recommendedAction,
@@ -901,7 +901,7 @@ function detectGeneralizedWorkflowLesson(text: string): {
     return {
       confidence: hasRepoLocalMarker(normalized) ? "high" : "medium",
       evidence: ["generalized_workflow_pattern", "avoid_only", "explicit_scope"],
-      match: createGeneralizedMatch({
+      match: createGeneralizedWorkflowImprovementMatch({
         guidancePattern: "avoid_only",
         subject: scope,
         avoidAction,
@@ -928,7 +928,7 @@ export function getWorkflowImprovementSpec(
 export function detectWorkflowImprovementSemanticDecision(
   text: string,
 ): WorkflowImprovementSemanticCaptureDecision {
-  const normalized = normalizeSemanticText(text);
+  const normalized = normalizeWorkflowImprovementSemanticText(text);
   if (!normalized || normalized.length < 18 || normalized.length > 220) {
     return {
       action: "ignore",

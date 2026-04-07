@@ -121,6 +121,29 @@ That means phrase induction now serves two layers:
 Phrase induction should not require new lesson keys for every approved generic
 lesson. It should attach new phrases to the approved normalized lesson cluster.
 
+## Live boundary
+
+The first phrase-induction slice is now live for approved generalized workflow
+lessons.
+
+Live now:
+
+- approved generalized workflow lessons can seed reviewed phrase-pattern
+  candidates
+- the first confirming phrase observation creates a held phrase-pattern
+  candidate
+- later compatible phrase evidence can auto-promote that phrase pattern
+- approved phrase patterns feed deterministic matching back into generalized
+  workflow capture
+- approved phrase-pattern artifacts remain hidden from normal approved-only
+  hybrid retrieval
+
+Still not live:
+
+- phrase induction for response-style memory
+- phrase induction for named project facts
+- generic semantic fallback from phrase patterns
+
 ## Retrieval / application behavior
 
 Phrase induction does not directly affect retrieval policy.

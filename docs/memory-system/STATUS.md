@@ -2039,7 +2039,6 @@ Fast re-entry reading order:
 
 ## Next expected action
 
-Implement reviewed phrase induction for approved generic lessons so the first
-approved broader workflow lessons can teach the system additional deterministic
-triggers, then follow with generalized lesson retrieval/application expansion
-on the same pipeline.
+Implement generalized lesson retrieval/application expansion so approved
+generic workflow lessons apply more reliably in later repo-operating asks,
+then follow with broader project-rule learning on the same pipeline.

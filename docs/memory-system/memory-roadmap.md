@@ -318,12 +318,11 @@ Delivery enablement pause:
   - stronger newer conflicting clusters can supersede older approved generic
     lessons with explicit lineage
 - post-pivot execution path:
-  1. reviewed phrase induction for approved generic lessons
-  2. generalized lesson retrieval/application expansion
-  3. broader project-rule learning on the same generic lesson pipeline
-  4. unmet-need planning on the same generic lesson pipeline
-  5. reduced-profile self-improving capture integration
-  6. later learned-guidance advisory planning
+  1. generalized lesson retrieval/application expansion
+  2. broader project-rule learning on the same generic lesson pipeline
+  3. unmet-need planning on the same generic lesson pipeline
+  4. reduced-profile self-improving capture integration
+  5. later learned-guidance advisory planning
 - primary spec:
   - `/memory-system/specs/delivery-enablements`
 
@@ -1069,10 +1068,10 @@ Current phase note:
   - semantic routing remains limited to the older bounded approved families
   - broader project-rule learning still remains future work
 - the next work in this phase is no longer more lesson-key expansion; it is:
-  - approved-generic phrase induction
   - generalized lesson retrieval/application expansion
-  - broader project-rule learning only after phrase induction or a documented
-    alternative reduces generic miss rates
+  - broader project-rule learning on the same generic pipeline
+  - unmet-need planning on the same generic pipeline after retrieval behavior
+    is clearer
 
 Primary spec:
 

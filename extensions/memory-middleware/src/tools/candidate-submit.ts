@@ -61,6 +61,7 @@ import {
 } from "../workflow-improvement-lifecycle.js";
 import {
   detectWorkflowImprovementSemanticDecision,
+  type WorkflowImprovementCanonicalMatch,
   type WorkflowImprovementCaptureClass,
   type WorkflowImprovementGuidancePattern,
   type WorkflowImprovementLessonFamily,
@@ -71,6 +72,10 @@ import {
   type WorkflowImprovementTemplate,
   type WorkflowImprovementToolKey,
 } from "../workflow-improvement-semantic.js";
+import {
+  findApprovedWorkflowPhrasePatternMatch,
+  maybeInduceWorkflowPhrasePattern,
+} from "../workflow-phrase-induction.js";
 import {
   asJsonToolResult as asJsonToolResultBase,
   readContextUuid,
@@ -1029,10 +1034,40 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     "guidancePattern",
   ]);
   const lessonKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "lessonKey"]);
-  const candidateState = readNestedMetadataString(params.input.metadata, [
-    "candidateLifecycle",
-    "state",
+  const subject = readNestedMetadataString(params.input.metadata, ["autoCapture", "subject"]);
+  const value = readNestedMetadataString(params.input.metadata, ["autoCapture", "value"]);
+  const normalizedSubject = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "normalizedSubject",
   ]);
+  const normalizedValue = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "normalizedValue",
+  ]);
+  const recommendedAction = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "recommendedAction",
+  ]);
+  const normalizedRecommendedAction = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "normalizedRecommendedAction",
+  ]);
+  const avoidAction = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "avoidAction",
+  ]);
+  const normalizedAvoidAction = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "normalizedAvoidAction",
+  ]);
+  const rationale = readNestedMetadataString(params.input.metadata, ["autoCapture", "rationale"]);
+  const normalizedRationale = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "normalizedRationale",
+  ]);
+  const observedText =
+    readNestedMetadataString(params.input.metadata, ["workflowPhraseInduction", "observedText"]) ??
+    params.input.content;
   const isSupportedTemplate =
     template === "workflow_tool_gotcha" ||
     template === "workflow_environment_constraint" ||
@@ -1048,6 +1083,32 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
   ) {
     return null;
   }
+  const canonicalMatchForPhraseInduction: WorkflowImprovementCanonicalMatch | null =
+    isGenericLesson && subject && value && normalizedSubject && normalizedValue
+      ? {
+          captureClass: "workflow_generalized_guidance" as const,
+          candidateKind: "improvement" as const,
+          reasonCode: "workflow_generalized_guidance_statement" as const,
+          template: "workflow_generalized_guidance" as const,
+          lessonFamily: "generalized_workflow_lesson" as const,
+          ...(guidancePattern
+            ? { guidancePattern: guidancePattern as WorkflowImprovementGuidancePattern }
+            : {}),
+          subject,
+          value,
+          normalizedSubject,
+          normalizedValue,
+          content: value,
+          subjectKey,
+          key,
+          ...(recommendedAction ? { recommendedAction } : {}),
+          ...(normalizedRecommendedAction ? { normalizedRecommendedAction } : {}),
+          ...(avoidAction ? { avoidAction } : {}),
+          ...(normalizedAvoidAction ? { normalizedAvoidAction } : {}),
+          ...(rationale ? { rationale } : {}),
+          ...(normalizedRationale ? { normalizedRationale } : {}),
+        }
+      : null;
 
   const inspection = await inspectWorkflowImprovementLifecycle({
     config: params.runtime.config,
@@ -1125,6 +1186,27 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
   }
 
   if (inspection.matchingApprovedObjectId) {
+    if (params.input.projectId && isGenericLesson && canonicalMatchForPhraseInduction) {
+      await maybeInduceWorkflowPhrasePattern({
+        config: params.runtime.config,
+        candidateIngress: params.runtime.candidateIngress,
+        candidateReview: params.runtime.candidateReview,
+        candidatePromotion: params.runtime.candidatePromotion,
+        text: observedText,
+        projectId: params.input.projectId,
+        ...(params.input.sessionId ? { sessionId: params.input.sessionId } : {}),
+        ...(params.input.agentId ? { agentId: params.input.agentId } : {}),
+        detectionSource:
+          readNestedMetadataString(params.input.metadata, [
+            "semanticDetection",
+            "detectionSource",
+          ]) === "deterministic"
+            ? "deterministic"
+            : "semantic",
+        targetMatch: canonicalMatchForPhraseInduction,
+        source: "workflow_phrase_induction_candidate_submit",
+      });
+    }
     return {
       accepted: false,
       status: "failed",
@@ -1290,6 +1372,32 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         };
       }
     }
+    if (
+      params.input.projectId &&
+      isGenericLesson &&
+      promotionResult.promotedMemoryObjectId &&
+      canonicalMatchForPhraseInduction
+    ) {
+      await maybeInduceWorkflowPhrasePattern({
+        config: params.runtime.config,
+        candidateIngress: params.runtime.candidateIngress,
+        candidateReview: params.runtime.candidateReview,
+        candidatePromotion: params.runtime.candidatePromotion,
+        text: observedText,
+        projectId: params.input.projectId,
+        ...(params.input.sessionId ? { sessionId: params.input.sessionId } : {}),
+        ...(params.input.agentId ? { agentId: params.input.agentId } : {}),
+        detectionSource:
+          readNestedMetadataString(params.input.metadata, [
+            "semanticDetection",
+            "detectionSource",
+          ]) === "deterministic"
+            ? "deterministic"
+            : "semantic",
+        targetMatch: canonicalMatchForPhraseInduction,
+        source: "workflow_phrase_induction_candidate_submit",
+      });
+    }
     return {
       accepted: true,
       status: "accepted",
@@ -1310,6 +1418,7 @@ export async function submitCandidateFromTool(params: {
   context?: OpenClawPluginToolContext;
 }): Promise<CandidateSubmissionResult> {
   const normalizedInput = await normalizeManagedToolCandidateInput({
+    runtime: params.runtime,
     input: params.input,
     context: params.context,
   });
@@ -1552,7 +1661,7 @@ function buildRecurringProcedureSemanticMetadata(params: {
 }
 
 function buildWorkflowImprovementSemanticMetadata(params: {
-  detectionSource: "semantic";
+  detectionSource: "semantic" | "deterministic";
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
   lessonFamily: WorkflowImprovementLessonFamily;
@@ -1562,7 +1671,10 @@ function buildWorkflowImprovementSemanticMetadata(params: {
 }): Record<string, unknown> {
   return {
     semanticDetection: {
-      source: "workflow_improvement_semantic_v2",
+      source:
+        params.detectionSource === "deterministic"
+          ? "workflow_phrase_induction_v1"
+          : "workflow_improvement_semantic_v2",
       detectionSource: params.detectionSource,
       confidence: params.confidence,
       lessonFamily: params.lessonFamily,
@@ -1857,9 +1969,10 @@ type ManagedWorkflowImprovementResolution = {
   toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
   source: "content" | "raw";
-  detectionSource: "semantic";
+  detectionSource: "semantic" | "deterministic";
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
+  observedText: string;
 };
 
 function inferProjectFactFieldKeyFromSubject(subject: string): ProjectFactFieldKey | null {
@@ -2332,10 +2445,33 @@ async function resolveManagedRecurringProcedureSubmission(params: {
 }
 
 async function resolveManagedWorkflowImprovementSubmission(params: {
+  runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
   context?: OpenClawPluginToolContext;
 }): Promise<ManagedWorkflowImprovementResolution | null> {
   const { input, context } = params;
+  if (input.projectId) {
+    const deterministicFromContent = await findApprovedWorkflowPhrasePatternMatch({
+      config: params.runtime.config,
+      text: input.content,
+      projectId: input.projectId,
+    });
+    if (deterministicFromContent) {
+      return {
+        parsed: toOrdinaryTurnWorkflowImprovementMatch(deterministicFromContent.match),
+        lessonFamily: deterministicFromContent.match.lessonFamily,
+        reviewMode: "hold_for_more_evidence",
+        ...(deterministicFromContent.match.guidancePattern
+          ? { guidancePattern: deterministicFromContent.match.guidancePattern }
+          : {}),
+        source: "content",
+        detectionSource: "deterministic",
+        confidence: "high",
+        evidence: ["approved_phrase_pattern_match"],
+        observedText: input.content,
+      };
+    }
+  }
   const contentDecision = detectWorkflowImprovementSemanticDecision(input.content);
   if (contentDecision.action === "capture") {
     return {
@@ -2354,6 +2490,7 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
       detectionSource: "semantic",
       confidence: contentDecision.confidence,
       evidence: contentDecision.evidence,
+      observedText: input.content,
     };
   }
 
@@ -2367,6 +2504,28 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
   }
 
   for (const rawCandidate of rawCandidates) {
+    if (input.projectId) {
+      const deterministicFromRaw = await findApprovedWorkflowPhrasePatternMatch({
+        config: params.runtime.config,
+        text: rawCandidate,
+        projectId: input.projectId,
+      });
+      if (deterministicFromRaw) {
+        return {
+          parsed: toOrdinaryTurnWorkflowImprovementMatch(deterministicFromRaw.match),
+          lessonFamily: deterministicFromRaw.match.lessonFamily,
+          reviewMode: "hold_for_more_evidence",
+          ...(deterministicFromRaw.match.guidancePattern
+            ? { guidancePattern: deterministicFromRaw.match.guidancePattern }
+            : {}),
+          source: "raw",
+          detectionSource: "deterministic",
+          confidence: "high",
+          evidence: ["approved_phrase_pattern_match"],
+          observedText: rawCandidate,
+        };
+      }
+    }
     const semanticFromRaw = detectWorkflowImprovementSemanticDecision(rawCandidate);
     if (semanticFromRaw.action !== "capture") {
       continue;
@@ -2387,6 +2546,7 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
       detectionSource: "semantic",
       confidence: semanticFromRaw.confidence,
       evidence: semanticFromRaw.evidence,
+      observedText: rawCandidate,
     };
   }
 
@@ -2469,6 +2629,7 @@ async function resolveManagedCorrectionSubmission(params: {
 }
 
 async function normalizeManagedToolCandidateInput(params: {
+  runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
   context?: OpenClawPluginToolContext;
 }): Promise<CandidateSubmissionInput> {
@@ -2497,6 +2658,7 @@ async function normalizeManagedToolCandidateInput(params: {
         },
       );
       return await normalizeManagedToolCandidateInput({
+        runtime: params.runtime,
         input: normalizedCorrectionInput,
         context,
       });
@@ -2524,6 +2686,7 @@ async function normalizeManagedToolCandidateInput(params: {
         },
       );
       return await normalizeManagedToolCandidateInput({
+        runtime: params.runtime,
         input: normalizedCorrectionInput,
         context,
       });
@@ -2700,6 +2863,7 @@ async function normalizeManagedToolCandidateInput(params: {
 
   if (input.kind === "improvement") {
     const workflowImprovementResolution = await resolveManagedWorkflowImprovementSubmission({
+      runtime: params.runtime,
       input,
       context,
     });
@@ -2715,6 +2879,9 @@ async function normalizeManagedToolCandidateInput(params: {
         category: "workflow_improvement",
         source: "explicit_workflow_improvement",
         subject_key: workflowImprovementResolution.parsed.subjectKey,
+        workflowPhraseInduction: {
+          observedText: workflowImprovementResolution.observedText,
+        },
         autoCapture: {
           source: "model_tool_candidate_submit",
           captureSeam: "model_tool_primary",
@@ -2735,7 +2902,9 @@ async function normalizeManagedToolCandidateInput(params: {
           key: workflowImprovementResolution.parsed.key,
           subjectKey: workflowImprovementResolution.parsed.subjectKey,
           subject: workflowImprovementResolution.parsed.subject,
+          normalizedSubject: workflowImprovementResolution.parsed.normalizedSubject,
           value: workflowImprovementResolution.parsed.value,
+          normalizedValue: workflowImprovementResolution.parsed.normalizedValue,
           ...(workflowImprovementResolution.parsed.recommendedAction
             ? { recommendedAction: workflowImprovementResolution.parsed.recommendedAction }
             : {}),

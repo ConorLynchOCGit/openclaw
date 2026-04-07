@@ -38,6 +38,7 @@ import {
 } from "../../runtime-api.js";
 import { createCandidateIngressPort } from "../candidate-ingress.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
+import { findApprovedWorkflowPhrasePatternMatch } from "../workflow-phrase-induction.js";
 import { createCandidateGetTool } from "./candidate-get.js";
 import { createCandidateListTool } from "./candidate-list.js";
 import { createCandidatePromoteMemoryTool } from "./candidate-promote-memory.js";
@@ -3438,6 +3439,195 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         matchedFields: expect.arrayContaining(["fts_search_document"]),
       }),
     );
+  });
+
+  it("auto-approves a repeated phrase pattern for an approved generic workflow lesson and keeps the artifact out of hybrid retrieval", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const searchTool = createMemoryObjectSearchHybridTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      } as never,
+    });
+
+    const initialSubmit = await submitTool.execute("call-generic-phrase-1", {
+      kind: "improvement",
+      content:
+        "For release proof notes here, use bulletized proof IDs instead of paraphrased rollout summaries.",
+      projectId: seeded.projectId,
+    });
+    const genericCandidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [genericCandidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const approvingSubmit = await submitTool.execute("call-generic-phrase-2", {
+      kind: "improvement",
+      content:
+        "Use bulletized proof IDs for release proof notes here instead of paraphrased rollout summaries.",
+      projectId: seeded.projectId,
+    });
+    const approvedLessonId = (approvingSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const phraseAttemptOne = await submitTool.execute("call-generic-phrase-3", {
+      kind: "improvement",
+      content:
+        "Prefer bulletized proof IDs for release proof notes instead of paraphrased rollout summaries.",
+      projectId: seeded.projectId,
+    });
+    expect(phraseAttemptOne.details).toEqual(
+      expect.objectContaining({
+        kind: "improvement",
+      }),
+    );
+
+    const phraseCandidateRow = await querySingleRow<{
+      id: string;
+      review_state: string;
+      lifecycle_state: string | null;
+      normalized_phrase: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          id::text as id,
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state,
+          metadata->'candidateMetadata'->'phraseInduction'->>'normalizedPhrase' as normalized_phrase
+        from memory_middleware.memory_objects
+        where project_id = $1::uuid
+          and metadata->'candidateMetadata'->>'artifactFamily' = 'workflow_phrase_pattern'
+          and review_state = 'candidate'
+        order by created_at desc
+        limit 1
+      `,
+      [seeded.projectId],
+    );
+    expect(phraseCandidateRow).toEqual({
+      id: expect.any(String),
+      review_state: "candidate",
+      lifecycle_state: "hold_for_more_evidence",
+      normalized_phrase:
+        "prefer bulletized proof ids for release proof notes instead of paraphrased rollout summaries.",
+    });
+
+    const phraseClient = await connectClient(dbEnvironment.connectionString);
+    try {
+      await phraseClient.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [phraseCandidateRow.id],
+      );
+    } finally {
+      await phraseClient.end();
+    }
+
+    const phraseAttemptTwo = await submitTool.execute("call-generic-phrase-4", {
+      kind: "improvement",
+      content:
+        "Prefer bulletized proof IDs for release proof notes instead of paraphrased rollout summaries.",
+      projectId: seeded.projectId,
+    });
+    expect(phraseAttemptTwo.details).toEqual(
+      expect.objectContaining({
+        kind: "improvement",
+      }),
+    );
+
+    const approvedPhraseRow = await querySingleRow<{
+      id: string;
+      review_state: string;
+      artifact_family: string | null;
+      promotion_profile: string | null;
+      normalized_phrase: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          id::text as id,
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->>'artifactFamily' as artifact_family,
+          metadata->'promotionMetadata'->'promotionMetadata'->>'autoPromotionProfile' as promotion_profile,
+          metadata->'candidateMetadata'->'phraseInduction'->>'normalizedPhrase' as normalized_phrase
+        from memory_middleware.memory_objects
+        where project_id = $1::uuid
+          and metadata->'candidateMetadata'->>'artifactFamily' = 'workflow_phrase_pattern'
+          and review_state = 'approved'
+        order by created_at desc
+        limit 1
+      `,
+      [seeded.projectId],
+    );
+    expect(approvedPhraseRow).toEqual({
+      id: expect.any(String),
+      review_state: "approved",
+      artifact_family: "workflow_phrase_pattern",
+      promotion_profile: "workflow_phrase_induction_v1",
+      normalized_phrase:
+        "prefer bulletized proof ids for release proof notes instead of paraphrased rollout summaries.",
+    });
+
+    const deterministicPattern = await findApprovedWorkflowPhrasePatternMatch({
+      config: runtime.config,
+      text: "Prefer bulletized proof IDs for release proof notes instead of paraphrased rollout summaries.",
+      projectId: seeded.projectId,
+    });
+    expect(deterministicPattern).toEqual(
+      expect.objectContaining({
+        approvedObjectId: approvedPhraseRow.id,
+        match: expect.objectContaining({
+          key: expect.any(String),
+          lessonFamily: "generalized_workflow_lesson",
+          guidancePattern: "use_instead_of",
+          subject: "release proof notes",
+        }),
+      }),
+    );
+
+    const searchResult = await searchTool.execute("call-generic-phrase-search", {
+      query: "release proof notes bulletized proof ids",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+    const records = (
+      searchResult.details as {
+        accepted: boolean;
+        status: string;
+        records: Array<{ id: string }>;
+      }
+    ).records;
+    expect(records.map((record) => record.id)).toContain(approvedLessonId);
+    expect(records.map((record) => record.id)).not.toContain(approvedPhraseRow.id);
   });
 
   it("rejects an expired generalized workflow lesson hold before creating a fresh cluster candidate", async () => {
