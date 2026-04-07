@@ -144,12 +144,19 @@ Do not let the self-improving origin silently override approved native lessons.
 Do not enable the reduced-profile self-improving seam until all of the
 following are true:
 
-1. generalized lesson normalization is stable
-2. generalized lesson auto-review exists
-3. candidate backlog-control rules are live
-4. conflict handling against native capture is implemented
-5. proof-runner support exists for this provenance path
-6. operator observability can distinguish self-improving-origin decisions
+1. the post-v3 substrate blockers before self-improving capture are landed:
+   - full ingestion control-plane flattening
+   - real application-selection / behavior-planning layer
+   - retrieval + semantic-routing control-plane flattening
+   - recurring-procedure staged substrate redesign where relevant
+   - correction-policy cleanup
+2. generalized lesson normalization is stable
+3. generalized lesson auto-review exists
+4. candidate backlog-control rules are live
+5. conflict handling against native capture is implemented
+6. proof-runner support exists for this provenance path on the adapterized
+   proof substrate
+7. operator observability can distinguish self-improving-origin decisions
 
 ## Candidate-only posture
 
@@ -191,6 +198,11 @@ Production enablement should start with:
 - one allowed lesson family
 - explicit disablement switch
 - proof that duplicate and conflict handling work
+
+Do not use this spec as permission to start reduced-profile self-improving
+capture immediately after one narrow flattening cleanup slice. The stronger
+substrate work now documented in the roadmap and sequencing docs is a hard
+prerequisite.
 
 ## Observability and audit
 

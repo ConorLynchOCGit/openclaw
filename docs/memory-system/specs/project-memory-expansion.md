@@ -14,33 +14,30 @@ Live now:
 - project-scoped clustering and duplicate suppression
 - explicit correction / supersede
 - approved-only hybrid retrieval
-- direct named-project retrieval/application parity improvements
 
 ## Intentional product-policy boundaries
 
-Project facts should remain:
+Project facts remain:
 
 - explicit
 - project-scoped
 - stricter than generic guidance
 
-They should not become:
+They do not become:
 
 - speculative project summaries
 - arbitrary new fact fields without bounded semantics
 - a backdoor to entity-profile expansion before that family exists
 
-## What flattening will absorb into shared substrate
+## Updated flattening posture
 
-Project facts should move onto shared:
+Project facts already share some substrate, but they still need:
 
-- family-definition registry
-- unified ingestion resolver
-- unified clustered lifecycle for the generic lane
-- unified correction / supersede
-- retrieval feature framework
-- behavior-profile layer
-- registry-driven proof inspection
+- full ingestion-control-plane migration
+- real application-selection handoff for `direct_answer`
+- retrieval/routing control-plane integration instead of partial direct-intent
+  shaping
+- correction-policy cleanup without legacy stringly gating
 
 ## What remains intentionally family-specific
 
@@ -48,13 +45,9 @@ Project facts should move onto shared:
 - application mode remains `direct_answer`
 - stricter truth posture remains
 
-## What future family work must not re-implement locally
+## Read with
 
-Do not keep project facts on a permanently bespoke path for:
-
-- direct-project retrieval shaping
-- cluster lifecycle
-- correction targeting
-
-Future entity-profile work should reuse the flattened substrate instead of
-copying the current project-fact stack.
+- `/memory-system/specs/full-ingestion-control-plane`
+- `/memory-system/specs/application-selection-layer`
+- `/memory-system/specs/retrieval-and-routing-control-plane`
+- `/memory-system/specs/correction-policy-cleanup`

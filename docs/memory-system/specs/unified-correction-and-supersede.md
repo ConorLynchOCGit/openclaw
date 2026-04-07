@@ -1,161 +1,55 @@
 # Unified Correction And Supersede
 
-## Purpose / problem
+## Purpose
 
-Correction and supersede behavior now exists across multiple families, but it
-still lands through family-specific logic. That is enough for practical parity,
-not enough for scalable architecture.
+Document the currently landed correction/supersede substrate and clarify what
+remains incomplete.
 
-This spec defines one correction engine with family policy hooks.
+## Current landed value
 
-## Why this is needed now
+The current correction/supersede work now provides:
 
-Every future family will need some answer to:
+- shared correction planning for several bounded families
+- shared approved-memory supersede execution for several paths
+- shared lineage writing for those paths
 
-- how explicit correction is detected
-- how a target is resolved
-- when correction stays held versus supersedes immediately
-- how lineage is recorded
+That is real substrate progress.
 
-If those rules continue to be implemented per family, the repo will keep adding
-parallel systems.
+## Why this spec is now explicitly partial
 
-## Current parallel systems this replaces or reduces
+The current layer is not yet the final correction-policy substrate.
 
-- response-style generic correction logic
-- project-fact subject-scoped supersede logic
-- recurring-procedure correction/supersede logic
-- generalized lesson supersede handling
+It still contains:
 
-## Architecture fit
+- legacy stringly/runtime-coupled gating
+- incomplete declarative policy coverage
+- incomplete procedure fit
+- incomplete unmet-need conservative posture modeling
 
-The correction engine sits after ingestion resolution and before lifecycle
-resolution. It consumes:
+## Relationship to the next correction phase
 
-- explicit correction intent from the ingestion resolver
-- family definition policy
-- currently approved or held targets
+The next target is specified in:
 
-It emits:
+- `/memory-system/specs/correction-policy-cleanup`
 
-- hold as correction evidence
-- reject
-- immediate supersede
-- lineage metadata
+That work should make correction posture declarative and remove the remaining
+legacy control-flow smell.
 
-## Domain model
+## What remains valid from the current layer
 
-### Shared correction contract
+- shared planning direction
+- shared lineage direction
+- bounded family differences remain appropriate
 
-```ts
-type CorrectionPolicy = {
-  familyId: string;
-  mode: "held_correction" | "immediate_supersede_when_targeted";
-  explicitCorrectionRequired: boolean;
-  targetFields: string[];
-  subjectIdentityFields: string[];
-};
-```
+## What remains incomplete
 
-```ts
-type CorrectionResolution =
-  | { outcome: "not_a_correction" }
-  | { outcome: "held_correction"; candidateClusterId: string }
-  | {
-      outcome: "immediate_supersede";
-      priorApprovedId: string;
-      nextApprovedPayload: Record<string, unknown>;
-      lineageReason: string;
-    }
-  | { outcome: "reject"; reasonCode: string };
-```
+- declarative immediate-versus-held policy
+- procedure staged-substrate fit
+- removal of legacy string gates
+- final proof alignment
 
-## Current-state pain points anchored to the repo
+## Implementation rule
 
-- response style now supports direct generic correction supersede, but that
-  behavior is still implemented as response-style-specific logic
-- generalized families already support stronger supersede lineage than some
-  older bounded families
-- target resolution rules are duplicated and inconsistently expressed
-
-## Proposed contracts and interfaces
-
-### Correction resolver service
-
-The service must:
-
-1. confirm explicit correction language when required
-2. resolve the target subject within family scope
-3. consult family correction policy
-4. either emit a held correction or immediate supersede resolution
-5. record explicit lineage metadata
-
-### Target-resolution rule
-
-Target resolution must be based on normalized subject identity, not freeform
-string similarity.
-
-### Lineage rule
-
-Supersede must always record:
-
-- prior approved object id
-- next approved object id
-- review or automatic decision id
-- reason code
-
-## What remains family policy instead of becoming generic
-
-- some families may remain conservative and require held correction first
-- procedures may require clearer same-checklist identity than guidance
-  families
-- unmet needs may intentionally avoid aggressive supersede because capability
-  granularity is the safer default
-
-## Rollout posture
-
-Move correction detection to the shared engine before deleting family-specific
-paths. Immediate supersede should only be enabled where the current family spec
-already allows it.
-
-Current live rollout:
-
-- `extensions/memory-middleware/src/memory-correction-engine.ts`
-  centralizes correction intent normalization, target validation, and
-  immediate-vs-held dispatch
-- `extensions/memory-middleware/src/memory-object-supersede.ts`
-  centralizes approved memory-object supersede execution and lineage writes
-- live adopters now include response style, project facts, and workflow-family
-  supersede targeting
-- unmet needs still retain their conservative held-correction posture
-- recurring procedures still retain validated-procedure-specific correction
-  distinctions where needed
-
-## Proof / evaluation requirements
-
-Implementation must prove:
-
-1. at least two families share the same correction engine
-2. explicit non-correction restatements do not supersede
-3. lineage remains queryable and auditable
-
-## Risks / failure modes
-
-- false correction detection mutates approved memory
-- target resolution is too fuzzy
-- held-correction and immediate-supersede rules collapse into one unsafe mode
-
-## Out of scope
-
-- user-facing memory browser
-- silent mutation
-- cross-family semantic correction fallback
-
-## Follow-up implementation slices
-
-1. extend the shared engine to the remaining recurring-procedure correction
-   surfaces where the validated target allows it
-2. remove remaining family-specific correction wrappers that only forward to
-   the shared engine
-3. align proof inspection and behavior-profile selection with shared correction
-   outcomes
+Do not describe correction-policy cleanup as if it were already done. The
+current shared layer is a partial bridge that still needs a stronger control
+plane.

@@ -11,8 +11,7 @@ Live now:
 
 - bounded recurring-procedure capture for supported named checklists
 - bounded generic named-checklist lane
-- clustered lifecycle and explicit repair / supersede for supported procedure
-  identities
+- explicit correction / supersede
 - validated-procedure retrieval
 - suggestion-first application for nearby advice asks
 - direct-use only on clear checklist asks
@@ -27,28 +26,32 @@ They remain:
 - direct-use only on clear checklist asks
 - explicitly non-autonomous
 
-## What flattening will absorb into shared substrate
+## Updated flattening posture
 
-Recurring procedures should still use shared:
+The repo now accepts that recurring procedures still retain too much historical
+subsystem shape.
 
-- family-definition registry
-- unified ingestion resolver
-- unified correction / supersede
-- retrieval feature framework
-- behavior-profile layer
-- registry-driven proof inspection
+That does not mean flattening procedures into ordinary memory objects.
+It means redesigning them as a staged family on shared substrate.
 
-Lifecycle flattening must preserve the distinct validated-procedure target and
-must not flatten procedures into ordinary memory-object approval.
+## Shared substrate targets
+
+Procedures should ultimately share:
+
+- full ingestion control plane
+- retrieval/routing control plane where honest
+- declarative correction-policy substrate where honest
+- proof adapter substrate
+- authoritative family registry
 
 ## What remains intentionally family-specific
 
-- validated-procedure storage target
-- clearer direct-use threshold
-- procedure application posture
+- validated artifact target
+- clear direct-use threshold
+- suggestion-first application posture
 
-## What future family work must not re-implement locally
+## Read with
 
-Do not build new procedural families with a local capture/lifecycle/retrieval
-stack. Use the flattened substrate and keep only the procedure-specific product
-policy distinct.
+- `/memory-system/specs/recurring-procedure-staged-substrate`
+- `/memory-system/specs/application-selection-layer`
+- `/memory-system/specs/retrieval-and-routing-control-plane`

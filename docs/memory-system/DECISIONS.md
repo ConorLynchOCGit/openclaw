@@ -3,89 +3,101 @@
 ## Current active architectural decisions
 
 This file records the currently active architecture decisions that govern the
-memory roadmap after the final family-parity batch.
+memory roadmap after flattening batch v3 and the accepted post-v3 architecture
+review.
 
-## 2026-04 — flatten before more families
+## 2026-04 — practical parity was enough to enter flattening, not enough to move on
 
-The next major roadmap step is not immediate reduced-profile self-improving
-capture. It is substrate flattening.
+Practical parity across the six landed families was accepted as sufficient to
+start flattening.
 
-Reason:
+It was not accepted as proof that:
 
-- the six landed families are at practical parity
-- the main remaining scaling problem is accidental implementation duplication
-- adding more families first would multiply parallel systems
+- the substrate was already flat enough for reduced-profile self-improving
+  capture
+- the substrate was already flat enough for new memory families
 
-## 2026-04 — practical parity is enough to proceed, not enough to expand broadly
+## 2026-04 — the current docs were too optimistic after batch v3
 
-Practical parity is accepted as sufficient to move out of the parity phase.
+The earlier roadmap/status/current-slice framing that reduced the remaining
+work to one narrow closeout slice is no longer accepted.
 
-Practical parity is not accepted as proof that:
-
-- all families now have the same capability envelope
-- all families should share one identical product-policy posture
-- the current implementation is already flat enough for major family expansion
+The accepted review conclusion is that multiple more flatten/refactor slices
+are still warranted before later phases.
 
 ## 2026-04 — preserve real family-policy differences
 
-The flattening phase must preserve:
+The substrate work must preserve:
 
 - procedures as `suggestion_first` and direct-use only on clear ask
 - project facts as explicit, scoped, and stricter than generic guidance
 - response style as bounded reply-shaping memory rather than broad personality
   memory
+- unmet needs as recommendation-only
 - semantic routing as hybrid-first and family-gated
+- phrase induction as family-eligible rather than universal
 
-## 2026-04 — collapse accidental parallel systems
+## 2026-04 — collapse accidental parallel systems before self-improving capture
 
-The flattening phase must collapse accidental duplication across:
+The next substrate work must collapse accidental duplication across:
 
-- family policy declaration
 - transcript and tool-side ingestion
-- clustered lifecycle handling
-- correction / supersede plumbing
-- phrase-pattern infrastructure
-- retrieval scoring
-- behavior application
-- proof inspection
+- retrieval intent and semantic routing
+- application selection and suppression
+- recurring-procedure subsystem shape
+- correction-policy control flow
+- proof-runner structure
+- registry authority
+- memory-family contract boundaries
 
-## 2026-04 — new families should land on the flattened substrate
+## 2026-04 — behavior-profile and proofing are only partially landed
 
-New cross-domain families should not land on top of the current branch-heavy
-substrate.
+Current accepted framing:
 
-They should land only after the flattening phase is materially complete enough
-that new family work can reuse:
+- behavior-profile is partially landed as prompt-support infrastructure
+- it is not yet the real application-selection layer
+- proofing is partially flattened
+- it is not yet a fully adapter-driven proof substrate
 
-- family-definition registry
-- unified ingestion resolver
-- unified clustered lifecycle
-- unified correction / supersede
-- retrieval feature framework
-- behavior-profile layer
-- registry-driven proof inspection
+## 2026-04 — registry policy is not yet authoritative enough
 
-## 2026-04 — keep hybrid-first approved-only posture
+The registry is live and useful.
 
-Flattening does not authorize:
+It is not yet accepted as the full substrate control plane because:
 
-- candidate retrieval in normal user-facing behavior
-- semantic retrieval as the default path
-- broad autonomy
+- some policy remains duplicated outside it
+- proof definitions are still separately modeled
+- semantic-routing policy is not yet fully runtime-authoritative
+- workflow-family mapping still exists outside the registry in runtime seams
 
-The current hybrid-first approved-only posture remains the controlling safety
-boundary.
+## 2026-04 — reduced-profile self-improving capture waits for stronger substrate work
 
-## 2026-04 — phrase induction remains family-eligible, not universal
+Before reduced-profile self-improving capture, the repo must land:
 
-Shared phrase substrate is desirable.
+1. full ingestion control-plane flattening
+2. real application-selection / behavior-planning layer
+3. retrieval + semantic-routing control-plane flattening
+4. recurring-procedure staged substrate redesign
+5. correction-policy cleanup
 
-Universal phrase eligibility is not.
+## 2026-04 — new families wait for additional authority and scale cleanup
 
-Current approved families for phrase induction remain:
+Before new memory families, the repo must also land:
 
-- workflow lessons
-- response style
+6. proof-runner adapterization
+7. registry authority cleanup
+8. memory-family contract / boundary cleanup
 
-Other families should gain phrase support only after a separate safety/product
-fit decision.
+## 2026-04 — should-fix-soon cleanup is real but secondary
+
+The following work is accepted as important near-term cleanup:
+
+- improve unit seams around retrieval intent, application selection, and
+  semantic fallback
+- reduce duplicated SQL expression scaffolding between approved and candidate
+  read surfaces
+- replace remaining stringly control-flow with closed policy enums or adapter
+  registration
+
+These should be planned soon, but they do not replace the primary blocker
+sequence above.

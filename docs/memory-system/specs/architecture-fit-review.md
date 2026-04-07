@@ -2,127 +2,107 @@
 
 ## Verdict
 
-The spec pack is now fit for a flattening phase.
+The spec pack is still fit for execution, but only after the roadmap is
+reframed honestly.
 
-That is the correct next phase because:
-
-- the six landed families are at practical parity
-- the product-policy differences are clearer than before
-- the remaining scaling problem is accidental parallel implementation
-
-The next phase should therefore flatten shared substrate, not jump directly to
-reduced-profile self-improving capture or new family expansion.
+The next architecture work is not a small closeout. It is a broader control-
+plane and authority cleanup phase.
 
 ## What the current architecture already got right
 
-- semantic detection, canonicalization, lifecycle, retrieval, and application
-  are conceptually separate layers
 - the six landed families already prove one broader memory system exists
-- approved-only and hybrid-first guardrails are intact
-- procedures, facts, and response style already have justified policy
-  differences
+- approved-only and hybrid-first guardrails remain intact
+- procedures, facts, response style, and unmet needs already have justified
+  policy differences
+- flattening batches v1-v3 did reduce real duplication
 
-## What is still over-coupled
+## What the previous post-v3 framing got wrong
 
-The main architectural problem is not missing infra. It is policy still being
-declared in too many places:
+- it over-read behavior-profile as if it were already the application layer
+- it over-read proof-family definitions as if proofing were already adapter-
+  driven
+- it over-read retrieval feature composition as if retrieval/routing were
+  largely flattened
+- it under-read how much ingestion and procedure work still remains
 
-- capture and candidate-submit each resolve families locally
-- lifecycle and correction behavior are still partly per-family implementations
-- retrieval ranking is too tied to family-specific SQL branches
-- prompt rendering still carries application policy
-- proof-runner still carries family selection policy
+## Main remaining architecture problems
 
-## Flattening ownership map
+- ingestion is still split across more than one family-control plane
+- retrieval policy is still split across framework, SQL, reshaping, and
+  semantic sidecar routing
+- application selection is still not a first-class runtime structure
+- recurring procedures still retain too much historical subsystem shape
+- correction policy is still not fully declarative
+- registry authority is not yet strong enough to justify calling it the full
+  control plane
+- proofing is still registry-plus-switch
+- memory-family boundaries across core/middleware/plugin-sdk still need cleanup
 
-### Family-definition registry owns
+## Ownership map for the next push
 
-- family identity
-- storage kind
-- scope model
-- canonical fields
-- lifecycle policy
-- correction policy
-- phrase policy
-- retrieval policy
-- application policy
-- semantic-routing policy
-- proof policy
+### Full ingestion control plane should own
 
-### Unified ingestion resolver owns
+- transcript/tool submission unification
+- deterministic parsing orchestration
+- phrase matching orchestration
+- semantic parsing orchestration
+- correction intent normalization
+- provenance output
 
-- transcript and tool-side family resolution
-- canonical payload formation
-- ambiguity outcome
-- correction-intent signaling
+### Application-selection layer should own
 
-### Unified clustered lifecycle owns
+- selected vs suppressed memories
+- application mode enforcement
+- application reason codes
+- rendering handoff
 
-- hold / approve / reject / supersede transitions
-- cluster and subject identity
-- stale handling
+### Retrieval/routing control plane should own
 
-### Unified correction / supersede owns
+- normalized query intent
+- retrieval surface planning
+- feature computation
+- family suppression
+- semantic fallback eligibility
 
-- explicit correction targeting
-- held versus immediate correction posture
-- lineage generation
+### Procedure staged substrate should own
 
-### Retrieval feature framework owns
+- candidate-to-validated staging
+- distinct procedure artifact semantics
+- shared substrate reuse points
 
-- feature extraction
-- feature weighting by family policy
-- matched-field evidence
-- direct-intent shaping
+### Correction-policy cleanup should own
 
-### Behavior-profile layer owns
+- declarative correction posture
+- lineage requirements
+- target selection rules
 
-- selected versus suppressed memories
-- family application posture
-- prompt-rendering inputs
+### Proof adapterization should own
 
-### Registry-driven proof inspection owns
+- proof adapter registration
+- lifecycle/artifact adapter dispatch
+- backward-compatible proof output
 
-- lifecycle inspection mode selection
-- phrase inspection support
-- matched-field evidence mapping
+### Registry authority cleanup should own
 
-## Must flatten now
+- authoritative policy source of truth
+- elimination of duplicate policy tables/mappings
 
-- family-definition registry
-- unified ingestion resolver
-- unified clustered lifecycle
-- unified correction / supersede
-- retrieval feature framework
-- behavior-profile layer
+### Contract boundary cleanup should own
 
-## Can flatten later inside the same phase
-
-- unified phrase-pattern engine
-- registry-driven proof inspection
+- clean memory-family policy seam across core/middleware/plugin-sdk
 
 ## Must remain intentionally family-specific
 
 - procedure application posture
 - stricter project-fact truth posture
 - bounded response-style scope
+- unmet-need recommendation-only posture
 - family-gated semantic routing
 - family eligibility for phrase induction
 
-## Main remaining architecture risk
-
-The main risk is now architectural drift from adding more families before
-flattening:
-
-- more ingestion duplication
-- more lifecycle duplication
-- more retrieval CASE growth
-- more prompt policy sprawl
-- more proof-runner branches
-
 ## Conclusion
 
-The roadmap is now fit for execution only if the next execution tranche is
-flattening. If the repo resumes self-improving capture or major family
-expansion before flattening, it will compound the very duplication this spec
-pack is trying to remove.
+The roadmap remains fit for execution only if the repo now treats the stronger
+substrate push as the real next phase. If the repo resumes self-improving
+capture or new family work too early, it will compound partial flattening and
+raise proof burden unnecessarily.

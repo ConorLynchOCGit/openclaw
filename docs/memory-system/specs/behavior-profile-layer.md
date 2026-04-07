@@ -1,180 +1,70 @@
 # Behavior Profile Layer
 
-## Purpose / problem
+## Purpose
 
-`extensions/memory-core/src/prompt-section.ts` currently carries too much
-application policy. It is not only rendering prompt text; it is also deciding:
+Document the currently landed behavior-profile bridge and clarify what is still
+missing before the repo can honestly say it has a real application-selection
+layer.
 
-- which families to query
-- what kind of result should win
-- when adjacent results should be suppressed
-- how guidance-only and suggestion-first behavior should be expressed
+## Current landed value
 
-That makes prompt text a hidden application engine.
+The current behavior-profile layer did improve the architecture:
 
-This spec defines an explicit behavior-profile layer that sits between
-retrieval and prompt rendering.
-
-## Why this is needed now
-
-Before more families are added, the system needs one layer that says:
-
-- what memories were selected
-- why they were selected
-- how they should be applied
-- which ones were suppressed
-
-Without that layer, each new family adds more prompt-only branching.
-
-## Current parallel systems this replaces or reduces
-
-- family-specific retrieval/application guidance in `prompt-section.ts`
-- prompt-only suppression of adjacent project memories
-- prompt text carrying application posture rules that belong in code
-
-## Architecture fit
-
-The behavior-profile layer consumes:
-
-- approved retrieval results
-- family definitions
-- query intent
-
-It produces:
-
-- a structured application profile
-- prompt-rendering inputs
-- applied/suppressed memory attribution
-
-It does not:
-
-- perform retrieval itself
-- mutate memory
-- override family safety policy
-
-## Domain model
-
-### Shared application profile
-
-```ts
-type BehaviorProfile = {
-  queryIntent: string;
-  selectedItems: AppliedMemoryItem[];
-  suppressedItems: SuppressedMemoryItem[];
-  renderingHints: {
-    includeProjectFacts: boolean;
-    includeGuidance: boolean;
-    includeProceduresAsSuggestions: boolean;
-    includeResponseStyle: boolean;
-  };
-};
-
-type AppliedMemoryItem = {
-  familyId: string;
-  memoryId: string;
-  applicationMode:
-    | "shape_reply"
-    | "guidance_only"
-    | "recommendation_only"
-    | "suggestion_first"
-    | "direct_answer";
-  reasonCodes: string[];
-};
-
-type SuppressedMemoryItem = {
-  familyId: string;
-  memoryId: string;
-  reasonCode:
-    | "lower_rank_than_family_winner"
-    | "adjacent_family_suppressed"
-    | "weak_overlap"
-    | "not_clear_checklist_ask";
-};
-```
-
-## Current-state pain points anchored to the repo
-
-- prompt rendering and selection policy are interleaved
-- procedure posture is encoded in prompt instructions instead of a structured
-  application mode
-- direct named-project selection rules are partly in retrieval and partly in
-  prompt text
-
-## Proposed contracts and interfaces
-
-### Profile builder
-
-Create a profile builder that:
-
-1. receives ranked retrieval results plus query intent
-2. applies family application policy from the registry
-3. chooses selected and suppressed items
-4. emits a compact structured profile
-
-### Prompt renderer
-
-`prompt-section.ts` should render from the profile rather than re-deriving
-family policy.
-
-### Family application posture
-
-The layer must preserve these modes:
-
-- `shape_reply` for response style
-- `direct_answer` for project facts
-- `guidance_only` for workflow lessons and project rules
-- `recommendation_only` for unmet needs
-- `suggestion_first` for recurring procedures
-
-## What remains family policy instead of becoming generic
-
-- the application mode for each family
-- direct-use restrictions for procedures
-- stricter factual answer posture for project facts
-
-## Rollout posture
-
-First land the profile builder without changing user-visible behavior. Swap
-`prompt-section.ts` to render from it, then delete duplicated policy logic.
-
-Current live rollout:
-
-- `src/plugin-sdk/memory-family-policy.ts` now exposes a public family-policy
-  seam so `memory-core` can consume registry-derived application posture
-  without reaching into `memory-middleware/src/**`
-- `extensions/memory-core/src/behavior-profile.ts` now builds the shared
-  durable-memory behavior profile
-- `extensions/memory-core/src/prompt-section.ts` now renders the durable-memory
-  section from that shared profile instead of carrying the family posture
+- `prompt-section.ts` no longer carries all durable-memory family posture
   inline
-- user-facing durable-memory guidance remained behaviorally stable in targeted
-  prompt tests
+- family posture is now less ad hoc and more registry-aligned
+- prompt support is cleaner than before
 
-## Proof / evaluation requirements
+## Why this spec is now explicitly partial
 
-Prove:
+The current layer is not yet the final application-selection substrate.
 
-1. prompt rendering still preserves guidance-only versus suggestion-first
-   distinctions
-2. selected and suppressed memory attribution is explicit
-3. at least two families stop depending on prompt-only policy branches
+It is still mostly:
 
-## Risks / failure modes
+- a prompt-support helper
+- family guidance assembly
+- registry-backed posture rendering
 
-- profile builder becomes another hidden policy layer without explicit evidence
-- prompt rendering drifts from structured application modes
-- family-specific safety posture gets flattened into one generic “memory
-  applies” rule
+It is not yet:
 
-## Out of scope
+- selected/suppressed memory planning
+- retrieval-to-application handoff
+- application reason-code attribution
+- the runtime source of truth for what memory actually applied
 
-- UI memory browser
-- semantic routing changes
-- new family rollout
+## Current-state gap
 
-## Follow-up implementation slices
+The repo still lacks one structured runtime artifact that answers:
 
-1. extend the behavior profile from prompt rendering into later runtime
-   selection / suppression attribution when honest
-2. keep retrieval/application policy aligned with the registry and retrieval
-   framework
+- what was selected
+- what was suppressed
+- why it was selected or suppressed
+- how each selected family is allowed to apply
+
+## Relationship to the new target layer
+
+This spec now describes the partially landed bridge.
+
+The target runtime control plane is specified in:
+
+- `/memory-system/specs/application-selection-layer`
+
+That later layer should extend and partially supersede this one.
+
+## What remains valid from the current layer
+
+- family application modes remain valid
+- durable-memory prompt guidance remains a downstream consumer
+- prompt rendering should still stop carrying family posture inline
+
+## What remains incomplete
+
+- structural selected/suppressed outputs
+- explicit handoff from retrieval intent and ranked records
+- suppression reason codes
+- structural procedure direct-use gating
+
+## Implementation rule
+
+Do not treat the current behavior-profile helper as architectural completion.
+Use it as the migration bridge toward the real application-selection layer.

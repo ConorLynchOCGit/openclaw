@@ -10,57 +10,44 @@ It is not broad personality memory.
 Live now:
 
 - bounded typed response-style memory
-- bounded generic response-style guidance for:
-  - response opening
-  - response structure
-  - response tone
-  - response detail level
-  - response wrap up
-- held-cluster lifecycle for generic response-style guidance
-- explicit correction / supersede for supported subjects
+- bounded generic response-style guidance
+- explicit correction / supersede
 - reviewed phrase-pattern support for approved response-style memories
 - approved-only hybrid retrieval and reply shaping
 
 ## Intentional product-policy boundaries
 
-Response-style memory should remain:
+Response-style memory remains:
 
 - bounded
 - explicit
 - reply-shaping
 
-It should not become:
+It does not become:
 
 - broad personality modeling
 - hidden long-tail preference overlearning
 - semantic “vibe” memory
 
-## What flattening will absorb into shared substrate
+## Updated flattening posture
 
-Response style should use the same shared flattening layers as other families:
+Response style already uses some shared substrate, but it still has remaining
+ingestion and application-selection debt.
 
-- family-definition registry
-- unified ingestion resolver
-- unified clustered lifecycle
-- unified correction / supersede
-- unified phrase-pattern engine
-- retrieval feature framework
-- behavior-profile layer
-- registry-driven proof inspection
+The next substrate push should move response style onto:
 
-## What remains intentionally family-specific
+- the full ingestion control plane
+- the real application-selection layer
+- the broader retrieval/routing control plane
 
-- application mode remains `shape_reply`
-- scope remains global rather than named-project scoped
-- bounded subject set remains explicit
+while keeping:
 
-## What future family work must not re-implement locally
+- `shape_reply`
+- global scope
+- explicit bounded subject set
 
-Do not keep response style on a forever-bespoke stack for:
+## Read with
 
-- phrase handling
-- correction targeting
-- clustered lifecycle
-- application rendering
-
-The family should remain distinct in policy, not in substrate shape.
+- `/memory-system/specs/full-ingestion-control-plane`
+- `/memory-system/specs/application-selection-layer`
+- `/memory-system/specs/retrieval-and-routing-control-plane`

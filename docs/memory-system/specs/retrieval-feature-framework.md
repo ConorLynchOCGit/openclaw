@@ -1,220 +1,64 @@
 # Retrieval Feature Framework
 
-## Purpose / problem
+## Purpose
 
-Retrieval policy is one of the biggest scaling risks in the current memory
-system. `extensions/memory-middleware/src/db/queries.ts` already contains a
-growing family-specific scoring forest for:
+Document what the current retrieval feature framework already flattened and
+what it did not flatten.
 
-- response style
-- project facts
-- workflow lessons
-- project rules
-- unmet needs
-- direct named-project intent shaping
+## Current landed value
 
-That approach will not scale to 10+ more families.
+The framework now provides:
 
-This spec defines a shared retrieval feature framework that preserves the
-current safety and quality rules while replacing family-specific scoring sprawl
-with structured feature composition.
+- shared score composition for approved-memory hybrid retrieval across several
+  families
+- shared matched-field composition for those families
+- shared reviewable-candidate retrieval feature composition
+- shared validated-procedure subject-match feature composition
 
-## Why this is needed now
+That is real and remains valuable.
 
-Before more families are added, retrieval needs one explicit model for:
+## Why this spec is now explicitly partial
 
-- feature extraction
-- family feature selection
-- scoring composition
-- suppression of adjacent irrelevant families
+The framework flattened score composition.
 
-Without that layer, every new family will require more direct SQL branching.
+It did not yet flatten the whole retrieval/routing control plane.
 
-## Current parallel systems this replaces or reduces
+The wider retrieval system still contains:
 
-- family-specific CASE ranking logic in `db/queries.ts`
-- family-specific matched-field reporting rules
-- ad hoc direct named-project intent boosts
-- prompt-side suppression of adjacent irrelevant memories
+- query-intent inference outside the framework
+- family suppression outside the framework
+- semantic fallback sidecars outside the framework
+- more surface-planning duplication than the final architecture should keep
 
-## Architecture fit
+## Relationship to the next retrieval phase
 
-The framework keeps:
+The next target is specified in:
 
-- approved-only retrieval
-- typed exact wins
+- `/memory-system/specs/retrieval-and-routing-control-plane`
+
+That work should absorb:
+
+- normalized query intent
+- retrieval plan selection
+- semantic fallback eligibility
+- family suppression / adjacency policy
+
+## What remains valid from the current framework
+
+- shared feature vocabulary
+- family retrieval weights
+- matched-field alignment
 - hybrid-first posture
-- family-gated semantic routing
 
-It changes:
+## What remains incomplete
 
-- how ranking features are expressed and composed
+- one retrieval control plane
+- one routing control plane
+- one application-selection handoff
+- reduction of semantic sidecar routing
 
-## Current-state pain points anchored to the repo
+## Implementation rule
 
-- typed and generic families use different hand-authored ranking rules
-- direct named-project intent shaping exists, but it is encoded as bespoke SQL
-  branches
-- matched-field reporting is tied to family-specific score logic
-
-## Domain model
-
-### Query intent
-
-```ts
-type RetrievalIntent =
-  | "direct_fact_lookup"
-  | "project_rule_lookup"
-  | "unmet_need_lookup"
-  | "workflow_guidance_lookup"
-  | "procedure_lookup"
-  | "response_style_lookup"
-  | "generic_context_lookup";
-```
-
-### Shared retrieval features
-
-```ts
-type RetrievalFeature =
-  | "typed_exact_match"
-  | "project_scope_match"
-  | "subject_match"
-  | "value_match"
-  | "recommended_action_match"
-  | "avoid_action_match"
-  | "needed_capability_match"
-  | "guidance_pattern_match"
-  | "procedure_title_match"
-  | "family_intent_match"
-  | "trigram_similarity"
-  | "fts_search_document";
-```
-
-### Family retrieval policy
-
-```ts
-type FamilyRetrievalPolicy = {
-  familyId: string;
-  retrievalMode: "approved_hybrid" | "validated_procedure_hybrid";
-  featureWeights: Partial<Record<RetrievalFeature, number>>;
-  directIntentClass?: "fact" | "rule" | "need" | "procedure" | "style";
-  matchedFieldPrefix?: string;
-  suppressAdjacentFamiliesOnDirectHit: boolean;
-  approvedOnly: true;
-};
-```
-
-## Proposed contracts and interfaces
-
-### Feature computation layer
-
-Compute shared features once per candidate row:
-
-- typed fast-path match
-- scope overlap
-- subject overlap
-- value/action/capability overlap
-- family-intent match
-- text similarity features
-
-### Scoring composition layer
-
-Compose score from:
-
-- shared feature values
-- family policy weights from the registry
-- query intent
-
-### Query-plan rule
-
-Move away from a single growing CASE forest by:
-
-1. computing normalized query intent and feature inputs up front
-2. generating family-specific feature columns from one feature set
-3. composing scores with family policy rather than family-specific SQL branches
-
-This can still live in SQL-backed retrieval, but the family policy must no
-longer be hand-inlined per family.
-
-## Required preserved behavior
-
-### Exact typed wins
-
-Typed explicit fields must still outrank generic overlap when the query is a
-direct typed ask.
-
-### Family-aligned direct-project intent shaping
-
-Direct named-project asks must still prefer:
-
-- project facts for fact-like asks
-- project rules for operating guidance asks
-- unmet needs for missing-support asks
-
-### Project scoping
-
-Project-scoped matches must still beat unscoped near-text matches where the
-project is explicit.
-
-### Approved-only behavior
-
-Candidate retrieval must remain excluded from normal user-facing behavior.
-
-## What remains family policy instead of becoming generic
-
-- feature weights
-- intent class eligibility
-- adjacent-family suppression behavior
-- semantic-routing eligibility
-
-## Rollout posture
-
-Land the feature framework before any broader family expansion. Migrate one
-family group at a time, starting with the existing direct named-project
-families whose current ranking logic is most obviously duplicated.
-
-Current live rollout:
-
-- `extensions/memory-middleware/src/retrieval-feature-framework.ts` now builds
-  approved-memory hybrid score clauses and matched-field clauses from
-  registry-defined retrieval policy
-- `extensions/memory-middleware/src/memory-family-registry.ts` now stores
-  registry retrieval weights and matched-field prefixes for response style,
-  project facts, workflow lessons, project rules, unmet needs, and recurring
-  procedures
-- `extensions/memory-middleware/src/db/queries.ts` now consumes that shared
-  composer for approved-memory hybrid ranking
-- `extensions/memory-middleware/src/db/queries.ts` now also uses the shared
-  composer for reviewable-candidate hybrid ranking
-- validated-procedure hybrid retrieval now uses the framework for recurring-
-  procedure subject-match scoring while keeping key/title fast paths explicit
-- typed exact/template/field/lesson boosts remain explicit fast paths
-- validated-procedure retrieval still retains narrower title/key fast paths
-
-## Proof / evaluation requirements
-
-Prove:
-
-1. typed exact wins are preserved
-2. project fact / project rule / unmet-need intent shaping still works
-3. matched-field evidence remains explicit
-4. one shared feature computation path serves more than one family
-
-## Risks / failure modes
-
-- feature framework becomes too generic and obscures why one family ranks above
-  another
-- adjacent-family suppression removes useful corroborating context
-- typed wins regress under generic overlap weights
-
-## Out of scope
-
-- semantic retrieval as the default
-- candidate retrieval broadening
-- family expansion
-
-## Follow-up implementation slices
-
-1. decide whether validated-procedure title/key fast paths should later join
-   the framework or remain intentionally explicit
-2. align behavior-profile selection with the same family retrieval policy
+Do not describe the retrieval feature framework as if it already flattened the
+whole retrieval architecture. It is a partial bridge that should feed the next
+control-plane rewrite.

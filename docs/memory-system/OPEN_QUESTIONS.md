@@ -1,39 +1,58 @@
 # Open Questions
 
-## Flattening-phase open questions
+## Active questions inside the stronger substrate plan
 
-These are the remaining real open questions after the user-directed decision to
-flatten before self-improving capture.
+These are the remaining real open questions after the accepted post-v3 review.
 
-1. How static should the first family-definition registry be?
-   - fully code-owned constants only
-   - or code-owned definitions with a small configurable weighting layer for
-     retrieval policy
-2. How much of retrieval weighting should be static in code versus externally
-   configurable once the retrieval feature framework exists?
-3. Should the first retrieval feature framework preserve current matched-field
-   names exactly, or introduce a new normalized matched-field vocabulary with a
-   backward-compatibility mapping?
-4. Should registry-driven proof inspection land after the behavior-profile
-   layer, or can it safely land earlier if proof-runner simplification becomes a
-   blocker?
-5. Once the unified phrase-pattern engine exists, do project rules or unmet
-   needs justify phrase induction later, or should workflow lessons and response
-   style remain the only eligible families for longer?
-6. How much wrapper compatibility should the first flattening slices preserve
-   before deleting old family-specific helpers?
+They are narrower than the earlier roadmap questions because the high-level
+sequence is now accepted.
+
+1. For the full ingestion control plane, how much adapter logic should live in:
+   - registry-declared typed policy
+   - adapter modules
+   - or both
+2. For the application-selection layer, should suppression reason codes be:
+   - shared across families
+   - or shared with a small family-specific extension vocabulary
+3. For retrieval/routing control-plane flattening, how much approved,
+   candidate, and validated-procedure planning can honestly converge without
+   obscuring real storage differences?
+4. For recurring procedures, what is the narrowest staged model that preserves:
+   - `suggestion_first`
+   - clear-ask direct use
+   - validated artifact distinction
+     while still removing historical subsystem duplication?
+5. For correction-policy cleanup, how should unmet-need conservative correction
+   posture be represented declaratively?
+6. For proof-runner adapterization, what is the smallest backward-compatible
+   proof output contract that still lets the runtime and proofing share one
+   policy source of truth?
+7. For registry authority cleanup, which policy surfaces should be generated
+   from registry definitions versus hand-authored adapter declarations?
+8. For memory-family contract boundary cleanup, what should become the
+   core-owned/shared memory-family contract without over-exposing middleware
+   internals?
+
+## Should-fix-soon questions
+
+1. What exact unit seams will reduce the most integration-test pressure first:
+   - retrieval intent
+   - application selection
+   - semantic fallback
+2. How much approved-versus-candidate SQL scaffolding can be shared before the
+   retrieval/routing control plane lands?
+3. Which remaining stringly control-flow points should be upgraded first to
+   reduce rollout risk most cheaply?
 
 ## Later-phase questions that remain intentionally later
 
-These stay open, but are not part of the current slice:
+These stay open, but are not part of the current docs/spec replanning slice:
 
-1. What exact bounded input set should the first enabled reduced-profile
-   self-improving capture source consume once flattening is materially complete?
+1. What exact bounded input set should the first reduced-profile
+   self-improving capture source consume once the stronger substrate work is
+   landed?
 2. What exact advisory posture should learned-guidance planning take once both
-   flattening and reduced-profile self-improving capture are live?
-3. Which cross-domain family should land first after flattening,
-   self-improving capture, and advisory planning:
-   - decision + rationale
-   - observation / result / finding
-   - terminology / ontology / canonical definition
-   - entity profile
+   the stronger substrate work and reduced-profile self-improving capture are
+   live?
+3. Which cross-domain family should land first after the stronger substrate
+   work, self-improving capture, and advisory planning?

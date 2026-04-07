@@ -1,289 +1,195 @@
 # Flattening Execution Plan
 
-## Why flattening is happening now
+## Why this plan changed after batch v3
 
-The six landed memory families are now at practical parity:
+The first three flattening batches landed real shared substrate work.
 
-- response style
-- project facts
-- recurring procedures
-- workflow lessons
-- project rules
-- unmet needs
+They did not, however, honestly reduce the remaining work to one narrow
+closeout slice.
 
-That is enough to move forward. It is not enough to add another 10+ families on
-top of the current branch-heavy substrate.
+The accepted post-v3 architecture review changed the execution posture from:
 
-The next phase is therefore not immediate self-improving capture. It is
-flattening:
+- one more flattening cleanup slice
 
-- preserve real family-policy differences
-- collapse accidental implementation duplication
-- make future family work land on shared substrate instead of adding more
-  parallel systems
+to:
 
-## Accepted target architecture
+- multiple more control-plane and authority cleanup slices before
+  self-improving capture
 
-Flattening should produce these shared substrate layers:
+## What is genuinely flattened already
+
+### Landed shared substrate
 
 1. family-definition registry
-2. unified ingestion resolver
-3. unified clustered lifecycle engine
-4. unified correction / supersede engine
-5. unified phrase-pattern engine
-6. retrieval feature framework
-7. behavior-profile layer
-8. registry-driven proof / lifecycle inspection
+2. workflow-family ingestion resolver
+3. shared clustered lifecycle inspection for several memory-object families
+4. bounded correction / supersede planning for several families
+5. shared phrase-pattern engine for workflow lessons and response style
+6. approved-memory retrieval feature composition across several families
+7. reviewable-candidate retrieval feature composition bridge
+8. validated-procedure subject-match retrieval feature bridge
+9. shared prompt-support behavior-profile helper
+10. less fragmented proof-family wiring
 
-These are the canonical implementation targets for the flattening phase.
+### What remains only partially flattened
 
-## Current code seams that must be collapsed
+- ingestion across all six families
+- behavior/application selection
+- retrieval and semantic routing
+- recurring-procedure substrate shape
+- correction-policy control plane
+- proofing
+- registry authority
+- memory-family contract boundaries
 
-### Capture and candidate formation
+## Remaining execution sequence
 
-- `extensions/memory-middleware/src/ordinary-turn-auto-capture.ts`
-- `extensions/memory-middleware/src/tools/candidate-submit.ts`
+### Phase C — blockers before reduced-profile self-improving capture
 
-### Lifecycle and repair
+1. full ingestion control-plane flattening
+2. real application-selection / behavior-planning layer
+3. retrieval + semantic-routing control-plane flattening
+4. recurring-procedure staged substrate redesign
+5. correction-policy cleanup
 
-- `extensions/memory-middleware/src/response-style-lifecycle.ts`
-- `extensions/memory-middleware/src/project-fact-lifecycle.ts`
-- `extensions/memory-middleware/src/recurring-procedure-lifecycle.ts`
-- generalized family lifecycle helpers embedded in workflow paths
+### Phase D — blockers before new families
 
-### Retrieval and application
+6. proof-runner adapterization
+7. registry authority cleanup
+8. memory-family contract / boundary cleanup
 
-- `extensions/memory-middleware/src/db/queries.ts`
-- `extensions/memory-core/src/prompt-section.ts`
+### Should fix soon
 
-### Proofing
+9. memory testability hardening
+10. retrieval SQL scaffolding reduction
+11. stringly-control-flow cleanup
 
-- `extensions/memory-middleware/src/proof-runner.ts`
+### Could fix later
 
-### Phrase induction
+12. deeper retrieval SQL normalization after control-plane unification
+13. artifact / read-model convergence after the procedure redesign proves out
 
-- family-specific workflow and response-style phrase engines
+## Why this order is recommended
 
-## Proposed implementation order
+- ingestion is still the largest duplicated family-control seam
+- application selection should not stay implied by prompt text or query
+  reshaping
+- retrieval/routing should flatten before new learned capture increases
+  candidate pressure
+- recurring procedures need a staged redesign before the substrate can be
+  called broadly extensible
+- correction policy should become declarative before the system creates more
+  candidate pressure for itself
+- proofing, registry authority, and boundary cleanup matter most before new
+  families start leaning on the substrate
 
-1. land the family-definition registry
-2. route ingestion through a unified resolver
-3. move clustered lifecycle policy onto a shared engine
-4. move correction / supersede onto a shared engine
-5. extract the unified phrase-pattern engine
-6. land the retrieval feature framework
-7. insert the behavior-profile layer and reduce prompt-section policy sprawl
-8. move proof inspection onto registry-driven modes
+## Slice-by-slice contracts
 
-This order is deliberate:
+### Slice 10 — full ingestion control-plane flattening
 
-- the registry is the control plane for every later slice
-- ingestion, lifecycle, and correction are the highest duplication seams
-- retrieval and behavior-profile work should happen after registry and policy
-  shape exist
-- proof inspection should flatten after runtime policy has become registry-
-  driven
+- one ingestion control plane for all six families
+- one transcript/tool submission decision model
+- family adapters for deterministic parsing, semantic parsing, phrase matching,
+  correction normalization, and provenance
+- deletion target: remaining duplicated response-style, project-fact, and
+  recurring-procedure ingestion stacks
 
-## Current execution status
+### Slice 11 — real application-selection / behavior-planning layer
 
-Batch v1, batch v2, and batch v3 are now landed.
+- selected versus suppressed memory items
+- explicit query-intent handoff from retrieval
+- application modes enforced structurally rather than mainly by prompt prose
+- prompt rendering becomes a downstream renderer
 
-Completed:
+### Slice 12 — retrieval + semantic-routing control-plane flattening
 
-1. family-definition registry
-   - `extensions/memory-middleware/src/memory-family-registry.ts`
-   - live consumers in `proof-runner.ts`, `ordinary-turn-auto-capture.ts`, and
-     `tools/candidate-submit.ts`
-2. unified ingestion resolver
-   - `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
-   - live for workflow lessons, project rules, and unmet needs across transcript
-     capture, tool submission, and tool-side duplicate-key derivation
-3. unified clustered lifecycle
-   - `extensions/memory-middleware/src/clustered-memory-lifecycle.ts`
-   - live for response-style, project-fact, and workflow-improvement
-     memory-object inspection
-   - recurring procedures now share lifecycle utility helpers while keeping the
-     validated-procedure inspection split
+- normalized retrieval intent
+- shared feature computation
+- unified approved / candidate / validated-procedure retrieval planning where
+  honest
+- semantic fallback becomes one registry-governed routing layer
+- deletion target: query-intent reshaping and semantic sidecar routing sprawl
 
-Completed through slice 6:
+### Slice 13 — recurring-procedure staged substrate redesign
 
-4. unified correction / supersede
-   - landed in batch v2 for response style, project facts, and workflow-family
-     supersede targeting
-5. unified phrase-pattern engine
-   - landed in batch v2 for workflow lessons and response style
-6. retrieval feature framework
+- preserve `suggestion_first`
+- preserve clear-ask direct use
+- reduce historical subsystem duplication in lifecycle, correction, retrieval,
+  and proofing
 
-- landed in batch v2 for approved-memory hybrid ranking across response
-  style, project facts, workflow lessons, project rules, and unmet needs
+### Slice 14 — correction-policy cleanup
 
-Completed through slice 9:
+- remove legacy stringly gating
+- declarative immediate-versus-held correction policy
+- clearer procedure and unmet-need correction fit
 
-7. behavior-profile layer
-   - landed in batch v3 through
-     `extensions/memory-core/src/behavior-profile.ts`
-   - `extensions/memory-core/src/prompt-section.ts` now renders durable-memory
-     guidance from the shared behavior-profile layer instead of owning the
-     family posture inline
-8. registry-driven proof inspection closeout
-   - landed in batch v3 through registry-driven proof family definitions in
-     `extensions/memory-middleware/src/memory-family-registry.ts`
-   - `extensions/memory-middleware/src/proof-runner.ts` now uses shared proof
-     lifecycle artifact extraction and shared hybrid-search proof validation
+### Slice 15 — proof-runner adapterization
 
-Still next:
+- registered lifecycle/artifact adapters
+- eliminate the remaining registry-plus-switch proof structure
 
-- one remaining flattening closeout slice
-  - strongest current target: remaining response-style / project-fact /
-    recurring-procedure ingestion migration plus the remaining recurring-
-    procedure bridge cleanup
+### Slice 16 — registry authority cleanup
 
-## What each implementation slice should accomplish
+- make registry policy actually authoritative
+- remove duplicate proof-definition and workflow-family mapping surfaces
+- align semantic-routing policy with runtime use
 
-### Slice 1 — family-definition registry
+### Slice 17 — memory-family contract / boundary cleanup
 
-- create concrete registry entries for the six landed families
-- move static family policy out of ad hoc branch logic
-- prove at least two runtime seams read registry policy
-  - landed in batch v1
+- replace the current boundary smell around family-policy exposure
+- define the stable core-owned/shared contract across memory-core,
+  memory-middleware, and plugin-sdk
 
-### Slice 2 — unified ingestion resolver
+## Should-fix-soon slices
 
-- unify transcript and tool-submitted resolution
-- preserve typed fast paths and bounded phrase-pattern feeds
-- delete duplicated normalization branches only after parity is proven
-  - landed in batch v1 for the workflow-family cluster
+These should be planned close to the main substrate push and may land as
+supporting slices or paired slices if the touched code overlaps honestly.
 
-### Slice 3 — unified clustered lifecycle
+### Memory testability hardening
 
-- move memory-object families to shared cluster policy
-- keep validated-procedure targets distinct
-- preserve hold, approve, reject, supersede behavior
-  - landed in batch v1 for memory-object inspection; recurring procedures remain
-    distinct at the validated target
+- stronger unit seams around retrieval intent, application selection, and
+  semantic fallback
+- lower dependence on full integration proof for every control-plane change
 
-### Slice 4 — unified correction / supersede
+### Retrieval SQL scaffolding reduction
 
-- centralize correction intent handling
-- preserve explicit lineage and family-specific correction modes
-  - landed in batch v2
+- reduce approved-versus-candidate SQL duplication where it is already honest
+  to share
+- do not over-normalize before the retrieval control-plane rewrite lands
 
-### Slice 5 — unified phrase-pattern engine
+### Stringly-control-flow cleanup
 
-- move workflow and response-style phrase patterns onto one reviewed engine
-- keep ineligible families out
-  - landed in batch v2
+- replace profile strings and ad hoc decision strings with enums, adapters, or
+  typed policy
 
-### Slice 6 — retrieval feature framework
+## Likely slice count now
 
-- replace family-specific scoring sprawl with shared feature composition
-- preserve exact typed wins and direct named-project intent shaping
-  - landed in batch v2 for approved-memory hybrid ranking
+Honest estimate:
 
-### Slice 7 — behavior-profile layer
+- minimum before self-improving capture: 5 major slices
+- likely before new families: 8 major slices
+- plus 2-3 supporting hardening slices if paired work does not cover them
+  naturally
 
-- separate retrieval selection from prompt rendering
-- preserve `guidance_only`, `recommendation_only`, `suggestion_first`, and
-  `shape_reply` differences
-  - landed in batch v3
-
-### Slice 8 — registry-driven proof inspection
-
-- make proofing scale with family registry policy
-- stop adding family switches to the proof runner
-  - landed in batch v3
-
-### Slice 9 — remaining flattening closeout
-
-- current batch-v3 implementation picked the hybrid retrieval islands first
-- reviewable-candidate hybrid retrieval now reuses the shared retrieval feature
-  composer
-- validated-procedure hybrid retrieval now shares framework-driven subject
-  scoring while keeping key/title fast paths explicit
-- one more narrower closeout slice is still justified for the remaining
-  ingestion / recurring-procedure bridge seams
-
-## Proof required for each slice
-
-Every flattening slice must prove both:
-
-- behavior preservation for currently landed families
-- actual reduction in accidental parallelism
-
-Required proof themes:
-
-- one shared substrate serving more than one family
-- no regression in approved-only or hybrid-first posture
-- no broad autonomy
-- explicit ids and matched fields where retrieval or lifecycle is involved
-
-## What must remain unchanged while flattening
+## What must remain unchanged while executing this plan
 
 - approved-only user-facing retrieval
 - hybrid-first retrieval posture
 - semantic routing remains family-gated
 - procedures remain `suggestion_first` and direct-use only on clear ask
-- project facts remain explicit and scoped
+- project facts remain explicit, scoped, and stricter than guidance
 - response style remains bounded
 - reduced-profile self-improving capture remains disabled
-- learned-guidance advisory planning remains not live
+- learned-guidance advisory planning remains disabled
+- no new families yet
 
-## Deletion rules for old family-specific seams
+## Deletion rule
 
-Do not delete older family-specific seams until:
+For every remaining substrate seam:
 
-1. the shared replacement is live
-2. parity with the old behavior is proven
-3. proof output can attribute the new shared layer honestly
+1. land the shared replacement
+2. prove parity
+3. delete the old duplicated branch
 
-Delete in this order:
-
-- policy lookups first
-- wrapper helpers second
-- dead family-specific branches last
-
-Batch v2 deletion results:
-
-- bounded correction auto-promotion no longer owns separate response-style and
-  project-fact supersede execution paths
-- workflow-improvement supersede writes no longer own a separate approved
-  memory-object supersede loop
-- workflow and response-style phrase induction no longer each own separate
-  proposal/lifecycle/approved-lookup implementations
-- approved-memory hybrid retrieval no longer hand-inlines the previous
-  generic-family CASE forest for response style, project facts, workflow
-  lessons, project rules, and unmet needs
-
-Batch v3 deletion results:
-
-- prompt-section no longer owns the family application posture inline
-- proof-runner no longer keeps separate registry-versus-phrase inspection
-  branches
-- reviewable-candidate hybrid retrieval no longer keeps a separate response-
-  style-only ranking branch island
-- validated-procedure hybrid retrieval no longer keeps subject-match scoring in
-  a standalone branch set
-
-## Later work that depends on flattening
-
-- reduced-profile self-improving capture integration
-- learned-guidance advisory planning
-- major cross-domain family expansion
-
-Flattening is a prerequisite because all three later phases would otherwise land
-on a substrate that is too branch-heavy to scale safely.
-
-## Anti-goals
-
-- turning all families into identical behavior policies
-- enabling self-improving capture during flattening
-- enabling learned advisory planning during flattening
-- broadening semantic routing to every family
-- adding new memory families before the substrate is flatter
-
-## Failure modes
-
-- flattening becomes vague refactor language without concrete contracts
-- product-policy differences get erased
-- shared substrate becomes another name for a large hidden switch statement
-- new families resume before the flattening slices are complete
+The work is not complete if the repo merely adds another abstraction layer on
+top of the old branches and leaves both alive.

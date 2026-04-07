@@ -25,17 +25,15 @@ Unmet needs remain:
 
 They are planning memory, not action-taking memory.
 
-## What flattening will absorb into shared substrate
+## Updated flattening posture
 
-Unmet needs should use shared:
+Unmet needs already share some substrate, but they still depend on the broader
+unfinished control-plane work for:
 
-- family-definition registry
-- unified ingestion resolver
-- unified clustered lifecycle
-- unified correction / supersede where justified
-- retrieval feature framework
-- behavior-profile layer
-- registry-driven proof inspection
+- real application selection
+- retrieval/routing control-plane integration
+- declarative conservative correction posture
+- proof adapterization
 
 ## What remains intentionally family-specific
 
@@ -43,8 +41,8 @@ Unmet needs should use shared:
 - capability-granular subject identity may remain more conservative than other
   guidance families
 
-## What future family work must not re-implement locally
+## Read with
 
-Do not create a separate planning queue or approval engine for later unmet-need
-variants. New unmet-need shapes should reuse the flattened substrate unless a
-real product-policy difference requires otherwise.
+- `/memory-system/specs/application-selection-layer`
+- `/memory-system/specs/retrieval-and-routing-control-plane`
+- `/memory-system/specs/correction-policy-cleanup`

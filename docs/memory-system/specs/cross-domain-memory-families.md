@@ -26,10 +26,11 @@ Do not use this doc to justify immediate new family work.
 
 The near-term roadmap is:
 
-1. flatten the family substrate
-2. reduced-profile self-improving capture integration
-3. learned-guidance advisory planning
-4. only then resume cross-domain family expansion
+1. substrate control-plane flattening
+2. substrate authority / scale cleanup
+3. reduced-profile self-improving capture integration
+4. learned-guidance advisory planning
+5. only then resume cross-domain family expansion
 
 ## Why expansion waits
 

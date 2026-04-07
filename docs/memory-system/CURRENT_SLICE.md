@@ -2,173 +2,145 @@
 
 ## Active slice
 
-Memory substrate flattening implementation phase
+Post-v3 substrate replanning and architecture-spec overhaul
 
 ## Objective
 
-Continue the flattening implementation phase after batches v1, v2, and v3:
+Rewrite the roadmap and spec pack after the post-v3 architecture review so the
+next implementation push starts from an honest and implementation-ready plan.
 
-- land the remaining bounded flattening closeout slice
-- finish the highest-leverage residual ingestion / recurring-procedure bridge
-  without reopening broad family rewrites
+This slice exists because flattening batch v3 improved the substrate, but it
+did not honestly finish flattening. The current docs were still overstating how
+close the memory system was to self-improving capture.
 
-The next work should keep reducing accidental parallelism while preserving
-current family behavior.
+## What the docs used to claim
 
-## Why this slice exists
+The previous roadmap/status/current-slice pack claimed:
 
-The six landed families are now close enough to practical parity to move
-forward:
+- one narrow flattening closeout slice remained
+- behavior-profile was complete enough to count as the application layer
+- proof inspection was complete enough to stop future proof-runner branching
+- future work was mostly down to residual ingestion / procedure bridge cleanup
 
-- response style
-- project facts
-- recurring procedures
-- workflow lessons
-- project rules
-- unmet needs
+That framing is no longer accepted.
 
-But practical parity did not make the families fully identical in code shape.
-The repo still carries too much accidental family-specific branching across:
+## What the accepted review says instead
 
-- capture
-- candidate submission
-- lifecycle
-- correction
-- retrieval
-- prompt application
-- proof inspection
+The accepted post-v3 review concluded:
 
-## Landed in batch v1
+- the substrate is not flat enough to move on after one more narrow slice
+- behavior-profile is still mostly a prompt helper, not a real
+  application-selection layer
+- ingestion is still only partially flattened
+- retrieval flattening stopped too early at score composition
+- semantic routing is still a separate hardcoded sidecar subsystem
+- proof inspection is still registry-plus-switch rather than truly
+  registry-driven
+- recurring procedures still retain too much subsystem shape
+- the registry is not yet authoritative enough to justify current confidence
+- correction policy still carries legacy stringly/runtime-coupled gating
+- the memory-family contract boundary is smellier than it should be
 
-- `extensions/memory-middleware/src/memory-family-registry.ts`
-  - six-family declarative registry
-  - runtime consumers in proof inspection, transcript capture metadata, and
-    tool-side workflow family metadata
-- `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
-  - shared workflow-family resolver used by transcript capture and tool-side
-    improvement submission
-  - same resolver also feeds tool-side duplicate-key detection for improvement
-    notes
-- `extensions/memory-middleware/src/clustered-memory-lifecycle.ts`
-  - shared memory-object lifecycle inspection engine
-  - adopted by response style, project facts, and workflow improvements
-  - recurring procedures now reuse shared lifecycle utilities while keeping
-    validated-procedure inspection distinct
+## What flattening genuinely achieved through batch v3
 
-## Landed in batch v2
+The first three implementation batches still matter and remain credited:
 
-- `extensions/memory-middleware/src/memory-correction-engine.ts`
-  - shared correction planning and execution for explicit bounded corrections
-  - live for response style, project facts, and workflow-family supersede
-    targeting
-- `extensions/memory-middleware/src/memory-object-supersede.ts`
-  - shared approved memory-object supersede and lineage writer
-  - now serves workflow improvements and bounded correction auto-promotion
-- `extensions/memory-middleware/src/phrase-pattern-engine.ts`
-  - shared reviewed phrase-pattern proposal, lifecycle, lookup, and induction
-    substrate
-  - live for workflow lessons and response style
-- `extensions/memory-middleware/src/retrieval-feature-framework.ts`
-  - shared approved-memory retrieval feature composer
-  - live for response style, project facts, workflow lessons, project rules,
-    and unmet needs in hybrid retrieval
+- six-family declarative registry is live
+- workflow-family ingestion now shares one resolver across transcript and tool
+  submission
+- multiple memory-object families now share clustered lifecycle inspection
+- bounded correction / supersede planning is shared across multiple families
+- workflow lessons and response style share one phrase-pattern engine
+- approved-memory retrieval feature composition is shared across more than one
+  family
+- reviewable-candidate retrieval and part of validated-procedure retrieval now
+  reuse shared framework pieces
+- prompt-section no longer carries all durable-memory posture inline
+- proofing is less split than before
 
-## Landed in batch v3
+Those are real gains. They are not the same thing as a fully flattened
+substrate.
 
-- `src/plugin-sdk/memory-family-policy.ts`
-  - public family-policy seam for cross-extension behavior-profile consumers
-- `extensions/memory-core/src/behavior-profile.ts`
-  - shared behavior-profile layer for durable-memory application posture
-  - `prompt-section.ts` now renders durable-memory guidance from the shared
-    profile instead of carrying the family posture inline
-- `extensions/memory-middleware/src/proof-runner.ts`
-  - registry-driven proof family definitions now cover the six core families
-    plus workflow / response-style phrase artifacts
-  - lifecycle artifact extraction and hybrid-search proof validation now use
-    shared helpers instead of family-only branches
-- `extensions/memory-middleware/src/retrieval-feature-framework.ts`
-  - reviewable-candidate hybrid retrieval now reuses the same feature composer
-    as approved-memory hybrid retrieval
-  - validated-procedure hybrid retrieval now shares framework-driven subject
-    scoring while keeping key/title fast paths explicit
+## What remains major substrate work
 
-## Duplicate seams removed in batch v1
+### Blockers before reduced-profile self-improving capture
 
-- proof-runner family inspection selection no longer hardcodes the six main
-  families
-- transcript capture no longer owns a separate workflow/project-rule/unmet-need
-  family-resolution chain
-- tool-side improvement submission no longer owns a separate
-  workflow/project-rule/unmet-need family-resolution chain
-- response-style, project-fact, and workflow-improvement lifecycle inspection
-  no longer each own a fully separate memory-object inspection implementation
+1. full ingestion control-plane flattening
+2. real application-selection / behavior-planning layer
+3. retrieval + semantic-routing control-plane flattening
+4. recurring-procedure staged substrate redesign
+5. correction-policy cleanup
 
-## Duplicate seams removed in batch v2
+### Blockers before adding new families
 
-- response-style, project-fact, and workflow-family correction targeting no
-  longer each own separate immediate supersede planning
-- workflow-improvement supersede writes no longer own a separate approved
-  memory-object supersede loop
-- workflow and response-style phrase induction no longer each own separate
-  proposal/lifecycle/approved-lookup engines
-- approved-memory hybrid retrieval no longer hand-inlines one large
-  family-specific generic score forest in `db/queries.ts`
+6. proof-runner adapterization
+7. registry authority cleanup
+8. memory-family contract / boundary cleanup
 
-## Duplicate seams removed in batch v3
+### Should fix soon
 
-- `extensions/memory-core/src/prompt-section.ts` no longer carries the family
-  application posture as its own inline control plane
-- `extensions/memory-middleware/src/proof-runner.ts` no longer splits core
-  family lifecycle inspection and phrase inspection into separate
-  registry-versus-switch paths
-- `extensions/memory-middleware/src/db/queries.ts` no longer keeps
-  reviewable-candidate hybrid retrieval on a separate family-scoring island
-- validated-procedure hybrid retrieval no longer keeps subject-match scoring in
-  its own bespoke branch set
+- improve unit seams around retrieval intent, application selection, and
+  semantic fallback
+- reduce duplicated SQL expression scaffolding between approved and candidate
+  read surfaces
+- replace remaining stringly control-flow with closed policy enums or adapter
+  registration
+
+### Could fix later
+
+- more aggressive normalization of retrieval SQL generation once the
+  control-plane rewrite is landed
+- better artifact / read-model convergence if procedure and memory-object
+  storage still feel too separate after the staged redesign
+
+## What is partially landed rather than complete enough
+
+- behavior-profile layer
+  - partially landed as shared prompt-policy support
+  - not yet a true application-selection planner
+- registry-driven proof inspection
+  - partially landed as proof-family definitions plus shared helpers
+  - not yet a true adapter-driven proof substrate
+- retrieval feature framework
+  - partially landed as shared score composition
+  - not yet the full retrieval/routing control plane
+- unified ingestion resolver
+  - partially landed for the workflow family cluster
+  - not yet the single ingestion control plane for all six families
+- unified correction / supersede
+  - partially landed for several bounded paths
+  - not yet fully declarative or free of stringly gating
+
+## Must remain intentionally different
+
+- procedures remain `suggestion_first` and direct-use only on clear ask
+- project facts remain explicit, scoped, and stricter than generic guidance
+- response style remains bounded and not broad personality memory
+- unmet needs remain recommendation-only
+- semantic routing remains hybrid-first and family-gated
+- phrase induction remains family-eligible, not universal
 
 ## Explicitly not next
 
-The next major roadmap step is not:
+Still not next:
 
 - reduced-profile self-improving capture integration
 - learned-guidance advisory planning
 - new cross-domain families
 
-Those remain later phases after the flattening phase.
+Those phases now wait for the stronger substrate work listed above, not just
+for one narrow closeout slice.
 
-## What remains next inside flattening
+## The next implementation slice
 
-- remaining ingestion migration for response style, project facts, and
-  recurring procedures where honest
-- remaining recurring-procedure lifecycle / correction bridge where honest
-- remaining validated-procedure and reviewable-candidate retrieval cleanup if a
-  final narrower bridge is still justified after the batch-v3 retrieval work
+The next implementation slice should now be:
 
-## Accepted architectural decisions
+- full ingestion control-plane flattening
 
-- practical parity is sufficient to move to flattening, not to broad family
-  expansion
-- the next major roadmap step is architecture flattening
-- real family-policy differences remain valid
-- accidental implementation differences must be collapsed
-- new families should land on top of the flattened substrate
+Reason:
 
-## What is now materially complete
-
-- behavior-profile layer is live enough to stop treating prompt text as the
-  source of family application posture
-- registry-driven proof inspection is live enough to stop adding new
-  family-only proof-runner branches for the currently landed proof surfaces
-
-## Must remain intentionally different
-
-- procedures remain `suggestion_first` and direct-use only on clear ask
-- project facts remain explicit and stricter than generic guidance
-- response style remains bounded
-- semantic routing remains hybrid-first and family-gated
-
-## The next implementation slice after batch v3
-
-- remaining flattening closeout
-  - strongest current target: response-style / project-fact / recurring-
-    procedure ingestion migration and the remaining recurring-procedure bridge
+- it is still the largest duplicated control-plane seam
+- it blocks cleaner application selection, retrieval/routing unification, and
+  later self-improving capture integration
+- it is broader than the old “remaining ingestion migration” framing and should
+  be treated that way
