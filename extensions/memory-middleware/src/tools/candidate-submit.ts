@@ -610,9 +610,17 @@ function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { subject?: unknown }).subject
           : undefined,
+      normalizedSubject:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { normalizedSubject?: unknown }).normalizedSubject
+          : undefined,
       value:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { value?: unknown }).value
+          : undefined,
+      normalizedValue:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { normalizedValue?: unknown }).normalizedValue
           : undefined,
       guidancePattern:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
@@ -622,13 +630,25 @@ function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { recommendedAction?: unknown }).recommendedAction
           : undefined,
+      normalizedRecommendedAction:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { normalizedRecommendedAction?: unknown }).normalizedRecommendedAction
+          : undefined,
       avoidAction:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { avoidAction?: unknown }).avoidAction
           : undefined,
+      normalizedAvoidAction:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { normalizedAvoidAction?: unknown }).normalizedAvoidAction
+          : undefined,
       rationale:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { rationale?: unknown }).rationale
+          : undefined,
+      normalizedRationale:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { normalizedRationale?: unknown }).normalizedRationale
           : undefined,
       guidanceMode: "guidance_only",
       toolName: "memory_candidate_submit",

@@ -317,12 +317,20 @@ Delivery enablement pause:
   - stale held clusters now reject cleanly instead of lingering
   - stronger newer conflicting clusters can supersede older approved generic
     lessons with explicit lineage
+- generalized lesson retrieval/application expansion is now also landed:
+  - approved-only hybrid ranking now boosts the right approved generic
+    workflow lesson using normalized subject overlap plus preferred and
+    avoided-action overlap
+  - prompt guidance now tells the model to include scoped competing actions or
+    signals in the hybrid query
+  - prompt guidance now limits generic workflow application to the top
+    directly relevant hint or two
+  - semantic routing for generic lessons is still not live
 - post-pivot execution path:
-  1. generalized lesson retrieval/application expansion
-  2. broader project-rule learning on the same generic lesson pipeline
-  3. unmet-need planning on the same generic lesson pipeline
-  4. reduced-profile self-improving capture integration
-  5. later learned-guidance advisory planning
+  1. broader project-rule learning on the same generic lesson pipeline
+  2. unmet-need planning on the same generic lesson pipeline
+  3. reduced-profile self-improving capture integration
+  4. later learned-guidance advisory planning
 - primary spec:
   - `/memory-system/specs/delivery-enablements`
 
@@ -1064,11 +1072,11 @@ Current phase note:
 - current generic workflow-learning limits in this phase:
   - broader lessons now use bounded held-cluster auto-review instead of
     indefinite manual review
-  - retrieval stays on the approved-only hybrid path
+  - retrieval stays on the approved-only hybrid path with normalized generic
+    workflow ranking boosts
   - semantic routing remains limited to the older bounded approved families
   - broader project-rule learning still remains future work
 - the next work in this phase is no longer more lesson-key expansion; it is:
-  - generalized lesson retrieval/application expansion
   - broader project-rule learning on the same generic pipeline
   - unmet-need planning on the same generic pipeline after retrieval behavior
     is clearer

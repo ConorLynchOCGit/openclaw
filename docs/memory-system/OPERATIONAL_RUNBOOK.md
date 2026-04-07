@@ -756,6 +756,10 @@ Current approved boundary note:
   - stronger newer conflicting lessons on the same subject can supersede older
     approved lessons with explicit lineage
   - phrase induction for approved generic lessons is now live
+  - approved-only hybrid retrieval now ranks the most relevant approved
+    generic workflow lesson using normalized subject and action overlap
+  - prompt application now stays trimmed to the top directly relevant generic
+    guidance hint or two
   - generic semantic fallback for those lessons is still not live
 - broader API workaround memory is not live yet
 - repair or forgetting is not live yet for this family

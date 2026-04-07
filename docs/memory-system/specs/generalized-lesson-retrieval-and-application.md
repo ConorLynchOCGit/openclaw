@@ -25,13 +25,20 @@ Live today:
 
 - approved generalized workflow lessons retrieve through the existing
   approved-only hybrid path
-- the prompt layer can already use those approved lessons as guidance
+- approved generalized workflow lessons now receive explicit hybrid ranking
+  boosts for:
+  - normalized subject overlap
+  - normalized recommended-action overlap
+  - normalized avoid-action overlap
+  - guidance-pattern intent overlap
+- the prompt layer now tells the model to include the scoped competing
+  actions or signals in hybrid queries for generic workflow asks
+- the prompt layer already limits generic workflow application to the top
+  directly relevant hint or two
 - no new family-specific semantic router was added
 
 Not live today:
 
-- a fully documented generic retrieval and application contract for approved
-  generalized lessons
 - cross-family generic lesson retrieval
 - semantic fallback for generic lessons
 - proactive or autonomous follow-through
@@ -124,8 +131,9 @@ The system should not add a semantic router for every new generalized lesson.
 Within the eligible approved set:
 
 1. explicit project-scoped exact field or lesson matches win
-2. exact or near-exact subject overlaps win next
-3. action overlaps and rationale overlaps support ranking
+2. exact or near-exact normalized subject overlaps win next
+3. normalized preferred/avoided-action overlaps and rationale overlaps support
+   ranking
 4. updated-at may break ties
 
 Generic lessons must not outrank:
@@ -164,6 +172,8 @@ That means:
 - include the lesson when it is relevant to the current repo-operating ask
 - omit it when relevance is weak
 - avoid dumping a large pile of generic lessons into every turn
+- surface only the top directly relevant hint or two when multiple approved
+  generic workflow lessons are adjacent
 
 ### Relevance rules
 
@@ -238,6 +248,18 @@ The first implementation slice following this spec must prove:
 - keep the first rollout inside generalized workflow lessons
 - prove hybrid-first retrieval quality before considering semantic broadening
 - do not broaden to project-rule generic lessons in the same retrieval slice
+
+## Slice v1 landed behavior
+
+The first landed retrieval/application slice now proves:
+
+- approved generic workflow lessons can outrank adjacent approved generic
+  lessons through the existing approved-only hybrid path
+- the ranking depends on normalized subject plus preferred/avoided-action
+  overlap rather than a new per-lesson router
+- prompt guidance now asks for scoped competing actions or signals in the
+  query so the hybrid scorer has enough structure to work with
+- prompt application remains guidance-only and intentionally trimmed
 
 ## Risks / failure modes
 

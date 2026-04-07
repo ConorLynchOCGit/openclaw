@@ -75,10 +75,15 @@ describe("buildPromptSection", () => {
         "For repo-operating or provider-troubleshooting asks where a remembered workflow lesson may matter",
       ),
     );
+    expect(result).toContainEqual(
+      expect.stringContaining("include the scope plus the competing actions or signals"),
+    );
     expect(result).toContainEqual(expect.stringContaining("directly answers the question"));
     expect(result).toContainEqual(expect.stringContaining("stored checklist exists"));
     expect(result).toContainEqual(expect.stringContaining("suggestion-first as an option"));
-    expect(result).toContainEqual(expect.stringContaining("bounded guidance hint or gotcha"));
+    expect(result).toContainEqual(
+      expect.stringContaining("surface only the top directly relevant guidance hint or two"),
+    );
     expect(result).toContainEqual(expect.stringContaining("known environment constraint"));
     expect(result).toContainEqual(expect.stringContaining("memory_candidate_submit"));
     expect(result).toContainEqual(expect.stringContaining("Actually, No, I meant, Sorry"));

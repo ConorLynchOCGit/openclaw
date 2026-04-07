@@ -271,6 +271,14 @@ dedicated specs now written for generalized lesson auto-review, phrase
 induction after approved generic lessons, generalized lesson
 retrieval/application, reduced-profile self-improving integration, and later
 learned-guidance advisory planning.
+Generalized lesson retrieval/application expansion v1 completed on the
+approved live production boundary for its intended scope, with approved-only
+hybrid ranking boosts for normalized generic workflow subjects plus preferred
+and avoided actions, prompt guidance that narrows generic workflow application
+to the most directly relevant hint or two, preserved hybrid-first and
+guidance-only posture, and isolated plus narrow production proof that the
+right approved generic workflow lesson now outranks adjacent lessons without
+generic semantic fallback.
 Fifth family-aware semantic retrieval routing slice completed on the approved
 live production boundary for its intended scope, with approved-only
 project-scoped semantic fallback for `git_stash_unsafe`, approved source
@@ -2039,6 +2047,5 @@ Fast re-entry reading order:
 
 ## Next expected action
 
-Implement generalized lesson retrieval/application expansion so approved
-generic workflow lessons apply more reliably in later repo-operating asks,
-then follow with broader project-rule learning on the same pipeline.
+Implement broader project-rule learning on the same generic supervised
+pipeline, then follow with unmet-need planning on that same substrate.

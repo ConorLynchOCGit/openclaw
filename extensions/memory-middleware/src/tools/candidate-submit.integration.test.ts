@@ -3630,6 +3630,110 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     expect(records.map((record) => record.id)).not.toContain(approvedPhraseRow.id);
   });
 
+  it("boosts the most relevant approved generalized workflow lesson in hybrid retrieval", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    async function approveGenericLesson(params: {
+      baseCallId: string;
+      firstContent: string;
+      secondContent: string;
+    }): Promise<string> {
+      const firstSubmit = await submitTool.execute(`${params.baseCallId}-1`, {
+        kind: "improvement",
+        content: params.firstContent,
+        projectId: seeded.projectId,
+      });
+      const candidateId = (firstSubmit.details as { memoryObjectId: string }).memoryObjectId;
+      const client = await connectClient(dbEnvironment.connectionString);
+      try {
+        await client.query(
+          `
+            update memory_middleware.memory_objects
+            set
+              created_at = now() - interval '10 seconds',
+              updated_at = now() - interval '10 seconds'
+            where id = $1::uuid
+          `,
+          [candidateId],
+        );
+      } finally {
+        await client.end();
+      }
+      const secondSubmit = await submitTool.execute(`${params.baseCallId}-2`, {
+        kind: "improvement",
+        content: params.secondContent,
+        projectId: seeded.projectId,
+      });
+      return (secondSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    }
+
+    const releaseNotesApprovedId = await approveGenericLesson({
+      baseCallId: "call-generic-retrieval-rank-release-notes",
+      firstContent:
+        "For release proof notes here, use bulletized proof IDs instead of paraphrased rollout summaries.",
+      secondContent:
+        "Use bulletized proof IDs for release proof notes here instead of paraphrased rollout summaries.",
+    });
+    const readinessApprovedId = await approveGenericLesson({
+      baseCallId: "call-generic-retrieval-rank-readiness",
+      firstContent: "For rollout readiness here, trust /readyz; /healthz is only liveness.",
+      secondContent: "Use /readyz for rollout readiness here; /healthz is only liveness.",
+    });
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query:
+        "for release proof notes should i use bulletized proof ids or paraphrased rollout summaries",
+      scope: "approved_only",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+    });
+    const records = (
+      hybridSearch as {
+        accepted: true;
+        status: "ok";
+        scope: "approved_only";
+        records: Array<{
+          id: string;
+          score: number;
+          matchedFields: string[];
+        }>;
+      }
+    ).records;
+
+    expect(records.length).toBeGreaterThanOrEqual(1);
+    expect(records[0]?.id).toBe(releaseNotesApprovedId);
+    expect(records[0]?.matchedFields).toEqual(
+      expect.arrayContaining([
+        "generalized_subject_match",
+        "generalized_recommended_action_match",
+        "generalized_avoid_action_match",
+        "generalized_guidance_pattern_match",
+      ]),
+    );
+    if (records[1]) {
+      expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
+    }
+    expect([releaseNotesApprovedId, readinessApprovedId]).toContain(records[0]?.id);
+  });
+
   it("rejects an expired generalized workflow lesson hold before creating a fresh cluster candidate", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

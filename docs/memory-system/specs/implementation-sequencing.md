@@ -47,15 +47,15 @@ Current sequencing note:
 - the first generalized supervised lesson learning slice is now also landed
 - generalized lesson auto-review and promotion v1 is now also landed
 - reviewed phrase induction for approved generic lessons is now also landed
+- generalized lesson retrieval/application expansion is now also landed
 - the program is no longer primarily advancing by enumerating one lesson key
   at a time
 - the next implementation slice should be:
-  - generalized lesson retrieval/application expansion
+  - broader project-rule learning on the same generic lesson pipeline
 - the next follow-up slices after that should be:
-  - broader project-rule learning only if it can reuse the same generic
-    lesson pipeline
-  - unmet-need planning v1 after the generalized pipeline can already absorb
-    broader lessons without manual backlog
+  - unmet-need planning v1 on the same generic lesson pipeline
+  - reduced-profile self-improving capture only after the broader generic
+    families reuse the same candidate and retrieval posture
 
 ## Why this order is recommended
 

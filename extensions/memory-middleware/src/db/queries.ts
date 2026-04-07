@@ -1304,8 +1304,49 @@ type WorkflowImprovementQueryHint = {
     | "anthropic_context1m_eligible_credential_required";
 };
 
+type GeneralizedWorkflowGuidancePatternHint =
+  | ""
+  | "use_instead_of"
+  | "trust_for_scope"
+  | "avoid_only";
+
 function normalizeRetrievalQuery(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function inferGeneralizedWorkflowGuidancePatternHint(
+  query: string,
+): GeneralizedWorkflowGuidancePatternHint {
+  const normalized = normalizeRetrievalQuery(query);
+  if (!normalized) {
+    return "";
+  }
+  if (
+    normalized.includes("what should i trust") ||
+    normalized.includes("which signal should i trust") ||
+    normalized.includes("which source should i trust") ||
+    normalized.includes("what source should i trust") ||
+    normalized.includes("rely on") ||
+    normalized.includes("trust")
+  ) {
+    return "trust_for_scope";
+  }
+  if (
+    normalized.includes("what should i avoid") ||
+    normalized.includes("avoid") ||
+    normalized.includes("don't use") ||
+    normalized.includes("do not use")
+  ) {
+    return "avoid_only";
+  }
+  if (
+    normalized.includes("should i use") ||
+    normalized.includes("what should i use") ||
+    normalized.includes("instead of")
+  ) {
+    return "use_instead_of";
+  }
+  return "";
 }
 
 function inferResponseStyleQueryHint(query: string): ResponseStyleQueryHint | null {
@@ -10200,6 +10241,51 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
+  const autoCaptureLessonFamilyExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'lessonFamily',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'lessonFamily',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'lessonFamily',",
+    "v.metadata->'autoPromotion'->>'lessonFamily',",
+    "''",
+    ")",
+  ].join(" ");
+  const autoCaptureGuidancePatternExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'guidancePattern',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'guidancePattern',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'guidancePattern',",
+    "v.metadata->'autoPromotion'->>'guidancePattern',",
+    "''",
+    ")",
+  ].join(" ");
+  const autoCaptureNormalizedSubjectExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'normalizedSubject',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedSubject',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedSubject',",
+    "v.metadata->'autoPromotion'->>'normalizedSubject',",
+    "''",
+    ")",
+  ].join(" ");
+  const autoCaptureNormalizedRecommendedActionExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'normalizedRecommendedAction',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedRecommendedAction',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedRecommendedAction',",
+    "v.metadata->'autoPromotion'->>'normalizedRecommendedAction',",
+    "''",
+    ")",
+  ].join(" ");
+  const autoCaptureNormalizedAvoidActionExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'normalizedAvoidAction',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedAvoidAction',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedAvoidAction',",
+    "v.metadata->'autoPromotion'->>'normalizedAvoidAction',",
+    "''",
+    ")",
+  ].join(" ");
   const responseStyleHint =
     params.input.kind === "project" || params.input.kind === "procedure"
       ? null
@@ -10208,6 +10294,11 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     params.input.kind === "project" ? inferProjectFactQueryHint(params.input.query) : null;
   const workflowImprovementHint =
     params.input.kind === "project" ? inferWorkflowImprovementQueryHint(params.input.query) : null;
+  const normalizedQuery = normalizeRetrievalQuery(params.input.query);
+  const generalizedWorkflowPatternHint =
+    params.input.kind === "project"
+      ? inferGeneralizedWorkflowGuidancePatternHint(params.input.query)
+      : "";
   const conditions = [
     `(
       mo.search_document @@ websearch_to_tsquery('english', $1::text)
@@ -10222,6 +10313,8 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     responseStyleHint?.template ?? "",
     projectFactHint?.fieldKey ?? "",
     workflowImprovementHint?.lessonKey ?? "",
+    normalizedQuery,
+    generalizedWorkflowPatternHint,
   ];
 
   if (params.input.kind) {
@@ -10259,6 +10352,22 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
           + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
           + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
           + case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
+          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
+              and ${autoCaptureNormalizedSubjectExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
+            then 170 else 0 end
+          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
+              and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
+            then 95 else 0 end
+          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
+              and ${autoCaptureNormalizedAvoidActionExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedAvoidActionExpression} || '%'
+            then 90 else 0 end
+          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
+              and $7::text <> ''
+              and ${autoCaptureGuidancePatternExpression} = $7::text
+            then 40 else 0 end
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
         )::float8 as score,
@@ -10276,6 +10385,26 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
             end,
             case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text
               then 'auto_capture_lesson_match'
+            end,
+            case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
+                and ${autoCaptureNormalizedSubjectExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
+              then 'generalized_subject_match'
+            end,
+            case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
+                and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
+              then 'generalized_recommended_action_match'
+            end,
+            case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
+                and ${autoCaptureNormalizedAvoidActionExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedAvoidActionExpression} || '%'
+              then 'generalized_avoid_action_match'
+            end,
+            case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
+                and $7::text <> ''
+                and ${autoCaptureGuidancePatternExpression} = $7::text
+              then 'generalized_guidance_pattern_match'
             end,
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'

@@ -2148,7 +2148,9 @@ function buildSubscriberCaptureMetadata(params: {
       key: match.key,
       subjectKey: match.subjectKey,
       subject: match.subject,
+      normalizedSubject: match.normalizedSubject,
       value: match.value,
+      normalizedValue: match.normalizedValue,
       ...(match.projectScope ? { projectScope: match.projectScope } : {}),
       agentExternalKey: params.agentExternalKey,
       sessionKey: params.sessionKey,
@@ -2637,8 +2639,24 @@ function buildRecurringProcedureAutoPromotionMetadata(params: {
       key: params.match.key,
       subjectKey: params.match.subjectKey,
       subject: params.match.subject,
+      normalizedSubject: params.match.normalizedSubject,
       title: params.match.title,
       value: params.match.value,
+      normalizedValue: params.match.normalizedValue,
+      ...(params.match.recommendedAction
+        ? { recommendedAction: params.match.recommendedAction }
+        : {}),
+      ...(params.match.normalizedRecommendedAction
+        ? { normalizedRecommendedAction: params.match.normalizedRecommendedAction }
+        : {}),
+      ...(params.match.avoidAction ? { avoidAction: params.match.avoidAction } : {}),
+      ...(params.match.normalizedAvoidAction
+        ? { normalizedAvoidAction: params.match.normalizedAvoidAction }
+        : {}),
+      ...(params.match.rationale ? { rationale: params.match.rationale } : {}),
+      ...(params.match.normalizedRationale
+        ? { normalizedRationale: params.match.normalizedRationale }
+        : {}),
       toolName: "memory_candidate_submit",
       agentExternalKey: params.agentExternalKey,
       sessionKey: params.sessionKey,
@@ -2898,13 +2916,24 @@ function buildWorkflowImprovementAutoReviewMetadata(params: {
       key: params.match.key,
       subjectKey: params.match.subjectKey,
       subject: params.match.subject,
+      normalizedSubject: params.match.normalizedSubject,
       value: params.match.value,
+      normalizedValue: params.match.normalizedValue,
       ...(params.match.guidancePattern ? { guidancePattern: params.match.guidancePattern } : {}),
       ...(params.match.recommendedAction
         ? { recommendedAction: params.match.recommendedAction }
         : {}),
+      ...(params.match.normalizedRecommendedAction
+        ? { normalizedRecommendedAction: params.match.normalizedRecommendedAction }
+        : {}),
       ...(params.match.avoidAction ? { avoidAction: params.match.avoidAction } : {}),
+      ...(params.match.normalizedAvoidAction
+        ? { normalizedAvoidAction: params.match.normalizedAvoidAction }
+        : {}),
       ...(params.match.rationale ? { rationale: params.match.rationale } : {}),
+      ...(params.match.normalizedRationale
+        ? { normalizedRationale: params.match.normalizedRationale }
+        : {}),
       guidanceMode: "guidance_only",
       agentExternalKey: params.agentExternalKey,
       sessionKey: params.sessionKey,

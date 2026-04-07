@@ -89,7 +89,7 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
           "For nearby deploy, release, triage, or investigation asks where a stored checklist may help, also prefer memory_object_search_hybrid with kind=procedure and scope=include_validated_procedures even if the user did not say checklist.",
         );
         lines.push(
-          "For repo-operating or provider-troubleshooting asks where a remembered workflow lesson may matter, prefer memory_object_search_hybrid with kind=project and approved-only scope before falling back to generic memory_search. This includes both the older bounded workflow lessons and newer approved generic workflow guidance.",
+          "For repo-operating or provider-troubleshooting asks where a remembered workflow lesson may matter, prefer memory_object_search_hybrid with kind=project and approved-only scope before falling back to generic memory_search. This includes both the older bounded workflow lessons and newer approved generic workflow guidance. When asking what to use, avoid, or trust for a repo-local scope, include the scope plus the competing actions or signals in the hybrid query so the most relevant approved generic lesson wins.",
         );
       }
       lines.push(
@@ -102,7 +102,7 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
         "For nearby advice asks that match a stored checklist, surface it suggestion-first as an option or relevant checklist rather than silently treating it as mandatory workflow.",
       );
       lines.push(
-        "If approved workflow-improvement memory exists for a relevant tool, repo-operating ask, or known environment constraint, surface it as a bounded guidance hint or gotcha to avoid. Do not turn it into an autonomous action or silently mutate the plan.",
+        "If approved workflow-improvement memory exists for a relevant tool, repo-operating ask, or known environment constraint, surface only the top directly relevant guidance hint or two and omit weak adjacent lessons. Do not turn it into an autonomous action or silently mutate the plan.",
       );
     }
 
