@@ -443,6 +443,41 @@ describe("memory candidate submit tool", () => {
     });
   });
 
+  it("normalizes generalized workflow lessons into review-first managed improvement metadata", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    await tool.execute("call-2c-generic", {
+      kind: "improvement",
+      content:
+        "For release proof notes here, use bulletized proof IDs instead of paraphrased rollout summaries.",
+    });
+
+    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
+      kind: "improvement",
+      content:
+        "Workflow improvement: for release proof notes, use bulletized proof IDs instead of paraphrased rollout summaries.",
+      metadata: expect.objectContaining({
+        category: "workflow_improvement",
+        source: "explicit_workflow_improvement",
+        autoCapture: expect.objectContaining({
+          captureClass: "workflow_generalized_guidance",
+          template: "workflow_generalized_guidance",
+          lessonFamily: "generalized_workflow_lesson",
+          guidancePattern: "use_instead_of",
+          recommendedAction: "bulletized proof IDs",
+          avoidAction: "paraphrased rollout summaries",
+          guidanceMode: "guidance_only",
+        }),
+        candidateLifecycle: expect.objectContaining({
+          family: "workflow_improvement",
+          state: "review_required",
+          lessonFamily: "generalized_workflow_lesson",
+        }),
+      }),
+    });
+  });
+
   it("stores an approved environment-constraint semantic embedding after confirmation promotion", async () => {
     storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
     inspectWorkflowImprovementLifecycle.mockReset();

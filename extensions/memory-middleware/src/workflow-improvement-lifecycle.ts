@@ -25,6 +25,8 @@ export type WorkflowImprovementPendingCandidate = {
   confirmationState?: string;
 };
 
+const WORKFLOW_PENDING_STATES = new Set(["pending_confirmation", "review_required"]);
+
 export type WorkflowImprovementLifecycleInspection = {
   matchingApprovedObjectId?: string;
   pendingCandidate?: WorkflowImprovementPendingCandidate;
@@ -165,7 +167,9 @@ export async function inspectWorkflowImprovementLifecycle(params: {
       (row) =>
         row.resolved_key === params.key &&
         row.review_state === "candidate" &&
-        extractCandidateConfirmationState(row.metadata ?? undefined) === "pending_confirmation",
+        WORKFLOW_PENDING_STATES.has(
+          extractCandidateConfirmationState(row.metadata ?? undefined) ?? "",
+        ),
     );
 
     return {

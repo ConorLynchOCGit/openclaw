@@ -72,7 +72,7 @@ describe("buildPromptSection", () => {
     expect(result).toContainEqual(expect.stringContaining("stored checklist may help"));
     expect(result).toContainEqual(
       expect.stringContaining(
-        "running tests, making scoped commits, git-state safety, docs-only validation gates, the memory proof runner, readiness checks, known host/runtime constraints, OpenAI embeddings auth, or Anthropic long-context API gotchas",
+        "For repo-operating or provider-troubleshooting asks where a remembered workflow lesson may matter",
       ),
     );
     expect(result).toContainEqual(expect.stringContaining("directly answers the question"));
@@ -122,8 +122,10 @@ describe("buildPromptSection", () => {
     expect(result).toContain(
       "If the user states a tightly bounded named project fact in explicit declarative form, such as For project Atlas, the staging branch is atlas-staging, submit it as a learning candidate.",
     );
-    expect(result).toContain(
-      "If the user shares a repeated repo-local tool gotcha, environment constraint, or bounded API workaround such as use pnpm test -- <path-or-filter> instead of raw vitest, use scripts/committer for commits, avoid git stash in multi-agent work, use pnpm check:fast for docs-only work, use pnpm memory:proof for bounded memory proof, trust /readyz for readiness instead of /healthz, python is not available here so use node/tsx, gateway POST /tools/invoke is forbidden here so use direct runtime invocation, OpenAI embeddings here still need a configured OPENAI_API_KEY or another embeddings provider because openai-codex OAuth profiles do not satisfy the embeddings path directly, or Anthropic Extra usage required for long context requests means context1m needs an eligible credential or fallback posture, submit it as kind=improvement.",
+    expect(result).toContainEqual(
+      expect.stringContaining(
+        "If the user explicitly teaches a repo-local workflow lesson in plain language, with a bounded scope plus a recommended action, avoided action, or trusted signal, submit it as kind=improvement.",
+      ),
     );
     expect(result).toContain(
       "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",

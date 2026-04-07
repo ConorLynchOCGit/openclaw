@@ -63,6 +63,8 @@ import {
 import {
   detectWorkflowImprovementSemanticDecision,
   type WorkflowImprovementCaptureClass,
+  type WorkflowImprovementGuidancePattern,
+  type WorkflowImprovementLessonFamily,
   type WorkflowImprovementLessonKey,
   type WorkflowImprovementReasonCode,
   type WorkflowImprovementSemanticConfidence,
@@ -582,7 +584,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "recurring_procedure_correction"
     | "workflow_tool_gotcha"
     | "workflow_environment_constraint"
-    | "workflow_api_workaround";
+    | "workflow_api_workaround"
+    | "workflow_generalized_guidance";
   candidateKind: "learning" | "correction" | "procedure" | "improvement";
   reasonCode:
     | "explicit_preference_statement"
@@ -595,7 +598,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "recurring_procedure_correction"
     | "workflow_tool_gotcha_statement"
     | "workflow_environment_constraint_statement"
-    | "workflow_api_workaround_statement";
+    | "workflow_api_workaround_statement"
+    | "workflow_generalized_guidance_statement";
   template:
     | "my_preferred_is"
     | "my_favorite_is"
@@ -608,7 +612,8 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "named_recurring_checklist"
     | "workflow_tool_gotcha"
     | "workflow_environment_constraint"
-    | "workflow_api_workaround";
+    | "workflow_api_workaround"
+    | "workflow_generalized_guidance";
   subject: string;
   value: string;
   normalizedSubject: string;
@@ -621,8 +626,16 @@ export type OrdinaryTurnAutoCaptureMatch = {
   procedureKey?: RecurringProcedureKey;
   title?: string;
   steps?: string[];
+  lessonFamily?: WorkflowImprovementLessonFamily;
   lessonKey?: WorkflowImprovementLessonKey;
   toolKey?: WorkflowImprovementToolKey;
+  guidancePattern?: WorkflowImprovementGuidancePattern;
+  recommendedAction?: string;
+  normalizedRecommendedAction?: string;
+  avoidAction?: string;
+  normalizedAvoidAction?: string;
+  rationale?: string;
+  normalizedRationale?: string;
 };
 
 type ResolvedAttribution = {
@@ -797,8 +810,11 @@ type WorkflowImprovementCaptureDecision = {
   confidence: WorkflowImprovementSemanticConfidence;
   detectionSource: WorkflowImprovementDetectionSource;
   evidence: string[];
-  lessonKey: WorkflowImprovementLessonKey;
-  toolKey: WorkflowImprovementToolKey;
+  reviewMode: "pending_confirmation" | "review_required";
+  lessonFamily: WorkflowImprovementLessonFamily;
+  lessonKey?: WorkflowImprovementLessonKey;
+  toolKey?: WorkflowImprovementToolKey;
+  guidancePattern?: WorkflowImprovementGuidancePattern;
   match: OrdinaryTurnAutoCaptureMatch;
 };
 
@@ -1538,8 +1554,10 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
   candidateKind: "improvement";
   reasonCode: WorkflowImprovementReasonCode;
   template: WorkflowImprovementTemplate;
-  lessonKey: WorkflowImprovementLessonKey;
-  toolKey: WorkflowImprovementToolKey;
+  lessonFamily: WorkflowImprovementLessonFamily;
+  lessonKey?: WorkflowImprovementLessonKey;
+  toolKey?: WorkflowImprovementToolKey;
+  guidancePattern?: WorkflowImprovementGuidancePattern;
   subject: string;
   value: string;
   normalizedSubject: string;
@@ -1547,6 +1565,12 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
   content: string;
   subjectKey: string;
   key: string;
+  recommendedAction?: string;
+  normalizedRecommendedAction?: string;
+  avoidAction?: string;
+  normalizedAvoidAction?: string;
+  rationale?: string;
+  normalizedRationale?: string;
 }): OrdinaryTurnAutoCaptureMatch {
   return {
     profile: "user-preference-v2",
@@ -1554,6 +1578,7 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
     candidateKind: match.candidateKind,
     reasonCode: match.reasonCode,
     template: match.template,
+    lessonFamily: match.lessonFamily,
     subject: match.subject,
     value: match.value,
     normalizedSubject: match.normalizedSubject,
@@ -1561,8 +1586,17 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
     content: match.content,
     subjectKey: match.subjectKey,
     key: match.key,
-    lessonKey: match.lessonKey,
-    toolKey: match.toolKey,
+    ...(match.lessonKey ? { lessonKey: match.lessonKey } : {}),
+    ...(match.toolKey ? { toolKey: match.toolKey } : {}),
+    ...(match.guidancePattern ? { guidancePattern: match.guidancePattern } : {}),
+    ...(match.recommendedAction ? { recommendedAction: match.recommendedAction } : {}),
+    ...(match.normalizedRecommendedAction
+      ? { normalizedRecommendedAction: match.normalizedRecommendedAction }
+      : {}),
+    ...(match.avoidAction ? { avoidAction: match.avoidAction } : {}),
+    ...(match.normalizedAvoidAction ? { normalizedAvoidAction: match.normalizedAvoidAction } : {}),
+    ...(match.rationale ? { rationale: match.rationale } : {}),
+    ...(match.normalizedRationale ? { normalizedRationale: match.normalizedRationale } : {}),
   };
 }
 
@@ -1704,8 +1738,16 @@ function detectWorkflowImprovementCaptureDecision(
     confidence: semanticDecision.confidence,
     detectionSource: "semantic",
     evidence: semanticDecision.evidence,
-    lessonKey: semanticDecision.match.lessonKey,
-    toolKey: semanticDecision.match.toolKey,
+    reviewMode:
+      semanticDecision.match.lessonFamily === "generalized_workflow_lesson"
+        ? "review_required"
+        : "pending_confirmation",
+    lessonFamily: semanticDecision.match.lessonFamily,
+    ...(semanticDecision.match.lessonKey ? { lessonKey: semanticDecision.match.lessonKey } : {}),
+    ...(semanticDecision.match.toolKey ? { toolKey: semanticDecision.match.toolKey } : {}),
+    ...(semanticDecision.match.guidancePattern
+      ? { guidancePattern: semanticDecision.match.guidancePattern }
+      : {}),
     match: toOrdinaryTurnWorkflowImprovementMatch(semanticDecision.match),
   };
 }
@@ -1925,16 +1967,20 @@ function buildWorkflowImprovementSemanticMetadata(params: {
   detectionSource: WorkflowImprovementDetectionSource;
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
-  lessonKey: WorkflowImprovementLessonKey;
-  toolKey: WorkflowImprovementToolKey;
+  lessonFamily: WorkflowImprovementLessonFamily;
+  lessonKey?: WorkflowImprovementLessonKey;
+  toolKey?: WorkflowImprovementToolKey;
+  guidancePattern?: WorkflowImprovementGuidancePattern;
 }): Record<string, unknown> {
   return {
     semanticDetection: {
-      source: "workflow_improvement_semantic_v1",
+      source: "workflow_improvement_semantic_v2",
       detectionSource: params.detectionSource,
       confidence: params.confidence,
-      lessonKey: params.lessonKey,
-      toolKey: params.toolKey,
+      lessonFamily: params.lessonFamily,
+      ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
+      ...(params.toolKey ? { toolKey: params.toolKey } : {}),
+      ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
       evidence: params.evidence,
     },
   };
@@ -2008,23 +2054,28 @@ function buildRecurringProcedurePendingConfirmationMetadata(params: {
 function buildWorkflowImprovementPendingConfirmationMetadata(params: {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
-  lessonKey: WorkflowImprovementLessonKey;
-  toolKey: WorkflowImprovementToolKey;
+  lessonFamily: WorkflowImprovementLessonFamily;
+  state?: "pending_confirmation" | "review_required";
+  lessonKey?: WorkflowImprovementLessonKey;
+  toolKey?: WorkflowImprovementToolKey;
+  guidancePattern?: WorkflowImprovementGuidancePattern;
   observedAt?: string;
 }): Record<string, unknown> {
   const observedAt = params.observedAt ?? new Date().toISOString();
   return {
     candidateLifecycle: {
       family: "workflow_improvement",
-      state: "pending_confirmation",
+      state: params.state ?? "pending_confirmation",
       confidence: params.confidence,
       evidenceCount: 1,
       observedAt,
       expiresAt: new Date(
         Date.parse(observedAt) + WORKFLOW_IMPROVEMENT_CONFIRMATION_WINDOW_MS,
       ).toISOString(),
-      lessonKey: params.lessonKey,
-      toolKey: params.toolKey,
+      lessonFamily: params.lessonFamily,
+      ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
+      ...(params.toolKey ? { toolKey: params.toolKey } : {}),
+      ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
       evidence: params.evidence,
     },
   };
@@ -2586,8 +2637,10 @@ function buildRecurringProcedureAutoPromotionMetadata(params: {
 async function rejectWorkflowImprovementCandidateIfPresent(params: {
   candidateId: string;
   subjectKey: string;
-  lessonKey: WorkflowImprovementLessonKey;
-  toolKey: WorkflowImprovementToolKey;
+  lessonFamily: WorkflowImprovementLessonFamily;
+  lessonKey?: WorkflowImprovementLessonKey;
+  toolKey?: WorkflowImprovementToolKey;
+  guidancePattern?: WorkflowImprovementGuidancePattern;
   rationale: string;
   reviewerAgentId?: string;
   logger: PluginLogger;
@@ -2605,8 +2658,10 @@ async function rejectWorkflowImprovementCandidateIfPresent(params: {
         family: "workflow_improvement",
         state: "rejected",
         subjectKey: params.subjectKey,
-        lessonKey: params.lessonKey,
-        toolKey: params.toolKey,
+        lessonFamily: params.lessonFamily,
+        ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
+        ...(params.toolKey ? { toolKey: params.toolKey } : {}),
+        ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
       },
     },
   });
@@ -2615,8 +2670,10 @@ async function rejectWorkflowImprovementCandidateIfPresent(params: {
       formatLog("memory-middleware workflow-improvement candidate rejection failed", {
         candidateId: params.candidateId,
         subjectKey: params.subjectKey,
-        lessonKey: params.lessonKey,
-        toolKey: params.toolKey,
+        lessonFamily: params.lessonFamily,
+        ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
+        ...(params.toolKey ? { toolKey: params.toolKey } : {}),
+        ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
         reason: result.reason ?? "unknown",
       }),
     );
@@ -2634,7 +2691,8 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
   config: MemoryMiddlewareConfig;
   cfg?: OpenClawConfig;
   sessionKey?: string;
-  lessonKey: WorkflowImprovementLessonKey;
+  lessonFamily: WorkflowImprovementLessonFamily;
+  lessonKey?: WorkflowImprovementLessonKey;
 }): Promise<boolean> {
   const reviewResult = await params.reviewCandidate({
     candidateId: params.candidateId,
@@ -2720,8 +2778,9 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
 
 function buildWorkflowImprovementAutoPromotionMetadata(params: {
   match: OrdinaryTurnAutoCaptureMatch;
-  lessonKey: WorkflowImprovementLessonKey;
-  toolKey: WorkflowImprovementToolKey;
+  lessonFamily: WorkflowImprovementLessonFamily;
+  lessonKey?: WorkflowImprovementLessonKey;
+  toolKey?: WorkflowImprovementToolKey;
   agentExternalKey: string;
   sessionKey: string;
   transcriptFile: string;
@@ -2738,12 +2797,19 @@ function buildWorkflowImprovementAutoPromotionMetadata(params: {
       captureProfile: params.match.profile,
       captureClass: params.match.captureClass,
       reasonCode: params.match.reasonCode,
-      lessonKey: params.lessonKey,
-      toolKey: params.toolKey,
+      lessonFamily: params.lessonFamily,
+      ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
+      ...(params.toolKey ? { toolKey: params.toolKey } : {}),
       key: params.match.key,
       subjectKey: params.match.subjectKey,
       subject: params.match.subject,
       value: params.match.value,
+      ...(params.match.guidancePattern ? { guidancePattern: params.match.guidancePattern } : {}),
+      ...(params.match.recommendedAction
+        ? { recommendedAction: params.match.recommendedAction }
+        : {}),
+      ...(params.match.avoidAction ? { avoidAction: params.match.avoidAction } : {}),
+      ...(params.match.rationale ? { rationale: params.match.rationale } : {}),
       guidanceMode: "guidance_only",
       agentExternalKey: params.agentExternalKey,
       sessionKey: params.sessionKey,
@@ -3643,8 +3709,14 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       detectionSource: decisionParams.decision.detectionSource,
       confidence: decisionParams.decision.confidence,
       evidence: decisionParams.decision.evidence,
-      lessonKey: decisionParams.decision.lessonKey,
-      toolKey: decisionParams.decision.toolKey,
+      lessonFamily: decisionParams.decision.lessonFamily,
+      ...(decisionParams.decision.lessonKey
+        ? { lessonKey: decisionParams.decision.lessonKey }
+        : {}),
+      ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
+      ...(decisionParams.decision.guidancePattern
+        ? { guidancePattern: decisionParams.decision.guidancePattern }
+        : {}),
     });
 
     const attribution = await deps.resolveAttribution({
@@ -3678,14 +3750,25 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       await rejectWorkflowImprovementCandidateIfPresent({
         candidateId: inspection.pendingCandidate.id,
         subjectKey: match.subjectKey,
-        lessonKey: decisionParams.decision.lessonKey,
-        toolKey: decisionParams.decision.toolKey,
+        lessonFamily: decisionParams.decision.lessonFamily,
+        ...(decisionParams.decision.lessonKey
+          ? { lessonKey: decisionParams.decision.lessonKey }
+          : {}),
+        ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
+        ...(decisionParams.decision.guidancePattern
+          ? { guidancePattern: decisionParams.decision.guidancePattern }
+          : {}),
         rationale:
-          "workflow-improvement candidate confirmation window expired without later confirming evidence",
+          decisionParams.decision.reviewMode === "review_required"
+            ? "workflow-improvement review candidate expired without approval"
+            : "workflow-improvement candidate confirmation window expired without later confirming evidence",
         reviewerAgentId: attribution.agentId,
         logger: params.logger,
         reviewCandidate: deps.reviewCandidate,
-        source: "workflow_improvement_candidate_confirmation",
+        source:
+          decisionParams.decision.reviewMode === "review_required"
+            ? "workflow_improvement_candidate_review"
+            : "workflow_improvement_candidate_confirmation",
       });
     }
 
@@ -3716,8 +3799,24 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       transcriptFile: decisionParams.transcriptFile,
       ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
       autoCaptureExtras: {
-        lessonKey: decisionParams.decision.lessonKey,
-        toolKey: decisionParams.decision.toolKey,
+        lessonFamily: decisionParams.decision.lessonFamily,
+        ...(decisionParams.decision.lessonKey
+          ? { lessonKey: decisionParams.decision.lessonKey }
+          : {}),
+        ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
+        ...(decisionParams.decision.guidancePattern
+          ? { guidancePattern: decisionParams.decision.guidancePattern }
+          : {}),
+        ...(match.recommendedAction ? { recommendedAction: match.recommendedAction } : {}),
+        ...(match.normalizedRecommendedAction
+          ? { normalizedRecommendedAction: match.normalizedRecommendedAction }
+          : {}),
+        ...(match.avoidAction ? { avoidAction: match.avoidAction } : {}),
+        ...(match.normalizedAvoidAction
+          ? { normalizedAvoidAction: match.normalizedAvoidAction }
+          : {}),
+        ...(match.rationale ? { rationale: match.rationale } : {}),
+        ...(match.normalizedRationale ? { normalizedRationale: match.normalizedRationale } : {}),
         guidanceMode: "guidance_only",
       },
       extraMetadata: {
@@ -3725,14 +3824,22 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         ...buildWorkflowImprovementPendingConfirmationMetadata({
           confidence: decisionParams.decision.confidence,
           evidence: decisionParams.decision.evidence,
-          lessonKey: decisionParams.decision.lessonKey,
-          toolKey: decisionParams.decision.toolKey,
+          lessonFamily: decisionParams.decision.lessonFamily,
+          state: decisionParams.decision.reviewMode,
+          ...(decisionParams.decision.lessonKey
+            ? { lessonKey: decisionParams.decision.lessonKey }
+            : {}),
+          ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
+          ...(decisionParams.decision.guidancePattern
+            ? { guidancePattern: decisionParams.decision.guidancePattern }
+            : {}),
           ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
         }),
       },
     });
 
     if (
+      decisionParams.decision.reviewMode === "pending_confirmation" &&
       inspection?.pendingCandidate &&
       !isExpiredPendingWorkflowImprovementCandidate(inspection.pendingCandidate) &&
       !shouldSkipImmediateWorkflowImprovementConfirmation(inspection.pendingCandidate.createdAt)
@@ -3746,11 +3853,17 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         config: params.config,
         cfg: params.cfg,
         sessionKey: decisionParams.sessionKey,
-        lessonKey: decisionParams.decision.lessonKey,
+        lessonFamily: decisionParams.decision.lessonFamily,
+        ...(decisionParams.decision.lessonKey
+          ? { lessonKey: decisionParams.decision.lessonKey }
+          : {}),
         metadata: buildWorkflowImprovementAutoPromotionMetadata({
           match,
-          lessonKey: decisionParams.decision.lessonKey,
-          toolKey: decisionParams.decision.toolKey,
+          lessonFamily: decisionParams.decision.lessonFamily,
+          ...(decisionParams.decision.lessonKey
+            ? { lessonKey: decisionParams.decision.lessonKey }
+            : {}),
+          ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
           agentExternalKey: decisionParams.agentExternalKey,
           sessionKey: decisionParams.sessionKey,
           transcriptFile: decisionParams.transcriptFile,
@@ -3767,8 +3880,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         logContext: {
           key: match.key,
           subjectKey: match.subjectKey,
-          lessonKey: decisionParams.decision.lessonKey,
-          toolKey: decisionParams.decision.toolKey,
+          lessonFamily: decisionParams.decision.lessonFamily,
+          ...(decisionParams.decision.lessonKey
+            ? { lessonKey: decisionParams.decision.lessonKey }
+            : {}),
+          ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
           confidence: decisionParams.decision.confidence,
         },
       });
@@ -3781,13 +3897,20 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     if (
       inspection?.pendingCandidate &&
       !isExpiredPendingWorkflowImprovementCandidate(inspection.pendingCandidate) &&
-      shouldSkipImmediateWorkflowImprovementConfirmation(inspection.pendingCandidate.createdAt)
+      (decisionParams.decision.reviewMode === "review_required" ||
+        shouldSkipImmediateWorkflowImprovementConfirmation(inspection.pendingCandidate.createdAt))
     ) {
       params.logger.debug?.(
-        formatLog("memory-middleware workflow-improvement capture skipped immediate duplicate", {
-          key: match.key,
-          candidateId: inspection.pendingCandidate.id,
-        }),
+        formatLog(
+          decisionParams.decision.reviewMode === "review_required"
+            ? "memory-middleware workflow-improvement capture skipped existing review candidate"
+            : "memory-middleware workflow-improvement capture skipped immediate duplicate",
+          {
+            key: match.key,
+            candidateId: inspection.pendingCandidate.id,
+            lessonFamily: decisionParams.decision.lessonFamily,
+          },
+        ),
       );
       markRecent(match.key);
       return true;
@@ -3814,8 +3937,15 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     params.logger.info(
       formatLog("memory-middleware ordinary-turn workflow-improvement capture accepted", {
         key: match.key,
-        lessonKey: decisionParams.decision.lessonKey,
-        toolKey: decisionParams.decision.toolKey,
+        lessonFamily: decisionParams.decision.lessonFamily,
+        ...(decisionParams.decision.lessonKey
+          ? { lessonKey: decisionParams.decision.lessonKey }
+          : {}),
+        ...(decisionParams.decision.toolKey ? { toolKey: decisionParams.decision.toolKey } : {}),
+        ...(decisionParams.decision.guidancePattern
+          ? { guidancePattern: decisionParams.decision.guidancePattern }
+          : {}),
+        reviewMode: decisionParams.decision.reviewMode,
         confidence: decisionParams.decision.confidence,
         eventId: result.eventId,
         memoryObjectId: result.memoryObjectId,

@@ -56,6 +56,35 @@ describe("parseMemoryProofPlan", () => {
     expect(plan.steps[3]?.kind).toBe("hybrid_search");
   });
 
+  it("accepts transcript steps that explicitly expect no lifecycle writes", () => {
+    const plan = parseMemoryProofPlan({
+      mode: "isolated",
+      label: "generic workflow ambiguity proof",
+      steps: [
+        {
+          id: "capture_vague_complaint",
+          kind: "transcript_capture",
+          text: "Build and rollout stuff has felt noisy lately.",
+          sessionFile: "/tmp/proof.jsonl",
+          sessionKey: "agent:test:proof",
+          agentExternalKey: "chief",
+          attribution: {
+            agentId: "agent-1",
+            sessionId: "session-1",
+            projectId: "project-1",
+          },
+          expectNoLifecycle: true,
+        },
+      ],
+    });
+
+    expect(plan.steps).toHaveLength(1);
+    expect(plan.steps[0]).toMatchObject({
+      kind: "transcript_capture",
+      expectNoLifecycle: true,
+    });
+  });
+
   it("rejects duplicate step ids", () => {
     expect(() =>
       parseMemoryProofPlan({
@@ -91,5 +120,29 @@ describe("parseMemoryProofPlan", () => {
         ],
       }),
     ).toThrow(/candidate_review requires candidateId or candidateIdFromStep/i);
+  });
+
+  it("requires transcript capture to declare either expectation or ignore mode", () => {
+    expect(() =>
+      parseMemoryProofPlan({
+        mode: "isolated",
+        label: "missing capture expectation",
+        steps: [
+          {
+            id: "capture",
+            kind: "transcript_capture",
+            text: "Use this instead.",
+            sessionFile: "/tmp/proof.jsonl",
+            sessionKey: "agent:test:proof",
+            agentExternalKey: "chief",
+            attribution: {
+              agentId: "agent-1",
+              sessionId: "session-1",
+              projectId: "project-1",
+            },
+          },
+        ],
+      }),
+    ).toThrow(/transcript_capture requires expectation or expectNoLifecycle/i);
   });
 });

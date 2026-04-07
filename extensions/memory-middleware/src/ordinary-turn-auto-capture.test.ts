@@ -1909,6 +1909,96 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     );
   });
 
+  it("captures a generalized workflow lesson as a review-first candidate and skips duplicate backlog", async () => {
+    const submitImprovementNote = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "improvement" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-generic-improvement-1",
+      memoryObjectId: "memory-generic-improvement-1",
+    }));
+    const reviewCandidate = vi.fn();
+    const promoteToMemory = vi.fn();
+    const inspectWorkflowImprovementLifecycle = vi
+      .fn()
+      .mockResolvedValueOnce({
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: [],
+      })
+      .mockResolvedValueOnce({
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: ["memory-generic-improvement-1"],
+        pendingCandidate: {
+          id: "memory-generic-improvement-1",
+          createdAt: new Date(Date.now() - 10_000).toISOString(),
+          updatedAt: new Date(Date.now() - 10_000).toISOString(),
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          confirmationState: "review_required",
+        },
+      });
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-generic",
+          sessionId: "session-uuid-generic",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        submitProcedureSuggestion: vi.fn(),
+        submitImprovementNote,
+        reviewCandidate,
+        promoteToMemory,
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+        inspectWorkflowImprovementLifecycle,
+      },
+    });
+
+    const update = {
+      sessionFile: "/root/.openclaw/agents/main/sessions/workflow-improvement-generic.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content:
+          "For release proof notes here, use bulletized proof IDs instead of paraphrased rollout summaries.",
+        timestamp: Date.parse("2026-04-06T03:10:00Z"),
+      },
+    };
+
+    await handler(update);
+    await handler(update);
+
+    expect(submitImprovementNote).toHaveBeenCalledTimes(1);
+    expect(submitImprovementNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          "Workflow improvement: for release proof notes, use bulletized proof IDs instead of paraphrased rollout summaries.",
+        metadata: expect.objectContaining({
+          autoCapture: expect.objectContaining({
+            captureClass: "workflow_generalized_guidance",
+            template: "workflow_generalized_guidance",
+            lessonFamily: "generalized_workflow_lesson",
+            guidancePattern: "use_instead_of",
+            recommendedAction: "bulletized proof IDs",
+            avoidAction: "paraphrased rollout summaries",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "workflow_improvement",
+            state: "review_required",
+            lessonFamily: "generalized_workflow_lesson",
+          }),
+        }),
+      }),
+    );
+    expect(reviewCandidate).not.toHaveBeenCalled();
+    expect(promoteToMemory).not.toHaveBeenCalled();
+  });
+
   it("stores an approved environment-constraint semantic embedding after auto-promotion", async () => {
     storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
     const reviewCandidate = vi.fn(async () => ({

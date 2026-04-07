@@ -61,6 +61,8 @@ import {
 import {
   detectWorkflowImprovementSemanticDecision,
   type WorkflowImprovementCaptureClass,
+  type WorkflowImprovementGuidancePattern,
+  type WorkflowImprovementLessonFamily,
   isSupportedWorkflowImprovementLessonKey,
   type WorkflowImprovementLessonKey,
   type WorkflowImprovementReasonCode,
@@ -568,6 +570,10 @@ function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { reasonCode?: unknown }).reasonCode
           : undefined,
+      lessonFamily:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { lessonFamily?: unknown }).lessonFamily
+          : undefined,
       lessonKey:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { lessonKey?: unknown }).lessonKey
@@ -591,6 +597,22 @@ function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
       value:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { value?: unknown }).value
+          : undefined,
+      guidancePattern:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { guidancePattern?: unknown }).guidancePattern
+          : undefined,
+      recommendedAction:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { recommendedAction?: unknown }).recommendedAction
+          : undefined,
+      avoidAction:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { avoidAction?: unknown }).avoidAction
+          : undefined,
+      rationale:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { rationale?: unknown }).rationale
           : undefined,
       guidanceMode: "guidance_only",
       toolName: "memory_candidate_submit",
@@ -967,15 +989,30 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
   const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
   const key = readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]);
   const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
+  const lessonFamily = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "lessonFamily",
+  ]);
+  const guidancePattern = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "guidancePattern",
+  ]);
   const lessonKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "lessonKey"]);
+  const candidateState = readNestedMetadataString(params.input.metadata, [
+    "candidateLifecycle",
+    "state",
+  ]);
+  const isSupportedTemplate =
+    template === "workflow_tool_gotcha" ||
+    template === "workflow_environment_constraint" ||
+    template === "workflow_api_workaround";
+  const isGenericTemplate = template === "workflow_generalized_guidance";
   if (
-    (template !== "workflow_tool_gotcha" &&
-      template !== "workflow_environment_constraint" &&
-      template !== "workflow_api_workaround") ||
+    (!isSupportedTemplate && !isGenericTemplate) ||
     !key ||
     !subjectKey ||
-    !lessonKey ||
-    !isSupportedWorkflowImprovementLessonKey(lessonKey)
+    (isSupportedTemplate && (!lessonKey || !isSupportedWorkflowImprovementLessonKey(lessonKey))) ||
+    (isGenericTemplate && lessonFamily !== "generalized_workflow_lesson")
   ) {
     return null;
   }
@@ -1005,7 +1042,9 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
           family: "workflow_improvement",
           state: "rejected",
           subjectKey,
-          lessonKey,
+          ...(lessonFamily ? { lessonFamily } : {}),
+          ...(lessonKey ? { lessonKey } : {}),
+          ...(guidancePattern ? { guidancePattern } : {}),
         },
       },
     });
@@ -1024,6 +1063,17 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     inspection.pendingCandidate &&
     !isExpiredPendingWorkflowImprovementCandidate(inspection.pendingCandidate)
   ) {
+    if (
+      candidateState === "review_required" ||
+      inspection.pendingCandidate.confirmationState === "review_required"
+    ) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: `workflow-improvement review candidate ${inspection.pendingCandidate.id} already exists`,
+      };
+    }
     if (shouldSkipImmediateWorkflowImprovementConfirmation(inspection.pendingCandidate.createdAt)) {
       return {
         accepted: false,
@@ -1072,7 +1122,11 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         reason: promotionResult.reason,
       };
     }
-    if (isEnvironmentConstraintLessonKey(lessonKey) && promotionResult.promotedMemoryObjectId) {
+    if (
+      lessonKey &&
+      isEnvironmentConstraintLessonKey(lessonKey) &&
+      promotionResult.promotedMemoryObjectId
+    ) {
       await storeApprovedEnvironmentConstraintSemanticEmbedding({
         config: params.runtime.config,
         cfg: params.context?.runtimeConfig ?? params.context?.config,
@@ -1081,6 +1135,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         memoryObjectId: promotionResult.promotedMemoryObjectId,
       });
     } else if (
+      lessonKey &&
       isWorkflowToolGotchaSemanticLessonKey(lessonKey) &&
       promotionResult.promotedMemoryObjectId
     ) {
@@ -1092,6 +1147,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         memoryObjectId: promotionResult.promotedMemoryObjectId,
       });
     } else if (
+      lessonKey &&
       isApiWorkaroundSemanticLessonKey(lessonKey) &&
       promotionResult.promotedMemoryObjectId
     ) {
@@ -1368,16 +1424,20 @@ function buildWorkflowImprovementSemanticMetadata(params: {
   detectionSource: "semantic";
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
-  lessonKey: WorkflowImprovementLessonKey;
-  toolKey: WorkflowImprovementToolKey;
+  lessonFamily: WorkflowImprovementLessonFamily;
+  lessonKey?: WorkflowImprovementLessonKey;
+  toolKey?: WorkflowImprovementToolKey;
+  guidancePattern?: WorkflowImprovementGuidancePattern;
 }): Record<string, unknown> {
   return {
     semanticDetection: {
-      source: "workflow_improvement_semantic_v1",
+      source: "workflow_improvement_semantic_v2",
       detectionSource: params.detectionSource,
       confidence: params.confidence,
-      lessonKey: params.lessonKey,
-      toolKey: params.toolKey,
+      lessonFamily: params.lessonFamily,
+      ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
+      ...(params.toolKey ? { toolKey: params.toolKey } : {}),
+      ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
       evidence: params.evidence,
     },
   };
@@ -1445,20 +1505,25 @@ function buildRecurringProcedurePendingConfirmationMetadata(params: {
 function buildWorkflowImprovementPendingConfirmationMetadata(params: {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
-  lessonKey: WorkflowImprovementLessonKey;
-  toolKey: WorkflowImprovementToolKey;
+  lessonFamily: WorkflowImprovementLessonFamily;
+  state?: "pending_confirmation" | "review_required";
+  lessonKey?: WorkflowImprovementLessonKey;
+  toolKey?: WorkflowImprovementToolKey;
+  guidancePattern?: WorkflowImprovementGuidancePattern;
 }): Record<string, unknown> {
   const observedAt = new Date().toISOString();
   return {
     candidateLifecycle: {
       family: "workflow_improvement",
-      state: "pending_confirmation",
+      state: params.state ?? "pending_confirmation",
       confidence: params.confidence,
       evidenceCount: 1,
       observedAt,
       expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
-      lessonKey: params.lessonKey,
-      toolKey: params.toolKey,
+      lessonFamily: params.lessonFamily,
+      ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
+      ...(params.toolKey ? { toolKey: params.toolKey } : {}),
+      ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
       evidence: params.evidence,
     },
   };
@@ -1565,8 +1630,10 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
   candidateKind: "improvement";
   reasonCode: WorkflowImprovementReasonCode;
   template: WorkflowImprovementTemplate;
-  lessonKey: WorkflowImprovementLessonKey;
-  toolKey: WorkflowImprovementToolKey;
+  lessonFamily: WorkflowImprovementLessonFamily;
+  lessonKey?: WorkflowImprovementLessonKey;
+  toolKey?: WorkflowImprovementToolKey;
+  guidancePattern?: WorkflowImprovementGuidancePattern;
   subject: string;
   value: string;
   normalizedSubject: string;
@@ -1574,6 +1641,12 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
   content: string;
   subjectKey: string;
   key: string;
+  recommendedAction?: string;
+  normalizedRecommendedAction?: string;
+  avoidAction?: string;
+  normalizedAvoidAction?: string;
+  rationale?: string;
+  normalizedRationale?: string;
 }): OrdinaryTurnAutoCaptureMatch {
   return {
     profile: "user-preference-v2",
@@ -1581,6 +1654,7 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
     candidateKind: match.candidateKind,
     reasonCode: match.reasonCode,
     template: match.template,
+    lessonFamily: match.lessonFamily,
     subject: match.subject,
     value: match.value,
     normalizedSubject: match.normalizedSubject,
@@ -1588,8 +1662,17 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
     content: match.content,
     subjectKey: match.subjectKey,
     key: match.key,
-    lessonKey: match.lessonKey,
-    toolKey: match.toolKey,
+    ...(match.lessonKey ? { lessonKey: match.lessonKey } : {}),
+    ...(match.toolKey ? { toolKey: match.toolKey } : {}),
+    ...(match.guidancePattern ? { guidancePattern: match.guidancePattern } : {}),
+    ...(match.recommendedAction ? { recommendedAction: match.recommendedAction } : {}),
+    ...(match.normalizedRecommendedAction
+      ? { normalizedRecommendedAction: match.normalizedRecommendedAction }
+      : {}),
+    ...(match.avoidAction ? { avoidAction: match.avoidAction } : {}),
+    ...(match.normalizedAvoidAction ? { normalizedAvoidAction: match.normalizedAvoidAction } : {}),
+    ...(match.rationale ? { rationale: match.rationale } : {}),
+    ...(match.normalizedRationale ? { normalizedRationale: match.normalizedRationale } : {}),
   };
 }
 
@@ -1631,8 +1714,11 @@ type ManagedRecurringProcedureResolution = {
 
 type ManagedWorkflowImprovementResolution = {
   parsed: OrdinaryTurnAutoCaptureMatch;
-  lessonKey: WorkflowImprovementLessonKey;
-  toolKey: WorkflowImprovementToolKey;
+  lessonFamily: WorkflowImprovementLessonFamily;
+  reviewMode: "pending_confirmation" | "review_required";
+  lessonKey?: WorkflowImprovementLessonKey;
+  toolKey?: WorkflowImprovementToolKey;
+  guidancePattern?: WorkflowImprovementGuidancePattern;
   source: "content" | "raw";
   detectionSource: "semantic";
   confidence: WorkflowImprovementSemanticConfidence;
@@ -2117,8 +2203,16 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
   if (contentDecision.action === "capture") {
     return {
       parsed: toOrdinaryTurnWorkflowImprovementMatch(contentDecision.match),
-      lessonKey: contentDecision.match.lessonKey,
-      toolKey: contentDecision.match.toolKey,
+      lessonFamily: contentDecision.match.lessonFamily,
+      reviewMode:
+        contentDecision.match.lessonFamily === "generalized_workflow_lesson"
+          ? "review_required"
+          : "pending_confirmation",
+      ...(contentDecision.match.lessonKey ? { lessonKey: contentDecision.match.lessonKey } : {}),
+      ...(contentDecision.match.toolKey ? { toolKey: contentDecision.match.toolKey } : {}),
+      ...(contentDecision.match.guidancePattern
+        ? { guidancePattern: contentDecision.match.guidancePattern }
+        : {}),
       source: "content",
       detectionSource: "semantic",
       confidence: contentDecision.confidence,
@@ -2142,8 +2236,16 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
     }
     return {
       parsed: toOrdinaryTurnWorkflowImprovementMatch(semanticFromRaw.match),
-      lessonKey: semanticFromRaw.match.lessonKey,
-      toolKey: semanticFromRaw.match.toolKey,
+      lessonFamily: semanticFromRaw.match.lessonFamily,
+      reviewMode:
+        semanticFromRaw.match.lessonFamily === "generalized_workflow_lesson"
+          ? "review_required"
+          : "pending_confirmation",
+      ...(semanticFromRaw.match.lessonKey ? { lessonKey: semanticFromRaw.match.lessonKey } : {}),
+      ...(semanticFromRaw.match.toolKey ? { toolKey: semanticFromRaw.match.toolKey } : {}),
+      ...(semanticFromRaw.match.guidancePattern
+        ? { guidancePattern: semanticFromRaw.match.guidancePattern }
+        : {}),
       source: "raw",
       detectionSource: "semantic",
       confidence: semanticFromRaw.confidence,
@@ -2483,12 +2585,43 @@ async function normalizeManagedToolCandidateInput(params: {
           captureClass: workflowImprovementResolution.parsed.captureClass,
           reasonCode: workflowImprovementResolution.parsed.reasonCode,
           template: workflowImprovementResolution.parsed.template,
-          lessonKey: workflowImprovementResolution.lessonKey,
-          toolKey: workflowImprovementResolution.toolKey,
+          lessonFamily: workflowImprovementResolution.lessonFamily,
+          ...(workflowImprovementResolution.lessonKey
+            ? { lessonKey: workflowImprovementResolution.lessonKey }
+            : {}),
+          ...(workflowImprovementResolution.toolKey
+            ? { toolKey: workflowImprovementResolution.toolKey }
+            : {}),
+          ...(workflowImprovementResolution.guidancePattern
+            ? { guidancePattern: workflowImprovementResolution.guidancePattern }
+            : {}),
           key: workflowImprovementResolution.parsed.key,
           subjectKey: workflowImprovementResolution.parsed.subjectKey,
           subject: workflowImprovementResolution.parsed.subject,
           value: workflowImprovementResolution.parsed.value,
+          ...(workflowImprovementResolution.parsed.recommendedAction
+            ? { recommendedAction: workflowImprovementResolution.parsed.recommendedAction }
+            : {}),
+          ...(workflowImprovementResolution.parsed.normalizedRecommendedAction
+            ? {
+                normalizedRecommendedAction:
+                  workflowImprovementResolution.parsed.normalizedRecommendedAction,
+              }
+            : {}),
+          ...(workflowImprovementResolution.parsed.avoidAction
+            ? { avoidAction: workflowImprovementResolution.parsed.avoidAction }
+            : {}),
+          ...(workflowImprovementResolution.parsed.normalizedAvoidAction
+            ? {
+                normalizedAvoidAction: workflowImprovementResolution.parsed.normalizedAvoidAction,
+              }
+            : {}),
+          ...(workflowImprovementResolution.parsed.rationale
+            ? { rationale: workflowImprovementResolution.parsed.rationale }
+            : {}),
+          ...(workflowImprovementResolution.parsed.normalizedRationale
+            ? { normalizedRationale: workflowImprovementResolution.parsed.normalizedRationale }
+            : {}),
           guidanceMode: "guidance_only",
           toolName: "memory_candidate_submit",
         },
@@ -2496,14 +2629,31 @@ async function normalizeManagedToolCandidateInput(params: {
           detectionSource: workflowImprovementResolution.detectionSource,
           confidence: workflowImprovementResolution.confidence,
           evidence: workflowImprovementResolution.evidence,
-          lessonKey: workflowImprovementResolution.lessonKey,
-          toolKey: workflowImprovementResolution.toolKey,
+          lessonFamily: workflowImprovementResolution.lessonFamily,
+          ...(workflowImprovementResolution.lessonKey
+            ? { lessonKey: workflowImprovementResolution.lessonKey }
+            : {}),
+          ...(workflowImprovementResolution.toolKey
+            ? { toolKey: workflowImprovementResolution.toolKey }
+            : {}),
+          ...(workflowImprovementResolution.guidancePattern
+            ? { guidancePattern: workflowImprovementResolution.guidancePattern }
+            : {}),
         }),
         ...buildWorkflowImprovementPendingConfirmationMetadata({
           confidence: workflowImprovementResolution.confidence,
           evidence: workflowImprovementResolution.evidence,
-          lessonKey: workflowImprovementResolution.lessonKey,
-          toolKey: workflowImprovementResolution.toolKey,
+          lessonFamily: workflowImprovementResolution.lessonFamily,
+          state: workflowImprovementResolution.reviewMode,
+          ...(workflowImprovementResolution.lessonKey
+            ? { lessonKey: workflowImprovementResolution.lessonKey }
+            : {}),
+          ...(workflowImprovementResolution.toolKey
+            ? { toolKey: workflowImprovementResolution.toolKey }
+            : {}),
+          ...(workflowImprovementResolution.guidancePattern
+            ? { guidancePattern: workflowImprovementResolution.guidancePattern }
+            : {}),
         }),
       },
     );

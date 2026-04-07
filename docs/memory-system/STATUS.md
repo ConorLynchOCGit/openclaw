@@ -251,6 +251,13 @@ workflow simplification and proof-readiness guidance detection, candidate
 confirmation without manual review for the new supported lessons,
 approved-only hybrid retrieval, and narrow isolated plus production proof
 without broader automation enablement.
+First generalized supervised lesson learning slice completed on the approved
+live production boundary for its intended scope, with broader repo-local
+workflow guidance capture beyond hand-authored lesson keys, normalized
+guidance-only candidate shapes, review-first lifecycle control for the new
+broader path, approved-only hybrid retrieval without new per-lesson routing,
+and isolated plus narrow production proof including explicit no-write
+ambiguity evidence.
 Fifth family-aware semantic retrieval routing slice completed on the approved
 live production boundary for its intended scope, with approved-only
 project-scoped semantic fallback for `git_stash_unsafe`, approved source
@@ -367,7 +374,10 @@ Current compact state:
   - repeated bounded workflow simplification statements
   - repeated bounded host or runtime constraint statements
   - repeated bounded provider-troubleshooting API workaround statements
+  - broader explicit repo-local workflow guidance statements normalized into
+    reviewed generic lesson shapes
   - medium-confidence candidate confirmation without manual review
+  - review-first lifecycle control for generalized workflow lessons
   - approved-only guidance retrieval for later repo-operating or
     provider-troubleshooting asks
   - weak ambiguous ignore instead of dead candidate backlog on the transcript

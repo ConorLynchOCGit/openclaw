@@ -170,6 +170,44 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
     });
   });
 
+  it("captures an unregistered generalized workflow lesson from explicit use-instead phrasing", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision(
+        "For release proof notes here, use bulletized proof IDs instead of paraphrased rollout summaries.",
+      ),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        lessonFamily: "generalized_workflow_lesson",
+        captureClass: "workflow_generalized_guidance",
+        guidancePattern: "use_instead_of",
+        subject: "release proof notes",
+        recommendedAction: "bulletized proof IDs",
+        avoidAction: "paraphrased rollout summaries",
+      },
+    });
+  });
+
+  it("captures an unregistered generalized workflow lesson from trust phrasing", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision(
+        "Trust the post-promotion proof report for rollout signoff here; raw container status is only a rough liveness signal.",
+      ),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        lessonFamily: "generalized_workflow_lesson",
+        captureClass: "workflow_generalized_guidance",
+        guidancePattern: "trust_for_scope",
+        subject: "rollout signoff",
+        recommendedAction: "the post-promotion proof report",
+        avoidAction: "raw container status",
+      },
+    });
+  });
+
   it("ignores a one-off tool complaint without durable guidance", () => {
     expect(detectWorkflowImprovementSemanticDecision("Vitest was slow today.")).toMatchObject({
       action: "ignore",
@@ -201,6 +239,16 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
   it("ignores a vague health complaint without the readyz distinction", () => {
     expect(
       detectWorkflowImprovementSemanticDecision("Health checks have been noisy lately."),
+    ).toMatchObject({
+      action: "ignore",
+    });
+  });
+
+  it("ignores broad workflow complaints that still lack explicit guidance", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision(
+        "Our slice workflow feels messy and people should be more careful.",
+      ),
     ).toMatchObject({
       action: "ignore",
     });

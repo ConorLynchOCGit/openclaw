@@ -41,6 +41,10 @@ Initial bounded subfamilies:
 - workflow simplification
 - recurring environment constraint
 
+Current broader reviewed subfamily:
+
+- generalized repo-local workflow guidance
+
 ## Bounded scope for first implementation
 
 Bound the first live slices to repeated repo-operating tool gotchas, repeated
@@ -68,6 +72,23 @@ Bound the next live slice to the first repeated API workaround family only:
   credential is not eligible for `context1m`; use an eligible billed API key
   or keep a fallback model configured
 
+The first generalized pivot slice now also lands a broader reviewed path for
+repo-local workflow guidance without per-lesson key registration.
+
+That broader path accepts explicit guidance patterns such as:
+
+- `for <scope>, use X instead of Y`
+- `for <scope>, trust X; Y is only Z`
+- `for <scope>, avoid Y`
+
+Generic workflow guidance remains:
+
+- guidance-only
+- review-first
+- project-scoped
+- duplicate-suppressed
+- approved-only on later retrieval
+
 Candidate confirmation is allowed for this narrow slice.
 
 Automatic application is not allowed beyond reviewed retrieval hints.
@@ -85,6 +106,8 @@ Outputs:
 - improvement-note candidate with bounded subtype
 - approved workflow lesson only after bounded confirmation for this narrow
   slice
+- generic reviewed workflow-guidance candidate for the broader repo-local
+  pivot slice
 
 ## Candidate vs approved behavior
 
@@ -105,6 +128,8 @@ Normal resolution mode for this family:
   - `auto_confirm`
 - broader workflow-improvement families:
   - `prompt_now` or `expire_or_reject`
+- broader generalized repo-local workflow guidance:
+  - `review_required`
 
 ## Provenance / metadata requirements
 
@@ -135,10 +160,28 @@ system should surface a concrete decision such as:
 If no prompt-worthy context appears, the evidence should age out rather than
 becoming dead candidate clutter.
 
+Implementation clarification from the generalized lesson-learning pivot slice:
+
+- broader repo-local workflow guidance is now live without per-lesson key
+  registration
+- generic captures normalize into:
+  - explicit subject or scope
+  - guidance pattern
+  - recommended action when present
+  - avoided action when present
+  - optional rationale
+- generic workflow captures use `review_required` instead of
+  `pending_confirmation`
+- approved generalized workflow lessons later retrieve through the normal
+  approved-only hybrid path rather than new per-lesson routing
+- weak vague workflow complaints should still stay ignored instead of creating
+  pending review backlog
+
 ## Ambiguity / abstain / clarify rules
 
 - if the lesson is just a one-off failure with no durable implication, ignore
-- if the improvement is too vague, candidate-only at most
+- if the improvement is too vague, ignore or candidate-only at most depending
+  on the family and risk
 
 Implementation clarification from the live environment-constraint slice:
 

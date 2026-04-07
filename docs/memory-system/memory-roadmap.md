@@ -15,6 +15,14 @@ This roadmap replaces the older scaffold-first roadmap. The early foundation
 phases are already complete enough to support live bounded memory work. The
 remaining roadmap is about finishing the product and operational shape.
 
+Roadmap pivot note:
+
+- the bounded lesson-key slices were necessary scaffolding
+- the program is no longer primarily advancing by enumerating one lesson key
+  at a time
+- the next scaling path is broader supervised lesson learning with explicit
+  review rather than more hand-authored lesson registries
+
 ## Current compact checkpoint
 
 Use this section first when returning to the memory build after working on
@@ -217,8 +225,10 @@ Current live limits:
   feature yet
 - recurring procedures are still bounded to the supported named checklist
   family and do not silently apply in the background
-- workflow-improvement memory is now live only for the first bounded repeated
-  tool-gotcha, workflow-simplification, and environment-constraint families
+- workflow-improvement memory is now live for:
+  - the first bounded repeated tool-gotcha, workflow-simplification, and
+    environment-constraint families
+  - the first broader reviewed repo-local workflow-guidance path
 - repeated API failure workaround memory is now live only for the first bounded
   approved guidance family
 - broader project memory is still limited to explicit named-project facts for:
@@ -231,8 +241,10 @@ Current live limits:
   - documentation URL
   - runbook URL
     and does not include speculative state
-- broader workflow-improvement memory is still not live beyond the supported
-  repeated lessons
+- broader workflow-improvement memory is no longer limited to supported lesson
+  keys only:
+  - reviewed generic repo-local workflow guidance is now live
+  - but it remains guidance-only, review-first, and hybrid-first
 - recommendation-only procurement/install artifacts are not live yet
 - self-improving capture remains disabled in production
 - automatic Skill Vetter invocation remains disabled
@@ -289,10 +301,20 @@ Delivery enablement pause:
   - `docs_only_check_fast`
   - `memory_proof_runner_required`
   - `readyz_for_readiness`
-- next strongest bounded candidates to choose between explicitly:
-  - unmet-need planning v1
-  - another lower-noise workflow-improvement expansion only if it beats
-    unmet-need planning on proofability and false-positive risk
+- the first generalized supervised lesson learning pivot slice is now also
+  landed:
+  - broader repo-local workflow guidance can now be captured without
+    per-lesson key registration
+  - broader workflow guidance now normalizes into reviewed generic lesson
+    shapes instead of expanding the lesson-key registry again
+  - approved retrieval for those generic lessons currently stays hybrid-first
+    and guidance-only
+- next strongest candidates to choose between explicitly:
+  - reviewed phrase induction for approved generic lessons
+  - broader project-rule memory only if it can reuse the reviewed generic
+    lesson shape
+  - unmet-need planning v1 after the broader reviewed lesson path is less
+    hand-authored
 - primary spec:
   - `/memory-system/specs/delivery-enablements`
 
@@ -1009,20 +1031,26 @@ Current phase note:
 - the first bounded workflow-improvement tranches are complete for their
   intended scope
 - broader workflow-improvement v2 is now also complete for its intended scope
+- the first generalized supervised lesson learning pivot slice is now also
+  complete for its intended scope
 - approved workflow lessons currently remain guidance-only
 - semantic retrieval is now live only for approved environment constraints
   plus the safest approved workflow tool gotchas inside this phase
 - repeated API workaround memory is now live for the first bounded family, but
   semantic retrieval for that family still remains future work inside this
   phase
-- broader workflow lessons still remain future work inside this phase beyond:
-  - `docs_only_check_fast`
-  - `memory_proof_runner_required`
-  - `readyz_for_readiness`
+- broader workflow lessons no longer require per-lesson key registration for
+  explicit repo-local workflow guidance
+- current generic workflow-learning limits in this phase:
+  - broader lessons are `review_required`, not auto-confirmed
+  - retrieval stays on the approved-only hybrid path
+  - semantic routing remains limited to the older bounded approved families
+  - broader project-rule learning still remains future work
 
 Primary spec:
 
 - `/memory-system/specs/workflow-improvement-memory`
+- `/memory-system/specs/generalized-lesson-learning`
 
 ---
 

@@ -35,10 +35,15 @@ Current sequencing note:
 - the pre-feature delivery enablement tranche is complete
 - the narrowly bounded project-memory expansion v3 slice is now also landed
 - the broader workflow-improvement memory v2 slice is now also landed
-- the next strongest bounded candidates to choose between explicitly are:
-  - unmet-need planning v1
-  - another lower-noise workflow-improvement expansion only if it is safer
-    than unmet-need planning
+- the first generalized supervised lesson learning slice is now also landed
+- the program is no longer primarily advancing by enumerating one lesson key
+  at a time
+- the next strongest candidates to choose between explicitly are:
+  - reviewed phrase induction for approved generic lessons
+  - broader project-rule memory only if it can reuse the reviewed generic
+    lesson shape cleanly
+  - unmet-need planning v1 after the broader reviewed lesson path is less
+    hand-authored
 
 ## Why this order is recommended
 
@@ -59,8 +64,11 @@ Current sequencing note:
   rollout friction; the delivery enablement tranche is meant to remove that
   drag before the remaining user-facing families continue
 - phrase induction is more valuable after the first semantic families exist
+- generalized supervised lesson learning becomes more valuable once the
+  bounded workflow and project families have already proven their lifecycle
+  seams
 - workflow improvements and unmet-need planning are useful but lower direct
-  user value
+  user value until broader reviewed capture exists
 - self-improving capture should wait until native taxonomy and review quality
   are strong
 

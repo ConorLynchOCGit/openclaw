@@ -2,64 +2,72 @@
 
 ## Active slice
 
-Second broader workflow-improvement UX slice
+Generalized supervised lesson learning v1
 
 Completed after one bounded slice
 
 ## Objective
 
-Expand the bounded workflow-improvement family with one more low-risk
-guidance-only tranche now that project-memory v3 and the delivery
-enablements are complete.
+Pivot the memory roadmap away from hand-registering one lesson key at a time.
 
 This slice now landed:
 
-- `docs_only_check_fast`
-- `memory_proof_runner_required`
-- `readyz_for_readiness`
-- the same workflow-improvement candidate-confirmation lifecycle already used
-  for bounded tool gotchas, environment constraints, and API workarounds
-- the same approved-only hybrid retrieval posture for later repo-operating
-  asks
-- deterministic ignore for unsupported vague workflow complaints
+- a generic reviewed workflow-guidance capture path for broader repo-local
+  lessons without per-lesson key registration
+- review-first normalized candidate shapes for:
+  - explicit repo-local scope
+  - recommended action
+  - avoided action
+  - optional rationale
+  - guidance pattern such as `use_instead_of` or `trust_for_scope`
+- duplicate suppression and subject clustering for the broader reviewed path
+- approved-only hybrid retrieval for approved generalized workflow lessons
+  without new per-lesson routing code
+- explicit no-write proof for vague workflow complaints through the repo-owned
+  proof runner
 
 ## Required work
 
-1. Extend the bounded workflow-improvement registry with the next explicit
-   low-risk repo-operating lessons only.
-2. Preserve the existing candidate-confirmation lifecycle, duplicate
-   handling, and approved-only hybrid retrieval posture.
-3. Prove isolated and production capture-confirm-retrieve loops for the new
-   lessons with the repo-owned proof runner.
-4. Keep broader workflow memory, unmet-need planning, and broader semantic
-   retrieval out of scope.
+1. Capture new repo-local workflow lessons without adding a new lesson key for
+   each one.
+2. Normalize casual phrasing into a reusable guidance-only candidate shape.
+3. Keep the broader path review-first so candidate noise stays bounded.
+4. Reuse approved-only hybrid retrieval instead of broadening semantic routing
+   generically.
+5. Prove positive capture plus explicit ignored vague chatter with the
+   repo-owned proof runner.
 
 ## Out of scope
 
-- broader unmet-need planning
-- broader workflow-improvement families beyond the supported lessons
-- semantic retrieval expansion for workflow improvements
+- broader project-rule memory
+- unmet-need planning
+- generic semantic retrieval for all approved lessons
+- autonomous remediation or silent plan mutation
 - production pairing/auth changes
 
 ## Acceptance criteria
 
-- the supported workflow-improvement lesson set now also includes docs-only
-  validation gates, the repo-owned memory proof runner, and `/readyz`
-  readiness guidance
-- later confirming evidence can auto-promote those workflow lessons without
-  manual review
-- approved-only hybrid retrieval can rank the right workflow lesson first for
-  later repo-operating asks
+- a new repo-local workflow lesson can be captured without a pre-registered
+  lesson key
+- casual phrasing normalizes into a reusable workflow-guidance candidate shape
+- first-seen broader lessons go to `review_required` instead of
+  `pending_confirmation`
+- approved generalized workflow lessons can be retrieved later through the
+  normal approved-only hybrid path
 - weak generic workflow complaints still stay ignored instead of creating
-  memory trash
+  backlog trash
 
 ## Notes
 
-This slice stays inside the existing workflow-improvement guidance-only family
-rather than opening a new planning or automation surface.
+This is a roadmap pivot, not another bounded lesson-key expansion.
 
-The next strongest bounded candidates to reconsider are:
+The recent bounded lesson-key slices remain valid scaffolding, but they are no
+longer the primary scaling path for workflow learning.
 
-- unmet-need planning v1, if the recommendation-only artifact shape is ready
-- another bounded workflow-improvement expansion only if it stays lower-noise
-  than unmet-need planning
+The next strongest candidates to reconsider after this pivot slice are:
+
+- reviewed phrase induction for approved generic lessons
+- broader project-rule memory only if it can reuse the same reviewed generic
+  lesson shape cleanly
+- unmet-need planning v1 after the broader reviewed learning path is less
+  hand-authored

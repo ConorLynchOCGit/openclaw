@@ -701,6 +701,10 @@ Current bounded step kinds:
 - `procedure_validate`
 - `hybrid_search`
 
+`transcript_capture` can now also prove no-write behavior with:
+
+- `expectNoLifecycle: true`
+
 Current runner behavior:
 
 - resolves memory SecretRefs and built-in embedding providers through the
@@ -726,6 +730,8 @@ Current v1 limits:
 - production mutation flows still require explicit operator judgment and any
   needed cleanup planning
 - repeated confirming evidence should not create duplicate durable writes
+- the runner can now also record explicit ignored transcript evidence for
+  bounded no-write proofs
 - weak ambiguous nearby environment text should not create additional durable
   writes on the transcript assist seam
 - approved-only retrieval remains the only user-visible read source for this
@@ -733,10 +739,16 @@ Current v1 limits:
 
 Current approved boundary note:
 
-- this slice is limited to the supported repeated tool-gotcha and
-  workflow-simplification and environment-constraint families plus the first
-  supported API workaround family only
-- broader workflow-improvement memory is not live yet
+- the older bounded workflow slice still remains limited to the supported
+  repeated tool-gotcha and workflow-simplification and
+  environment-constraint families plus the first supported API workaround
+  family
+- the generalized lesson-learning pivot now also allows broader explicit
+  repo-local workflow guidance through the same family under:
+  - `lessonFamily = generalized_workflow_lesson`
+  - `template = workflow_generalized_guidance`
+  - `candidateLifecycle.state = review_required`
+  - approved-only hybrid retrieval after review or promotion
 - broader API workaround memory is not live yet
 - repair or forgetting is not live yet for this family
 - candidates should not shape user-visible behavior before approval in this
@@ -748,6 +760,7 @@ Current approved boundary note:
 For the exact proof ids and production evidence for this slice, use:
 
 - `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_V2_REPORT.md`
+- `docs/memory-system/PRODUCTION_GENERALIZED_LESSON_LEARNING_V1_REPORT.md`
 - `docs/memory-system/PRODUCTION_ENVIRONMENT_CONSTRAINT_UX_REPORT.md`
 - `docs/memory-system/PRODUCTION_API_WORKAROUND_UX_REPORT.md`
 

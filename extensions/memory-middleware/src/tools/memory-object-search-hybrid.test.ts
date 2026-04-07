@@ -170,6 +170,22 @@ describe("memory object hybrid search tool", () => {
     });
   });
 
+  it("keeps the text-ranked hybrid result when a semantic fallback throws", async () => {
+    const runtime = createRuntime();
+    maybeApplyWorkflowToolGotchaSemanticFallback.mockImplementationOnce(async () => {
+      throw new Error("memory embeddings query timed out after 60s");
+    });
+    const tool = createMemoryObjectSearchHybridTool({ runtime });
+
+    const result = await tool.execute("call-fallback-timeout", {
+      query: "how should I land this carefully",
+      scope: "approved_only",
+      kind: "project",
+    });
+
+    expect(result.details).toEqual(createAcceptedSearchResult());
+  });
+
   it("returns semantic fallback ordering when the family router rewrites weak procedure results", async () => {
     const runtime = createRuntime();
     maybeApplyProcedureSemanticFallback.mockImplementationOnce(async ({ hybridResult }) =>

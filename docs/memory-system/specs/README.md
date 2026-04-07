@@ -27,6 +27,7 @@ partially built family still needs a deliberate productionization plan.
 - `/memory-system/specs/ambiguity-and-clarification`
 - `/memory-system/specs/candidate-confirmation-lifecycle`
 - `/memory-system/specs/phrase-induction`
+- `/memory-system/specs/generalized-lesson-learning`
 - `/memory-system/specs/behavior-application`
 - `/memory-system/specs/user-repair-and-memory-control`
 - `/memory-system/specs/messy-language-eval`

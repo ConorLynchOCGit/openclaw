@@ -32,23 +32,33 @@ export type WorkflowImprovementSemanticConfidence = "high" | "medium";
 export type WorkflowImprovementCaptureClass =
   | "workflow_tool_gotcha"
   | "workflow_environment_constraint"
-  | "workflow_api_workaround";
+  | "workflow_api_workaround"
+  | "workflow_generalized_guidance";
 export type WorkflowImprovementReasonCode =
   | "workflow_tool_gotcha_statement"
   | "workflow_environment_constraint_statement"
-  | "workflow_api_workaround_statement";
+  | "workflow_api_workaround_statement"
+  | "workflow_generalized_guidance_statement";
 export type WorkflowImprovementTemplate =
   | "workflow_tool_gotcha"
   | "workflow_environment_constraint"
-  | "workflow_api_workaround";
+  | "workflow_api_workaround"
+  | "workflow_generalized_guidance";
+export type WorkflowImprovementLessonFamily = "supported_lesson" | "generalized_workflow_lesson";
+export type WorkflowImprovementGuidancePattern =
+  | "use_instead_of"
+  | "trust_for_scope"
+  | "avoid_only";
 
 export type WorkflowImprovementCanonicalMatch = {
   captureClass: WorkflowImprovementCaptureClass;
   candidateKind: "improvement";
   reasonCode: WorkflowImprovementReasonCode;
   template: WorkflowImprovementTemplate;
-  lessonKey: WorkflowImprovementLessonKey;
-  toolKey: WorkflowImprovementToolKey;
+  lessonFamily: WorkflowImprovementLessonFamily;
+  lessonKey?: WorkflowImprovementLessonKey;
+  toolKey?: WorkflowImprovementToolKey;
+  guidancePattern?: WorkflowImprovementGuidancePattern;
   subject: string;
   value: string;
   normalizedSubject: string;
@@ -56,6 +66,12 @@ export type WorkflowImprovementCanonicalMatch = {
   content: string;
   subjectKey: string;
   key: string;
+  recommendedAction?: string;
+  normalizedRecommendedAction?: string;
+  avoidAction?: string;
+  normalizedAvoidAction?: string;
+  rationale?: string;
+  normalizedRationale?: string;
 };
 
 export type WorkflowImprovementSemanticCaptureDecision =
@@ -216,6 +232,84 @@ function normalizeSemanticText(value: string): string {
     .trim();
 }
 
+function trimTerminalPunctuation(value: string): string {
+  return value.replace(/[.!?;:,]+$/g, "").trim();
+}
+
+function normalizeWorkflowSegment(value: string): string {
+  return trimTerminalPunctuation(normalizeText(value))
+    .replace(/\bplz\b/gi, "please")
+    .replace(/\b(?:on|in)\s+this\s+(?:repo|repository|host|environment)\b/gi, "")
+    .replace(/\bhere\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeWorkflowScope(value: string): string {
+  return normalizeWorkflowSegment(value)
+    .replace(/\b(?:work|workflow)\b$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hasRepoLocalMarker(value: string): boolean {
+  return /\b(?:here|this repo|this repository|this host|this environment)\b/i.test(value);
+}
+
+function containsBlockedWorkflowTopic(value: string): boolean {
+  return /\b(?:install|installer|procure|procurement|vet|vetted|approval|approve|buy|purchase)\b/i.test(
+    value,
+  );
+}
+
+function containsLikelySecretMaterial(value: string): boolean {
+  return (
+    /\b(?:sk-[A-Za-z0-9_-]{10,}|ghp_[A-Za-z0-9]{10,}|xox[baprs]-[A-Za-z0-9-]{10,})\b/.test(value) ||
+    /\b[A-Z][A-Z0-9_]{2,}=\S{8,}\b/.test(value) ||
+    /\bBearer\s+\S{8,}\b/i.test(value)
+  );
+}
+
+function buildGeneralizedWorkflowImprovementKey(params: {
+  captureClass: WorkflowImprovementCaptureClass;
+  normalizedSubject: string;
+  normalizedRecommendedAction?: string;
+  normalizedAvoidAction?: string;
+  normalizedRationale?: string;
+}): string {
+  return createHash("sha256")
+    .update(
+      [
+        "memory-middleware",
+        "ordinary-turn",
+        "workflow-improvement-generic-v1",
+        params.captureClass,
+        params.normalizedSubject,
+        params.normalizedRecommendedAction ?? "",
+        params.normalizedAvoidAction ?? "",
+        params.normalizedRationale ?? "",
+      ].join("|"),
+    )
+    .digest("hex");
+}
+
+function buildGeneralizedWorkflowImprovementSubjectKey(params: {
+  captureClass: WorkflowImprovementCaptureClass;
+  normalizedSubject: string;
+}): string {
+  return createHash("sha256")
+    .update(
+      [
+        "memory-middleware",
+        "ordinary-turn",
+        "workflow-improvement-generic-subject-v1",
+        params.captureClass,
+        params.normalizedSubject,
+      ].join("|"),
+    )
+    .digest("hex");
+}
+
 function buildWorkflowImprovementKey(params: {
   lessonKey: WorkflowImprovementLessonKey;
   captureClass: WorkflowImprovementCaptureClass;
@@ -261,6 +355,7 @@ function createMatch(lessonKey: WorkflowImprovementLessonKey): WorkflowImproveme
     candidateKind: "improvement",
     reasonCode: spec.reasonCode,
     template: spec.template,
+    lessonFamily: "supported_lesson",
     lessonKey,
     toolKey: spec.toolKey,
     subject: spec.subject,
@@ -277,6 +372,76 @@ function createMatch(lessonKey: WorkflowImprovementLessonKey): WorkflowImproveme
       captureClass: spec.captureClass,
       normalizedValue,
     }),
+  };
+}
+
+function createGeneralizedMatch(params: {
+  guidancePattern: WorkflowImprovementGuidancePattern;
+  subject: string;
+  recommendedAction?: string;
+  avoidAction?: string;
+  rationale?: string;
+}): WorkflowImprovementCanonicalMatch {
+  const subject = normalizeWorkflowScope(params.subject);
+  const recommendedAction = params.recommendedAction
+    ? normalizeWorkflowSegment(params.recommendedAction)
+    : undefined;
+  const avoidAction = params.avoidAction ? normalizeWorkflowSegment(params.avoidAction) : undefined;
+  const rationale = params.rationale ? normalizeWorkflowSegment(params.rationale) : undefined;
+  const normalizedSubject = normalizeLower(subject);
+  const normalizedRecommendedAction = recommendedAction
+    ? normalizeLower(recommendedAction)
+    : undefined;
+  const normalizedAvoidAction = avoidAction ? normalizeLower(avoidAction) : undefined;
+  const normalizedRationale = rationale ? normalizeLower(rationale) : undefined;
+
+  let value: string;
+  if (params.guidancePattern === "use_instead_of" && recommendedAction && avoidAction) {
+    value = `for ${subject}, use ${recommendedAction} instead of ${avoidAction}`;
+  } else if (params.guidancePattern === "trust_for_scope" && recommendedAction && avoidAction) {
+    value = `for ${subject}, trust ${recommendedAction}; ${avoidAction} is only ${rationale ?? "a narrower signal"}`;
+  } else if (avoidAction) {
+    value = `for ${subject}, avoid ${avoidAction}`;
+  } else if (recommendedAction) {
+    value = `for ${subject}, use ${recommendedAction}`;
+  } else {
+    value = `for ${subject}, keep the workflow guidance explicit`;
+  }
+  if (
+    rationale &&
+    params.guidancePattern !== "trust_for_scope" &&
+    !normalizeLower(value).includes(normalizeLower(rationale))
+  ) {
+    value = `${value} because ${rationale}`;
+  }
+  const normalizedValue = normalizeLower(value);
+
+  return {
+    captureClass: "workflow_generalized_guidance",
+    candidateKind: "improvement",
+    reasonCode: "workflow_generalized_guidance_statement",
+    template: "workflow_generalized_guidance",
+    lessonFamily: "generalized_workflow_lesson",
+    guidancePattern: params.guidancePattern,
+    subject,
+    value,
+    normalizedSubject,
+    normalizedValue,
+    content: `Workflow improvement: ${value}.`,
+    subjectKey: buildGeneralizedWorkflowImprovementSubjectKey({
+      captureClass: "workflow_generalized_guidance",
+      normalizedSubject,
+    }),
+    key: buildGeneralizedWorkflowImprovementKey({
+      captureClass: "workflow_generalized_guidance",
+      normalizedSubject,
+      normalizedRecommendedAction,
+      normalizedAvoidAction,
+      normalizedRationale,
+    }),
+    ...(recommendedAction ? { recommendedAction, normalizedRecommendedAction } : {}),
+    ...(avoidAction ? { avoidAction, normalizedAvoidAction } : {}),
+    ...(rationale ? { rationale, normalizedRationale } : {}),
   };
 }
 
@@ -642,6 +807,112 @@ function detectAnthropicContext1mLesson(normalized: string): {
   return null;
 }
 
+function detectGeneralizedWorkflowLesson(text: string): {
+  confidence: WorkflowImprovementSemanticConfidence;
+  evidence: string[];
+  match: WorkflowImprovementCanonicalMatch;
+} | null {
+  const normalized = normalizeText(text);
+  if (
+    normalized.length < 24 ||
+    normalized.length > 260 ||
+    containsBlockedWorkflowTopic(normalized) ||
+    containsLikelySecretMaterial(normalized)
+  ) {
+    return null;
+  }
+
+  const useInsteadPatterns = [
+    /^(?:for|when|during|on)\s+(.{3,96}?),\s*(?:prefer|use)\s+(.{2,140}?)\s+instead of\s+(.{2,140}?)(?:\s+because\s+(.{3,120}?))?[.!?]?$/i,
+    /^(?:prefer|use)\s+(.{2,140}?)\s+for\s+(.{3,96}?)(?:\s+here|\s+in this repo|\s+on this host|\s+in this environment)?\s+instead of\s+(.{2,140}?)(?:\s+because\s+(.{3,120}?))?[.!?]?$/i,
+    /^(?:do not|don't|dont|avoid|never)\s+(.{2,140}?)(?:\s+(?:here|in this repo|on this host|in this environment))?(?:\s+for\s+(.{3,96}?))?(?:[;,]\s*|\s+instead[, ]+\s*)(?:prefer|use)\s+(.{2,140}?)(?:\s+instead)?(?:\s+because\s+(.{3,120}?))?[.!?]?$/i,
+  ];
+
+  for (const pattern of useInsteadPatterns) {
+    const match = normalized.match(pattern);
+    if (!match) {
+      continue;
+    }
+    if (pattern === useInsteadPatterns[0]) {
+      const [, scope, recommendedAction, avoidAction, rationale] = match;
+      return {
+        confidence: hasRepoLocalMarker(normalized) ? "high" : "medium",
+        evidence: ["generalized_workflow_pattern", "use_instead_of", "explicit_scope"],
+        match: createGeneralizedMatch({
+          guidancePattern: "use_instead_of",
+          subject: scope,
+          recommendedAction,
+          avoidAction,
+          ...(rationale ? { rationale } : {}),
+        }),
+      };
+    }
+    if (pattern === useInsteadPatterns[1]) {
+      const [, recommendedAction, scope, avoidAction, rationale] = match;
+      return {
+        confidence: "high",
+        evidence: ["generalized_workflow_pattern", "use_instead_of", "explicit_scope"],
+        match: createGeneralizedMatch({
+          guidancePattern: "use_instead_of",
+          subject: scope,
+          recommendedAction,
+          avoidAction,
+          ...(rationale ? { rationale } : {}),
+        }),
+      };
+    }
+    const [, avoidAction, scope, recommendedAction, rationale] = match;
+    return {
+      confidence: hasRepoLocalMarker(normalized) || Boolean(scope) ? "high" : "medium",
+      evidence: ["generalized_workflow_pattern", "avoid_then_use"],
+      match: createGeneralizedMatch({
+        guidancePattern: "use_instead_of",
+        subject: scope || "repo workflow",
+        recommendedAction,
+        avoidAction,
+        ...(rationale ? { rationale } : {}),
+      }),
+    };
+  }
+
+  const trustMatch = normalized.match(
+    /^(?:trust|use)\s+(.{2,140}?)\s+for\s+(.{3,96}?)(?:\s+here|\s+in this repo|\s+on this host|\s+in this environment)?[;,]\s+(.{2,140}?)\s+is\s+only\s+(.{3,120}?)[.!?]?$/i,
+  );
+  if (trustMatch) {
+    const [, recommendedAction, scope, avoidAction, rationale] = trustMatch;
+    return {
+      confidence: "high",
+      evidence: ["generalized_workflow_pattern", "trust_for_scope", "signal_distinction"],
+      match: createGeneralizedMatch({
+        guidancePattern: "trust_for_scope",
+        subject: scope,
+        recommendedAction,
+        avoidAction,
+        rationale,
+      }),
+    };
+  }
+
+  const avoidOnlyMatch = normalized.match(
+    /^(?:do not|don't|dont|avoid|never)\s+(.{2,140}?)\s+(?:for|during|when)\s+(.{3,96}?)(?:\s+here|\s+in this repo|\s+on this host|\s+in this environment)?(?:\s+because\s+(.{3,120}?))?[.!?]?$/i,
+  );
+  if (avoidOnlyMatch) {
+    const [, avoidAction, scope, rationale] = avoidOnlyMatch;
+    return {
+      confidence: hasRepoLocalMarker(normalized) ? "high" : "medium",
+      evidence: ["generalized_workflow_pattern", "avoid_only", "explicit_scope"],
+      match: createGeneralizedMatch({
+        guidancePattern: "avoid_only",
+        subject: scope,
+        avoidAction,
+        ...(rationale ? { rationale } : {}),
+      }),
+    };
+  }
+
+  return null;
+}
+
 export function isSupportedWorkflowImprovementLessonKey(
   value: string,
 ): value is WorkflowImprovementLessonKey {
@@ -763,6 +1034,16 @@ export function detectWorkflowImprovementSemanticDecision(
       confidence: anthropicContext1m.confidence,
       evidence: anthropicContext1m.evidence,
       match: createMatch("anthropic_context1m_eligible_credential_required"),
+    };
+  }
+
+  const generalizedWorkflowLesson = detectGeneralizedWorkflowLesson(text);
+  if (generalizedWorkflowLesson) {
+    return {
+      action: "capture",
+      confidence: generalizedWorkflowLesson.confidence,
+      evidence: generalizedWorkflowLesson.evidence,
+      match: generalizedWorkflowLesson.match,
     };
   }
 

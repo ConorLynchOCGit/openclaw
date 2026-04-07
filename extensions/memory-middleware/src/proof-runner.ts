@@ -46,18 +46,26 @@ const MemoryProofAttributionSchema = z.object({
   projectId: z.string().min(1).optional(),
 });
 
-const MemoryProofTranscriptCaptureStepSchema = z.object({
-  id: z.string().min(1),
-  kind: z.literal("transcript_capture"),
-  text: z.string().min(1),
-  sessionFile: z.string().min(1),
-  sessionKey: z.string().min(1),
-  agentExternalKey: z.string().min(1),
-  messageId: z.string().min(1).optional(),
-  timestampMs: z.number().int().positive().optional(),
-  attribution: MemoryProofAttributionSchema,
-  expectation: MemoryProofCaptureExpectationSchema,
-});
+const MemoryProofTranscriptCaptureStepSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: z.literal("transcript_capture"),
+    text: z.string().min(1),
+    sessionFile: z.string().min(1),
+    sessionKey: z.string().min(1),
+    agentExternalKey: z.string().min(1),
+    messageId: z.string().min(1).optional(),
+    timestampMs: z.number().int().positive().optional(),
+    attribution: MemoryProofAttributionSchema,
+    expectation: MemoryProofCaptureExpectationSchema.optional(),
+    expectNoLifecycle: z.literal(true).optional(),
+  })
+  .refine((value) => Boolean(value.expectation || value.expectNoLifecycle), {
+    message: "transcript_capture requires expectation or expectNoLifecycle",
+  })
+  .refine((value) => !(value.expectation && value.expectNoLifecycle), {
+    message: "transcript_capture cannot combine expectation with expectNoLifecycle",
+  });
 
 const MemoryProofCandidateReviewStepSchema = z
   .object({
@@ -203,8 +211,9 @@ export type MemoryProofStepResult =
       id: string;
       kind: "transcript_capture";
       artifacts: MemoryProofStepArtifacts;
-      expectation: MemoryProofCaptureExpectation;
-      lifecycle: LifecycleInspection;
+      expectation?: MemoryProofCaptureExpectation;
+      lifecycle?: LifecycleInspection;
+      ignored?: boolean;
     }
   | {
       id: string;
@@ -558,6 +567,20 @@ async function runTranscriptCaptureStep(params: {
     },
   });
 
+  if (params.step.expectNoLifecycle) {
+    assert(
+      !submittedCapture?.eventId && !submittedCapture?.memoryObjectId,
+      `transcript_capture ${params.step.id} unexpectedly created lifecycle evidence`,
+    );
+    return {
+      id: params.step.id,
+      kind: "transcript_capture",
+      artifacts: {},
+      ignored: true,
+    };
+  }
+
+  assert(params.step.expectation, `transcript_capture ${params.step.id} missing expectation`);
   const autoCaptureMetadata =
     submittedCapture?.metadata?.autoCapture &&
     typeof submittedCapture.metadata.autoCapture === "object" &&
