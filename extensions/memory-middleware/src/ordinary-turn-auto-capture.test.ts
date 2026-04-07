@@ -12,6 +12,10 @@ const storeApprovedEnvironmentConstraintSemanticEmbedding = vi.hoisted(() =>
 const storeApprovedWorkflowToolGotchaSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
 const findApprovedWorkflowPhrasePatternMatch = vi.hoisted(() => vi.fn(async () => null));
 const maybeInduceWorkflowPhrasePattern = vi.hoisted(() => vi.fn(async () => ({ status: "held" })));
+const findApprovedResponseStylePhrasePatternMatch = vi.hoisted(() => vi.fn(async () => null));
+const maybeInduceResponseStylePhrasePattern = vi.hoisted(() =>
+  vi.fn(async () => ({ status: "held" })),
+);
 
 vi.mock("./semantic-retrieval-routing.js", () => ({
   storeApprovedApiWorkaroundSemanticEmbedding,
@@ -27,6 +31,16 @@ vi.mock("./workflow-phrase-induction.js", async () => {
     ...actual,
     findApprovedWorkflowPhrasePatternMatch,
     maybeInduceWorkflowPhrasePattern,
+  };
+});
+vi.mock("./response-style-phrase-induction.js", async () => {
+  const actual = await vi.importActual<typeof import("./response-style-phrase-induction.js")>(
+    "./response-style-phrase-induction.js",
+  );
+  return {
+    ...actual,
+    findApprovedResponseStylePhrasePatternMatch,
+    maybeInduceResponseStylePhrasePattern,
   };
 });
 
@@ -1305,6 +1319,225 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(submitLearning).toHaveBeenCalledTimes(1);
     expect(reviewCandidate).toHaveBeenCalledTimes(1);
     expect(promoteToMemory).toHaveBeenCalledTimes(1);
+  });
+
+  it("auto-promotes a bounded generic response-style correction when an approved subject already exists", async () => {
+    maybeInduceResponseStylePhrasePattern.mockClear();
+    const submitCorrectionSuggestion = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "correction" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-requirement-generic-correction-1",
+      memoryObjectId: "memory-requirement-generic-correction-1",
+    }));
+    const inspectResponseStyleLifecycle = vi.fn(async () => ({
+      activeApprovedSubjectObjectIds: ["memory-approved-requirement-generic-1"],
+      pendingSubjectCandidateIds: [],
+    }));
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      reviewId: "review-requirement-generic-correction-1",
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      promotedMemoryObjectId: "memory-approved-requirement-generic-correction-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectResponseStyleLifecycle,
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion,
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "Actually, include a brief summary first.",
+        timestamp: Date.parse("2026-04-07T18:05:00Z"),
+      },
+    });
+
+    expect(submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "User correction: include a brief summary first.",
+        metadata: expect.objectContaining({
+          autoCapture: expect.objectContaining({
+            template: "response_style_generalized_guidance",
+            responseStyleFamily: "generalized_guidance",
+            subject: "response opening",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "response_style",
+            state: "hold_for_more_evidence",
+            responseStyleFamily: "generalized_guidance",
+          }),
+        }),
+      }),
+    );
+    expect(reviewCandidate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-requirement-generic-correction-1",
+        outcome: "accepted",
+        metadata: expect.objectContaining({
+          autoPromotion: expect.objectContaining({
+            profile: "response_style_generalized_correction_v1",
+            captureClass: "requirement_correction",
+            responseStyleFamily: "generalized_guidance",
+          }),
+        }),
+      }),
+    );
+    expect(promoteToMemory).toHaveBeenCalledTimes(1);
+    expect(maybeInduceResponseStylePhrasePattern).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Actually, include a brief summary first.",
+        detectionSource: "semantic",
+        targetMatch: expect.objectContaining({
+          template: "response_style_generalized_guidance",
+          family: "generalized_guidance",
+          subject: "response opening",
+          value: "include a brief summary first",
+        }),
+      }),
+    );
+  });
+
+  it("routes approved response-style phrase patterns back into deterministic transcript capture", async () => {
+    findApprovedResponseStylePhrasePatternMatch.mockResolvedValueOnce({
+      approvedObjectId: "approved-rs-phrase-1",
+      normalizedPhrase: "topline first then details",
+      match: {
+        captureClass: "explicit_requirement" as const,
+        candidateKind: "learning" as const,
+        reasonCode: "explicit_requirement_statement" as const,
+        template: "response_style_generalized_guidance" as const,
+        family: "generalized_guidance" as const,
+        subject: "response opening",
+        value: "start with the direct answer first",
+        normalizedSubject: "response opening",
+        normalizedValue: "start with the direct answer first",
+        content: "User requirement: start with the direct answer first.",
+        subjectKey: "rs-opening-subject",
+        key: "rs-opening-answer-first",
+      },
+    } as never);
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-rs-phrase-1",
+      memoryObjectId: "memory-rs-phrase-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectResponseStyleLifecycle: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "Topline first, then details.",
+        timestamp: Date.parse("2026-04-07T18:06:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "User requirement: start with the direct answer first.",
+        metadata: expect.objectContaining({
+          autoCapture: expect.objectContaining({
+            template: "response_style_generalized_guidance",
+            responseStyleFamily: "generalized_guidance",
+            subject: "response opening",
+            value: "start with the direct answer first",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            evidence: ["approved_phrase_pattern_match"],
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("induces a reviewed response-style phrase pattern when an approved bounded preference sees later repeated phrasing", async () => {
+    maybeInduceResponseStylePhrasePattern.mockClear();
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectResponseStyleLifecycle: vi.fn(async () => ({
+          matchingApprovedObjectId: "approved-rs-concise-1",
+          activeApprovedSubjectObjectIds: ["approved-rs-concise-1"],
+          pendingSubjectCandidateIds: [],
+        })),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        submitImprovementNote: vi.fn(),
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "Keep it short.",
+        timestamp: Date.parse("2026-04-07T18:07:00Z"),
+      },
+    });
+
+    expect(maybeInduceResponseStylePhrasePattern).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Keep it short.",
+        detectionSource: "semantic",
+        targetMatch: expect.objectContaining({
+          template: "responses_concise",
+          family: "supported_template",
+          subject: "response style",
+          value: "keep responses concise",
+        }),
+      }),
+    );
   });
 
   it("routes bounded named project facts through learning submission without auto-promotion", async () => {

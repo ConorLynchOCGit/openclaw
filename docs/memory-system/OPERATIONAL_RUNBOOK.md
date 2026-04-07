@@ -761,6 +761,10 @@ Current runner behavior:
   - matched fields for retrieval checks
   - `/healthz` and `/readyz` snapshots before and after the run
 - supports isolated mutating rehearsal and production retrieval-style rehearsal
+- can now inspect hidden approved phrase-pattern artifact families for proof
+  work:
+  - `workflow_phrase_pattern`
+  - `response_style_phrase_pattern`
 
 Read those health snapshots this way:
 
@@ -778,6 +782,8 @@ Current v1 limits:
 - repeated confirming evidence should not create duplicate durable writes
 - the runner can now also record explicit ignored transcript evidence for
   bounded no-write proofs
+- phrase-pattern artifacts remain hidden from normal approved-only retrieval
+  and should be inspected through proof-runner lifecycle output or direct SQL
 - weak ambiguous nearby environment text should not create additional durable
   writes on the transcript assist seam
 - approved-only retrieval remains the only user-visible read source for this

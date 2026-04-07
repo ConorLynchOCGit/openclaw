@@ -124,6 +124,43 @@ describe("parseMemoryProofPlan", () => {
     });
   });
 
+  it("accepts response-style phrase-pattern transcript capture expectations", () => {
+    const plan = parseMemoryProofPlan({
+      mode: "isolated",
+      label: "response-style phrase induction proof",
+      steps: [
+        {
+          id: "capture_phrase",
+          kind: "transcript_capture",
+          text: "Keep it short.",
+          sessionFile: "/tmp/proof.jsonl",
+          sessionKey: "agent:test:proof",
+          agentExternalKey: "chief",
+          attribution: {
+            agentId: "agent-1",
+            sessionId: "session-1",
+            projectId: "project-1",
+          },
+          expectation: {
+            family: "response_style_phrase_pattern",
+            key: "pattern-key-1",
+            subjectKey: "target-key-1",
+            normalizedPhrase: "keep it short.",
+          },
+        },
+      ],
+    });
+
+    expect(plan.steps).toHaveLength(1);
+    expect(plan.steps[0]).toMatchObject({
+      kind: "transcript_capture",
+      expectation: {
+        family: "response_style_phrase_pattern",
+        key: "pattern-key-1",
+      },
+    });
+  });
+
   it("accepts project-rule transcript capture expectations", () => {
     const plan = parseMemoryProofPlan({
       mode: "isolated",

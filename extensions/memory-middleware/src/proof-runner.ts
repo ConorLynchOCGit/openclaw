@@ -17,6 +17,10 @@ import {
   inspectResponseStyleLifecycle,
   type ResponseStyleLifecycleInspection,
 } from "./response-style-lifecycle.js";
+import {
+  inspectResponseStylePhrasePatternLifecycle,
+  type ResponseStylePhraseLifecycleInspection,
+} from "./response-style-phrase-induction.js";
 import type { MemoryMiddlewareRuntime } from "./runtime.js";
 import { searchMemoryObjectsHybridFromTool } from "./tools/memory-object-search-hybrid.js";
 import {
@@ -37,6 +41,7 @@ const MemoryProofFamilySchema = z.enum([
   "recurring_procedure",
   "workflow_improvement",
   "workflow_phrase_pattern",
+  "response_style_phrase_pattern",
 ]);
 const MemoryProofSearchScopeSchema = z.enum(MEMORY_OBJECT_SEARCH_SCOPES);
 
@@ -204,6 +209,10 @@ type LifecycleInspection =
   | {
       family: "workflow_phrase_pattern";
       inspection: WorkflowPhraseLifecycleInspection;
+    }
+  | {
+      family: "response_style_phrase_pattern";
+      inspection: ResponseStylePhraseLifecycleInspection;
     };
 
 export type MemoryProofHealthSnapshot = {
@@ -346,6 +355,7 @@ function summarizeLifecycleArtifacts(lifecycle: LifecycleInspection): MemoryProo
           : {}),
       };
     case "workflow_phrase_pattern":
+    case "response_style_phrase_pattern":
       return {
         ...(lifecycle.inspection.pendingCandidate?.id
           ? { candidateId: lifecycle.inspection.pendingCandidate.id }
@@ -462,6 +472,22 @@ async function inspectLifecycle(params: {
       });
       assert(inspection, "workflow phrase-pattern lifecycle inspection unavailable");
       return { family: "workflow_phrase_pattern", inspection };
+    }
+    case "response_style_phrase_pattern": {
+      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
+      assert(
+        params.expectation.normalizedPhrase,
+        "capture expectation normalizedPhrase is required",
+      );
+      const inspection = await inspectResponseStylePhrasePatternLifecycle({
+        config: params.config,
+        patternKey: params.expectation.key,
+        targetKey: params.expectation.subjectKey,
+        normalizedPhrase: params.expectation.normalizedPhrase,
+        logger: params.logger,
+      });
+      assert(inspection, "response-style phrase-pattern lifecycle inspection unavailable");
+      return { family: "response_style_phrase_pattern", inspection };
     }
   }
 }

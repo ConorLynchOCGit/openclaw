@@ -59,16 +59,17 @@ For approved generalized lessons, the candidate should also retain:
 - normalized `recommendedAction` when present
 - normalized `avoidAction` when present
 
-## Bounded scope for the first implementation
+## Bounded scope for the current implementation
 
-The first live phrase-induction rollout should allow induction for:
+The live phrase-induction rollout now allows induction for:
 
-- already-approved response-style subjects
-- already-approved named project-fact fields
 - already-approved generalized workflow lessons
+- already-approved response-style memories where the phrase artifact can stay
+  whole-phrase, bounded, reviewed, and deterministic
 
-It should not yet allow induction for:
+It does not yet allow induction for:
 
+- already-approved named project-fact fields
 - unapproved generic lessons
 - brand-new lesson families
 - unmet-need planning artifacts
@@ -123,25 +124,31 @@ lesson. It should attach new phrases to the approved normalized lesson cluster.
 
 ## Live boundary
 
-The first phrase-induction slice is now live for approved generalized workflow
-lessons.
+Phrase induction is now live for these approved families:
+
+- generalized workflow lessons
+- response-style memory
 
 Live now:
 
-- approved generalized workflow lessons can seed reviewed phrase-pattern
-  candidates
+- approved generalized workflow lessons can seed reviewed
+  `workflow_phrase_pattern` candidates
+- approved response-style memories can seed reviewed
+  `response_style_phrase_pattern` candidates
 - the first confirming phrase observation creates a held phrase-pattern
   candidate
 - later compatible phrase evidence can auto-promote that phrase pattern
-- approved phrase patterns feed deterministic matching back into generalized
-  workflow capture
+- approved phrase patterns feed deterministic matching back into the same
+  target family
 - approved phrase-pattern artifacts remain hidden from normal approved-only
   hybrid retrieval
 
 Still not live:
 
-- phrase induction for response-style memory
 - phrase induction for named project facts
+- phrase induction for recurring procedures
+- phrase induction for project rules
+- phrase induction for unmet needs
 - generic semantic fallback from phrase patterns
 
 ## Retrieval / application behavior
@@ -211,7 +218,8 @@ Track:
 
 - off-production first
 - production only after approved pattern loading is reversible and observable
-- start with one family where approved generic lessons already exist
+- start with families where the approved-memory target is already stable and
+  the phrase artifact can stay bounded and deterministic
 
 ## Risks / failure modes
 

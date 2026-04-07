@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawPluginToolContext } from "../../api.js";
 import type { CandidateSubmissionAcceptedResult, CandidateSubmissionInput } from "../db/runtime.js";
+import type { ApprovedResponseStylePhrasePatternMatch } from "../response-style-phrase-induction.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import type { ApprovedWorkflowPhrasePatternMatch } from "../workflow-phrase-induction.js";
 const inspectWorkflowImprovementLifecycle = vi.hoisted(() =>
@@ -17,7 +18,13 @@ const storeApprovedWorkflowToolGotchaSemanticEmbedding = vi.hoisted(() => vi.fn(
 const findApprovedWorkflowPhrasePatternMatch = vi.hoisted(() =>
   vi.fn<() => Promise<ApprovedWorkflowPhrasePatternMatch | null>>(async () => null),
 );
+const findApprovedResponseStylePhrasePatternMatch = vi.hoisted(() =>
+  vi.fn<() => Promise<ApprovedResponseStylePhrasePatternMatch | null>>(async () => null),
+);
 const maybeInduceWorkflowPhrasePattern = vi.hoisted(() =>
+  vi.fn(async () => ({ status: "existing" })),
+);
+const maybeInduceResponseStylePhrasePattern = vi.hoisted(() =>
   vi.fn(async () => ({ status: "existing" })),
 );
 
@@ -34,6 +41,16 @@ vi.mock("../workflow-phrase-induction.js", async () => {
     ...actual,
     findApprovedWorkflowPhrasePatternMatch,
     maybeInduceWorkflowPhrasePattern,
+  };
+});
+vi.mock("../response-style-phrase-induction.js", async () => {
+  const actual = await vi.importActual<typeof import("../response-style-phrase-induction.js")>(
+    "../response-style-phrase-induction.js",
+  );
+  return {
+    ...actual,
+    findApprovedResponseStylePhrasePatternMatch,
+    maybeInduceResponseStylePhrasePattern,
   };
 });
 vi.mock("../workflow-improvement-lifecycle.js", async () => {
@@ -620,6 +637,51 @@ describe("memory candidate submit tool", () => {
           candidateLifecycle: expect.objectContaining({
             family: "workflow_improvement",
             state: "hold_for_more_evidence",
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("uses an approved phrase pattern as deterministic response-style evidence", async () => {
+    findApprovedResponseStylePhrasePatternMatch.mockResolvedValueOnce({
+      approvedObjectId: "approved-rs-pattern-1",
+      normalizedPhrase: "keep it short.",
+      match: {
+        captureClass: "explicit_requirement",
+        candidateKind: "learning",
+        reasonCode: "explicit_requirement_statement",
+        template: "responses_concise",
+        family: "supported_template",
+        subject: "response style",
+        value: "keep responses concise",
+        normalizedSubject: "response style",
+        normalizedValue: "keep responses concise",
+        content: "User requirement: keep responses concise.",
+        subjectKey: "response-style-key-1",
+        key: "response-style-key-1",
+      },
+    } satisfies ApprovedResponseStylePhrasePatternMatch);
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    await tool.execute("call-rs-deterministic", {
+      kind: "learning",
+      content: "Keep it short.",
+    });
+
+    expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          autoCapture: expect.objectContaining({
+            template: "responses_concise",
+            responseStyleFamily: "supported_template",
+            subject: "response style",
+            value: "keep responses concise",
+          }),
+          semanticDetection: expect.objectContaining({
+            detectionSource: "deterministic",
+            evidence: ["approved_phrase_pattern_match"],
           }),
         }),
       }),

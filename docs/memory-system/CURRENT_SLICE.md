@@ -6,27 +6,29 @@ Reduced-profile self-improving capture integration
 
 ## Objective
 
-Integrate reduced-profile self-improving capture on top of the now-closer
+Integrate reduced-profile self-improving capture on top of the now-stronger
 existing-family substrate without widening retrieval scope, broadening the
 taxonomy, or enabling autonomous behavior.
 
-The previous slice just landed:
+The previous batch just landed:
 
-- cross-family retrieval/application parity closeout
-- direct named-project fact asks now boost fact-like project results without
-  widening semantic retrieval or exposing candidates
-- direct named-project operating-rule asks now boost project-rule results
-  instead of blending adjacent project facts or unmet-need artifacts
-- direct named-project unmet-need asks now boost unmet-need results and can
-  suppress adjacent project rules once the top family-aligned result wins
-- approved-only hybrid retrieval now applies one shared intent-aware shaping
-  layer across project facts, project rules, and unmet needs inside the mixed
-  `kind=project` pool
-- prompt guidance now tells the model to use the top family-aligned project
-  result for direct named-project asks and to avoid blending adjacent project
-  memories unless they directly corroborate the same answer
-- isolated plus narrow production proof now show the new ranking/application
-  behavior without broadening into self-improving capture or advisory planning
+- cross-family repair / supersede parity closeout
+- bounded phrase-induction expansion where materially justified
+- remaining generic-envelope parity closeout for the weakest family surface
+- transcript-driven bounded generic response-style corrections can now
+  immediately supersede an approved generic response-style memory on the same
+  subject instead of always waiting in held state
+- approved response-style memories can now seed bounded reviewed
+  `response_style_phrase_pattern` artifacts that later feed deterministic
+  response-style capture while staying hidden from normal approved retrieval
+- bounded generic response-style coverage now also includes:
+  - `response detail level`
+  - `response wrap up`
+- response-style parsing now accepts durable forms such as:
+  - `By default, keep explanations high level unless I ask for more detail.`
+  - `From now on, end longer replies with next steps.`
+- the six already-landed families now share a closer repair, phrase, and
+  retrieval/application posture before self-improving capture is introduced
 
 ## Required work
 
@@ -61,7 +63,7 @@ The previous slice just landed:
   through the same candidate, review, and retrieval substrate
 - the self-improving seam stays candidate-only, bounded, and provenance-aware
 - later advisory planning can build on the same approved-memory posture rather
-  than compensating for family-specific special cases
+  than compensating for older remaining family-specific special cases
 - hybrid-first retrieval remains the default path
 - the post-pivot families stay part of the same layered supervised-learning
   system

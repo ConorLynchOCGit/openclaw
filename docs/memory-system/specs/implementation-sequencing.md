@@ -64,9 +64,15 @@ Current sequencing note:
   at a time
 - cross-family retrieval/application parity closeout is now also landed as
   the fourth parity tranche inside existing-family parity
+- cross-family repair / supersede parity closeout is now also landed as the
+  fifth parity tranche
+- bounded phrase-induction expansion is now also landed as the sixth parity
+  tranche, but only where the reviewed artifact model is a good fit
+- remaining generic-envelope parity closeout is now also landed as the
+  seventh parity tranche
 - the next implementation slice should be:
   - reduced-profile self-improving capture integration after the already
-    landed families are closer to parity
+    landed families are closer to practical parity
 - the next follow-up slices after that should be:
   - later learned-guidance advisory planning after self-improving candidate
     provenance and generic retrieval posture are mature enough
@@ -96,6 +102,8 @@ Current sequencing note:
   seams
 - phrase induction is more valuable after approved generic lessons exist and
   auto-review can turn broader lessons into durable approved inputs
+- extending the same phrase-induction posture to other families should stay
+  bounded and reviewed rather than becoming generic semantic fallback
 - generalized lesson retrieval/application is more valuable after broader
   approved lessons exist and before later families broaden
 - broader project-rule learning and unmet-need planning should reuse the

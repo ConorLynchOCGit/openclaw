@@ -99,14 +99,14 @@ const RESPONSE_STYLE_TEMPLATE_SPECS: Record<
 };
 
 const CORRECTION_PREFIX_PATTERNS = [
-  /^actually\b/,
-  /^no\b/,
-  /^nope\b/,
-  /^sorry\b/,
-  /^i meant\b/,
-  /^correction\b/,
-  /^that's not right\b/,
-  /^thats not right\b/,
+  /^actually\b/i,
+  /^no\b/i,
+  /^nope\b/i,
+  /^sorry\b/i,
+  /^i meant\b/i,
+  /^correction\b/i,
+  /^that's not right\b/i,
+  /^thats not right\b/i,
 ];
 
 const FORGET_PREFIX_PATTERNS = [
@@ -177,7 +177,7 @@ const GENERIC_RESPONSE_STYLE_MANAGED_PREFIX_PATTERNS = [
 const GENERIC_RESPONSE_STYLE_DURABLE_PREFIX_PATTERNS = [
   /^(?:for future|in future)\s+(?:replies|responses|answers)(?:,|:|\s+)\s*/i,
   /^(?:from now on)(?:,|:|\s+)\s*/i,
-  /^(?:by default|default to)(?:\s+)\s*/i,
+  /^(?:by default|default to)(?:,|:|\s+)\s*/i,
   /^(?:please\s+)?remember(?:\s+that|\s+to)?\s*/i,
   /^(?:my|the)\s+response(?:-| )?(?:style|format|structure|tone)\s+preference\s+is\s*/i,
   /^(?:i\s+prefer|i'd prefer|id prefer)\s+(?:your\s+)?(?:replies|responses|answers)\s+(?:to\s+)?/i,
@@ -217,6 +217,22 @@ const GENERIC_RESPONSE_STYLE_SUBJECT_SPECS: GenericResponseStyleSubjectSpec[] = 
       /\bemoji\b/.test(normalizedDirective) &&
       /\b(?:no|avoid|skip|omit|without|dont|do not)\b/.test(normalizedDirective),
   },
+  {
+    subject: "response detail level",
+    match: (normalizedDirective) =>
+      (/\bhigh level\b/.test(normalizedDirective) &&
+        /\b(?:unless asked|unless i ask|unless requested)\b/.test(normalizedDirective)) ||
+      /\b(?:more|extra)\s+detail\b/.test(normalizedDirective) ||
+      /\bmore detailed\b/.test(normalizedDirective),
+  },
+  {
+    subject: "response wrap up",
+    match: (normalizedDirective) =>
+      (/\b(?:end|finish|close|wrap up)\b/.test(normalizedDirective) &&
+        /\b(?:summary|recap|next steps)\b/.test(normalizedDirective)) ||
+      (/\b(?:summary|recap|next steps)\b/.test(normalizedDirective) &&
+        /\bat the end\b/.test(normalizedDirective)),
+  },
 ];
 
 function normalizeText(value: string): string {
@@ -227,7 +243,7 @@ function normalizeLower(value: string): string {
   return normalizeText(value).toLowerCase();
 }
 
-function normalizeSemanticText(value: string): string {
+export function normalizeResponseStyleSemanticText(value: string): string {
   return normalizeLower(value)
     .replace(/[’']/g, "")
     .replace(/\bpls\b/g, "please")
@@ -244,7 +260,7 @@ function normalizeSemanticText(value: string): string {
 }
 
 function tokenize(value: string): string[] {
-  const normalized = normalizeSemanticText(value);
+  const normalized = normalizeResponseStyleSemanticText(value);
   return normalized ? normalized.split(" ").filter(Boolean) : [];
 }
 
@@ -426,6 +442,27 @@ function buildGenericCanonicalMatch(params: {
   };
 }
 
+export function createResponseStyleCanonicalMatch(params: {
+  template: ResponseStyleTemplate;
+  family: ResponseStyleFamily;
+  subject: string;
+  value: string;
+  captureClass?: "explicit_requirement" | "requirement_correction";
+}): ResponseStyleCanonicalMatch {
+  const captureClass = params.captureClass ?? "explicit_requirement";
+  if (params.family === "supported_template" && isSupportedResponseStyleTemplate(params.template)) {
+    return buildCanonicalMatch({
+      template: params.template,
+      captureClass,
+    });
+  }
+  return buildGenericCanonicalMatch({
+    captureClass,
+    subject: params.subject,
+    value: params.value,
+  });
+}
+
 function scoreConcise(tokens: string[], normalized: string): { score: number; evidence: string[] } {
   const evidence: string[] = [];
   let score = 0;
@@ -521,18 +558,23 @@ function scoreNoTables(
 ): { score: number; evidence: string[] } {
   const evidence: string[] = [];
   let score = 0;
-  if (containsAny(tokens, ["table", "tables"], 1)) {
+  const hasTableTerm = containsAny(tokens, ["table", "tables"], 1);
+  if (hasTableTerm) {
     score += 2;
     evidence.push("table_term");
   }
   if (
-    containsAny(tokens, ["dont", "not", "no", "skip", "avoid"], 0) ||
-    containsPhrase(normalized, "unless i ask")
+    hasTableTerm &&
+    (containsAny(tokens, ["dont", "not", "no", "skip", "avoid"], 0) ||
+      containsPhrase(normalized, "unless i ask"))
   ) {
     score += 2;
     evidence.push("negative_table_signal");
   }
-  if (containsPhrase(normalized, "unless i ask") || containsPhrase(normalized, "unless asked")) {
+  if (
+    hasTableTerm &&
+    (containsPhrase(normalized, "unless i ask") || containsPhrase(normalized, "unless asked"))
+  ) {
     score += 2;
     evidence.push("unless_asked_phrase");
   }
@@ -710,9 +752,12 @@ function normalizeGenericResponseStyleDirective(value: string): string {
     .replace(/[.!?]+$/, "")
     .replace(/^to\s+/i, "")
     .replace(/\b(?:lead|begin|open)\b/gi, "start")
+    .replace(/\bhigh[- ]level\b/gi, "high level")
+    .replace(/\btop[- ]level\b/gi, "high level")
     .replace(/\bsection headings?\b/gi, "section headers")
     .replace(/\bheadings?\b/gi, "headers")
     .replace(/\bemojis?\b/gi, "emoji")
+    .replace(/\bwrap[- ]?up\b/gi, "wrap up")
     .replace(/\bup front\b/gi, "upfront")
     .replace(/\s+/g, " ")
     .trim();
@@ -754,7 +799,7 @@ function extractGenericResponseStyleDirective(text: string): {
 }
 
 function inferGenericResponseStyleSubject(directive: string): string | null {
-  const normalizedDirective = normalizeSemanticText(directive);
+  const normalizedDirective = normalizeResponseStyleSemanticText(directive);
   for (const spec of GENERIC_RESPONSE_STYLE_SUBJECT_SPECS) {
     if (spec.match(normalizedDirective)) {
       return spec.subject;
@@ -776,7 +821,7 @@ function detectGenericForgetTarget(
   let remainder = normalized;
   for (const pattern of FORGET_PREFIX_PATTERNS) {
     if (pattern.test(remainder)) {
-      remainder = normalizeSemanticText(remainder.replace(pattern, ""));
+      remainder = normalizeResponseStyleSemanticText(remainder.replace(pattern, ""));
       break;
     }
   }
@@ -809,7 +854,7 @@ function detectGenericResponseStyleCapture(text: string): {
   if (!extracted) {
     return null;
   }
-  const normalizedDirective = normalizeSemanticText(extracted.directive);
+  const normalizedDirective = normalizeResponseStyleSemanticText(extracted.directive);
   if (
     !normalizedDirective ||
     normalizedDirective.length < 8 ||
@@ -845,7 +890,7 @@ function detectGenericResponseStyleCapture(text: string): {
 export function detectResponseStyleSemanticDecision(
   text: string,
 ): ResponseStyleSemanticCaptureDecision {
-  const normalized = normalizeSemanticText(text);
+  const normalized = normalizeResponseStyleSemanticText(text);
   const tokens = tokenize(text);
   if (!normalized || tokens.length === 0 || normalized.length < 4 || normalized.length > 160) {
     return { action: "ignore", reason: "out_of_bounds", evidence: [] };

@@ -2846,6 +2846,116 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
+  it("holds and later auto-promotes bounded generic response-style detail guidance without manual review", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-rs-detail-1", {
+      kind: "learning",
+      content: "By default, keep explanations high level unless I ask for more detail.",
+      projectId: seeded.projectId,
+    });
+    const candidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const initialRow = await querySingleRow<{
+      review_state: string;
+      template: string | null;
+      response_style_family: string | null;
+      subject: string | null;
+      value: string | null;
+      lifecycle_state: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'template' as template,
+          metadata->'candidateMetadata'->'autoCapture'->>'responseStyleFamily' as response_style_family,
+          metadata->'candidateMetadata'->'autoCapture'->>'subject' as subject,
+          metadata->'candidateMetadata'->'autoCapture'->>'value' as value,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [candidateId],
+    );
+
+    expect(initialRow).toEqual({
+      review_state: "candidate",
+      template: "response_style_generalized_guidance",
+      response_style_family: "generalized_guidance",
+      subject: "response detail level",
+      value: "keep explanations high level unless I ask for more detail",
+      lifecycle_state: "hold_for_more_evidence",
+    });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-rs-detail-2", {
+      kind: "learning",
+      content: "Please remember to keep explanations high level unless I ask for more detail.",
+      projectId: seeded.projectId,
+    });
+
+    expect(confirmingSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "learning",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+
+    const promotedMemoryObjectId = (confirmingSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    const confirmedRow = await querySingleRow<{
+      candidate_review_state: string;
+      review_state: string;
+      promotion_profile: string | null;
+      subject: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select review_state::text from memory_middleware.memory_objects where id = $1::uuid) as candidate_review_state,
+          (select review_state::text from memory_middleware.memory_objects where id = $2::uuid) as review_state,
+          (select metadata->'promotionMetadata'->'autoPromotion'->>'profile' from memory_middleware.memory_objects where id = $2::uuid) as promotion_profile,
+          (select metadata->'candidateMetadata'->'autoCapture'->>'subject' from memory_middleware.memory_objects where id = $2::uuid) as subject
+      `,
+      [candidateId, promotedMemoryObjectId],
+    );
+
+    expect(confirmedRow).toEqual({
+      candidate_review_state: "candidate",
+      review_state: "approved",
+      promotion_profile: "response_style_confirmation_v1",
+      subject: "response detail level",
+    });
+  });
+
   it("supersedes older approved generic response-style guidance when a corrected promotion targets the same bounded subject", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

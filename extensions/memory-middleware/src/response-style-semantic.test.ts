@@ -52,6 +52,16 @@ describe("detectResponseStyleSemanticDecision", () => {
       "use short section headers in longer replies",
     ],
     ["Default to no emoji in responses.", "response tone", "no emoji in responses"],
+    [
+      "By default, keep explanations high level unless I ask for more detail.",
+      "response detail level",
+      "keep explanations high level unless I ask for more detail",
+    ],
+    [
+      "From now on, end longer replies with next steps.",
+      "response wrap up",
+      "end longer replies with next steps",
+    ],
   ])("captures bounded generic response-style guidance: %s", (text, subject, value) => {
     expect(detectResponseStyleSemanticDecision(text)).toMatchObject({
       action: "capture",
@@ -61,6 +71,36 @@ describe("detectResponseStyleSemanticDecision", () => {
         family: "generalized_guidance",
         subject,
         value,
+      },
+    });
+  });
+
+  it("strips correction prefixes case-insensitively for bounded generic response-style guidance", () => {
+    expect(
+      detectResponseStyleSemanticDecision("Actually, include a brief summary first."),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        template: "response_style_generalized_guidance",
+        captureClass: "requirement_correction",
+        subject: "response opening",
+        value: "include a brief summary first",
+      },
+    });
+  });
+
+  it("captures bounded generic response-style wrap-up corrections", () => {
+    expect(
+      detectResponseStyleSemanticDecision("Actually, end longer replies with a short recap."),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        template: "response_style_generalized_guidance",
+        captureClass: "requirement_correction",
+        subject: "response wrap up",
+        value: "end longer replies with a short recap",
       },
     });
   });
@@ -84,6 +124,8 @@ describe("detectResponseStyleSemanticDecision", () => {
     "we should add bullets to the changelog generator",
     "remember this later maybe",
     "For this reply, start with the direct answer first.",
+    "the project needs more detail in the rollout plan",
+    "next steps for this project are still blocked",
   ])("ignores false-positive traps: %s", (text) => {
     expect(detectResponseStyleSemanticDecision(text)).toMatchObject({
       action: "ignore",

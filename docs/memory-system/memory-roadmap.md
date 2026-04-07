@@ -155,9 +155,13 @@ Current state:
     memory through the same response-style review + promotion substrate
   - approved-only hybrid retrieval now ranks generic response-style guidance
     by normalized subject and value overlap
-  - transcript-driven generic correction remains conservative and still waits
-    for later confirming evidence instead of immediately superseding on first
-    mention
+  - transcript-driven generic corrections can now immediately supersede an
+    approved generic response-style memory on the same normalized subject
+  - bounded reviewed response-style phrase induction is now also live for
+    approved response-style memories
+  - the bounded generic response-style lane now also covers:
+    - response detail level
+    - response wrap up
 - the first bounded semantic project-memory UX slice is now live for its
   intended scope:
   - semantic explicit named-project detection is now live for:
@@ -490,6 +494,12 @@ Delivery enablement pause:
   - response-style genericization and retrieval parity v1
 - fourth landed parity tranche inside step 1:
   - cross-family retrieval/application parity closeout
+- fifth landed parity tranche inside step 1:
+  - cross-family repair / supersede parity closeout
+- sixth landed parity tranche inside step 1:
+  - bounded phrase-induction expansion where materially justified
+- seventh landed parity tranche inside step 1:
+  - remaining generic-envelope parity closeout for the weakest family surface
 - next recommended implementation slice after step 1:
   - reduced-profile self-improving capture integration
 - existing-family parity means, for the current landed families:
@@ -504,6 +514,11 @@ Delivery enablement pause:
   - phrase induction is added where it materially improves recall
   - the family is ready to participate in later self-improving capture and
     advisory planning without bespoke special cases
+- current parity note:
+  - the families are now close enough in substrate maturity to advance to
+    reduced-profile self-improving capture
+  - they are still intentionally bounded rather than fully identical in
+    capability envelope
 - recommended first cross-domain expansion tranche only after parity,
   self-improving, and advisory planning:
   - decision + rationale
@@ -1284,6 +1299,14 @@ Current phase note:
     slice
   - reduced-profile self-improving capture integration after the broader
     generic families share the same retrieval posture
+- phase note after the final parity batch:
+  - the remaining parity work in this phase is now also landed for:
+    - cross-family repair / supersede parity closeout
+    - bounded phrase-induction expansion where materially justified
+    - remaining generic-envelope parity closeout for bounded response-style
+      guidance
+  - the next work in the roadmap is now reduced-profile self-improving
+    capture integration rather than more existing-family parity cleanup
 
 Primary spec:
 

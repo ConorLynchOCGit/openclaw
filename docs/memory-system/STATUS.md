@@ -2130,10 +2130,46 @@ Fast re-entry reading order:
       directly corroborate the same answer
     - hybrid remains the default working-context path and generic semantic
       broadening is still not live
+62. Cross-family repair / supersede parity closeout is now landed:
+    - transcript-driven bounded generic response-style corrections can now
+      supersede an already-approved generic response-style memory on the same
+      normalized subject instead of always waiting in held state
+    - supersede lineage remains explicit and auditable through the existing
+      approved-memory correction path
+    - supported-template correction behavior remains unchanged
+63. Bounded phrase-induction expansion is now landed where materially
+    justified:
+    - approved response-style memories can now seed reviewed
+      `response_style_phrase_pattern` artifacts
+    - the first novel anchored paraphrase enters `hold_for_more_evidence`
+    - later compatible evidence can auto-promote that phrase pattern
+    - approved response-style phrase patterns now feed deterministic
+      response-style capture
+    - approved phrase-pattern artifacts remain hidden from normal approved
+      retrieval
+64. Remaining generic-envelope parity closeout is now landed for the weakest
+    remaining family surface:
+    - bounded generic response-style capture now also supports:
+      - `response detail level`
+      - `response wrap up`
+    - durable response-style parsing now accepts:
+      - `By default, ...`
+      - hyphenated forms such as `wrap-up` and `high-level`
+    - bounded false-positive resistance was tightened so project/detail and
+      next-steps planning language does not get overlearned as response-style
+      memory
+65. The final existing-family parity batch is now complete enough to advance
+    the roadmap:
+    - all six preexisting families now share a materially closer lifecycle,
+      repair, retrieval/application, and bounded phrase posture
+    - phrase induction is now live where it is clearly justified for the
+      current artifact model
+    - the next roadmap step is reduced-profile self-improving capture
+      integration on top of this stronger substrate
 
 ## Next expected action
 
 Implement reduced-profile self-improving capture integration on the same
-generic supervised pipeline now that the existing-family parity closeout is
+generic supervised pipeline now that the final existing-family parity batch is
 landed, then follow with learned-guidance advisory planning only after the
 broader generic families reuse the same candidate and retrieval posture.

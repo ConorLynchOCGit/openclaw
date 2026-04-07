@@ -47,6 +47,11 @@ import {
   isExpiredPendingResponseStyleCandidate,
 } from "./response-style-lifecycle.js";
 import {
+  findApprovedResponseStylePhrasePatternMatch,
+  maybeInduceResponseStylePhrasePattern,
+} from "./response-style-phrase-induction.js";
+import {
+  createResponseStyleCanonicalMatch,
   detectResponseStyleSemanticDecision,
   isSupportedResponseStyleTemplate,
   isResponseStyleCorrectionMatch,
@@ -3205,6 +3210,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
 
   async function handleResponseStyleDecision(decisionParams: {
     decision: ResponseStyleCaptureDecision;
+    observedText: string;
     agentExternalKey: string;
     sessionKey: string;
     transcriptFile: string;
@@ -3333,6 +3339,36 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       inspection?.matchingApprovedObjectId &&
       (isResponseStyleLearningMatch(match) || isResponseStyleCorrectionMatch(match))
     ) {
+      const targetMatch = createResponseStyleCanonicalMatch({
+        template: match.template,
+        family: match.responseStyleFamily ?? "supported_template",
+        subject: match.subject,
+        value: match.value,
+      });
+      await maybeInduceResponseStylePhrasePattern({
+        config: params.config,
+        candidateIngress: {
+          submitImprovementNote: async (input) =>
+            deps.submitImprovementNote({
+              content: input.content,
+              projectId: input.projectId ?? attribution.projectId,
+              agentId: input.agentId ?? attribution.agentId,
+              sessionId: input.sessionId ?? attribution.sessionId,
+              metadata: input.metadata ?? {},
+            }),
+        },
+        candidateReview: { review: deps.reviewCandidate },
+        candidatePromotion: { promoteToMemory: deps.promoteToMemory },
+        text: decisionParams.observedText,
+        ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
+        sessionId: attribution.sessionId,
+        agentId: attribution.agentId,
+        detectionSource: decisionParams.decision.detectionSource,
+        targetMatch,
+        logger: params.logger,
+        source: "response_style_phrase_induction_transcript_auto_capture",
+        ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
+      });
       params.logger.debug?.(
         formatLog("memory-middleware response-style capture skipped existing approved key", {
           key: match.key,
@@ -3469,9 +3505,16 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       result.memoryObjectId &&
       decisionParams.decision.reviewMode === "direct" &&
       (isResponseStyleLearningMatch(match) || isResponseStyleCorrectionMatch(match));
+    const shouldPromoteGenericCorrectionAgainstApprovedSubject =
+      autoPromotion.profile === "explicit-user-preference-v1" &&
+      autoPromotionAgents.has(decisionParams.agentExternalKey) &&
+      result.memoryObjectId &&
+      match.responseStyleFamily === "generalized_guidance" &&
+      isResponseStyleCorrectionMatch(match) &&
+      (inspection?.activeApprovedSubjectObjectIds.length ?? 0) > 0;
 
     if (shouldDirectPromote && result.memoryObjectId) {
-      await autoPromoteResponseStyleCandidate({
+      const promoted = await autoPromoteResponseStyleCandidate({
         candidateId: result.memoryObjectId,
         reviewerAgentId: attribution.agentId,
         logger: params.logger,
@@ -3492,6 +3535,93 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           confidence: decisionParams.decision.confidence,
         },
       });
+      if (promoted) {
+        await maybeInduceResponseStylePhrasePattern({
+          config: params.config,
+          candidateIngress: {
+            submitImprovementNote: async (input) =>
+              deps.submitImprovementNote({
+                content: input.content,
+                projectId: input.projectId ?? attribution.projectId,
+                agentId: input.agentId ?? attribution.agentId,
+                sessionId: input.sessionId ?? attribution.sessionId,
+                metadata: input.metadata ?? {},
+              }),
+          },
+          candidateReview: { review: deps.reviewCandidate },
+          candidatePromotion: { promoteToMemory: deps.promoteToMemory },
+          text: decisionParams.observedText,
+          ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
+          sessionId: attribution.sessionId,
+          agentId: attribution.agentId,
+          detectionSource: decisionParams.decision.detectionSource,
+          targetMatch: createResponseStyleCanonicalMatch({
+            template: match.template,
+            family: match.responseStyleFamily ?? "supported_template",
+            subject: match.subject,
+            value: match.value,
+          }),
+          logger: params.logger,
+          source: "response_style_phrase_induction_transcript_auto_capture",
+          ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
+        });
+      }
+    }
+
+    if (shouldPromoteGenericCorrectionAgainstApprovedSubject && result.memoryObjectId) {
+      const promoted = await autoPromoteResponseStyleCandidate({
+        candidateId: result.memoryObjectId,
+        reviewerAgentId: attribution.agentId,
+        logger: params.logger,
+        reviewCandidate: deps.reviewCandidate,
+        promoteToMemory: deps.promoteToMemory,
+        metadata: buildResponseStyleAutoPromotionMetadata({
+          match,
+          agentExternalKey: decisionParams.agentExternalKey,
+          sessionKey: decisionParams.sessionKey,
+          transcriptFile: decisionParams.transcriptFile,
+          autoPromotionProfile: "response_style_generalized_correction_v1",
+          ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
+          ...(semanticMetadata ? { semanticMetadata } : {}),
+        }),
+        logContext: {
+          key: match.key,
+          subjectKey: match.subjectKey,
+          correctionMode: "generic_subject_supersede",
+          confidence: decisionParams.decision.confidence,
+        },
+      });
+      if (promoted) {
+        await maybeInduceResponseStylePhrasePattern({
+          config: params.config,
+          candidateIngress: {
+            submitImprovementNote: async (input) =>
+              deps.submitImprovementNote({
+                content: input.content,
+                projectId: input.projectId ?? attribution.projectId,
+                agentId: input.agentId ?? attribution.agentId,
+                sessionId: input.sessionId ?? attribution.sessionId,
+                metadata: input.metadata ?? {},
+              }),
+          },
+          candidateReview: { review: deps.reviewCandidate },
+          candidatePromotion: { promoteToMemory: deps.promoteToMemory },
+          text: decisionParams.observedText,
+          ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
+          sessionId: attribution.sessionId,
+          agentId: attribution.agentId,
+          detectionSource: decisionParams.decision.detectionSource,
+          targetMatch: createResponseStyleCanonicalMatch({
+            template: match.template,
+            family: match.responseStyleFamily ?? "supported_template",
+            subject: match.subject,
+            value: match.value,
+          }),
+          logger: params.logger,
+          source: "response_style_phrase_induction_transcript_auto_capture",
+          ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
+        });
+      }
     }
 
     params.logger.info(
@@ -4690,11 +4820,43 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       return;
     }
     const timestamp = extractTranscriptTimestamp(transcriptMessage);
+    const deterministicResponseStylePhraseMatch = await findApprovedResponseStylePhrasePatternMatch(
+      {
+        config: params.config,
+        text,
+        logger: params.logger,
+      },
+    );
+    if (
+      deterministicResponseStylePhraseMatch &&
+      (await handleResponseStyleDecision({
+        decision: {
+          action: "capture",
+          confidence: "high",
+          detectionSource: "deterministic",
+          evidence: ["approved_phrase_pattern_match"],
+          responseStyleFamily: deterministicResponseStylePhraseMatch.match.family,
+          match: toOrdinaryTurnResponseStyleMatch(deterministicResponseStylePhraseMatch.match),
+          reviewMode:
+            deterministicResponseStylePhraseMatch.match.family === "generalized_guidance"
+              ? "hold_for_more_evidence"
+              : "direct",
+        },
+        observedText: text,
+        agentExternalKey,
+        sessionKey,
+        transcriptFile,
+        ...(timestamp ? { timestamp } : {}),
+      }))
+    ) {
+      return;
+    }
     const responseStyleDecision = detectResponseStyleCaptureDecision(text, autoCapture.profile);
     if (
       responseStyleDecision &&
       (await handleResponseStyleDecision({
         decision: responseStyleDecision,
+        observedText: text,
         agentExternalKey,
         sessionKey,
         transcriptFile,

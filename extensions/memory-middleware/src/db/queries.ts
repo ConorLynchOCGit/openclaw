@@ -171,7 +171,10 @@ const DEFAULT_PROACTIVE_PLAN_MAX_ACTIONS = 6;
 const MAX_PROACTIVE_PLAN_MAX_ACTIONS = 20;
 const DEFAULT_BACKGROUND_JOB_MAX_ATTEMPTS = 3;
 const MAX_BACKGROUND_JOB_MAX_ATTEMPTS = 10;
-const NON_USER_VISIBLE_APPROVED_ARTIFACT_FAMILIES = ["workflow_phrase_pattern"] as const;
+const NON_USER_VISIBLE_APPROVED_ARTIFACT_FAMILIES = [
+  "workflow_phrase_pattern",
+  "response_style_phrase_pattern",
+] as const;
 
 type CandidatePersistencePlan = {
   schema: string;

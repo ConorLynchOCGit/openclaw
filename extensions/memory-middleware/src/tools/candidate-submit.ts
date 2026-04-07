@@ -49,6 +49,11 @@ import {
   isExpiredPendingResponseStyleCandidate,
 } from "../response-style-lifecycle.js";
 import {
+  findApprovedResponseStylePhrasePatternMatch,
+  maybeInduceResponseStylePhrasePattern,
+} from "../response-style-phrase-induction.js";
+import {
+  createResponseStyleCanonicalMatch,
   detectResponseStyleSemanticDecision,
   isResponseStyleCorrectionMatch,
   isResponseStyleLearningMatch,
@@ -296,6 +301,7 @@ function buildToolResponseStyleAutoPromotionMetadata(params: {
 async function maybeResolveExistingResponseStyleCandidate(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
+  context?: OpenClawPluginToolContext;
 }): Promise<CandidateSubmissionResult | null> {
   if (params.input.kind !== "learning" && params.input.kind !== "correction") {
     return null;
@@ -357,7 +363,41 @@ async function maybeResolveExistingResponseStyleCandidate(params: {
     });
   }
 
+  const observedText =
+    (typeof params.input.metadata?.raw === "string" && params.input.metadata.raw.trim()) ||
+    params.input.content;
+  const canonicalMatch = buildResponseStyleCanonicalMatchFromInput(params.input);
+
   if (inspection.matchingApprovedObjectId) {
+    if (observedText && canonicalMatch) {
+      await maybeInduceResponseStylePhrasePattern({
+        config: params.runtime.config,
+        candidateIngress: params.runtime.candidateIngress,
+        candidateReview: params.runtime.candidateReview,
+        candidatePromotion: params.runtime.candidatePromotion,
+        text: observedText,
+        ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+        ...(params.input.sessionId
+          ? { sessionId: params.input.sessionId }
+          : params.context?.sessionId
+            ? { sessionId: params.context.sessionId }
+            : {}),
+        ...(params.input.agentId
+          ? { agentId: params.input.agentId }
+          : params.context?.agentId
+            ? { agentId: params.context.agentId }
+            : {}),
+        detectionSource:
+          readNestedMetadataString(params.input.metadata, [
+            "semanticDetection",
+            "detectionSource",
+          ]) === "deterministic"
+            ? "deterministic"
+            : "semantic",
+        targetMatch: canonicalMatch,
+        source: "response_style_phrase_induction_candidate_submit",
+      });
+    }
     return {
       accepted: false,
       status: "failed",
@@ -447,6 +487,35 @@ async function maybeResolveExistingResponseStyleCandidate(params: {
         kind: params.input.kind,
         reason: promotionResult.reason,
       };
+    }
+    if (observedText && canonicalMatch && promotionResult.promotedMemoryObjectId) {
+      await maybeInduceResponseStylePhrasePattern({
+        config: params.runtime.config,
+        candidateIngress: params.runtime.candidateIngress,
+        candidateReview: params.runtime.candidateReview,
+        candidatePromotion: params.runtime.candidatePromotion,
+        text: observedText,
+        ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+        ...(params.input.sessionId
+          ? { sessionId: params.input.sessionId }
+          : params.context?.sessionId
+            ? { sessionId: params.context.sessionId }
+            : {}),
+        ...(params.input.agentId
+          ? { agentId: params.input.agentId }
+          : params.context?.agentId
+            ? { agentId: params.context.agentId }
+            : {}),
+        detectionSource:
+          readNestedMetadataString(params.input.metadata, [
+            "semanticDetection",
+            "detectionSource",
+          ]) === "deterministic"
+            ? "deterministic"
+            : "semantic",
+        targetMatch: canonicalMatch,
+        source: "response_style_phrase_induction_candidate_submit",
+      });
     }
     return {
       accepted: true,
@@ -1674,6 +1743,7 @@ export async function submitCandidateFromTool(params: {
   const resolvedExisting = await maybeResolveExistingResponseStyleCandidate({
     runtime: params.runtime,
     input: normalizedInput,
+    context: params.context,
   });
   if (resolvedExisting) {
     return resolvedExisting;
@@ -2485,9 +2555,41 @@ function isManagedResponseStyleMatch(
   );
 }
 
-function resolveManagedResponseStyleLearning(
-  input: CandidateSubmissionInput,
-): ManagedResponseStyleResolution | null {
+function buildResponseStyleCanonicalMatchFromInput(input: CandidateSubmissionInput) {
+  const template = readNestedMetadataString(input.metadata, ["autoCapture", "template"]);
+  const family =
+    (readNestedMetadataString(input.metadata, [
+      "autoCapture",
+      "responseStyleFamily",
+    ]) as ResponseStyleFamily | null) ?? "supported_template";
+  const subject = readNestedMetadataString(input.metadata, ["autoCapture", "subject"]);
+  const value = readNestedMetadataString(input.metadata, ["autoCapture", "value"]);
+  if (
+    !template ||
+    !subject ||
+    !value ||
+    (template !== "responses_concise" &&
+      template !== "responses_bullets" &&
+      template !== "responses_plain_english" &&
+      template !== "responses_no_tables" &&
+      template !== "responses_numbered_steps" &&
+      template !== "response_style_generalized_guidance")
+  ) {
+    return null;
+  }
+  return createResponseStyleCanonicalMatch({
+    template,
+    family,
+    subject,
+    value,
+  });
+}
+
+async function resolveManagedResponseStyleLearning(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: CandidateSubmissionInput;
+}): Promise<ManagedResponseStyleResolution | null> {
+  const { input } = params;
   const parsedFromContent = parseAutoCaptureManagedCandidateContent(input.content);
   if (isManagedResponseStyleMatch(parsedFromContent)) {
     return {
@@ -2498,6 +2600,25 @@ function resolveManagedResponseStyleLearning(
       detectionSource: "deterministic",
       confidence: "high",
       evidence: ["managed_content_pattern_match"],
+    };
+  }
+
+  const deterministicFromContent = await findApprovedResponseStylePhrasePatternMatch({
+    config: params.runtime.config,
+    text: input.content,
+  });
+  if (deterministicFromContent) {
+    return {
+      parsed: toOrdinaryTurnResponseStyleMatch(deterministicFromContent.match),
+      responseStyleFamily: deterministicFromContent.match.family,
+      reviewMode:
+        deterministicFromContent.match.family === "generalized_guidance"
+          ? "hold_for_more_evidence"
+          : "direct",
+      source: "content",
+      detectionSource: "deterministic",
+      confidence: "high",
+      evidence: ["approved_phrase_pattern_match"],
     };
   }
 
@@ -2515,6 +2636,24 @@ function resolveManagedResponseStyleLearning(
         detectionSource: "deterministic",
         confidence: "high",
         evidence: ["raw_turn_pattern_match"],
+      };
+    }
+    const deterministicFromRaw = await findApprovedResponseStylePhrasePatternMatch({
+      config: params.runtime.config,
+      text: input.metadata.raw,
+    });
+    if (deterministicFromRaw) {
+      return {
+        parsed: toOrdinaryTurnResponseStyleMatch(deterministicFromRaw.match),
+        responseStyleFamily: deterministicFromRaw.match.family,
+        reviewMode:
+          deterministicFromRaw.match.family === "generalized_guidance"
+            ? "hold_for_more_evidence"
+            : "direct",
+        source: "raw",
+        detectionSource: "deterministic",
+        confidence: "high",
+        evidence: ["approved_phrase_pattern_match"],
       };
     }
     const semanticFromRaw = detectResponseStyleSemanticDecision(input.metadata.raw);
@@ -3218,7 +3357,10 @@ async function normalizeManagedToolCandidateInput(params: {
       });
     }
 
-    const responseStyleResolution = resolveManagedResponseStyleLearning(input);
+    const responseStyleResolution = await resolveManagedResponseStyleLearning({
+      runtime: params.runtime,
+      input,
+    });
     if (responseStyleResolution) {
       return mergeCandidateMetadata(input, {
         category: "user_requirement",
@@ -3239,13 +3381,11 @@ async function normalizeManagedToolCandidateInput(params: {
           normalizedValue: responseStyleResolution.parsed.normalizedValue,
           toolName: "memory_candidate_submit",
         },
-        ...(responseStyleResolution.detectionSource === "semantic"
-          ? buildResponseStyleSemanticMetadata({
-              detectionSource: responseStyleResolution.detectionSource,
-              confidence: responseStyleResolution.confidence,
-              evidence: responseStyleResolution.evidence,
-            })
-          : {}),
+        ...buildResponseStyleSemanticMetadata({
+          detectionSource: responseStyleResolution.detectionSource,
+          confidence: responseStyleResolution.confidence,
+          evidence: responseStyleResolution.evidence,
+        }),
         ...(responseStyleResolution.reviewMode !== "direct"
           ? buildPendingConfirmationMetadata({
               confidence: responseStyleResolution.confidence,

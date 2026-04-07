@@ -31,10 +31,9 @@ This feature uses:
 - semantic event detection
 - deterministic parser as a shortcut for the older supported templates
 - bounded correction capture
+- reviewed phrase induction for approved response-style memories
 - approved `feedback` memory
 - behavior application
-
-Phrase induction is not live for response-style memory in this slice.
 
 ## Domain model / concepts
 
@@ -46,17 +45,21 @@ Supported fast-path subjects remain bounded to:
 - `responses_no_tables_unless_asked`
 - `responses_numbered_steps_for_instructions`
 
-This parity tranche also adds one bounded generic lane for explicit durable:
+This parity tranche now adds one bounded generic lane for explicit durable:
 
 - `response opening`
 - `response structure`
 - `response tone`
+- `response detail level`
+- `response wrap up`
 
 Examples inside that lane:
 
 - start with the direct answer first
 - use short section headers in longer replies
 - no emoji in responses
+- keep explanations high level unless I ask for more detail
+- end longer replies with next steps
 
 ## Bounded scope for parity v1
 
@@ -88,6 +91,16 @@ Examples:
   - later compatible evidence can auto-promote
 - broader or ambiguous cases should use the candidate-confirmation lifecycle
   rather than an indefinite review queue
+
+Phrase induction posture for this family:
+
+- only already-approved response-style memories can seed phrase-pattern
+  candidates
+- the first novel anchored paraphrase creates a held
+  `response_style_phrase_pattern` artifact
+- later compatible evidence can auto-promote the pattern
+- approved phrase patterns feed future deterministic response-style capture
+- approved phrase artifacts stay hidden from normal approved-only retrieval
 
 Candidate resolution mode for this family:
 
@@ -135,9 +148,10 @@ Users must be able to:
 Current parity nuance:
 
 - supported template corrections can still supersede directly
-- the new transcript-driven generic lane remains conservative on first
-  correction mention and may hold for later confirming evidence instead of
-  immediately superseding
+- bounded generic corrections can now supersede directly when an approved
+  generic response-style memory already exists on the same normalized subject
+- first-time generic guidance still uses `hold_for_more_evidence` rather than
+  broad first-mention auto-promotion
 
 ## Observability / metrics / audit requirements
 
@@ -155,6 +169,7 @@ Track:
 - overlap retrieval tests
 - later-session application proofs
 - repair proofs
+- phrase-pattern proof for bounded approved response-style memories
 
 ## Rollout posture
 
@@ -166,6 +181,7 @@ Track:
 - one-off formatting gets overlearned as a durable preference
 - multiple style memories fight each other
 - style memory is retrieved but not consistently applied
+- phrase patterns overfit and start matching non-style asks
 
 ## Open questions
 
