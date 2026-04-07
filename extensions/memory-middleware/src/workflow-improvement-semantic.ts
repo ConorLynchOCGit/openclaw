@@ -4,6 +4,9 @@ export const WORKFLOW_IMPROVEMENT_LESSON_KEYS = [
   "vitest_wrapper_required",
   "scripts_committer_required",
   "git_stash_unsafe",
+  "docs_only_check_fast",
+  "memory_proof_runner_required",
+  "readyz_for_readiness",
   "python_command_unavailable",
   "gateway_tools_invoke_forbidden",
   "openai_embeddings_api_key_required",
@@ -14,6 +17,9 @@ export const WORKFLOW_IMPROVEMENT_TOOL_KEYS = [
   "vitest",
   "scripts_committer",
   "git_stash",
+  "validation_tier",
+  "memory_proof_runner",
+  "gateway_readiness",
   "python_runtime",
   "gateway_tools_invoke",
   "openai_embeddings",
@@ -106,6 +112,37 @@ const WORKFLOW_IMPROVEMENT_SPECS: Record<WorkflowImprovementLessonKey, WorkflowI
     content:
       "Workflow improvement: do not use git stash during multi-agent repo work because it can disturb concurrent work.",
   },
+  docs_only_check_fast: {
+    captureClass: "workflow_tool_gotcha",
+    reasonCode: "workflow_tool_gotcha_statement",
+    template: "workflow_tool_gotcha",
+    toolKey: "validation_tier",
+    subject: "docs-only validation tier",
+    value:
+      "for docs or process-only work, use pnpm check:fast instead of full pnpm check, pnpm build, or full pnpm test",
+    content:
+      "Workflow improvement: for docs or process-only work, use pnpm check:fast instead of full pnpm check, pnpm build, or full pnpm test.",
+  },
+  memory_proof_runner_required: {
+    captureClass: "workflow_tool_gotcha",
+    reasonCode: "workflow_tool_gotcha_statement",
+    template: "workflow_tool_gotcha",
+    toolKey: "memory_proof_runner",
+    subject: "memory proof workflow",
+    value: "use pnpm memory:proof instead of bespoke host-side setup for bounded memory proof",
+    content:
+      "Workflow improvement: use pnpm memory:proof instead of bespoke host-side setup for bounded memory proof.",
+  },
+  readyz_for_readiness: {
+    captureClass: "workflow_tool_gotcha",
+    reasonCode: "workflow_tool_gotcha_statement",
+    template: "workflow_tool_gotcha",
+    toolKey: "gateway_readiness",
+    subject: "gateway readiness checks",
+    value: "trust /readyz for readiness; /healthz is only a shallow liveness signal",
+    content:
+      "Workflow improvement: trust /readyz for readiness; /healthz is only a shallow liveness signal.",
+  },
   python_command_unavailable: {
     captureClass: "workflow_environment_constraint",
     reasonCode: "workflow_environment_constraint_statement",
@@ -163,6 +200,9 @@ function normalizeSemanticText(value: string): string {
     .replace(/[’']/g, "")
     .replace(/\bpython3\b/g, "python")
     .replace(/\bpnpm\s+test\s+--\b/g, "pnpm test")
+    .replace(/\bpnpm\s+check:fast\b/g, "pnpm check fast")
+    .replace(/\bpnpm\s+memory:proof\b/g, "pnpm memory proof")
+    .replace(/\bproof[-\s]+runner\b/g, "proof runner")
     .replace(/\braw\s+vitest\b/g, "vitest")
     .replace(/\bscripts\s*\/\s*committer\b/g, "scripts/committer")
     .replace(/\bgit\s+add\s*\/\s*git\s+commit\b/g, "git add git commit")
@@ -336,6 +376,116 @@ function detectGitStashLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["tool_git_stash", "risk_phrase"],
+    };
+  }
+
+  return null;
+}
+
+function detectDocsOnlyCheckFastLesson(normalized: string): {
+  confidence: WorkflowImprovementSemanticConfidence;
+  evidence: string[];
+} | null {
+  const hasDocsOnlyScope =
+    normalized.includes("docs-only") ||
+    normalized.includes("docs only") ||
+    normalized.includes("process-only") ||
+    normalized.includes("process only") ||
+    normalized.includes("docs/process-only") ||
+    normalized.includes("changelog-only") ||
+    normalized.includes("changelog only");
+  const hasCheckFast = normalized.includes("pnpm check fast") || normalized.includes("check fast");
+  const hasBroaderGate =
+    normalized.includes("pnpm check") ||
+    normalized.includes("pnpm build") ||
+    normalized.includes("pnpm test") ||
+    normalized.includes("full check") ||
+    normalized.includes("full suite");
+
+  if (
+    hasDocsOnlyScope &&
+    hasCheckFast &&
+    (hasBroaderGate ||
+      /\b(?:instead of|skip|no)\b/.test(normalized) ||
+      normalized.includes("dont build") ||
+      normalized.includes("do not build"))
+  ) {
+    return {
+      confidence: "high",
+      evidence: ["docs_only_scope", "check_fast", "broader_gate_reference"],
+    };
+  }
+
+  if (hasDocsOnlyScope && hasCheckFast) {
+    return {
+      confidence: "medium",
+      evidence: ["docs_only_scope", "check_fast"],
+    };
+  }
+
+  return null;
+}
+
+function detectMemoryProofRunnerLesson(normalized: string): {
+  confidence: WorkflowImprovementSemanticConfidence;
+  evidence: string[];
+} | null {
+  const hasProofCommand =
+    normalized.includes("pnpm memory proof") || normalized.includes("memory proof");
+  const hasProofContext =
+    normalized.includes("proof runner") ||
+    normalized.includes("bounded memory proof") ||
+    normalized.includes("isolated proof") ||
+    normalized.includes("production proof") ||
+    normalized.includes("memory slice");
+  const hasReplacement =
+    /\b(?:instead of|use)\b/.test(normalized) &&
+    (normalized.includes("bespoke") ||
+      normalized.includes("host side") ||
+      normalized.includes("manual") ||
+      normalized.includes("bootstrap") ||
+      normalized.includes("hand assembled"));
+
+  if (hasProofCommand && hasProofContext && (hasReplacement || /\buse\b/.test(normalized))) {
+    return {
+      confidence: "high",
+      evidence: ["memory_proof_command", "proof_context", "replacement_phrase"],
+    };
+  }
+
+  if (hasProofCommand && hasProofContext) {
+    return {
+      confidence: "medium",
+      evidence: ["memory_proof_command", "proof_context"],
+    };
+  }
+
+  return null;
+}
+
+function detectReadyzLesson(normalized: string): {
+  confidence: WorkflowImprovementSemanticConfidence;
+  evidence: string[];
+} | null {
+  const hasReadyz = normalized.includes("/readyz") || normalized.includes("readyz");
+  const hasHealthz = normalized.includes("/healthz") || normalized.includes("healthz");
+  const hasReadinessContext =
+    normalized.includes("readiness") ||
+    normalized.includes("rollout") ||
+    normalized.includes("proof");
+  const hasLiveness = normalized.includes("liveness") || normalized.includes("live only");
+
+  if (hasReadyz && hasReadinessContext && (hasHealthz || hasLiveness)) {
+    return {
+      confidence: "high",
+      evidence: ["readyz_probe", "readiness_context", "healthz_liveness_distinction"],
+    };
+  }
+
+  if (hasReadyz && hasReadinessContext) {
+    return {
+      confidence: "medium",
+      evidence: ["readyz_probe", "readiness_context"],
     };
   }
 
@@ -543,6 +693,36 @@ export function detectWorkflowImprovementSemanticDecision(
       confidence: gitStash.confidence,
       evidence: gitStash.evidence,
       match: createMatch("git_stash_unsafe"),
+    };
+  }
+
+  const docsOnlyCheckFast = detectDocsOnlyCheckFastLesson(normalized);
+  if (docsOnlyCheckFast) {
+    return {
+      action: "capture",
+      confidence: docsOnlyCheckFast.confidence,
+      evidence: docsOnlyCheckFast.evidence,
+      match: createMatch("docs_only_check_fast"),
+    };
+  }
+
+  const memoryProofRunner = detectMemoryProofRunnerLesson(normalized);
+  if (memoryProofRunner) {
+    return {
+      action: "capture",
+      confidence: memoryProofRunner.confidence,
+      evidence: memoryProofRunner.evidence,
+      match: createMatch("memory_proof_runner_required"),
+    };
+  }
+
+  const readyz = detectReadyzLesson(normalized);
+  if (readyz) {
+    return {
+      action: "capture",
+      confidence: readyz.confidence,
+      evidence: readyz.evidence,
+      match: createMatch("readyz_for_readiness"),
     };
   }
 

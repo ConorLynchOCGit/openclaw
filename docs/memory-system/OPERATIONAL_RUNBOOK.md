@@ -598,16 +598,21 @@ For the exact proof ids and production evidence for this slice, use:
 
 ## Workflow-improvement UX workflow
 
-The fifth through seventh user-facing semantic workflow-memory slices are now
-live for bounded tool-gotcha, environment-constraint, and API workaround
-families only.
+The fifth through tenth user-facing semantic workflow-memory slices are now
+live for bounded tool-gotcha, workflow-simplification,
+environment-constraint, and API workaround families only.
 
-Supported first-slice workflow lessons:
+Supported workflow lessons:
 
 - use `pnpm test -- <path-or-filter>` instead of raw Vitest
 - use `scripts/committer "<msg>" <file...>` instead of manual
   `git add` + `git commit`
 - avoid `git stash` in this multi-agent repo
+- use `pnpm check:fast` for docs-only or process-only work instead of
+  replaying broader gates
+- use `pnpm memory:proof` for bounded memory proof instead of bespoke
+  host-side setup
+- trust `/readyz` for readiness while treating `/healthz` as liveness
 - Python command unavailable on this host or environment
 - gateway `POST /tools/invoke` forbidden in this environment
 - OpenAI embeddings require a configured `OPENAI_API_KEY` or another
@@ -620,8 +625,8 @@ Supported first-slice workflow lessons:
 Current live behavior:
 
 - bounded natural-language workflow-improvement detection is allowed only for
-  the supported repeated tool-gotcha, environment-constraint, and API
-  workaround subjects
+  the supported repeated tool-gotcha, workflow-simplification,
+  environment-constraint, and API workaround subjects
 - first-seen supported workflow lessons enter a pending-confirmation
   lifecycle instead of immediate approval or a dead manual-review queue
 - later confirming evidence can auto-promote those pending candidates without
@@ -653,6 +658,8 @@ Expected operator checks:
 
 - supported repeated tool-gotcha phrasing can create bounded improvement
   candidates without introducing freeform workflow memory
+- supported repeated workflow-simplification phrasing can create bounded
+  improvement candidates without introducing freeform workflow memory
 - supported repeated environment-constraint phrasing can create bounded
   improvement candidates without introducing freeform workflow memory
 - supported repeated API workaround phrasing can create bounded improvement
@@ -727,8 +734,8 @@ Current v1 limits:
 Current approved boundary note:
 
 - this slice is limited to the supported repeated tool-gotcha and
-  environment-constraint families plus the first supported API workaround
-  family only
+  workflow-simplification and environment-constraint families plus the first
+  supported API workaround family only
 - broader workflow-improvement memory is not live yet
 - broader API workaround memory is not live yet
 - repair or forgetting is not live yet for this family
@@ -740,7 +747,7 @@ Current approved boundary note:
 
 For the exact proof ids and production evidence for this slice, use:
 
-- `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_REPORT.md`
+- `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_V2_REPORT.md`
 - `docs/memory-system/PRODUCTION_ENVIRONMENT_CONSTRAINT_UX_REPORT.md`
 - `docs/memory-system/PRODUCTION_API_WORKAROUND_UX_REPORT.md`
 

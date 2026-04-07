@@ -379,6 +379,38 @@ describe("memory candidate submit tool", () => {
     });
   });
 
+  it("normalizes bounded workflow-simplification submissions into managed improvement metadata", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    await tool.execute("call-2c-workflow-v2", {
+      kind: "improvement",
+      content:
+        "Use pnpm memory:proof for bounded memory proof here instead of bespoke host-side setup.",
+    });
+
+    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
+      kind: "improvement",
+      content:
+        "Workflow improvement: use pnpm memory:proof instead of bespoke host-side setup for bounded memory proof.",
+      metadata: expect.objectContaining({
+        category: "workflow_improvement",
+        source: "explicit_workflow_improvement",
+        autoCapture: expect.objectContaining({
+          captureClass: "workflow_tool_gotcha",
+          template: "workflow_tool_gotcha",
+          lessonKey: "memory_proof_runner_required",
+          toolKey: "memory_proof_runner",
+          guidanceMode: "guidance_only",
+        }),
+        candidateLifecycle: expect.objectContaining({
+          family: "workflow_improvement",
+          state: "pending_confirmation",
+        }),
+      }),
+    });
+  });
+
   it("normalizes bounded API workaround submissions into managed improvement metadata", async () => {
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });

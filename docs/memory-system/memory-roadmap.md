@@ -218,7 +218,7 @@ Current live limits:
 - recurring procedures are still bounded to the supported named checklist
   family and do not silently apply in the background
 - workflow-improvement memory is now live only for the first bounded repeated
-  tool-gotcha and environment-constraint families
+  tool-gotcha, workflow-simplification, and environment-constraint families
 - repeated API failure workaround memory is now live only for the first bounded
   approved guidance family
 - broader project memory is still limited to explicit named-project facts for:
@@ -231,7 +231,8 @@ Current live limits:
   - documentation URL
   - runbook URL
     and does not include speculative state
-- broader workflow-improvement memory is not live yet
+- broader workflow-improvement memory is still not live beyond the supported
+  repeated lessons
 - recommendation-only procurement/install artifacts are not live yet
 - self-improving capture remains disabled in production
 - automatic Skill Vetter invocation remains disabled
@@ -283,9 +284,15 @@ Delivery enablement pause:
   - Docker health/readiness alignment
 - the delivery enablement pause is now complete and the first resumed
   user-facing bounded project-memory v3 slice is also now landed
+- the next resumed user-facing workflow-improvement v2 slice is now also
+  landed for:
+  - `docs_only_check_fast`
+  - `memory_proof_runner_required`
+  - `readyz_for_readiness`
 - next strongest bounded candidates to choose between explicitly:
-  - broader workflow-improvement memory v2
   - unmet-need planning v1
+  - another lower-noise workflow-improvement expansion only if it beats
+    unmet-need planning on proofability and false-positive risk
 - primary spec:
   - `/memory-system/specs/delivery-enablements`
 
@@ -968,7 +975,7 @@ First bounded live tranche:
 - weak ambiguous environment phrasing is now production-proven as a no-write
   path on the transcript assist seam
 - report:
-  - `/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_REPORT`
+  - `/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_V2_REPORT`
   - `/memory-system/PRODUCTION_ENVIRONMENT_CONSTRAINT_UX_REPORT`
 
 Bound the broader phase to operational learnings such as:
@@ -1001,13 +1008,17 @@ Current phase note:
 
 - the first bounded workflow-improvement tranches are complete for their
   intended scope
+- broader workflow-improvement v2 is now also complete for its intended scope
 - approved workflow lessons currently remain guidance-only
 - semantic retrieval is now live only for approved environment constraints
   plus the safest approved workflow tool gotchas inside this phase
 - repeated API workaround memory is now live for the first bounded family, but
   semantic retrieval for that family still remains future work inside this
   phase
-- broader workflow lessons still remain future work inside this phase
+- broader workflow lessons still remain future work inside this phase beyond:
+  - `docs_only_check_fast`
+  - `memory_proof_runner_required`
+  - `readyz_for_readiness`
 
 Primary spec:
 

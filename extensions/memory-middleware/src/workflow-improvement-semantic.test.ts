@@ -61,6 +61,51 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
     });
   });
 
+  it("captures the docs-only validation lesson", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision(
+        "For docs-only work here, use pnpm check:fast instead of full pnpm check or pnpm build.",
+      ),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        lessonKey: "docs_only_check_fast",
+        toolKey: "validation_tier",
+      },
+    });
+  });
+
+  it("captures the memory proof runner lesson", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision(
+        "Use pnpm memory:proof for bounded memory proof here instead of bespoke host-side setup.",
+      ),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        lessonKey: "memory_proof_runner_required",
+        toolKey: "memory_proof_runner",
+      },
+    });
+  });
+
+  it("captures the readyz readiness lesson", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision(
+        "Trust /readyz for rollout readiness here; /healthz is only liveness.",
+      ),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        lessonKey: "readyz_for_readiness",
+        toolKey: "gateway_readiness",
+      },
+    });
+  });
+
   it("captures the python-unavailable environment constraint", () => {
     expect(
       detectWorkflowImprovementSemanticDecision(
@@ -148,6 +193,14 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
   it("ignores a generic workflow complaint without a bounded supported lesson", () => {
     expect(
       detectWorkflowImprovementSemanticDecision("Our release workflow feels clunky."),
+    ).toMatchObject({
+      action: "ignore",
+    });
+  });
+
+  it("ignores a vague health complaint without the readyz distinction", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision("Health checks have been noisy lately."),
     ).toMatchObject({
       action: "ignore",
     });

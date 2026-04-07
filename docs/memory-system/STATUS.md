@@ -245,6 +245,12 @@ and runbook URL capture, candidate confirmation without manual review for the
 new support URL fields, direct approved retrieval for later project
 questions, and narrow isolated plus production proof without broader
 automation enablement.
+Tenth user-experience-focused workflow-improvement slice completed on the
+approved live production boundary for its intended scope, with bounded
+workflow simplification and proof-readiness guidance detection, candidate
+confirmation without manual review for the new supported lessons,
+approved-only hybrid retrieval, and narrow isolated plus production proof
+without broader automation enablement.
 Fifth family-aware semantic retrieval routing slice completed on the approved
 live production boundary for its intended scope, with approved-only
 project-scoped semantic fallback for `git_stash_unsafe`, approved source
@@ -343,6 +349,11 @@ Current compact state:
   - `scripts/committer "<msg>" <file...>` instead of manual
     `git add` + `git commit`
   - avoiding `git stash` in this multi-agent repo
+  - using `pnpm check:fast` for docs-only or process-only work instead of
+    replaying broader gates
+  - using `pnpm memory:proof` for bounded memory proof instead of bespoke
+    host-side proof setup
+  - trusting `/readyz` for readiness while treating `/healthz` as liveness
   - Python command unavailable on this host or environment
   - gateway `POST /tools/invoke` forbidden in this environment
   - OpenAI embeddings need a configured `OPENAI_API_KEY` or another embeddings
@@ -353,6 +364,7 @@ Current compact state:
     or keep a fallback model posture
 - semantic workflow-improvement capture now supports:
   - repeated bounded repo-operating tool-gotcha statements
+  - repeated bounded workflow simplification statements
   - repeated bounded host or runtime constraint statements
   - repeated bounded provider-troubleshooting API workaround statements
   - medium-confidence candidate confirmation without manual review
@@ -427,20 +439,19 @@ Current compact state:
   - `background_jobs +0`
   - production health remained `ok`
 - latest workflow-improvement production proof artifacts:
-  - `projectId = db5fdd6d-927e-4a1d-a3a8-edd0d4690c25`
-  - `agentId = 1aef21d4-d631-44bf-8c12-cee4a0154f2b`
-  - `sessionId = e414c4a1-f98d-48ff-bb84-15eec93b6b79`
-  - `candidateId = f34c5114-559a-4608-9ae5-4ab713d0b38b`
-  - `candidateEventId = 8258307f-e848-40bf-bfd6-6247c21f01c1`
-  - `approvedObjectId = 50ef7dea-9216-4bfc-9ad4-745b6d52436d`
-  - `reviewId = dd1927ad-4696-41a1-97ba-aba3ce53a6ff`
-  - `rollbackTag = openclaw:pre-workflow-improvement-20260405T235548Z`
+  - `projectId = 2fbcec81-165d-4207-ac0d-3653800bdda1`
+  - `agentId = 73e7e59a-6eaa-42bf-b442-43ebfc4b128c`
+  - `sessionId = 1dab970c-7507-460b-9352-5443d60d91eb`
+  - `candidateId = 06401172-641a-49ff-a3f6-ebe8d8e82b6e`
+  - `candidateEventId = 239353d7-cbd0-4085-8ea7-61dee3ec6d3a`
+  - `approvedObjectId = 7091f421-9f5e-46b4-a561-80b3ac9548a0`
+  - `reviewId = 70e9d2b9-8fd6-4939-badf-6c77d3a2fa54`
 - latest workflow-improvement production proof delta:
   - `memory_events +1`
   - `memory_objects +2`
   - `memory_reviews +1`
   - repeated confirming evidence caused `+0` additional writes
-  - ambiguous follow-up caused `+0` additional writes
+  - weak ambiguous workflow complaint caused `+0` additional writes
   - `procedures +0`
   - `skill_candidates +0`
   - `background_jobs +0`
@@ -613,7 +624,7 @@ Current compact state:
 - recurring-procedure behavior production report now lives in:
   - `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_BEHAVIOR_REPORT.md`
 - workflow-improvement production report now lives in:
-  - `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_REPORT.md`
+  - `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_V2_REPORT.md`
   - `docs/memory-system/PRODUCTION_ENVIRONMENT_CONSTRAINT_UX_REPORT.md`
   - `docs/memory-system/PRODUCTION_API_WORKAROUND_UX_REPORT.md`
 - fresh proof delta:

@@ -34,9 +34,11 @@ Current sequencing note:
 
 - the pre-feature delivery enablement tranche is complete
 - the narrowly bounded project-memory expansion v3 slice is now also landed
+- the broader workflow-improvement memory v2 slice is now also landed
 - the next strongest bounded candidates to choose between explicitly are:
-  - broader workflow-improvement memory v2
   - unmet-need planning v1
+  - another lower-noise workflow-improvement expansion only if it is safer
+    than unmet-need planning
 
 ## Why this order is recommended
 

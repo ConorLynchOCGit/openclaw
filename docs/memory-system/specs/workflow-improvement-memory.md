@@ -43,13 +43,19 @@ Initial bounded subfamilies:
 
 ## Bounded scope for first implementation
 
-Bound the first live slices to repeated repo-operating tool gotchas and the
-first repeated environment constraints only:
+Bound the first live slices to repeated repo-operating tool gotchas, repeated
+workflow simplifications, and the first repeated environment constraints
+only:
 
 - use `pnpm test -- <path-or-filter>` instead of raw Vitest
 - use `scripts/committer "<msg>" <file...>` instead of manual
   `git add` + `git commit`
 - avoid `git stash` in this multi-agent repo
+- use `pnpm check:fast` for docs-only or process-only work instead of
+  replaying broader gates
+- use `pnpm memory:proof` for bounded memory proof instead of bespoke
+  host-side setup
+- trust `/readyz` for readiness while treating `/healthz` as liveness only
 - Python command unavailable on this host or environment
 - gateway `POST /tools/invoke` forbidden in this environment
 
@@ -83,7 +89,8 @@ Outputs:
 ## Candidate vs approved behavior
 
 - do not use a passive manual candidate queue for this family
-- for the first bounded tool-gotcha slice:
+- for the first bounded tool-gotcha, workflow-simplification, and
+  environment-constraint slices:
   - first-seen supported lessons should enter `pending_confirmation`
   - later compatible evidence may auto-promote when the lesson remains
     low-risk and bounded
@@ -93,7 +100,8 @@ Outputs:
 
 Normal resolution mode for this family:
 
-- first bounded tool-gotcha slice:
+- first bounded tool-gotcha, workflow-simplification, and environment
+  slices:
   - `auto_confirm`
 - broader workflow-improvement families:
   - `prompt_now` or `expire_or_reject`

@@ -1279,6 +1279,9 @@ type WorkflowImprovementQueryHint = {
     | "vitest_wrapper_required"
     | "scripts_committer_required"
     | "git_stash_unsafe"
+    | "docs_only_check_fast"
+    | "memory_proof_runner_required"
+    | "readyz_for_readiness"
     | "python_command_unavailable"
     | "gateway_tools_invoke_forbidden"
     | "openai_embeddings_api_key_required"
@@ -1435,6 +1438,36 @@ function inferWorkflowImprovementQueryHint(query: string): WorkflowImprovementQu
   }
   if (normalized.includes("git stash") || normalized.includes("stash")) {
     return { lessonKey: "git_stash_unsafe" };
+  }
+  if (
+    (normalized.includes("docs-only") ||
+      normalized.includes("docs only") ||
+      normalized.includes("process-only") ||
+      normalized.includes("process only") ||
+      normalized.includes("changelog-only") ||
+      normalized.includes("changelog only")) &&
+    (normalized.includes("check:fast") ||
+      normalized.includes("check fast") ||
+      normalized.includes("pnpm check") ||
+      normalized.includes("pnpm build"))
+  ) {
+    return { lessonKey: "docs_only_check_fast" };
+  }
+  if (
+    normalized.includes("memory:proof") ||
+    (normalized.includes("memory proof") &&
+      (normalized.includes("proof runner") ||
+        normalized.includes("isolated proof") ||
+        normalized.includes("production proof")))
+  ) {
+    return { lessonKey: "memory_proof_runner_required" };
+  }
+  if (
+    normalized.includes("readyz") ||
+    ((normalized.includes("healthz") || normalized.includes("liveness")) &&
+      normalized.includes("readiness"))
+  ) {
+    return { lessonKey: "readyz_for_readiness" };
   }
   if (
     (normalized.includes("python") &&

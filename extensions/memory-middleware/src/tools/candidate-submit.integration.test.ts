@@ -4296,6 +4296,99 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     expect([vitestApprovedId, committerApprovedId]).toContain(records[0]?.id);
   });
 
+  it("boosts the most relevant approved workflow-simplification lesson in hybrid retrieval", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+
+    const docsOnlySubmit = await submitTool.execute("call-16wi-v2-a", {
+      kind: "improvement",
+      content:
+        "For docs-only work here, use pnpm check:fast instead of full pnpm check or pnpm build.",
+      projectId: seeded.projectId,
+    });
+    const docsOnlyCandidateId = (docsOnlySubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await reviewTool.execute("call-16wi-v2-b", {
+      candidateId: docsOnlyCandidateId,
+      outcome: "accepted",
+    });
+    const docsOnlyPromotion = await promoteTool.execute("call-16wi-v2-c", {
+      candidateId: docsOnlyCandidateId,
+    });
+    const docsOnlyApprovedId = (docsOnlyPromotion.details as { promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const readyzSubmit = await submitTool.execute("call-16wi-v2-d", {
+      kind: "improvement",
+      content: "Trust /readyz for rollout readiness here; /healthz is only liveness.",
+      projectId: seeded.projectId,
+    });
+    const readyzCandidateId = (readyzSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    await reviewTool.execute("call-16wi-v2-e", {
+      candidateId: readyzCandidateId,
+      outcome: "accepted",
+    });
+    const readyzPromotion = await promoteTool.execute("call-16wi-v2-f", {
+      candidateId: readyzCandidateId,
+    });
+    const readyzApprovedId = (readyzPromotion.details as { promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "docs only change what gate should I run check fast or full check",
+      scope: "approved_only",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "approved_only",
+    });
+    const records = (
+      hybridSearch as {
+        accepted: true;
+        status: "ok";
+        scope: "approved_only";
+        records: Array<{
+          id: string;
+          score: number;
+          matchedFields: string[];
+        }>;
+      }
+    ).records;
+    expect(records.length).toBeGreaterThanOrEqual(1);
+    expect(records[0]?.id).toBe(docsOnlyApprovedId);
+    expect(records[0]?.matchedFields).toContain("auto_capture_lesson_match");
+    if (records[1]) {
+      expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
+    }
+    expect([docsOnlyApprovedId, readyzApprovedId]).toContain(records[0]?.id);
+  });
+
   it("boosts the most relevant approved environment-constraint lesson in hybrid retrieval", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

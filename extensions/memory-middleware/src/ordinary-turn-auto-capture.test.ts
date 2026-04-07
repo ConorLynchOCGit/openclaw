@@ -2106,6 +2106,115 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     );
   });
 
+  it("captures the docs-only validation lesson without enabling semantic fallback writes", async () => {
+    storeApprovedWorkflowToolGotchaSemanticEmbedding.mockClear();
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "memory-improvement-docs-1",
+      outcome: "accepted" as const,
+      reviewId: "review-improvement-docs-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "memory-improvement-docs-1",
+      promotedMemoryObjectId: "approved-docs-workflow-1",
+      sourceEventId: "event-improvement-docs-1",
+      reviewState: "approved" as const,
+    }));
+    const submitImprovementNote = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "improvement" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-improvement-docs-1",
+      memoryObjectId: "memory-improvement-docs-1",
+    }));
+    const inspectWorkflowImprovementLifecycle = vi
+      .fn()
+      .mockResolvedValueOnce({
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: [],
+      })
+      .mockResolvedValueOnce({
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: ["memory-improvement-docs-1"],
+        pendingCandidate: {
+          id: "memory-improvement-docs-1",
+          createdAt: new Date(Date.now() - 10_000).toISOString(),
+          updatedAt: new Date(Date.now() - 10_000).toISOString(),
+          expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          confirmationState: "pending_confirmation",
+        },
+      });
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-6b",
+          sessionId: "session-uuid-6b",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        submitProcedureSuggestion: vi.fn(),
+        submitImprovementNote,
+        reviewCandidate,
+        promoteToMemory,
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+        inspectWorkflowImprovementLifecycle,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/workflow-docs.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content:
+          "For docs-only work here, use pnpm check:fast instead of full pnpm check or pnpm build.",
+        timestamp: Date.parse("2026-04-07T00:20:00Z"),
+      },
+    });
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/workflow-docs.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content:
+          "Docs-only slices here should stay on pnpm check:fast and skip full pnpm check plus build replay.",
+        timestamp: Date.parse("2026-04-07T00:21:00Z"),
+      },
+    });
+
+    expect(submitImprovementNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          "Workflow improvement: for docs or process-only work, use pnpm check:fast instead of full pnpm check, pnpm build, or full pnpm test.",
+        metadata: expect.objectContaining({
+          autoCapture: expect.objectContaining({
+            captureClass: "workflow_tool_gotcha",
+            lessonKey: "docs_only_check_fast",
+            toolKey: "validation_tier",
+          }),
+        }),
+      }),
+    );
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(promoteToMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-improvement-docs-1",
+      }),
+    );
+    expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).not.toHaveBeenCalled();
+  });
+
   it("stores an approved API workaround semantic embedding after auto-promotion", async () => {
     storeApprovedApiWorkaroundSemanticEmbedding.mockClear();
     storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
