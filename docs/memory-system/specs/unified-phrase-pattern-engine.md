@@ -167,6 +167,18 @@ Keep phrase-induction policy bounded while moving the artifact handling into one
 engine. Do not enable phrase induction for additional families in the same
 slice unless a separate family-specific proof justifies it.
 
+Current live rollout:
+
+- `extensions/memory-middleware/src/phrase-pattern-engine.ts` now owns the
+  shared reviewed phrase proposal, lifecycle inspection, approved lookup, and
+  promotion flow
+- `extensions/memory-middleware/src/workflow-phrase-induction.ts` now acts as a
+  family adapter onto that shared engine
+- `extensions/memory-middleware/src/response-style-phrase-induction.ts` now
+  acts as a family adapter onto that shared engine
+- project facts, recurring procedures, project rules, and unmet needs remain
+  intentionally out of phrase induction for now
+
 ## Proof / evaluation requirements
 
 The first shared engine slice must prove:
@@ -190,6 +202,8 @@ The first shared engine slice must prove:
 
 ## Follow-up implementation slices
 
-1. extract shared phrase proposal/review substrate
-2. migrate workflow and response-style phrase engines
-3. re-evaluate later families only after shared substrate exists
+1. remove any remaining family-local phrase wrapper logic that no longer adds
+   policy value
+2. align proof inspection and later behavior-profile work with shared phrase
+   artifacts
+3. re-evaluate later families only after a separate safety case exists

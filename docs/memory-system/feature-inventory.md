@@ -30,16 +30,16 @@ This inventory tracks:
 
 ## Flattening-phase substrate inventory
 
-| Substrate seam                   | Status          | Why it matters now                                                                                                               | Category          |
-| -------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| Family-definition registry       | `built_partial` | six-family registry is live, but more runtime seams still need to consume it                                                     | architecture debt |
-| Unified ingestion resolver       | `built_partial` | workflow-family transcript and tool ingestion now share one resolver; other families still need migration                        | architecture debt |
-| Unified clustered lifecycle      | `built_partial` | memory-object lifecycle inspection is shared for multiple families; correction and procedure-target paths still remain           | architecture debt |
-| Unified correction / supersede   | `not_built`     | explicit correction targeting and supersede logic are still too family-specific                                                  | architecture debt |
-| Unified phrase-pattern engine    | `not_built`     | phrase-capable families should not each own a local phrase subsystem                                                             | architecture debt |
-| Retrieval feature framework      | `not_built`     | family-specific ranking logic in `db/queries.ts` will not scale                                                                  | architecture debt |
-| Behavior-profile layer           | `not_built`     | prompt rendering still carries too much application policy                                                                       | architecture debt |
-| Registry-driven proof inspection | `built_partial` | proof-runner now uses registry-defined inspection modes for the six main families, but proofing is not fully registry-driven yet | architecture debt |
+| Substrate seam                   | Status          | Why it matters now                                                                                                                                     | Category          |
+| -------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
+| Family-definition registry       | `built_partial` | six-family registry is live, but more runtime seams still need to consume it                                                                           | architecture debt |
+| Unified ingestion resolver       | `built_partial` | workflow-family transcript and tool ingestion now share one resolver; other families still need migration                                              | architecture debt |
+| Unified clustered lifecycle      | `built_partial` | memory-object lifecycle inspection is shared for multiple families; correction and procedure-target paths still remain                                 | architecture debt |
+| Unified correction / supersede   | `built_partial` | bounded correction planning and approved memory-object supersede are shared, but recurring procedures and some conservative held paths remain distinct | architecture debt |
+| Unified phrase-pattern engine    | `built_partial` | workflow lessons and response style now share one reviewed phrase substrate; phrase eligibility still remains intentionally narrow                     | architecture debt |
+| Retrieval feature framework      | `built_partial` | approved-memory hybrid ranking now uses a shared feature composer, but candidate and validated-procedure retrieval still retain narrower legacy seams  | architecture debt |
+| Behavior-profile layer           | `not_built`     | prompt rendering still carries too much application policy                                                                                             | architecture debt |
+| Registry-driven proof inspection | `built_partial` | proof-runner now uses registry-defined inspection modes for the six main families, but proofing is not fully registry-driven yet                       | architecture debt |
 
 ## Deliberate policy differences versus backlog
 
@@ -56,16 +56,18 @@ Backlog / flattening debt:
 - policy scattered across multiple runtime seams
 - ingestion still duplicated for response style, project facts, and recurring
   procedures
-- correction plumbing still duplicated by family
-- growing family-specific retrieval scoring logic
+- remaining correction plumbing for procedures and conservative held-only paths
+- remaining candidate/procedure retrieval scoring branches
 - prompt-policy sprawl
 - proof-runner still has remaining non-registry paths
+- response style, project facts, and recurring procedures still need more
+  ingestion flattening where honest
 
 ## Not live yet
 
 Still not live:
 
-- later flattening slices after batch v1
+- later flattening slices after batch v2
 - reduced-profile self-improving capture on top of the flattened substrate
 - learned-guidance advisory planning
 - new cross-domain families

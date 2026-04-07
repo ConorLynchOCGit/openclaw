@@ -50,6 +50,17 @@ export type MemoryFamilyRetrievalMode =
   | "validated_procedure_hybrid"
   | "approved_hybrid_with_semantic_gate";
 
+export type MemoryFamilyRetrievalFeature =
+  | "family_intent_match"
+  | "project_scope_match"
+  | "subject_match"
+  | "value_match"
+  | "recommended_action_match"
+  | "avoid_action_match"
+  | "needed_capability_match"
+  | "guidance_pattern_match"
+  | "procedure_title_match";
+
 export type MemoryFamilyApplicationMode =
   | "shape_reply"
   | "guidance_only"
@@ -111,9 +122,10 @@ export type MemoryFamilyDefinition = {
   };
   retrievalPolicy: {
     mode: MemoryFamilyRetrievalMode;
-    featureSet: readonly string[];
+    featureWeights: Partial<Record<MemoryFamilyRetrievalFeature, number>>;
     directIntentClass?: "fact" | "rule" | "need" | "procedure" | "style";
     suppressAdjacentFamilies?: boolean;
+    matchedFieldPrefix?: string;
   };
   applicationPolicy: {
     mode: MemoryFamilyApplicationMode;
@@ -167,8 +179,12 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     retrievalPolicy: {
       mode: "approved_hybrid",
-      featureSet: ["response_style_subject_match", "response_style_value_match"],
+      featureWeights: {
+        subject_match: 170,
+        value_match: 105,
+      },
       directIntentClass: "style",
+      matchedFieldPrefix: "response_style",
     },
     applicationPolicy: {
       mode: "shape_reply",
@@ -209,9 +225,15 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     retrievalPolicy: {
       mode: "approved_hybrid",
-      featureSet: ["project_scope_match", "subject_match", "value_match"],
+      featureWeights: {
+        family_intent_match: 90,
+        project_scope_match: 205,
+        subject_match: 180,
+        value_match: 100,
+      },
       directIntentClass: "fact",
       suppressAdjacentFamilies: true,
+      matchedFieldPrefix: "project_fact",
     },
     applicationPolicy: {
       mode: "direct_answer",
@@ -258,8 +280,12 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     retrievalPolicy: {
       mode: "validated_procedure_hybrid",
-      featureSet: ["procedure_title_match", "subject_match"],
+      featureWeights: {
+        procedure_title_match: 0,
+        subject_match: 0,
+      },
       directIntentClass: "procedure",
+      matchedFieldPrefix: "procedure",
     },
     applicationPolicy: {
       mode: "suggestion_first",
@@ -326,12 +352,13 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     retrievalPolicy: {
       mode: "approved_hybrid_with_semantic_gate",
-      featureSet: [
-        "project_scope_match",
-        "subject_match",
-        "recommended_action_match",
-        "avoid_action_match",
-      ],
+      featureWeights: {
+        subject_match: 170,
+        recommended_action_match: 95,
+        avoid_action_match: 90,
+        guidance_pattern_match: 40,
+      },
+      matchedFieldPrefix: "generalized",
     },
     applicationPolicy: {
       mode: "guidance_only",
@@ -390,14 +417,17 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     retrievalPolicy: {
       mode: "approved_hybrid",
-      featureSet: [
-        "project_scope_match",
-        "subject_match",
-        "recommended_action_match",
-        "avoid_action_match",
-      ],
+      featureWeights: {
+        family_intent_match: 95,
+        project_scope_match: 210,
+        subject_match: 165,
+        recommended_action_match: 95,
+        avoid_action_match: 90,
+        guidance_pattern_match: 40,
+      },
       directIntentClass: "rule",
       suppressAdjacentFamilies: true,
+      matchedFieldPrefix: "project_rule",
     },
     applicationPolicy: {
       mode: "guidance_only",
@@ -445,9 +475,15 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     retrievalPolicy: {
       mode: "approved_hybrid",
-      featureSet: ["project_scope_match", "subject_match", "needed_capability_match"],
+      featureWeights: {
+        family_intent_match: 130,
+        project_scope_match: 205,
+        subject_match: 160,
+        needed_capability_match: 110,
+      },
       directIntentClass: "need",
       suppressAdjacentFamilies: true,
+      matchedFieldPrefix: "unmet_need",
     },
     applicationPolicy: {
       mode: "recommendation_only",

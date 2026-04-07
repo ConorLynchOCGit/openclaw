@@ -99,13 +99,17 @@ family-policy differences.
    - recurring procedures now reuse shared lifecycle utilities while retaining
      validated-procedure inspection
 4. unified correction / supersede engine
-   - next
+   - landed in batch v2 for response-style, project-fact, and workflow-family
+     bounded correction / supersede planning
 5. retrieval feature framework
+   - landed in batch v2 for approved-memory hybrid ranking across response
+     style, project facts, workflow lessons, project rules, and unmet needs
 6. behavior-profile / application layer
 
 ### Can flatten later inside the same phase
 
 7. unified phrase-pattern engine
+   - landed in batch v2 for workflow lessons and response style
 8. registry-driven proof / lifecycle inspection
 
 ### What must remain intentionally family-specific
@@ -159,9 +163,18 @@ Batch v1 completed:
   submission
 - shared memory-object lifecycle inspection across more than one family
 
+Batch v2 completed:
+
+- shared correction planning and approved-memory supersede execution across
+  multiple bounded families
+- shared reviewed phrase-pattern handling across workflow lessons and response
+  style
+- shared approved-memory retrieval feature composition across multiple
+  guidance and direct-answer families
+
 The next recommended slice is:
 
-- unified correction / supersede
+- behavior-profile layer
 
 ## Phase C — reduced-profile self-improving capture
 

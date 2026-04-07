@@ -10,6 +10,10 @@ import {
   DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG,
   type MemoryMiddlewareConfig,
 } from "./config.js";
+import {
+  executeMemoryObjectCorrectionPlan,
+  resolveMemoryCorrectionPlan,
+} from "./memory-correction-engine.js";
 import { getCaptureMetadataByCaptureClass } from "./memory-family-registry.js";
 import { resolveWorkflowImprovementIngestion } from "./memory-ingestion-resolver.js";
 import {
@@ -3030,6 +3034,19 @@ function isAutoReviewedManagedImprovementDecision(
   return decision.lessonFamily !== "supported_lesson";
 }
 
+function getMemoryFamilyIdForWorkflowLessonFamily(
+  lessonFamily: WorkflowImprovementLessonFamily,
+): "workflow_improvement" | "project_rule" | "unmet_need" {
+  switch (lessonFamily) {
+    case "generalized_project_rule":
+      return "project_rule";
+    case "generalized_unmet_need":
+      return "unmet_need";
+    default:
+      return "workflow_improvement";
+  }
+}
+
 function findConflictingApprovedGeneralizedGuidanceEntries(params: {
   inspection: WorkflowImprovementLifecycleInspection | null | undefined;
   key: string;
@@ -3470,13 +3487,17 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       result.memoryObjectId &&
       decisionParams.decision.reviewMode === "direct" &&
       (isResponseStyleLearningMatch(match) || isResponseStyleCorrectionMatch(match));
-    const shouldPromoteGenericCorrectionAgainstApprovedSubject =
-      autoPromotion.profile === "explicit-user-preference-v1" &&
-      autoPromotionAgents.has(decisionParams.agentExternalKey) &&
+    const responseStyleCorrectionPlan =
       result.memoryObjectId &&
       match.responseStyleFamily === "generalized_guidance" &&
-      isResponseStyleCorrectionMatch(match) &&
-      (inspection?.activeApprovedSubjectObjectIds.length ?? 0) > 0;
+      isResponseStyleCorrectionMatch(match)
+        ? resolveMemoryCorrectionPlan({
+            familyId: "response_style",
+            trigger: "explicit_correction",
+            autoPromotionProfile: autoPromotion.profile,
+            activeApprovedSubjectObjectIds: inspection?.activeApprovedSubjectObjectIds ?? [],
+          })
+        : null;
 
     if (shouldDirectPromote && result.memoryObjectId) {
       const promoted = await autoPromoteResponseStyleCandidate({
@@ -3521,7 +3542,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           agentId: attribution.agentId,
           detectionSource: decisionParams.decision.detectionSource,
           targetMatch: createResponseStyleCanonicalMatch({
-            template: match.template,
+            template:
+              match.template === "response_style_generalized_guidance" ||
+              isSupportedResponseStyleTemplate(match.template)
+                ? match.template
+                : "response_style_generalized_guidance",
             family: match.responseStyleFamily ?? "supported_template",
             subject: match.subject,
             value: match.value,
@@ -3533,14 +3558,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       }
     }
 
-    if (shouldPromoteGenericCorrectionAgainstApprovedSubject && result.memoryObjectId) {
-      const promoted = await autoPromoteResponseStyleCandidate({
+    if (
+      responseStyleCorrectionPlan?.status === "execute" &&
+      autoPromotionAgents.has(decisionParams.agentExternalKey) &&
+      result.memoryObjectId
+    ) {
+      const promoted = await executeMemoryObjectCorrectionPlan({
+        familyId: "response_style",
+        plan: responseStyleCorrectionPlan,
         candidateId: result.memoryObjectId,
         reviewerAgentId: attribution.agentId,
-        logger: params.logger,
         reviewCandidate: deps.reviewCandidate,
         promoteToMemory: deps.promoteToMemory,
-        metadata: buildResponseStyleAutoPromotionMetadata({
+        promotionMetadata: buildResponseStyleAutoPromotionMetadata({
           match,
           agentExternalKey: decisionParams.agentExternalKey,
           sessionKey: decisionParams.sessionKey,
@@ -3549,14 +3579,25 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
           ...(semanticMetadata ? { semanticMetadata } : {}),
         }),
+        config: params.config,
+        schema: params.config.database.schema ?? "memory_middleware",
+        logger: params.logger,
         logContext: {
           key: match.key,
           subjectKey: match.subjectKey,
           correctionMode: "generic_subject_supersede",
           confidence: decisionParams.decision.confidence,
         },
+        logLabel: "response-style correction",
+        supersedeRationale:
+          "older approved memory was superseded by a reviewed correction promotion for the same bounded subject",
+        supersedeSource: "response-style-correction-promotion",
+        supersedeReason: "candidate_correction_promotion",
+        supersedeMetadata: {
+          subjectKey: match.subjectKey,
+        },
       });
-      if (promoted) {
+      if (promoted.accepted) {
         await maybeInduceResponseStylePhrasePattern({
           config: params.config,
           candidateIngress: {
@@ -3577,7 +3618,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           agentId: attribution.agentId,
           detectionSource: decisionParams.decision.detectionSource,
           targetMatch: createResponseStyleCanonicalMatch({
-            template: match.template,
+            template:
+              match.template === "response_style_generalized_guidance" ||
+              isSupportedResponseStyleTemplate(match.template)
+                ? match.template
+                : "response_style_generalized_guidance",
             family: match.responseStyleFamily ?? "supported_template",
             subject: match.subject,
             value: match.value,
@@ -3853,21 +3898,29 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
 
     markRecent(match.key);
 
-    const shouldDirectCorrectionPromote =
-      autoPromotion.profile === "explicit-user-preference-v1" &&
-      autoPromotionAgents.has(decisionParams.agentExternalKey) &&
-      result.memoryObjectId &&
-      match.captureClass === "project_fact_correction" &&
-      inspection?.activeApprovedSubjectObjectIds.length;
+    const projectFactCorrectionPlan =
+      result.memoryObjectId && match.captureClass === "project_fact_correction"
+        ? resolveMemoryCorrectionPlan({
+            familyId: "project_fact",
+            trigger: "explicit_correction",
+            autoPromotionProfile: autoPromotion.profile,
+            activeApprovedSubjectObjectIds: inspection?.activeApprovedSubjectObjectIds ?? [],
+          })
+        : null;
 
-    if (shouldDirectCorrectionPromote && result.memoryObjectId) {
-      await autoPromoteProjectFactCandidate({
+    if (
+      projectFactCorrectionPlan?.status === "execute" &&
+      autoPromotionAgents.has(decisionParams.agentExternalKey) &&
+      result.memoryObjectId
+    ) {
+      await executeMemoryObjectCorrectionPlan({
+        familyId: "project_fact",
+        plan: projectFactCorrectionPlan,
         candidateId: result.memoryObjectId,
         reviewerAgentId: attribution.agentId,
-        logger: params.logger,
         reviewCandidate: deps.reviewCandidate,
         promoteToMemory: deps.promoteToMemory,
-        metadata: buildProjectFactAutoPromotionMetadata({
+        promotionMetadata: buildProjectFactAutoPromotionMetadata({
           match,
           factFamily: decisionParams.decision.factFamily,
           ...(decisionParams.decision.fieldKey
@@ -3882,6 +3935,9 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
           ...(semanticMetadata ? { semanticMetadata } : {}),
         }),
+        config: params.config,
+        schema: params.config.database.schema ?? "memory_middleware",
+        logger: params.logger,
         logContext: {
           key: match.key,
           subjectKey: match.subjectKey,
@@ -3891,6 +3947,14 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             : {}),
           confidence: decisionParams.decision.confidence,
           correctionPromotion: true,
+        },
+        logLabel: "project-fact correction",
+        supersedeRationale:
+          "older approved memory was superseded by a reviewed correction promotion for the same bounded subject",
+        supersedeSource: "project-fact-correction-promotion",
+        supersedeReason: "candidate_correction_promotion",
+        supersedeMetadata: {
+          subjectKey: match.subjectKey,
         },
       });
     }
@@ -4548,7 +4612,17 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         });
       }
 
-      const supersedeTargetIds = conflictingApprovedGeneralizedEntries.map((entry) => entry.id);
+      const workflowCorrectionPlan = resolveMemoryCorrectionPlan({
+        familyId: getMemoryFamilyIdForWorkflowLessonFamily(effectiveDecision.lessonFamily),
+        trigger: "cluster_auto_review",
+        conflictingApprovedObjectIds: conflictingApprovedGeneralizedEntries.map(
+          (entry) => entry.id,
+        ),
+      });
+      const supersedeTargetIds =
+        workflowCorrectionPlan.status === "execute"
+          ? workflowCorrectionPlan.supersedeTargetIds
+          : [];
       const promotedMemoryObjectId = await autoPromoteWorkflowImprovementCandidate({
         candidateId: inspection.pendingCandidate.id,
         reviewerAgentId: attribution.agentId,

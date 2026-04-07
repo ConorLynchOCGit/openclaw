@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import { Client, type ClientConfig } from "pg";
 import type { PluginLogger } from "../../api.js";
 import type { MemoryMiddlewareDbConfig } from "../config.js";
+import {
+  executeApprovedMemoryObjectSupersede,
+  resolveCorrectionSupersedeSubjectKey,
+  selectApprovedMemoryObjectSupersedeTargetsBySubjectKey,
+} from "../memory-object-supersede.js";
+import { buildApprovedMemoryRetrievalFeatureSql } from "../retrieval-feature-framework.js";
 import type {
   CandidateGetInput,
   CandidateGetResult,
@@ -10607,6 +10613,26 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
   }
 
   values.push(normalizeMemoryObjectSearchLimit(params.input.limit));
+  const retrievalFeatureSql = buildApprovedMemoryRetrievalFeatureSql({
+    expressions: {
+      autoCaptureTemplateExpression,
+      autoCaptureFactFamilyExpression,
+      autoCaptureLessonFamilyExpression,
+      autoCaptureGuidancePatternExpression,
+      autoCaptureNormalizedSubjectExpression,
+      autoCaptureNormalizedProjectFactLabelExpression,
+      autoCaptureNormalizedProjectScopeExpression,
+      autoCaptureNormalizedRecommendedActionExpression,
+      autoCaptureNormalizedAvoidActionExpression,
+      autoCaptureNormalizedNeededCapabilityExpression,
+      autoCaptureNormalizedValueExpression,
+    },
+    paramRefs: {
+      normalizedQueryRef: "$6::text",
+      projectMemoryIntentFamilyRef: "$7::text",
+      generalizedWorkflowPatternHintRef: "$8::text",
+    },
+  });
 
   const result = await params.client.query<RankedMemoryObjectSearchRow>(
     `
@@ -10632,83 +10658,7 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
           + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
           + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
           + case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
-          + case when $7::text = 'project_fact'
-              and ${autoCaptureFactFamilyExpression} in ('supported_field', 'generalized_reference')
-            then 90 else 0 end
-          + case when $7::text = 'project_rule'
-              and ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-            then 95 else 0 end
-          + case when $7::text = 'unmet_need'
-              and ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
-            then 130 else 0 end
-          + case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
-              and ${autoCaptureNormalizedSubjectExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
-            then 170 else 0 end
-          + case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
-              and ${autoCaptureNormalizedValueExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedValueExpression} || '%'
-            then 105 else 0 end
-          + case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
-              and ${autoCaptureNormalizedProjectScopeExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
-            then 205 else 0 end
-          + case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
-              and ${autoCaptureNormalizedProjectFactLabelExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedProjectFactLabelExpression} || '%'
-            then 180 else 0 end
-          + case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
-              and ${autoCaptureNormalizedValueExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedValueExpression} || '%'
-            then 100 else 0 end
-          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
-              and ${autoCaptureNormalizedSubjectExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
-            then 170 else 0 end
-          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-              and ${autoCaptureNormalizedProjectScopeExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
-            then 210 else 0 end
-          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
-              and ${autoCaptureNormalizedProjectScopeExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
-            then 205 else 0 end
-          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-              and ${autoCaptureNormalizedSubjectExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
-            then 165 else 0 end
-          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
-              and ${autoCaptureNormalizedSubjectExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
-            then 160 else 0 end
-          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
-              and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
-            then 95 else 0 end
-          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-              and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
-            then 95 else 0 end
-          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
-              and ${autoCaptureNormalizedNeededCapabilityExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedNeededCapabilityExpression} || '%'
-            then 110 else 0 end
-          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
-              and ${autoCaptureNormalizedAvoidActionExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedAvoidActionExpression} || '%'
-            then 90 else 0 end
-          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-              and ${autoCaptureNormalizedAvoidActionExpression} <> ''
-              and $6::text like '%' || ${autoCaptureNormalizedAvoidActionExpression} || '%'
-            then 90 else 0 end
-          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
-              and $8::text <> ''
-              and ${autoCaptureGuidancePatternExpression} = $8::text
-            then 40 else 0 end
-          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-              and $8::text <> ''
-              and ${autoCaptureGuidancePatternExpression} = $8::text
-            then 40 else 0 end
+          ${retrievalFeatureSql.scoreClauses.map((clause) => `+ ${clause}`).join("\n          ")}
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
         )::float8 as score,
@@ -10726,104 +10676,8 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
             end,
             case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text
               then 'auto_capture_lesson_match'
-            end,
-            case when $7::text = 'project_fact'
-                and ${autoCaptureFactFamilyExpression} in ('supported_field', 'generalized_reference')
-              then 'project_fact_intent_match'
-            end,
-            case when $7::text = 'project_rule'
-                and ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-              then 'project_rule_intent_match'
-            end,
-            case when $7::text = 'unmet_need'
-                and ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
-              then 'unmet_need_intent_match'
-            end,
-            case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
-                and ${autoCaptureNormalizedSubjectExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
-              then 'response_style_subject_match'
-            end,
-            case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
-                and ${autoCaptureNormalizedValueExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedValueExpression} || '%'
-              then 'response_style_value_match'
-            end,
-            case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
-                and ${autoCaptureNormalizedProjectScopeExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
-              then 'project_fact_scope_match'
-            end,
-            case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
-                and ${autoCaptureNormalizedProjectFactLabelExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedProjectFactLabelExpression} || '%'
-              then 'project_fact_subject_match'
-            end,
-            case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
-                and ${autoCaptureNormalizedValueExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedValueExpression} || '%'
-              then 'project_fact_value_match'
-            end,
-            case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
-                and ${autoCaptureNormalizedSubjectExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
-              then 'generalized_subject_match'
-            end,
-            case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-                and ${autoCaptureNormalizedProjectScopeExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
-              then 'project_rule_scope_match'
-            end,
-            case when ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
-                and ${autoCaptureNormalizedProjectScopeExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
-              then 'unmet_need_scope_match'
-            end,
-            case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-                and ${autoCaptureNormalizedSubjectExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
-              then 'project_rule_subject_match'
-            end,
-            case when ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
-                and ${autoCaptureNormalizedSubjectExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
-              then 'unmet_need_subject_match'
-            end,
-            case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
-                and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
-              then 'generalized_recommended_action_match'
-            end,
-            case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-                and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
-              then 'project_rule_recommended_action_match'
-            end,
-            case when ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
-                and ${autoCaptureNormalizedNeededCapabilityExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedNeededCapabilityExpression} || '%'
-              then 'unmet_need_capability_match'
-            end,
-            case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
-                and ${autoCaptureNormalizedAvoidActionExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedAvoidActionExpression} || '%'
-              then 'generalized_avoid_action_match'
-            end,
-            case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-                and ${autoCaptureNormalizedAvoidActionExpression} <> ''
-                and $6::text like '%' || ${autoCaptureNormalizedAvoidActionExpression} || '%'
-              then 'project_rule_avoid_action_match'
-            end,
-            case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
-                and $8::text <> ''
-                and ${autoCaptureGuidancePatternExpression} = $8::text
-              then 'generalized_guidance_pattern_match'
-            end,
-            case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
-                and $8::text <> ''
-                and ${autoCaptureGuidancePatternExpression} = $8::text
-              then 'project_rule_guidance_pattern_match'
-            end,
+            end${retrievalFeatureSql.matchedFieldClauses.length > 0 ? "," : ""}
+            ${retrievalFeatureSql.matchedFieldClauses.join(",\n            ")},
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'
             end,
@@ -12175,45 +12029,6 @@ function readNestedMetadataString(
   return typeof cursor === "string" && cursor.trim().length > 0 ? cursor.trim() : undefined;
 }
 
-function resolveCorrectionSupersedeSubjectKey(
-  metadata: Record<string, unknown> | undefined,
-): string | undefined {
-  return (
-    readNestedMetadataString(metadata, ["autoCapture", "subjectKey"]) ??
-    readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "subjectKey"]) ??
-    normalizeMetadataString(metadata, "preference_key")
-  );
-}
-
-async function selectApprovedSupersedeTargetsBySubjectKey(params: {
-  client: Client;
-  schema: string;
-  subjectKey: string;
-  promotedMemoryObjectId: string;
-}): Promise<Array<{ id: string }>> {
-  const memoryObjectsTable = quoteQualifiedTable({
-    schema: params.schema,
-    table: "memory_objects",
-  });
-  const result = await params.client.query<{ id: string }>(
-    `
-      select id::text as id
-      from ${memoryObjectsTable}
-      where review_state = 'approved'
-        and id <> $2::uuid
-        and (
-          metadata->'candidateMetadata'->'autoCapture'->>'subjectKey' = $1
-          or metadata->'promotionMetadata'->'autoPromotion'->>'subjectKey' = $1
-          or metadata->'autoPromotion'->>'subjectKey' = $1
-          or metadata->>'preference_key' = $1
-        )
-      order by created_at desc, id desc
-    `,
-    [params.subjectKey, params.promotedMemoryObjectId],
-  );
-  return result.rows;
-}
-
 async function promoteCandidateToMemoryInConfiguredDatabase(params: {
   config: MemoryMiddlewareDbConfig;
   input: CandidateMemoryPromotionInput;
@@ -12433,51 +12248,31 @@ async function promoteCandidateToMemoryInConfiguredDatabase(params: {
         ? resolveCorrectionSupersedeSubjectKey(target.candidate_metadata ?? undefined)
         : undefined;
     if (correctionSubjectKey) {
-      const supersedeTargets = await selectApprovedSupersedeTargetsBySubjectKey({
+      const supersedeTargets = await selectApprovedMemoryObjectSupersedeTargetsBySubjectKey({
         client,
         schema: params.schema,
         subjectKey: correctionSubjectKey,
-        promotedMemoryObjectId,
+        supersededByObjectId: promotedMemoryObjectId,
       });
-      const supersededAt = new Date().toISOString();
-      for (const supersedeTarget of supersedeTargets) {
-        await insertConsolidationSupersedeReview({
-          client,
-          schema: params.schema,
-          memoryObjectId: supersedeTarget.id,
-          reviewerAgentId: params.input.promoterAgentId ?? target.agent_id ?? undefined,
-          rationale:
-            "older approved memory was superseded by a reviewed correction promotion for the same bounded subject",
-          metadata: {
-            source: "candidate-memory-correction-supersede",
-            supersededByObjectId: promotedMemoryObjectId,
-            promotedFromCandidateId: params.input.candidateId,
-            subjectKey: correctionSubjectKey,
-          },
-        });
-        await updateMemoryObjectToSuperseded({
-          client,
-          schema: params.schema,
-          memoryObjectId: supersedeTarget.id,
-          supersededAt,
-          metadata: {
-            supersededByObjectId: promotedMemoryObjectId,
-            lifecycleHint: "superseded",
-            supersededReason: "candidate_correction_promotion",
-            subjectKey: correctionSubjectKey,
-          },
-        });
-        await ensureConsolidationSupersedesLink({
-          client,
-          schema: params.schema,
-          sourceMemoryObjectId: supersedeTarget.id,
-          targetMemoryObjectId: promotedMemoryObjectId,
-          metadata: {
-            source: "candidate-memory-correction-supersede",
-            promotedFromCandidateId: params.input.candidateId,
-            subjectKey: correctionSubjectKey,
-          },
-        });
+      const supersedeResult = await executeApprovedMemoryObjectSupersede({
+        client,
+        schema: params.schema,
+        targetObjectIds: supersedeTargets.map((targetRow) => targetRow.id),
+        supersededByObjectId: promotedMemoryObjectId,
+        reviewerAgentId: params.input.promoterAgentId ?? target.agent_id ?? undefined,
+        rationale:
+          "older approved memory was superseded by a reviewed correction promotion for the same bounded subject",
+        source: "candidate-memory-correction-supersede",
+        supersededReason: "candidate_correction_promotion",
+        metadata: {
+          promotedFromCandidateId: params.input.candidateId,
+          subjectKey: correctionSubjectKey,
+        },
+        logger: params.logger,
+        logLabel: "candidate-memory-correction",
+      });
+      if (!supersedeResult.accepted) {
+        throw new Error(supersedeResult.reason ?? "candidate correction supersede failed");
       }
     }
 

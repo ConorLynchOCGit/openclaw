@@ -96,8 +96,9 @@ type RetrievalFeature =
 type FamilyRetrievalPolicy = {
   familyId: string;
   retrievalMode: "approved_hybrid" | "validated_procedure_hybrid";
-  enabledFeatures: Partial<Record<RetrievalFeature, number>>;
-  intentClasses: RetrievalIntent[];
+  featureWeights: Partial<Record<RetrievalFeature, number>>;
+  directIntentClass?: "fact" | "rule" | "need" | "procedure" | "style";
+  matchedFieldPrefix?: string;
   suppressAdjacentFamiliesOnDirectHit: boolean;
   approvedOnly: true;
 };
@@ -172,6 +173,20 @@ Land the feature framework before any broader family expansion. Migrate one
 family group at a time, starting with the existing direct named-project
 families whose current ranking logic is most obviously duplicated.
 
+Current live rollout:
+
+- `extensions/memory-middleware/src/retrieval-feature-framework.ts` now builds
+  approved-memory hybrid score clauses and matched-field clauses from
+  registry-defined retrieval policy
+- `extensions/memory-middleware/src/memory-family-registry.ts` now stores
+  registry retrieval weights and matched-field prefixes for response style,
+  project facts, workflow lessons, project rules, and unmet needs
+- `extensions/memory-middleware/src/db/queries.ts` now consumes that shared
+  composer for approved-memory hybrid ranking
+- typed exact/template/field/lesson boosts remain explicit fast paths
+- candidate retrieval and validated-procedure retrieval still retain narrower
+  legacy scoring seams
+
 ## Proof / evaluation requirements
 
 Prove:
@@ -196,7 +211,7 @@ Prove:
 
 ## Follow-up implementation slices
 
-1. define shared retrieval features and family policy shape
-2. migrate project facts / project rules / unmet needs
-3. migrate response style and workflow lessons
-4. reconcile validated-procedure retrieval with the same feature model
+1. migrate the remaining reviewable-candidate retrieval scoring onto the same
+   framework where honest
+2. reconcile validated-procedure retrieval with the shared feature model
+3. align behavior-profile selection with the same family retrieval policy

@@ -26,6 +26,11 @@ Live substrate properties:
 - declarative family registry for the six landed families
 - shared workflow-family ingestion resolution across transcript and tool paths
 - shared memory-object clustered lifecycle inspection
+- shared correction / supersede planning for bounded correction families
+- shared reviewed phrase-pattern substrate for workflow lessons and response
+  style
+- shared approved-memory retrieval feature composition for response style,
+  project facts, workflow lessons, project rules, and unmet needs
 
 ## What practical parity means
 
@@ -46,22 +51,28 @@ Practical parity does not mean:
 
 The next major roadmap phase remains flattening the family substrate.
 
-The first implementation batch is now landed:
+The first two implementation batches are now landed:
 
 - family-definition registry
 - unified ingestion resolver for the workflow-family cluster
 - unified clustered lifecycle inspection for memory-object families
+- unified correction / supersede engine for bounded correction and workflow
+  supersede paths
+- unified phrase-pattern engine for workflow lessons and response style
+- retrieval feature framework for approved-memory hybrid ranking
 
 That means:
 
 - family policy has started moving into one declarative registry
 - ingestion and lifecycle are less family-branch-heavy than before
-- future flattening slices now target correction, retrieval/application, and
-  proofing
+- correction, phrase handling, and approved-memory retrieval are less
+  family-branch-heavy than before
+- future flattening slices now target behavior-profile selection, proofing,
+  and the remaining narrower migration seams
 
 ## What the next flattening slice is
 
-- unified correction / supersede engine
+- behavior-profile layer
 
 ## Why flattening comes before future expansion
 

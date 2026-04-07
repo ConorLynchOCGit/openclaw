@@ -10,6 +10,10 @@ import {
   type CandidateSubmissionKind,
   type CandidateSubmissionResult,
 } from "../db/runtime.js";
+import {
+  executeMemoryObjectCorrectionPlan,
+  resolveMemoryCorrectionPlan,
+} from "../memory-correction-engine.js";
 import { getCaptureMetadataByWorkflowLessonFamily } from "../memory-family-registry.js";
 import { resolveWorkflowImprovementIngestion } from "../memory-ingestion-resolver.js";
 import {
@@ -112,6 +116,19 @@ const API_WORKAROUND_SEMANTIC_LESSON_KEYS = new Set([
   "openai_embeddings_api_key_required",
   "anthropic_context1m_eligible_credential_required",
 ]);
+
+function getMemoryFamilyIdForWorkflowLessonFamily(
+  lessonFamily: WorkflowImprovementLessonFamily,
+): "workflow_improvement" | "project_rule" | "unmet_need" {
+  switch (lessonFamily) {
+    case "generalized_project_rule":
+      return "project_rule";
+    case "generalized_unmet_need":
+      return "unmet_need";
+    default:
+      return "workflow_improvement";
+  }
+}
 
 function candidateKindSchema() {
   return Type.Unsafe<CandidateSubmissionKind>({
@@ -1570,9 +1587,17 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         });
       }
     }
-    const supersedeTargetIds = isAutoReviewedFamily
-      ? conflictingApprovedGeneralizedEntries.map((entry) => entry.id)
-      : [];
+    const workflowCorrectionPlan = isAutoReviewedFamily
+      ? resolveMemoryCorrectionPlan({
+          familyId: getMemoryFamilyIdForWorkflowLessonFamily(lessonFamily),
+          trigger: "cluster_auto_review",
+          conflictingApprovedObjectIds: conflictingApprovedGeneralizedEntries.map(
+            (entry) => entry.id,
+          ),
+        })
+      : null;
+    const supersedeTargetIds =
+      workflowCorrectionPlan?.status === "execute" ? workflowCorrectionPlan.supersedeTargetIds : [];
     const promotionMetadata = buildToolWorkflowImprovementAutoPromotionMetadata({
       input: params.input,
       autoPromotionProfile: isAutoReviewedFamily
@@ -3762,36 +3787,57 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
     subjectKey,
     ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
   });
-  if (!inspection || inspection.activeApprovedSubjectObjectIds.length === 0) {
+  if (!inspection) {
     return params.result;
   }
 
-  const promotionMetadata = buildToolProjectFactAutoPromotionMetadata({
-    input: params.input,
-    autoPromotionProfile:
-      factFamily === "generalized_reference"
-        ? "project_fact_generalized_correction_v1"
-        : "project_fact_correction_v1",
+  const correctionPlan = resolveMemoryCorrectionPlan({
+    familyId: "project_fact",
+    trigger: "explicit_correction",
+    autoPromotionProfile: autoPromotion.profile,
+    activeApprovedSubjectObjectIds: inspection.activeApprovedSubjectObjectIds,
   });
-  const reviewResult = await params.runtime.candidateReview.review({
-    candidateId: params.result.memoryObjectId,
-    outcome: "accepted",
-    metadata: promotionMetadata,
-  });
-  if (!reviewResult.accepted) {
+  if (correctionPlan.status !== "execute") {
     return params.result;
   }
-  const promotionResult = await params.runtime.candidatePromotion.promoteToMemory({
+  const correctionResult = await executeMemoryObjectCorrectionPlan({
+    familyId: "project_fact",
+    plan: correctionPlan,
     candidateId: params.result.memoryObjectId,
-    metadata: promotionMetadata,
+    reviewCandidate: params.runtime.candidateReview.review,
+    promoteToMemory: params.runtime.candidatePromotion.promoteToMemory,
+    promotionMetadata: buildToolProjectFactAutoPromotionMetadata({
+      input: params.input,
+      autoPromotionProfile:
+        factFamily === "generalized_reference"
+          ? "project_fact_generalized_correction_v1"
+          : "project_fact_correction_v1",
+    }),
+    reviewerAgentId: params.input.agentId,
+    config: params.runtime.config,
+    schema: params.runtime.config.database?.schema ?? "memory_middleware",
+    logContext: {
+      key,
+      subjectKey,
+      factFamily,
+      correctionPromotion: true,
+    },
+    logLabel: "project-fact correction",
+    supersedeRationale:
+      "older approved memory was superseded by a reviewed correction promotion for the same bounded subject",
+    supersedeSource: "project-fact-correction-promotion",
+    supersedeReason: "candidate_correction_promotion",
+    supersedeMetadata: {
+      subjectKey,
+    },
   });
-  if (!promotionResult.accepted) {
+  if (!correctionResult.accepted || !correctionResult.promotedMemoryObjectId) {
     return params.result;
   }
 
   return {
     ...params.result,
-    memoryObjectId: promotionResult.promotedMemoryObjectId,
+    memoryObjectId: correctionResult.promotedMemoryObjectId,
     reviewState: "approved",
   };
 }

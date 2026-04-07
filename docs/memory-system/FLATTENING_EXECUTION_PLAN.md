@@ -86,7 +86,7 @@ This order is deliberate:
 
 ## Current execution status
 
-Batch v1 is now landed.
+Batch v1 and batch v2 are now landed.
 
 Completed:
 
@@ -105,11 +105,19 @@ Completed:
    - recurring procedures now share lifecycle utility helpers while keeping the
      validated-procedure inspection split
 
-Still next:
+Completed through slice 6:
 
 4. unified correction / supersede
+   - landed in batch v2 for response style, project facts, and workflow-family
+     supersede targeting
 5. unified phrase-pattern engine
+   - landed in batch v2 for workflow lessons and response style
 6. retrieval feature framework
+   - landed in batch v2 for approved-memory hybrid ranking across response
+     style, project facts, workflow lessons, project rules, and unmet needs
+
+Still next:
+
 7. behavior-profile layer
 8. registry-driven proof inspection closeout
 
@@ -141,17 +149,19 @@ Still next:
 
 - centralize correction intent handling
 - preserve explicit lineage and family-specific correction modes
-  - next
+  - landed in batch v2
 
 ### Slice 5 — unified phrase-pattern engine
 
 - move workflow and response-style phrase patterns onto one reviewed engine
 - keep ineligible families out
+  - landed in batch v2
 
 ### Slice 6 — retrieval feature framework
 
 - replace family-specific scoring sprawl with shared feature composition
 - preserve exact typed wins and direct named-project intent shaping
+  - landed in batch v2 for approved-memory hybrid ranking
 
 ### Slice 7 — behavior-profile layer
 
@@ -202,6 +212,18 @@ Delete in this order:
 - policy lookups first
 - wrapper helpers second
 - dead family-specific branches last
+
+Batch v2 deletion results:
+
+- bounded correction auto-promotion no longer owns separate response-style and
+  project-fact supersede execution paths
+- workflow-improvement supersede writes no longer own a separate approved
+  memory-object supersede loop
+- workflow and response-style phrase induction no longer each own separate
+  proposal/lifecycle/approved-lookup implementations
+- approved-memory hybrid retrieval no longer hand-inlines the previous
+  generic-family CASE forest for response style, project facts, workflow
+  lessons, project rules, and unmet needs
 
 ## Later work that depends on flattening
 

@@ -65,4 +65,24 @@ describe("memory-family-registry", () => {
     expect(isMemoryProofInspectableFamily("workflow_improvement")).toBe(true);
     expect(isMemoryProofInspectableFamily("workflow_phrase_pattern")).toBe(false);
   });
+
+  it("encodes shared retrieval feature policy in the family registry", () => {
+    expect(getMemoryFamilyDefinition("project_fact").retrievalPolicy).toMatchObject({
+      directIntentClass: "fact",
+      matchedFieldPrefix: "project_fact",
+      featureWeights: expect.objectContaining({
+        family_intent_match: 90,
+        project_scope_match: 205,
+        subject_match: 180,
+      }),
+    });
+    expect(getMemoryFamilyDefinition("workflow_improvement").retrievalPolicy).toMatchObject({
+      matchedFieldPrefix: "generalized",
+      featureWeights: expect.objectContaining({
+        subject_match: 170,
+        recommended_action_match: 95,
+        avoid_action_match: 90,
+      }),
+    });
+  });
 });

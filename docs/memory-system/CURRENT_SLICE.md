@@ -6,15 +6,13 @@ Memory substrate flattening implementation phase
 
 ## Objective
 
-Land the first flattening implementation batch after practical existing-family
-parity:
+Continue the flattening implementation phase after batches v1 and v2:
 
-- family-definition registry
-- unified ingestion resolver
-- unified clustered lifecycle
+- behavior-profile layer
+- registry-driven proof inspection closeout
 
-This batch changed runtime substrate shape while preserving current family
-behavior.
+The next work should keep reducing accidental parallelism while preserving
+current family behavior.
 
 ## Why this slice exists
 
@@ -56,6 +54,24 @@ The repo still carries too much accidental family-specific branching across:
   - recurring procedures now reuse shared lifecycle utilities while keeping
     validated-procedure inspection distinct
 
+## Landed in batch v2
+
+- `extensions/memory-middleware/src/memory-correction-engine.ts`
+  - shared correction planning and execution for explicit bounded corrections
+  - live for response style, project facts, and workflow-family supersede
+    targeting
+- `extensions/memory-middleware/src/memory-object-supersede.ts`
+  - shared approved memory-object supersede and lineage writer
+  - now serves workflow improvements and bounded correction auto-promotion
+- `extensions/memory-middleware/src/phrase-pattern-engine.ts`
+  - shared reviewed phrase-pattern proposal, lifecycle, lookup, and induction
+    substrate
+  - live for workflow lessons and response style
+- `extensions/memory-middleware/src/retrieval-feature-framework.ts`
+  - shared approved-memory retrieval feature composer
+  - live for response style, project facts, workflow lessons, project rules,
+    and unmet needs in hybrid retrieval
+
 ## Duplicate seams removed in batch v1
 
 - proof-runner family inspection selection no longer hardcodes the six main
@@ -66,6 +82,17 @@ The repo still carries too much accidental family-specific branching across:
   workflow/project-rule/unmet-need family-resolution chain
 - response-style, project-fact, and workflow-improvement lifecycle inspection
   no longer each own a fully separate memory-object inspection implementation
+
+## Duplicate seams removed in batch v2
+
+- response-style, project-fact, and workflow-family correction targeting no
+  longer each own separate immediate supersede planning
+- workflow-improvement supersede writes no longer own a separate approved
+  memory-object supersede loop
+- workflow and response-style phrase induction no longer each own separate
+  proposal/lifecycle/approved-lookup engines
+- approved-memory hybrid retrieval no longer hand-inlines one large
+  family-specific generic score forest in `db/queries.ts`
 
 ## Explicitly not next
 
@@ -79,11 +106,12 @@ Those remain later phases after the flattening phase.
 
 ## What remains next inside flattening
 
-- unified correction / supersede engine
-- unified phrase-pattern engine
-- retrieval feature framework
 - behavior-profile layer
 - registry-driven proof inspection closeout
+- remaining ingestion migration for response style, project facts, and
+  recurring procedures where honest
+- remaining lifecycle / retrieval cleanup for recurring procedures and
+  reviewable-candidate retrieval seams
 
 ## Accepted architectural decisions
 
@@ -96,16 +124,10 @@ Those remain later phases after the flattening phase.
 
 ## Must flatten now
 
-- family-definition registry
-- unified ingestion resolver
-- unified clustered lifecycle
-- unified correction / supersede
-- retrieval feature framework
 - behavior-profile layer
 
 ## Can flatten later inside the same phase
 
-- unified phrase-pattern engine
 - registry-driven proof inspection
 
 ## Must remain intentionally different
@@ -115,6 +137,6 @@ Those remain later phases after the flattening phase.
 - response style remains bounded
 - semantic routing remains hybrid-first and family-gated
 
-## The next implementation slice after batch v1
+## The next implementation slice after batch v2
 
-- unified correction / supersede
+- behavior-profile layer

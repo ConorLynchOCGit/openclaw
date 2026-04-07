@@ -118,6 +118,19 @@ Move correction detection to the shared engine before deleting family-specific
 paths. Immediate supersede should only be enabled where the current family spec
 already allows it.
 
+Current live rollout:
+
+- `extensions/memory-middleware/src/memory-correction-engine.ts`
+  centralizes correction intent normalization, target validation, and
+  immediate-vs-held dispatch
+- `extensions/memory-middleware/src/memory-object-supersede.ts`
+  centralizes approved memory-object supersede execution and lineage writes
+- live adopters now include response style, project facts, and workflow-family
+  supersede targeting
+- unmet needs still retain their conservative held-correction posture
+- recurring procedures still retain validated-procedure-specific correction
+  distinctions where needed
+
 ## Proof / evaluation requirements
 
 Implementation must prove:
@@ -140,7 +153,9 @@ Implementation must prove:
 
 ## Follow-up implementation slices
 
-1. correction engine skeleton and family policy wiring
-2. migrate response style and project facts
-3. migrate recurring procedures and generalized families
-4. remove duplicated supersede logic
+1. extend the shared engine to the remaining recurring-procedure correction
+   surfaces where the validated target allows it
+2. remove remaining family-specific correction wrappers that only forward to
+   the shared engine
+3. align proof inspection and behavior-profile selection with shared correction
+   outcomes

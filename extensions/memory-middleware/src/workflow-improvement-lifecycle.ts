@@ -5,13 +5,13 @@ import {
   extractCandidateExpiresAt,
   inspectClusteredMemoryObjectLifecycle,
   isExpiredPendingClusteredMemoryCandidate,
-  quoteQualifiedTable,
   summarizeClusteredLifecycleError,
   type ClusteredMemoryLifecycleRowBase,
   type ClusteredMemoryPendingCandidate,
 } from "./clustered-memory-lifecycle.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
 import { getMemoryFamilyDefinition } from "./memory-family-registry.js";
+import { executeApprovedMemoryObjectSupersede } from "./memory-object-supersede.js";
 
 type WorkflowImprovementLifecycleRow = ClusteredMemoryLifecycleRowBase & {
   resolved_template: string | null;
@@ -226,118 +226,32 @@ export async function supersedeApprovedWorkflowImprovementSubjectEntries(params:
   }
 
   const schema = params.config.database.schema ?? "memory_middleware";
-  const memoryObjectsTable = quoteQualifiedTable({
-    schema,
-    table: "memory_objects",
-  });
-  const memoryReviewsTable = quoteQualifiedTable({
-    schema,
-    table: "memory_reviews",
-  });
-  const memoryLinksTable = quoteQualifiedTable({
-    schema,
-    table: "memory_links",
-  });
   const client = new Client({ connectionString: params.config.database.url });
 
   try {
     await client.connect();
     await client.query("begin");
-
-    const supersededAt = new Date().toISOString();
-    const supersededObjectIds: string[] = [];
-
-    for (const targetObjectId of params.targetObjectIds) {
-      const targetResult = await client.query<{
-        review_state: string;
-        superseded_at: string | null;
-      }>(
-        `
-          select review_state::text as review_state, superseded_at::text as superseded_at
-          from ${memoryObjectsTable}
-          where id = $1::uuid
-          limit 1
-        `,
-        [targetObjectId],
-      );
-      const target = targetResult.rows[0];
-      if (!target || target.review_state !== "approved" || target.superseded_at) {
-        continue;
-      }
-
-      await client.query(
-        `
-          insert into ${memoryReviewsTable} (
-            memory_object_id,
-            reviewer_agent_id,
-            action,
-            resulting_state,
-            rationale,
-            metadata
-          )
-          values ($1::uuid, $2::uuid, 'supersede', 'superseded', $3::text, $4::jsonb)
-        `,
-        [
-          targetObjectId,
-          params.reviewerAgentId ?? null,
-          "older approved generalized workflow lesson was superseded by stronger newer cluster evidence",
-          JSON.stringify({
-            source: "workflow-improvement-generic-auto-review",
-            supersededByObjectId: params.supersededByObjectId,
-            ...(params.metadata ? { workflowAutoReviewMetadata: params.metadata } : {}),
-          }),
-        ],
-      );
-
-      await client.query(
-        `
-          update ${memoryObjectsTable}
-          set
-            review_state = 'superseded',
-            superseded_at = coalesce(superseded_at, $2::timestamptz),
-            metadata = metadata || $3::jsonb
-          where id = $1::uuid
-        `,
-        [
-          targetObjectId,
-          supersededAt,
-          JSON.stringify({
-            supersededByObjectId: params.supersededByObjectId,
-            lifecycleHint: "superseded",
-            supersededReason: "generalized_workflow_auto_review",
-            ...(params.metadata ? { workflowAutoReviewMetadata: params.metadata } : {}),
-          }),
-        ],
-      );
-
-      await client.query(
-        `
-          insert into ${memoryLinksTable} (
-            source_memory_object_id,
-            target_memory_object_id,
-            link_kind,
-            metadata
-          )
-          values ($1::uuid, $2::uuid, 'supersedes', $3::jsonb)
-          on conflict do nothing
-        `,
-        [
-          targetObjectId,
-          params.supersededByObjectId,
-          JSON.stringify({
-            source: "workflow-improvement-generic-auto-review",
-            ...(params.metadata ? { workflowAutoReviewMetadata: params.metadata } : {}),
-          }),
-        ],
-      );
-
-      supersededObjectIds.push(targetObjectId);
+    const supersedeResult = await executeApprovedMemoryObjectSupersede({
+      client,
+      schema,
+      targetObjectIds: params.targetObjectIds,
+      supersededByObjectId: params.supersededByObjectId,
+      reviewerAgentId: params.reviewerAgentId,
+      rationale:
+        "older approved generalized workflow lesson was superseded by stronger newer cluster evidence",
+      source: "workflow-improvement-generic-auto-review",
+      supersededReason: "generalized_workflow_auto_review",
+      ...(params.metadata ? { metadata: { workflowAutoReviewMetadata: params.metadata } } : {}),
+      logger: params.logger,
+      logLabel: "workflow-improvement",
+    });
+    if (!supersedeResult.accepted) {
+      throw new Error(supersedeResult.reason ?? "workflow improvement supersede failed");
     }
-
     await client.query("commit");
     return {
       accepted: true,
-      supersededObjectIds,
+      supersededObjectIds: supersedeResult.supersededObjectIds,
     };
   } catch (error) {
     try {
