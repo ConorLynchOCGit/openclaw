@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const RESPONSE_STYLE_TEMPLATES = [
+export const SUPPORTED_RESPONSE_STYLE_TEMPLATES = [
   "responses_concise",
   "responses_bullets",
   "responses_plain_english",
@@ -8,7 +8,14 @@ export const RESPONSE_STYLE_TEMPLATES = [
   "responses_numbered_steps",
 ] as const;
 
+export const RESPONSE_STYLE_TEMPLATES = [
+  ...SUPPORTED_RESPONSE_STYLE_TEMPLATES,
+  "response_style_generalized_guidance",
+] as const;
+
+export type SupportedResponseStyleTemplate = (typeof SUPPORTED_RESPONSE_STYLE_TEMPLATES)[number];
 export type ResponseStyleTemplate = (typeof RESPONSE_STYLE_TEMPLATES)[number];
+export type ResponseStyleFamily = "supported_template" | "generalized_guidance";
 
 export type ResponseStyleSemanticConfidence = "high" | "medium";
 
@@ -17,6 +24,7 @@ export type ResponseStyleCanonicalMatch = {
   candidateKind: "learning" | "correction";
   reasonCode: "explicit_requirement_statement" | "explicit_requirement_correction";
   template: ResponseStyleTemplate;
+  family: ResponseStyleFamily;
   subject: string;
   value: string;
   normalizedSubject: string;
@@ -54,7 +62,10 @@ type ResponseStyleTemplateSpec = {
   correctionContent: string;
 };
 
-const RESPONSE_STYLE_TEMPLATE_SPECS: Record<ResponseStyleTemplate, ResponseStyleTemplateSpec> = {
+const RESPONSE_STYLE_TEMPLATE_SPECS: Record<
+  SupportedResponseStyleTemplate,
+  ResponseStyleTemplateSpec
+> = {
   responses_concise: {
     subject: "response style",
     value: "keep responses concise",
@@ -131,7 +142,7 @@ const RESPONSE_NOUNS = [
 ];
 
 const RESPONSE_STYLE_FORGET_ALIASES: Array<{
-  template: ResponseStyleTemplate;
+  template: SupportedResponseStyleTemplate;
   phrases: string[];
 }> = [
   {
@@ -153,6 +164,58 @@ const RESPONSE_STYLE_FORGET_ALIASES: Array<{
   {
     template: "responses_numbered_steps",
     phrases: ["numbered steps", "numbered lists", "numbered list"],
+  },
+];
+
+const GENERIC_RESPONSE_STYLE_MANAGED_PREFIX_PATTERNS = [
+  /^user requirement(?::| stated explicitly:)?\s*/i,
+  /^user correction(?::| to response(?:-| )?(?:style|format|structure|tone) preference:)?\s*/i,
+  /^user corrected response(?:-| )?(?:style|format|structure|tone) preference:\s*/i,
+  /^user prefers\s+/i,
+];
+
+const GENERIC_RESPONSE_STYLE_DURABLE_PREFIX_PATTERNS = [
+  /^(?:for future|in future)\s+(?:replies|responses|answers)(?:,|:|\s+)\s*/i,
+  /^(?:from now on)(?:,|:|\s+)\s*/i,
+  /^(?:by default|default to)(?:\s+)\s*/i,
+  /^(?:please\s+)?remember(?:\s+that|\s+to)?\s*/i,
+  /^(?:my|the)\s+response(?:-| )?(?:style|format|structure|tone)\s+preference\s+is\s*/i,
+  /^(?:i\s+prefer|i'd prefer|id prefer)\s+(?:your\s+)?(?:replies|responses|answers)\s+(?:to\s+)?/i,
+];
+
+const GENERIC_RESPONSE_STYLE_SITUATIONAL_PATTERN =
+  /\b(?:this reply|this response|this answer|this message|for this reply|for this response|for this answer|for now|right now|today|this time|on this turn)\b/i;
+const GENERIC_RESPONSE_STYLE_CONTENT_BLOCKLIST =
+  /\b(?:project|repo|branch|deploy|deployment|runbook|workflow|procedure|plan|task|spec|ticket|tool|command|package|database)\b/i;
+
+type GenericResponseStyleSubjectSpec = {
+  subject: string;
+  match: (normalizedDirective: string) => boolean;
+};
+
+const GENERIC_RESPONSE_STYLE_SUBJECT_SPECS: GenericResponseStyleSubjectSpec[] = [
+  {
+    subject: "response opening",
+    match: (normalizedDirective) =>
+      /(?:start|include|lead|begin|open)\b/.test(normalizedDirective) &&
+      /\b(?:answer|summary|tldr|bottom line|recommendation)\b/.test(normalizedDirective),
+  },
+  {
+    subject: "response opening",
+    match: (normalizedDirective) =>
+      /\b(?:answer|summary|tldr|bottom line|recommendation)\b/.test(normalizedDirective) &&
+      /\b(?:first|upfront|before details|at top)\b/.test(normalizedDirective),
+  },
+  {
+    subject: "response structure",
+    match: (normalizedDirective) =>
+      /\b(?:header|headers|heading|headings|section|sections)\b/.test(normalizedDirective),
+  },
+  {
+    subject: "response tone",
+    match: (normalizedDirective) =>
+      /\bemoji\b/.test(normalizedDirective) &&
+      /\b(?:no|avoid|skip|omit|without|dont|do not)\b/.test(normalizedDirective),
   },
 ];
 
@@ -187,6 +250,12 @@ function tokenize(value: string): string[] {
 
 function isResponseStyleTemplate(value: string): value is ResponseStyleTemplate {
   return RESPONSE_STYLE_TEMPLATES.includes(value as ResponseStyleTemplate);
+}
+
+export function isSupportedResponseStyleTemplate(
+  value: string,
+): value is SupportedResponseStyleTemplate {
+  return SUPPORTED_RESPONSE_STYLE_TEMPLATES.includes(value as SupportedResponseStyleTemplate);
 }
 
 function buildAutoCaptureKey(params: {
@@ -286,7 +355,7 @@ function startsWithAny(normalized: string, patterns: RegExp[]): boolean {
 }
 
 function buildCanonicalMatch(params: {
-  template: ResponseStyleTemplate;
+  template: SupportedResponseStyleTemplate;
   captureClass: "explicit_requirement" | "requirement_correction";
 }): ResponseStyleCanonicalMatch {
   const spec = RESPONSE_STYLE_TEMPLATE_SPECS[params.template];
@@ -300,6 +369,7 @@ function buildCanonicalMatch(params: {
         ? "explicit_requirement_correction"
         : "explicit_requirement_statement",
     template: params.template,
+    family: "supported_template",
     subject: spec.subject,
     value: spec.value,
     normalizedSubject,
@@ -314,6 +384,42 @@ function buildCanonicalMatch(params: {
     }),
     key: buildAutoCaptureKey({
       template: params.template,
+      normalizedSubject,
+      normalizedValue,
+    }),
+  };
+}
+
+function buildGenericCanonicalMatch(params: {
+  captureClass: "explicit_requirement" | "requirement_correction";
+  subject: string;
+  value: string;
+}): ResponseStyleCanonicalMatch {
+  const normalizedSubject = normalizeLower(params.subject);
+  const normalizedValue = normalizeLower(params.value);
+  return {
+    captureClass: params.captureClass,
+    candidateKind: params.captureClass === "requirement_correction" ? "correction" : "learning",
+    reasonCode:
+      params.captureClass === "requirement_correction"
+        ? "explicit_requirement_correction"
+        : "explicit_requirement_statement",
+    template: "response_style_generalized_guidance",
+    family: "generalized_guidance",
+    subject: params.subject,
+    value: params.value,
+    normalizedSubject,
+    normalizedValue,
+    content:
+      params.captureClass === "requirement_correction"
+        ? `User correction: ${params.value}.`
+        : `User requirement: ${params.value}.`,
+    subjectKey: buildAutoCaptureSubjectKey({
+      template: "response_style_generalized_guidance",
+      normalizedSubject,
+    }),
+    key: buildAutoCaptureKey({
+      template: "response_style_generalized_guidance",
       normalizedSubject,
       normalizedValue,
     }),
@@ -472,7 +578,7 @@ function detectBestTemplate(
   tokens: string[],
   normalized: string,
 ): {
-  template: ResponseStyleTemplate;
+  template: SupportedResponseStyleTemplate;
   score: number;
   evidence: string[];
 } | null {
@@ -498,7 +604,7 @@ function detectBestTemplate(
 }
 
 function resolveCaptureConfidence(
-  template: ResponseStyleTemplate,
+  template: SupportedResponseStyleTemplate,
   score: number,
   normalized: string,
 ): ResponseStyleSemanticConfidence | null {
@@ -537,7 +643,7 @@ function resolveCaptureConfidence(
 function detectForgetTarget(
   tokens: string[],
   normalized: string,
-): { template: ResponseStyleTemplate; evidence: string[] } | null {
+): { template: SupportedResponseStyleTemplate; evidence: string[] } | null {
   const explicitForget =
     startsWithAny(normalized, FORGET_PREFIX_PATTERNS) ||
     containsPhrase(normalized, "dont remember") ||
@@ -580,6 +686,162 @@ function detectForgetTarget(
   };
 }
 
+function stripManagedResponseStylePrefix(text: string): {
+  normalized: string;
+  forcedCorrection: boolean;
+  forcedDurable: boolean;
+} {
+  let normalized = text;
+  let forcedCorrection = false;
+  let forcedDurable = false;
+  for (const pattern of GENERIC_RESPONSE_STYLE_MANAGED_PREFIX_PATTERNS) {
+    if (pattern.test(normalized)) {
+      forcedCorrection = forcedCorrection || /^user correction/i.test(normalized);
+      forcedDurable = true;
+      normalized = normalizeText(normalized.replace(pattern, ""));
+      break;
+    }
+  }
+  return { normalized, forcedCorrection, forcedDurable };
+}
+
+function normalizeGenericResponseStyleDirective(value: string): string {
+  return normalizeText(value)
+    .replace(/[.!?]+$/, "")
+    .replace(/^to\s+/i, "")
+    .replace(/\b(?:lead|begin|open)\b/gi, "start")
+    .replace(/\bsection headings?\b/gi, "section headers")
+    .replace(/\bheadings?\b/gi, "headers")
+    .replace(/\bemojis?\b/gi, "emoji")
+    .replace(/\bup front\b/gi, "upfront")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractGenericResponseStyleDirective(text: string): {
+  directive: string;
+  correction: boolean;
+} | null {
+  const strippedManaged = stripManagedResponseStylePrefix(normalizeText(text));
+  let correction = strippedManaged.forcedCorrection;
+  let normalized = strippedManaged.normalized;
+  for (const pattern of CORRECTION_PREFIX_PATTERNS) {
+    if (pattern.test(normalizeLower(normalized))) {
+      correction = true;
+      normalized = normalizeText(normalized.replace(pattern, "").replace(/^[:,\s-]+/, ""));
+      break;
+    }
+  }
+
+  for (const pattern of GENERIC_RESPONSE_STYLE_DURABLE_PREFIX_PATTERNS) {
+    if (pattern.test(normalized)) {
+      const directive = normalizeGenericResponseStyleDirective(normalized.replace(pattern, ""));
+      return directive ? { directive, correction } : null;
+    }
+  }
+
+  if (strippedManaged.forcedDurable) {
+    const directive = normalizeGenericResponseStyleDirective(normalized);
+    return directive ? { directive, correction } : null;
+  }
+
+  if (correction) {
+    const directive = normalizeGenericResponseStyleDirective(normalized);
+    return directive ? { directive, correction } : null;
+  }
+
+  return null;
+}
+
+function inferGenericResponseStyleSubject(directive: string): string | null {
+  const normalizedDirective = normalizeSemanticText(directive);
+  for (const spec of GENERIC_RESPONSE_STYLE_SUBJECT_SPECS) {
+    if (spec.match(normalizedDirective)) {
+      return spec.subject;
+    }
+  }
+  return null;
+}
+
+function detectGenericForgetTarget(
+  normalized: string,
+): { subject: string; subjectKey: string; evidence: string[] } | null {
+  const explicitForget =
+    startsWithAny(normalized, FORGET_PREFIX_PATTERNS) ||
+    containsPhrase(normalized, "dont remember") ||
+    containsPhrase(normalized, "do not remember");
+  if (!explicitForget) {
+    return null;
+  }
+  let remainder = normalized;
+  for (const pattern of FORGET_PREFIX_PATTERNS) {
+    if (pattern.test(remainder)) {
+      remainder = normalizeSemanticText(remainder.replace(pattern, ""));
+      break;
+    }
+  }
+  remainder = remainder
+    .replace(/\b(?:the|my|that)\b/g, " ")
+    .replace(/\bpreference\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const subject = inferGenericResponseStyleSubject(remainder);
+  if (!subject) {
+    return null;
+  }
+  const normalizedSubject = normalizeLower(subject);
+  return {
+    subject,
+    subjectKey: buildAutoCaptureSubjectKey({
+      template: "response_style_generalized_guidance",
+      normalizedSubject,
+    }),
+    evidence: ["explicit_forget_intent", "generic_response_style_subject"],
+  };
+}
+
+function detectGenericResponseStyleCapture(text: string): {
+  confidence: ResponseStyleSemanticConfidence;
+  evidence: string[];
+  match: ResponseStyleCanonicalMatch;
+} | null {
+  const extracted = extractGenericResponseStyleDirective(text);
+  if (!extracted) {
+    return null;
+  }
+  const normalizedDirective = normalizeSemanticText(extracted.directive);
+  if (
+    !normalizedDirective ||
+    normalizedDirective.length < 8 ||
+    normalizedDirective.length > 96 ||
+    GENERIC_RESPONSE_STYLE_SITUATIONAL_PATTERN.test(normalizedDirective) ||
+    GENERIC_RESPONSE_STYLE_CONTENT_BLOCKLIST.test(normalizedDirective)
+  ) {
+    return null;
+  }
+  const subject = inferGenericResponseStyleSubject(extracted.directive);
+  if (!subject) {
+    return null;
+  }
+  const confidence =
+    extracted.correction ||
+    GENERIC_RESPONSE_STYLE_DURABLE_PREFIX_PATTERNS.some((pattern) => pattern.test(text))
+      ? "high"
+      : "medium";
+  return {
+    confidence,
+    evidence: [
+      "generic_response_style_subject",
+      `subject_${normalizeLower(subject).replace(/\s+/g, "_")}`,
+    ],
+    match: buildGenericCanonicalMatch({
+      captureClass: extracted.correction ? "requirement_correction" : "explicit_requirement",
+      subject,
+      value: extracted.directive,
+    }),
+  };
+}
+
 export function detectResponseStyleSemanticDecision(
   text: string,
 ): ResponseStyleSemanticCaptureDecision {
@@ -602,6 +864,28 @@ export function detectResponseStyleSemanticDecision(
       template: forgetTarget.template,
       subject: match.subject,
       subjectKey: match.subjectKey,
+    };
+  }
+
+  const genericForgetTarget = detectGenericForgetTarget(normalized);
+  if (genericForgetTarget) {
+    return {
+      action: "forget",
+      confidence: "high",
+      evidence: genericForgetTarget.evidence,
+      template: "response_style_generalized_guidance",
+      subject: genericForgetTarget.subject,
+      subjectKey: genericForgetTarget.subjectKey,
+    };
+  }
+
+  const genericCapture = detectGenericResponseStyleCapture(text);
+  if (genericCapture) {
+    return {
+      action: "capture",
+      confidence: genericCapture.confidence,
+      evidence: genericCapture.evidence,
+      match: genericCapture.match,
     };
   }
 
@@ -637,7 +921,7 @@ export function detectResponseStyleSemanticDecision(
 }
 
 export function getResponseStyleTemplateSpec(
-  template: ResponseStyleTemplate,
+  template: SupportedResponseStyleTemplate,
 ): ResponseStyleTemplateSpec {
   return RESPONSE_STYLE_TEMPLATE_SPECS[template];
 }

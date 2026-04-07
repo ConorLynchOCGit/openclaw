@@ -144,6 +144,20 @@ Current state:
     response-style subjects
   - a checked-in messy-language eval harness now exists for the supported
     response-style family
+  - the first response-style parity tranche now also adds a bounded generic
+    lane for:
+    - response opening
+    - response structure
+    - response tone
+  - first-evidence generic response-style guidance now reuses
+    `hold_for_more_evidence`
+  - later compatible evidence can promote approved generic response-style
+    memory through the same response-style review + promotion substrate
+  - approved-only hybrid retrieval now ranks generic response-style guidance
+    by normalized subject and value overlap
+  - transcript-driven generic correction remains conservative and still waits
+    for later confirming evidence instead of immediately superseding on first
+    mention
 - the first bounded semantic project-memory UX slice is now live for its
   intended scope:
   - semantic explicit named-project detection is now live for:
@@ -460,8 +474,10 @@ Delivery enablement pause:
   - project-fact generalization and lifecycle parity v1
 - second landed parity tranche inside step 1:
   - recurring-procedure generalization and repair parity v1
+- third landed parity tranche inside step 1:
+  - response-style genericization and retrieval parity v1
 - next recommended parity tranche inside step 1:
-  - response-style genericization and retrieval parity
+  - cross-family retrieval/application parity closeout
 - existing-family parity means, for the current landed families:
   - natural-language capture is no longer overly rigid where the family is
     intended to generalize

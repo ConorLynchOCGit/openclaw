@@ -10454,6 +10454,14 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
           + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
           + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
           + case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
+          + case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
+              and ${autoCaptureNormalizedSubjectExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
+            then 170 else 0 end
+          + case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
+              and ${autoCaptureNormalizedValueExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedValueExpression} || '%'
+            then 105 else 0 end
           + case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
               and ${autoCaptureNormalizedProjectScopeExpression} <> ''
               and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
@@ -10531,6 +10539,16 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
             end,
             case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text
               then 'auto_capture_lesson_match'
+            end,
+            case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
+                and ${autoCaptureNormalizedSubjectExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
+              then 'response_style_subject_match'
+            end,
+            case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
+                and ${autoCaptureNormalizedValueExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedValueExpression} || '%'
+              then 'response_style_value_match'
             end,
             case when ${autoCaptureFactFamilyExpression} = 'generalized_reference'
                 and ${autoCaptureNormalizedProjectScopeExpression} <> ''
@@ -10668,6 +10686,24 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
+  const autoCaptureNormalizedSubjectExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'normalizedSubject',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedSubject',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedSubject',",
+    "v.metadata->'autoPromotion'->>'normalizedSubject',",
+    "''",
+    ")",
+  ].join(" ");
+  const autoCaptureNormalizedValueExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'normalizedValue',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedValue',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedValue',",
+    "v.metadata->'autoPromotion'->>'normalizedValue',",
+    "''",
+    ")",
+  ].join(" ");
   const responseStyleHint =
     params.input.kind === "project" || params.input.kind === "procedure"
       ? null
@@ -10727,6 +10763,14 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
           + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
           + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
           + case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
+          + case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
+              and ${autoCaptureNormalizedSubjectExpression} <> ''
+              and lower($1::text) like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
+            then 170 else 0 end
+          + case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
+              and ${autoCaptureNormalizedValueExpression} <> ''
+              and lower($1::text) like '%' || ${autoCaptureNormalizedValueExpression} || '%'
+            then 105 else 0 end
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
         )::float8 as score,
@@ -10744,6 +10788,16 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
             end,
             case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text
               then 'auto_capture_lesson_match'
+            end,
+            case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
+                and ${autoCaptureNormalizedSubjectExpression} <> ''
+                and lower($1::text) like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
+              then 'response_style_subject_match'
+            end,
+            case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
+                and ${autoCaptureNormalizedValueExpression} <> ''
+                and lower($1::text) like '%' || ${autoCaptureNormalizedValueExpression} || '%'
+              then 'response_style_value_match'
             end,
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'

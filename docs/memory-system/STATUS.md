@@ -302,6 +302,16 @@ retrieval boosts for direct named generic checklist asks, and isolated plus
 narrow production proof that a repeated generic recurring checklist can be
 held, approved, retrieved, and corrected without broadening into vague
 one-off procedure memory.
+Third existing-family parity tranche completed on the approved live
+production boundary for its intended scope, with a bounded generic
+response-style guidance lane beyond the older fixed supported subject list,
+first-evidence `hold_for_more_evidence` lifecycle reuse on the same
+response-style candidate substrate, later confirmation promotion through the
+existing response-style review + promotion seam, approved-only hybrid
+retrieval boosts for normalized generic response-style subject and value
+overlap, and isolated plus narrow production proof that repeated generic
+response-style guidance can be held, approved, and retrieved without
+turning on generic semantic fallback or self-improving capture.
 Fifth family-aware semantic retrieval routing slice completed on the approved
 live production boundary for its intended scope, with approved-only
 project-scoped semantic fallback for `git_stash_unsafe`, approved source
@@ -361,6 +371,17 @@ Current compact state:
   - medium-confidence candidate confirmation without manual review
   - targetable conversational forget for supported subjects
   - weak ambiguous ignore instead of dead candidate backlog
+  - bounded generic response-style guidance for:
+    - response opening
+    - response structure
+    - response tone
+  - `hold_for_more_evidence` lifecycle reuse for explicit durable generic
+    response-style guidance
+  - approved-only hybrid retrieval boosts for normalized generic
+    response-style subject and value overlap
+  - conservative transcript-driven generic correction that still waits for
+    later confirming evidence instead of immediately superseding on first
+    mention
 - first semantic project-memory UX slice is now live for its intended scope
 - supported semantic project-fact subjects now include:
   - default branch
@@ -443,21 +464,25 @@ Current compact state:
 - semantic retrieval remains hybrid-first for:
   - response-style memory
   - explicit named project facts
-- latest semantic response-style proof timestamp:
-  - `2026-04-05T16:38:19.403Z`
-- latest semantic response-style production proof artifacts:
-  - `projectId = a3eddcc3-58cb-412f-a19b-ddc1cc20c65e`
-  - `agentId = f275b481-e49b-4a83-8c2a-8896d2848036`
-  - `sessionId = 7a2ce36a-ed01-4b80-9364-bc4d27487c61`
-  - `candidateId = cfe86364-440a-44f5-8dab-97d7004cbb1f`
-  - `candidateEventId = 208cd978-c7f7-4b1f-ac92-98cece6824f8`
-  - `cleanupReviewId = 11abf604-e12e-4d4a-b1bf-c20ea9980f3c`
-- latest semantic response-style production proof delta:
-  - `memory_events +1`
-  - `memory_objects +1`
-  - `memory_reviews +0` before cleanup
-  - ambiguous follow-up caused `+0` additional writes
-  - final approved-only retrieval for the seeded proof project remained empty
+- latest response-style parity proof timestamp:
+  - `2026-04-07T18:03:40.236Z`
+- latest response-style parity production proof artifacts:
+  - `projectId = 437d43ff-1c9d-4757-8d44-cd8e0aeb241b`
+  - `agentId = 9d8f2956-a081-4135-be61-8fe7f2fe8070`
+  - `sessionId = cd670787-8e50-427d-9b14-cb1176408238`
+  - `candidateId = 494e94f3-69f4-435a-a1cd-779590c67a21`
+  - `candidateEventId = 2bfdabb4-0041-49f3-bd7c-512a569e7cf2`
+  - `approvedObjectId = f54bf0a4-9e47-41c4-b9be-3de5323ea1f6`
+  - `reviewId = 2b9170ca-7b24-4b39-9ee3-c798482f5632`
+- latest response-style parity production proof delta:
+  - repeated generic response-style guidance now produced:
+    - one held candidate
+    - one approved response-style memory
+  - approved-only hybrid retrieval returned the approved generic
+    response-style object with:
+    - `response_style_subject_match`
+    - `response_style_value_match`
+    - `trigram_similarity`
 - latest semantic project-memory production proof artifacts:
   - `projectId = 00c98f31-5783-4ac9-9ea0-186e939987a4`
   - `candidateId = d277ee41-dc0d-4c82-ac3c-09ba3953f9c5`

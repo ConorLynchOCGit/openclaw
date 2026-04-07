@@ -11,18 +11,24 @@ turning on self-improving capture or widening the taxonomy further.
 
 The previous slice just landed:
 
-- recurring-procedure generalization and repair parity v1
-- a bounded `generalized_named_checklist` path for explicit named recurring
-  checklists without adding one more supported procedure key
-- first-evidence held-cluster lifecycle for generic recurring procedures on
-  the existing candidate -> draft -> validated procedure substrate
-- project-scoped recurring-procedure retrieval boosts for direct named generic
-  checklist asks while preserving the older supported checklist fast path
-- explicit generic recurring-procedure correction and supersede on the same
-  subject
-- isolated plus narrow production proof that a repeated generic recurring
-  checklist can be held, approved, retrieved, and corrected without
-  broadening into vague one-off procedure memory
+- response-style genericization and retrieval parity v1
+- a bounded `response_style_generalized_guidance` lane now exists for explicit
+  durable response opening, response structure, and response tone guidance
+  without adding one more supported response-style subject
+- supported response-style templates remain the precision fast path
+- first-evidence generic response-style capture now uses
+  `hold_for_more_evidence` on the existing response-style lifecycle seam
+- later compatible evidence can promote approved generic response-style
+  memory through the same response-style candidate review + promotion
+  substrate
+- approved-only hybrid retrieval now recognizes normalized generic
+  response-style subject and value overlap
+- isolated plus narrow production proof now shows repeated generic
+  response-style guidance can be held, approved, and retrieved without
+  broadening into generic semantic fallback or self-improving capture
+- transcript-driven generic response-style correction remains conservative in
+  this tranche and still holds for later confirming evidence instead of
+  immediately superseding on first mention
 
 ## Required work
 
@@ -81,7 +87,7 @@ The post-pivot pipeline now tracks these landed and next sequenced steps:
 
 The next implementation slice should be:
 
-- response-style genericization and retrieval parity
+- cross-family retrieval/application parity closeout
 
 Cross-domain roadmap note:
 

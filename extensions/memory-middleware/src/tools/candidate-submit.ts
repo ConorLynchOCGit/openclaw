@@ -52,6 +52,7 @@ import {
   detectResponseStyleSemanticDecision,
   isResponseStyleCorrectionMatch,
   isResponseStyleLearningMatch,
+  type ResponseStyleFamily,
   type ResponseStyleSemanticConfidence,
 } from "../response-style-semantic.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
@@ -241,6 +242,10 @@ function buildToolResponseStyleAutoPromotionMetadata(params: {
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { reasonCode?: unknown }).reasonCode
           : undefined,
+      template:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { template?: unknown }).template
+          : undefined,
       key:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { key?: unknown }).key
@@ -253,9 +258,21 @@ function buildToolResponseStyleAutoPromotionMetadata(params: {
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { subject?: unknown }).subject
           : undefined,
+      normalizedSubject:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { normalizedSubject?: unknown }).normalizedSubject
+          : undefined,
       value:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { value?: unknown }).value
+          : undefined,
+      normalizedValue:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { normalizedValue?: unknown }).normalizedValue
+          : undefined,
+      responseStyleFamily:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { responseStyleFamily?: unknown }).responseStyleFamily
           : undefined,
       toolName: "memory_candidate_submit",
     },
@@ -284,6 +301,11 @@ async function maybeResolveExistingResponseStyleCandidate(params: {
     return null;
   }
   const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
+  const responseStyleFamily =
+    (readNestedMetadataString(params.input.metadata, [
+      "autoCapture",
+      "responseStyleFamily",
+    ]) as ResponseStyleFamily | null) ?? "supported_template";
   const key = readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]);
   const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
   const confirmationState = readNestedMetadataString(params.input.metadata, [
@@ -300,7 +322,8 @@ async function maybeResolveExistingResponseStyleCandidate(params: {
       template !== "responses_bullets" &&
       template !== "responses_plain_english" &&
       template !== "responses_no_tables" &&
-      template !== "responses_numbered_steps")
+      template !== "responses_numbered_steps" &&
+      template !== "response_style_generalized_guidance")
   ) {
     return null;
   }
@@ -385,7 +408,14 @@ async function maybeResolveExistingResponseStyleCandidate(params: {
         });
       }
     }
-    if (confirmationState !== "pending_confirmation" && confidence !== "high") {
+    if (
+      !(
+        responseStyleFamily === "generalized_guidance" &&
+        confirmationState === "hold_for_more_evidence"
+      ) &&
+      confirmationState !== "pending_confirmation" &&
+      confidence !== "high"
+    ) {
       return null;
     }
     const promotionMetadata = buildToolResponseStyleAutoPromotionMetadata({
@@ -1916,16 +1946,19 @@ function buildWorkflowImprovementSemanticMetadata(params: {
 function buildPendingConfirmationMetadata(params: {
   confidence: ResponseStyleSemanticConfidence;
   evidence: string[];
+  responseStyleFamily: ResponseStyleFamily;
+  state?: "pending_confirmation" | "hold_for_more_evidence";
 }): Record<string, unknown> {
   const observedAt = new Date().toISOString();
   return {
     candidateLifecycle: {
       family: "response_style",
-      state: "pending_confirmation",
+      state: params.state ?? "pending_confirmation",
       confidence: params.confidence,
       evidenceCount: 1,
       observedAt,
       expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
+      responseStyleFamily: params.responseStyleFamily,
       evidence: params.evidence,
     },
   };
@@ -2188,6 +2221,8 @@ type SessionStoreEntry = {
 
 type ManagedResponseStyleResolution = {
   parsed: OrdinaryTurnAutoCaptureMatch;
+  responseStyleFamily: ResponseStyleFamily;
+  reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
   source: "content" | "raw";
   detectionSource: "deterministic" | "semantic";
   confidence: "high" | ResponseStyleSemanticConfidence;
@@ -2457,6 +2492,8 @@ function resolveManagedResponseStyleLearning(
   if (isManagedResponseStyleMatch(parsedFromContent)) {
     return {
       parsed: parsedFromContent,
+      responseStyleFamily: parsedFromContent.responseStyleFamily ?? "supported_template",
+      reviewMode: "direct",
       source: "content",
       detectionSource: "deterministic",
       confidence: "high",
@@ -2472,6 +2509,8 @@ function resolveManagedResponseStyleLearning(
     if (isManagedResponseStyleMatch(parsedFromRaw)) {
       return {
         parsed: parsedFromRaw,
+        responseStyleFamily: parsedFromRaw.responseStyleFamily ?? "supported_template",
+        reviewMode: "direct",
         source: "raw",
         detectionSource: "deterministic",
         confidence: "high",
@@ -2482,6 +2521,13 @@ function resolveManagedResponseStyleLearning(
     if (semanticFromRaw.action === "capture") {
       return {
         parsed: toOrdinaryTurnResponseStyleMatch(semanticFromRaw.match),
+        responseStyleFamily: semanticFromRaw.match.family,
+        reviewMode:
+          semanticFromRaw.match.family === "generalized_guidance"
+            ? "hold_for_more_evidence"
+            : semanticFromRaw.confidence === "high"
+              ? "direct"
+              : "pending_confirmation",
         source: "raw",
         detectionSource: "semantic",
         confidence: semanticFromRaw.confidence,
@@ -2494,6 +2540,13 @@ function resolveManagedResponseStyleLearning(
   if (semanticFromContent.action === "capture") {
     return {
       parsed: toOrdinaryTurnResponseStyleMatch(semanticFromContent.match),
+      responseStyleFamily: semanticFromContent.match.family,
+      reviewMode:
+        semanticFromContent.match.family === "generalized_guidance"
+          ? "hold_for_more_evidence"
+          : semanticFromContent.confidence === "high"
+            ? "direct"
+            : "pending_confirmation",
       source: "content",
       detectionSource: "semantic",
       confidence: semanticFromContent.confidence,
@@ -3177,10 +3230,13 @@ async function normalizeManagedToolCandidateInput(params: {
           captureClass: responseStyleResolution.parsed.captureClass,
           reasonCode: responseStyleResolution.parsed.reasonCode,
           template: responseStyleResolution.parsed.template,
+          responseStyleFamily: responseStyleResolution.responseStyleFamily,
           key: responseStyleResolution.parsed.key,
           subjectKey: responseStyleResolution.parsed.subjectKey,
           subject: responseStyleResolution.parsed.subject,
+          normalizedSubject: responseStyleResolution.parsed.normalizedSubject,
           value: responseStyleResolution.parsed.value,
+          normalizedValue: responseStyleResolution.parsed.normalizedValue,
           toolName: "memory_candidate_submit",
         },
         ...(responseStyleResolution.detectionSource === "semantic"
@@ -3190,10 +3246,12 @@ async function normalizeManagedToolCandidateInput(params: {
               evidence: responseStyleResolution.evidence,
             })
           : {}),
-        ...(responseStyleResolution.confidence === "medium"
+        ...(responseStyleResolution.reviewMode !== "direct"
           ? buildPendingConfirmationMetadata({
               confidence: responseStyleResolution.confidence,
               evidence: responseStyleResolution.evidence,
+              responseStyleFamily: responseStyleResolution.responseStyleFamily,
+              state: responseStyleResolution.reviewMode,
             })
           : {}),
       });
@@ -3287,6 +3345,7 @@ async function normalizeManagedToolCandidateInput(params: {
         subjectKey: parsed.subjectKey,
         subject: parsed.subject,
         value: parsed.value,
+        ...(parsed.responseStyleFamily ? { responseStyleFamily: parsed.responseStyleFamily } : {}),
         ...(parsed.projectScope ? { projectScope: parsed.projectScope } : {}),
         toolName: "memory_candidate_submit",
       },
@@ -3598,7 +3657,14 @@ async function normalizeManagedToolCandidateInput(params: {
         key: parsed.key,
         subjectKey: parsed.subjectKey,
         subject: parsed.subject,
+        ...(typeof parsed.normalizedSubject === "string"
+          ? { normalizedSubject: parsed.normalizedSubject }
+          : {}),
         value: parsed.value,
+        ...(typeof parsed.normalizedValue === "string"
+          ? { normalizedValue: parsed.normalizedValue }
+          : {}),
+        ...(parsed.responseStyleFamily ? { responseStyleFamily: parsed.responseStyleFamily } : {}),
         ...(parsed.projectScope ? { projectScope: parsed.projectScope } : {}),
         toolName: "memory_candidate_submit",
       },
@@ -3615,6 +3681,8 @@ async function normalizeManagedToolCandidateInput(params: {
         ? buildPendingConfirmationMetadata({
             confidence: correctionOverride.confidence,
             evidence: correctionOverride.evidence,
+            responseStyleFamily:
+              correctionOverride.parsed.responseStyleFamily ?? "supported_template",
           })
         : {}),
     });
@@ -3647,16 +3715,18 @@ async function maybeAutoPromoteToolSubmittedPreference(params: {
     "candidateLifecycle",
     "state",
   ]);
-  const isSupportedResponseStyleTemplate =
+  const isAutoPromotableResponseStyleTemplate =
     template === "responses_concise" ||
     template === "responses_bullets" ||
     template === "responses_plain_english" ||
     template === "responses_no_tables" ||
-    template === "responses_numbered_steps";
+    template === "responses_numbered_steps" ||
+    template === "response_style_generalized_guidance";
   if (
     pendingConfirmationState === "pending_confirmation" ||
+    pendingConfirmationState === "hold_for_more_evidence" ||
     (!parsedGeneral &&
-      (!isSupportedResponseStyleTemplate ||
+      (!isAutoPromotableResponseStyleTemplate ||
         (captureClass !== "explicit_requirement" && captureClass !== "requirement_correction")))
   ) {
     return params.result;

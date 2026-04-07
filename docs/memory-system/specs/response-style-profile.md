@@ -29,15 +29,16 @@ loops.
 This feature uses:
 
 - semantic event detection
-- deterministic parser as a shortcut
+- deterministic parser as a shortcut for the older supported templates
 - bounded correction capture
 - approved `feedback` memory
 - behavior application
-- phrase induction
+
+Phrase induction is not live for response-style memory in this slice.
 
 ## Domain model / concepts
 
-Bound initial subjects to:
+Supported fast-path subjects remain bounded to:
 
 - `responses_concise`
 - `responses_bullet_points`
@@ -45,9 +46,26 @@ Bound initial subjects to:
 - `responses_no_tables_unless_asked`
 - `responses_numbered_steps_for_instructions`
 
-## Bounded scope for first implementation
+This parity tranche also adds one bounded generic lane for explicit durable:
 
-v1 should improve only these subjects and no broader style space.
+- `response opening`
+- `response structure`
+- `response tone`
+
+Examples inside that lane:
+
+- start with the direct answer first
+- use short section headers in longer replies
+- no emoji in responses
+
+## Bounded scope for parity v1
+
+The generic lane remains intentionally narrow:
+
+- it only accepts explicit durable wording
+- it ignores situational one-off phrasing
+- it does not broaden into broader personality or writing-style modeling
+- it does not enable generic semantic fallback for response-style memory
 
 ## Exact input / output behavior
 
@@ -62,14 +80,19 @@ Examples:
 
 ## Candidate vs approved behavior
 
-- low-risk response-style memory may continue to auto-promote where that is
-  already justified
+- supported low-risk response-style memory may continue to auto-promote where
+  that is already justified
+- bounded generic response-style guidance now uses the same
+  candidate-confirmation substrate as the newer generic families:
+  - first evidence enters `hold_for_more_evidence`
+  - later compatible evidence can auto-promote
 - broader or ambiguous cases should use the candidate-confirmation lifecycle
   rather than an indefinite review queue
 
 Candidate resolution mode for this family:
 
 - `auto_confirm` for bounded low-risk response-style subjects
+- `hold_for_more_evidence` for bounded generic response-style guidance
 - `prompt_now` only when a short clarification would materially avoid the wrong
   durable preference
 - `expire_or_reject` for unresolved ambiguous style signals
@@ -79,6 +102,8 @@ Candidate resolution mode for this family:
 Record:
 
 - subject key
+- normalized subject
+- normalized value
 - capture family
 - whether the event was a correction or new requirement
 - evidence text
@@ -91,6 +116,8 @@ Approved response-style memory should:
 - influence later replies consistently
 - use stable precedence
 - not be crowded out by adjacent style memories
+- use normalized subject/value overlap to rank the most relevant approved
+  generic response-style memory when several approved style memories coexist
 
 ## Ambiguity / abstain / clarify rules
 
@@ -104,6 +131,13 @@ Users must be able to:
 - correct an existing style preference
 - stop applying a style preference
 - replace an outdated style preference
+
+Current parity nuance:
+
+- supported template corrections can still supersede directly
+- the new transcript-driven generic lane remains conservative on first
+  correction mention and may hold for later confirming evidence instead of
+  immediately superseding
 
 ## Observability / metrics / audit requirements
 

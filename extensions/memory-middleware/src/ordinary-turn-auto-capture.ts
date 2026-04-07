@@ -48,10 +48,11 @@ import {
 } from "./response-style-lifecycle.js";
 import {
   detectResponseStyleSemanticDecision,
+  isSupportedResponseStyleTemplate,
   isResponseStyleCorrectionMatch,
   isResponseStyleLearningMatch,
-  RESPONSE_STYLE_TEMPLATES,
   type ResponseStyleCanonicalMatch,
+  type ResponseStyleFamily,
   type ResponseStyleSemanticConfidence,
 } from "./response-style-semantic.js";
 import {
@@ -103,7 +104,6 @@ const WORKFLOW_IMPROVEMENT_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
 const WORKFLOW_IMPROVEMENT_CONFIRMATION_MIN_AGE_MS = 5_000;
 const CORRECTION_PREFIX =
   "(?:actually,?|correction:|no,?|i meant,?|that(?:'|’)s not right,?|sorry,?)\\s*";
-const RESPONSE_STYLE_TEMPLATE_SET = new Set<string>(RESPONSE_STYLE_TEMPLATES);
 const PROJECT_FACT_FIELD_LABEL_TO_KEY: Record<string, ProjectFactFieldKey> = {
   "default branch": "default_branch",
   "staging branch": "staging_branch",
@@ -627,6 +627,7 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "responses_plain_english"
     | "responses_no_tables"
     | "responses_numbered_steps"
+    | "response_style_generalized_guidance"
     | "project_fact_named_scope"
     | "project_fact_generalized_named_scope"
     | "named_recurring_checklist"
@@ -646,6 +647,7 @@ export type OrdinaryTurnAutoCaptureMatch = {
   key: string;
   projectScope?: string;
   normalizedProjectScope?: string;
+  responseStyleFamily?: ResponseStyleFamily;
   factFamily?: ProjectFactFamily;
   fieldKey?: ProjectFactFieldKey;
   procedureFamily?: RecurringProcedureFamily;
@@ -795,19 +797,12 @@ type WorkflowImprovementDetectionSource = "semantic" | "deterministic";
 type ResponseStyleCaptureDecision =
   | {
       action: "capture";
-      confidence: "high";
+      confidence: "high" | ResponseStyleSemanticConfidence;
       detectionSource: "deterministic" | "semantic";
       evidence: string[];
+      responseStyleFamily: ResponseStyleFamily;
       match: OrdinaryTurnAutoCaptureMatch;
-      confirmationMode: "direct";
-    }
-  | {
-      action: "capture";
-      confidence: ResponseStyleSemanticConfidence;
-      detectionSource: "semantic";
-      evidence: string[];
-      match: OrdinaryTurnAutoCaptureMatch;
-      confirmationMode: "pending_confirmation";
+      reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
     }
   | {
       action: "forget";
@@ -1514,10 +1509,6 @@ export function parseManagedCorrectionCandidateContent(
   return null;
 }
 
-function isSupportedResponseStyleTemplate(template: string): boolean {
-  return RESPONSE_STYLE_TEMPLATE_SET.has(template);
-}
-
 function toOrdinaryTurnResponseStyleMatch(
   match: ResponseStyleCanonicalMatch,
 ): OrdinaryTurnAutoCaptureMatch {
@@ -1534,6 +1525,7 @@ function toOrdinaryTurnResponseStyleMatch(
     content: match.content,
     subjectKey: match.subjectKey,
     key: match.key,
+    responseStyleFamily: match.family,
   };
 }
 
@@ -1680,8 +1672,9 @@ function detectResponseStyleCaptureDecision(
       confidence: "high",
       detectionSource: "deterministic",
       evidence: ["deterministic_pattern_match"],
+      responseStyleFamily: "supported_template",
       match: exactMatch,
-      confirmationMode: "direct",
+      reviewMode: "direct",
     };
   }
 
@@ -1707,8 +1700,12 @@ function detectResponseStyleCaptureDecision(
       confidence: "high",
       detectionSource: "semantic",
       evidence: semanticDecision.evidence,
+      responseStyleFamily: semanticDecision.match.family,
       match,
-      confirmationMode: "direct",
+      reviewMode:
+        semanticDecision.match.family === "generalized_guidance"
+          ? "hold_for_more_evidence"
+          : "direct",
     };
   }
   return {
@@ -1716,8 +1713,12 @@ function detectResponseStyleCaptureDecision(
     confidence: "medium",
     detectionSource: "semantic",
     evidence: semanticDecision.evidence,
+    responseStyleFamily: semanticDecision.match.family,
     match,
-    confirmationMode: "pending_confirmation",
+    reviewMode:
+      semanticDecision.match.family === "generalized_guidance"
+        ? "hold_for_more_evidence"
+        : "pending_confirmation",
   };
 }
 
@@ -2116,19 +2117,22 @@ function buildWorkflowImprovementSemanticMetadata(params: {
 function buildPendingConfirmationMetadata(params: {
   confidence: ResponseStyleSemanticConfidence;
   evidence: string[];
+  responseStyleFamily: ResponseStyleFamily;
+  state?: "pending_confirmation" | "hold_for_more_evidence";
   observedAt?: string;
 }): Record<string, unknown> {
   const observedAt = params.observedAt ?? new Date().toISOString();
   return {
     candidateLifecycle: {
       family: "response_style",
-      state: "pending_confirmation",
+      state: params.state ?? "pending_confirmation",
       confidence: params.confidence,
       evidenceCount: 1,
       observedAt,
       expiresAt: new Date(
         Date.parse(observedAt) + RESPONSE_STYLE_CONFIRMATION_WINDOW_MS,
       ).toISOString(),
+      responseStyleFamily: params.responseStyleFamily,
       evidence: params.evidence,
     },
   };
@@ -2274,6 +2278,7 @@ function buildSubscriberCaptureMetadata(params: {
       normalizedSubject: match.normalizedSubject,
       value: match.value,
       normalizedValue: match.normalizedValue,
+      ...(match.responseStyleFamily ? { responseStyleFamily: match.responseStyleFamily } : {}),
       ...(match.projectScope ? { projectScope: match.projectScope } : {}),
       ...(match.normalizedProjectScope
         ? { normalizedProjectScope: match.normalizedProjectScope }
@@ -2710,10 +2715,16 @@ function buildResponseStyleAutoPromotionMetadata(params: {
       captureProfile: params.match.profile,
       captureClass: params.match.captureClass,
       reasonCode: params.match.reasonCode,
+      template: params.match.template,
       key: params.match.key,
       subjectKey: params.match.subjectKey,
       subject: params.match.subject,
+      normalizedSubject: params.match.normalizedSubject,
       value: params.match.value,
+      normalizedValue: params.match.normalizedValue,
+      ...(params.match.responseStyleFamily
+        ? { responseStyleFamily: params.match.responseStyleFamily }
+        : {}),
       ...(params.match.projectScope ? { projectScope: params.match.projectScope } : {}),
       agentExternalKey: params.agentExternalKey,
       sessionKey: params.sessionKey,
@@ -3366,10 +3377,12 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
       extraMetadata: {
         ...(semanticMetadata ?? {}),
-        ...(decisionParams.decision.confirmationMode === "pending_confirmation"
+        ...(decisionParams.decision.reviewMode !== "direct"
           ? buildPendingConfirmationMetadata({
               confidence: decisionParams.decision.confidence,
               evidence: decisionParams.decision.evidence,
+              responseStyleFamily: decisionParams.decision.responseStyleFamily,
+              state: decisionParams.decision.reviewMode,
               ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
             })
           : {}),
@@ -3454,7 +3467,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       autoPromotion.profile === "explicit-user-preference-v1" &&
       autoPromotionAgents.has(decisionParams.agentExternalKey) &&
       result.memoryObjectId &&
-      decisionParams.decision.confirmationMode === "direct" &&
+      decisionParams.decision.reviewMode === "direct" &&
       (isResponseStyleLearningMatch(match) || isResponseStyleCorrectionMatch(match));
 
     if (shouldDirectPromote && result.memoryObjectId) {
@@ -3488,7 +3501,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         captureClass: match.captureClass,
         candidateKind: match.candidateKind,
         confidence: decisionParams.decision.confidence,
-        confirmationMode: decisionParams.decision.confirmationMode,
+        confirmationMode: decisionParams.decision.reviewMode,
         eventId: result.eventId,
         memoryObjectId: result.memoryObjectId,
       }),

@@ -63,8 +63,8 @@ Current sequencing note:
 - the program is no longer primarily advancing by enumerating one lesson key
   at a time
 - the next implementation slice should be:
-  - response-style genericization and retrieval parity after the recurring-
-    procedure parity tranche
+  - cross-family retrieval/application parity closeout after the
+    response-style parity tranche
 - the next follow-up slices after that should be:
   - reduced-profile self-improving capture integration after the already
     landed families are closer to parity

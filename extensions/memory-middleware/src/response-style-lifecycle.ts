@@ -173,7 +173,9 @@ export async function inspectResponseStyleLifecycle(params: {
       (row) =>
         row.resolved_key === params.key &&
         row.review_state === "candidate" &&
-        extractCandidateConfirmationState(row.metadata ?? undefined) === "pending_confirmation",
+        (extractCandidateConfirmationState(row.metadata ?? undefined) === "pending_confirmation" ||
+          extractCandidateConfirmationState(row.metadata ?? undefined) ===
+            "hold_for_more_evidence"),
     );
 
     return {

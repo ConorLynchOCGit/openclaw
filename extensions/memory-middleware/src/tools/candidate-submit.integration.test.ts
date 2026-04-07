@@ -2736,6 +2736,207 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
+  it("holds and later auto-promotes bounded generic response-style guidance without manual review", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-rs-generic-1", {
+      kind: "learning",
+      content: "For future replies, start with the direct answer first.",
+      projectId: seeded.projectId,
+    });
+    const candidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const initialRow = await querySingleRow<{
+      review_state: string;
+      template: string | null;
+      response_style_family: string | null;
+      subject: string | null;
+      value: string | null;
+      lifecycle_state: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'template' as template,
+          metadata->'candidateMetadata'->'autoCapture'->>'responseStyleFamily' as response_style_family,
+          metadata->'candidateMetadata'->'autoCapture'->>'subject' as subject,
+          metadata->'candidateMetadata'->'autoCapture'->>'value' as value,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [candidateId],
+    );
+
+    expect(initialRow).toEqual({
+      review_state: "candidate",
+      template: "response_style_generalized_guidance",
+      response_style_family: "generalized_guidance",
+      subject: "response opening",
+      value: "start with the direct answer first",
+      lifecycle_state: "hold_for_more_evidence",
+    });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-rs-generic-2", {
+      kind: "learning",
+      content: "Please remember to start with the direct answer first.",
+      projectId: seeded.projectId,
+    });
+
+    expect(confirmingSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "learning",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+
+    const promotedMemoryObjectId = (confirmingSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    const confirmedRow = await querySingleRow<{
+      candidate_review_state: string;
+      review_state: string;
+      promotion_profile: string | null;
+      response_style_family: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select review_state::text from memory_middleware.memory_objects where id = $1::uuid) as candidate_review_state,
+          (select review_state::text from memory_middleware.memory_objects where id = $2::uuid) as review_state,
+          (select metadata->'promotionMetadata'->'autoPromotion'->>'profile' from memory_middleware.memory_objects where id = $2::uuid) as promotion_profile,
+          (select metadata->'candidateMetadata'->'autoCapture'->>'responseStyleFamily' from memory_middleware.memory_objects where id = $2::uuid) as response_style_family
+      `,
+      [candidateId, promotedMemoryObjectId],
+    );
+
+    expect(confirmedRow).toEqual({
+      candidate_review_state: "candidate",
+      review_state: "approved",
+      promotion_profile: "response_style_confirmation_v1",
+      response_style_family: "generalized_guidance",
+    });
+  });
+
+  it("supersedes older approved generic response-style guidance when a corrected promotion targets the same bounded subject", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const firstSubmit = await submitTool.execute("call-rs-generic-3", {
+      kind: "learning",
+      content: "User requirement: start with the direct answer first.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "user_requirement",
+        source: "explicit_user_requirement",
+        autoCapture: {
+          captureClass: "explicit_requirement",
+          template: "response_style_generalized_guidance",
+          responseStyleFamily: "generalized_guidance",
+          subjectKey: "rs-opening",
+          key: "rs-opening-answer-first",
+          subject: "response opening",
+          value: "start with the direct answer first",
+        },
+      },
+    });
+    const firstCandidateId = (firstSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    await runtime.candidateReview.review({
+      candidateId: firstCandidateId,
+      outcome: "accepted",
+      rationale: "Accept initial generic response-style guidance.",
+    });
+    const firstPromotion = await runtime.candidatePromotion.promoteToMemory({
+      candidateId: firstCandidateId,
+    });
+    expect(firstPromotion.accepted).toBe(true);
+    const firstApprovedId = (firstPromotion as { accepted: true; promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const correctionSubmit = await submitTool.execute("call-rs-generic-4", {
+      kind: "correction",
+      content: "Actually, include a brief summary first.",
+      projectId: seeded.projectId,
+    });
+    expect(correctionSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "correction",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const correctedApprovedId = (correctionSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const supersession = await querySingleRow<{
+      original_review_state: string;
+      original_superseded_by: string | null;
+      corrected_review_state: string;
+      supersedes_link_count: string;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select review_state::text from memory_middleware.memory_objects where id = $1::uuid) as original_review_state,
+          (select metadata->>'supersededByObjectId' from memory_middleware.memory_objects where id = $1::uuid) as original_superseded_by,
+          (select review_state::text from memory_middleware.memory_objects where id = $2::uuid) as corrected_review_state,
+          (
+            select count(*)::text
+            from memory_middleware.memory_links
+            where source_memory_object_id = $1::uuid
+              and target_memory_object_id = $2::uuid
+              and link_kind = 'supersedes'
+          ) as supersedes_link_count
+      `,
+      [firstApprovedId, correctedApprovedId],
+    );
+
+    expect(supersession).toEqual({
+      original_review_state: "superseded",
+      original_superseded_by: correctedApprovedId,
+      corrected_review_state: "approved",
+      supersedes_link_count: "1",
+    });
+  });
+
   it("promotes a medium-confidence project fact candidate after later confirming evidence without manual review", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
@@ -4965,6 +5166,127 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
     }
     expect([plainEnglishApprovedId, numberedStepsApprovedId]).toContain(records[0]?.id);
+  });
+
+  it("boosts the most relevant approved generic response-style guidance in hybrid retrieval when overlapping memories exist", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+
+    const openingSubmit = await submitTool.execute("call-rs-generic-5", {
+      kind: "learning",
+      content: "User requirement: start with the direct answer first.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "user_requirement",
+        source: "explicit_user_requirement",
+        autoCapture: {
+          captureClass: "explicit_requirement",
+          template: "response_style_generalized_guidance",
+          responseStyleFamily: "generalized_guidance",
+          subjectKey: "rs-opening",
+          key: "rs-opening-answer-first",
+          subject: "response opening",
+          normalizedSubject: "response opening",
+          value: "start with the direct answer first",
+          normalizedValue: "start with the direct answer first",
+        },
+      },
+    });
+    const openingCandidateId = (openingSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    await reviewTool.execute("call-rs-generic-6", {
+      candidateId: openingCandidateId,
+      outcome: "accepted",
+      rationale: "Accept generic opening guidance for overlap ranking proof.",
+    });
+    const openingPromotion = await promoteTool.execute("call-rs-generic-7", {
+      candidateId: openingCandidateId,
+    });
+    const openingApprovedId = (openingPromotion.details as { promotedMemoryObjectId: string })
+      .promotedMemoryObjectId;
+
+    const structureSubmit = await submitTool.execute("call-rs-generic-8", {
+      kind: "learning",
+      content: "User requirement: use short section headers in longer replies.",
+      projectId: seeded.projectId,
+      metadata: {
+        category: "user_requirement",
+        source: "explicit_user_requirement",
+        autoCapture: {
+          captureClass: "explicit_requirement",
+          template: "response_style_generalized_guidance",
+          responseStyleFamily: "generalized_guidance",
+          subjectKey: "rs-structure",
+          key: "rs-structure-short-headers",
+          subject: "response structure",
+          normalizedSubject: "response structure",
+          value: "use short section headers in longer replies",
+          normalizedValue: "use short section headers in longer replies",
+        },
+      },
+    });
+    const structureCandidateId = (structureSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await reviewTool.execute("call-rs-generic-9", {
+      candidateId: structureCandidateId,
+      outcome: "accepted",
+      rationale: "Accept generic structure guidance for overlap ranking proof.",
+    });
+    await promoteTool.execute("call-rs-generic-10", {
+      candidateId: structureCandidateId,
+    });
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "response opening start with the direct answer first",
+      scope: "approved_only",
+      kind: "feedback",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      query: "response opening start with the direct answer first",
+    });
+    const records = (
+      hybridSearch as {
+        accepted: true;
+        status: "ok";
+        scope: "approved_only";
+        query: string;
+        records: Array<{
+          id: string;
+          score: number;
+          matchedFields: string[];
+        }>;
+      }
+    ).records;
+    expect(records.length).toBeGreaterThanOrEqual(1);
+    expect(records[0]?.id).toBe(openingApprovedId);
+    expect(records[0]?.matchedFields).toEqual(
+      expect.arrayContaining(["response_style_subject_match", "response_style_value_match"]),
+    );
   });
 
   it("boosts the most relevant approved project fact field in hybrid retrieval when overlapping project memories exist", async () => {

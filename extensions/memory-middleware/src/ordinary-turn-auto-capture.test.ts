@@ -1172,6 +1172,141 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(promoteToMemory).toHaveBeenCalledTimes(1);
   });
 
+  it("routes bounded generic response-style guidance through held-cluster submission without direct auto-promotion", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-requirement-generic-1",
+      memoryObjectId: "memory-requirement-generic-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectResponseStyleLifecycle: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "For future replies, start with the direct answer first.",
+        timestamp: Date.parse("2026-04-07T18:00:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "User requirement: start with the direct answer first.",
+        metadata: expect.objectContaining({
+          category: "user_requirement",
+          source: "explicit_user_requirement",
+          autoCapture: expect.objectContaining({
+            template: "response_style_generalized_guidance",
+            responseStyleFamily: "generalized_guidance",
+            subject: "response opening",
+            normalizedSubject: "response opening",
+            normalizedValue: "start with the direct answer first",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "response_style",
+            state: "hold_for_more_evidence",
+            responseStyleFamily: "generalized_guidance",
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("auto-promotes a held generic response-style cluster after later compatible evidence arrives", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-requirement-generic-1",
+      memoryObjectId: "memory-requirement-generic-1",
+    }));
+    const inspectResponseStyleLifecycle = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        pendingCandidate: {
+          id: "memory-requirement-generic-1",
+          sourceEventId: "event-requirement-generic-1",
+          createdAt: "2026-04-07T17:00:00.000Z",
+          updatedAt: "2026-04-07T17:00:00.000Z",
+          confirmationState: "hold_for_more_evidence",
+        },
+        activeApprovedSubjectObjectIds: [],
+        pendingSubjectCandidateIds: ["memory-requirement-generic-1"],
+      });
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      reviewId: "review-requirement-generic-1",
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      promotedMemoryObjectId: "memory-approved-requirement-generic-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectResponseStyleLifecycle,
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "For future replies, start with the direct answer first.",
+        timestamp: Date.parse("2026-04-07T18:00:00Z"),
+      },
+    });
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "Please remember to start with the direct answer first.",
+        timestamp: Date.parse("2026-04-07T18:00:07Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(1);
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(promoteToMemory).toHaveBeenCalledTimes(1);
+  });
+
   it("routes bounded named project facts through learning submission without auto-promotion", async () => {
     const submitLearning = vi.fn(async () => ({
       accepted: true as const,
