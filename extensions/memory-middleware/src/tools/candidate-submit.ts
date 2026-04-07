@@ -55,6 +55,7 @@ import {
   storeApprovedEnvironmentConstraintSemanticEmbedding,
   storeApprovedWorkflowToolGotchaSemanticEmbedding,
 } from "../semantic-retrieval-routing.js";
+import { detectUnmetNeedSemanticDecision } from "../unmet-need-semantic.js";
 import {
   inspectWorkflowImprovementLifecycle,
   isExpiredPendingWorkflowImprovementCandidate,
@@ -68,6 +69,7 @@ import {
   type WorkflowImprovementLessonFamily,
   isSupportedWorkflowImprovementLessonKey,
   type WorkflowImprovementLessonKey,
+  type WorkflowImprovementNeedCategory,
   type WorkflowImprovementReasonCode,
   type WorkflowImprovementSemanticConfidence,
   type WorkflowImprovementTemplate,
@@ -635,6 +637,18 @@ function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { guidancePattern?: unknown }).guidancePattern
           : undefined,
+      needCategory:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { needCategory?: unknown }).needCategory
+          : undefined,
+      neededCapability:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { neededCapability?: unknown }).neededCapability
+          : undefined,
+      normalizedNeededCapability:
+        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+          ? (autoCapture as { normalizedNeededCapability?: unknown }).normalizedNeededCapability
+          : undefined,
       recommendedAction:
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { recommendedAction?: unknown }).recommendedAction
@@ -659,7 +673,12 @@ function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
         autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
           ? (autoCapture as { normalizedRationale?: unknown }).normalizedRationale
           : undefined,
-      guidanceMode: "guidance_only",
+      ...(autoCapture &&
+      typeof autoCapture === "object" &&
+      !Array.isArray(autoCapture) &&
+      (autoCapture as { lessonFamily?: unknown }).lessonFamily === "generalized_unmet_need"
+        ? { recommendationMode: "recommendation_only" }
+        : { guidanceMode: "guidance_only" }),
       toolName: "memory_candidate_submit",
     },
     ...(semanticDetection &&
@@ -1094,6 +1113,18 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     "autoCapture",
     "normalizedRationale",
   ]);
+  const needCategory = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "needCategory",
+  ]);
+  const neededCapability = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "neededCapability",
+  ]);
+  const normalizedNeededCapability = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "normalizedNeededCapability",
+  ]);
   const observedText =
     readNestedMetadataString(params.input.metadata, ["workflowPhraseInduction", "observedText"]) ??
     params.input.content;
@@ -1103,13 +1134,18 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     template === "workflow_api_workaround";
   const isGenericTemplate = template === "workflow_generalized_guidance";
   const isProjectRuleTemplate = template === "project_rule_guidance";
-  const isGenericLesson =
+  const isUnmetNeedTemplate = template === "unmet_need_recommendation";
+  const isAutoReviewedFamily =
     (isGenericTemplate && lessonFamily === "generalized_workflow_lesson") ||
-    (isProjectRuleTemplate && lessonFamily === "generalized_project_rule");
+    (isProjectRuleTemplate && lessonFamily === "generalized_project_rule") ||
+    (isUnmetNeedTemplate && lessonFamily === "generalized_unmet_need");
   const supportsPhraseInduction =
     isGenericTemplate && lessonFamily === "generalized_workflow_lesson";
   if (
-    (!isSupportedTemplate && !isGenericTemplate && !isProjectRuleTemplate) ||
+    (!isSupportedTemplate &&
+      !isGenericTemplate &&
+      !isProjectRuleTemplate &&
+      !isUnmetNeedTemplate) ||
     !key ||
     !subjectKey ||
     (isSupportedTemplate && (!lessonKey || !isSupportedWorkflowImprovementLessonKey(lessonKey))) ||
@@ -1118,7 +1154,12 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     return null;
   }
   const canonicalMatchForPhraseInduction: WorkflowImprovementCanonicalMatch | null =
-    isGenericLesson && subject && value && normalizedSubject && normalizedValue
+    isAutoReviewedFamily &&
+    lessonFamily === "generalized_workflow_lesson" &&
+    subject &&
+    value &&
+    normalizedSubject &&
+    normalizedValue
       ? {
           captureClass: "workflow_generalized_guidance" as const,
           candidateKind: "improvement" as const,
@@ -1135,6 +1176,11 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
           content: value,
           subjectKey,
           key,
+          ...(needCategory
+            ? { needCategory: needCategory as WorkflowImprovementNeedCategory }
+            : {}),
+          ...(neededCapability ? { neededCapability } : {}),
+          ...(normalizedNeededCapability ? { normalizedNeededCapability } : {}),
           ...(recommendedAction ? { recommendedAction } : {}),
           ...(normalizedRecommendedAction ? { normalizedRecommendedAction } : {}),
           ...(avoidAction ? { avoidAction } : {}),
@@ -1161,12 +1207,20 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     await params.runtime.candidateReview.review({
       candidateId: inspection.pendingCandidate.id,
       outcome: "rejected",
-      rationale: isGenericLesson
-        ? "generalized workflow lesson cluster expired without enough compatible evidence"
+      rationale: isAutoReviewedFamily
+        ? lessonFamily === "generalized_project_rule"
+          ? "project-rule cluster expired without enough compatible evidence"
+          : lessonFamily === "generalized_unmet_need"
+            ? "unmet-need cluster expired without enough compatible evidence"
+            : "generalized workflow lesson cluster expired without enough compatible evidence"
         : "workflow-improvement candidate confirmation window expired without later confirming evidence",
       metadata: {
-        source: isGenericLesson
-          ? "candidate_submit_workflow_improvement_generic_auto_review"
+        source: isAutoReviewedFamily
+          ? lessonFamily === "generalized_project_rule"
+            ? "candidate_submit_project_rule_auto_review"
+            : lessonFamily === "generalized_unmet_need"
+              ? "candidate_submit_unmet_need_auto_review"
+              : "candidate_submit_workflow_improvement_generic_auto_review"
           : "candidate_submit_workflow_improvement_confirmation",
         candidateLifecycle: {
           family: "workflow_improvement",
@@ -1180,12 +1234,12 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     });
   }
 
-  const conflictingApprovedGeneralizedEntries = isGenericLesson
+  const conflictingApprovedGeneralizedEntries = isAutoReviewedFamily
     ? inspection.activeApprovedSubjectEntries.filter(
         (entry) => entry.lessonFamily === lessonFamily && entry.key && entry.key !== key,
       )
     : [];
-  const conflictingPendingGeneralizedEntries = isGenericLesson
+  const conflictingPendingGeneralizedEntries = isAutoReviewedFamily
     ? inspection.pendingSubjectCandidates.filter(
         (entry) =>
           entry.lessonFamily === lessonFamily &&
@@ -1195,7 +1249,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
       )
     : [];
 
-  if (isGenericLesson && conflictingPendingGeneralizedEntries.length > 0) {
+  if (isAutoReviewedFamily && conflictingPendingGeneralizedEntries.length > 0) {
     for (const pendingEntry of conflictingPendingGeneralizedEntries) {
       if (!isExpiredPendingWorkflowImprovementCandidate(pendingEntry)) {
         continue;
@@ -1206,12 +1260,16 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         rationale:
           lessonFamily === "generalized_project_rule"
             ? "older project-rule cluster expired without enough compatible evidence"
-            : "older generalized workflow lesson cluster expired without enough compatible evidence",
+            : lessonFamily === "generalized_unmet_need"
+              ? "older unmet-need cluster expired without enough compatible evidence"
+              : "older generalized workflow lesson cluster expired without enough compatible evidence",
         metadata: {
           source:
             lessonFamily === "generalized_project_rule"
               ? "candidate_submit_project_rule_auto_review"
-              : "candidate_submit_workflow_improvement_generic_auto_review",
+              : lessonFamily === "generalized_unmet_need"
+                ? "candidate_submit_unmet_need_auto_review"
+                : "candidate_submit_workflow_improvement_generic_auto_review",
           candidateLifecycle: {
             family: "workflow_improvement",
             state: "rejected",
@@ -1252,7 +1310,9 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
       reason:
         lessonFamily === "generalized_project_rule"
           ? `approved project rule already exists for key ${key}`
-          : `approved workflow-improvement memory already exists for key ${key}`,
+          : lessonFamily === "generalized_unmet_need"
+            ? `approved unmet-need recommendation already exists for key ${key}`
+            : `approved workflow-improvement memory already exists for key ${key}`,
     };
   }
 
@@ -1265,10 +1325,12 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         accepted: false,
         status: "failed",
         kind: params.input.kind,
-        reason: isGenericLesson
+        reason: isAutoReviewedFamily
           ? lessonFamily === "generalized_project_rule"
             ? `project-rule cluster ${inspection.pendingCandidate.id} is still gathering evidence`
-            : `generalized workflow lesson cluster ${inspection.pendingCandidate.id} is still gathering evidence`
+            : lessonFamily === "generalized_unmet_need"
+              ? `unmet-need cluster ${inspection.pendingCandidate.id} is still gathering evidence`
+              : `generalized workflow lesson cluster ${inspection.pendingCandidate.id} is still gathering evidence`
           : `workflow-improvement confirmation candidate ${inspection.pendingCandidate.id} already exists`,
       };
     }
@@ -1279,17 +1341,19 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         accepted: false,
         status: "failed",
         kind: params.input.kind,
-        reason: isGenericLesson
+        reason: isAutoReviewedFamily
           ? lessonFamily === "generalized_project_rule"
             ? `project-rule cluster ${inspection.pendingCandidate.id} is waiting for later evidence`
-            : `generalized workflow lesson cluster ${inspection.pendingCandidate.id} is waiting for later evidence`
+            : lessonFamily === "generalized_unmet_need"
+              ? `unmet-need cluster ${inspection.pendingCandidate.id} is waiting for later evidence`
+              : `generalized workflow lesson cluster ${inspection.pendingCandidate.id} is waiting for later evidence`
           : `workflow-improvement confirmation candidate ${inspection.pendingCandidate.id} is waiting for later evidence`,
       };
     }
     const contradictoryPendingCandidateIds = conflictingPendingGeneralizedEntries
       .filter((entry) => !isExpiredPendingWorkflowImprovementCandidate(entry))
       .map((entry) => entry.id);
-    if (isGenericLesson) {
+    if (isAutoReviewedFamily) {
       for (const candidateId of contradictoryPendingCandidateIds) {
         await params.runtime.candidateReview.review({
           candidateId,
@@ -1297,12 +1361,16 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
           rationale:
             lessonFamily === "generalized_project_rule"
               ? "older project-rule cluster was replaced by stronger newer conflicting evidence for the same scoped subject"
-              : "older generalized workflow lesson cluster was replaced by stronger newer conflicting evidence for the same scoped subject",
+              : lessonFamily === "generalized_unmet_need"
+                ? "older unmet-need cluster was replaced by stronger newer conflicting evidence for the same scoped subject"
+                : "older generalized workflow lesson cluster was replaced by stronger newer conflicting evidence for the same scoped subject",
           metadata: {
             source:
               lessonFamily === "generalized_project_rule"
                 ? "candidate_submit_project_rule_auto_review"
-                : "candidate_submit_workflow_improvement_generic_auto_review",
+                : lessonFamily === "generalized_unmet_need"
+                  ? "candidate_submit_unmet_need_auto_review"
+                  : "candidate_submit_workflow_improvement_generic_auto_review",
             candidateLifecycle: {
               family: "workflow_improvement",
               state: "rejected",
@@ -1313,18 +1381,20 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         });
       }
     }
-    const supersedeTargetIds = isGenericLesson
+    const supersedeTargetIds = isAutoReviewedFamily
       ? conflictingApprovedGeneralizedEntries.map((entry) => entry.id)
       : [];
     const promotionMetadata = buildToolWorkflowImprovementAutoPromotionMetadata({
       input: params.input,
-      autoPromotionProfile: isGenericLesson
+      autoPromotionProfile: isAutoReviewedFamily
         ? lessonFamily === "generalized_project_rule"
           ? "project_rule_auto_review_v1"
-          : "workflow_generalized_auto_review_v1"
+          : lessonFamily === "generalized_unmet_need"
+            ? "unmet_need_auto_review_v1"
+            : "workflow_generalized_auto_review_v1"
         : "workflow_improvement_confirmation_v1",
       confirmationState: "confirmed",
-      ...(isGenericLesson
+      ...(isAutoReviewedFamily
         ? {
             autoReview: {
               outcome: supersedeTargetIds.length > 0 ? "supersede_existing" : "approve",
@@ -1399,7 +1469,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
       });
     }
     if (
-      isGenericLesson &&
+      isAutoReviewedFamily &&
       promotionResult.promotedMemoryObjectId &&
       supersedeTargetIds.length > 0
     ) {
@@ -1728,7 +1798,9 @@ function buildWorkflowImprovementSemanticMetadata(params: {
           ? "workflow_phrase_induction_v1"
           : params.lessonFamily === "generalized_project_rule"
             ? "project_rule_semantic_v1"
-            : "workflow_improvement_semantic_v2",
+            : params.lessonFamily === "generalized_unmet_need"
+              ? "unmet_need_semantic_v1"
+              : "workflow_improvement_semantic_v2",
       detectionSource: params.detectionSource,
       confidence: params.confidence,
       lessonFamily: params.lessonFamily,
@@ -1939,6 +2011,7 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
   lessonKey?: WorkflowImprovementLessonKey;
   toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
+  needCategory?: WorkflowImprovementNeedCategory;
   subject: string;
   value: string;
   normalizedSubject: string;
@@ -1946,6 +2019,8 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
   content: string;
   subjectKey: string;
   key: string;
+  neededCapability?: string;
+  normalizedNeededCapability?: string;
   recommendedAction?: string;
   normalizedRecommendedAction?: string;
   avoidAction?: string;
@@ -1974,6 +2049,11 @@ function toOrdinaryTurnWorkflowImprovementMatch(match: {
     ...(match.lessonKey ? { lessonKey: match.lessonKey } : {}),
     ...(match.toolKey ? { toolKey: match.toolKey } : {}),
     ...(match.guidancePattern ? { guidancePattern: match.guidancePattern } : {}),
+    ...(match.needCategory ? { needCategory: match.needCategory } : {}),
+    ...(match.neededCapability ? { neededCapability: match.neededCapability } : {}),
+    ...(match.normalizedNeededCapability
+      ? { normalizedNeededCapability: match.normalizedNeededCapability }
+      : {}),
     ...(match.recommendedAction ? { recommendedAction: match.recommendedAction } : {}),
     ...(match.normalizedRecommendedAction
       ? { normalizedRecommendedAction: match.normalizedRecommendedAction }
@@ -2546,6 +2626,19 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
       observedText: input.content,
     };
   }
+  const unmetNeedFromContent = detectUnmetNeedSemanticDecision(input.content);
+  if (unmetNeedFromContent.action === "capture") {
+    return {
+      parsed: toOrdinaryTurnWorkflowImprovementMatch(unmetNeedFromContent.match),
+      lessonFamily: unmetNeedFromContent.match.lessonFamily,
+      reviewMode: "hold_for_more_evidence",
+      source: "content",
+      detectionSource: "semantic",
+      confidence: unmetNeedFromContent.confidence,
+      evidence: unmetNeedFromContent.evidence,
+      observedText: input.content,
+    };
+  }
   const contentDecision = detectWorkflowImprovementSemanticDecision(input.content);
   if (contentDecision.action === "capture") {
     return {
@@ -2611,6 +2704,19 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
         detectionSource: "semantic",
         confidence: projectRuleFromRaw.confidence,
         evidence: projectRuleFromRaw.evidence,
+        observedText: rawCandidate,
+      };
+    }
+    const unmetNeedFromRaw = detectUnmetNeedSemanticDecision(rawCandidate);
+    if (unmetNeedFromRaw.action === "capture") {
+      return {
+        parsed: toOrdinaryTurnWorkflowImprovementMatch(unmetNeedFromRaw.match),
+        lessonFamily: unmetNeedFromRaw.match.lessonFamily,
+        reviewMode: "hold_for_more_evidence",
+        source: "raw",
+        detectionSource: "semantic",
+        confidence: unmetNeedFromRaw.confidence,
+        evidence: unmetNeedFromRaw.evidence,
         observedText: rawCandidate,
       };
     }
@@ -2967,11 +3073,15 @@ async function normalizeManagedToolCandidateInput(params: {
         category:
           workflowImprovementResolution.lessonFamily === "generalized_project_rule"
             ? "project_rule"
-            : "workflow_improvement",
+            : workflowImprovementResolution.lessonFamily === "generalized_unmet_need"
+              ? "unmet_need"
+              : "workflow_improvement",
         source:
           workflowImprovementResolution.lessonFamily === "generalized_project_rule"
             ? "explicit_project_rule"
-            : "explicit_workflow_improvement",
+            : workflowImprovementResolution.lessonFamily === "generalized_unmet_need"
+              ? "explicit_unmet_need"
+              : "explicit_workflow_improvement",
         subject_key: workflowImprovementResolution.parsed.subjectKey,
         workflowPhraseInduction: {
           observedText: workflowImprovementResolution.observedText,
@@ -2993,6 +3103,9 @@ async function normalizeManagedToolCandidateInput(params: {
           ...(workflowImprovementResolution.guidancePattern
             ? { guidancePattern: workflowImprovementResolution.guidancePattern }
             : {}),
+          ...(workflowImprovementResolution.parsed.needCategory
+            ? { needCategory: workflowImprovementResolution.parsed.needCategory }
+            : {}),
           key: workflowImprovementResolution.parsed.key,
           subjectKey: workflowImprovementResolution.parsed.subjectKey,
           subject: workflowImprovementResolution.parsed.subject,
@@ -3007,6 +3120,15 @@ async function normalizeManagedToolCandidateInput(params: {
           normalizedSubject: workflowImprovementResolution.parsed.normalizedSubject,
           value: workflowImprovementResolution.parsed.value,
           normalizedValue: workflowImprovementResolution.parsed.normalizedValue,
+          ...(workflowImprovementResolution.parsed.neededCapability
+            ? { neededCapability: workflowImprovementResolution.parsed.neededCapability }
+            : {}),
+          ...(workflowImprovementResolution.parsed.normalizedNeededCapability
+            ? {
+                normalizedNeededCapability:
+                  workflowImprovementResolution.parsed.normalizedNeededCapability,
+              }
+            : {}),
           ...(workflowImprovementResolution.parsed.recommendedAction
             ? { recommendedAction: workflowImprovementResolution.parsed.recommendedAction }
             : {}),
@@ -3030,7 +3152,9 @@ async function normalizeManagedToolCandidateInput(params: {
           ...(workflowImprovementResolution.parsed.normalizedRationale
             ? { normalizedRationale: workflowImprovementResolution.parsed.normalizedRationale }
             : {}),
-          guidanceMode: "guidance_only",
+          ...(workflowImprovementResolution.lessonFamily === "generalized_unmet_need"
+            ? { recommendationMode: "recommendation_only" }
+            : { guidanceMode: "guidance_only" }),
           toolName: "memory_candidate_submit",
         },
         ...buildWorkflowImprovementSemanticMetadata({

@@ -2,44 +2,46 @@
 
 ## Active slice
 
-Unmet-need planning
+Reduced-profile self-improving capture integration
 
 ## Objective
 
-Teach the same generalized supervised-learning pipeline to remember repeated
-missing capabilities or missing workflow support as recommendation-only
-planning artifacts.
+Plug the already-built reduced-profile self-improving capture seam into the now
+landed generalized learning pipeline without creating a second learning system
+or bypassing bounded review.
 
 The previous slice just landed:
 
-- broader project-rule learning on the same generic lesson pipeline
-- a bounded `generalized_project_rule` family for named-project operating
-  guidance
-- held-cluster auto-review and promotion for project rules through the existing
+- unmet-need planning on the same generic lesson pipeline
+- a bounded `generalized_unmet_need` family for named-project missing workflow
+  support
+- held-cluster auto-review and promotion for unmet needs through the existing
   machine-review substrate
-- approved-only hybrid retrieval with project-rule scope, subject, preferred,
-  avoided-action, and guidance-pattern ranking boosts
-- prompt guidance that tells the model to use named-project operating hybrid
-  queries rather than coercing rules into project facts
-- isolated plus production proof that a project rule can be learned and later
-  retrieved without broadening into speculative project state
+- approved-only hybrid retrieval with unmet-need scope, subject, and
+  capability ranking boosts
+- prompt guidance that tells the model to use named-project missing-capability
+  hybrid queries and keep the result recommendation-only
+- isolated plus production proof that a repeated unmet need can be learned and
+  later surfaced without broadening into procurement, install, or approval
+  automation
 
 ## Required work
 
-1. Extend the same generic supervised-learning pipeline into one bounded
-   unmet-need family.
-2. Define a recommendation-only unmet-need artifact shape that stays distinct
-   from workflow guidance and project rules.
-3. Reuse bounded normalization, machine review/promotion, and approved-only
-   retrieval on the same substrate.
-4. Keep unmet-need behavior recommendation-only with no procurement, install,
-   or approval automation.
-5. Prove that a repeated unmet need can be learned, approved, and later
-   surfaced as a bounded recommendation without broadening into autonomy.
+1. Feed reduced-profile self-improving candidate capture into the same
+   generalized lesson candidate substrate instead of leaving it as a parallel
+   disabled note.
+2. Preserve candidate-only posture, provenance, and auditability.
+3. Reuse the same normalization, clustering, and auto-review path already live
+   for workflow guidance, project rules, and unmet needs.
+4. Keep the seam reduced-profile and bounded so it broadens candidate coverage
+   without creating noisy hidden promotion.
+5. Prove that self-improving capture can contribute candidates to the same
+   generic pipeline without bypassing review, retrieval, or guidance-only
+   behavior.
 
 ## Out of scope
 
-- reduced-profile self-improving capture
+- broader autonomous planning or execution
 - generic semantic fallback for generalized lessons, project rules, or unmet
   needs
 - procurement, install, vetting, or approval automation
@@ -48,19 +50,19 @@ The previous slice just landed:
 
 ## Acceptance criteria
 
-- one bounded unmet-need family can be captured without inventing a separate
-  planning pipeline
-- the same generic lifecycle can approve and retrieve those unmet-need
-  artifacts
-- workflow guidance, project rules, and unmet-need artifacts stay distinct and
-  explainable
+- reduced-profile self-improving capture becomes another candidate source
+  instead of a separate adoption path
+- the same generic lifecycle continues to own approval, rejection, and
+  retrieval shaping
+- workflow guidance, project rules, unmet-need artifacts, and self-improving
+  candidates stay distinct and explainable
 - hybrid-first retrieval remains the default path
 - the post-pivot families stay part of the same layered supervised-learning
   system
 
 ## Notes
 
-The post-pivot pipeline now has five landed supervised-learning steps:
+The post-pivot pipeline now has six landed supervised-learning steps:
 
 1. generalized lesson capture
 2. generalized lesson auto-review and promotion
@@ -73,4 +75,4 @@ The post-pivot pipeline now has five landed supervised-learning steps:
 
 The next implementation slice should be:
 
-- unmet-need planning
+- reduced-profile self-improving capture integration

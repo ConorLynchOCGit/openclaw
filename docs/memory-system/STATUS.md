@@ -2055,9 +2055,21 @@ Fast re-entry reading order:
       project-scope, subject, preferred-action, avoided-action, and
       guidance-pattern overlap
     - named project facts and project rules remain distinct and guidance-only
+60. Unmet-need planning is now also landed on the same generalized
+    supervised-learning pipeline:
+    - named-project missing workflow support can now be captured without
+      inventing a separate planning queue
+    - the first compatible evidence enters `hold_for_more_evidence`
+    - later compatible evidence can auto-promote through the existing
+      review and promotion substrate
+    - approved unmet-need artifacts retrieve later through approved-only hybrid
+      using project-scope, subject, and needed-capability overlap
+    - unmet needs remain recommendation-only and do not broaden into
+      procurement, install, or approval automation
 
 ## Next expected action
 
-Implement unmet-need planning on the same generic supervised pipeline, then
-follow with reduced-profile self-improving capture integration only after the
-broader generic families reuse the same candidate and retrieval posture.
+Implement reduced-profile self-improving capture integration on the same
+generic supervised pipeline, then follow with learned-guidance advisory
+planning only after the broader generic families reuse the same candidate and
+retrieval posture.

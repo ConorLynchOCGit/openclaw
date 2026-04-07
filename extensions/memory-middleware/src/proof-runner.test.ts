@@ -160,6 +160,42 @@ describe("parseMemoryProofPlan", () => {
     });
   });
 
+  it("accepts unmet-need transcript capture expectations", () => {
+    const plan = parseMemoryProofPlan({
+      mode: "isolated",
+      label: "unmet need proof",
+      steps: [
+        {
+          id: "capture_unmet_need",
+          kind: "transcript_capture",
+          text: "For project Atlas, we need a release evidence template for rollout audits.",
+          sessionFile: "/tmp/proof.jsonl",
+          sessionKey: "agent:test:proof",
+          agentExternalKey: "chief",
+          attribution: {
+            agentId: "agent-1",
+            sessionId: "session-1",
+            projectId: "project-1",
+          },
+          expectation: {
+            family: "unmet_need",
+            key: "unmet-need-key-1",
+            subjectKey: "unmet-need-subject-key-1",
+            projectId: "project-1",
+          },
+        },
+      ],
+    });
+
+    expect(plan.steps[0]).toMatchObject({
+      kind: "transcript_capture",
+      expectation: {
+        family: "unmet_need",
+        key: "unmet-need-key-1",
+      },
+    });
+  });
+
   it("rejects duplicate step ids", () => {
     expect(() =>
       parseMemoryProofPlan({

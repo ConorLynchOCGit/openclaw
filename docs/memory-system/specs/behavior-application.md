@@ -78,6 +78,9 @@ Live today:
   guidance path
 - approved generalized project rules can surface through the same
   guidance-only path for direct named-project operating asks
+- approved generalized unmet-need artifacts can surface through the same
+  approved-only path as recommendation-only missing-capability reminders for
+  direct named-project asks
 
 Not live today:
 
@@ -143,6 +146,7 @@ Retrieval posture for this layer:
   semantic fallback family
 - approved generalized workflow lessons remain hybrid-first
 - approved generalized project rules remain hybrid-first
+- approved generalized unmet-need artifacts remain hybrid-first
 - broader approved generic lessons should remain hybrid-first until
   `/memory-system/specs/generalized-lesson-retrieval-and-application`
   explicitly proves a broader need
@@ -171,6 +175,14 @@ For approved generalized workflow guidance, the locked v1 posture is:
 - project-scoped
 - omit on weak overlap
 - do not trigger action-taking
+
+For approved generalized unmet-need artifacts, the locked v1 posture is:
+
+- recommendation-only
+- project-scoped
+- surface as "still missing" or "still needed" guidance only when the current
+  ask is explicitly about missing capability or next support
+- do not trigger procurement, install, approval, or autonomous remediation
 
 ## Ambiguity / abstain / clarify rules
 

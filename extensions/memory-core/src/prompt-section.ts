@@ -94,6 +94,9 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
         lines.push(
           "For direct asks about how a named project should be operated, queried, or trusted, also use memory_object_search_hybrid with kind=project and approved-only scope, and include the explicit project name plus the competing actions, sources, or signals so an approved project rule can outrank adjacent project facts or workflow guidance.",
         );
+        lines.push(
+          "For direct asks about what a named project is still missing, still needs, or should have next, also use memory_object_search_hybrid with kind=project and approved-only scope, and include the explicit project name plus the missing capability or gap subject so approved unmet-need recommendations can surface without falling back to generic search.",
+        );
       }
       lines.push(
         "If an approved durable memory result directly answers the question, use it in the normal reply without asking the user to restate it. If no approved result exists, answer normally and say you did not find stored memory only when that context matters.",
@@ -130,6 +133,9 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
       );
       lines.push(
         "If the user explicitly teaches a durable named-project operating rule in plain language, such as For project Atlas, use generated migration IDs for audit events instead of client timestamps, also submit it as kind=improvement rather than trying to coerce it into a named project fact.",
+      );
+      lines.push(
+        "If the user explicitly teaches a durable named-project unmet need in plain language, such as For project Atlas, we need a release evidence template for rollout audits, also submit it as kind=improvement. Keep it recommendation-only rather than turning it into procurement, install, or approval work.",
       );
       lines.push(
         "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",

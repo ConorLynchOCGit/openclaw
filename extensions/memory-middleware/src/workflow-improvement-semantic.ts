@@ -34,27 +34,32 @@ export type WorkflowImprovementCaptureClass =
   | "workflow_environment_constraint"
   | "workflow_api_workaround"
   | "workflow_generalized_guidance"
-  | "project_rule_guidance";
+  | "project_rule_guidance"
+  | "unmet_need_recommendation";
 export type WorkflowImprovementReasonCode =
   | "workflow_tool_gotcha_statement"
   | "workflow_environment_constraint_statement"
   | "workflow_api_workaround_statement"
   | "workflow_generalized_guidance_statement"
-  | "project_rule_guidance_statement";
+  | "project_rule_guidance_statement"
+  | "unmet_need_recommendation_statement";
 export type WorkflowImprovementTemplate =
   | "workflow_tool_gotcha"
   | "workflow_environment_constraint"
   | "workflow_api_workaround"
   | "workflow_generalized_guidance"
-  | "project_rule_guidance";
+  | "project_rule_guidance"
+  | "unmet_need_recommendation";
 export type WorkflowImprovementLessonFamily =
   | "supported_lesson"
   | "generalized_workflow_lesson"
-  | "generalized_project_rule";
+  | "generalized_project_rule"
+  | "generalized_unmet_need";
 export type WorkflowImprovementGuidancePattern =
   | "use_instead_of"
   | "trust_for_scope"
   | "avoid_only";
+export type WorkflowImprovementNeedCategory = "missing_workflow_support";
 
 export type WorkflowImprovementCanonicalMatch = {
   captureClass: WorkflowImprovementCaptureClass;
@@ -72,6 +77,11 @@ export type WorkflowImprovementCanonicalMatch = {
   content: string;
   subjectKey: string;
   key: string;
+  projectScope?: string;
+  normalizedProjectScope?: string;
+  needCategory?: WorkflowImprovementNeedCategory;
+  neededCapability?: string;
+  normalizedNeededCapability?: string;
   recommendedAction?: string;
   normalizedRecommendedAction?: string;
   avoidAction?: string;

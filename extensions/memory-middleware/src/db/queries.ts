@@ -10295,6 +10295,15 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
+  const autoCaptureNormalizedNeededCapabilityExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'normalizedNeededCapability',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedNeededCapability',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedNeededCapability',",
+    "v.metadata->'autoPromotion'->>'normalizedNeededCapability',",
+    "''",
+    ")",
+  ].join(" ");
   const responseStyleHint =
     params.input.kind === "project" || params.input.kind === "procedure"
       ? null
@@ -10369,10 +10378,18 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
               and ${autoCaptureNormalizedProjectScopeExpression} <> ''
               and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
             then 210 else 0 end
+          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
+              and ${autoCaptureNormalizedProjectScopeExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
+            then 205 else 0 end
           + case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
               and ${autoCaptureNormalizedSubjectExpression} <> ''
               and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
             then 165 else 0 end
+          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
+              and ${autoCaptureNormalizedSubjectExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
+            then 160 else 0 end
           + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
               and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
               and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
@@ -10381,6 +10398,10 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
               and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
               and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
             then 95 else 0 end
+          + case when ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
+              and ${autoCaptureNormalizedNeededCapabilityExpression} <> ''
+              and $6::text like '%' || ${autoCaptureNormalizedNeededCapabilityExpression} || '%'
+            then 110 else 0 end
           + case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
               and ${autoCaptureNormalizedAvoidActionExpression} <> ''
               and $6::text like '%' || ${autoCaptureNormalizedAvoidActionExpression} || '%'
@@ -10425,10 +10446,20 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
                 and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
               then 'project_rule_scope_match'
             end,
+            case when ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
+                and ${autoCaptureNormalizedProjectScopeExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedProjectScopeExpression} || '%'
+              then 'unmet_need_scope_match'
+            end,
             case when ${autoCaptureLessonFamilyExpression} = 'generalized_project_rule'
                 and ${autoCaptureNormalizedSubjectExpression} <> ''
                 and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
               then 'project_rule_subject_match'
+            end,
+            case when ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
+                and ${autoCaptureNormalizedSubjectExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
+              then 'unmet_need_subject_match'
             end,
             case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
                 and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
@@ -10439,6 +10470,11 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
                 and ${autoCaptureNormalizedRecommendedActionExpression} <> ''
                 and $6::text like '%' || ${autoCaptureNormalizedRecommendedActionExpression} || '%'
               then 'project_rule_recommended_action_match'
+            end,
+            case when ${autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'
+                and ${autoCaptureNormalizedNeededCapabilityExpression} <> ''
+                and $6::text like '%' || ${autoCaptureNormalizedNeededCapabilityExpression} || '%'
+              then 'unmet_need_capability_match'
             end,
             case when ${autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'
                 and ${autoCaptureNormalizedAvoidActionExpression} <> ''

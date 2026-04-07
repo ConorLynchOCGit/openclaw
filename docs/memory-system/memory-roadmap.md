@@ -335,12 +335,20 @@ Delivery enablement pause:
     `generalized_project_rule` lessons
   - approved project rules now retrieve through approved-only hybrid with
     project-rule ranking boosts and still remain guidance-only
+- unmet-need planning is now also landed:
+  - named-project missing workflow support can now be captured on the same
+    generic pipeline through `generalized_unmet_need`
+  - the same bounded machine review path can auto-promote approved unmet-need
+    recommendations after repeated compatible evidence
+  - approved unmet-need artifacts now retrieve through approved-only hybrid
+    with project-scope, subject, and needed-capability boosts
+  - unmet-need artifacts remain recommendation-only and distinct from workflow
+    guidance, project rules, procurement, install, and approval flows
 - post-pivot execution path:
-  1. unmet-need planning on the same generic lesson pipeline
-  2. reduced-profile self-improving capture integration
-  3. later learned-guidance advisory planning
+  1. reduced-profile self-improving capture integration
+  2. later learned-guidance advisory planning
 - primary spec:
-  - `/memory-system/specs/unmet-need-planning`
+  - `/memory-system/specs/self-improving-capture-integration`
 
 Fast re-entry reading order:
 
@@ -1159,34 +1167,28 @@ Primary spec:
 Represent repeated unmet needs without enabling autonomous procurement or
 installation.
 
-### Scope
+### Landed v1 scope
 
-Recommendation-only artifacts such as:
-
-- missing capability suggestion
-- suggested plugin/tool candidate
-- procurement recommendation
-- approval-needed install suggestion
-
-This phase should reuse the generalized-learning pipeline rather than starting
-from a bespoke manual candidate backlog if the normalized artifact shape can be
-kept bounded and recommendation-only.
+Recommendation-only unmet-need artifacts for named-project missing workflow
+support on the same generalized learning pipeline.
 
 ### Deliverables
 
-- event detection for repeated unmet capability needs
-- candidate-only recommendation artifacts
-- operator-visible planning surface
-- strict separation between:
-  - recommendation
-  - approval
-  - installation
+- event detection for repeated named-project unmet-need statements
+- normalized `generalized_unmet_need` candidate shapes
+- held-cluster auto-review and promotion through the existing workflow
+  improvement lifecycle
+- approved-only hybrid retrieval with unmet-need scope, subject, and
+  capability boosts
+- strict separation between recommendation-only guidance and governance or
+  execution flows
 
 ### Exit criteria
 
 - the system can remember repeated unmet needs
 - no autonomous install/procurement occurs
-- operators can review recommendations as durable planning artifacts
+- approved unmet-need artifacts remain recommendation-only and retrievable
+  through the same generic path
 
 Primary spec:
 

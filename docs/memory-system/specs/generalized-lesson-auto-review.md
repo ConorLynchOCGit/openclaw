@@ -43,8 +43,7 @@ Live today:
 
 Not live today:
 
-- phrase induction for approved generic lessons
-- broader project-rule learning on the same generic pipeline
+- reduced-profile self-improving capture on the same auto-review path
 - semantic fallback for generic lessons
 
 ## Non-goals
@@ -83,10 +82,18 @@ It must not create a separate parallel promotion system.
 
 ### Input candidate class
 
-The first auto-review slice operates only on candidates that already satisfy:
+The landed auto-review posture now operates on candidates that already satisfy
+one of:
 
 - `lessonFamily = generalized_workflow_lesson`
-- `template = workflow_generalized_guidance`
+  - `template = workflow_generalized_guidance`
+- `lessonFamily = generalized_project_rule`
+  - `template = project_rule_guidance`
+- `lessonFamily = generalized_unmet_need`
+  - `template = unmet_need_recommendation`
+
+All still require:
+
 - project-scoped provenance
 - reviewable normalized lesson shape
 
@@ -95,7 +102,7 @@ The first auto-review slice operates only on candidates that already satisfy:
 Each candidate should be evaluated as a normalized evidence cluster, not as one
 isolated transcript row.
 
-The cluster key is the normalized tuple:
+Workflow-guidance and project-rule clusters use the normalized tuple:
 
 - project scope
 - `lessonFamily`
@@ -107,6 +114,17 @@ The cluster key is the normalized tuple:
 
 `rationale` may help compatibility checks, but it should not create a distinct
 cluster when the main guidance tuple is otherwise identical.
+
+The landed unmet-need family uses the normalized tuple:
+
+- project scope
+- `lessonFamily`
+- `template`
+- normalized `subject`
+- normalized `neededCapability`
+
+This keeps distinct missing capabilities from collapsing into one unresolved
+subject-level queue.
 
 ### Auto-review outcomes
 

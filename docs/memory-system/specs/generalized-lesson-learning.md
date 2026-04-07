@@ -52,10 +52,13 @@ Live now:
   the first bounded `generalized_project_rule` family
 - approved generic project rules also retrieve later through approved-only
   hybrid
+- named-project unmet needs can now use the same generic pipeline through the
+  first bounded `generalized_unmet_need` family
+- approved unmet-need artifacts also retrieve later through approved-only
+  hybrid as recommendation-only results
 
 Not live yet:
 
-- unmet-need planning on the same path
 - self-improving capture into the same path
 - advisory planning from approved learned guidance
 
@@ -124,8 +127,9 @@ In the landed auto-review posture they:
 - stale held clusters reject instead of lingering
 
 The next scaling step is no longer auto-review, phrase induction, retrieval,
-or the first project-rule family. Those are now live. The next step is
-unmet-need planning on the same pipeline.
+the first project-rule family, or the first unmet-need family. Those are now
+live. The next step is reduced-profile self-improving capture integration on
+the same pipeline.
 
 ## Retrieval / application posture
 
@@ -190,9 +194,8 @@ pipeline rather than reverting to keyed expansion.
 The next implementation slices after the currently landed generalized slices
 should be:
 
-1. unmet-need planning
-2. reduced-profile self-improving capture integration
-3. later learned-guidance advisory planning
+1. reduced-profile self-improving capture integration
+2. later learned-guidance advisory planning
 
 ## Risks / failure modes
 

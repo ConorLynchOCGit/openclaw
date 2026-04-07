@@ -532,6 +532,42 @@ describe("memory candidate submit tool", () => {
     });
   });
 
+  it("normalizes unmet needs into held-cluster managed improvement metadata", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    await tool.execute("call-2d-unmet-need", {
+      kind: "improvement",
+      content: "For project Atlas, we need a release evidence template for rollout audits.",
+    });
+
+    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
+      kind: "improvement",
+      content:
+        "Unmet need [Atlas]: for project Atlas, we need a release evidence template for rollout audits.",
+      metadata: expect.objectContaining({
+        category: "unmet_need",
+        source: "explicit_unmet_need",
+        autoCapture: expect.objectContaining({
+          captureClass: "unmet_need_recommendation",
+          template: "unmet_need_recommendation",
+          lessonFamily: "generalized_unmet_need",
+          projectScope: "Atlas",
+          normalizedProjectScope: "atlas",
+          needCategory: "missing_workflow_support",
+          neededCapability: "a release evidence template",
+          normalizedNeededCapability: "a release evidence template",
+          recommendationMode: "recommendation_only",
+        }),
+        candidateLifecycle: expect.objectContaining({
+          family: "workflow_improvement",
+          state: "hold_for_more_evidence",
+          lessonFamily: "generalized_unmet_need",
+        }),
+      }),
+    });
+  });
+
   it("uses an approved phrase pattern as deterministic workflow-improvement evidence", async () => {
     findApprovedWorkflowPhrasePatternMatch.mockResolvedValueOnce({
       approvedObjectId: "approved-pattern-1",

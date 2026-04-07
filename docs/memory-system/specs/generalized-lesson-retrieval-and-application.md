@@ -47,11 +47,19 @@ Live today:
 - the prompt layer now tells the model to use named-project operating queries
   when the user is asking how a specific project should be operated, queried,
   or trusted
+- approved unmet-need artifacts now also retrieve through the same
+  approved-only hybrid path
+- approved unmet-need artifacts now receive explicit hybrid ranking boosts for:
+  - normalized project-scope overlap
+  - normalized subject overlap
+  - normalized needed-capability overlap
+- the prompt layer now tells the model to use named-project missing-capability
+  queries when the user is asking what a project still needs or is still
+  missing
 - no new family-specific semantic router was added
 
 Not live today:
 
-- unmet-need planning retrieval and application
 - semantic fallback for generic lessons
 - proactive or autonomous follow-through
 
@@ -113,6 +121,7 @@ asks such as:
 - "what did we learn about this workflow area"
 - "for project Atlas, what should we use for audit events"
 - "for project Cedar Orbit, which rollout signal should we trust"
+- "for project Atlas, what are we still missing for rollout audits"
 
 ## Retrieval posture
 
@@ -261,9 +270,9 @@ The first implementation slice following this spec must prove:
 
 - keep the first rollout inside generalized workflow lessons
 - keep the first broadening limited to generalized workflow lessons plus the
-  first bounded project-rule family
+  first bounded project-rule and unmet-need families
 - prove hybrid-first retrieval quality before considering semantic broadening
-- do not broaden to unmet-need artifacts in the same retrieval slice
+- do not broaden to generic semantic routing in the same retrieval slice
 
 ## Slice v1 landed behavior
 
@@ -276,6 +285,8 @@ The first landed retrieval/application slice now proves:
 - prompt guidance now asks for scoped competing actions or signals in the
   query so the hybrid scorer has enough structure to work with
 - prompt application remains guidance-only and intentionally trimmed
+- approved unmet-need artifacts now reuse the same hybrid-first path with
+  recommendation-only application
 
 ## Risks / failure modes
 

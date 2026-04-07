@@ -31,10 +31,10 @@ Historical completed order:
 15. reviewed phrase induction for approved generic lessons
 16. generalized lesson retrieval/application expansion
 17. broader project-rule learning on the same generic lesson pipeline
+18. unmet-need planning v1 on the same generic lesson pipeline
 
 Recommended next execution order after the generalized-learning pivot:
 
-18. unmet-need planning v1 on the same generic lesson pipeline
 19. reduced-profile self-improving capture integration
 20. later learned-guidance advisory planning
 21. any broader automation discussion
@@ -50,15 +50,15 @@ Current sequencing note:
 - generalized lesson retrieval/application expansion is now also landed
 - broader project-rule learning on the same generic lesson pipeline is now
   also landed
+- unmet-need planning v1 on the same generic lesson pipeline is now also
+  landed
 - the program is no longer primarily advancing by enumerating one lesson key
   at a time
 - the next implementation slice should be:
-  - unmet-need planning v1 on the same generic lesson pipeline
+  - reduced-profile self-improving capture integration
 - the next follow-up slices after that should be:
-  - reduced-profile self-improving capture only after the broader generic
-    families reuse the same candidate and retrieval posture
-  - later learned-guidance advisory planning after unmet-need retrieval and
-    auto-review are mature enough
+  - later learned-guidance advisory planning after self-improving candidate
+    provenance and generic retrieval posture are mature enough
 
 ## Why this order is recommended
 

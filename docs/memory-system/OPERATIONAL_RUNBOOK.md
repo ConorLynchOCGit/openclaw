@@ -761,6 +761,13 @@ Current approved boundary note:
   - prompt application now stays trimmed to the top directly relevant generic
     guidance hint or two
   - generic semantic fallback for those lessons is still not live
+- the same generalized path now also covers:
+  - named-project operating rules through `generalized_project_rule`
+  - named-project unmet-need recommendations through
+    `generalized_unmet_need`
+- unmet-need artifacts remain recommendation-only and retrieve through the
+  same approved-only hybrid path using project-scope, subject, and
+  needed-capability overlap
 - broader API workaround memory is not live yet
 - repair or forgetting is not live yet for this family
 - candidates should not shape user-visible behavior before approval in this
@@ -774,6 +781,7 @@ For the exact proof ids and production evidence for this slice, use:
 - `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_V2_REPORT.md`
 - `docs/memory-system/PRODUCTION_GENERALIZED_LESSON_LEARNING_V1_REPORT.md`
 - `docs/memory-system/PRODUCTION_GENERALIZED_LESSON_AUTO_REVIEW_V1_REPORT.md`
+- `docs/memory-system/PRODUCTION_GENERALIZED_LEARNING_BATCH_REPORT_V1.md`
 - `docs/memory-system/PRODUCTION_ENVIRONMENT_CONSTRAINT_UX_REPORT.md`
 - `docs/memory-system/PRODUCTION_API_WORKAROUND_UX_REPORT.md`
 

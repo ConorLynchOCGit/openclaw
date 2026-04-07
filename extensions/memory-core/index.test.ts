@@ -81,6 +81,7 @@ describe("buildPromptSection", () => {
     expect(result).toContainEqual(
       expect.stringContaining("direct asks about how a named project should be operated"),
     );
+    expect(result).toContainEqual(expect.stringContaining("what a named project is still missing"));
     expect(result).toContainEqual(expect.stringContaining("directly answers the question"));
     expect(result).toContainEqual(expect.stringContaining("stored checklist exists"));
     expect(result).toContainEqual(expect.stringContaining("suggestion-first as an option"));
@@ -138,6 +139,11 @@ describe("buildPromptSection", () => {
     expect(result).toContainEqual(
       expect.stringContaining(
         "If the user explicitly teaches a durable named-project operating rule in plain language",
+      ),
+    );
+    expect(result).toContainEqual(
+      expect.stringContaining(
+        "If the user explicitly teaches a durable named-project unmet need in plain language",
       ),
     );
     expect(result).toContain(
