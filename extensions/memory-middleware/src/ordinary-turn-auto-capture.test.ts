@@ -1912,6 +1912,7 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
       candidateIngress: createUnusedCandidateIngress(),
       deps: {
         resolveAttribution: vi.fn(async () => ({
+          projectId: "project-uuid-3",
           agentId: "agent-uuid-3",
           sessionId: "session-uuid-3",
         })),
@@ -1951,6 +1952,7 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
 
     expect(submitProcedureSuggestion).toHaveBeenCalledWith(
       expect.objectContaining({
+        projectId: "project-uuid-3",
         agentId: "agent-uuid-3",
         sessionId: "session-uuid-3",
         content: ["1. Open the canary lane", "2. Verify health", "3. Roll forward"].join("\n"),
@@ -1984,6 +1986,86 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
         procedureId: "procedure-1",
       }),
     );
+  });
+
+  it("holds a generalized recurring checklist on first evidence instead of forcing direct promotion", async () => {
+    const submitProcedureSuggestion = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "procedure" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-procedure-generic-1",
+      memoryObjectId: "memory-procedure-generic-1",
+    }));
+    const reviewCandidate = vi.fn();
+    const promoteToProcedureDraft = vi.fn();
+    const validateProcedure = vi.fn();
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        resolveAttribution: vi.fn(async () => ({
+          projectId: "project-uuid-generic-procedure",
+          agentId: "agent-uuid-generic-procedure",
+          sessionId: "session-uuid-generic-procedure",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        submitProcedureSuggestion,
+        submitImprovementNote: vi.fn(),
+        reviewCandidate,
+        promoteToMemory: vi.fn(),
+        promoteToProcedureDraft,
+        validateProcedure,
+        inspectRecurringProcedureLifecycle: vi.fn(async () => ({
+          activeValidatedSubjectProcedureIds: [],
+          pendingSubjectCandidateIds: [],
+        })),
+        supersedeValidatedProceduresBySubjectKey: vi.fn(async () => ({
+          accepted: true as const,
+          status: "already_superseded" as const,
+          supersededProcedureIds: [],
+        })),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/recurring-procedure-generic.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: [
+          "My release evidence handoff checklist:",
+          "1. Capture the signed evidence bundle.",
+          "2. Post the audit handoff note.",
+        ].join("\n"),
+        timestamp: Date.parse("2026-04-07T17:00:00Z"),
+      },
+    });
+
+    expect(submitProcedureSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-uuid-generic-procedure",
+        content: ["1. Capture the signed evidence bundle", "2. Post the audit handoff note"].join(
+          "\n",
+        ),
+        metadata: expect.objectContaining({
+          autoCapture: expect.objectContaining({
+            template: "generalized_recurring_checklist",
+            procedureFamily: "generalized_named_checklist",
+            title: "Release Evidence Handoff Checklist",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            state: "hold_for_more_evidence",
+          }),
+        }),
+      }),
+    );
+    expect(reviewCandidate).not.toHaveBeenCalled();
+    expect(promoteToProcedureDraft).not.toHaveBeenCalled();
+    expect(validateProcedure).not.toHaveBeenCalled();
   });
 
   it("captures a bounded workflow improvement as an improvement candidate and promotes it after later confirming evidence", async () => {

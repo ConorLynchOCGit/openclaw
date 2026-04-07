@@ -45,14 +45,29 @@ Support strongly structured recurring procedures with:
 - applicability hints
 - provenance from source candidate and validation
 
-## Bounded scope for first implementation
+## Bounded scope for the currently landed family
 
-Support recurring checklist-like procedures only, for example:
+Support recurring checklist-like procedures only.
+
+Supported precision fast path:
 
 - deploy checklist
 - release checklist
 - triage checklist
 - investigation checklist
+
+Parity expansion now also landed:
+
+- explicit named generic recurring checklists such as:
+  - evidence relay checklist
+  - evidence archive checklist
+  - release evidence handoff checklist
+
+The landed generic lane is still bounded:
+
+- the checklist must be explicitly named
+- the steps must be structured
+- vague one-off instructions still stay out of scope
 
 ## Exact input / output behavior
 
@@ -73,9 +88,12 @@ Outputs:
 - validated procedure remains the threshold for reliable later application
 - unvalidated procedure candidates must not shape normal user-facing behavior
 
-Candidate resolution mode for the currently live bounded checklist family:
+Candidate resolution modes for the currently live family:
 
-- `candidate_with_confirmation` or `expire_or_reject`
+- supported named checklist fast path:
+  - `candidate_with_confirmation` or `expire_or_reject`
+- bounded generic named recurring checklist path:
+  - `hold_for_more_evidence` then `approve` / `reject` / `supersede`
 
 That means:
 
@@ -83,6 +101,11 @@ That means:
   pending-confirmation candidates
 - later confirming evidence may auto-promote through the existing candidate ->
   draft -> validated procedure path without manual review
+- explicit named generic recurring checklists may land as bounded held
+  clusters on first evidence
+- later compatible evidence may auto-promote the same generic subject through
+  the existing candidate -> draft -> validated procedure path without manual
+  review
 - contradictory evidence should block or supersede promotion
 - if later evidence never strengthens the signal, the candidate should expire
   instead of sitting in background review
@@ -95,6 +118,8 @@ Preserve:
 - review lineage
 - validation run id
 - procedure key/title normalization metadata
+- procedure family metadata for the generic named-checklist lane
+- normalized subject metadata for project-scoped retrieval and later repair
 
 ## Retrieval / application behavior
 
@@ -145,6 +170,17 @@ as long as retrieval stays bounded to the supported checklist family and the
 response remains suggestion-first unless the ask is clearly a direct request
 for the stored checklist.
 
+The parity tranche adds one more bounded retrieval posture:
+
+- direct named generic recurring checklist asks can now retrieve the right
+  validated procedure through approved-only hybrid subject/title boosts inside
+  the same project scope
+
+That means the family now has:
+
+- nearby ask retrieval for the older supported named checklist fast path
+- direct named retrieval for bounded generic named recurring checklists
+
 ## Ambiguity / abstain / clarify rules
 
 - if it is unclear whether the instruction is reusable or one-off, abstain or
@@ -160,6 +196,9 @@ Users should later be able to:
 - replace a stored checklist
 - retire an outdated one
 - correct individual steps
+
+The currently landed parity slice now supports explicit generic correction and
+supersede for bounded named generic recurring checklists on the same subject.
 
 ## Observability / metrics / audit requirements
 
@@ -178,6 +217,10 @@ Track:
   not silently applied
 - prove one clear-ask case where direct-use is correct
 - prove one medium-confidence candidate-confirmation case without manual review
+- prove one generic held-cluster recurring checklist that later auto-promotes
+  without manual review
+- prove one generic recurring-procedure correction that supersedes an older
+  validated procedure on the same subject
 - prove ambiguous one-offs do not overcapture
 
 ## Rollout posture

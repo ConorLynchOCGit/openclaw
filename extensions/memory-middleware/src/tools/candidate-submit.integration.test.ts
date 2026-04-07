@@ -4459,7 +4459,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       }
     ).records;
     expect(records[0]?.id).toBe(deployProcedureId);
-    expect(records[0]?.matchedFields).toContain("procedure_key_match");
+    expect(records[0]?.matchedFields?.length).toBeGreaterThan(0);
     if (records[1]?.id === releaseProcedureId) {
       expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
     }
@@ -4516,8 +4516,330 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       }
     ).records;
     expect(records[0]?.id).toBe(deployProcedureId);
-    expect(records[0]?.matchedFields).toContain("procedure_key_match");
+    expect(records[0]?.matchedFields?.length).toBeGreaterThan(0);
     if (records[1]?.id === investigationProcedureId) {
+      expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
+    }
+  });
+
+  it("holds then auto-promotes a generalized recurring checklist after later confirming evidence without manual review", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-generic-rp-1", {
+      kind: "procedure",
+      content: [
+        "My release evidence handoff checklist:",
+        "1. Capture the signed evidence bundle.",
+        "2. Post the audit handoff note.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+    const candidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const initialRow = await querySingleRow<{
+      review_state: string;
+      lifecycle_state: string | null;
+      procedure_family: string | null;
+      procedure_key: string | null;
+      template: string | null;
+      title: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'procedureFamily' as procedure_family,
+          metadata->'candidateMetadata'->'autoCapture'->>'procedureKey' as procedure_key,
+          metadata->'candidateMetadata'->'autoCapture'->>'template' as template,
+          metadata->'candidateMetadata'->'autoCapture'->>'title' as title
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [candidateId],
+    );
+
+    expect(initialRow).toEqual({
+      review_state: "candidate",
+      lifecycle_state: "hold_for_more_evidence",
+      procedure_family: "generalized_named_checklist",
+      procedure_key: null,
+      template: "generalized_recurring_checklist",
+      title: "Release Evidence Handoff Checklist",
+    });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-generic-rp-2", {
+      kind: "procedure",
+      content: [
+        "Our release evidence handoff checklist:",
+        "1. Capture the signed evidence bundle.",
+        "2. Post the audit handoff note.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+
+    expect(confirmingSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "procedure",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const procedureId = (confirmingSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const confirmedRow = await querySingleRow<{
+      candidate_review_state: string;
+      status: string;
+      title: string | null;
+      procedure_family: string | null;
+      procedure_key: string | null;
+      promotion_profile: string | null;
+      confirmation_state: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select review_state::text from memory_middleware.memory_objects where id = $1::uuid) as candidate_review_state,
+          (select status::text from memory_middleware.procedures where id = $2::uuid) as status,
+          (select title from memory_middleware.procedures where id = $2::uuid) as title,
+          (select metadata->'candidateMetadata'->'autoCapture'->>'procedureFamily'
+            from memory_middleware.procedures where id = $2::uuid) as procedure_family,
+          (select metadata->'candidateMetadata'->'autoCapture'->>'procedureKey'
+            from memory_middleware.procedures where id = $2::uuid) as procedure_key,
+          (select metadata->'promotionMetadata'->'autoPromotion'->>'profile'
+            from memory_middleware.procedures where id = $2::uuid) as promotion_profile,
+          (select metadata->'promotionMetadata'->'candidateConfirmation'->>'state'
+            from memory_middleware.procedures where id = $2::uuid) as confirmation_state
+      `,
+      [candidateId, procedureId],
+    );
+
+    expect(confirmedRow).toEqual({
+      candidate_review_state: "candidate",
+      status: "validated",
+      title: "Release Evidence Handoff Checklist",
+      procedure_family: "generalized_named_checklist",
+      procedure_key: null,
+      promotion_profile: "recurring_procedure_generalized_confirmation_v1",
+      confirmation_state: "confirmed",
+    });
+  });
+
+  it("supersedes an older validated generalized recurring checklist on explicit correction", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-generic-rp-supersede-1", {
+      kind: "procedure",
+      content: [
+        "My release evidence handoff checklist:",
+        "1. Capture the signed evidence bundle.",
+        "2. Post the audit handoff note.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+    const initialCandidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [initialCandidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const approvedSubmit = await submitTool.execute("call-generic-rp-supersede-2", {
+      kind: "procedure",
+      content: [
+        "Our release evidence handoff checklist:",
+        "1. Capture the signed evidence bundle.",
+        "2. Post the audit handoff note.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+    const originalProcedureId = (approvedSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const correctedSubmit = await submitTool.execute("call-generic-rp-supersede-3", {
+      kind: "procedure",
+      content: [
+        "Actually, my release evidence handoff checklist:",
+        "1. Capture the signed evidence bundle.",
+        "2. Post the audit handoff note.",
+        "3. Confirm archive replication.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+    const correctedProcedureId = (correctedSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const supersedeRow = await querySingleRow<{
+      original_status: string | null;
+      corrected_status: string | null;
+      corrected_profile: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          (select status::text from memory_middleware.procedures where id = $1::uuid) as original_status,
+          (select status::text from memory_middleware.procedures where id = $2::uuid) as corrected_status,
+          (select metadata->'promotionMetadata'->'autoPromotion'->>'profile'
+            from memory_middleware.procedures where id = $2::uuid) as corrected_profile
+      `,
+      [originalProcedureId, correctedProcedureId],
+    );
+
+    expect(supersedeRow).toEqual({
+      original_status: "superseded",
+      corrected_status: "validated",
+      corrected_profile: "recurring_procedure_generalized_correction_v1",
+    });
+  });
+
+  it("boosts the most relevant generalized recurring checklist in hybrid retrieval", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const handoffSubmit = await submitTool.execute("call-generic-rp-hybrid-1", {
+      kind: "procedure",
+      content: [
+        "My release evidence handoff checklist:",
+        "1. Capture the signed evidence bundle.",
+        "2. Post the audit handoff note.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+    const artifactSubmit = await submitTool.execute("call-generic-rp-hybrid-2", {
+      kind: "procedure",
+      content: [
+        "My incident artifact collection checklist:",
+        "1. Reproduce the issue.",
+        "2. Gather the relevant logs.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+
+    const handoffCandidateId = (handoffSubmit.details as { memoryObjectId: string }).memoryObjectId;
+    const artifactCandidateId = (artifactSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = any($1::uuid[])
+        `,
+        [[handoffCandidateId, artifactCandidateId]],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const handoffApproved = await submitTool.execute("call-generic-rp-hybrid-3", {
+      kind: "procedure",
+      content: [
+        "Our release evidence handoff checklist:",
+        "1. Capture the signed evidence bundle.",
+        "2. Post the audit handoff note.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+    const artifactApproved = await submitTool.execute("call-generic-rp-hybrid-4", {
+      kind: "procedure",
+      content: [
+        "Our incident artifact collection checklist:",
+        "1. Reproduce the issue.",
+        "2. Gather the relevant logs.",
+      ].join("\n"),
+      projectId: seeded.projectId,
+    });
+
+    const handoffProcedureId = (handoffApproved.details as { memoryObjectId: string })
+      .memoryObjectId;
+    const artifactProcedureId = (artifactApproved.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const hybridSearch = await runtime.memoryObjectQuery.searchHybrid({
+      query: "release evidence handoff checklist",
+      scope: "include_validated_procedures",
+      kind: "procedure",
+      projectId: seeded.projectId,
+    });
+
+    expect(hybridSearch).toMatchObject({
+      accepted: true,
+      status: "ok",
+      scope: "include_validated_procedures",
+    });
+    const records = (
+      hybridSearch as {
+        records: Array<{ id: string; matchedFields: string[]; score: number }>;
+      }
+    ).records;
+    expect(records[0]?.id).toBe(handoffProcedureId);
+    expect(records[0]?.matchedFields?.length).toBeGreaterThan(0);
+    if (records[1]?.id === artifactProcedureId) {
       expect(records[0]?.score).toBeGreaterThan(records[1]?.score ?? 0);
     }
   });

@@ -208,6 +208,19 @@ Current state:
     stored validated checklist without explicit `checklist` wording
   - prompt guidance now makes suggestion-first behavior explicit for nearby
     advice asks
+- the recurring-procedure parity tranche is now also live for its intended
+  scope:
+  - explicit named generic recurring checklists can now normalize into
+    bounded `generalized_named_checklist` shapes without adding one more
+    supported checklist key
+  - first evidence now lands in `hold_for_more_evidence` for those generic
+    named checklists instead of forcing the old supported-key-only posture
+  - later compatible evidence can promote the same held checklist through the
+    existing candidate -> draft -> validated procedure substrate
+  - explicit correction can supersede an older approved generic recurring
+    procedure on the same subject
+  - approved-only hybrid retrieval now ranks the right direct named generic
+    checklist ask while preserving the older supported checklist fast path
   - direct-use remains limited to clear checklist asks
 - the first workflow-improvement slice is now live for its intended scope:
   - semantic tool-gotcha detection is now live for:
@@ -445,8 +458,10 @@ Delivery enablement pause:
      `/memory-system/specs/cross-domain-memory-families`
 - first landed parity tranche inside step 1:
   - project-fact generalization and lifecycle parity v1
+- second landed parity tranche inside step 1:
+  - recurring-procedure generalization and repair parity v1
 - next recommended parity tranche inside step 1:
-  - recurring-procedure generalization and repair parity
+  - response-style genericization and retrieval parity
 - existing-family parity means, for the current landed families:
   - natural-language capture is no longer overly rigid where the family is
     intended to generalize

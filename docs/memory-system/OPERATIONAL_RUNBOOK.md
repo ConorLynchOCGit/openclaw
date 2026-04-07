@@ -428,10 +428,12 @@ For the exact proof ids and production evidence for this slice, use:
 
 ## Recurring-procedure semantic UX workflow
 
-The third user-facing semantic memory slice is now live for a bounded
-named-checklist family only.
+The recurring-procedure family now has two live bounded lanes:
 
-Supported first-slice recurring procedures:
+- supported named checklist subjects
+- bounded generic named recurring checklists
+
+Supported named-checklist fast path:
 
 - deploy checklist
 - release checklist
@@ -440,16 +442,26 @@ Supported first-slice recurring procedures:
 
 Current live behavior:
 
-- bounded natural-language recurring-procedure detection is allowed only for
+- bounded natural-language recurring-procedure detection is still allowed for
   supported named checklist subjects with structured steps
+- explicit named recurring checklists outside the supported key registry can
+  now normalize into bounded `generalized_named_checklist` shapes when the
+  phrasing is clearly reusable and the steps are structured
 - medium-confidence recurring-procedure turns can enter a
   pending-confirmation lifecycle instead of a dead manual-review queue
+- explicit named generic recurring checklists now use
+  `hold_for_more_evidence` on first evidence instead of pretending they are
+  already part of the older supported checklist key set
 - later confirming evidence can auto-promote those pending candidates without
   manual review
 - supported recurring-procedure corrections can supersede stale validated
   procedures for the same subject
+- generic recurring-procedure corrections can now also supersede older
+  approved procedures on the same subject
 - clear checklist asks can use validated-procedure retrieval and
   procedure-key-aware ranking
+- clear direct asks for a named generic recurring checklist can now retrieve
+  the right validated procedure through project-scoped subject/title boosts
 - nearby deploy/release/triage/investigation asks can also use
   validated-procedure retrieval through bounded procedure-key inference
 - prompt guidance keeps those nearby asks suggestion-first unless the user is
@@ -475,15 +487,28 @@ Expected operator checks:
 - supported checklist phrasing can create bounded recurring-procedure
   candidates or validated procedures without introducing freeform procedure
   memory
+- explicit named generic checklist phrasing can create a bounded
+  `generalized_named_checklist` candidate without introducing vague one-off
+  procedure memory
 - a medium-confidence recurring-procedure candidate can later show:
   - bounded pending-confirmation metadata
   - a later validated procedure with:
     - `promotionProfile = recurring_procedure_confirmation_v1`
     - `confirmationState = confirmed`
+- a first-evidence generic recurring checklist can later show:
+  - bounded `hold_for_more_evidence` metadata
+  - a later validated procedure with:
+    - `promotionProfile = recurring_procedure_generalized_confirmation_v1`
+    - `procedureFamily = generalized_named_checklist`
 - a supported recurring-procedure correction can produce a validated
   procedure with:
   - `promotionProfile = recurring_procedure_correction_v1`
+- a generic recurring-procedure correction can produce a validated procedure
+  with:
+  - `promotionProfile = recurring_procedure_generalized_correction_v1`
 - clear checklist asks can retrieve the right validated procedure first
+- direct named generic checklist asks can retrieve the right validated
+  procedure first for the same project scope
 - nearby deploy/release/triage/investigation asks can retrieve the right
   validated procedure first even without explicit `checklist` wording
 - prompt guidance for nearby advice asks should surface the stored checklist as
@@ -494,7 +519,8 @@ Expected operator checks:
 
 Current approved boundary note:
 
-- this slice is limited to supported named checklists only
+- this family now includes supported named checklists and the first bounded
+  generic named recurring-checklist lane only
 - vague one-off instructions are not live
 - broader procedure extraction is not live
 - silent background application of stored procedures is not live
@@ -505,6 +531,7 @@ For the exact proof ids and production evidence for this slice, use:
 
 - `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_UX_REPORT.md`
 - `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_BEHAVIOR_REPORT.md`
+- `docs/memory-system/PRODUCTION_RECURRING_PROCEDURE_PARITY_V1_REPORT.md`
 
 ## Semantic retrieval routing workflow
 

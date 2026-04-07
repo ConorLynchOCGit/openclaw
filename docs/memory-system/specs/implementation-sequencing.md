@@ -63,8 +63,8 @@ Current sequencing note:
 - the program is no longer primarily advancing by enumerating one lesson key
   at a time
 - the next implementation slice should be:
-  - recurring-procedure generalization and repair parity after the first
-    project-fact parity tranche
+  - response-style genericization and retrieval parity after the recurring-
+    procedure parity tranche
 - the next follow-up slices after that should be:
   - reduced-profile self-improving capture integration after the already
     landed families are closer to parity

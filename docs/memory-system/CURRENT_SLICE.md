@@ -11,18 +11,18 @@ turning on self-improving capture or widening the taxonomy further.
 
 The previous slice just landed:
 
-- project-fact generalization and lifecycle parity v1
-- a bounded `generalized_reference` path for explicit named-project reference
-  facts such as evidence dashboards without adding one more typed field key
-- held-cluster project-fact auto-review through the existing candidate,
-  review, and promotion substrate
-- explicit correction and supersede flow for approved generic project facts on
-  the same project-scoped subject
-- approved-only hybrid retrieval boosts for generic named-project reference
-  facts while preserving stronger typed-field matches
-- isolated plus production proof that a repeated generic project fact can be
-  held, approved, retrieved, and corrected without broadening into
-  speculative project summaries
+- recurring-procedure generalization and repair parity v1
+- a bounded `generalized_named_checklist` path for explicit named recurring
+  checklists without adding one more supported procedure key
+- first-evidence held-cluster lifecycle for generic recurring procedures on
+  the existing candidate -> draft -> validated procedure substrate
+- project-scoped recurring-procedure retrieval boosts for direct named generic
+  checklist asks while preserving the older supported checklist fast path
+- explicit generic recurring-procedure correction and supersede on the same
+  subject
+- isolated plus narrow production proof that a repeated generic recurring
+  checklist can be held, approved, retrieved, and corrected without
+  broadening into vague one-off procedure memory
 
 ## Required work
 
@@ -81,7 +81,7 @@ The post-pivot pipeline now tracks these landed and next sequenced steps:
 
 The next implementation slice should be:
 
-- recurring-procedure generalization and repair parity
+- response-style genericization and retrieval parity
 
 Cross-domain roadmap note:
 

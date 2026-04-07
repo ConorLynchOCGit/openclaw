@@ -291,6 +291,17 @@ approved-only hybrid retrieval boosts for generic named-project reference
 facts, and isolated plus narrow production proof that a repeated generic
 project fact can be held, approved, retrieved, and corrected without
 speculative project summarization.
+Second existing-family parity tranche completed on the approved live
+production boundary for its intended scope, with bounded generic named
+recurring checklist capture beyond the older supported checklist key registry,
+first-evidence `hold_for_more_evidence` clustering for explicit named generic
+checklists, compatible later evidence promoting through the existing
+candidate -> draft -> validated procedure substrate, explicit correction and
+supersede on the same recurring-procedure subject, project-scoped hybrid
+retrieval boosts for direct named generic checklist asks, and isolated plus
+narrow production proof that a repeated generic recurring checklist can be
+held, approved, retrieved, and corrected without broadening into vague
+one-off procedure memory.
 Fifth family-aware semantic retrieval routing slice completed on the approved
 live production boundary for its intended scope, with approved-only
 project-scoped semantic fallback for `git_stash_unsafe`, approved source

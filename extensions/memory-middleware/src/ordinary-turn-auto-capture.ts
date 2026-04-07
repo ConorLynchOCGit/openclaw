@@ -33,6 +33,7 @@ import {
 } from "./recurring-procedure-lifecycle.js";
 import {
   detectRecurringProcedureSemanticDecision,
+  type RecurringProcedureFamily,
   getRecurringProcedureTitle,
   type RecurringProcedureCanonicalMatch,
   type RecurringProcedureKey,
@@ -629,6 +630,7 @@ export type OrdinaryTurnAutoCaptureMatch = {
     | "project_fact_named_scope"
     | "project_fact_generalized_named_scope"
     | "named_recurring_checklist"
+    | "generalized_recurring_checklist"
     | "workflow_tool_gotcha"
     | "workflow_environment_constraint"
     | "workflow_api_workaround"
@@ -646,6 +648,7 @@ export type OrdinaryTurnAutoCaptureMatch = {
   normalizedProjectScope?: string;
   factFamily?: ProjectFactFamily;
   fieldKey?: ProjectFactFieldKey;
+  procedureFamily?: RecurringProcedureFamily;
   procedureKey?: RecurringProcedureKey;
   title?: string;
   steps?: string[];
@@ -695,6 +698,7 @@ type OrdinaryTurnAutoCaptureHandlerDeps = {
   }) => Promise<{ accepted: boolean; reason?: string; eventId?: string; memoryObjectId?: string }>;
   submitProcedureSuggestion: (input: {
     content: string;
+    projectId?: string;
     agentId: string;
     sessionId: string;
     metadata: Record<string, unknown>;
@@ -830,7 +834,9 @@ type RecurringProcedureCaptureDecision = {
   confidence: "high" | "medium";
   detectionSource: RecurringProcedureDetectionSource;
   evidence: string[];
-  procedureKey: RecurringProcedureKey;
+  reviewMode: "pending_confirmation" | "hold_for_more_evidence";
+  procedureFamily: RecurringProcedureFamily;
+  procedureKey?: RecurringProcedureKey;
   match: OrdinaryTurnAutoCaptureMatch;
 };
 
@@ -1587,7 +1593,8 @@ function toOrdinaryTurnRecurringProcedureMatch(
     content: match.content,
     subjectKey: match.subjectKey,
     key: match.key,
-    procedureKey: match.procedureKey,
+    procedureFamily: match.procedureFamily,
+    ...(match.procedureKey ? { procedureKey: match.procedureKey } : {}),
     title: match.title,
     steps: match.steps,
   };
@@ -1790,7 +1797,14 @@ function detectRecurringProcedureCaptureDecision(
     confidence: semanticDecision.confidence,
     detectionSource: "semantic",
     evidence: semanticDecision.evidence,
-    procedureKey: semanticDecision.match.procedureKey,
+    reviewMode:
+      semanticDecision.match.procedureFamily === "supported_key"
+        ? "pending_confirmation"
+        : "hold_for_more_evidence",
+    procedureFamily: semanticDecision.match.procedureFamily,
+    ...(semanticDecision.match.procedureKey
+      ? { procedureKey: semanticDecision.match.procedureKey }
+      : {}),
     match: toOrdinaryTurnRecurringProcedureMatch(semanticDecision.match),
   };
 }
@@ -2054,14 +2068,16 @@ function buildRecurringProcedureSemanticMetadata(params: {
   detectionSource: RecurringProcedureDetectionSource;
   confidence: RecurringProcedureSemanticConfidence | "high";
   evidence: string[];
-  procedureKey: RecurringProcedureKey;
+  procedureFamily: RecurringProcedureFamily;
+  procedureKey?: RecurringProcedureKey;
 }): Record<string, unknown> {
   return {
     semanticDetection: {
       source: "recurring_procedure_semantic_v1",
       detectionSource: params.detectionSource,
       confidence: params.confidence,
-      procedureKey: params.procedureKey,
+      procedureFamily: params.procedureFamily,
+      ...(params.procedureKey ? { procedureKey: params.procedureKey } : {}),
       evidence: params.evidence,
     },
   };
@@ -2147,21 +2163,24 @@ function buildProjectFactPendingConfirmationMetadata(params: {
 function buildRecurringProcedurePendingConfirmationMetadata(params: {
   confidence: RecurringProcedureSemanticConfidence;
   evidence: string[];
-  procedureKey: RecurringProcedureKey;
+  procedureFamily: RecurringProcedureFamily;
+  procedureKey?: RecurringProcedureKey;
+  state?: "pending_confirmation" | "hold_for_more_evidence";
   observedAt?: string;
 }): Record<string, unknown> {
   const observedAt = params.observedAt ?? new Date().toISOString();
   return {
     candidateLifecycle: {
       family: "recurring_procedure",
-      state: "pending_confirmation",
+      state: params.state ?? "pending_confirmation",
       confidence: params.confidence,
       evidenceCount: 1,
       observedAt,
       expiresAt: new Date(
         Date.parse(observedAt) + PROJECT_FACT_CONFIRMATION_WINDOW_MS,
       ).toISOString(),
-      procedureKey: params.procedureKey,
+      procedureFamily: params.procedureFamily,
+      ...(params.procedureKey ? { procedureKey: params.procedureKey } : {}),
       evidence: params.evidence,
     },
   };
@@ -2516,7 +2535,8 @@ async function autoPromoteProjectFactCandidate(params: {
 async function rejectRecurringProcedureCandidateIfPresent(params: {
   candidateId: string;
   subjectKey: string;
-  procedureKey: RecurringProcedureKey;
+  procedureFamily: RecurringProcedureFamily;
+  procedureKey?: RecurringProcedureKey;
   rationale: string;
   reviewerAgentId?: string;
   logger: PluginLogger;
@@ -2534,7 +2554,8 @@ async function rejectRecurringProcedureCandidateIfPresent(params: {
         family: "recurring_procedure",
         state: "rejected",
         subjectKey: params.subjectKey,
-        procedureKey: params.procedureKey,
+        procedureFamily: params.procedureFamily,
+        ...(params.procedureKey ? { procedureKey: params.procedureKey } : {}),
       },
     },
   });
@@ -2543,7 +2564,8 @@ async function rejectRecurringProcedureCandidateIfPresent(params: {
       formatLog("memory-middleware recurring-procedure candidate rejection failed", {
         candidateId: params.candidateId,
         subjectKey: params.subjectKey,
-        procedureKey: params.procedureKey,
+        procedureFamily: params.procedureFamily,
+        ...(params.procedureKey ? { procedureKey: params.procedureKey } : {}),
         reason: result.reason ?? "unknown",
       }),
     );
@@ -2767,7 +2789,8 @@ function buildProjectFactAutoPromotionMetadata(params: {
 
 function buildRecurringProcedureAutoPromotionMetadata(params: {
   match: OrdinaryTurnAutoCaptureMatch;
-  procedureKey: RecurringProcedureKey;
+  procedureFamily: RecurringProcedureFamily;
+  procedureKey?: RecurringProcedureKey;
   agentExternalKey: string;
   sessionKey: string;
   transcriptFile: string;
@@ -2784,7 +2807,8 @@ function buildRecurringProcedureAutoPromotionMetadata(params: {
       captureProfile: params.match.profile,
       captureClass: params.match.captureClass,
       reasonCode: params.match.reasonCode,
-      procedureKey: params.procedureKey,
+      procedureFamily: params.procedureFamily,
+      ...(params.procedureKey ? { procedureKey: params.procedureKey } : {}),
       key: params.match.key,
       subjectKey: params.match.subjectKey,
       subject: params.match.subject,
@@ -3788,6 +3812,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     timestamp?: string;
   }): Promise<boolean> {
     const match = decisionParams.decision.match;
+    const resolvedTitle =
+      match.title ??
+      (decisionParams.decision.procedureKey
+        ? getRecurringProcedureTitle(decisionParams.decision.procedureKey)
+        : match.subject);
     if (inFlightKeys.has(match.key)) {
       return true;
     }
@@ -3796,7 +3825,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       detectionSource: decisionParams.decision.detectionSource,
       confidence: decisionParams.decision.confidence,
       evidence: decisionParams.decision.evidence,
-      procedureKey: decisionParams.decision.procedureKey,
+      procedureFamily: decisionParams.decision.procedureFamily,
+      ...(decisionParams.decision.procedureKey
+        ? { procedureKey: decisionParams.decision.procedureKey }
+        : {}),
     });
 
     const inspection = await deps.inspectRecurringProcedureLifecycle({
@@ -3829,7 +3861,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       await rejectRecurringProcedureCandidateIfPresent({
         candidateId: inspection.pendingCandidate.id,
         subjectKey: match.subjectKey,
-        procedureKey: decisionParams.decision.procedureKey,
+        procedureFamily: decisionParams.decision.procedureFamily,
+        ...(decisionParams.decision.procedureKey
+          ? { procedureKey: decisionParams.decision.procedureKey }
+          : {}),
         rationale:
           "recurring-procedure candidate confirmation window expired without later confirming evidence",
         reviewerAgentId: attribution.agentId,
@@ -3884,7 +3919,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         await rejectRecurringProcedureCandidateIfPresent({
           candidateId,
           subjectKey: match.subjectKey,
-          procedureKey: decisionParams.decision.procedureKey,
+          procedureFamily: decisionParams.decision.procedureFamily,
+          ...(decisionParams.decision.procedureKey
+            ? { procedureKey: decisionParams.decision.procedureKey }
+            : {}),
           rationale: "recurring-procedure correction superseded pending procedure candidate state",
           reviewerAgentId: attribution.agentId,
           logger: params.logger,
@@ -3901,17 +3939,26 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       transcriptFile: decisionParams.transcriptFile,
       ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
       autoCaptureExtras: {
-        procedureKey: decisionParams.decision.procedureKey,
-        title: match.title ?? getRecurringProcedureTitle(decisionParams.decision.procedureKey),
+        procedureFamily: decisionParams.decision.procedureFamily,
+        ...(decisionParams.decision.procedureKey
+          ? { procedureKey: decisionParams.decision.procedureKey }
+          : {}),
+        title: resolvedTitle,
         steps: match.steps ?? [],
       },
       extraMetadata: {
         ...(semanticMetadata ?? {}),
-        ...(decisionParams.decision.confidence === "medium"
+        ...(match.captureClass !== "recurring_procedure_correction" &&
+        (decisionParams.decision.confidence === "medium" ||
+          decisionParams.decision.reviewMode === "hold_for_more_evidence")
           ? buildRecurringProcedurePendingConfirmationMetadata({
               confidence: decisionParams.decision.confidence,
               evidence: decisionParams.decision.evidence,
-              procedureKey: decisionParams.decision.procedureKey,
+              procedureFamily: decisionParams.decision.procedureFamily,
+              ...(decisionParams.decision.procedureKey
+                ? { procedureKey: decisionParams.decision.procedureKey }
+                : {}),
+              state: decisionParams.decision.reviewMode,
               ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
             })
           : {}),
@@ -3927,7 +3974,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         config: params.config,
         cfg: params.cfg,
         candidateId: inspection.pendingCandidate.id,
-        title: match.title ?? getRecurringProcedureTitle(decisionParams.decision.procedureKey),
+        title: resolvedTitle,
         subjectKey: match.subjectKey,
         captureClass: match.captureClass,
         agentExternalKey: decisionParams.agentExternalKey,
@@ -3940,16 +3987,25 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         supersedeValidatedProceduresBySubjectKey: deps.supersedeValidatedProceduresBySubjectKey,
         metadata: buildRecurringProcedureAutoPromotionMetadata({
           match,
-          procedureKey: decisionParams.decision.procedureKey,
+          procedureFamily: decisionParams.decision.procedureFamily,
+          ...(decisionParams.decision.procedureKey
+            ? { procedureKey: decisionParams.decision.procedureKey }
+            : {}),
           agentExternalKey: decisionParams.agentExternalKey,
           sessionKey: decisionParams.sessionKey,
           transcriptFile: decisionParams.transcriptFile,
-          autoPromotionProfile: "recurring_procedure_confirmation_v1",
+          autoPromotionProfile:
+            decisionParams.decision.procedureFamily === "generalized_named_checklist"
+              ? "recurring_procedure_generalized_confirmation_v1"
+              : "recurring_procedure_confirmation_v1",
           ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
           semanticMetadata,
           candidateConfirmation: {
             state: "confirmed",
-            method: "repeat_subject_signal",
+            method:
+              decisionParams.decision.procedureFamily === "generalized_named_checklist"
+                ? "generalized_cluster_auto_review"
+                : "repeat_subject_signal",
             confirmationEvidenceCount: 2,
             confirmationWindowMs: PROCEDURE_CONFIRMATION_WINDOW_MS,
           },
@@ -3957,7 +4013,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         logContext: {
           key: match.key,
           subjectKey: match.subjectKey,
-          procedureKey: decisionParams.decision.procedureKey,
+          procedureFamily: decisionParams.decision.procedureFamily,
+          ...(decisionParams.decision.procedureKey
+            ? { procedureKey: decisionParams.decision.procedureKey }
+            : {}),
           confirmationMode: "repeat_subject_signal",
           confidence: decisionParams.decision.confidence,
         },
@@ -3985,6 +4044,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
 
     const result = await deps.submitProcedureSuggestion({
       content: match.content,
+      projectId: attribution.projectId,
       agentId: attribution.agentId,
       sessionId: attribution.sessionId,
       metadata: candidateMetadata,
@@ -4005,14 +4065,16 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       autoPromotion.profile === "explicit-user-preference-v1" &&
       autoPromotionAgents.has(decisionParams.agentExternalKey) &&
       result.memoryObjectId &&
-      decisionParams.decision.confidence === "high";
+      (match.captureClass === "recurring_procedure_correction" ||
+        (decisionParams.decision.procedureFamily === "supported_key" &&
+          decisionParams.decision.confidence === "high"));
 
     if (shouldDirectPromote && result.memoryObjectId) {
       await autoPromoteRecurringProcedureCandidate({
         config: params.config,
         cfg: params.cfg,
         candidateId: result.memoryObjectId,
-        title: match.title ?? getRecurringProcedureTitle(decisionParams.decision.procedureKey),
+        title: resolvedTitle,
         subjectKey: match.subjectKey,
         captureClass: match.captureClass,
         agentExternalKey: decisionParams.agentExternalKey,
@@ -4025,13 +4087,18 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         supersedeValidatedProceduresBySubjectKey: deps.supersedeValidatedProceduresBySubjectKey,
         metadata: buildRecurringProcedureAutoPromotionMetadata({
           match,
-          procedureKey: decisionParams.decision.procedureKey,
+          procedureFamily: decisionParams.decision.procedureFamily,
+          ...(decisionParams.decision.procedureKey
+            ? { procedureKey: decisionParams.decision.procedureKey }
+            : {}),
           agentExternalKey: decisionParams.agentExternalKey,
           sessionKey: decisionParams.sessionKey,
           transcriptFile: decisionParams.transcriptFile,
           autoPromotionProfile:
             match.captureClass === "recurring_procedure_correction"
-              ? "recurring_procedure_correction_v1"
+              ? decisionParams.decision.procedureFamily === "generalized_named_checklist"
+                ? "recurring_procedure_generalized_correction_v1"
+                : "recurring_procedure_correction_v1"
               : "recurring_procedure_direct_v1",
           ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
           semanticMetadata,
@@ -4039,7 +4106,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         logContext: {
           key: match.key,
           subjectKey: match.subjectKey,
-          procedureKey: decisionParams.decision.procedureKey,
+          procedureFamily: decisionParams.decision.procedureFamily,
+          ...(decisionParams.decision.procedureKey
+            ? { procedureKey: decisionParams.decision.procedureKey }
+            : {}),
           confidence: decisionParams.decision.confidence,
         },
       });
@@ -4048,10 +4118,14 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     params.logger.info(
       formatLog("memory-middleware ordinary-turn recurring-procedure capture accepted", {
         key: match.key,
-        procedureKey: decisionParams.decision.procedureKey,
+        procedureFamily: decisionParams.decision.procedureFamily,
+        ...(decisionParams.decision.procedureKey
+          ? { procedureKey: decisionParams.decision.procedureKey }
+          : {}),
         title: match.title,
         captureClass: match.captureClass,
         confidence: decisionParams.decision.confidence,
+        reviewMode: decisionParams.decision.reviewMode,
         eventId: result.eventId,
         memoryObjectId: result.memoryObjectId,
       }),

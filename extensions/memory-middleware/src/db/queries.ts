@@ -1283,12 +1283,40 @@ type ProjectFactQueryHint = {
 };
 
 type RecurringProcedureQueryHint = {
-  procedureKey:
+  procedureKey?:
     | "deploy_checklist"
     | "release_checklist"
     | "triage_checklist"
     | "investigation_checklist";
+  normalizedSubject?: string;
 };
+
+function inferSupportedRecurringProcedureKeyFromSubject(
+  normalizedSubject: string,
+):
+  | "deploy_checklist"
+  | "release_checklist"
+  | "triage_checklist"
+  | "investigation_checklist"
+  | null {
+  if (normalizedSubject === "deploy checklist" || normalizedSubject === "deployment checklist") {
+    return "deploy_checklist";
+  }
+  if (normalizedSubject === "release checklist" || normalizedSubject === "release steps") {
+    return "release_checklist";
+  }
+  if (normalizedSubject === "triage checklist" || normalizedSubject === "triage steps") {
+    return "triage_checklist";
+  }
+  if (
+    normalizedSubject === "investigation checklist" ||
+    normalizedSubject === "investigation steps" ||
+    normalizedSubject === "debug checklist"
+  ) {
+    return "investigation_checklist";
+  }
+  return null;
+}
 
 type WorkflowImprovementQueryHint = {
   lessonKey:
@@ -1434,6 +1462,31 @@ function inferRecurringProcedureQueryHint(query: string): RecurringProcedureQuer
   const normalized = normalizeRetrievalQuery(query);
   if (!normalized) {
     return null;
+  }
+  const genericNormalized = normalized
+    .replace(
+      /^(?:give me|show me|use|return|find|what(?: are| is)?|where(?: are| is)?|how should we|how do we|can you show me|can you give me)\s+/,
+      "",
+    )
+    .replace(/\bmy\b\s+/g, "")
+    .trim();
+  const genericSubjectMatch = normalized.match(
+    /\b(?:our|the)?\s*([a-z0-9][a-z0-9 /_-]{3,80}?)\s+(checklist|procedure|runbook|playbook|steps)\b/,
+  );
+  const fallbackGenericSubjectMatch = genericNormalized.match(
+    /\b(?:our|the)?\s*([a-z0-9][a-z0-9 /_-]{3,80}?)\s+(checklist|procedure|runbook|playbook|steps)\b/,
+  );
+  const subjectMatch = genericSubjectMatch ?? fallbackGenericSubjectMatch;
+  if (subjectMatch) {
+    const normalizedSubject =
+      `${subjectMatch[1]?.trim() ?? ""} ${subjectMatch[2]?.trim() ?? ""}`.trim();
+    const supportedProcedureKey = inferSupportedRecurringProcedureKeyFromSubject(normalizedSubject);
+    if (supportedProcedureKey) {
+      return { procedureKey: supportedProcedureKey };
+    }
+    return {
+      normalizedSubject,
+    };
   }
   if (
     normalized.includes("deploy checklist") ||
@@ -10748,6 +10801,14 @@ async function searchValidatedProcedureRowsHybrid(params: {
     table: "procedure_runs",
   });
   const combinedTextExpression = "lower(coalesce(p.title, '') || ' ' || coalesce(p.body, ''))";
+  const procedureSubjectExpression = [
+    "coalesce(",
+    "lower(p.metadata->'autoPromotion'->>'normalizedSubject'),",
+    "lower(p.metadata->'candidateMetadata'->'autoCapture'->>'normalizedSubject'),",
+    "lower(p.title),",
+    "''",
+    ")",
+  ].join(" ");
   const procedureKeyExpression = [
     "coalesce(",
     "p.metadata->'autoPromotion'->>'procedureKey',",
@@ -10764,12 +10825,15 @@ async function searchValidatedProcedureRowsHybrid(params: {
       or ${combinedTextExpression} like lower($2::text)
       or similarity(${combinedTextExpression}, lower($1::text)) >= 0.15
       or ($3::text <> '' and ${procedureKeyExpression} = $3::text)
+      or ($4::text <> '' and ${procedureSubjectExpression} = $4::text)
+      or ($4::text <> '' and ${procedureSubjectExpression} like ($4::text || '%'))
     )`,
   ];
   const values: unknown[] = [
     params.input.query,
     `${params.input.query}%`,
     procedureHint?.procedureKey ?? "",
+    procedureHint?.normalizedSubject ?? "",
   ];
 
   if (params.input.projectId) {
@@ -10800,6 +10864,8 @@ async function searchValidatedProcedureRowsHybrid(params: {
           case when lower(p.title) = lower($1::text) then 160 else 0 end,
           case when lower(p.title) like lower($2::text) then 130 else 0 end,
           case when $3::text <> '' and ${procedureKeyExpression} = $3::text then 220 else 0 end,
+          case when $4::text <> '' and ${procedureSubjectExpression} = $4::text then 200 else 0 end,
+          case when $4::text <> '' and ${procedureSubjectExpression} like ($4::text || '%') then 170 else 0 end,
           (ts_rank_cd(p.search_document, websearch_to_tsquery('english', $1::text)) * 110.0),
           (similarity(${combinedTextExpression}, lower($1::text)) * 45.0)
         )::float8 as score,
@@ -10809,6 +10875,12 @@ async function searchValidatedProcedureRowsHybrid(params: {
             case when lower(p.title) like lower($2::text) then 'title_prefix' end,
             case when $3::text <> '' and ${procedureKeyExpression} = $3::text
               then 'procedure_key_match'
+            end,
+            case when $4::text <> '' and ${procedureSubjectExpression} = $4::text
+              then 'procedure_subject_match'
+            end,
+            case when $4::text <> '' and ${procedureSubjectExpression} like ($4::text || '%')
+              then 'procedure_subject_prefix'
             end,
             case when p.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'

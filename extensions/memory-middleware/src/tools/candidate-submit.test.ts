@@ -1911,4 +1911,46 @@ describe("memory candidate submit tool", () => {
       memoryObjectId: "procedure-1",
     });
   });
+
+  it("holds a generalized recurring checklist for more evidence instead of forcing a legacy procedure key", async () => {
+    const runtime = createRuntime();
+    const tool = createCandidateSubmitTool({ runtime });
+
+    const result = await tool.execute("call-generic-recurring-procedure", {
+      kind: "procedure",
+      content: [
+        "My release evidence handoff checklist:",
+        "1. Capture the signed evidence bundle.",
+        "2. Post the audit handoff note.",
+      ].join("\n"),
+    });
+
+    expect(runtime.candidateIngress.submitProcedureSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: ["1. Capture the signed evidence bundle", "2. Post the audit handoff note"].join(
+          "\n",
+        ),
+        metadata: expect.objectContaining({
+          category: "recurring_procedure",
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_recurring_procedure",
+            template: "generalized_recurring_checklist",
+            procedureFamily: "generalized_named_checklist",
+            title: "Release Evidence Handoff Checklist",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            state: "hold_for_more_evidence",
+          }),
+        }),
+      }),
+    );
+    expect(runtime.candidatePromotion.promoteToProcedureDraft).not.toHaveBeenCalled();
+    expect(runtime.procedureValidation.validate).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({
+      accepted: true,
+      kind: "procedure",
+      reviewState: "candidate",
+      memoryObjectId: "memory-1",
+    });
+  });
 });
