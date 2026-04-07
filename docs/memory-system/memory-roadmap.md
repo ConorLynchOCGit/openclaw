@@ -23,6 +23,67 @@ Roadmap pivot note:
 - the next scaling path is broader supervised lesson learning with explicit
   review rather than more hand-authored lesson registries
 
+Cross-domain expansion note:
+
+- the first live generalized families were proven mostly with software
+  examples because that was the easiest initial surface
+- the long-run roadmap is no longer "keep adding software-specific family
+  tails"
+- future family expansion should prefer domain-neutral families that can work
+  for software, marketing, geology, physical science, and other domains
+- the canonical matrix for that expansion now lives in:
+  - `/memory-system/specs/cross-domain-memory-families`
+
+## Cross-domain family matrix
+
+Use the matrix to separate:
+
+1. families that are already real
+2. families that were previously enumerated somewhere in the older roadmap
+3. families that are likely still necessary for true cross-domain completion
+
+Implemented now:
+
+- response-style preference / requirement
+- project facts
+- recurring procedures
+- workflow lessons
+- project rules
+- unmet needs
+
+Previously enumerated but not fully realized as standalone families:
+
+- user correction as a generic family
+- project fact correction as a generic family
+- external API failure lesson
+- outdated knowledge correction
+- better approach discovered
+- recurring deployment/runtime constraint
+- recurring debugging preference
+- recurring review preference
+- repeated anti-pattern to avoid
+- merge, alias, retrieval-gap, and phrase-pattern operator-assist families
+
+Likely still needed for cross-domain completion:
+
+- decision + rationale
+- hypothesis / open question
+- observation / result / finding
+- metric / baseline / threshold
+- risk / hazard / safety constraint
+- audience / stakeholder model
+- terminology / ontology / canonical definition
+- entity profile
+- exception / edge-case rule
+- source trust / authority ranking
+
+Long-run family-expansion rule:
+
+- do not create a long tail of domain-specific vertical families such as
+  "geology memory" or "marketing memory"
+- instead, map new domains onto the smallest useful set of domain-neutral
+  families from the matrix
+
 ## Current compact checkpoint
 
 Use this section first when returning to the memory build after working on
@@ -347,8 +408,24 @@ Delivery enablement pause:
 - post-pivot execution path:
   1. reduced-profile self-improving capture integration
   2. later learned-guidance advisory planning
+  3. cross-domain family expansion using
+     `/memory-system/specs/cross-domain-memory-families`
+- recommended first cross-domain expansion tranche after self-improving and
+  advisory planning:
+  - decision + rationale
+  - observation / result / finding
+  - terminology / ontology / canonical definition
+  - entity profile
+- recommended second cross-domain expansion tranche after that:
+  - risk / hazard / safety constraint
+  - metric / baseline / threshold
+  - hypothesis / open question
+  - audience / stakeholder model
+  - source trust / authority ranking
+  - exception / edge-case rule
 - primary spec:
   - `/memory-system/specs/self-improving-capture-integration`
+  - `/memory-system/specs/cross-domain-memory-families`
 
 Fast re-entry reading order:
 
@@ -379,6 +456,8 @@ architecture each time:
   - `/memory-system/specs/premortem`
 - architecture-fit review:
   - `/memory-system/specs/architecture-fit-review`
+- cross-domain family matrix:
+  - `/memory-system/specs/cross-domain-memory-families`
 - semantic retrieval routing:
   - `/memory-system/specs/semantic-retrieval-routing`
 - generalized lesson auto-review:
@@ -608,6 +687,15 @@ The v1 target is:
 - a full inspection UI is not required before the first semantic families ship
 
 ## Event-family roadmap
+
+Historical note:
+
+- the event-family list below is still useful as a record of the early bounded
+  rollout order
+- it is no longer the full long-run family taxonomy
+- future family expansion should use
+  `/memory-system/specs/cross-domain-memory-families` as the canonical
+  planning reference
 
 The semantic detector should not start with every imaginable memory event.
 Rollout should be by bounded event families.

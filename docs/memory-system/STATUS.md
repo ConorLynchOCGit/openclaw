@@ -8,6 +8,9 @@ separating built-live, built-off-production-or-partial, and not-built
 families.
 Implementation-ready spec pack completed for the remaining major not-built
 and not-yet-productionized memory families.
+Cross-domain family matrix completed to distinguish landed families,
+historically enumerated families, and likely additional domain-neutral
+families needed for non-software work.
 In-repo durable handoff pack initialized.
 Repo reconciliation completed at the architecture level.
 Initial middleware scaffold and immediate skill-onboarding preparation completed.

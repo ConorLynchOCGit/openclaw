@@ -37,7 +37,23 @@ Recommended next execution order after the generalized-learning pivot:
 
 19. reduced-profile self-improving capture integration
 20. later learned-guidance advisory planning
-21. any broader automation discussion
+21. cross-domain family expansion tranche 1:
+
+- decision + rationale
+- observation / result / finding
+- terminology / ontology / canonical definition
+- entity profile
+
+22. cross-domain family expansion tranche 2:
+
+- risk / hazard / safety constraint
+- metric / baseline / threshold
+- hypothesis / open question
+- audience / stakeholder model
+- source trust / authority ranking
+- exception / edge-case rule
+
+23. any broader automation discussion
 
 Current sequencing note:
 
@@ -59,6 +75,8 @@ Current sequencing note:
 - the next follow-up slices after that should be:
   - later learned-guidance advisory planning after self-improving candidate
     provenance and generic retrieval posture are mature enough
+  - then domain-neutral family expansion guided by
+    `/memory-system/specs/cross-domain-memory-families`
 
 ## Why this order is recommended
 
@@ -93,6 +111,12 @@ Current sequencing note:
   autonomy
 - self-improving capture should wait until native taxonomy, auto-review, and
   backlog control are strong
+- after self-improving capture and learned-guidance advisory planning are
+  live, future expansion should prefer domain-neutral families over longer
+  software-only tails
+- decision, finding, terminology, and entity families should land before more
+  specialized long-tail lesson families because they travel better across
+  multiple knowledge domains
 
 ## Hard prerequisites
 

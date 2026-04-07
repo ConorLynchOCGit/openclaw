@@ -13,6 +13,18 @@ It separates:
 
 Use this file before starting a new memory slice.
 
+Cross-domain planning note:
+
+- this inventory tracks both the currently landed families and the remaining
+  family backlog
+- for the canonical split between:
+  - implemented families
+  - previously enumerated but still incomplete families
+  - likely additional domain-neutral families needed for cross-domain
+    completion
+- also read:
+  - `/memory-system/specs/cross-domain-memory-families`
+
 ## Status classes
 
 - `built_live`
@@ -50,6 +62,44 @@ Use this file before starting a new memory slice.
 | Messy-language eval framework                                  | `built_offprod_or_partial` | Checked-in semantic tests now exist for the bounded response-style family, the first bounded project-fact family, the first bounded recurring-procedure family, and the first bounded workflow-improvement families, but there is still no broader cross-family corpus or shared eval harness.                                                                                                                                                                                                                                                                                                                                                         | `extensions/memory-middleware/src/response-style-semantic.test.ts`, `extensions/memory-middleware/src/project-fact-semantic.test.ts`, `extensions/memory-middleware/src/recurring-procedure-semantic.test.ts`, `extensions/memory-middleware/src/workflow-improvement-semantic.test.ts`                                                                                                                                                                                                                                                                                                     | We can now prove semantic capture for the first bounded slices only, not later families.                                                                                                                                                                                                                                  | `/memory-system/specs/messy-language-eval`                                                                                                                      |
 | Implementation sequencing / sprint guidance                    | `built_offprod_or_partial` | A single sequencing doc now exists and has been updated for the generalized-learning pivot, but it still depends on future implementation slices to prove the new order in practice.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `docs/memory-system/specs/implementation-sequencing.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Future sessions now have a coherent planned order, but the post-pivot slices themselves are not all live yet.                                                                                                                                                                                                             | `/memory-system/specs/implementation-sequencing`                                                                                                                |
 | Planning premortem / guardrails                                | `not_built`                | Risks are scattered across docs rather than concentrated into a planning-to-implementation premortem.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | runbook warnings, readiness reviews                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Teams/sessions can still repeat preventable planning and rollout mistakes.                                                                                                                                                                                                                                                | `/memory-system/specs/premortem`                                                                                                                                |
+
+## Cross-domain family summary
+
+Implemented content families now:
+
+- response-style preference / requirement
+- project facts
+- recurring procedures
+- workflow lessons
+- project rules
+- unmet needs
+
+Previously enumerated but still incomplete as standalone families:
+
+- user correction as a generic family
+- project fact correction as a generic family
+- external API failure lesson
+- outdated knowledge correction
+- better approach discovered
+- recurring deployment/runtime constraint
+- recurring debugging preference
+- recurring review preference
+- repeated anti-pattern to avoid
+- merge, alias, retrieval-gap, and phrase-pattern operator-assist families
+
+Likely additional domain-neutral families needed for true cross-domain
+completion:
+
+- decision + rationale
+- hypothesis / open question
+- observation / result / finding
+- metric / baseline / threshold
+- risk / hazard / safety constraint
+- audience / stakeholder model
+- terminology / ontology / canonical definition
+- entity profile
+- exception / edge-case rule
+- source trust / authority ranking
 
 ## Already-built live baseline that new work must preserve
 

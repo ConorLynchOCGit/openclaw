@@ -22,6 +22,7 @@ partially built family still needs a deliberate productionization plan.
 
 ### Cross-cutting architecture and planning
 
+- `/memory-system/specs/cross-domain-memory-families`
 - `/memory-system/specs/semantic-event-detector`
 - `/memory-system/specs/semantic-retrieval-routing`
 - `/memory-system/specs/ambiguity-and-clarification`
@@ -55,6 +56,12 @@ partially built family still needs a deliberate productionization plan.
 - do not treat these docs as permission to skip the existing plugin/runtime
   boundaries
 - do not confuse “already built” with “ready for normal production use”
+- use `/memory-system/specs/cross-domain-memory-families` when deciding
+  whether a proposed slice should:
+  - extend an already-real family
+  - finish a previously enumerated but still incomplete family
+  - or introduce a new domain-neutral family needed for cross-domain
+    completion
 - use `/memory-system/feature-inventory` to determine whether a family needs:
   - implementation
   - productionization

@@ -76,3 +76,16 @@ The post-pivot pipeline now has six landed supervised-learning steps:
 The next implementation slice should be:
 
 - reduced-profile self-improving capture integration
+
+Cross-domain roadmap note:
+
+- after reduced-profile self-improving capture integration and later
+  learned-guidance advisory planning, future family expansion should follow
+  `/memory-system/specs/cross-domain-memory-families`
+- the roadmap is no longer "finish the software-only family tail"
+- the next broad family tranches after the near-term path should be
+  domain-neutral:
+  - decision + rationale
+  - observation / result / finding
+  - terminology / ontology / canonical definition
+  - entity profile

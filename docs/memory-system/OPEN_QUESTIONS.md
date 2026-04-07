@@ -34,6 +34,37 @@ pivot.
 8. Should later advisory planning from learned lessons begin inline during
    active repo-operating asks, or only after an explicit background-job proof?
 
+## Cross-domain family expansion questions
+
+1. After self-improving capture and learned-guidance advisory planning are
+   live, which domain-neutral family should land first:
+   - decision + rationale
+   - observation / result / finding
+   - terminology / ontology / canonical definition
+   - entity profile
+2. Should older software-shaped enumerated families such as:
+   - external API failure lesson
+   - recurring deployment/runtime constraint
+   - recurring debugging preference
+   - recurring review preference
+     become standalone families, or be absorbed into broader domain-neutral
+     families?
+3. What exact line should separate:
+   - fact vs observation
+   - rule vs decision
+   - risk vs workflow constraint
+   - project fact vs entity profile
+4. What non-project scopes should the first broader domain-neutral families
+   support after the current project-heavy tranche:
+   - client
+   - audience
+   - site
+   - campaign
+   - sample
+   - instrument
+5. When source materials disagree, should source trust / authority ranking land
+   before broader hypothesis memory, or after it?
+
 ## Architecture reconciliation questions
 
 1. Should the initial middleware plugin continue to coexist with the current

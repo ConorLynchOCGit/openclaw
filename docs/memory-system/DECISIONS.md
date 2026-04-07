@@ -3770,6 +3770,31 @@ Reason:
 Proactivity should be a downstream use of already-trusted learned guidance, not
 the mechanism that compensates for immature approval or retrieval quality.
 
+---
+
+### 16DG. Cross-domain family expansion should prefer domain-neutral families over vertical taxonomies
+
+After the current near-term self-improving and advisory slices, family
+expansion should prefer domain-neutral families such as:
+
+- decisions
+- findings
+- risks
+- terminology
+- entity profiles
+
+over domain-specific vertical taxonomies such as:
+
+- geology-only memory
+- marketing-only memory
+- software-only long-tail subfamilies
+
+Reason:
+The intended product scope is broader than software development. A small set of
+domain-neutral families scales across software, marketing, geology, physical
+science, and other domains more cleanly than a growing list of vertical family
+taxonomies.
+
 ## Provisional decisions pending implementation
 
 - whether the new middleware should be a regular bundled plugin or eventually replace the exclusive `kind: "memory"` slot
