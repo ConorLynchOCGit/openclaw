@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseMemoryProofPlan } from "./proof-runner.js";
+import {
+  buildProofLifecycleArtifacts,
+  parseMemoryProofPlan,
+  validateHybridSearchProofResult,
+} from "./proof-runner.js";
 
 describe("parseMemoryProofPlan", () => {
   it("accepts bounded transcript-to-search proof plans", () => {
@@ -292,5 +296,90 @@ describe("parseMemoryProofPlan", () => {
         ],
       }),
     ).toThrow(/transcript_capture requires expectation or expectNoLifecycle/i);
+  });
+});
+
+describe("registry-driven proof helpers", () => {
+  it("derives approved-memory artifacts for a corrected bounded family proof", () => {
+    expect(
+      buildProofLifecycleArtifacts({
+        artifactMode: "approved_memory_object",
+        inspection: {
+          matchingApprovedObjectId: "approved-fact-1",
+          pendingCandidate: {
+            id: "candidate-fact-1",
+            sourceEventId: "event-fact-1",
+            createdAt: "2026-04-01T00:00:00.000Z",
+            updatedAt: "2026-04-01T00:00:00.000Z",
+            expiresAt: "2026-04-04T00:00:00.000Z",
+            confirmationState: "pending_confirmation",
+          },
+          activeApprovedSubjectObjectIds: ["approved-fact-1"],
+          pendingSubjectCandidateIds: ["candidate-fact-1"],
+        },
+      }),
+    ).toEqual({
+      candidateId: "candidate-fact-1",
+      candidateEventId: "event-fact-1",
+      approvedObjectId: "approved-fact-1",
+    });
+  });
+
+  it("derives phrase-pattern artifacts without pretending phrase candidates are memory objects", () => {
+    expect(
+      buildProofLifecycleArtifacts({
+        artifactMode: "phrase_pattern",
+        inspection: {
+          matchingApprovedObjectId: "phrase-approved-1",
+          pendingCandidate: {
+            id: "phrase-candidate-1",
+            createdAt: "2026-04-01T00:00:00.000Z",
+            updatedAt: "2026-04-01T00:00:00.000Z",
+            expiresAt: "2026-04-04T00:00:00.000Z",
+          },
+          conflictingApprovedObjectIds: [],
+          conflictingPendingCandidateIds: [],
+        },
+      }),
+    ).toEqual({
+      candidateId: "phrase-candidate-1",
+      approvedObjectId: "phrase-approved-1",
+    });
+  });
+
+  it("validates retrieval-evidence matched fields for proof search steps", () => {
+    expect(() =>
+      validateHybridSearchProofResult({
+        stepId: "search-proof",
+        expectedRecordId: "memory-1",
+        expectation: {
+          matchedFieldsInclude: ["project_fact_scope_match", "semantic_fallback"],
+        },
+        result: {
+          accepted: true,
+          status: "ok",
+          scope: "approved_only",
+          query: "atlas evidence dashboard",
+          records: [
+            {
+              objectType: "memory_object",
+              readSurface: "approved_memory_view",
+              id: "memory-1",
+              memoryKind: "project",
+              reviewState: "approved",
+              content: "For project Atlas, the evidence dashboard is atlas-rollout.",
+              projectId: "project-1",
+              agentId: "agent-1",
+              sessionId: "session-1",
+              metadata: {},
+              createdAt: "2026-04-01T00:00:00.000Z",
+              updatedAt: "2026-04-01T00:00:00.000Z",
+              score: 321,
+              matchedFields: ["project_fact_scope_match", "semantic_fallback"],
+            },
+          ],
+        },
+      }),
+    ).not.toThrow();
   });
 });

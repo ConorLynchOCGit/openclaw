@@ -629,6 +629,10 @@
       "types": "./dist/plugin-sdk/memory-core-host-runtime-files.d.ts",
       "default": "./dist/plugin-sdk/memory-core-host-runtime-files.js"
     },
+    "./plugin-sdk/memory-family-policy": {
+      "types": "./dist/plugin-sdk/memory-family-policy.d.ts",
+      "default": "./dist/plugin-sdk/memory-family-policy.js"
+    },
     "./plugin-sdk/memory-lancedb": {
       "types": "./dist/plugin-sdk/memory-lancedb.d.ts",
       "default": "./dist/plugin-sdk/memory-lancedb.js"

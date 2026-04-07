@@ -8,6 +8,7 @@ import plugin, {
   DEFAULT_MEMORY_FLUSH_PROMPT,
   DEFAULT_MEMORY_FLUSH_SOFT_TOKENS,
 } from "./index.js";
+import { buildDurableMemoryBehaviorProfile } from "./src/behavior-profile.js";
 import { memoryRuntime } from "./src/runtime-provider.js";
 
 describe("buildPromptSection", () => {
@@ -154,6 +155,40 @@ describe("buildPromptSection", () => {
     );
     expect(result).toContain(
       "Do not call memory_candidate_submit just because the user naturally states a plain favorite/preferred preference in ordinary conversation; that narrow low-risk preference class may be auto-captured already.",
+    );
+  });
+});
+
+describe("behavior profile layer", () => {
+  it("routes multiple family postures through the shared behavior profile substrate", () => {
+    const profile = buildDurableMemoryBehaviorProfile({
+      availableTools: new Set([
+        "memory_candidate_submit",
+        "memory_object_search_hybrid",
+        "memory_session_update",
+      ]),
+    });
+
+    expect(profile).not.toBeNull();
+    expect(profile?.families).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          familyId: "response_style",
+          applicationMode: "shape_reply",
+          retrievalMode: "approved_hybrid",
+        }),
+        expect.objectContaining({
+          familyId: "project_fact",
+          applicationMode: "direct_answer",
+          retrievalMode: "approved_hybrid",
+        }),
+        expect.objectContaining({
+          familyId: "recurring_procedure",
+          applicationMode: "suggestion_first",
+          directUseOnlyOnClearAsk: true,
+          retrievalMode: "validated_procedure_hybrid",
+        }),
+      ]),
     );
   });
 });

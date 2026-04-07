@@ -1,4 +1,5 @@
 import {
+  getMemoryFamilyDefinition,
   listMemoryFamilyDefinitions,
   type MemoryFamilyDefinition,
   type MemoryFamilyId,
@@ -28,6 +29,14 @@ type RetrievalParamRefs = {
 type RetrievalFeatureSqlBundle = {
   scoreClauses: string[];
   matchedFieldClauses: string[];
+};
+
+type ValidatedProcedureExpressions = {
+  procedureSubjectExpression: string;
+};
+
+type ValidatedProcedureParamRefs = {
+  normalizedSubjectRef: string;
 };
 
 function listApprovedMemoryFeatureFamilies(): MemoryFamilyDefinition[] {
@@ -207,4 +216,37 @@ export function buildApprovedMemoryRetrievalFeatureSql(params: {
   }
 
   return { scoreClauses, matchedFieldClauses };
+}
+
+export function buildReviewableCandidateRetrievalFeatureSql(params: {
+  expressions: RetrievalSqlExpressions;
+  paramRefs: RetrievalParamRefs;
+}): RetrievalFeatureSqlBundle {
+  return buildApprovedMemoryRetrievalFeatureSql(params);
+}
+
+export function buildValidatedProcedureRetrievalFeatureSql(params: {
+  expressions: ValidatedProcedureExpressions;
+  paramRefs: ValidatedProcedureParamRefs;
+}): RetrievalFeatureSqlBundle {
+  const definition = getMemoryFamilyDefinition("recurring_procedure");
+  const subjectWeight = definition.retrievalPolicy.featureWeights.subject_match ?? 0;
+  if (!subjectWeight) {
+    return { scoreClauses: [], matchedFieldClauses: [] };
+  }
+
+  const exactWhenClause = `${params.paramRefs.normalizedSubjectRef} <> '' and ${params.expressions.procedureSubjectExpression} = ${params.paramRefs.normalizedSubjectRef}`;
+  const prefixWeight = Math.max(subjectWeight - 30, 0);
+  const prefixWhenClause = `${params.paramRefs.normalizedSubjectRef} <> '' and ${params.expressions.procedureSubjectExpression} like (${params.paramRefs.normalizedSubjectRef} || '%')`;
+
+  return {
+    scoreClauses: [
+      `case when ${exactWhenClause} then ${subjectWeight} else 0 end`,
+      `case when ${prefixWhenClause} then ${prefixWeight} else 0 end`,
+    ],
+    matchedFieldClauses: [
+      `case when ${exactWhenClause} then 'procedure_subject_match' end`,
+      `case when ${prefixWhenClause} then 'procedure_subject_prefix' end`,
+    ],
+  };
 }

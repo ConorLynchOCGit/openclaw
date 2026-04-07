@@ -105,12 +105,16 @@ family-policy differences.
    - landed in batch v2 for approved-memory hybrid ranking across response
      style, project facts, workflow lessons, project rules, and unmet needs
 6. behavior-profile / application layer
+   - landed in batch v3 through the shared durable-memory behavior-profile
+     layer used by `extensions/memory-core/src/prompt-section.ts`
 
 ### Can flatten later inside the same phase
 
 7. unified phrase-pattern engine
    - landed in batch v2 for workflow lessons and response style
 8. registry-driven proof / lifecycle inspection
+   - landed in batch v3 for the six core proof families plus workflow /
+     response-style phrase artifacts
 
 ### What must remain intentionally family-specific
 
@@ -172,9 +176,21 @@ Batch v2 completed:
 - shared approved-memory retrieval feature composition across multiple
   guidance and direct-answer families
 
-The next recommended slice is:
+Batch v3 completed:
 
-- behavior-profile layer
+- shared durable-memory behavior-profile rendering from registry-derived family
+  posture
+- registry-driven proof family definitions across lifecycle and phrase
+  inspection
+- shared reviewable-candidate retrieval feature composition and validated-
+  procedure subject-match retrieval composition
+
+One more flattening closeout slice is still honestly recommended before moving
+on:
+
+- remaining ingestion migration for response style, project facts, and
+  recurring procedures where honest
+- remaining recurring-procedure bridge cleanup
 
 ## Phase C — reduced-profile self-improving capture
 

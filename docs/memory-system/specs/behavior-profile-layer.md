@@ -137,6 +137,19 @@ The layer must preserve these modes:
 First land the profile builder without changing user-visible behavior. Swap
 `prompt-section.ts` to render from it, then delete duplicated policy logic.
 
+Current live rollout:
+
+- `src/plugin-sdk/memory-family-policy.ts` now exposes a public family-policy
+  seam so `memory-core` can consume registry-derived application posture
+  without reaching into `memory-middleware/src/**`
+- `extensions/memory-core/src/behavior-profile.ts` now builds the shared
+  durable-memory behavior profile
+- `extensions/memory-core/src/prompt-section.ts` now renders the durable-memory
+  section from that shared profile instead of carrying the family posture
+  inline
+- user-facing durable-memory guidance remained behaviorally stable in targeted
+  prompt tests
+
 ## Proof / evaluation requirements
 
 Prove:
@@ -161,7 +174,7 @@ Prove:
 
 ## Follow-up implementation slices
 
-1. define behavior profile structure and family application mapping
-2. build profile from current retrieval output
-3. migrate `prompt-section.ts` to pure rendering
-4. delete duplicated application policy branches
+1. extend the behavior profile from prompt rendering into later runtime
+   selection / suppression attribution when honest
+2. keep retrieval/application policy aligned with the registry and retrieval
+   framework

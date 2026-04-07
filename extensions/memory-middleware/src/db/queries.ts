@@ -7,7 +7,11 @@ import {
   resolveCorrectionSupersedeSubjectKey,
   selectApprovedMemoryObjectSupersedeTargetsBySubjectKey,
 } from "../memory-object-supersede.js";
-import { buildApprovedMemoryRetrievalFeatureSql } from "../retrieval-feature-framework.js";
+import {
+  buildApprovedMemoryRetrievalFeatureSql,
+  buildReviewableCandidateRetrievalFeatureSql,
+  buildValidatedProcedureRetrievalFeatureSql,
+} from "../retrieval-feature-framework.js";
 import type {
   CandidateGetInput,
   CandidateGetResult,
@@ -10730,6 +10734,22 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
+  const autoCaptureFactFamilyExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'factFamily',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'factFamily',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'factFamily',",
+    "v.metadata->'autoPromotion'->>'factFamily',",
+    "case when",
+    "  coalesce(",
+    "    v.metadata->'autoCapture'->>'fieldKey',",
+    "    v.metadata->'candidateMetadata'->'autoCapture'->>'fieldKey',",
+    "    v.metadata->'promotionMetadata'->'autoPromotion'->>'fieldKey',",
+    "    v.metadata->'autoPromotion'->>'fieldKey',",
+    "    ''",
+    "  ) <> '' then 'supported_field' else '' end",
+    ")",
+  ].join(" ");
   const autoCaptureLessonKeyExpression = [
     "coalesce(",
     "v.metadata->'autoCapture'->>'lessonKey',",
@@ -10739,12 +10759,73 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
+  const autoCaptureLessonFamilyExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'lessonFamily',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'lessonFamily',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'lessonFamily',",
+    "v.metadata->'autoPromotion'->>'lessonFamily',",
+    "''",
+    ")",
+  ].join(" ");
+  const autoCaptureGuidancePatternExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'guidancePattern',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'guidancePattern',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'guidancePattern',",
+    "v.metadata->'autoPromotion'->>'guidancePattern',",
+    "''",
+    ")",
+  ].join(" ");
   const autoCaptureNormalizedSubjectExpression = [
     "coalesce(",
     "v.metadata->'autoCapture'->>'normalizedSubject',",
     "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedSubject',",
     "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedSubject',",
     "v.metadata->'autoPromotion'->>'normalizedSubject',",
+    "''",
+    ")",
+  ].join(" ");
+  const autoCaptureNormalizedProjectFactLabelExpression = [
+    "case",
+    `when position(' :: ' in ${autoCaptureNormalizedSubjectExpression}) > 0`,
+    `then split_part(${autoCaptureNormalizedSubjectExpression}, ' :: ', 2)`,
+    `else ${autoCaptureNormalizedSubjectExpression}`,
+    "end",
+  ].join(" ");
+  const autoCaptureNormalizedProjectScopeExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'normalizedProjectScope',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedProjectScope',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedProjectScope',",
+    "v.metadata->'autoPromotion'->>'normalizedProjectScope',",
+    "''",
+    ")",
+  ].join(" ");
+  const autoCaptureNormalizedRecommendedActionExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'normalizedRecommendedAction',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedRecommendedAction',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedRecommendedAction',",
+    "v.metadata->'autoPromotion'->>'normalizedRecommendedAction',",
+    "''",
+    ")",
+  ].join(" ");
+  const autoCaptureNormalizedAvoidActionExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'normalizedAvoidAction',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedAvoidAction',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedAvoidAction',",
+    "v.metadata->'autoPromotion'->>'normalizedAvoidAction',",
+    "''",
+    ")",
+  ].join(" ");
+  const autoCaptureNormalizedNeededCapabilityExpression = [
+    "coalesce(",
+    "v.metadata->'autoCapture'->>'normalizedNeededCapability',",
+    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedNeededCapability',",
+    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedNeededCapability',",
+    "v.metadata->'autoPromotion'->>'normalizedNeededCapability',",
     "''",
     ")",
   ].join(" ");
@@ -10765,6 +10846,13 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
     params.input.kind === "project" ? inferProjectFactQueryHint(params.input.query) : null;
   const workflowImprovementHint =
     params.input.kind === "project" ? inferWorkflowImprovementQueryHint(params.input.query) : null;
+  const normalizedQuery = normalizeRetrievalQuery(params.input.query);
+  const projectMemoryIntentFamily =
+    params.input.kind === "project" ? inferProjectMemoryIntentFamily(params.input.query) : "";
+  const generalizedWorkflowPatternHint =
+    params.input.kind === "project"
+      ? inferGeneralizedWorkflowGuidancePatternHint(params.input.query)
+      : "";
   const conditions = [
     "v.review_state = 'candidate'",
     `(
@@ -10779,6 +10867,9 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
     responseStyleHint?.template ?? "",
     projectFactHint?.fieldKey ?? "",
     workflowImprovementHint?.lessonKey ?? "",
+    normalizedQuery,
+    projectMemoryIntentFamily,
+    generalizedWorkflowPatternHint,
   ];
 
   if (params.input.kind) {
@@ -10791,6 +10882,26 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
   }
 
   values.push(normalizeMemoryObjectSearchLimit(params.input.limit));
+  const retrievalFeatureSql = buildReviewableCandidateRetrievalFeatureSql({
+    expressions: {
+      autoCaptureTemplateExpression,
+      autoCaptureFactFamilyExpression,
+      autoCaptureLessonFamilyExpression,
+      autoCaptureGuidancePatternExpression,
+      autoCaptureNormalizedSubjectExpression,
+      autoCaptureNormalizedProjectFactLabelExpression,
+      autoCaptureNormalizedProjectScopeExpression,
+      autoCaptureNormalizedRecommendedActionExpression,
+      autoCaptureNormalizedAvoidActionExpression,
+      autoCaptureNormalizedNeededCapabilityExpression,
+      autoCaptureNormalizedValueExpression,
+    },
+    paramRefs: {
+      normalizedQueryRef: "$6::text",
+      projectMemoryIntentFamilyRef: "$7::text",
+      generalizedWorkflowPatternHintRef: "$8::text",
+    },
+  });
 
   const result = await params.client.query<RankedMemoryObjectSearchRow>(
     `
@@ -10816,14 +10927,7 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
           + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
           + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
           + case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
-          + case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
-              and ${autoCaptureNormalizedSubjectExpression} <> ''
-              and lower($1::text) like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
-            then 170 else 0 end
-          + case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
-              and ${autoCaptureNormalizedValueExpression} <> ''
-              and lower($1::text) like '%' || ${autoCaptureNormalizedValueExpression} || '%'
-            then 105 else 0 end
+          ${retrievalFeatureSql.scoreClauses.map((clause) => `+ ${clause}`).join("\n          ")}
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
         )::float8 as score,
@@ -10842,16 +10946,7 @@ async function searchReviewableCandidateSurfaceRowsHybrid(params: {
             case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text
               then 'auto_capture_lesson_match'
             end,
-            case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
-                and ${autoCaptureNormalizedSubjectExpression} <> ''
-                and lower($1::text) like '%' || ${autoCaptureNormalizedSubjectExpression} || '%'
-              then 'response_style_subject_match'
-            end,
-            case when ${autoCaptureTemplateExpression} = 'response_style_generalized_guidance'
-                and ${autoCaptureNormalizedValueExpression} <> ''
-                and lower($1::text) like '%' || ${autoCaptureNormalizedValueExpression} || '%'
-              then 'response_style_value_match'
-            end,
+            ${retrievalFeatureSql.matchedFieldClauses.join(",\n            ")},
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'
             end,
@@ -10949,6 +11044,14 @@ async function searchValidatedProcedureRowsHybrid(params: {
   }
 
   values.push(normalizeMemoryObjectSearchLimit(params.input.limit));
+  const procedureRetrievalFeatureSql = buildValidatedProcedureRetrievalFeatureSql({
+    expressions: {
+      procedureSubjectExpression,
+    },
+    paramRefs: {
+      normalizedSubjectRef: "$4::text",
+    },
+  });
 
   const result = await params.client.query<RankedProcedureSearchRow>(
     `
@@ -10971,8 +11074,7 @@ async function searchValidatedProcedureRowsHybrid(params: {
           case when lower(p.title) = lower($1::text) then 160 else 0 end,
           case when lower(p.title) like lower($2::text) then 130 else 0 end,
           case when $3::text <> '' and ${procedureKeyExpression} = $3::text then 220 else 0 end,
-          case when $4::text <> '' and ${procedureSubjectExpression} = $4::text then 200 else 0 end,
-          case when $4::text <> '' and ${procedureSubjectExpression} like ($4::text || '%') then 170 else 0 end,
+          ${procedureRetrievalFeatureSql.scoreClauses.join(",\n          ")},
           (ts_rank_cd(p.search_document, websearch_to_tsquery('english', $1::text)) * 110.0),
           (similarity(${combinedTextExpression}, lower($1::text)) * 45.0)
         )::float8 as score,
@@ -10983,12 +11085,7 @@ async function searchValidatedProcedureRowsHybrid(params: {
             case when $3::text <> '' and ${procedureKeyExpression} = $3::text
               then 'procedure_key_match'
             end,
-            case when $4::text <> '' and ${procedureSubjectExpression} = $4::text
-              then 'procedure_subject_match'
-            end,
-            case when $4::text <> '' and ${procedureSubjectExpression} like ($4::text || '%')
-              then 'procedure_subject_prefix'
-            end,
+            ${procedureRetrievalFeatureSql.matchedFieldClauses.join(",\n            ")},
             case when p.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'
             end,

@@ -102,6 +102,18 @@ Each family registers:
 Move proof policy into the registry before deleting existing family switches.
 Keep proof output backward-compatible while the transition is in progress.
 
+Current live rollout:
+
+- `extensions/memory-middleware/src/memory-family-registry.ts` now exposes
+  explicit proof family definitions for the six main families plus workflow /
+  response-style phrase artifacts
+- `extensions/memory-middleware/src/proof-runner.ts` now resolves proof family
+  inspection through those registry definitions instead of splitting core
+  families and phrase artifacts into separate control paths
+- lifecycle artifact extraction and hybrid-search proof validation now live in
+  shared helpers
+- recurring procedures still keep their validated-target distinction
+
 ## Proof / evaluation requirements
 
 Prove:
@@ -123,7 +135,6 @@ Prove:
 
 ## Follow-up implementation slices
 
-1. add proof policy to the family-definition registry
-2. migrate lifecycle inspection selection
-3. migrate phrase inspection
-4. remove proof-runner family switches
+1. surface proof policy ids in proof evidence if later proof consumers need it
+2. tighten any remaining proof evidence mapping around later recurring-
+   procedure bridge work

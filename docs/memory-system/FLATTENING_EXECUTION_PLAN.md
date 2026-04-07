@@ -86,7 +86,7 @@ This order is deliberate:
 
 ## Current execution status
 
-Batch v1 and batch v2 are now landed.
+Batch v1, batch v2, and batch v3 are now landed.
 
 Completed:
 
@@ -113,13 +113,30 @@ Completed through slice 6:
 5. unified phrase-pattern engine
    - landed in batch v2 for workflow lessons and response style
 6. retrieval feature framework
-   - landed in batch v2 for approved-memory hybrid ranking across response
-     style, project facts, workflow lessons, project rules, and unmet needs
+
+- landed in batch v2 for approved-memory hybrid ranking across response
+  style, project facts, workflow lessons, project rules, and unmet needs
+
+Completed through slice 9:
+
+7. behavior-profile layer
+   - landed in batch v3 through
+     `extensions/memory-core/src/behavior-profile.ts`
+   - `extensions/memory-core/src/prompt-section.ts` now renders durable-memory
+     guidance from the shared behavior-profile layer instead of owning the
+     family posture inline
+8. registry-driven proof inspection closeout
+   - landed in batch v3 through registry-driven proof family definitions in
+     `extensions/memory-middleware/src/memory-family-registry.ts`
+   - `extensions/memory-middleware/src/proof-runner.ts` now uses shared proof
+     lifecycle artifact extraction and shared hybrid-search proof validation
 
 Still next:
 
-7. behavior-profile layer
-8. registry-driven proof inspection closeout
+- one remaining flattening closeout slice
+  - strongest current target: remaining response-style / project-fact /
+    recurring-procedure ingestion migration plus the remaining recurring-
+    procedure bridge cleanup
 
 ## What each implementation slice should accomplish
 
@@ -168,11 +185,23 @@ Still next:
 - separate retrieval selection from prompt rendering
 - preserve `guidance_only`, `recommendation_only`, `suggestion_first`, and
   `shape_reply` differences
+  - landed in batch v3
 
 ### Slice 8 — registry-driven proof inspection
 
 - make proofing scale with family registry policy
 - stop adding family switches to the proof runner
+  - landed in batch v3
+
+### Slice 9 — remaining flattening closeout
+
+- current batch-v3 implementation picked the hybrid retrieval islands first
+- reviewable-candidate hybrid retrieval now reuses the shared retrieval feature
+  composer
+- validated-procedure hybrid retrieval now shares framework-driven subject
+  scoring while keeping key/title fast paths explicit
+- one more narrower closeout slice is still justified for the remaining
+  ingestion / recurring-procedure bridge seams
 
 ## Proof required for each slice
 
@@ -224,6 +253,16 @@ Batch v2 deletion results:
 - approved-memory hybrid retrieval no longer hand-inlines the previous
   generic-family CASE forest for response style, project facts, workflow
   lessons, project rules, and unmet needs
+
+Batch v3 deletion results:
+
+- prompt-section no longer owns the family application posture inline
+- proof-runner no longer keeps separate registry-versus-phrase inspection
+  branches
+- reviewable-candidate hybrid retrieval no longer keeps a separate response-
+  style-only ranking branch island
+- validated-procedure hybrid retrieval no longer keeps subject-match scoring in
+  a standalone branch set
 
 ## Later work that depends on flattening
 

@@ -61,18 +61,28 @@ The first two implementation batches are now landed:
 - unified phrase-pattern engine for workflow lessons and response style
 - retrieval feature framework for approved-memory hybrid ranking
 
+The third implementation batch is now landed:
+
+- behavior-profile layer for durable-memory application posture and prompt
+  rendering
+- registry-driven proof inspection closeout for lifecycle and phrase artifacts
+- reviewable-candidate retrieval framework bridge plus validated-procedure
+  subject-match framework bridge
+
 That means:
 
 - family policy has started moving into one declarative registry
 - ingestion and lifecycle are less family-branch-heavy than before
 - correction, phrase handling, and approved-memory retrieval are less
   family-branch-heavy than before
-- future flattening slices now target behavior-profile selection, proofing,
-  and the remaining narrower migration seams
+- prompt application and proofing are now less family-branch-heavy than before
+- future flattening work is down to the remaining narrower migration seams
 
 ## What the next flattening slice is
 
-- behavior-profile layer
+- remaining flattening closeout
+  - strongest current target: the remaining response-style / project-fact /
+    recurring-procedure ingestion and procedure-bridge seams
 
 ## Why flattening comes before future expansion
 

@@ -4,6 +4,8 @@ import {
   getCaptureMetadataByWorkflowLessonFamily,
   getMemoryFamilyDefinition,
   getMemoryFamilyDefinitionByCaptureClass,
+  getMemoryProofDefinition,
+  isMemoryProofFamily,
   isMemoryProofInspectableFamily,
   listMemoryFamilyDefinitions,
 } from "./memory-family-registry.js";
@@ -64,6 +66,22 @@ describe("memory-family-registry", () => {
   it("recognizes proof-inspectable families and excludes phrase artifacts", () => {
     expect(isMemoryProofInspectableFamily("workflow_improvement")).toBe(true);
     expect(isMemoryProofInspectableFamily("workflow_phrase_pattern")).toBe(false);
+  });
+
+  it("exposes registry-driven proof definitions for lifecycle and phrase artifacts", () => {
+    expect(isMemoryProofFamily("workflow_phrase_pattern")).toBe(true);
+    expect(getMemoryProofDefinition("project_rule")).toMatchObject({
+      inspectionMode: "workflow_improvement_lifecycle",
+      artifactMode: "approved_memory_object",
+    });
+    expect(getMemoryProofDefinition("workflow_phrase_pattern")).toMatchObject({
+      inspectionMode: "workflow_phrase_pattern_lifecycle",
+      artifactMode: "phrase_pattern",
+    });
+    expect(getMemoryProofDefinition("recurring_procedure")).toMatchObject({
+      inspectionMode: "recurring_procedure_lifecycle",
+      artifactMode: "validated_procedure",
+    });
   });
 
   it("encodes shared retrieval feature policy in the family registry", () => {

@@ -37,9 +37,9 @@ This inventory tracks:
 | Unified clustered lifecycle      | `built_partial` | memory-object lifecycle inspection is shared for multiple families; correction and procedure-target paths still remain                                 | architecture debt |
 | Unified correction / supersede   | `built_partial` | bounded correction planning and approved memory-object supersede are shared, but recurring procedures and some conservative held paths remain distinct | architecture debt |
 | Unified phrase-pattern engine    | `built_partial` | workflow lessons and response style now share one reviewed phrase substrate; phrase eligibility still remains intentionally narrow                     | architecture debt |
-| Retrieval feature framework      | `built_partial` | approved-memory hybrid ranking now uses a shared feature composer, but candidate and validated-procedure retrieval still retain narrower legacy seams  | architecture debt |
-| Behavior-profile layer           | `not_built`     | prompt rendering still carries too much application policy                                                                                             | architecture debt |
-| Registry-driven proof inspection | `built_partial` | proof-runner now uses registry-defined inspection modes for the six main families, but proofing is not fully registry-driven yet                       | architecture debt |
+| Retrieval feature framework      | `built_partial` | approved-memory and reviewable-candidate hybrid ranking now use the shared feature composer, and validated-procedure subject scoring now shares it too | architecture debt |
+| Behavior-profile layer           | `built_partial` | a shared behavior-profile layer now feeds `prompt-section.ts`, but later runtime selection and suppression attribution can still tighten               | architecture debt |
+| Registry-driven proof inspection | `built_partial` | proof-runner now uses registry-driven proof family definitions for lifecycle and phrase artifacts, but later proof evidence can still tighten further  | architecture debt |
 
 ## Deliberate policy differences versus backlog
 
@@ -57,9 +57,9 @@ Backlog / flattening debt:
 - ingestion still duplicated for response style, project facts, and recurring
   procedures
 - remaining correction plumbing for procedures and conservative held-only paths
-- remaining candidate/procedure retrieval scoring branches
-- prompt-policy sprawl
-- proof-runner still has remaining non-registry paths
+- remaining validated-procedure / recurring-procedure retrieval and bridge
+  cleanup
+- remaining ingestion / procedure bridge cleanup
 - response style, project facts, and recurring procedures still need more
   ingestion flattening where honest
 
@@ -67,7 +67,7 @@ Backlog / flattening debt:
 
 Still not live:
 
-- later flattening slices after batch v2
+- final flattening closeout slice after batch v3
 - reduced-profile self-improving capture on top of the flattened substrate
 - learned-guidance advisory planning
 - new cross-domain families

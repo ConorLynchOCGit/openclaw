@@ -180,12 +180,16 @@ Current live rollout:
   registry-defined retrieval policy
 - `extensions/memory-middleware/src/memory-family-registry.ts` now stores
   registry retrieval weights and matched-field prefixes for response style,
-  project facts, workflow lessons, project rules, and unmet needs
+  project facts, workflow lessons, project rules, unmet needs, and recurring
+  procedures
 - `extensions/memory-middleware/src/db/queries.ts` now consumes that shared
   composer for approved-memory hybrid ranking
+- `extensions/memory-middleware/src/db/queries.ts` now also uses the shared
+  composer for reviewable-candidate hybrid ranking
+- validated-procedure hybrid retrieval now uses the framework for recurring-
+  procedure subject-match scoring while keeping key/title fast paths explicit
 - typed exact/template/field/lesson boosts remain explicit fast paths
-- candidate retrieval and validated-procedure retrieval still retain narrower
-  legacy scoring seams
+- validated-procedure retrieval still retains narrower title/key fast paths
 
 ## Proof / evaluation requirements
 
@@ -211,7 +215,6 @@ Prove:
 
 ## Follow-up implementation slices
 
-1. migrate the remaining reviewable-candidate retrieval scoring onto the same
-   framework where honest
-2. reconcile validated-procedure retrieval with the shared feature model
-3. align behavior-profile selection with the same family retrieval policy
+1. decide whether validated-procedure title/key fast paths should later join
+   the framework or remain intentionally explicit
+2. align behavior-profile selection with the same family retrieval policy

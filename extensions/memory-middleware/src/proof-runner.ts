@@ -5,10 +5,10 @@ import type { OpenClawPluginToolContext, PluginLogger } from "../api.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
 import { MEMORY_OBJECT_SEARCH_SCOPES, type MemoryObjectSearchHybridInput } from "./db/runtime.js";
 import {
-  getMemoryFamilyDefinition,
-  isMemoryProofInspectableFamily,
-  MEMORY_PROOF_INSPECTABLE_FAMILY_IDS,
-  type MemoryProofInspectableFamilyId,
+  getMemoryProofDefinition,
+  isMemoryProofFamily,
+  MEMORY_PROOF_FAMILY_IDS,
+  type MemoryProofFamilyId,
 } from "./memory-family-registry.js";
 import { createOrdinaryTurnAutoCaptureHandler } from "./ordinary-turn-auto-capture.js";
 import {
@@ -39,11 +39,7 @@ import {
 } from "./workflow-phrase-induction.js";
 
 const MemoryProofModeSchema = z.enum(["isolated", "production"]);
-const MemoryProofFamilySchema = z.enum([
-  ...MEMORY_PROOF_INSPECTABLE_FAMILY_IDS,
-  "workflow_phrase_pattern",
-  "response_style_phrase_pattern",
-]);
+const MemoryProofFamilySchema = z.enum(MEMORY_PROOF_FAMILY_IDS);
 const MemoryProofSearchScopeSchema = z.enum(MEMORY_OBJECT_SEARCH_SCOPES);
 
 const MemoryProofCaptureExpectationSchema = z.object({
@@ -182,39 +178,19 @@ export type MemoryProofPlan = z.infer<typeof MemoryProofPlanSchema>;
 export type MemoryProofStep = z.infer<typeof MemoryProofStepSchema>;
 export type MemoryProofCaptureExpectation = z.infer<typeof MemoryProofCaptureExpectationSchema>;
 
-type LifecycleInspection =
-  | {
-      family: "response_style";
-      inspection: ResponseStyleLifecycleInspection;
-    }
-  | {
-      family: "project_fact";
-      inspection: ProjectFactLifecycleInspection;
-    }
-  | {
-      family: "recurring_procedure";
-      inspection: RecurringProcedureLifecycleInspection;
-    }
-  | {
-      family: "project_rule";
-      inspection: WorkflowImprovementLifecycleInspection;
-    }
-  | {
-      family: "unmet_need";
-      inspection: WorkflowImprovementLifecycleInspection;
-    }
-  | {
-      family: "workflow_improvement";
-      inspection: WorkflowImprovementLifecycleInspection;
-    }
-  | {
-      family: "workflow_phrase_pattern";
-      inspection: WorkflowPhraseLifecycleInspection;
-    }
-  | {
-      family: "response_style_phrase_pattern";
-      inspection: ResponseStylePhraseLifecycleInspection;
-    };
+type ProofLifecycleDetails =
+  | ResponseStyleLifecycleInspection
+  | ProjectFactLifecycleInspection
+  | RecurringProcedureLifecycleInspection
+  | WorkflowImprovementLifecycleInspection
+  | WorkflowPhraseLifecycleInspection
+  | ResponseStylePhraseLifecycleInspection;
+
+type LifecycleInspection = {
+  family: MemoryProofFamilyId;
+  inspection: ProofLifecycleDetails;
+  artifacts: MemoryProofStepArtifacts;
+};
 
 export type MemoryProofHealthSnapshot = {
   endpoint: string;
@@ -337,110 +313,34 @@ function resolveProofTranscriptFile(
   );
 }
 
-function summarizeLifecycleArtifacts(lifecycle: LifecycleInspection): MemoryProofStepArtifacts {
-  switch (lifecycle.family) {
-    case "response_style":
-    case "project_fact":
-    case "project_rule":
-    case "unmet_need":
-    case "workflow_improvement":
-      return {
-        ...(lifecycle.inspection.pendingCandidate?.id
-          ? { candidateId: lifecycle.inspection.pendingCandidate.id }
-          : {}),
-        ...(lifecycle.inspection.pendingCandidate?.sourceEventId
-          ? { candidateEventId: lifecycle.inspection.pendingCandidate.sourceEventId }
-          : {}),
-        ...(lifecycle.inspection.matchingApprovedObjectId
-          ? { approvedObjectId: lifecycle.inspection.matchingApprovedObjectId }
-          : {}),
-      };
-    case "workflow_phrase_pattern":
-    case "response_style_phrase_pattern":
-      return {
-        ...(lifecycle.inspection.pendingCandidate?.id
-          ? { candidateId: lifecycle.inspection.pendingCandidate.id }
-          : {}),
-        ...(lifecycle.inspection.matchingApprovedObjectId
-          ? { approvedObjectId: lifecycle.inspection.matchingApprovedObjectId }
-          : {}),
-      };
-    case "recurring_procedure":
-      return {
-        ...(lifecycle.inspection.pendingCandidate?.id
-          ? { candidateId: lifecycle.inspection.pendingCandidate.id }
-          : {}),
-        ...(lifecycle.inspection.pendingCandidate?.sourceEventId
-          ? { candidateEventId: lifecycle.inspection.pendingCandidate.sourceEventId }
-          : {}),
-        ...(lifecycle.inspection.matchingValidatedProcedureId
-          ? { validatedProcedureId: lifecycle.inspection.matchingValidatedProcedureId }
-          : {}),
-      };
-  }
-}
-
 async function inspectLifecycle(params: {
   config: MemoryMiddlewareConfig;
   logger: PluginLogger;
   expectation: MemoryProofCaptureExpectation;
 }): Promise<LifecycleInspection> {
   assert(params.expectation.key, "capture expectation key is required");
-  if (isMemoryProofInspectableFamily(params.expectation.family)) {
-    return inspectRegisteredLifecycle({
-      config: params.config,
-      logger: params.logger,
-      expectation: params.expectation,
-      family: params.expectation.family,
-    });
-  }
-  switch (params.expectation.family) {
-    case "workflow_phrase_pattern": {
-      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
-      assert(
-        params.expectation.normalizedPhrase,
-        "capture expectation normalizedPhrase is required",
-      );
-      const inspection = await inspectWorkflowPhrasePatternLifecycle({
-        config: params.config,
-        patternKey: params.expectation.key,
-        targetKey: params.expectation.subjectKey,
-        normalizedPhrase: params.expectation.normalizedPhrase,
-        projectId: params.expectation.projectId,
-        logger: params.logger,
-      });
-      assert(inspection, "workflow phrase-pattern lifecycle inspection unavailable");
-      return { family: "workflow_phrase_pattern", inspection };
-    }
-    case "response_style_phrase_pattern": {
-      assert(params.expectation.subjectKey, "capture expectation subjectKey is required");
-      assert(
-        params.expectation.normalizedPhrase,
-        "capture expectation normalizedPhrase is required",
-      );
-      const inspection = await inspectResponseStylePhrasePatternLifecycle({
-        config: params.config,
-        patternKey: params.expectation.key,
-        targetKey: params.expectation.subjectKey,
-        normalizedPhrase: params.expectation.normalizedPhrase,
-        logger: params.logger,
-      });
-      assert(inspection, "response-style phrase-pattern lifecycle inspection unavailable");
-      return { family: "response_style_phrase_pattern", inspection };
-    }
-  }
+  assert(
+    isMemoryProofFamily(params.expectation.family),
+    `unknown proof family ${params.expectation.family}`,
+  );
+  return inspectRegisteredLifecycle({
+    config: params.config,
+    logger: params.logger,
+    expectation: params.expectation,
+    family: params.expectation.family,
+  });
 }
 
 async function inspectRegisteredLifecycle(params: {
   config: MemoryMiddlewareConfig;
   logger: PluginLogger;
   expectation: MemoryProofCaptureExpectation;
-  family: MemoryProofInspectableFamilyId;
+  family: MemoryProofFamilyId;
 }): Promise<LifecycleInspection> {
-  const definition = getMemoryFamilyDefinition(params.family);
+  const definition = getMemoryProofDefinition(params.family);
   const key = params.expectation.key;
   assert(key, "capture expectation key is required");
-  switch (definition.proofPolicy.inspectionMode) {
+  switch (definition.inspectionMode) {
     case "response_style_lifecycle": {
       const subjectKey = params.expectation.subjectKey;
       assert(subjectKey, "capture expectation subjectKey is required");
@@ -451,7 +351,14 @@ async function inspectRegisteredLifecycle(params: {
         logger: params.logger,
       });
       assert(inspection, "response-style lifecycle inspection unavailable");
-      return { family: "response_style", inspection };
+      return {
+        family: params.family,
+        inspection,
+        artifacts: buildProofLifecycleArtifacts({
+          artifactMode: definition.artifactMode,
+          inspection,
+        }),
+      };
     }
     case "project_fact_lifecycle": {
       const subjectKey = params.expectation.subjectKey;
@@ -464,7 +371,14 @@ async function inspectRegisteredLifecycle(params: {
         logger: params.logger,
       });
       assert(inspection, "project-fact lifecycle inspection unavailable");
-      return { family: "project_fact", inspection };
+      return {
+        family: params.family,
+        inspection,
+        artifacts: buildProofLifecycleArtifacts({
+          artifactMode: definition.artifactMode,
+          inspection,
+        }),
+      };
     }
     case "workflow_improvement_lifecycle": {
       const subjectKey = params.expectation.subjectKey;
@@ -477,13 +391,14 @@ async function inspectRegisteredLifecycle(params: {
         logger: params.logger,
       });
       assert(inspection, `${params.family} lifecycle inspection unavailable`);
-      if (params.family === "project_rule") {
-        return { family: "project_rule", inspection };
-      }
-      if (params.family === "unmet_need") {
-        return { family: "unmet_need", inspection };
-      }
-      return { family: "workflow_improvement", inspection };
+      return {
+        family: params.family,
+        inspection,
+        artifacts: buildProofLifecycleArtifacts({
+          artifactMode: definition.artifactMode,
+          inspection,
+        }),
+      };
     }
     case "recurring_procedure_lifecycle": {
       const subjectKey = params.expectation.subjectKey;
@@ -495,7 +410,154 @@ async function inspectRegisteredLifecycle(params: {
         logger: params.logger,
       });
       assert(inspection, "recurring-procedure lifecycle inspection unavailable");
-      return { family: "recurring_procedure", inspection };
+      return {
+        family: params.family,
+        inspection,
+        artifacts: buildProofLifecycleArtifacts({
+          artifactMode: definition.artifactMode,
+          inspection,
+        }),
+      };
+    }
+    case "workflow_phrase_pattern_lifecycle": {
+      const subjectKey = params.expectation.subjectKey;
+      assert(subjectKey, "capture expectation subjectKey is required");
+      assert(
+        params.expectation.normalizedPhrase,
+        "capture expectation normalizedPhrase is required",
+      );
+      const inspection = await inspectWorkflowPhrasePatternLifecycle({
+        config: params.config,
+        patternKey: key,
+        targetKey: subjectKey,
+        normalizedPhrase: params.expectation.normalizedPhrase,
+        projectId: params.expectation.projectId,
+        logger: params.logger,
+      });
+      assert(inspection, "workflow phrase-pattern lifecycle inspection unavailable");
+      return {
+        family: params.family,
+        inspection,
+        artifacts: buildProofLifecycleArtifacts({
+          artifactMode: definition.artifactMode,
+          inspection,
+        }),
+      };
+    }
+    case "response_style_phrase_pattern_lifecycle": {
+      const subjectKey = params.expectation.subjectKey;
+      assert(subjectKey, "capture expectation subjectKey is required");
+      assert(
+        params.expectation.normalizedPhrase,
+        "capture expectation normalizedPhrase is required",
+      );
+      const inspection = await inspectResponseStylePhrasePatternLifecycle({
+        config: params.config,
+        patternKey: key,
+        targetKey: subjectKey,
+        normalizedPhrase: params.expectation.normalizedPhrase,
+        logger: params.logger,
+      });
+      assert(inspection, "response-style phrase-pattern lifecycle inspection unavailable");
+      return {
+        family: params.family,
+        inspection,
+        artifacts: buildProofLifecycleArtifacts({
+          artifactMode: definition.artifactMode,
+          inspection,
+        }),
+      };
+    }
+  }
+}
+
+export function buildProofLifecycleArtifacts(params: {
+  artifactMode: ReturnType<typeof getMemoryProofDefinition>["artifactMode"];
+  inspection: ProofLifecycleDetails;
+}): MemoryProofStepArtifacts {
+  switch (params.artifactMode) {
+    case "approved_memory_object": {
+      const inspection = params.inspection as
+        | ResponseStyleLifecycleInspection
+        | ProjectFactLifecycleInspection
+        | WorkflowImprovementLifecycleInspection;
+      return {
+        ...(inspection.pendingCandidate?.id ? { candidateId: inspection.pendingCandidate.id } : {}),
+        ...(inspection.pendingCandidate?.sourceEventId
+          ? { candidateEventId: inspection.pendingCandidate.sourceEventId }
+          : {}),
+        ...(inspection.matchingApprovedObjectId
+          ? { approvedObjectId: inspection.matchingApprovedObjectId }
+          : {}),
+      };
+    }
+    case "phrase_pattern": {
+      const inspection = params.inspection as
+        | WorkflowPhraseLifecycleInspection
+        | ResponseStylePhraseLifecycleInspection;
+      return {
+        ...(inspection.pendingCandidate?.id ? { candidateId: inspection.pendingCandidate.id } : {}),
+        ...(inspection.matchingApprovedObjectId
+          ? { approvedObjectId: inspection.matchingApprovedObjectId }
+          : {}),
+      };
+    }
+    case "validated_procedure": {
+      const inspection = params.inspection as RecurringProcedureLifecycleInspection;
+      return {
+        ...(inspection.pendingCandidate?.id ? { candidateId: inspection.pendingCandidate.id } : {}),
+        ...(inspection.pendingCandidate?.sourceEventId
+          ? { candidateEventId: inspection.pendingCandidate.sourceEventId }
+          : {}),
+        ...(inspection.matchingValidatedProcedureId
+          ? { validatedProcedureId: inspection.matchingValidatedProcedureId }
+          : {}),
+      };
+    }
+  }
+}
+
+export function validateHybridSearchProofResult(params: {
+  stepId: string;
+  result: Awaited<ReturnType<typeof searchMemoryObjectsHybridFromTool>>;
+  expectedRecordId?: string;
+  expectation?: z.infer<typeof MemoryProofSearchExpectationSchema>;
+}): void {
+  if (!params.result.accepted) {
+    throw new Error(`hybrid_search ${params.stepId} failed: ${params.result.reason}`);
+  }
+  const minRecords = params.expectation?.minRecords ?? (params.expectedRecordId ? 1 : undefined);
+  if (minRecords !== undefined) {
+    assert(
+      params.result.records.length >= minRecords,
+      `hybrid_search ${params.stepId} returned ${params.result.records.length} record(s), expected at least ${minRecords}`,
+    );
+  }
+  if (!params.expectedRecordId) {
+    return;
+  }
+  const matchingRecord = params.result.records.find(
+    (record: (typeof params.result.records)[number]) => record.id === params.expectedRecordId,
+  );
+  assert(
+    matchingRecord,
+    `hybrid_search ${params.stepId} did not return expected record ${params.expectedRecordId}`,
+  );
+  if (params.expectation?.objectType) {
+    assert(
+      matchingRecord.objectType === params.expectation.objectType,
+      `hybrid_search ${params.stepId} expected objectType ${params.expectation.objectType}, got ${matchingRecord.objectType}`,
+    );
+  }
+  if (params.expectation?.matchedFieldsInclude?.length) {
+    const matchedFields =
+      "matchedFields" in matchingRecord ? matchingRecord.matchedFields : undefined;
+    const actual = Array.isArray(matchedFields) ? matchedFields : [];
+    for (const expectedField of params.expectation.matchedFieldsInclude) {
+      assert(
+        actual.includes(expectedField),
+        `hybrid_search ${params.stepId} expected matched field ${expectedField}`,
+      );
     }
   }
 }
@@ -733,7 +795,7 @@ async function runTranscriptCaptureStep(params: {
     logger: params.logger,
     expectation: derivedExpectation,
   });
-  const artifacts = summarizeLifecycleArtifacts(lifecycle);
+  const artifacts = lifecycle.artifacts;
 
   assert(
     artifacts.candidateId || artifacts.approvedObjectId || artifacts.validatedProcedureId,
@@ -900,46 +962,16 @@ async function runHybridSearchStep(params: {
     input: buildSearchInput(params.step),
     context: toolContext as OpenClawPluginToolContext,
   });
-  if (!result.accepted) {
-    throw new Error(`hybrid_search ${params.step.id} failed: ${result.reason}`);
-  }
   const expectedRecordId = resolveExpectedSearchRecordId({
     step: params.step,
     resultsById: params.resultsById,
   });
-  const minRecords = params.step.expectation?.minRecords ?? (expectedRecordId ? 1 : undefined);
-  if (minRecords !== undefined) {
-    assert(
-      result.records.length >= minRecords,
-      `hybrid_search ${params.step.id} returned ${result.records.length} record(s), expected at least ${minRecords}`,
-    );
-  }
-  if (expectedRecordId) {
-    const matchingRecord = result.records.find(
-      (record: (typeof result.records)[number]) => record.id === expectedRecordId,
-    );
-    assert(
-      matchingRecord,
-      `hybrid_search ${params.step.id} did not return expected record ${expectedRecordId}`,
-    );
-    if (params.step.expectation?.objectType) {
-      assert(
-        matchingRecord.objectType === params.step.expectation.objectType,
-        `hybrid_search ${params.step.id} expected objectType ${params.step.expectation.objectType}, got ${matchingRecord.objectType}`,
-      );
-    }
-    if (params.step.expectation?.matchedFieldsInclude?.length) {
-      const matchedFields =
-        "matchedFields" in matchingRecord ? matchingRecord.matchedFields : undefined;
-      const actual = Array.isArray(matchedFields) ? matchedFields : [];
-      for (const expectedField of params.step.expectation.matchedFieldsInclude) {
-        assert(
-          actual.includes(expectedField),
-          `hybrid_search ${params.step.id} expected matched field ${expectedField}`,
-        );
-      }
-    }
-  }
+  validateHybridSearchProofResult({
+    stepId: params.step.id,
+    result,
+    expectedRecordId,
+    expectation: params.step.expectation,
+  });
 
   return {
     id: params.step.id,
