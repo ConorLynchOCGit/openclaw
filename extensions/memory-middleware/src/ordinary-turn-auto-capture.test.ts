@@ -1909,7 +1909,7 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     );
   });
 
-  it("captures a generalized workflow lesson as a review-first candidate and skips duplicate backlog", async () => {
+  it("captures a generalized workflow lesson as a held cluster and auto-promotes it after later compatible evidence", async () => {
     const submitImprovementNote = vi.fn(async () => ({
       accepted: true as const,
       status: "accepted" as const,
@@ -1919,8 +1919,23 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
       eventId: "event-generic-improvement-1",
       memoryObjectId: "memory-generic-improvement-1",
     }));
-    const reviewCandidate = vi.fn();
-    const promoteToMemory = vi.fn();
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "memory-generic-improvement-1",
+      outcome: "accepted" as const,
+      reviewId: "review-generic-improvement-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "memory-generic-improvement-1",
+      promotedMemoryObjectId: "approved-generic-improvement-1",
+      sourceEventId: "event-generic-improvement-1",
+      reviewState: "approved" as const,
+    }));
     const inspectWorkflowImprovementLifecycle = vi
       .fn()
       .mockResolvedValueOnce({
@@ -1935,7 +1950,7 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
           createdAt: new Date(Date.now() - 10_000).toISOString(),
           updatedAt: new Date(Date.now() - 10_000).toISOString(),
           expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-          confirmationState: "review_required",
+          confirmationState: "hold_for_more_evidence",
         },
       });
     const handler = createOrdinaryTurnAutoCaptureHandler({
@@ -1989,14 +2004,18 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
           }),
           candidateLifecycle: expect.objectContaining({
             family: "workflow_improvement",
-            state: "review_required",
+            state: "hold_for_more_evidence",
             lessonFamily: "generalized_workflow_lesson",
           }),
         }),
       }),
     );
-    expect(reviewCandidate).not.toHaveBeenCalled();
-    expect(promoteToMemory).not.toHaveBeenCalled();
+    expect(reviewCandidate).toHaveBeenCalledTimes(1);
+    expect(promoteToMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateId: "memory-generic-improvement-1",
+      }),
+    );
   });
 
   it("stores an approved environment-constraint semantic embedding after auto-promotion", async () => {

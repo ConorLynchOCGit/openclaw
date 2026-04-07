@@ -2,65 +2,62 @@
 
 ## Active slice
 
-Generalized lesson auto-review and promotion v1
-
-Ready to start after the architecture/spec alignment pass
+Reviewed phrase induction for approved generic lessons
 
 ## Objective
 
-Convert the first generalized workflow-guidance path from a review collector
-into a real supervised learning loop.
+Reduce future misses for approved generic workflow lessons by turning repeated
+approved phrasing into reviewed deterministic trigger expansions.
 
-This next slice should land:
+The previous slice just landed:
 
-- auto-review for eligible generalized workflow-lesson candidates
+- generalized workflow-lesson auto-review and promotion
 - bounded machine resolution into:
   - `approve`
   - `hold_for_more_evidence`
   - `reject`
   - `supersede_existing`
-- duplicate and stale-review backlog control for broader reviewed lessons
+- duplicate clustering and stale-held rejection
 - approved durable lesson retrieval through the existing hybrid-first path
   without new per-lesson routers
 - explicit proof that a non-keyed lesson can become approved without manual
-  review
+  review in both isolated and narrow production proof
 
 ## Required work
 
-1. Resolve generalized workflow lessons without depending on manual review.
-2. Define stable evidence thresholds for auto-approval, hold, reject, and
-   supersede.
-3. Keep broader lessons guidance-only and approved-only in later behavior.
-4. Reuse the existing hybrid-first retrieval path instead of broadening
-   semantic routing generically.
-5. Prove both positive promotion and bounded no-backlog rejection behavior
-   through the repo-owned proof runner.
+1. Propose reviewed deterministic trigger phrases from approved generic
+   lessons.
+2. Keep approved-generic phrase induction scoped to the same family and
+   approved-only retrieval posture.
+3. Preserve hybrid-first retrieval as the main path while reducing misses from
+   messy recurring phrasing.
+4. Keep phrase induction auditable and bounded instead of turning it into a
+   hidden second semantic detector.
+5. Prove that approved generic lessons become easier to match later without
+   broadening into generic semantic routing.
 
 ## Out of scope
 
 - broader project-rule learning
 - unmet-need planning
-- phrase induction runtime changes
-- semantic fallback for generalized lessons
+- generic semantic fallback for generalized lessons
 - autonomous remediation or silent plan mutation
 - production pairing/auth changes
 
 ## Acceptance criteria
 
-- a new repo-local workflow lesson can become approved without a pre-registered
-  lesson key and without manual review
-- broader reviewed lessons resolve through bounded machine outcomes instead of
-  an indefinite review pile
-- duplicate restatements cluster onto one lesson decision rather than creating
-  review spray
-- stale weak lessons resolve cleanly instead of lingering
-- approved generalized workflow lessons still retrieve later through the normal
-  approved-only hybrid path
+- approved generalized workflow lessons can seed reviewed deterministic phrase
+  proposals
+- approved generic lessons become easier to match later without per-lesson
+  router growth
+- phrase induction remains reviewable, bounded, and guidance-only
+- the older keyed lessons and the new generic path stay part of the same
+  layered workflow-learning system
 
 ## Notes
 
-The roadmap pivot is no longer just "capture broader lessons." It is now one
-staged supervised-learning pipeline:
+The post-pivot pipeline now has its first closed supervised-learning loop for
+generic workflow guidance:
 
 1. generalized lesson capture
 2. generalized lesson auto-review and promotion
@@ -70,6 +67,6 @@ staged supervised-learning pipeline:
 6. reduced-profile self-improving capture as another candidate source
 7. later advisory planning from approved learned lessons
 
-The next implementation slice after this docs/spec pass should be:
+The next implementation slice should be:
 
-- generalized lesson auto-review and promotion v1
+- reviewed phrase induction for approved generic lessons

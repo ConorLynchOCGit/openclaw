@@ -244,7 +244,7 @@ Current live limits:
 - broader workflow-improvement memory is no longer limited to supported lesson
   keys only:
   - reviewed generic repo-local workflow guidance is now live
-  - but it remains guidance-only, review-first, and hybrid-first
+  - and it remains guidance-only, bounded auto-review, and hybrid-first
 - recommendation-only procurement/install artifacts are not live yet
 - self-improving capture remains disabled in production
 - automatic Skill Vetter invocation remains disabled
@@ -309,14 +309,21 @@ Delivery enablement pause:
     shapes instead of expanding the lesson-key registry again
   - approved retrieval for those generic lessons currently stays hybrid-first
     and guidance-only
+- generalized lesson auto-review and promotion is now also landed:
+  - broader generic workflow lessons now enter `hold_for_more_evidence`
+    instead of indefinite manual review
+  - two compatible evidence events can auto-promote an approved lesson without
+    a pre-registered lesson key
+  - stale held clusters now reject cleanly instead of lingering
+  - stronger newer conflicting clusters can supersede older approved generic
+    lessons with explicit lineage
 - post-pivot execution path:
-  1. generalized lesson auto-review and promotion
-  2. reviewed phrase induction for approved generic lessons
-  3. generalized lesson retrieval/application expansion
-  4. broader project-rule learning on the same generic lesson pipeline
-  5. unmet-need planning on the same generic lesson pipeline
-  6. reduced-profile self-improving capture integration
-  7. later learned-guidance advisory planning
+  1. reviewed phrase induction for approved generic lessons
+  2. generalized lesson retrieval/application expansion
+  3. broader project-rule learning on the same generic lesson pipeline
+  4. unmet-need planning on the same generic lesson pipeline
+  5. reduced-profile self-improving capture integration
+  6. later learned-guidance advisory planning
 - primary spec:
   - `/memory-system/specs/delivery-enablements`
 
@@ -1045,6 +1052,8 @@ Current phase note:
 - broader workflow-improvement v2 is now also complete for its intended scope
 - the first generalized supervised lesson learning pivot slice is now also
   complete for its intended scope
+- generalized lesson auto-review and promotion is now also complete for its
+  intended scope
 - approved workflow lessons currently remain guidance-only
 - semantic retrieval is now live only for approved environment constraints
   plus the safest approved workflow tool gotchas inside this phase
@@ -1054,14 +1063,16 @@ Current phase note:
 - broader workflow lessons no longer require per-lesson key registration for
   explicit repo-local workflow guidance
 - current generic workflow-learning limits in this phase:
-  - broader lessons are `review_required`, not auto-confirmed
+  - broader lessons now use bounded held-cluster auto-review instead of
+    indefinite manual review
   - retrieval stays on the approved-only hybrid path
   - semantic routing remains limited to the older bounded approved families
   - broader project-rule learning still remains future work
 - the next work in this phase is no longer more lesson-key expansion; it is:
-  - generalized lesson auto-review and promotion
   - approved-generic phrase induction
   - generalized lesson retrieval/application expansion
+  - broader project-rule learning only after phrase induction or a documented
+    alternative reduces generic miss rates
 
 Primary spec:
 

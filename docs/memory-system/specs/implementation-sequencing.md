@@ -27,10 +27,10 @@ Historical completed order:
 11. family-aware semantic retrieval routing
 12. pre-feature delivery enablement tranche
 13. generalized supervised lesson learning v1
+14. generalized lesson auto-review and promotion v1
 
 Recommended next execution order after the generalized-learning pivot:
 
-14. generalized lesson auto-review and promotion v1
 15. reviewed phrase induction for approved generic lessons
 16. generalized lesson retrieval/application expansion
 17. broader project-rule learning on the same generic lesson pipeline
@@ -45,12 +45,12 @@ Current sequencing note:
 - the narrowly bounded project-memory expansion v3 slice is now also landed
 - the broader workflow-improvement memory v2 slice is now also landed
 - the first generalized supervised lesson learning slice is now also landed
+- generalized lesson auto-review and promotion v1 is now also landed
 - the program is no longer primarily advancing by enumerating one lesson key
   at a time
 - the next implementation slice should be:
-  - generalized lesson auto-review and promotion v1
-- the next follow-up slices after that should be:
   - reviewed phrase induction for approved generic lessons
+- the next follow-up slices after that should be:
   - generalized lesson retrieval/application expansion
   - broader project-rule learning only if it can reuse the same generic
     lesson pipeline

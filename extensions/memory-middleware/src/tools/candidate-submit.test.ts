@@ -443,7 +443,7 @@ describe("memory candidate submit tool", () => {
     });
   });
 
-  it("normalizes generalized workflow lessons into review-first managed improvement metadata", async () => {
+  it("normalizes generalized workflow lessons into held-cluster managed improvement metadata", async () => {
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });
 
@@ -471,7 +471,7 @@ describe("memory candidate submit tool", () => {
         }),
         candidateLifecycle: expect.objectContaining({
           family: "workflow_improvement",
-          state: "review_required",
+          state: "hold_for_more_evidence",
           lessonFamily: "generalized_workflow_lesson",
         }),
       }),

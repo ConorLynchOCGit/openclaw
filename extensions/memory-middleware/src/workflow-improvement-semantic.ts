@@ -272,22 +272,22 @@ function containsLikelySecretMaterial(value: string): boolean {
 
 function buildGeneralizedWorkflowImprovementKey(params: {
   captureClass: WorkflowImprovementCaptureClass;
+  guidancePattern: WorkflowImprovementGuidancePattern;
   normalizedSubject: string;
   normalizedRecommendedAction?: string;
   normalizedAvoidAction?: string;
-  normalizedRationale?: string;
 }): string {
   return createHash("sha256")
     .update(
       [
         "memory-middleware",
         "ordinary-turn",
-        "workflow-improvement-generic-v1",
+        "workflow-improvement-generic-cluster-v2",
         params.captureClass,
+        params.guidancePattern,
         params.normalizedSubject,
         params.normalizedRecommendedAction ?? "",
         params.normalizedAvoidAction ?? "",
-        params.normalizedRationale ?? "",
       ].join("|"),
     )
     .digest("hex");
@@ -434,10 +434,10 @@ function createGeneralizedMatch(params: {
     }),
     key: buildGeneralizedWorkflowImprovementKey({
       captureClass: "workflow_generalized_guidance",
+      guidancePattern: params.guidancePattern,
       normalizedSubject,
       normalizedRecommendedAction,
       normalizedAvoidAction,
-      normalizedRationale,
     }),
     ...(recommendedAction ? { recommendedAction, normalizedRecommendedAction } : {}),
     ...(avoidAction ? { avoidAction, normalizedAvoidAction } : {}),

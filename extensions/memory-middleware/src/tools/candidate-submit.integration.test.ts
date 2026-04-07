@@ -3305,6 +3305,351 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
+  it("auto-promotes a generalized workflow lesson cluster after later compatible evidence and retrieves it through approved-only hybrid", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const searchTool = createMemoryObjectSearchHybridTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      } as never,
+    });
+
+    const initialSubmit = await submitTool.execute("call-generic-auto-review-1", {
+      kind: "improvement",
+      content:
+        "For release proof notes here, use bulletized proof IDs instead of paraphrased rollout summaries.",
+      projectId: seeded.projectId,
+    });
+    const candidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const initialRow = await querySingleRow<{
+      review_state: string;
+      lesson_family: string | null;
+      lifecycle_state: string | null;
+      cluster_key: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'lessonFamily' as lesson_family,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'clusterKey' as cluster_key
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [candidateId],
+    );
+
+    expect(initialRow).toEqual({
+      review_state: "candidate",
+      lesson_family: "generalized_workflow_lesson",
+      lifecycle_state: "hold_for_more_evidence",
+      cluster_key: expect.any(String),
+    });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-generic-auto-review-2", {
+      kind: "improvement",
+      content:
+        "Use bulletized proof IDs for release proof notes here instead of paraphrased rollout summaries.",
+      projectId: seeded.projectId,
+    });
+
+    expect(confirmingSubmit.details).toMatchObject({
+      accepted: true,
+      kind: "improvement",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const approvedMemoryObjectId = (confirmingSubmit.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const approvedRow = await querySingleRow<{
+      review_state: string;
+      promotion_profile: string | null;
+      confirmation_method: string | null;
+      auto_review_outcome: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'promotionMetadata'->'autoPromotion'->>'profile' as promotion_profile,
+          metadata->'promotionMetadata'->'candidateConfirmation'->>'method' as confirmation_method,
+          metadata->'promotionMetadata'->'workflowAutoReview'->>'outcome' as auto_review_outcome
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [approvedMemoryObjectId],
+    );
+
+    expect(approvedRow).toEqual({
+      review_state: "approved",
+      promotion_profile: "workflow_generalized_auto_review_v1",
+      confirmation_method: "generalized_cluster_auto_review",
+      auto_review_outcome: "approve",
+    });
+
+    const searchResult = await searchTool.execute("call-generic-auto-review-search", {
+      query: "what should I use for release proof notes",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+    const records = (
+      searchResult.details as {
+        accepted: boolean;
+        status: string;
+        records: Array<{ id: string; matchedFields: string[] }>;
+      }
+    ).records;
+
+    expect(records[0]).toEqual(
+      expect.objectContaining({
+        id: approvedMemoryObjectId,
+        matchedFields: expect.arrayContaining(["fts_search_document"]),
+      }),
+    );
+  });
+
+  it("rejects an expired generalized workflow lesson hold before creating a fresh cluster candidate", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const initialSubmit = await submitTool.execute("call-generic-expire-1", {
+      kind: "improvement",
+      content:
+        "For artifact signoff notes here, use manifest hashes instead of paraphrased artifact summaries.",
+      projectId: seeded.projectId,
+    });
+    const firstCandidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set metadata = jsonb_set(
+            metadata,
+            '{candidateMetadata,candidateLifecycle,expiresAt}',
+            to_jsonb((now() - interval '1 minute')::text),
+            true
+          )
+          where id = $1::uuid
+        `,
+        [firstCandidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const resubmitted = await submitTool.execute("call-generic-expire-2", {
+      kind: "improvement",
+      content:
+        "For artifact signoff notes here, use manifest hashes instead of paraphrased artifact summaries.",
+      projectId: seeded.projectId,
+    });
+
+    expect(resubmitted.details).toMatchObject({
+      accepted: true,
+      kind: "improvement",
+      reviewState: "candidate",
+      memoryObjectId: expect.any(String),
+    });
+    const replacementCandidateId = (resubmitted.details as { memoryObjectId: string })
+      .memoryObjectId;
+    expect(replacementCandidateId).not.toBe(firstCandidateId);
+
+    const expiredRow = await querySingleRow<{
+      review_state: string;
+      lifecycle_state: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'candidateLifecycle'->>'state' as lifecycle_state
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [firstCandidateId],
+    );
+
+    expect(expiredRow).toEqual({
+      review_state: "rejected",
+      lifecycle_state: "hold_for_more_evidence",
+    });
+  });
+
+  it("supersedes an older approved generalized workflow lesson when stronger newer conflicting evidence wins", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const originalFirst = await submitTool.execute("call-generic-supersede-1a", {
+      kind: "improvement",
+      content:
+        "For rollout evidence notes here, use bulletized proof IDs instead of paraphrased rollout summaries.",
+      projectId: seeded.projectId,
+    });
+    const originalCandidateId = (originalFirst.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    let client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [originalCandidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const originalSecond = await submitTool.execute("call-generic-supersede-1b", {
+      kind: "improvement",
+      content:
+        "Use bulletized proof IDs for rollout evidence notes here instead of paraphrased rollout summaries.",
+      projectId: seeded.projectId,
+    });
+    const originalApprovedId = (originalSecond.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const newerFirst = await submitTool.execute("call-generic-supersede-2a", {
+      kind: "improvement",
+      content:
+        "For rollout evidence notes here, use tabulated proof IDs instead of paraphrased rollout summaries.",
+      projectId: seeded.projectId,
+    });
+    const newerCandidateId = (newerFirst.details as { memoryObjectId: string }).memoryObjectId;
+
+    client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [newerCandidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const newerSecond = await submitTool.execute("call-generic-supersede-2b", {
+      kind: "improvement",
+      content:
+        "Use tabulated proof IDs for rollout evidence notes here instead of paraphrased rollout summaries.",
+      projectId: seeded.projectId,
+    });
+
+    expect(newerSecond.details).toMatchObject({
+      accepted: true,
+      kind: "improvement",
+      reviewState: "approved",
+      memoryObjectId: expect.any(String),
+    });
+    const supersedingApprovedId = (newerSecond.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const originalApprovedRow = await querySingleRow<{
+      review_state: string;
+      superseded_by_object_id: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->>'supersededByObjectId' as superseded_by_object_id
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [originalApprovedId],
+    );
+
+    expect(originalApprovedRow).toEqual({
+      review_state: "superseded",
+      superseded_by_object_id: supersedingApprovedId,
+    });
+
+    const supersedingRow = await querySingleRow<{
+      review_state: string;
+      auto_review_outcome: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'promotionMetadata'->'workflowAutoReview'->>'outcome' as auto_review_outcome
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [supersedingApprovedId],
+    );
+
+    expect(supersedingRow).toEqual({
+      review_state: "approved",
+      auto_review_outcome: "supersede_existing",
+    });
+  });
+
   it("auto-promotes an explicit recurring checklist into a validated procedure without manual review", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({

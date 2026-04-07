@@ -40,13 +40,16 @@ Live now:
 - broader repo-local workflow guidance can be captured without a pre-registered
   lesson key
 - casual phrasing can normalize into a reusable lesson shape
-- broader lessons enter `review_required`
+- broader lessons now enter `hold_for_more_evidence`
 - duplicate restatements cluster onto one candidate
+- two compatible evidence events can auto-promote an approved generic lesson
+- stale held clusters can auto-reject
+- stronger newer conflicting clusters can supersede older approved generic
+  lessons on the same scoped subject
 - approved generic lessons retrieve later through approved-only hybrid
 
 Not live yet:
 
-- automatic generalized lesson approval
 - phrase induction for approved generic lessons
 - broader project-rule learning on the same path
 - unmet-need planning on the same path
@@ -65,7 +68,7 @@ workflow-guidance path for lessons such as:
 This is broader than the old lesson-key path, but still:
 
 - guidance-only
-- review-first
+- bounded auto-review
 - hybrid-first on retrieval
 
 ## Candidate shape
@@ -105,19 +108,20 @@ Ignore when:
 
 ## Review posture
 
-Generic lessons are `review_required`, not `pending_confirmation`.
+Generic lessons are no longer indefinite `review_required` backlog entries.
 
-That is the first containment step, not the long-term product posture.
-
-In v1 it means:
+In the landed auto-review posture they:
 
 - broader lessons are allowed to enter the system
-- they do not auto-promote from repeated phrasing alone yet
+- first compatible evidence holds the normalized cluster
+- later compatible evidence can auto-promote through the existing review and
+  promotion substrate
 - duplicate subject or action matches collapse onto the same pending candidate
   instead of creating backlog spray
+- stale held clusters reject instead of lingering
 
-The next scaling step is not "more generic capture." It is automated candidate
-resolution for this path.
+The next scaling step is no longer auto-review. It is phrase induction and
+retrieval/application expansion for the approved generic path.
 
 ## Retrieval / application posture
 
@@ -180,9 +184,9 @@ pipeline rather than reverting to keyed expansion.
 
 The next implementation slices after this first generalized step should be:
 
-1. generalized lesson auto-review and promotion
-2. reviewed phrase induction for approved generic lessons
-3. generalized lesson retrieval/application expansion
+1. reviewed phrase induction for approved generic lessons
+2. generalized lesson retrieval/application expansion
+3. broader project-rule learning on the same generic pipeline
 
 Only after those should the system broaden into:
 
@@ -194,11 +198,11 @@ Only after those should the system broaden into:
 
 - teams keep treating keyed lessons as the real path and generic learning as an
   optional side branch
-- generalized learning creates candidate backlog but never durable approval
+- generalized learning stops at auto-review and never improves future matching
 - retrieval broadens too early and reintroduces noisy memory behavior
 - self-improving capture is enabled before the native pipeline can absorb it
 
 ## Open questions
 
-- should the first broader generic family after workflow guidance be project
-  rules or unmet-need planning?
+- should phrase induction propose only trigger phrases first, or also bounded
+  subject aliases for approved generic lessons?

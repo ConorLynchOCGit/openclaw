@@ -3,10 +3,7 @@
 ## Purpose / user problem
 
 The first generalized lesson-learning slice can create normalized reviewed
-workflow-lesson candidates without pre-registering lesson keys, but it still
-depends on `review_required`.
-
-That is a containment step, not a scalable product loop.
+workflow-lesson candidates without pre-registering lesson keys.
 
 This spec defines the first repo-native path that converts broader reviewed
 lesson candidates into durable approved lessons or bounded rejections without
@@ -35,16 +32,20 @@ Live today:
   - optional `recommendedAction`
   - optional `avoidAction`
   - optional `rationale`
-- those broader lessons enter `review_required`
+- those broader lessons now enter `hold_for_more_evidence`
 - duplicate restatements cluster onto the same candidate
+- compatible repeated evidence can auto-promote without manual review as the
+  normal path
+- stale held clusters can auto-reject
+- stronger newer conflicting clusters can supersede older approved generic
+  lessons on the same scoped subject
 - approved generic lessons can retrieve later through approved-only hybrid
 
 Not live today:
 
-- automatic approval
-- automatic rejection
-- automatic supersede
-- machine triage of stale review-required candidates
+- phrase induction for approved generic lessons
+- broader project-rule learning on the same generic pipeline
+- semantic fallback for generic lessons
 
 ## Non-goals
 
@@ -173,12 +174,11 @@ Two evidence rows are compatible when:
 
 ### Stronger evidence signal
 
-The first implementation may optionally count one explicit repeated
-instructional restatement from a different turn as the second compatible
-evidence event.
+The landed implementation counts one explicit repeated instructional
+restatement from a later turn as the second compatible evidence event.
 
-It should not require a different session in v1, but it must require a
-different event id.
+It does not require a different session in v1, but it does require a
+different event id and the existing minimum-age gate on the held cluster.
 
 ## Hold rules
 
@@ -193,14 +193,14 @@ Held candidates must not linger forever.
 
 ### Hold expiration
 
-The first implementation should define bounded stale resolution:
+The landed implementation defines bounded stale resolution:
 
 - stale held clusters should auto-reject or auto-expire after a bounded window
 - the audit trail should remain
 - stale clusters should stop surfacing as active pending review work
 
-The exact time window remains configurable, but the default product posture
-must be "bounded queue," not "background graveyard."
+The default product posture remains "bounded queue," not "background
+graveyard."
 
 ## Rejection rules
 
@@ -232,6 +232,9 @@ Supersede must create explicit lineage between:
 - the review decision that caused the change
 
 Automatic destructive deletion is not allowed.
+
+The landed implementation records explicit `supersedes` lineage between the
+older approved object and the newer approved object.
 
 ## Duplicate and clustering behavior
 

@@ -747,13 +747,16 @@ Current approved boundary note:
   repo-local workflow guidance through the same family under:
   - `lessonFamily = generalized_workflow_lesson`
   - `template = workflow_generalized_guidance`
-  - `candidateLifecycle.state = review_required`
-  - approved-only hybrid retrieval after review or promotion
-- generalized lesson auto-review is not live yet:
-  - broader lessons still require explicit review or proof-time promotion to
-    become approved
-  - phrase induction for approved generic lessons is not live
-  - generic semantic fallback for those lessons is not live
+  - `candidateLifecycle.state = hold_for_more_evidence`
+  - approved-only hybrid retrieval after machine auto-review promotion
+- generalized lesson auto-review is now live for the first broader workflow
+  family:
+  - two compatible evidence events can approve a generalized lesson cluster
+  - stale held clusters reject cleanly instead of lingering
+  - stronger newer conflicting lessons on the same subject can supersede older
+    approved lessons with explicit lineage
+  - phrase induction for approved generic lessons is still not live
+  - generic semantic fallback for those lessons is still not live
 - broader API workaround memory is not live yet
 - repair or forgetting is not live yet for this family
 - candidates should not shape user-visible behavior before approval in this
@@ -766,6 +769,7 @@ For the exact proof ids and production evidence for this slice, use:
 
 - `docs/memory-system/PRODUCTION_WORKFLOW_IMPROVEMENT_UX_V2_REPORT.md`
 - `docs/memory-system/PRODUCTION_GENERALIZED_LESSON_LEARNING_V1_REPORT.md`
+- `docs/memory-system/PRODUCTION_GENERALIZED_LESSON_AUTO_REVIEW_V1_REPORT.md`
 - `docs/memory-system/PRODUCTION_ENVIRONMENT_CONSTRAINT_UX_REPORT.md`
 - `docs/memory-system/PRODUCTION_API_WORKAROUND_UX_REPORT.md`
 

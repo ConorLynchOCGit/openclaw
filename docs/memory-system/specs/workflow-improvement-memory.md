@@ -92,7 +92,7 @@ That broader path accepts explicit guidance patterns such as:
 Generic workflow guidance remains:
 
 - guidance-only
-- review-first
+- held-first with clustered auto-review
 - project-scoped
 - duplicate-suppressed
 - approved-only on later retrieval
@@ -142,13 +142,10 @@ Normal resolution mode for this family:
 - broader workflow-improvement families:
   - `prompt_now` or `expire_or_reject`
 - broader generalized repo-local workflow guidance:
-  - `review_required`
-
-Planned next resolution mode for broader generalized workflow guidance:
-
-- machine auto-review over normalized lesson clusters with bounded
-  `approve` / `hold_for_more_evidence` / `reject` / `supersede_existing`
-  outcomes
+  - `hold_for_more_evidence` on first compatible evidence
+  - bounded clustered auto-review over normalized lesson clusters with
+    `approve` / `hold_for_more_evidence` / `reject` / `supersede_existing`
+    outcomes
 
 ## Provenance / metadata requirements
 
@@ -189,14 +186,18 @@ Implementation clarification from the generalized lesson-learning pivot slice:
   - recommended action when present
   - avoided action when present
   - optional rationale
-- generic workflow captures use `review_required` instead of
-  `pending_confirmation`
+- generic workflow captures now use `hold_for_more_evidence` instead of
+  indefinite manual review
+- later compatible evidence can auto-promote the same normalized lesson
+  cluster without manual review as the normal path
+- stale held clusters reject cleanly, and stronger newer conflicting clusters
+  can supersede older approved generic lessons on the same subject
 - approved generalized workflow lessons later retrieve through the normal
   approved-only hybrid path rather than new per-lesson routing
 - weak vague workflow complaints should still stay ignored instead of creating
   pending review backlog
-- later phrase induction should attach to approved generic workflow lessons
-  rather than re-expanding the lesson-key registry
+- the next scaling step is approved-generic phrase induction rather than
+  re-expanding the lesson-key registry
 
 ## Ambiguity / abstain / clarify rules
 

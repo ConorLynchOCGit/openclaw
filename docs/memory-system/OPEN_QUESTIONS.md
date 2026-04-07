@@ -5,11 +5,12 @@
 These are the highest-priority open questions after the generalized-learning
 pivot.
 
-1. Should generalized lesson auto-review require two compatible evidence events
-   by default, or should a narrower single-evidence fast path exist for
-   explicit high-confidence imperative lessons?
-2. What stale window should generic `review_required` lesson clusters use
-   before they auto-reject or expire?
+1. The default generalized lesson auto-review threshold is now two compatible
+   evidence events. Should a narrower single-evidence fast path exist later
+   for explicit high-confidence imperative lessons?
+2. The current generic `hold_for_more_evidence` cluster window is bounded.
+   Should the first live default stay at the current three-day window, or be
+   shortened after more production evidence?
 3. When should contradiction between two generic lessons trigger:
    - `hold_for_more_evidence`
    - `reject`

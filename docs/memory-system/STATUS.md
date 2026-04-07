@@ -258,6 +258,14 @@ guidance-only candidate shapes, review-first lifecycle control for the new
 broader path, approved-only hybrid retrieval without new per-lesson routing,
 and isolated plus narrow production proof including explicit no-write
 ambiguity evidence.
+Generalized lesson auto-review and promotion v1 completed on the approved live
+production boundary for its intended scope, with broader generic workflow
+lessons now entering `hold_for_more_evidence`, auto-approving after two
+compatible evidence events, stale held-cluster rejection, explicit
+supersede-existing lineage for stronger newer lessons on the same scoped
+subject, approved-only hybrid retrieval preserved, and isolated plus narrow
+production proof covering hold, approve, reject, supersede, and no-write
+branches.
 Post-pivot generalized-learning architecture pack completed in docs, with
 dedicated specs now written for generalized lesson auto-review, phrase
 induction after approved generic lessons, generalized lesson
@@ -382,7 +390,7 @@ Current compact state:
   - broader explicit repo-local workflow guidance statements normalized into
     reviewed generic lesson shapes
   - medium-confidence candidate confirmation without manual review
-  - review-first lifecycle control for generalized workflow lessons
+  - held-cluster auto-review for generalized workflow lessons
   - approved-only guidance retrieval for later repo-operating or
     provider-troubleshooting asks
   - weak ambiguous ignore instead of dead candidate backlog on the transcript
@@ -2031,7 +2039,7 @@ Fast re-entry reading order:
 
 ## Next expected action
 
-Implement generalized lesson auto-review and promotion v1 so the first broader
-review-required workflow lessons can become approved durable lessons without
-manual review, then follow with approved-generic phrase induction and
-generalized lesson retrieval/application expansion on the same pipeline.
+Implement reviewed phrase induction for approved generic lessons so the first
+approved broader workflow lessons can teach the system additional deterministic
+triggers, then follow with generalized lesson retrieval/application expansion
+on the same pipeline.

@@ -57,6 +57,7 @@ import {
 import {
   inspectWorkflowImprovementLifecycle,
   isExpiredPendingWorkflowImprovementCandidate,
+  supersedeApprovedWorkflowImprovementSubjectEntries,
 } from "../workflow-improvement-lifecycle.js";
 import {
   detectWorkflowImprovementSemanticDecision,
@@ -553,9 +554,19 @@ function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
   input: CandidateSubmissionInput;
   autoPromotionProfile: string;
   confirmationState?: "confirmed";
+  autoReview?: {
+    outcome: "approve" | "supersede_existing";
+    contradictionCount: number;
+    supersedeTargetIds: string[];
+    rejectedCandidateIds: string[];
+  };
 }): Record<string, unknown> {
   const autoCapture = params.input.metadata?.autoCapture;
   const semanticDetection = params.input.metadata?.semanticDetection;
+  const clusterKey =
+    autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+      ? (autoCapture as { key?: unknown }).key
+      : undefined;
   return {
     autoPromotion: {
       source: "candidate_submit_auto_promotion",
@@ -626,8 +637,28 @@ function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
       ? {
           candidateConfirmation: {
             state: params.confirmationState,
-            method: "repeat_subject_signal",
+            method: params.autoReview ? "generalized_cluster_auto_review" : "repeat_subject_signal",
             confirmationEvidenceCount: 2,
+            ...(typeof params.autoReview?.contradictionCount === "number"
+              ? { contradictionCount: params.autoReview.contradictionCount }
+              : {}),
+            ...(typeof clusterKey === "string" && clusterKey.trim().length > 0
+              ? { clusterKey: clusterKey.trim() }
+              : {}),
+          },
+        }
+      : {}),
+    ...(params.autoReview
+      ? {
+          workflowAutoReview: {
+            family: "workflow_improvement",
+            outcome: params.autoReview.outcome,
+            contradictionCount: params.autoReview.contradictionCount,
+            supersedeTargetIds: params.autoReview.supersedeTargetIds,
+            rejectedCandidateIds: params.autoReview.rejectedCandidateIds,
+            ...(typeof clusterKey === "string" && clusterKey.trim().length > 0
+              ? { clusterKey: clusterKey.trim() }
+              : {}),
           },
         }
       : {}),
@@ -832,7 +863,7 @@ async function autoPromoteRecurringProcedureCandidateFromTool(params: {
         accepted: false,
         status: "failed",
         kind: "procedure",
-        reason: supersedeResult.reason,
+        reason: supersedeResult.reason ?? "validated procedure supersede failed",
       };
     }
   }
@@ -1007,12 +1038,13 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     template === "workflow_environment_constraint" ||
     template === "workflow_api_workaround";
   const isGenericTemplate = template === "workflow_generalized_guidance";
+  const isGenericLesson = isGenericTemplate && lessonFamily === "generalized_workflow_lesson";
   if (
     (!isSupportedTemplate && !isGenericTemplate) ||
     !key ||
     !subjectKey ||
     (isSupportedTemplate && (!lessonKey || !isSupportedWorkflowImprovementLessonKey(lessonKey))) ||
-    (isGenericTemplate && lessonFamily !== "generalized_workflow_lesson")
+    !lessonFamily
   ) {
     return null;
   }
@@ -1034,10 +1066,13 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     await params.runtime.candidateReview.review({
       candidateId: inspection.pendingCandidate.id,
       outcome: "rejected",
-      rationale:
-        "workflow-improvement candidate confirmation window expired without later confirming evidence",
+      rationale: isGenericLesson
+        ? "generalized workflow lesson cluster expired without enough compatible evidence"
+        : "workflow-improvement candidate confirmation window expired without later confirming evidence",
       metadata: {
-        source: "candidate_submit_workflow_improvement_confirmation",
+        source: isGenericLesson
+          ? "candidate_submit_workflow_improvement_generic_auto_review"
+          : "candidate_submit_workflow_improvement_confirmation",
         candidateLifecycle: {
           family: "workflow_improvement",
           state: "rejected",
@@ -1048,6 +1083,45 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         },
       },
     });
+  }
+
+  const conflictingApprovedGeneralizedEntries = isGenericLesson
+    ? inspection.activeApprovedSubjectEntries.filter(
+        (entry) =>
+          entry.lessonFamily === "generalized_workflow_lesson" && entry.key && entry.key !== key,
+      )
+    : [];
+  const conflictingPendingGeneralizedEntries = isGenericLesson
+    ? inspection.pendingSubjectCandidates.filter(
+        (entry) =>
+          entry.lessonFamily === "generalized_workflow_lesson" &&
+          entry.key &&
+          entry.key !== key &&
+          entry.id !== inspection.pendingCandidate?.id,
+      )
+    : [];
+
+  if (isGenericLesson && conflictingPendingGeneralizedEntries.length > 0) {
+    for (const pendingEntry of conflictingPendingGeneralizedEntries) {
+      if (!isExpiredPendingWorkflowImprovementCandidate(pendingEntry)) {
+        continue;
+      }
+      await params.runtime.candidateReview.review({
+        candidateId: pendingEntry.id,
+        outcome: "rejected",
+        rationale:
+          "older generalized workflow lesson cluster expired without enough compatible evidence",
+        metadata: {
+          source: "candidate_submit_workflow_improvement_generic_auto_review",
+          candidateLifecycle: {
+            family: "workflow_improvement",
+            state: "rejected",
+            subjectKey,
+            lessonFamily: "generalized_workflow_lesson",
+          },
+        },
+      });
+    }
   }
 
   if (inspection.matchingApprovedObjectId) {
@@ -1063,23 +1137,14 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     inspection.pendingCandidate &&
     !isExpiredPendingWorkflowImprovementCandidate(inspection.pendingCandidate)
   ) {
-    if (
-      candidateState === "review_required" ||
-      inspection.pendingCandidate.confirmationState === "review_required"
-    ) {
-      return {
-        accepted: false,
-        status: "failed",
-        kind: params.input.kind,
-        reason: `workflow-improvement review candidate ${inspection.pendingCandidate.id} already exists`,
-      };
-    }
     if (shouldSkipImmediateWorkflowImprovementConfirmation(inspection.pendingCandidate.createdAt)) {
       return {
         accepted: false,
         status: "failed",
         kind: params.input.kind,
-        reason: `workflow-improvement confirmation candidate ${inspection.pendingCandidate.id} already exists`,
+        reason: isGenericLesson
+          ? `generalized workflow lesson cluster ${inspection.pendingCandidate.id} is still gathering evidence`
+          : `workflow-improvement confirmation candidate ${inspection.pendingCandidate.id} already exists`,
       };
     }
     const autoPromotion =
@@ -1089,13 +1154,53 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         accepted: false,
         status: "failed",
         kind: params.input.kind,
-        reason: `workflow-improvement confirmation candidate ${inspection.pendingCandidate.id} is waiting for later evidence`,
+        reason: isGenericLesson
+          ? `generalized workflow lesson cluster ${inspection.pendingCandidate.id} is waiting for later evidence`
+          : `workflow-improvement confirmation candidate ${inspection.pendingCandidate.id} is waiting for later evidence`,
       };
     }
+    const contradictoryPendingCandidateIds = conflictingPendingGeneralizedEntries
+      .filter((entry) => !isExpiredPendingWorkflowImprovementCandidate(entry))
+      .map((entry) => entry.id);
+    if (isGenericLesson) {
+      for (const candidateId of contradictoryPendingCandidateIds) {
+        await params.runtime.candidateReview.review({
+          candidateId,
+          outcome: "rejected",
+          rationale:
+            "older generalized workflow lesson cluster was replaced by stronger newer conflicting evidence for the same scoped subject",
+          metadata: {
+            source: "candidate_submit_workflow_improvement_generic_auto_review",
+            candidateLifecycle: {
+              family: "workflow_improvement",
+              state: "rejected",
+              subjectKey,
+              lessonFamily: "generalized_workflow_lesson",
+            },
+          },
+        });
+      }
+    }
+    const supersedeTargetIds = isGenericLesson
+      ? conflictingApprovedGeneralizedEntries.map((entry) => entry.id)
+      : [];
     const promotionMetadata = buildToolWorkflowImprovementAutoPromotionMetadata({
       input: params.input,
-      autoPromotionProfile: "workflow_improvement_confirmation_v1",
+      autoPromotionProfile: isGenericLesson
+        ? "workflow_generalized_auto_review_v1"
+        : "workflow_improvement_confirmation_v1",
       confirmationState: "confirmed",
+      ...(isGenericLesson
+        ? {
+            autoReview: {
+              outcome: supersedeTargetIds.length > 0 ? "supersede_existing" : "approve",
+              contradictionCount:
+                supersedeTargetIds.length + contradictoryPendingCandidateIds.length,
+              supersedeTargetIds,
+              rejectedCandidateIds: contradictoryPendingCandidateIds,
+            },
+          }
+        : {}),
     });
     const reviewResult = await params.runtime.candidateReview.review({
       candidateId: inspection.pendingCandidate.id,
@@ -1158,6 +1263,32 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         sessionKey: params.context?.sessionKey,
         memoryObjectId: promotionResult.promotedMemoryObjectId,
       });
+    }
+    if (
+      isGenericLesson &&
+      promotionResult.promotedMemoryObjectId &&
+      supersedeTargetIds.length > 0
+    ) {
+      const supersedeResult = await supersedeApprovedWorkflowImprovementSubjectEntries({
+        config: params.runtime.config,
+        targetObjectIds: supersedeTargetIds,
+        supersededByObjectId: promotionResult.promotedMemoryObjectId,
+        reviewerAgentId: params.context?.agentId,
+        metadata: {
+          clusterKey: key,
+          subjectKey,
+          guidancePattern,
+          evidenceCount: 2,
+        },
+      });
+      if (!supersedeResult.accepted) {
+        return {
+          accepted: false,
+          status: "failed",
+          kind: params.input.kind,
+          reason: supersedeResult.reason ?? "workflow improvement supersede failed",
+        };
+      }
     }
     return {
       accepted: true,
@@ -1506,10 +1637,12 @@ function buildWorkflowImprovementPendingConfirmationMetadata(params: {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
   lessonFamily: WorkflowImprovementLessonFamily;
-  state?: "pending_confirmation" | "review_required";
+  state?: "pending_confirmation" | "hold_for_more_evidence";
   lessonKey?: WorkflowImprovementLessonKey;
   toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
+  clusterKey?: string;
+  contradictionCount?: number;
 }): Record<string, unknown> {
   const observedAt = new Date().toISOString();
   return {
@@ -1524,6 +1657,10 @@ function buildWorkflowImprovementPendingConfirmationMetadata(params: {
       ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
       ...(params.toolKey ? { toolKey: params.toolKey } : {}),
       ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
+      ...(params.clusterKey ? { clusterKey: params.clusterKey } : {}),
+      ...(typeof params.contradictionCount === "number"
+        ? { contradictionCount: params.contradictionCount }
+        : {}),
       evidence: params.evidence,
     },
   };
@@ -1715,7 +1852,7 @@ type ManagedRecurringProcedureResolution = {
 type ManagedWorkflowImprovementResolution = {
   parsed: OrdinaryTurnAutoCaptureMatch;
   lessonFamily: WorkflowImprovementLessonFamily;
-  reviewMode: "pending_confirmation" | "review_required";
+  reviewMode: "pending_confirmation" | "hold_for_more_evidence";
   lessonKey?: WorkflowImprovementLessonKey;
   toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
@@ -2206,7 +2343,7 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
       lessonFamily: contentDecision.match.lessonFamily,
       reviewMode:
         contentDecision.match.lessonFamily === "generalized_workflow_lesson"
-          ? "review_required"
+          ? "hold_for_more_evidence"
           : "pending_confirmation",
       ...(contentDecision.match.lessonKey ? { lessonKey: contentDecision.match.lessonKey } : {}),
       ...(contentDecision.match.toolKey ? { toolKey: contentDecision.match.toolKey } : {}),
@@ -2239,7 +2376,7 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
       lessonFamily: semanticFromRaw.match.lessonFamily,
       reviewMode:
         semanticFromRaw.match.lessonFamily === "generalized_workflow_lesson"
-          ? "review_required"
+          ? "hold_for_more_evidence"
           : "pending_confirmation",
       ...(semanticFromRaw.match.lessonKey ? { lessonKey: semanticFromRaw.match.lessonKey } : {}),
       ...(semanticFromRaw.match.toolKey ? { toolKey: semanticFromRaw.match.toolKey } : {}),
@@ -2653,6 +2790,9 @@ async function normalizeManagedToolCandidateInput(params: {
             : {}),
           ...(workflowImprovementResolution.guidancePattern
             ? { guidancePattern: workflowImprovementResolution.guidancePattern }
+            : {}),
+          ...(workflowImprovementResolution.lessonFamily === "generalized_workflow_lesson"
+            ? { clusterKey: workflowImprovementResolution.parsed.key }
             : {}),
         }),
       },
