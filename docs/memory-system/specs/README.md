@@ -2,81 +2,88 @@
 
 ## Purpose
 
-This directory contains the implementation-ready spec pack for the remaining
-memory-system work.
+This directory is the implementation-ready spec pack for the current memory
+roadmap.
 
-Use these docs when the roadmap says a family still needs design or when a
-partially built family still needs a deliberate productionization plan.
+The current roadmap state is:
+
+1. the six landed families are at practical parity
+2. practical parity is enough to move forward
+3. practical parity is not enough to justify broad family expansion
+4. the next major phase is substrate flattening
+
+Use this pack to execute flattening first, then resume later phases on top of
+the flattened substrate.
 
 ## Read order for a fresh session
 
-1. `/memory-system/README`
-2. `/memory-system/ARCHITECTURE`
-3. `/memory-system/memory-roadmap`
+1. `/memory-system/memory-roadmap`
+2. `/memory-system/STATUS`
+3. `/memory-system/CURRENT_SLICE`
 4. `/memory-system/feature-inventory`
-5. `/memory-system/specs/README`
-6. `/memory-system/specs/implementation-sequencing`
-7. the specific feature spec you are about to implement
+5. `/memory-system/FAMILY_SUBSTRATE_FLATTENING_ANALYSIS`
+6. `/memory-system/FLATTENING_EXECUTION_PLAN`
+7. `/memory-system/specs/implementation-sequencing`
+8. the specific flattening or family spec you are about to implement
 
 ## Spec index
 
-### Cross-cutting architecture and planning
+### Flattening core specs
 
-- `/memory-system/specs/cross-domain-memory-families`
-- `/memory-system/specs/semantic-event-detector`
-- `/memory-system/specs/semantic-retrieval-routing`
-- `/memory-system/specs/ambiguity-and-clarification`
-- `/memory-system/specs/candidate-confirmation-lifecycle`
+- `/memory-system/specs/family-definition-registry`
+- `/memory-system/specs/unified-ingestion-resolver`
+- `/memory-system/specs/unified-clustered-lifecycle`
+- `/memory-system/specs/unified-correction-and-supersede`
+- `/memory-system/specs/unified-phrase-pattern-engine`
+- `/memory-system/specs/retrieval-feature-framework`
+- `/memory-system/specs/behavior-profile-layer`
+- `/memory-system/specs/registry-driven-proof-inspection`
+
+### Cross-cutting architecture and sequencing
+
+- `/memory-system/specs/architecture-fit-review`
+- `/memory-system/specs/behavior-application`
 - `/memory-system/specs/phrase-induction`
+- `/memory-system/specs/implementation-sequencing`
+- `/memory-system/specs/cross-domain-memory-families`
+
+### Existing family specs
+
+- `/memory-system/specs/response-style-profile`
+- `/memory-system/specs/project-memory-expansion`
+- `/memory-system/specs/recurring-procedure-memory`
 - `/memory-system/specs/generalized-lesson-learning`
 - `/memory-system/specs/generalized-lesson-auto-review`
 - `/memory-system/specs/generalized-lesson-retrieval-and-application`
-- `/memory-system/specs/behavior-application`
-- `/memory-system/specs/self-improving-capture-integration`
-- `/memory-system/specs/learned-guidance-advisory-planning`
-- `/memory-system/specs/user-repair-and-memory-control`
-- `/memory-system/specs/messy-language-eval`
-- `/memory-system/specs/governance-surface-productionization`
-- `/memory-system/specs/implementation-sequencing`
-- `/memory-system/specs/delivery-enablements`
-- `/memory-system/specs/premortem`
-- `/memory-system/specs/architecture-fit-review`
-
-### User-visible feature families
-
-- `/memory-system/specs/response-style-profile`
-- `/memory-system/specs/recurring-procedure-memory`
-- `/memory-system/specs/workflow-improvement-memory`
-- `/memory-system/specs/project-memory-expansion`
 - `/memory-system/specs/project-rule-learning`
 - `/memory-system/specs/unmet-need-planning`
 
+### Later phases, not current execution targets
+
+- `/memory-system/specs/self-improving-capture-integration`
+- `/memory-system/specs/learned-guidance-advisory-planning`
+
 ## Rules for using this spec pack
 
-- do not treat these docs as permission to skip the existing plugin/runtime
-  boundaries
-- do not confuse “already built” with “ready for normal production use”
-- use `/memory-system/specs/cross-domain-memory-families` when deciding
-  whether a proposed slice should:
-  - extend an already-real family
-  - finish a previously enumerated but still incomplete family
-  - or introduce a new domain-neutral family needed for cross-domain
-    completion
-- use `/memory-system/feature-inventory` to determine whether a family needs:
-  - implementation
-  - productionization
-  - or no new spec work at all
-- if two specs overlap, resolve the overlap in
-  `/memory-system/specs/architecture-fit-review` before starting code
+- do not add new families on top of the current branch-heavy substrate
+- do not treat flattening as permission to erase real family-policy
+  differences
+- do not let future family work re-implement local capture, lifecycle,
+  retrieval, application, or proof stacks when a flattening spec covers the
+  seam already
+- use `/memory-system/specs/cross-domain-memory-families` only after the
+  flattening phase, reduced-profile self-improving capture, and learned
+  advisory planning are stronger
+- if two specs overlap, the flattening core specs control the shared
+  substrate and the family specs control product-policy differences
 
 ## Current non-goals
 
 This spec pack does not authorize:
 
+- reduced-profile self-improving capture enablement in the current slice
+- learned-guidance advisory planning in the current slice
+- new cross-domain families in the current slice
 - broad autonomous memory behavior
-- automatic Skill Vetter invocation
-- autonomous procurement
-- broad autonomous approval outside explicitly bounded candidate-resolution
-  specs
-- actual installation
-- production-first experimentation
+- automatic installation, procurement, or approval
+- global semantic routing

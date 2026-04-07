@@ -5,277 +5,160 @@
 This document turns the roadmap and spec pack into an execution order optimized
 for:
 
-- speed
 - low rework
-- low production risk
-- high user-visible value
+- low rollout risk
+- high future-family leverage
+- minimal new parallel systems
 
-## Recommended implementation order
+## Current sequencing conclusion
+
+The six landed families are now close enough to practical parity to move
+forward, but not similar enough in implementation shape to justify immediate:
+
+- reduced-profile self-improving capture
+- learned-guidance advisory planning
+- broad family expansion
+
+The next major phase is flattening the family substrate.
+
+## Completed order so far
 
 Historical completed order:
 
-1. quick-win governance productionization tranche
-2. memory application and user-control rules
-3. semantic event detector v1
-4. ambiguity / clarify-abstain behavior
-5. candidate confirmation lifecycle
-6. messy-language eval framework
-7. response-style profile completion
-8. recurring procedure memory
-9. broader project memory expansion
-10. workflow improvement / tool-gotcha memory
-11. family-aware semantic retrieval routing
-12. pre-feature delivery enablement tranche
-13. generalized supervised lesson learning v1
-14. generalized lesson auto-review and promotion v1
-15. reviewed phrase induction for approved generic lessons
-16. generalized lesson retrieval/application expansion
-17. broader project-rule learning on the same generic lesson pipeline
-18. unmet-need planning v1 on the same generic lesson pipeline
+1. bounded governance and candidate substrate
+2. bounded semantic family rollout
+3. generalized workflow lesson learning
+4. generalized lesson auto-review
+5. reviewed phrase induction for approved generic workflow lessons
+6. generalized lesson retrieval and application expansion
+7. project-rule learning
+8. unmet-need planning
+9. existing-family parity batches
+10. cross-family retrieval / repair / phrase / envelope parity closeout
 
-Recommended next execution order after the generalized-learning pivot:
+## Recommended next order
 
-19. existing-family parity and genericization completion
-20. reduced-profile self-improving capture integration
-21. later learned-guidance advisory planning
-22. cross-domain family expansion tranche 1:
-    decision + rationale, observation / result / finding, terminology /
-    ontology / canonical definition, and entity profile
-23. cross-domain family expansion tranche 2:
-    risk / hazard / safety constraint, metric / baseline / threshold,
-    hypothesis / open question, audience / stakeholder model, source trust /
-    authority ranking, and exception / edge-case rule
-24. any broader automation discussion
-
-Current sequencing note:
-
-- the pre-feature delivery enablement tranche is complete
-- the narrowly bounded project-memory expansion v3 slice is now also landed
-- the broader workflow-improvement memory v2 slice is now also landed
-- the first generalized supervised lesson learning slice is now also landed
-- generalized lesson auto-review and promotion v1 is now also landed
-- reviewed phrase induction for approved generic lessons is now also landed
-- generalized lesson retrieval/application expansion is now also landed
-- broader project-rule learning on the same generic lesson pipeline is now
-  also landed
-- unmet-need planning v1 on the same generic lesson pipeline is now also
-  landed
-- the program is no longer primarily advancing by enumerating one lesson key
-  at a time
-- cross-family retrieval/application parity closeout is now also landed as
-  the fourth parity tranche inside existing-family parity
-- cross-family repair / supersede parity closeout is now also landed as the
-  fifth parity tranche
-- bounded phrase-induction expansion is now also landed as the sixth parity
-  tranche, but only where the reviewed artifact model is a good fit
-- remaining generic-envelope parity closeout is now also landed as the
-  seventh parity tranche
-- the next implementation slice should be:
-  - reduced-profile self-improving capture integration after the already
-    landed families are closer to practical parity
-- the next follow-up slices after that should be:
-  - later learned-guidance advisory planning after self-improving candidate
-    provenance and generic retrieval posture are mature enough
-  - then domain-neutral family expansion guided by
-    `/memory-system/specs/cross-domain-memory-families`
+1. flattening phase:
+   - family-definition registry
+   - unified ingestion resolver
+   - unified clustered lifecycle
+   - unified correction / supersede engine
+   - unified phrase-pattern engine
+   - retrieval feature framework
+   - behavior-profile layer
+   - registry-driven proof inspection
+2. reduced-profile self-improving capture integration
+3. learned-guidance advisory planning
+4. cross-domain family expansion tranche 1:
+   - decision + rationale
+   - observation / result / finding
+   - terminology / ontology / canonical definition
+   - entity profile
+5. cross-domain family expansion tranche 2:
+   - risk / hazard / safety constraint
+   - metric / baseline / threshold
+   - hypothesis / open question
+   - audience / stakeholder model
+   - source trust / authority ranking
+   - exception / edge-case rule
 
 ## Why this order is recommended
 
-- some governance families are already built enough to produce quick
-  operational closure before new feature implementation
-- the quick-win tranche stays manual/internal and stops short of
-  approval/install semantics
-- behavior application and user control must be settled before broad semantic
-  capture, or later phases will feel inconsistent and hard to repair
-- semantic detection without ambiguity rules, candidate confirmation rules,
-  and evals is too risky
-- response-style memory is the highest-frequency visible win
-- procedure memory is a strong second visible win
-- family-aware semantic retrieval routing becomes more useful only after the
-  first bounded semantic families are already live
-- once the early semantic-routing and workflow slices are live, the next
-  source of delay shifts from missing feature design to repeated proof and
-  rollout friction; the delivery enablement tranche is meant to remove that
-  drag before the remaining user-facing families continue
-- generalized supervised lesson learning becomes more valuable once the
-  bounded workflow and project families have already proven their lifecycle
-  seams
-- phrase induction is more valuable after approved generic lessons exist and
-  auto-review can turn broader lessons into durable approved inputs
-- extending the same phrase-induction posture to other families should stay
-  bounded and reviewed rather than becoming generic semantic fallback
-- generalized lesson retrieval/application is more valuable after broader
-  approved lessons exist and before later families broaden
-- broader project-rule learning and unmet-need planning should reuse the
-  generic lesson pipeline rather than starting from new bespoke candidate
-  models
-- once project-rule learning is live, unmet-need planning becomes the next
-  broader family because it extends the same substrate without broadening into
-  autonomy
-- before self-improving capture or cross-domain expansion, the already-landed
-  families should be brought closer to the same maturity level across:
-  - natural-language capture
-  - canonicalization
-  - clustering and dedupe
-  - machine review and promotion
-  - repair and supersede
-  - retrieval and application quality
-- self-improving capture should wait until native taxonomy, auto-review,
-  backlog control, and existing-family parity are stronger
-- after family parity, self-improving capture, and learned-guidance advisory
-  planning are live, future expansion should prefer domain-neutral families
-  over longer software-only tails
-- decision, finding, terminology, and entity families should land before more
-  specialized long-tail lesson families because they travel better across
-  multiple knowledge domains
+- practical parity solved the biggest user-facing inconsistency
+- flattening solves the biggest execution-cost and scalability problem
+- self-improving capture should land on top of flatter family plumbing
+- advisory planning should land on top of flatter retrieval/application
+  plumbing
+- cross-domain family expansion should not resume while family policy is still
+  scattered across branches
 
-## Hard prerequisites
+## Must flatten now
 
-### Before quick-win governance productionization
+The following are the highest-leverage flattening steps and should be treated as
+the near-term execution core:
 
-- family-by-family quick-win vs wait classification exists
-- each quick-win family still stops short of approval/install semantics
-- runbook and rollback notes are part of the tranche, not deferred to later
+1. family-definition registry
+2. unified ingestion resolver
+3. unified clustered lifecycle
+4. unified correction / supersede engine
+5. retrieval feature framework
+6. behavior-profile layer
 
-### Before semantic detector work
+These directly reduce the cost of future families.
 
-- behavior application rules exist
-- ambiguity policy exists
-- candidate confirmation lifecycle exists
-- messy-language eval plan exists
+## Can flatten later inside the same phase
 
-### Before recurring procedure memory
+- unified phrase-pattern engine
+- registry-driven proof inspection
 
-- behavior application rules exist
-- at least one response-style family is stable under semantic capture
+These still matter, but they can follow after registry/ingestion/lifecycle if a
+later implementation slice needs tighter staging.
 
-### Before generalized lesson auto-review and promotion
+## Must remain intentionally family-specific
 
-- generalized lesson candidate formation is live
-- normalized generic lesson shape is stable enough to cluster
-- duplicate suppression exists
-- proof runner can capture the generic path honestly
+- procedures remain `suggestion_first` and direct-use only on clear ask
+- project facts remain explicit and stricter than generic guidance
+- response style remains bounded
+- semantic routing remains family-gated
+- phrase induction remains family-eligible rather than universal
 
-### Before reviewed phrase induction for approved generic lessons
+## Hard prerequisites before flattening implementation starts
 
-- generalized lesson auto-review is live
-- approved generic lessons exist without manual promotion as the normal path
-- generic lesson retrieval is still hybrid-first
+- the architecture docs for flattening are checked in
+- the family-definition registry shape is settled enough to code
+- the current families are documented in terms of:
+  - what is live
+  - what flattening absorbs
+  - what remains family policy
+- the active roadmap and current-slice docs no longer say
+  reduced-profile self-improving capture is immediately next
 
-### Before generalized lesson retrieval/application expansion
+## Hard prerequisites before reduced-profile self-improving capture
 
-- generalized lesson auto-review is live
-- at least one approved generic lesson family is stable
-- prompt/application seams already attribute applied memory
+- family-definition registry is live
+- ingestion no longer depends on two divergent family-resolution stacks
+- clustered lifecycle and correction behavior are no longer spread across near-
+  duplicate paths
+- retrieval/application policy is flatter than it is today
 
-### Before reduced-profile self-improving capture integration
+## Hard prerequisites before learned-guidance advisory planning
 
-- semantic event detector is live for first families
-- generalized lesson auto-review is live
-- phrase induction exists or a deliberate alternative is documented
-- messy-language eval is already in use
-- candidate noise is acceptably low
-- the currently landed families are closer to parity on lifecycle and
-  retrieval/application quality than they are today
+- reduced-profile self-improving capture is production-proven
+- behavior-profile layer and retrieval framework are stable enough that
+  advisory logic is not compensating for prompt-section policy sprawl
 
-### Before family-aware semantic retrieval routing
+## Hard prerequisites before new cross-domain families
 
-- at least two bounded semantic families are already live
-- hybrid retrieval is stable for those families
-- approved-only behavior rules are already proven
-- semantic retrieval remains approved-only plus explicit validated-procedure
-  scope
+- flattening phase is materially complete
+- reduced-profile self-improving capture is integrated on the flattened
+  substrate
+- advisory planning is stable enough to reuse the same substrate
 
 ## What can proceed in parallel
 
-Safe parallel tracks after the shared prerequisites are met:
+Once the family-definition registry contract is stable:
 
-- phrase induction + messy-language eval
-- generalized lesson retrieval/application docs + broader family design
-- family-aware semantic retrieval routing spec work + later conceptual family
-  design
-- governance productionization docs + runbook updates
-- repo-global landing hygiene work + memory-program proof harness work, once
-  the delivery enablement tranche is active
+- registry spec refinement and proof-inspection design
+- phrase-pattern engine design and behavior-profile design
+- family-spec updates and roadmap/status alignment
+
+During implementation, keep runtime slices narrow enough that shared substrate
+changes can still be proven honestly.
 
 ## What must not proceed in parallel
 
-- generalized lesson auto-review and self-improving enablement
-- behavior-application changes and broad production rollout
+- broad family expansion during flattening
+- self-improving capture implementation before the registry/ingestion/lifecycle
+  flattening core exists
+- advisory-planning implementation before behavior-profile and retrieval
+  flattening exist
 
-## High user value vs low user value
+## Proof posture
 
-### Highest user value
+Every flattening slice must prove both:
 
-- response-style profile completion
-- recurring procedure memory
-- broader project memory
+1. no regression in current family behavior
+2. real reduction in accidental parallelism
 
-### Medium user value
-
-- user repair/control
-- semantic detector
-- behavior application
-
-### Lower direct user value but still important
-
-- phrase induction
-- generalized lesson auto-review
-- governance productionization
-- premortem / guardrail work
-
-## High risk vs low risk
-
-### Higher risk
-
-- generalized lesson auto-review
-- behavior application
-- wait-tranche governance productionization
-- self-improving capture integration
-- any productionization that touches live governance posture
-
-### Lower risk
-
-- quick-win governance productionization
-- messy-language eval harness
-- phrase induction candidate store
-- roadmap/spec/runbook updates
-
-## Proof environment first
-
-The following must be proven in the isolated proof environment first:
-
-- any quick-win governance family whose docs/config changed before production
-  proof
-- semantic detector outputs
-- ambiguity outcomes
-- response-style profile application
-- procedure memory retrieval/use
-- broader project-memory fields
-- unmet-need recommendation artifacts
-
-## Production early-implementation restrictions
-
-Do not touch on production during early implementation:
-
-- pairing/auth experiments
-- new scheduler classes
-- self-improving enablement
-- procurement/install automation
-- actual installation
-
-The quick-win governance tranche is the only allowed productionization work
-before the next major user-facing semantic slice.
-
-## Good enough to start coding
-
-For a spec to be ready for code:
-
-- scope is bounded
-- current seams are identified
-- candidate vs approved behavior is explicit
-- rollout posture is explicit
-- proof requirements are explicit
-- non-goals are explicit
-
-If any of those are missing, finish the spec first.
+Flattening slices are not honest if they only move code around without proving
+that shared substrate is now serving multiple families.

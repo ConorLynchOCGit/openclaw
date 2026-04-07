@@ -1,267 +1,157 @@
 # Behavior Application
 
-## Purpose / user problem
+## Purpose
 
-Users only feel memory value when remembered information consistently changes
-later behavior. Capture alone is not enough.
+This spec is the canonical bridge between:
 
-## Why this belongs in the memory system
+- retrieval selection
+- family application posture
+- prompt rendering
+- the new behavior-profile layer
 
-The memory system needs an explicit layer that turns approved memory into an
-active behavior profile for the current turn.
-
-## Non-goals
-
-- replacing retrieval
-- storing new durable memory
-- broad autonomous action planning
-
-## Architecture fit
-
-This layer consumes:
-
-- approved memory retrieval results
-- explicit candidate retrieval only when a surface intentionally asks for it
-- validated procedures when explicitly relevant
-- a shared typed canonical subject registry owned inside `memory-middleware`
-
-It should fit between retrieval and prompt/application surfaces such as
-`extensions/memory-core/src/prompt-section.ts`.
-
-It must not bypass:
-
-- approved-only behavior rules
-- retrieval scopes
-- project scoping
-
-The default working-context retrieval posture remains typed hybrid retrieval.
-
-Family-aware semantic retrieval should be introduced only where it materially
-improves conceptual recall without displacing stronger exact or typed matches.
-
-That routing policy is specified in:
-
-- `/memory-system/specs/semantic-retrieval-routing`
-
-The detailed posture for approved generic lessons is specified in:
-
-- `/memory-system/specs/generalized-lesson-retrieval-and-application`
-
-## Domain model / concepts
-
-Introduce an `ActiveBehaviorProfile` concept with bounded categories:
-
-- response style
-- project facts
-- applicable procedures
-- operator/workflow hints where allowed
-- approved generic guidance where allowed
-
-Each profile item should include:
-
-- source memory id
-- source kind
-- scope
-- precedence weight
-- justification for inclusion
+It replaces the old habit of letting prompt text carry too much of the actual
+application policy.
 
 ## Current live posture
 
-Live today:
+The six landed families already apply with distinct user-facing behavior:
 
-- approved response-style memories shape replies in their bounded family
-- approved project facts can answer direct project questions
-- validated recurring procedures can shape suggestion-first or direct-use
-  behavior in their bounded family
-- approved workflow-guidance memories can surface as repo-operating guidance
-- approved generalized workflow lessons can also surface through the same
-  guidance path
-- approved generalized project rules can surface through the same
-  guidance-only path for direct named-project operating asks
-- approved generalized unmet-need artifacts can surface through the same
-  approved-only path as recommendation-only missing-capability reminders for
-  direct named-project asks
-- direct named-project project-fact, project-rule, and unmet-need asks now
-  use one shared family-aligned project-selection posture instead of freely
-  blending adjacent approved project memories from other families
+- response style shapes replies
+- project facts answer explicit factual asks
+- workflow lessons and project rules remain guidance-only
+- unmet needs remain recommendation-only
+- recurring procedures remain suggestion-first and direct-use only on clear
+  checklist asks
 
-Not live today:
+Those differences are valid product-policy differences and must remain.
 
-- a full explicit active-profile layer across all families
-- learned-guidance advisory planning
+## Problem being solved by flattening
 
-## Exact input / output behavior
+Today, too much application logic is spread across:
 
-### Inputs
+- retrieval ranking
+- prompt-section query instructions
+- prompt rendering branches
 
-- current turn text
-- retrieval results
-- current project/session scope when available
+That makes prompt text a hidden policy engine.
 
-### Outputs
+## Target architecture
 
-- a compact active profile for the turn
-- or no profile if nothing relevant is approved
+Application should be split into four layers.
 
-The `ActiveBehaviorProfile` is ephemeral per turn.
+### 1. Application substrate
 
-It is not a new durable memory object type.
+The behavior-profile layer builds a structured `BehaviorProfile` from:
 
-## Candidate vs approved behavior
+- query intent
+- ranked retrieval results
+- family application policy from the registry
 
-- candidate memory must not shape behavior by default
-- approved memory is the main input
-- validated procedures may shape behavior only when explicitly allowed by the
-  retrieval surface
-- validated procedures must not silently become a background action layer
-- generalized lessons must be approved before they shape normal behavior
+### 2. Family application posture
 
-## Provenance / metadata requirements
+The registry declares one application mode for each family:
 
-Behavior application should preserve:
+- `shape_reply`
+- `direct_answer`
+- `guidance_only`
+- `recommendation_only`
+- `suggestion_first`
 
-- which memory ids were applied
-- which retrieved items were rejected as irrelevant
-- why a higher-precedence memory won
+### 3. Retrieval selection
 
-Any persisted visibility should be limited to debug/observability metadata
-rather than storing the active profile itself as canonical state.
+The retrieval layer and behavior-profile layer together decide:
 
-## Retrieval / application behavior
+- which memories are selected
+- which are suppressed
+- why they were selected or suppressed
 
-This is the primary spec for later-turn memory use.
+### 4. Prompt rendering
 
-Retrieval posture for this layer:
+`prompt-section.ts` should render from the behavior profile. It should not
+re-derive family policy locally.
 
-- hybrid retrieval remains the normal default
-- semantic retrieval is additive and family-scoped
-- exact typed matches should usually outrank pure semantic similarity
-- response-style and explicit named project facts remain hybrid-first
-- nearby recurring-procedure asks are the first live semantic fallback family
-- approved environment-constraint guidance is the second live semantic fallback
-  family
-- approved workflow-improvement tool gotchas for
-  `vitest_wrapper_required`, `scripts_committer_required`, and
-  `git_stash_unsafe` are the third live semantic fallback family
-- approved API workaround guidance for
-  `openai_embeddings_api_key_required` and
-  `anthropic_context1m_eligible_credential_required` are the fourth live
-  semantic fallback family
-- approved generalized workflow lessons remain hybrid-first
-- approved generalized project rules remain hybrid-first
-- approved generalized unmet-need artifacts remain hybrid-first
-- broader approved generic lessons should remain hybrid-first until
-  `/memory-system/specs/generalized-lesson-retrieval-and-application`
-  explicitly proves a broader need
+## Family application posture
 
-It should define precedence such as:
+### Response style
 
-1. current project-scoped fact over global adjacent fact
-2. explicit response-style memory over softer inferred style hints
-3. specific procedure match over generic related procedure
-4. exact named workflow lesson over adjacent generic workflow guidance for the
-   same question
-5. explicit superseding approved lesson over older conflicting approved lesson
-6. for direct named-project asks, the top family-aligned project result over
-   adjacent project memories from other families unless they directly
-   corroborate the same answer
+- mode: `shape_reply`
+- role: shape the style and structure of the answer
+- non-goal: broad personality simulation
 
-The locked v1 procedure posture is:
+### Project facts
 
-- suggestion-first when a validated procedure looks relevant but the user has
-  not clearly asked to use it
-- direct-use only when the user is clearly asking for that named or strongly
-  equivalent stored procedure
-- omission over guessing when procedure relevance is uncertain
-- no silent background application of stored procedures
+- mode: `direct_answer`
+- role: answer scoped factual project asks
+- non-goal: speculative project summaries
 
-For approved generalized workflow guidance, the locked v1 posture is:
+### Workflow lessons
 
-- guidance-only
-- project-scoped
-- omit on weak overlap
-- do not trigger action-taking
+- mode: `guidance_only`
+- role: provide reusable operating guidance
+- non-goal: direct tool execution
 
-For approved generalized unmet-need artifacts, the locked v1 posture is:
+### Project rules
 
-- recommendation-only
-- project-scoped
-- surface as "still missing" or "still needed" guidance only when the current
-  ask is explicitly about missing capability or next support
-- do not trigger procurement, install, approval, or autonomous remediation
+- mode: `guidance_only`
+- role: provide named-project operating guidance
+- non-goal: arbitrary new project-fact fields
 
-For direct named-project cross-family selection, the locked v1 posture is:
+### Unmet needs
 
-- fact-like asks such as "where is", "what is the", "which branch", "url",
-  "dashboard", "report", and "runbook" should prefer the top fact-like
-  approved project result
-- operating-rule asks such as "what should I use", "what should I trust",
-  "what should I avoid", or "instead of" should prefer the top approved
-  project-rule result
-- unmet-need asks such as "what do we still need", "what are we missing", or
-  "are we still missing" should prefer the top approved unmet-need result
-- adjacent project memories from other families should be omitted unless they
-  directly corroborate the same answer
+- mode: `recommendation_only`
+- role: surface remembered missing support or capability gaps
+- non-goal: install, procurement, or approval action
 
-## Ambiguity / abstain / clarify rules
+### Recurring procedures
 
-- if precedence is unclear but behavior can safely omit memory, omit it
-- if two memories genuinely conflict and the reply would materially change,
-  prefer asking a clarifying question in later phases rather than silently
-  guessing
-- if a procedure appears relevant but the ask is not clearly procedural,
-  prefer suggestion-first or omission rather than direct-use
-- if a generalized workflow lesson is only weakly adjacent, omit it rather than
-  surfacing speculative advice
+- mode: `suggestion_first`
+- role: suggest known procedures, and only directly use them on clear checklist
+  asks
+- non-goal: silent procedure execution
 
-## User repair / supersede / forgetting implications
+## Retrieval selection rules
 
-Repair flows should target the applied profile, not just hidden DB rows.
+The behavior-profile layer must preserve:
 
-Users need to be able to correct what the system is currently using.
+- exact typed wins when a direct typed project fact is asked
+- family-aligned direct named-project result shaping
+- suppression of adjacent irrelevant project memories after a clear family
+  winner
+- response-style shaping without turning style memories into direct factual
+  answers
 
-The locked v1 repair posture is conversational-first:
+## Prompt rendering rules
 
-- users repair memory by ordinary conversational turns
-- behavior application must preserve enough targeting context that repairs like
-  "no, not that one" or "forget that preference" can resolve safely
-- this does not require a full inspection UI in v1
+Prompt rendering should:
 
-## Observability / metrics / audit requirements
+- consume selected/suppressed memory outputs from the behavior profile
+- preserve family-specific posture wording
+- keep memory attribution available for later repair and proof
 
-Track:
+Prompt rendering should not:
 
-- applied profile size
-- which memories were applied
-- conflict rate
-- omission rate due to ambiguity
-- memory application miss rate discovered during review
+- choose the winning family by itself
+- silently broaden retrieval
+- silently change procedure posture
 
-## Evaluation / proof requirements
+## What flattening will absorb
 
-- prove that later replies actually change due to approved memory
-- prove precedence behavior in overlapping-memory cases
-- prove irrelevant adjacent memories are not over-applied
-- prove suggestion-first procedure handling separately from clear-ask direct-use
-- prove approved generalized lessons stay guidance-only
+The flattening phase should move these responsibilities out of prompt text:
 
-## Rollout posture
+- family query selection
+- family winner selection
+- adjacent-family suppression
+- application mode selection
 
-- off-production first
-- production after response-style and project-fact precedence are validated
-- later generic application broadening should follow the dedicated generalized
-  retrieval/application spec rather than ad hoc prompt edits
+## What remains intentionally family-specific
 
-## Risks / failure modes
+- application mode per family
+- direct-use restrictions for procedures
+- stricter truth posture for project facts
+- bounded scope of response style
 
-- too many memories applied at once
-- prompt bloat
-- hidden precedence rules users cannot predict
-- inconsistent behavior across similar turns
-- stored procedures become unexpectedly overactive and feel intrusive
-- generic approved lessons become a second hidden policy layer
+## Non-goals
 
-## Open questions
-
-- how much debug or inspection detail should be exposed by default without
-  making memory behavior harder to understand?
+- making every family apply the same way
+- turning prompt rendering into a memory browser
+- enabling advisory planning in the current phase

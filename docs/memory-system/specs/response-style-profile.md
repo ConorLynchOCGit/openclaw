@@ -1,189 +1,66 @@
 # Response-Style Profile
 
-## Purpose / user problem
+## Purpose
 
-Users frequently need the assistant to remember how it should respond:
+Response-style memory stores durable reply-shaping preferences and requirements.
+It is not broad personality memory.
 
-- concise or not
-- plain English or not
-- bullets or not
-- tables or not
-- numbered steps or not
+## Current live posture
 
-This is the highest-frequency user-facing memory family and should feel
-reliably remembered.
+Live now:
 
-## Why this belongs in the memory system
+- bounded typed response-style memory
+- bounded generic response-style guidance for:
+  - response opening
+  - response structure
+  - response tone
+  - response detail level
+  - response wrap up
+- held-cluster lifecycle for generic response-style guidance
+- explicit correction / supersede for supported subjects
+- reviewed phrase-pattern support for approved response-style memories
+- approved-only hybrid retrieval and reply shaping
 
-Response-style memory is one of the clearest “I can feel it remembered me”
-loops.
+## Intentional product-policy boundaries
 
-## Non-goals
+Response-style memory should remain:
 
-- storing every transient formatting request
-- inferring stable style from one-off situational formatting
+- bounded
+- explicit
+- reply-shaping
+
+It should not become:
+
 - broad personality modeling
+- hidden long-tail preference overlearning
+- semantic “vibe” memory
 
-## Architecture fit
+## What flattening will absorb into shared substrate
 
-This feature uses:
+Response style should use the same shared flattening layers as other families:
 
-- semantic event detection
-- deterministic parser as a shortcut for the older supported templates
-- bounded correction capture
-- reviewed phrase induction for approved response-style memories
-- approved `feedback` memory
-- behavior application
+- family-definition registry
+- unified ingestion resolver
+- unified clustered lifecycle
+- unified correction / supersede
+- unified phrase-pattern engine
+- retrieval feature framework
+- behavior-profile layer
+- registry-driven proof inspection
 
-## Domain model / concepts
+## What remains intentionally family-specific
 
-Supported fast-path subjects remain bounded to:
+- application mode remains `shape_reply`
+- scope remains global rather than named-project scoped
+- bounded subject set remains explicit
 
-- `responses_concise`
-- `responses_bullet_points`
-- `responses_plain_english`
-- `responses_no_tables_unless_asked`
-- `responses_numbered_steps_for_instructions`
+## What future family work must not re-implement locally
 
-This parity tranche now adds one bounded generic lane for explicit durable:
+Do not keep response style on a forever-bespoke stack for:
 
-- `response opening`
-- `response structure`
-- `response tone`
-- `response detail level`
-- `response wrap up`
+- phrase handling
+- correction targeting
+- clustered lifecycle
+- application rendering
 
-Examples inside that lane:
-
-- start with the direct answer first
-- use short section headers in longer replies
-- no emoji in responses
-- keep explanations high level unless I ask for more detail
-- end longer replies with next steps
-
-## Bounded scope for parity v1
-
-The generic lane remains intentionally narrow:
-
-- it only accepts explicit durable wording
-- it ignores situational one-off phrasing
-- it does not broaden into broader personality or writing-style modeling
-- it does not enable generic semantic fallback for response-style memory
-
-## Exact input / output behavior
-
-The system should accept many natural phrasings for these subjects and map them
-to bounded canonical values.
-
-Examples:
-
-- request
-- correction
-- explicit stop/repair
-
-## Candidate vs approved behavior
-
-- supported low-risk response-style memory may continue to auto-promote where
-  that is already justified
-- bounded generic response-style guidance now uses the same
-  candidate-confirmation substrate as the newer generic families:
-  - first evidence enters `hold_for_more_evidence`
-  - later compatible evidence can auto-promote
-- broader or ambiguous cases should use the candidate-confirmation lifecycle
-  rather than an indefinite review queue
-
-Phrase induction posture for this family:
-
-- only already-approved response-style memories can seed phrase-pattern
-  candidates
-- the first novel anchored paraphrase creates a held
-  `response_style_phrase_pattern` artifact
-- later compatible evidence can auto-promote the pattern
-- approved phrase patterns feed future deterministic response-style capture
-- approved phrase artifacts stay hidden from normal approved-only retrieval
-
-Candidate resolution mode for this family:
-
-- `auto_confirm` for bounded low-risk response-style subjects
-- `hold_for_more_evidence` for bounded generic response-style guidance
-- `prompt_now` only when a short clarification would materially avoid the wrong
-  durable preference
-- `expire_or_reject` for unresolved ambiguous style signals
-
-## Provenance / metadata requirements
-
-Record:
-
-- subject key
-- normalized subject
-- normalized value
-- capture family
-- whether the event was a correction or new requirement
-- evidence text
-- applied scope
-
-## Retrieval / application behavior
-
-Approved response-style memory should:
-
-- influence later replies consistently
-- use stable precedence
-- not be crowded out by adjacent style memories
-- use normalized subject/value overlap to rank the most relevant approved
-  generic response-style memory when several approved style memories coexist
-
-## Ambiguity / abstain / clarify rules
-
-- distinguish enduring preference from one-off formatting request
-- clarify when the user intent could be situational
-
-## User repair / supersede / forgetting implications
-
-Users must be able to:
-
-- correct an existing style preference
-- stop applying a style preference
-- replace an outdated style preference
-
-Current parity nuance:
-
-- supported template corrections can still supersede directly
-- bounded generic corrections can now supersede directly when an approved
-  generic response-style memory already exists on the same normalized subject
-- first-time generic guidance still uses `hold_for_more_evidence` rather than
-  broad first-mention auto-promotion
-
-## Observability / metrics / audit requirements
-
-Track:
-
-- style subject capture volume
-- correction volume
-- overlap conflicts
-- repair volume
-- later-turn application success
-
-## Evaluation / proof requirements
-
-- messy-language coverage for each supported subject
-- overlap retrieval tests
-- later-session application proofs
-- repair proofs
-- phrase-pattern proof for bounded approved response-style memories
-
-## Rollout posture
-
-- off-production first
-- bounded production acceptance by subject family
-
-## Risks / failure modes
-
-- one-off formatting gets overlearned as a durable preference
-- multiple style memories fight each other
-- style memory is retrieved but not consistently applied
-- phrase patterns overfit and start matching non-style asks
-
-## Open questions
-
-- should style memory include stronger scope controls later, such as
-  project-only or channel-only preferences?
+The family should remain distinct in policy, not in substrate shape.

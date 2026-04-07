@@ -2,127 +2,127 @@
 
 ## Verdict
 
-The current spec pack is coherent enough for implementation sprinting, with one
-important rule:
+The spec pack is now fit for a flattening phase.
 
-- implementation must preserve the separation between:
-  - semantic detection
-  - bounded canonicalization
-  - behavior application
-  - deterministic phrase induction
+That is the correct next phase because:
 
-If those layers collapse into one mixed heuristic path, the design will drift
-back toward a brittle and hard-to-audit system.
+- the six landed families are at practical parity
+- the product-policy differences are clearer than before
+- the remaining scaling problem is accidental parallel implementation
 
-## Cross-spec ownership map
+The next phase should therefore flatten shared substrate, not jump directly to
+reduced-profile self-improving capture or new family expansion.
 
-### Semantic detector owns
+## What the current architecture already got right
 
-- event-family detection
-- evidence extraction
-- confidence assignment
+- semantic detection, canonicalization, lifecycle, retrieval, and application
+  are conceptually separate layers
+- the six landed families already prove one broader memory system exists
+- approved-only and hybrid-first guardrails are intact
+- procedures, facts, and response style already have justified policy
+  differences
 
-### Ambiguity policy owns
+## What is still over-coupled
 
-- accept vs candidate-only vs clarify vs ignore
+The main architectural problem is not missing infra. It is policy still being
+declared in too many places:
 
-### Candidate confirmation lifecycle owns
+- capture and candidate-submit each resolve families locally
+- lifecycle and correction behavior are still partly per-family implementations
+- retrieval ranking is too tied to family-specific SQL branches
+- prompt rendering still carries application policy
+- proof-runner still carries family selection policy
 
-- what happens after `candidate_only`
-- confirming evidence rules
-- contradiction rules
-- expiration rules
-- promotion eligibility after confirmation
-- the no-dead-candidate rule across candidate-producing families
+## Flattening ownership map
 
-### Canonicalization owns
+### Family-definition registry owns
 
-- mapping supported events into bounded subject/value forms
-- shared use of a code-owned typed canonical subject registry inside
-  `memory-middleware`
+- family identity
+- storage kind
+- scope model
+- canonical fields
+- lifecycle policy
+- correction policy
+- phrase policy
+- retrieval policy
+- application policy
+- semantic-routing policy
+- proof policy
 
-### Behavior application owns
+### Unified ingestion resolver owns
 
-- later-turn precedence and active profile composition
-- ephemeral per-turn `ActiveBehaviorProfile` materialization only
+- transcript and tool-side family resolution
+- canonical payload formation
+- ambiguity outcome
+- correction-intent signaling
 
-### Phrase induction owns
+### Unified clustered lifecycle owns
 
-- reviewed expansion of deterministic trigger coverage
-- candidate-only phrase proposals and reviewed promotion into a DB-backed
-  approved pattern store
+- hold / approve / reject / supersede transitions
+- cluster and subject identity
+- stale handling
 
-### User repair/control owns
+### Unified correction / supersede owns
 
-- correction, supersede, forget, and do-not-remember flows from the user side
-- conversational targeting rules for repair without a full inspection UI
+- explicit correction targeting
+- held versus immediate correction posture
+- lineage generation
 
-## Conflicts checked
+### Retrieval feature framework owns
 
-- detector vs canonicalizer:
-  - separated correctly in the specs
-- ambiguity policy vs candidate confirmation lifecycle:
-  - ambiguity chooses the outcome; lifecycle governs only the follow-on path
-    after `candidate_only`
-- behavior application vs retrieval ranking:
-  - ranking remains upstream retrieval logic; application remains turn-time
-    selection and precedence
-- behavior application vs recurring procedure memory:
-  - procedure memory defines what procedure artifacts exist; behavior
-    application defines when they are suggested, directly used, or omitted
-- user repair vs correction capture:
-  - repair expands and formalizes the control loop rather than replacing
-    correction capture
-- user repair vs behavior application:
-  - behavior application exposes enough applied-memory context for repair
-    targeting, but it does not become a user-facing memory browser in v1
-- phrase induction vs semantic detector:
-  - phrase induction is downstream and reviewable; it is not a second detector
+- feature extraction
+- feature weighting by family policy
+- matched-field evidence
+- direct-intent shaping
 
-## Hidden infra risks checked
+### Behavior-profile layer owns
 
-The spec pack does not require a new standalone memory service.
+- selected versus suppressed memories
+- family application posture
+- prompt-rendering inputs
 
-It stays inside:
+### Registry-driven proof inspection owns
 
-- `memory-middleware`
-- existing DB-backed candidate/review/promotion model
-- a code-owned canonical subject registry plus DB-backed approved phrase
-  patterns
-- existing retrieval surfaces
-- existing proof-vs-production posture
+- lifecycle inspection mode selection
+- phrase inspection support
+- matched-field evidence mapping
+
+## Must flatten now
+
+- family-definition registry
+- unified ingestion resolver
+- unified clustered lifecycle
+- unified correction / supersede
+- retrieval feature framework
+- behavior-profile layer
+
+## Can flatten later inside the same phase
+
+- unified phrase-pattern engine
+- registry-driven proof inspection
+
+## Must remain intentionally family-specific
+
+- procedure application posture
+- stricter project-fact truth posture
+- bounded response-style scope
+- family-gated semantic routing
+- family eligibility for phrase induction
 
 ## Main remaining architecture risk
 
-The main risk is not missing infra. It is overcoupling:
+The main risk is now architectural drift from adding more families before
+flattening:
 
-- detector
-- parser
-- canonicalizer
-- candidate confirmation lifecycle
-- behavior application
+- more ingestion duplication
+- more lifecycle duplication
+- more retrieval CASE growth
+- more prompt policy sprawl
+- more proof-runner branches
 
-must remain separate in code and tests.
+## Conclusion
 
-## Corrections applied during review
-
-- behavior application was promoted to a first-class architecture layer
-- ambiguity policy was separated from detector behavior
-- detector outputs were fixed to candidate metadata and observability rather
-  than a new durable artifact type
-- approved induced phrase patterns were fixed to a reviewed DB-backed store
-  merged with code-owned built-in patterns
-- productionization of off-production governance surfaces was given its own
-  planning track instead of being left implicit
-- messy-language eval was made an explicit gate rather than a vague future idea
-
-## Remaining caution
-
-The roadmap is now fit for execution, but only if future slices continue to:
-
-- update the inventory
-- update the relevant spec docs
-- avoid treating fallback duplicate suppression as a substitute for a real
-  product loop
-- avoid reintroducing candidate families that depend on indefinite manual
-  backlog instead of auto-confirm, prompt-now, or expiration
+The roadmap is now fit for execution only if the next execution tranche is
+flattening. If the repo resumes self-improving capture or major family
+expansion before flattening, it will compound the very duplication this spec
+pack is trying to remove.
