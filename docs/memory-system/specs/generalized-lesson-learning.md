@@ -4,21 +4,21 @@
 
 The memory program needs to stop scaling one lesson key at a time.
 
-Users should be able to teach OpenClaw new repo-local workflow lessons in
-casual language, have those lessons normalized into a reusable reviewed
-candidate shape, and later retrieve the approved lesson as guidance without
-hand-written per-lesson routing.
+Users should be able to teach OpenClaw new durable lessons in casual language,
+have those lessons normalized into reusable reviewed candidates, and later
+retrieve approved lessons as guidance without adding new hand-written lesson
+keys or routers for each one.
 
 ## Why this belongs in the memory system
 
-This is the first step from a safe flashcard cabinet toward a supervised
-learning system that can make and organize new flashcards on its own.
+This is the first architectural move from:
 
-It turns broader repeated operational guidance into:
+- a bounded flashcard cabinet
 
-- reviewable candidate memory
-- approved durable guidance
-- later retrieval or prompt application
+toward:
+
+- a supervised learning system that can create, organize, approve, retrieve,
+  and later broaden new flashcards on its own
 
 without allowing silent execution.
 
@@ -30,19 +30,43 @@ without allowing silent execution.
 - procurement, install, vetting, or approval automation
 - unrestricted freeform memory writes
 
+## Current live posture
+
+The first generalized slice is live only inside the workflow-improvement
+family.
+
+Live now:
+
+- broader repo-local workflow guidance can be captured without a pre-registered
+  lesson key
+- casual phrasing can normalize into a reusable lesson shape
+- broader lessons enter `review_required`
+- duplicate restatements cluster onto one candidate
+- approved generic lessons retrieve later through approved-only hybrid
+
+Not live yet:
+
+- automatic generalized lesson approval
+- phrase induction for approved generic lessons
+- broader project-rule learning on the same path
+- unmet-need planning on the same path
+- self-improving capture into the same path
+- advisory planning from approved learned guidance
+
 ## First landed slice
 
-The first generalized slice stays inside the workflow-improvement family.
-
-It adds a broader reviewed repo-local workflow-guidance path for lessons such
-as:
+The first generalized slice adds a broader reviewed repo-local
+workflow-guidance path for lessons such as:
 
 - `for <scope>, use X instead of Y`
 - `for <scope>, trust X; Y is only Z`
 - `for <scope>, avoid Y`
 
-This is broader than the old lesson-key path, but still guidance-only and
-review-first.
+This is broader than the old lesson-key path, but still:
+
+- guidance-only
+- review-first
+- hybrid-first on retrieval
 
 ## Candidate shape
 
@@ -83,60 +107,33 @@ Ignore when:
 
 Generic lessons are `review_required`, not `pending_confirmation`.
 
-That is the main noise-control lever for the broader path:
+That is the first containment step, not the long-term product posture.
+
+In v1 it means:
 
 - broader lessons are allowed to enter the system
-- they do not auto-promote from repeated phrasing alone in v1
+- they do not auto-promote from repeated phrasing alone yet
 - duplicate subject or action matches collapse onto the same pending candidate
   instead of creating backlog spray
 
-## Dedupe / clustering / supersede
+The next scaling step is not "more generic capture." It is automated candidate
+resolution for this path.
 
-The first generalized slice clusters by:
-
-- normalized subject key
-- normalized recommended action
-- normalized avoided action
-- normalized rationale when present
-
-This keeps:
-
-- repeated restatements of the same lesson on one candidate
-- nearby paraphrases reviewable as one lesson
-
-Repair and supersede remain explicit review-driven actions in v1 rather than
-automatic semantic mutation.
-
-## Retrieval / application behavior
+## Retrieval / application posture
 
 Approved generalized lessons stay on the normal approved-only hybrid retrieval
 path.
 
 They do not need per-lesson routing code.
 
-The approved object content plus normalized metadata provide enough signal for:
-
-- `fts_search_document`
-- `trigram_similarity`
-
-to rank later repo-operating asks usefully.
-
 Application stays guidance-only:
 
 - the lesson may surface as remembered advice
 - it must not directly trigger action-taking
 
-## Proof requirements
+Detailed retrieval/application posture is defined in:
 
-The first generalized slice must prove:
-
-1. a new lesson can be captured without a hard-coded lesson key
-2. casual phrasing is normalized into a reusable candidate shape
-3. broader lesson capture stays review-first
-4. duplicate restatements do not create backlog spray
-5. vague workflow chatter can be explicitly proven as ignored
-6. approved retrieval works through the generic hybrid path without
-   hand-written routing
+- `/memory-system/specs/generalized-lesson-retrieval-and-application`
 
 ## Relationship to bounded lesson keys
 
@@ -146,12 +143,62 @@ They now serve as:
 
 - proven low-risk special cases
 - semantic-routing seeds for the narrowest high-value lessons
-- scaffolding that made this broader reviewed path safe enough to ship
+- high-precision fast paths for already-known subjects
 
 They are no longer the primary long-term scaling strategy.
 
-## Next likely follow-up
+## The post-pivot pipeline
 
-The strongest follow-up after this slice is reviewed phrase induction for
-approved generic lessons, so repeated successful captures can improve future
-matching without adding more hard-coded keys.
+The intended scaling path is now:
+
+1. generalized lesson candidate formation
+2. generalized lesson auto-review and promotion
+3. phrase induction for approved generic lessons
+4. generalized lesson retrieval/application expansion
+5. broader project-rule and unmet-need families on the same pipeline
+6. reduced-profile self-improving capture as another candidate source
+7. later advisory planning from approved learned lessons
+
+This is one layered system, not several unrelated feature families.
+
+## Proof requirements
+
+The first generalized slice had to prove:
+
+1. a new lesson can be captured without a hard-coded lesson key
+2. casual phrasing normalizes into a reusable candidate shape
+3. broader lesson capture stays review-first
+4. duplicate restatements do not create backlog spray
+5. vague workflow chatter can be explicitly proven as ignored
+6. approved retrieval works through the generic hybrid path without
+   hand-written routing
+
+The next generalized slices should each prove one additional layer of the
+pipeline rather than reverting to keyed expansion.
+
+## Next follow-up sequence
+
+The next implementation slices after this first generalized step should be:
+
+1. generalized lesson auto-review and promotion
+2. reviewed phrase induction for approved generic lessons
+3. generalized lesson retrieval/application expansion
+
+Only after those should the system broaden into:
+
+- broader project-rule learning
+- unmet-need planning
+- reduced-profile self-improving capture integration
+
+## Risks / failure modes
+
+- teams keep treating keyed lessons as the real path and generic learning as an
+  optional side branch
+- generalized learning creates candidate backlog but never durable approval
+- retrieval broadens too early and reintroduces noisy memory behavior
+- self-improving capture is enabled before the native pipeline can absorb it
+
+## Open questions
+
+- should the first broader generic family after workflow guidance be project
+  rules or unmet-need planning?

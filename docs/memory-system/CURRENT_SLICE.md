@@ -2,72 +2,74 @@
 
 ## Active slice
 
-Generalized supervised lesson learning v1
+Generalized lesson auto-review and promotion v1
 
-Completed after one bounded slice
+Ready to start after the architecture/spec alignment pass
 
 ## Objective
 
-Pivot the memory roadmap away from hand-registering one lesson key at a time.
+Convert the first generalized workflow-guidance path from a review collector
+into a real supervised learning loop.
 
-This slice now landed:
+This next slice should land:
 
-- a generic reviewed workflow-guidance capture path for broader repo-local
-  lessons without per-lesson key registration
-- review-first normalized candidate shapes for:
-  - explicit repo-local scope
-  - recommended action
-  - avoided action
-  - optional rationale
-  - guidance pattern such as `use_instead_of` or `trust_for_scope`
-- duplicate suppression and subject clustering for the broader reviewed path
-- approved-only hybrid retrieval for approved generalized workflow lessons
-  without new per-lesson routing code
-- explicit no-write proof for vague workflow complaints through the repo-owned
-  proof runner
+- auto-review for eligible generalized workflow-lesson candidates
+- bounded machine resolution into:
+  - `approve`
+  - `hold_for_more_evidence`
+  - `reject`
+  - `supersede_existing`
+- duplicate and stale-review backlog control for broader reviewed lessons
+- approved durable lesson retrieval through the existing hybrid-first path
+  without new per-lesson routers
+- explicit proof that a non-keyed lesson can become approved without manual
+  review
 
 ## Required work
 
-1. Capture new repo-local workflow lessons without adding a new lesson key for
-   each one.
-2. Normalize casual phrasing into a reusable guidance-only candidate shape.
-3. Keep the broader path review-first so candidate noise stays bounded.
-4. Reuse approved-only hybrid retrieval instead of broadening semantic routing
-   generically.
-5. Prove positive capture plus explicit ignored vague chatter with the
-   repo-owned proof runner.
+1. Resolve generalized workflow lessons without depending on manual review.
+2. Define stable evidence thresholds for auto-approval, hold, reject, and
+   supersede.
+3. Keep broader lessons guidance-only and approved-only in later behavior.
+4. Reuse the existing hybrid-first retrieval path instead of broadening
+   semantic routing generically.
+5. Prove both positive promotion and bounded no-backlog rejection behavior
+   through the repo-owned proof runner.
 
 ## Out of scope
 
-- broader project-rule memory
+- broader project-rule learning
 - unmet-need planning
-- generic semantic retrieval for all approved lessons
+- phrase induction runtime changes
+- semantic fallback for generalized lessons
 - autonomous remediation or silent plan mutation
 - production pairing/auth changes
 
 ## Acceptance criteria
 
-- a new repo-local workflow lesson can be captured without a pre-registered
-  lesson key
-- casual phrasing normalizes into a reusable workflow-guidance candidate shape
-- first-seen broader lessons go to `review_required` instead of
-  `pending_confirmation`
-- approved generalized workflow lessons can be retrieved later through the
-  normal approved-only hybrid path
-- weak generic workflow complaints still stay ignored instead of creating
-  backlog trash
+- a new repo-local workflow lesson can become approved without a pre-registered
+  lesson key and without manual review
+- broader reviewed lessons resolve through bounded machine outcomes instead of
+  an indefinite review pile
+- duplicate restatements cluster onto one lesson decision rather than creating
+  review spray
+- stale weak lessons resolve cleanly instead of lingering
+- approved generalized workflow lessons still retrieve later through the normal
+  approved-only hybrid path
 
 ## Notes
 
-This is a roadmap pivot, not another bounded lesson-key expansion.
+The roadmap pivot is no longer just "capture broader lessons." It is now one
+staged supervised-learning pipeline:
 
-The recent bounded lesson-key slices remain valid scaffolding, but they are no
-longer the primary scaling path for workflow learning.
+1. generalized lesson capture
+2. generalized lesson auto-review and promotion
+3. phrase induction for approved generic lessons
+4. generic retrieval/application expansion
+5. broader project-rule and unmet-need families on the same pipeline
+6. reduced-profile self-improving capture as another candidate source
+7. later advisory planning from approved learned lessons
 
-The next strongest candidates to reconsider after this pivot slice are:
+The next implementation slice after this docs/spec pass should be:
 
-- reviewed phrase induction for approved generic lessons
-- broader project-rule memory only if it can reuse the same reviewed generic
-  lesson shape cleanly
-- unmet-need planning v1 after the broader reviewed learning path is less
-  hand-authored
+- generalized lesson auto-review and promotion v1

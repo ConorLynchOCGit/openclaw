@@ -749,6 +749,11 @@ Current approved boundary note:
   - `template = workflow_generalized_guidance`
   - `candidateLifecycle.state = review_required`
   - approved-only hybrid retrieval after review or promotion
+- generalized lesson auto-review is not live yet:
+  - broader lessons still require explicit review or proof-time promotion to
+    become approved
+  - phrase induction for approved generic lessons is not live
+  - generic semantic fallback for those lessons is not live
 - broader API workaround memory is not live yet
 - repair or forgetting is not live yet for this family
 - candidates should not shape user-visible behavior before approval in this

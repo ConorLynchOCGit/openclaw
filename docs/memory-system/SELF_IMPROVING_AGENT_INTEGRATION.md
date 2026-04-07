@@ -168,6 +168,10 @@ This means its outputs should feed:
 - procedure drafting
 - improvement-note tracking
 
+After the generalized-learning pivot, reduced-profile outputs should also feed
+the same normalized lesson clustering and auto-review pipeline used by
+repo-native capture rather than a separate review system.
+
 They should not directly feed:
 
 - approved policy changes

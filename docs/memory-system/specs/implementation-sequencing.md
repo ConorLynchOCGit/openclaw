@@ -12,6 +12,8 @@ for:
 
 ## Recommended implementation order
 
+Historical completed order:
+
 1. quick-win governance productionization tranche
 2. memory application and user-control rules
 3. semantic event detector v1
@@ -19,16 +21,23 @@ for:
 5. candidate confirmation lifecycle
 6. messy-language eval framework
 7. response-style profile completion
-8. phrase induction v1
-9. recurring procedure memory
-10. broader project memory expansion
-11. workflow improvement / tool-gotcha memory
-12. family-aware semantic retrieval routing
-13. pre-feature delivery enablement tranche
-14. unmet-need planning
-15. wait-tranche governance productionization
-16. reduced-profile self-improving capture enablement
-17. any broader automation discussion
+8. recurring procedure memory
+9. broader project memory expansion
+10. workflow improvement / tool-gotcha memory
+11. family-aware semantic retrieval routing
+12. pre-feature delivery enablement tranche
+13. generalized supervised lesson learning v1
+
+Recommended next execution order after the generalized-learning pivot:
+
+14. generalized lesson auto-review and promotion v1
+15. reviewed phrase induction for approved generic lessons
+16. generalized lesson retrieval/application expansion
+17. broader project-rule learning on the same generic lesson pipeline
+18. unmet-need planning v1 on the same generic lesson pipeline
+19. reduced-profile self-improving capture integration
+20. later learned-guidance advisory planning
+21. any broader automation discussion
 
 Current sequencing note:
 
@@ -38,12 +47,15 @@ Current sequencing note:
 - the first generalized supervised lesson learning slice is now also landed
 - the program is no longer primarily advancing by enumerating one lesson key
   at a time
-- the next strongest candidates to choose between explicitly are:
+- the next implementation slice should be:
+  - generalized lesson auto-review and promotion v1
+- the next follow-up slices after that should be:
   - reviewed phrase induction for approved generic lessons
-  - broader project-rule memory only if it can reuse the reviewed generic
-    lesson shape cleanly
-  - unmet-need planning v1 after the broader reviewed lesson path is less
-    hand-authored
+  - generalized lesson retrieval/application expansion
+  - broader project-rule learning only if it can reuse the same generic
+    lesson pipeline
+  - unmet-need planning v1 after the generalized pipeline can already absorb
+    broader lessons without manual backlog
 
 ## Why this order is recommended
 
@@ -63,14 +75,18 @@ Current sequencing note:
   source of delay shifts from missing feature design to repeated proof and
   rollout friction; the delivery enablement tranche is meant to remove that
   drag before the remaining user-facing families continue
-- phrase induction is more valuable after the first semantic families exist
 - generalized supervised lesson learning becomes more valuable once the
   bounded workflow and project families have already proven their lifecycle
   seams
-- workflow improvements and unmet-need planning are useful but lower direct
-  user value until broader reviewed capture exists
-- self-improving capture should wait until native taxonomy and review quality
-  are strong
+- phrase induction is more valuable after approved generic lessons exist and
+  auto-review can turn broader lessons into durable approved inputs
+- generalized lesson retrieval/application is more valuable after broader
+  approved lessons exist and before later families broaden
+- broader project-rule learning and unmet-need planning should reuse the
+  generic lesson pipeline rather than starting from new bespoke candidate
+  models
+- self-improving capture should wait until native taxonomy, auto-review, and
+  backlog control are strong
 
 ## Hard prerequisites
 
@@ -92,9 +108,29 @@ Current sequencing note:
 - behavior application rules exist
 - at least one response-style family is stable under semantic capture
 
-### Before reduced-profile self-improving capture enablement
+### Before generalized lesson auto-review and promotion
+
+- generalized lesson candidate formation is live
+- normalized generic lesson shape is stable enough to cluster
+- duplicate suppression exists
+- proof runner can capture the generic path honestly
+
+### Before reviewed phrase induction for approved generic lessons
+
+- generalized lesson auto-review is live
+- approved generic lessons exist without manual promotion as the normal path
+- generic lesson retrieval is still hybrid-first
+
+### Before generalized lesson retrieval/application expansion
+
+- generalized lesson auto-review is live
+- at least one approved generic lesson family is stable
+- prompt/application seams already attribute applied memory
+
+### Before reduced-profile self-improving capture integration
 
 - semantic event detector is live for first families
+- generalized lesson auto-review is live
 - phrase induction exists or a deliberate alternative is documented
 - messy-language eval is already in use
 - candidate noise is acceptably low
@@ -112,7 +148,7 @@ Current sequencing note:
 Safe parallel tracks after the shared prerequisites are met:
 
 - phrase induction + messy-language eval
-- project-memory expansion + workflow-improvement-memory
+- generalized lesson retrieval/application docs + broader family design
 - family-aware semantic retrieval routing spec work + later conceptual family
   design
 - governance productionization docs + runbook updates
@@ -121,7 +157,7 @@ Safe parallel tracks after the shared prerequisites are met:
 
 ## What must not proceed in parallel
 
-- semantic detector implementation and self-improving enablement
+- generalized lesson auto-review and self-improving enablement
 - behavior-application changes and broad production rollout
 
 ## High user value vs low user value
@@ -141,7 +177,7 @@ Safe parallel tracks after the shared prerequisites are met:
 ### Lower direct user value but still important
 
 - phrase induction
-- workflow-improvement memory
+- generalized lesson auto-review
 - governance productionization
 - premortem / guardrail work
 
@@ -149,10 +185,10 @@ Safe parallel tracks after the shared prerequisites are met:
 
 ### Higher risk
 
-- semantic detector
+- generalized lesson auto-review
 - behavior application
 - wait-tranche governance productionization
-- self-improving capture enablement
+- self-improving capture integration
 - any productionization that touches live governance posture
 
 ### Lower risk

@@ -309,12 +309,14 @@ Delivery enablement pause:
     shapes instead of expanding the lesson-key registry again
   - approved retrieval for those generic lessons currently stays hybrid-first
     and guidance-only
-- next strongest candidates to choose between explicitly:
-  - reviewed phrase induction for approved generic lessons
-  - broader project-rule memory only if it can reuse the reviewed generic
-    lesson shape
-  - unmet-need planning v1 after the broader reviewed lesson path is less
-    hand-authored
+- post-pivot execution path:
+  1. generalized lesson auto-review and promotion
+  2. reviewed phrase induction for approved generic lessons
+  3. generalized lesson retrieval/application expansion
+  4. broader project-rule learning on the same generic lesson pipeline
+  5. unmet-need planning on the same generic lesson pipeline
+  6. reduced-profile self-improving capture integration
+  7. later learned-guidance advisory planning
 - primary spec:
   - `/memory-system/specs/delivery-enablements`
 
@@ -349,6 +351,12 @@ architecture each time:
   - `/memory-system/specs/architecture-fit-review`
 - semantic retrieval routing:
   - `/memory-system/specs/semantic-retrieval-routing`
+- generalized lesson auto-review:
+  - `/memory-system/specs/generalized-lesson-auto-review`
+- generalized lesson retrieval/application:
+  - `/memory-system/specs/generalized-lesson-retrieval-and-application`
+- self-improving integration:
+  - `/memory-system/specs/self-improving-capture-integration`
 
 ## Architectural direction
 
@@ -363,8 +371,10 @@ The correct long-term shape is:
 1. fuzzy learning-event detection
 2. strict bounded canonicalization
 3. candidate-first storage
-4. stable behavior application
+4. bounded machine review and promotion
 5. reviewed expansion of deterministic coverage
+6. stable behavior application
+7. later advisory planning from approved learned guidance
 
 In other words:
 
@@ -524,14 +534,15 @@ Flow:
 1. semantic detector recognizes a valid event
 2. canonicalizer maps it to an existing approved subject/template
 3. phrase induction proposes additional trigger phrases for that same approved
-   subject
+   subject or approved normalized generic lesson cluster
 4. proposals land as reviewable phrase-pattern candidates
 5. only approved phrase patterns are promoted into the deterministic matcher
    set
 
 Hard rules:
 
-- phrase induction may only extend existing approved canonical subjects
+- phrase induction may only extend existing approved canonical subjects or
+  approved normalized generic lesson clusters
 - it may not invent new memory classes
 - it may not directly change runtime behavior without review
 - typo, grammar, synonym, and paraphrase expansion is allowed only inside the
@@ -828,6 +839,7 @@ matcher set.
   - minor grammar variants
   - typo-tolerant variants
   - paraphrase variants
+- first approved-generic-lesson targets for the same reviewed learning path
 - promotion path from approved phrase-pattern candidates into the deterministic
   matcher surface
 - dedupe rules for repeated phrase suggestions against the same subject
@@ -843,9 +855,9 @@ matcher set.
 
 - new real user phrasings can improve deterministic coverage over time
 - the matcher set becomes broader without hand-authoring every phrase
-- operator review remains in control of what is promoted
+- bounded policy review remains in control of what is promoted
 - approved phrase induction materially reduces future semantic misses for the
-  same bounded subjects
+  same bounded subjects and the first approved generic lesson clusters
 
 Primary spec:
 
@@ -1046,11 +1058,17 @@ Current phase note:
   - retrieval stays on the approved-only hybrid path
   - semantic routing remains limited to the older bounded approved families
   - broader project-rule learning still remains future work
+- the next work in this phase is no longer more lesson-key expansion; it is:
+  - generalized lesson auto-review and promotion
+  - approved-generic phrase induction
+  - generalized lesson retrieval/application expansion
 
 Primary spec:
 
 - `/memory-system/specs/workflow-improvement-memory`
 - `/memory-system/specs/generalized-lesson-learning`
+- `/memory-system/specs/generalized-lesson-auto-review`
+- `/memory-system/specs/generalized-lesson-retrieval-and-application`
 
 ---
 
@@ -1121,6 +1139,10 @@ Recommendation-only artifacts such as:
 - procurement recommendation
 - approval-needed install suggestion
 
+This phase should reuse the generalized-learning pipeline rather than starting
+from a bespoke manual candidate backlog if the normalized artifact shape can be
+kept bounded and recommendation-only.
+
 ### Deliverables
 
 - event detection for repeated unmet capability needs
@@ -1157,6 +1179,8 @@ after the native event taxonomy and canonicalization rules are strong enough.
 - explicit provenance showing self-improving origin
 - conflict/duplicate handling against native deterministic and semantic lanes
 - operator guidance for when self-improving output should be trusted or ignored
+- integration into the same generalized lesson clustering and auto-review path
+  rather than a parallel review system
 
 ### Exit criteria
 
@@ -1170,13 +1194,49 @@ Primary docs:
 
 - `/memory-system/SELF_IMPROVING_AGENT_ADOPTION_PLAN`
 - `/memory-system/SELF_IMPROVING_AGENT_FORK_SPEC`
+- `/memory-system/specs/self-improving-capture-integration`
 - `/memory-system/specs/semantic-event-detector`
 - `/memory-system/specs/ambiguity-and-clarification`
 - `/memory-system/specs/messy-language-eval`
 
 ---
 
-## Phase J — broader automation only after memory quality is real
+## Phase J — learned-guidance advisory planning
+
+### Goal
+
+Let approved learned lessons inform bounded advisory planning only after
+approval, retrieval, and repair quality are strong enough.
+
+### Scope
+
+Advisory-only guidance such as:
+
+- preflight reminders
+- "use X instead of Y here" suggestions
+- "trust X for this scope" reminders
+- "avoid Y here" warnings
+
+### Deliverables
+
+- a read-only advisory layer over approved learned guidance
+- explicit attribution from advisory output back to approved lesson ids
+- conflict handling for competing learned guidance
+- no execution authority and no silent plan mutation
+
+### Exit criteria
+
+- approved learned lessons can influence planning as guidance
+- irrelevant lessons do not create advisory noise
+- no new action-taking path appears
+
+Primary spec:
+
+- `/memory-system/specs/learned-guidance-advisory-planning`
+
+---
+
+## Phase K — broader automation only after memory quality is real
 
 ### Goal
 

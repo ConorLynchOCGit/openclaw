@@ -32,6 +32,14 @@ It must stay separate from:
 - project-fact memory
 - proactive execution
 
+The workflow-improvement family now has two layers:
+
+1. older bounded keyed lessons as precision fast paths
+2. generalized workflow lessons as the new scaling path
+
+The keyed layer remains useful, but the generic layer is now the main future
+growth path.
+
 ## Domain model / concepts
 
 Initial bounded subfamilies:
@@ -89,9 +97,14 @@ Generic workflow guidance remains:
 - duplicate-suppressed
 - approved-only on later retrieval
 
-Candidate confirmation is allowed for this narrow slice.
-
 Automatic application is not allowed beyond reviewed retrieval hints.
+
+The next scaling step for this family is no longer "add more lesson keys."
+It is:
+
+- generalized lesson auto-review and promotion
+- phrase induction for approved generic lessons
+- broader project-rule or unmet-need families reusing the same pipeline
 
 ## Exact input / output behavior
 
@@ -130,6 +143,12 @@ Normal resolution mode for this family:
   - `prompt_now` or `expire_or_reject`
 - broader generalized repo-local workflow guidance:
   - `review_required`
+
+Planned next resolution mode for broader generalized workflow guidance:
+
+- machine auto-review over normalized lesson clusters with bounded
+  `approve` / `hold_for_more_evidence` / `reject` / `supersede_existing`
+  outcomes
 
 ## Provenance / metadata requirements
 
@@ -176,6 +195,8 @@ Implementation clarification from the generalized lesson-learning pivot slice:
   approved-only hybrid path rather than new per-lesson routing
 - weak vague workflow complaints should still stay ignored instead of creating
   pending review backlog
+- later phrase induction should attach to approved generic workflow lessons
+  rather than re-expanding the lesson-key registry
 
 ## Ambiguity / abstain / clarify rules
 
@@ -229,6 +250,8 @@ Track:
 
 - off-production first
 - production only after response-style and procedure behavior are stable
+- broader workflow learning should now grow through the generic lesson
+  pipeline, not primarily through manual lesson-key expansion
 
 ## Risks / failure modes
 
@@ -242,3 +265,6 @@ Track:
 
 - should this family eventually have its own memory kind, or continue to live
   inside bounded improvement/candidate pathways?
+- after generalized workflow auto-review is stable, should broader project-rule
+  memory still live inside the workflow-improvement family or split into a new
+  generic lesson family?

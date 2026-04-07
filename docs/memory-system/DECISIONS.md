@@ -3660,6 +3660,101 @@ Manual review will not be the normal operating model for user-facing memory
 quality, so unresolved candidate buildup would create memory trash instead of a
 real product loop.
 
+---
+
+### 16DB. Generalized lesson learning is now the main scaling path for broader workflow memory
+
+After the first generalized lesson-learning slice, the primary way to expand
+workflow learning should be:
+
+- broader normalized lesson capture
+- bounded machine review or promotion
+- approved-only retrieval and application
+
+not repeated lesson-key expansion.
+
+Reason:
+The keyed path remains useful as a precision fast path, but it does not scale
+into generally useful learning.
+
+---
+
+### 16DC. Generalized lesson auto-review should be the next implementation slice after the pivot
+
+The next implementation step after generalized lesson capture should be:
+
+- bounded machine auto-review and promotion for eligible generalized lessons
+
+It should come before:
+
+- phrase induction for approved generic lessons
+- broader project-rule learning
+- unmet-need planning
+- reduced-profile self-improving capture enablement
+
+Reason:
+Broader candidate formation without broader candidate resolution would recreate
+the same manual-review bottleneck under a more generic detector.
+
+---
+
+### 16DD. Approved generic lessons stay hybrid-first until proof shows a real retrieval gap
+
+Approved generalized lessons should retrieve through the approved-only hybrid
+path first.
+
+Do not add generic semantic fallback until:
+
+- auto-review is stable
+- phrase induction exists for approved generic lessons
+- hybrid-first retrieval has produced real measured miss evidence
+
+Reason:
+Generic semantic retrieval before stable normalization would hide unfinished
+taxonomy work behind broader similarity search.
+
+---
+
+### 16DE. Reduced-profile self-improving capture is an input source into the same generalized lesson pipeline
+
+If reduced-profile self-improving capture is enabled later, it should feed:
+
+- the same candidate-only ingress
+- the same normalized clustering
+- the same auto-review or review rules
+
+It must not create:
+
+- a separate approval path
+- a separate retrieval path
+- a second durable memory authority
+
+Reason:
+The self-improving seam should broaden candidate coverage, not fragment the
+learning architecture into parallel subsystems.
+
+---
+
+### 16DF. Learned-guidance proactivity must begin as advisory-only and only after approval plus retrieval maturity
+
+Approved learned lessons may later inform bounded advisory planning, but only
+after:
+
+- generalized lesson auto-review is stable
+- approved generic lesson retrieval and application are stable
+- repair and supersede behavior are predictable enough to keep stale guidance
+  from silently persisting
+
+That later surface must remain:
+
+- advisory-only
+- read-only against approved lessons
+- non-executing
+
+Reason:
+Proactivity should be a downstream use of already-trusted learned guidance, not
+the mechanism that compensates for immature approval or retrieval quality.
+
 ## Provisional decisions pending implementation
 
 - whether the new middleware should be a regular bundled plugin or eventually replace the exclusive `kind: "memory"` slot

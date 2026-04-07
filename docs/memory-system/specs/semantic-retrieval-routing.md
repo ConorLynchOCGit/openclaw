@@ -71,8 +71,17 @@ The third live family-aware slice now also exists:
 - approved tool-gotcha source memory objects can receive bounded semantic
   embeddings when that family promotes or backfills them
 
+The generalized-learning pivot now also adds approved broader workflow lessons,
+but their live retrieval posture remains:
+
+- approved-only
+- hybrid-first
+- no generic semantic fallback yet
+- no per-lesson semantic router
+
 This means semantic retrieval now exists both as a substrate and as a narrow
-normal working-context strategy for one bounded family.
+normal working-context strategy for several bounded families, while approved
+generic lessons still remain hybrid-first.
 
 ## Non-goals
 
@@ -153,8 +162,9 @@ semantic tool.
 | Recurring procedures on nearby asks          | Hybrid with procedure-key inference                          | Medium                                               | Early safe semantic candidate. Add semantic rerank only for nearby procedural asks, while preserving suggestion-first behavior.                                        |
 | Workflow-improvement tool gotchas            | Hybrid with lesson-key boosts plus partial semantic fallback | Medium                                               | Live only for the current approved low-noise lesson keys first. Keep hybrid-first for strong exact matches and preserve approved-only project-scoped guidance posture. |
 | Environment constraints                      | Hybrid with lesson-key boosts plus semantic fallback         | High                                                 | Live safe semantic family under approved-only project scope. Guidance-only posture remains and strong typed lesson matches still outrank semantic similarity.          |
-| API failure workaround memory                | Not live yet                                                 | High                                                 | Strong semantic-retrieval family once workaround artifacts exist. Error wording and user asks will drift heavily.                                                      |
-| Broader workflow-improvement memory          | Not live yet                                                 | High                                                 | Good semantic family after canonical lesson classes exist. Guidance-only posture must remain.                                                                          |
+| API failure workaround memory                | Hybrid with lesson-key boosts plus semantic fallback         | High                                                 | Live only for the current approved low-noise workaround keys first. Keep hybrid-first for strong exact matches and preserve approved-only guidance posture.            |
+| Approved generalized workflow lessons        | Approved-only hybrid retrieval                               | Medium to high                                       | Keep hybrid-first until generalized lesson auto-review, phrase induction, and generic retrieval/application are stable enough to measure real hybrid miss patterns.    |
+| Broader workflow-improvement memory          | Not live yet                                                 | High                                                 | Good semantic family after canonical lesson classes, generic auto-review, and phrase induction exist. Guidance-only posture must remain.                               |
 | Unmet-need / recommendation-only planning    | Not live yet                                                 | Medium to high                                       | Semantic retrieval is useful only after typed unmet-need artifacts exist. Keep recommendation-only posture and do not spill into execution.                            |
 | Governance manual/internal families          | Exact lineage and internal review surfaces                   | Low and usually unsafe                               | Keep exact or hybrid typed retrieval only. Do not route these families through default semantic retrieval.                                                             |
 
@@ -199,6 +209,10 @@ Why these come first:
 
 After the first semantic-routing slice is stable, expand to:
 
+- approved generalized workflow lessons only after:
+  - generalized lesson auto-review is live
+  - phrase induction exists for approved generic lessons
+  - hybrid-first retrieval has produced real measured recall gaps
 - broader workflow-improvement memory
 - bounded narrative project memory
 - unmet-need recommendation artifacts
@@ -207,6 +221,8 @@ These families should wait because:
 
 - they need stronger canonical object shapes first
 - semantic retrieval without that structure risks surfacing vague adjacent notes
+- generic approved lessons also need stable auto-review and phrase induction so
+  semantic fallback does not become a substitute for unfinished normalization
 
 ## Working-context routing rules
 
@@ -420,10 +436,12 @@ The live semantic-retrieval routing slices are:
 - nearby recurring-procedure asks
 - approved environment-constraint guidance
 - approved workflow-improvement tool-gotcha guidance for
-  `vitest_wrapper_required` and `scripts_committer_required`
+  `vitest_wrapper_required`, `scripts_committer_required`, and
+  `git_stash_unsafe`
 - approved API workaround guidance for
   `openai_embeddings_api_key_required` and
   `anthropic_context1m_eligible_credential_required`
+- approved generalized workflow lessons on approved-only hybrid retrieval only
 
 Exact live routing posture:
 
@@ -454,19 +472,18 @@ Exact live routing posture:
 
 ## Recommended next implementation slice
 
-The next recommended implementation slice for normal working-context semantic
-retrieval is:
+Semantic retrieval is no longer the recommended immediate next slice.
 
-- later bounded tool-gotcha lesson keys only if proofable low-noise ask
-  shapes emerge
-- otherwise the next broader bounded project-memory expansion slice
+The next memory-program implementation slice should be:
 
-That next slice has:
+- generalized lesson auto-review and promotion
 
-- clear user value
-- low automation risk
-- bounded family registries
-- strong explainability
+The next semantic-retrieval expansion should wait until:
+
+- approved generic lessons can resolve without manual review
+- phrase induction exists for approved generic lessons
+- hybrid-first retrieval for approved generic lessons has produced honest miss
+  evidence
 
 ## Open questions
 

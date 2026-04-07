@@ -43,6 +43,10 @@ That routing policy is specified in:
 
 - `/memory-system/specs/semantic-retrieval-routing`
 
+The detailed posture for approved generic lessons is specified in:
+
+- `/memory-system/specs/generalized-lesson-retrieval-and-application`
+
 ## Domain model / concepts
 
 Introduce an `ActiveBehaviorProfile` concept with bounded categories:
@@ -51,6 +55,7 @@ Introduce an `ActiveBehaviorProfile` concept with bounded categories:
 - project facts
 - applicable procedures
 - operator/workflow hints where allowed
+- approved generic guidance where allowed
 
 Each profile item should include:
 
@@ -60,13 +65,23 @@ Each profile item should include:
 - precedence weight
 - justification for inclusion
 
-## Bounded scope for first implementation
+## Current live posture
 
-First implementation should support:
+Live today:
 
-- response-style precedence
-- project-scope precedence over global adjacent memory
-- bounded procedure suggestion/use under an explicit posture
+- approved response-style memories shape replies in their bounded family
+- approved project facts can answer direct project questions
+- validated recurring procedures can shape suggestion-first or direct-use
+  behavior in their bounded family
+- approved workflow-guidance memories can surface as repo-operating guidance
+- approved generalized workflow lessons can also surface through the same
+  guidance path
+
+Not live today:
+
+- a full explicit active-profile layer across all families
+- broader generic project-rule behavior application
+- learned-guidance advisory planning
 
 ## Exact input / output behavior
 
@@ -92,6 +107,7 @@ It is not a new durable memory object type.
 - validated procedures may shape behavior only when explicitly allowed by the
   retrieval surface
 - validated procedures must not silently become a background action layer
+- generalized lessons must be approved before they shape normal behavior
 
 ## Provenance / metadata requirements
 
@@ -114,25 +130,29 @@ Retrieval posture for this layer:
 - semantic retrieval is additive and family-scoped
 - exact typed matches should usually outrank pure semantic similarity
 - response-style and explicit named project facts remain hybrid-first
-- nearby recurring-procedure asks are now the first live semantic fallback
+- nearby recurring-procedure asks are the first live semantic fallback family
+- approved environment-constraint guidance is the second live semantic fallback
   family
-- approved environment-constraint guidance is now the second live semantic
-  fallback family
 - approved workflow-improvement tool gotchas for
-  `vitest_wrapper_required` and `scripts_committer_required` are now the
-  third live semantic fallback family
+  `vitest_wrapper_required`, `scripts_committer_required`, and
+  `git_stash_unsafe` are the third live semantic fallback family
 - approved API workaround guidance for
   `openai_embeddings_api_key_required` and
-  `anthropic_context1m_eligible_credential_required` is now the fourth live
+  `anthropic_context1m_eligible_credential_required` are the fourth live
   semantic fallback family
-- `git_stash_unsafe` still remains hybrid-first
-- conceptual workflow families remain the next semantic candidates
+- approved generalized workflow lessons remain hybrid-first
+- broader approved generic lessons should remain hybrid-first until
+  `/memory-system/specs/generalized-lesson-retrieval-and-application`
+  explicitly proves a broader need
 
 It should define precedence such as:
 
 1. current project-scoped fact over global adjacent fact
 2. explicit response-style memory over softer inferred style hints
 3. specific procedure match over generic related procedure
+4. exact named workflow lesson over adjacent generic workflow guidance for the
+   same question
+5. explicit superseding approved lesson over older conflicting approved lesson
 
 The locked v1 procedure posture is:
 
@@ -143,16 +163,12 @@ The locked v1 procedure posture is:
 - omission over guessing when procedure relevance is uncertain
 - no silent background application of stored procedures
 
-This means behavior application may:
+For approved generalized workflow guidance, the locked v1 posture is:
 
-- surface the existence of a relevant stored procedure
-- offer to use it
-- return it directly on a clear ask
-
-It must not:
-
-- silently force a remembered checklist into a loosely related request
-- treat validated procedures as always-on reply policy
+- guidance-only
+- project-scoped
+- omit on weak overlap
+- do not trigger action-taking
 
 ## Ambiguity / abstain / clarify rules
 
@@ -162,12 +178,14 @@ It must not:
   guessing
 - if a procedure appears relevant but the ask is not clearly procedural,
   prefer suggestion-first or omission rather than direct-use
+- if a generalized workflow lesson is only weakly adjacent, omit it rather than
+  surfacing speculative advice
 
 ## User repair / supersede / forgetting implications
 
 Repair flows should target the applied profile, not just hidden DB rows.
 
-Users need to be able to correct what the system is currently “using.”
+Users need to be able to correct what the system is currently using.
 
 The locked v1 repair posture is conversational-first:
 
@@ -192,11 +210,14 @@ Track:
 - prove precedence behavior in overlapping-memory cases
 - prove irrelevant adjacent memories are not over-applied
 - prove suggestion-first procedure handling separately from clear-ask direct-use
+- prove approved generalized lessons stay guidance-only
 
 ## Rollout posture
 
 - off-production first
 - production after response-style and project-fact precedence are validated
+- later generic application broadening should follow the dedicated generalized
+  retrieval/application spec rather than ad hoc prompt edits
 
 ## Risks / failure modes
 
@@ -205,8 +226,9 @@ Track:
 - hidden precedence rules users cannot predict
 - inconsistent behavior across similar turns
 - stored procedures become unexpectedly overactive and feel intrusive
+- generic approved lessons become a second hidden policy layer
 
 ## Open questions
 
-- how much debug/inspection detail should be exposed by default without making
-  memory behavior harder to understand?
+- how much debug or inspection detail should be exposed by default without
+  making memory behavior harder to understand?

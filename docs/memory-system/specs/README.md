@@ -28,7 +28,11 @@ partially built family still needs a deliberate productionization plan.
 - `/memory-system/specs/candidate-confirmation-lifecycle`
 - `/memory-system/specs/phrase-induction`
 - `/memory-system/specs/generalized-lesson-learning`
+- `/memory-system/specs/generalized-lesson-auto-review`
+- `/memory-system/specs/generalized-lesson-retrieval-and-application`
 - `/memory-system/specs/behavior-application`
+- `/memory-system/specs/self-improving-capture-integration`
+- `/memory-system/specs/learned-guidance-advisory-planning`
 - `/memory-system/specs/user-repair-and-memory-control`
 - `/memory-system/specs/messy-language-eval`
 - `/memory-system/specs/governance-surface-productionization`
@@ -64,6 +68,7 @@ This spec pack does not authorize:
 - broad autonomous memory behavior
 - automatic Skill Vetter invocation
 - autonomous procurement
-- autonomous approval
+- broad autonomous approval outside explicitly bounded candidate-resolution
+  specs
 - actual installation
 - production-first experimentation

@@ -258,6 +258,11 @@ guidance-only candidate shapes, review-first lifecycle control for the new
 broader path, approved-only hybrid retrieval without new per-lesson routing,
 and isolated plus narrow production proof including explicit no-write
 ambiguity evidence.
+Post-pivot generalized-learning architecture pack completed in docs, with
+dedicated specs now written for generalized lesson auto-review, phrase
+induction after approved generic lessons, generalized lesson
+retrieval/application, reduced-profile self-improving integration, and later
+learned-guidance advisory planning.
 Fifth family-aware semantic retrieval routing slice completed on the approved
 live production boundary for its intended scope, with approved-only
 project-scoped semantic fallback for `git_stash_unsafe`, approved source
@@ -2026,8 +2031,7 @@ Fast re-entry reading order:
 
 ## Next expected action
 
-Choose the next bounded implementation slice for the memory middleware backend:
-continue the current production soak and rollback-drill posture without
-changing the feature boundary, or tighten the operator path and secret
-contract so production validation no longer depends on direct in-container
-middleware invocation plus duplicated DB URL placement.
+Implement generalized lesson auto-review and promotion v1 so the first broader
+review-required workflow lessons can become approved durable lessons without
+manual review, then follow with approved-generic phrase induction and
+generalized lesson retrieval/application expansion on the same pipeline.

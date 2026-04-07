@@ -23,6 +23,16 @@ system, but only as bounded recommendation artifacts.
 This feature should feed into the already-built skill/procurement governance
 surfaces rather than inventing a separate planning pipeline.
 
+After the generalized-learning pivot, unmet-need planning should also reuse the
+same broader supervised learning pipeline where possible:
+
+- normalized candidate shape
+- bounded candidate resolution
+- approved-only retrieval or planning visibility
+
+It should not start as an unrelated one-off detector family if the generic
+lesson pipeline can absorb it cleanly.
+
 ## Domain model / concepts
 
 Initial bounded categories:
@@ -37,6 +47,14 @@ Recommendation-only.
 
 No execution.
 
+The first unmet-need slice should come after:
+
+- generalized lesson auto-review is live
+- phrase induction or a documented alternative already improves broader lesson
+  matching
+- generic retrieval/application posture is clear enough that unmet-need
+  artifacts do not become a shadow action layer
+
 ## Exact input / output behavior
 
 Inputs:
@@ -49,6 +67,9 @@ Outputs:
 - or existing governance-family record when the evidence is strong enough and
   the workflow already supports it
 
+The preferred v1 shape is a recommendation artifact that still looks like a
+bounded generic learned object rather than a bespoke backlog queue.
+
 ## Candidate vs approved behavior
 
 - do not create a passive manual candidate queue for unmet-need signals
@@ -58,6 +79,12 @@ Outputs:
   requires immediate explicit operator action
 - no procurement/approval-related state mutation without explicit user/operator
   confirmation
+
+This family should reuse the same anti-backlog rule as generalized lessons:
+
+- no indefinite manual queue
+- bounded auto-resolution into prompt, reject, suppress, or approved
+  recommendation artifact
 
 ## Provenance / metadata requirements
 
@@ -72,6 +99,9 @@ Record:
 
 These artifacts should surface to operators or planning workflows, not silently
 change user-facing behavior.
+
+They should eventually reuse the broader approved learned-guidance retrieval
+contract rather than inventing a parallel planner-only storage shape.
 
 The expected resolution path is:
 
@@ -111,6 +141,9 @@ Track:
 - off-production first
 - production only after the recommendation artifacts remain clearly separate
   from execution
+
+This family should not land before the generalized-learning pipeline can
+already resolve broader lessons without manual review.
 
 ## Risks / failure modes
 

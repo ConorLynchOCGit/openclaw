@@ -19,6 +19,7 @@ This plan is based on:
 - `docs/memory-system/SKILL_PROCUREMENT.md`
 - `docs/memory-system/SELF_IMPROVING_AGENT_INTEGRATION.md`
 - `docs/memory-system/SELF_IMPROVING_AGENT_VETTING.md`
+- `docs/memory-system/specs/self-improving-capture-integration.md`
 
 ## Adoption analysis
 
@@ -142,9 +143,11 @@ Recommended path:
 
 1. finish the custom memory middleware plugin base
 2. define the candidate-only capture seam
-3. if still useful, fork or adapt `self-improving-agent` into a reduced
+3. define how reduced-profile output merges into the generalized lesson
+   clustering and auto-review pipeline
+4. if still useful, fork or adapt `self-improving-agent` into a reduced
    profile aligned with that seam
-4. only then consider limited installation of the reduced version
+5. only then consider limited installation of the reduced version
 
 ## Explicit recommendation
 

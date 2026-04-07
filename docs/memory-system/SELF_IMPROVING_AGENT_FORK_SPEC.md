@@ -19,7 +19,8 @@ anything that would let it act like:
 - a skill-promotion authority
 
 The reduced profile exists to support candidate-only outputs that can later
-flow through the custom memory middleware plugin base.
+flow through the custom memory middleware plugin base and the same generalized
+lesson clustering or review pipeline used by native capture.
 
 ## Allowed outputs
 
@@ -74,6 +75,11 @@ After the plugin base exists:
 - candidate-only ingestion paths exposed by the custom memory middleware plugin
 - any future review queue or candidate-capture interface explicitly created for
   this purpose
+
+The reduced profile should not create a parallel review or approval queue.
+Its outputs should merge into the same generalized lesson pipeline defined in:
+
+- `docs/memory-system/specs/self-improving-capture-integration.md`
 
 The intended target class is:
 
