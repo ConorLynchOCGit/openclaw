@@ -145,10 +145,12 @@ describe("resolveMemoryMiddlewareConfig", () => {
       resolveMemoryMiddlewareConfig({
         selfImprovingCapture: {
           mode: "candidate-only",
+          rolloutTarget: "off-production",
           allowedLessonFamilies: [" supported_lesson ", "supported_lesson", "ignored"],
         },
         learnedGuidanceAdvisoryPlanning: {
           mode: "inline-only",
+          rolloutTarget: "off-production",
           allowedLessonFamilies: [
             "generalized_workflow_lesson",
             "supported_lesson",
@@ -160,10 +162,12 @@ describe("resolveMemoryMiddlewareConfig", () => {
     ).toMatchObject({
       selfImprovingCapture: {
         mode: "candidate-only",
+        rolloutTarget: "off-production",
         allowedLessonFamilies: ["supported_lesson"],
       },
       learnedGuidanceAdvisoryPlanning: {
         mode: "inline-only",
+        rolloutTarget: "off-production",
         allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
         defaultMaxSuggestions: 10,
       },

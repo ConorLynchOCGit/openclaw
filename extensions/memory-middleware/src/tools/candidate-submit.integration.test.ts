@@ -76,6 +76,8 @@ import { createMemoryToolResultPersistTool } from "./memory-tool-result-persist.
 import { createProcedureValidatePlanTool } from "./procedure-validate-plan.js";
 import { createProcedureValidateTool } from "./procedure-validate.js";
 import {
+  REAL_WORKSPACE_EXPLICIT_DOCS_LOCALIZATION_PACKET,
+  REAL_WORKSPACE_EXPLICIT_FILE_REFERENCE_PACKET,
   REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET,
   REAL_WORKSPACE_PROJECT_FACT_PACKET,
   REAL_WORKSPACE_PROJECT_RULE_PACKET,
@@ -137,6 +139,24 @@ async function connectClient(connectionString: string): Promise<Client> {
   });
   await client.connect();
   return client;
+}
+
+async function ageMemoryObject(connectionString: string, objectId: string): Promise<void> {
+  const client = await connectClient(connectionString);
+  try {
+    await client.query(
+      `
+        update memory_middleware.memory_objects
+        set
+          created_at = now() - interval '10 seconds',
+          updated_at = now() - interval '10 seconds'
+        where id = $1::uuid
+      `,
+      [objectId],
+    );
+  } finally {
+    await client.end();
+  }
 }
 
 async function waitForContainerReady(containerName: string): Promise<void> {
@@ -470,8 +490,10 @@ function createRuntime(params: {
     | "candidate-only";
   autoPromotionProfile?: "disabled" | "explicit-user-preference-v1";
   selfImprovingMode?: "disabled" | "candidate-only";
+  selfImprovingRolloutTarget?: "off-production" | null;
   selfImprovingAllowedLessonFamilies?: Array<"supported_lesson" | "generalized_workflow_lesson">;
   learnedGuidanceMode?: "disabled" | "inline-only";
+  learnedGuidanceRolloutTarget?: "off-production" | null;
   learnedGuidanceAllowedLessonFamilies?: Array<"supported_lesson" | "generalized_workflow_lesson">;
   learnedGuidanceDefaultMaxSuggestions?: number;
   queryMode?: "disabled" | "read-only" | "candidate-only";
@@ -500,11 +522,21 @@ function createRuntime(params: {
   });
   const fullCandidateMode = params.mode === "candidate-only" ? "candidate-only" : "disabled";
   const selfImprovingMode = params.selfImprovingMode ?? "disabled";
+  const selfImprovingRolloutTarget =
+    params.selfImprovingRolloutTarget === null
+      ? undefined
+      : (params.selfImprovingRolloutTarget ??
+        (selfImprovingMode === "candidate-only" ? "off-production" : undefined));
   const selfImprovingAllowedLessonFamilies = params.selfImprovingAllowedLessonFamilies ?? [
     "generalized_workflow_lesson",
     "supported_lesson",
   ];
   const learnedGuidanceMode = params.learnedGuidanceMode ?? "disabled";
+  const learnedGuidanceRolloutTarget =
+    params.learnedGuidanceRolloutTarget === null
+      ? undefined
+      : (params.learnedGuidanceRolloutTarget ??
+        (learnedGuidanceMode === "inline-only" ? "off-production" : undefined));
   const learnedGuidanceAllowedLessonFamilies = params.learnedGuidanceAllowedLessonFamilies ?? [
     "generalized_workflow_lesson",
     "supported_lesson",
@@ -678,10 +710,12 @@ function createRuntime(params: {
       },
       selfImprovingCapture: {
         mode: selfImprovingMode,
+        ...(selfImprovingRolloutTarget ? { rolloutTarget: selfImprovingRolloutTarget } : {}),
         allowedLessonFamilies: selfImprovingAllowedLessonFamilies,
       },
       learnedGuidanceAdvisoryPlanning: {
         mode: learnedGuidanceMode,
+        ...(learnedGuidanceRolloutTarget ? { rolloutTarget: learnedGuidanceRolloutTarget } : {}),
         allowedLessonFamilies: learnedGuidanceAllowedLessonFamilies,
         defaultMaxSuggestions: learnedGuidanceDefaultMaxSuggestions,
       },
@@ -719,10 +753,12 @@ function createRuntime(params: {
         },
         selfImprovingCapture: {
           mode: selfImprovingMode,
+          ...(selfImprovingRolloutTarget ? { rolloutTarget: selfImprovingRolloutTarget } : {}),
           allowedLessonFamilies: selfImprovingAllowedLessonFamilies,
         },
         learnedGuidanceAdvisoryPlanning: {
           mode: learnedGuidanceMode,
+          ...(learnedGuidanceRolloutTarget ? { rolloutTarget: learnedGuidanceRolloutTarget } : {}),
           allowedLessonFamilies: learnedGuidanceAllowedLessonFamilies,
           defaultMaxSuggestions: learnedGuidanceDefaultMaxSuggestions,
         },
@@ -754,6 +790,7 @@ function createRuntime(params: {
     learnedGuidanceAdvisoryPlanning: createLearnedGuidanceAdvisoryPlanningPort({
       memoryObjectQuery,
       mode: learnedGuidanceMode,
+      rolloutTarget: learnedGuidanceRolloutTarget,
       allowedLessonFamilies: learnedGuidanceAllowedLessonFamilies,
       defaultMaxSuggestions: learnedGuidanceDefaultMaxSuggestions,
     }),
@@ -1555,6 +1592,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       blockedOutputPosture: "approved_memory",
       rolloutScope: {
         rolloutPhase: "bounded_rollout_proof_v1",
+        enablementTarget: "off-production",
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
@@ -1614,6 +1652,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       reason: "self-improving candidate capture mode is not enabled",
       rolloutScope: {
         rolloutPhase: "bounded_rollout_proof_v1",
+        enablementTarget: "default-off",
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
@@ -1641,6 +1680,59 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       memory_links: "0",
       memory_sources: "0",
       background_jobs: "0",
+    });
+  });
+
+  it("keeps self-improving capture default-off until an explicit off-production rollout target is set", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      selfImprovingMode: "candidate-only",
+      selfImprovingRolloutTarget: null,
+    });
+    const tool = createMemorySelfImprovingCaptureCandidateTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const countsBefore = await readTableCounts(dbEnvironment.connectionString);
+    const result = await tool.execute("call-self-3b", {
+      kind: "improvement",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+      projectId: seeded.projectId,
+    });
+    const countsAfter = await readTableCounts(dbEnvironment.connectionString);
+
+    expect(countsAfter).toEqual(countsBefore);
+    expect(result.details).toEqual({
+      accepted: false,
+      status: "disabled",
+      kind: "improvement",
+      target: "candidate_only",
+      reason:
+        "self-improving candidate capture is only enabled for an explicit off-production rollout target",
+      rolloutScope: {
+        rolloutPhase: "bounded_rollout_proof_v1",
+        enablementTarget: "default-off",
+        sourceProfile: "reduced_profile_candidate_only",
+        target: "candidate_only",
+        requiresProjectId: true,
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        retrievalAuthority: "approved_only",
+      },
+      evaluation: {
+        outcomeCode: "capture_disabled",
+        resolution: "disabled",
+        provenanceOrigin: "self_improving_capture",
+        duplicateOutcome: "none",
+        replayBlocked: false,
+        reviewBurden: "no_new_review_required",
+      },
     });
   });
 
@@ -21165,6 +21257,248 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     );
   });
 
+  it("follows explicit docs-localization packets through bounded promotion and keeps weaker nearby candidates behind the approved rule", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const searchTool = createMemoryObjectSearchHybridTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      } as never,
+    });
+
+    const explicitPacket = await submitAndApproveWorkspacePacket({
+      submitTool,
+      reviewTool,
+      promoteTool,
+      callPrefix: "call-explicit-docs-localization",
+      kind: REAL_WORKSPACE_EXPLICIT_DOCS_LOCALIZATION_PACKET.submissionKind,
+      content: REAL_WORKSPACE_EXPLICIT_DOCS_LOCALIZATION_PACKET.content,
+      projectId: seeded.projectId,
+      rationale: "Approve the explicit docs-localization packet for bounded promotion proof.",
+    });
+
+    const approvedRow = await querySingleRow<{
+      review_state: string;
+      lesson_family: string | null;
+      capture_class: string | null;
+      subject: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'lessonFamily' as lesson_family,
+          metadata->'candidateMetadata'->'autoCapture'->>'captureClass' as capture_class,
+          metadata->'candidateMetadata'->'autoCapture'->>'subject' as subject
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [explicitPacket.approvedMemoryObjectId],
+    );
+
+    expect(approvedRow).toEqual({
+      review_state: "approved",
+      lesson_family: "generalized_project_rule",
+      capture_class: "project_rule_guidance",
+      subject: "docs localization changes",
+    });
+
+    const weakerSubmission = await submitTool.execute("call-explicit-docs-localization-weaker", {
+      kind: REAL_WORKSPACE_EXPLICIT_DOCS_LOCALIZATION_PACKET.submissionKind,
+      content: REAL_WORKSPACE_EXPLICIT_DOCS_LOCALIZATION_PACKET.weakerNearbyContent,
+      projectId: seeded.projectId,
+    });
+    const weakerCandidateId = (weakerSubmission.details as { memoryObjectId: string })
+      .memoryObjectId;
+
+    const weakerRow = await querySingleRow<{ review_state: string }>(
+      dbEnvironment.connectionString,
+      `
+        select review_state::text as review_state
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [weakerCandidateId],
+    );
+    expect(weakerRow).toEqual({
+      review_state: "candidate",
+    });
+
+    const searchResult = await searchTool.execute("call-explicit-docs-localization-search", {
+      query: REAL_WORKSPACE_EXPLICIT_DOCS_LOCALIZATION_PACKET.retrievalQuery,
+      scope: "include_candidates",
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+
+    const records = (
+      searchResult.details as {
+        records: Array<{ id: string; reviewState: string; matchedFields: string[] }>;
+      }
+    ).records;
+    const weakerIndex = records.findIndex((record) => record.id === weakerCandidateId);
+
+    expect(records[0]).toEqual(
+      expect.objectContaining({
+        id: explicitPacket.approvedMemoryObjectId,
+        reviewState: "approved",
+        matchedFields: expect.arrayContaining([
+          "project_rule_intent_match",
+          "project_rule_scope_match",
+          "project_rule_recommended_action_match",
+          "project_rule_guidance_pattern_match",
+        ]),
+      }),
+    );
+    if (weakerIndex >= 0) {
+      expect(weakerIndex).toBeGreaterThan(0);
+    }
+  });
+
+  it("follows explicit file-reference packets through bounded promotion and keeps weaker nearby candidates behind the approved preference", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const searchTool = createMemoryObjectSearchHybridTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      } as never,
+    });
+
+    const explicitPacket = await submitAndApproveWorkspacePacket({
+      submitTool,
+      reviewTool,
+      promoteTool,
+      callPrefix: "call-explicit-file-reference",
+      kind: REAL_WORKSPACE_EXPLICIT_FILE_REFERENCE_PACKET.submissionKind,
+      content: REAL_WORKSPACE_EXPLICIT_FILE_REFERENCE_PACKET.content,
+      projectId: seeded.projectId,
+      rationale: "Approve the explicit file-reference packet for bounded promotion proof.",
+    });
+
+    const approvedRow = await querySingleRow<{
+      review_state: string;
+      template: string | null;
+      response_style_family: string | null;
+      subject: string | null;
+    }>(
+      dbEnvironment.connectionString,
+      `
+        select
+          review_state::text as review_state,
+          metadata->'candidateMetadata'->'autoCapture'->>'template' as template,
+          metadata->'candidateMetadata'->'autoCapture'->>'responseStyleFamily' as response_style_family,
+          metadata->'candidateMetadata'->'autoCapture'->>'subject' as subject
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [explicitPacket.approvedMemoryObjectId],
+    );
+
+    expect(approvedRow).toEqual({
+      review_state: "approved",
+      template: "response_style_generalized_guidance",
+      response_style_family: "generalized_guidance",
+      subject: "file references",
+    });
+
+    const weakerSubmission = await submitTool.execute("call-explicit-file-reference-weaker", {
+      kind: REAL_WORKSPACE_EXPLICIT_FILE_REFERENCE_PACKET.submissionKind,
+      content: REAL_WORKSPACE_EXPLICIT_FILE_REFERENCE_PACKET.weakerNearbyContent,
+      projectId: seeded.projectId,
+    });
+    const weakerCandidateId = (weakerSubmission.details as { memoryObjectId: string })
+      .memoryObjectId;
+    await ageMemoryObject(dbEnvironment.connectionString, weakerCandidateId);
+
+    const weakerRow = await querySingleRow<{ review_state: string }>(
+      dbEnvironment.connectionString,
+      `
+        select review_state::text as review_state
+        from memory_middleware.memory_objects
+        where id = $1::uuid
+      `,
+      [weakerCandidateId],
+    );
+    expect(weakerRow).toEqual({
+      review_state: "candidate",
+    });
+
+    const searchResult = await searchTool.execute("call-explicit-file-reference-search", {
+      query: REAL_WORKSPACE_EXPLICIT_FILE_REFERENCE_PACKET.retrievalQuery,
+      scope: "include_candidates",
+      kind: "feedback",
+      projectId: seeded.projectId,
+    });
+
+    const records = (
+      searchResult.details as {
+        records: Array<{ id: string; reviewState: string; matchedFields: string[] }>;
+      }
+    ).records;
+    const weakerIndex = records.findIndex((record) => record.id === weakerCandidateId);
+
+    expect(records[0]).toEqual(
+      expect.objectContaining({
+        id: explicitPacket.approvedMemoryObjectId,
+        reviewState: "approved",
+        matchedFields: expect.arrayContaining(["response_style_subject_match"]),
+      }),
+    );
+    if (weakerIndex >= 0) {
+      expect(weakerIndex).toBeGreaterThan(0);
+    }
+  });
+
   it("surfaces real workspace workflow packets through inline advisory planning with provenance intact", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
@@ -21473,6 +21807,17 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       accepted: false,
       status: "disabled",
       reason: "learned guidance advisory planning mode is not enabled",
+      rolloutScope: {
+        rolloutPhase: "bounded_rollout_proof_v1",
+        enablementTarget: "default-off",
+        mode: "inline-only",
+        source: "approved_workflow_guidance",
+        approvedOnly: true,
+        advisoryOnly: true,
+        inlineOnly: true,
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        defaultMaxSuggestions: 3,
+      },
       observability: {
         outcomeCode: "planner_disabled",
         retrievedRecordCount: 0,
@@ -21484,6 +21829,55 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         selfImprovingSuggestionCount: 0,
         estimatedPromptTokens: 0,
         reasons: ["learned guidance advisory planning mode is not enabled"],
+      },
+    });
+  });
+
+  it("keeps learned-guidance planning default-off until an explicit off-production rollout target is set", async () => {
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      learnedGuidanceMode: "inline-only",
+      learnedGuidanceRolloutTarget: null,
+    });
+    const learnedGuidanceTool = createMemoryLearnedGuidancePlanTool({ runtime });
+
+    const countsBefore = await readTableCounts(dbEnvironment.connectionString);
+    const result = await learnedGuidanceTool.execute("call-learned-guidance-5b", {
+      query: "what should I use for release proof notes?",
+    });
+    const countsAfter = await readTableCounts(dbEnvironment.connectionString);
+
+    expect(countsAfter).toEqual(countsBefore);
+    expect(result.details).toEqual({
+      accepted: false,
+      status: "disabled",
+      reason:
+        "learned guidance advisory planning is only enabled for an explicit off-production rollout target",
+      rolloutScope: {
+        rolloutPhase: "bounded_rollout_proof_v1",
+        enablementTarget: "default-off",
+        mode: "inline-only",
+        source: "approved_workflow_guidance",
+        approvedOnly: true,
+        advisoryOnly: true,
+        inlineOnly: true,
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        defaultMaxSuggestions: 3,
+      },
+      observability: {
+        outcomeCode: "planner_disabled",
+        retrievedRecordCount: 0,
+        eligibleWorkflowGuidanceCount: 0,
+        filteredOutByScopeCount: 0,
+        suggestionCount: 0,
+        suppressedConflictCount: 0,
+        nativeSuggestionCount: 0,
+        selfImprovingSuggestionCount: 0,
+        estimatedPromptTokens: 0,
+        reasons: [
+          "learned guidance advisory planning is only enabled for an explicit off-production rollout target",
+        ],
       },
     });
   });

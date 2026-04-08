@@ -29,6 +29,16 @@ export const REAL_WORKSPACE_PROJECT_RULE_PACKET = {
     "for localized docs should I edit docs/zh-CN directly or rerun docs i18n after updating English?",
 } as const;
 
+export const REAL_WORKSPACE_EXPLICIT_DOCS_LOCALIZATION_PACKET = {
+  id: "repo-docs-i18n-explicit",
+  submissionKind: "improvement",
+  content:
+    "For OpenClaw docs, update English docs first and rerun docs i18n instead of editing docs/zh-CN directly.",
+  retrievalQuery:
+    "for openclaw docs localization should I update English docs first and rerun docs i18n instead of editing docs/zh-CN directly?",
+  weakerNearbyContent: "The translation docs should flow through the English source first.",
+} as const;
+
 export const REAL_WORKSPACE_PROJECT_FACT_PACKET = {
   id: "repo-docs-url",
   submissionKind: "learning",
@@ -70,4 +80,12 @@ export const REAL_WORKSPACE_RESPONSE_STYLE_PACKET = {
     },
   },
   retrievalQuery: "response detail level high level unless asked for more detail",
+} as const;
+
+export const REAL_WORKSPACE_EXPLICIT_FILE_REFERENCE_PACKET = {
+  id: "user-file-references-repo-root-relative",
+  submissionKind: "learning",
+  content: "When referencing files in chat, use repo-root relative paths.",
+  retrievalQuery: "when you cite files for me what path style should you use",
+  weakerNearbyContent: "Don't use absolute paths when citing files to me.",
 } as const;

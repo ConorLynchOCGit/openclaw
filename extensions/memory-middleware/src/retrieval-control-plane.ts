@@ -76,6 +76,59 @@ function scopeIncludesValidatedProcedures(scope: MemoryObjectSearchScope): boole
   );
 }
 
+function readRecordMetadataString(value: unknown, path: readonly string[]): string | null {
+  let current = value;
+  for (const segment of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return null;
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return typeof current === "string" && current.trim().length > 0 ? current.trim() : null;
+}
+
+function readSubjectKey(record: RankedRetrievedMemoryRecord): string | null {
+  if (record.objectType !== "memory_object") {
+    return null;
+  }
+  return (
+    readRecordMetadataString(record.metadata, ["autoCapture", "subjectKey"]) ??
+    readRecordMetadataString(record.metadata, ["candidateMetadata", "autoCapture", "subjectKey"]) ??
+    readRecordMetadataString(record.metadata, [
+      "promotionMetadata",
+      "autoPromotion",
+      "subjectKey",
+    ]) ??
+    readRecordMetadataString(record.metadata, ["autoPromotion", "subjectKey"]) ??
+    readRecordMetadataString(record.metadata, ["preference_key"])
+  );
+}
+
+function preferApprovedRecordsWithinSubjectClusters(
+  records: RankedRetrievedMemoryRecord[],
+): RankedRetrievedMemoryRecord[] {
+  return [...records].sort((left, right) => {
+    const leftSubjectKey = readSubjectKey(left);
+    const rightSubjectKey = readSubjectKey(right);
+    if (!leftSubjectKey || leftSubjectKey !== rightSubjectKey) {
+      return 0;
+    }
+    if (left.objectType !== "memory_object" || right.objectType !== "memory_object") {
+      return 0;
+    }
+    if (left.reviewState === right.reviewState) {
+      return 0;
+    }
+    if (left.reviewState === "approved") {
+      return -1;
+    }
+    if (right.reviewState === "approved") {
+      return 1;
+    }
+    return 0;
+  });
+}
+
 function resolveWorkflowSemanticFallbackFamilies(
   hint: WorkflowImprovementQueryHint | null,
 ): SemanticFallbackFamily[] {
@@ -157,26 +210,30 @@ export function shapeRankedRetrievedRecordsForControlPlane(params: {
     record: RankedRetrievedMemoryRecord,
   ) => MemoryFamilyId | "workflow_guidance" | "other";
 }): RankedRetrievedMemoryRecord[] {
+  const records = scopeIncludesCandidates(params.decision.scope)
+    ? preferApprovedRecordsWithinSubjectClusters(params.records)
+    : params.records;
+
   if (
     params.decision.kind !== "project" ||
     scopeIncludesCandidates(params.decision.scope) ||
     !params.decision.projectMemoryIntentFamily
   ) {
-    return params.records;
+    return records;
   }
 
   const targetFamily = params.decision.projectMemoryIntentFamily;
-  const targetFamilyRecords = params.records.filter(
+  const targetFamilyRecords = records.filter(
     (record) =>
       record.objectType === "memory_object" &&
       record.memoryKind === "project" &&
       params.classifyProjectFamily(record) === targetFamily,
   );
   if (targetFamilyRecords.length === 0) {
-    return params.records;
+    return records;
   }
 
-  const nonProjectOrSameFamilyRecords = params.records.filter((record) => {
+  const nonProjectOrSameFamilyRecords = records.filter((record) => {
     if (record.objectType !== "memory_object" || record.memoryKind !== "project") {
       return true;
     }

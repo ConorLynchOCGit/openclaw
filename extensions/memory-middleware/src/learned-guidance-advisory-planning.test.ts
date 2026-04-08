@@ -62,6 +62,17 @@ describe("learned-guidance advisory planning", () => {
       accepted: false,
       status: "disabled",
       reason: "learned guidance advisory planning mode is not enabled",
+      rolloutScope: {
+        rolloutPhase: "bounded_rollout_proof_v1",
+        enablementTarget: "default-off",
+        mode: "inline-only",
+        source: "approved_workflow_guidance",
+        approvedOnly: true,
+        advisoryOnly: true,
+        inlineOnly: true,
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        defaultMaxSuggestions: 3,
+      },
       observability: {
         outcomeCode: "planner_disabled",
         retrievedRecordCount: 0,
@@ -73,6 +84,30 @@ describe("learned-guidance advisory planning", () => {
         selfImprovingSuggestionCount: 0,
         estimatedPromptTokens: 0,
         reasons: ["learned guidance advisory planning mode is not enabled"],
+      },
+    });
+  });
+
+  it("stays disabled until an explicit off-production rollout target is set", async () => {
+    const port = createLearnedGuidanceAdvisoryPlanningPort({
+      memoryObjectQuery: {
+        searchHybrid: vi.fn(),
+      } as never,
+      mode: "inline-only",
+    });
+
+    await expect(
+      port.plan({ query: "how should I commit scoped repo changes?" }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      status: "disabled",
+      reason:
+        "learned guidance advisory planning is only enabled for an explicit off-production rollout target",
+      rolloutScope: {
+        enablementTarget: "default-off",
+      },
+      observability: {
+        outcomeCode: "planner_disabled",
       },
     });
   });
@@ -90,6 +125,7 @@ describe("learned-guidance advisory planning", () => {
         searchHybrid,
       } as never,
       mode: "inline-only",
+      rolloutTarget: "off-production",
     });
 
     const result = await port.plan({
@@ -161,6 +197,7 @@ describe("learned-guidance advisory planning", () => {
         })),
       } as never,
       mode: "inline-only",
+      rolloutTarget: "off-production",
     });
 
     const result = await port.plan({
@@ -205,6 +242,7 @@ describe("learned-guidance advisory planning", () => {
         })),
       } as never,
       mode: "inline-only",
+      rolloutTarget: "off-production",
       allowedLessonFamilies: ["supported_lesson"],
     });
 

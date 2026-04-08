@@ -280,13 +280,39 @@ It concluded:
 - the next missing truth is still bounded off-production evidence, but now on
   top of a cleaner Main-session boundary and cleaner explicit packet shapes
 
-## What comes next after Phase J
+## Phase K — bounded promotion follow-through and off-production rollout enablement
 
-The next honest move is bounded promotion follow-through and off-production
-rollout enablement for the narrow self-improving and inline-advisory seams plus
-the stronger explicit docs/file packet shapes.
+This phase is now landed.
 
-## Phase K — cross-domain family expansion
+It added:
+
+- bounded promotion follow-through proof for explicit docs-localization
+  project-rule packet shapes
+- bounded promotion follow-through proof for explicit file-reference
+  response-style packet shapes
+- retrieval control-plane preference for stronger approved explicit memory over
+  weaker nearby reviewable candidates inside the same bounded subject cluster
+- explicit `off-production` rollout-target gating for reduced-profile
+  self-improving capture
+- explicit `off-production` rollout-target gating for learned-guidance
+  advisory planning
+
+It concluded:
+
+- explicit docs-localization and file-reference packet shapes are now
+  promotion-eligible under bounded follow-through
+- vague shorthand docs/file packet shapes should stay candidate-heavy
+- the narrow self-improving and learned-guidance seams remain default-off
+  unless an explicit `off-production` rollout target is set
+- the next missing truth is real bounded off-production usage evidence
+
+## What comes next after Phase K
+
+The next honest move is bounded off-production evidence review for the narrow
+self-improving and inline-advisory seams plus the now-promotion-eligible
+explicit docs/file packet shapes.
+
+## Phase L — cross-domain family expansion
 
 Cross-domain family expansion resumes only after:
 

@@ -214,6 +214,8 @@ Production enablement should start with:
 - explicit disablement switch
 - proof that duplicate and conflict handling work
 - review-facing outcome and burden signals
+- an explicit `off-production` rollout target instead of treating mode alone as
+  activation
 
 Do not use this spec as permission to start reduced-profile self-improving
 capture immediately after flattening. The stronger substrate work and the
@@ -227,6 +229,7 @@ The current accepted reevaluation result is still:
 
 - stay narrow
 - keep the seam default-off
+- require an explicit `off-production` rollout target before activation
 - gather bounded off-production evidence before widening
 - do not widen vague shorthand packet shapes automatically just because
   stronger explicit natural wording now works

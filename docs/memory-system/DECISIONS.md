@@ -203,6 +203,32 @@ Current accepted framing:
 - widening should start from the strongest explicit packet shapes, not from the
   weakest paraphrases
 
+## 2026-04 — explicit docs/file packet shapes are now promotion-eligible
+
+Current accepted framing:
+
+- explicit docs-localization project-rule packets now have enough bounded
+  follow-through evidence to promote under their intended family
+- explicit file-reference response-style packets now have enough bounded
+  follow-through evidence to promote under their intended family
+- stronger approved explicit memory should outrank weaker nearby reviewable
+  variants within the same bounded subject cluster
+- vague shorthand docs/file variants still stay candidate-heavy until
+  off-production evidence says otherwise
+
+## 2026-04 — off-production rollout must stay an explicit target
+
+Current accepted framing:
+
+- self-improving capture staying in `candidate-only` mode is not enough by
+  itself to activate the seam
+- learned-guidance advisory planning staying in `inline-only` mode is not
+  enough by itself to activate the seam
+- both seams now require an explicit `off-production` rollout target before
+  their bounded runtime paths activate
+- default-off remains the honest default posture until real off-production
+  evidence exists
+
 ## 2026-04 — should-fix-soon cleanup is real but secondary
 
 The following work is accepted as already-landed near-term cleanup:

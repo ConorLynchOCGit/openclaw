@@ -45,13 +45,17 @@ export type MemoryMiddlewareAutoPromotionConfig = {
   allowedAgents: string[];
 };
 
+export type MemoryMiddlewareRolloutTarget = "off-production";
+
 export type MemoryMiddlewareSelfImprovingCaptureConfig = {
   mode: "disabled" | "candidate-only";
+  rolloutTarget?: MemoryMiddlewareRolloutTarget;
   allowedLessonFamilies: Array<"supported_lesson" | "generalized_workflow_lesson">;
 };
 
 export type MemoryMiddlewareLearnedGuidanceAdvisoryPlanningConfig = {
   mode: "disabled" | "inline-only";
+  rolloutTarget?: MemoryMiddlewareRolloutTarget;
   allowedLessonFamilies: Array<"supported_lesson" | "generalized_workflow_lesson">;
   defaultMaxSuggestions: number;
 };
@@ -200,6 +204,10 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
         additionalProperties: false,
         properties: {
           mode: { type: "string", enum: ["disabled", "candidate-only"] },
+          rolloutTarget: {
+            type: "string",
+            enum: ["off-production"],
+          },
           allowedLessonFamilies: {
             type: "array",
             items: {
@@ -214,6 +222,10 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
         additionalProperties: false,
         properties: {
           mode: { type: "string", enum: ["disabled", "inline-only"] },
+          rolloutTarget: {
+            type: "string",
+            enum: ["off-production"],
+          },
           allowedLessonFamilies: {
             type: "array",
             items: {
@@ -234,6 +246,10 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function normalizeRolloutTarget(value: unknown): MemoryMiddlewareRolloutTarget | undefined {
+  return value === "off-production" ? "off-production" : undefined;
 }
 
 export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareConfig {
@@ -358,11 +374,17 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
     : ["chief", "main"];
   const selfImprovingCaptureMode =
     selfImprovingCapture.mode === "candidate-only" ? "candidate-only" : "disabled";
+  const selfImprovingCaptureRolloutTarget = normalizeRolloutTarget(
+    selfImprovingCapture.rolloutTarget,
+  );
   const selfImprovingAllowedLessonFamilies = normalizeBoundedWorkflowLessonFamilies(
     selfImprovingCapture.allowedLessonFamilies,
   );
   const learnedGuidanceAdvisoryPlanningMode =
     learnedGuidanceAdvisoryPlanning.mode === "inline-only" ? "inline-only" : "disabled";
+  const learnedGuidanceAdvisoryPlanningRolloutTarget = normalizeRolloutTarget(
+    learnedGuidanceAdvisoryPlanning.rolloutTarget,
+  );
   const learnedGuidanceAllowedLessonFamilies = normalizeBoundedWorkflowLessonFamilies(
     learnedGuidanceAdvisoryPlanning.allowedLessonFamilies,
   );
@@ -408,10 +430,16 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
     },
     selfImprovingCapture: {
       mode: selfImprovingCaptureMode,
+      ...(selfImprovingCaptureRolloutTarget
+        ? { rolloutTarget: selfImprovingCaptureRolloutTarget }
+        : {}),
       allowedLessonFamilies: selfImprovingAllowedLessonFamilies,
     },
     learnedGuidanceAdvisoryPlanning: {
       mode: learnedGuidanceAdvisoryPlanningMode,
+      ...(learnedGuidanceAdvisoryPlanningRolloutTarget
+        ? { rolloutTarget: learnedGuidanceAdvisoryPlanningRolloutTarget }
+        : {}),
       allowedLessonFamilies: learnedGuidanceAllowedLessonFamilies,
       defaultMaxSuggestions: learnedGuidanceDefaultMaxSuggestions,
     },

@@ -24,6 +24,7 @@ function createRuntime() {
         ],
         rolloutScope: {
           rolloutPhase: "bounded_rollout_proof_v1" as const,
+          enablementTarget: "off-production" as const,
           mode: "inline-only" as const,
           source: "approved_workflow_guidance" as const,
           approvedOnly: true as const,

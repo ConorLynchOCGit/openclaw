@@ -96,6 +96,10 @@
             "type": "string",
             "enum": ["disabled", "candidate-only"]
           },
+          "rolloutTarget": {
+            "type": "string",
+            "enum": ["off-production"]
+          },
           "allowedLessonFamilies": {
             "type": "array",
             "items": {
@@ -112,6 +116,10 @@
           "mode": {
             "type": "string",
             "enum": ["disabled", "inline-only"]
+          },
+          "rolloutTarget": {
+            "type": "string",
+            "enum": ["off-production"]
           },
           "allowedLessonFamilies": {
             "type": "array",

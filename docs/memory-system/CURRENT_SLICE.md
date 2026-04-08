@@ -2,14 +2,14 @@
 
 ## Active slice
 
-Bounded promotion follow-through and off-production rollout enablement for
-the stronger explicit memory packet shapes proved in Main-session UX testing
+Bounded off-production evidence review for the promotion-eligible explicit
+packet shapes and the still-narrow self-improving / inline-advisory seams
 
 ## Objective
 
-Use the newly landed reminder-isolation and overlap-consolidation work to
-promote the strongest explicit packet shapes honestly, then collect
-off-production evidence before any widening decision.
+Use the newly landed promotion follow-through and explicit off-production
+enablement path to gather real bounded evidence before any widening or
+default-on decision.
 
 The current accepted answer is:
 
@@ -19,18 +19,21 @@ The current accepted answer is:
 - Main session no longer needs to leak internal reminder payloads into visible
   chat to support internal reminder execution
 - explicit docs-localization rules and file-reference response-style packets
-  now have stronger canonical lanes than they had before the manual UX pass
-- the next missing truth is bounded promotion follow-through plus off-production
-  evidence, not more shared-substrate design
+  now have bounded promotion follow-through evidence behind them
+- the narrow self-improving and inline-advisory seams now require an explicit
+  `off-production` rollout target before they activate at all
+- the next missing truth is real bounded off-production usage evidence, not
+  more shared-substrate design or more enablement plumbing
 
-This slice does not answer production enablement by default.
+This slice still does not answer production enablement by default.
 
 It answers:
 
-- which explicit packet shapes are now strong enough for bounded promotion
-  follow-through
 - whether bounded off-production usage shows enough usefulness, low-enough
-  noise, and low-enough prompt cost to justify later widening
+  noise, low-enough prompt cost, and clean-enough provenance to justify later
+  widening
+- whether the strongest explicit docs/file packet shapes stay clean under
+  review/promotion pressure while nearby vague shorthand remains bounded
 
 The rollout still must avoid creating:
 
@@ -69,6 +72,26 @@ The rollout still must avoid creating:
 - self-improving capture and learned-guidance advisory planning still stay
   narrow; this batch did not change that widening judgment
 
+### Slice 4 — bounded promotion and off-production rollout enablement
+
+- explicit docs-localization project-rule packets now promote and retrieve
+  cleanly without being flattened into generic workflow memory
+- explicit file-reference response-style packets now promote and retrieve
+  cleanly without being flattened into project guidance
+- within a shared subject cluster, stronger approved explicit memory now stays
+  ahead of weaker nearby reviewable candidates during bounded retrieval
+- self-improving capture and learned-guidance planning now stay default-off
+  unless an explicit `off-production` rollout target is set
+- mode alone no longer activates either seam
+
+### Slice 5 — post-enablement judgment
+
+- explicit docs-localization and file-reference packet shapes are now
+  promotion-eligible under bounded follow-through
+- vague shorthand docs/file variants still stay candidate-heavy
+- self-improving capture and learned-guidance advisory planning still stay
+  default-off and narrow outside explicit off-production rollout
+
 ## What is now strong enough for bounded promotion follow-through
 
 - explicit docs-localization operating rules with clear project scope
@@ -103,18 +126,25 @@ Still intentionally disabled:
   workflow-guidance-only, candidate-only seam
 - learned-guidance advisory planning exists as a default-off, approved-only,
   inline-only workflow-guidance seam
+- both seams now require an explicit `off-production` rollout target before
+  the bounded runtime path activates
 - both seams now expose explicit rollout scope and structured evaluation /
   observability fields in their runtime results
 - Main-session internal reminders now execute without leaking their system
   payloads into visible Main chat
 - explicit docs/file packet shapes now have tighter semantic and retrieval
   control-plane support
+- explicit docs/file packet shapes now have bounded promotion follow-through
+  proof under their intended families
 
 Live rollout controls now include:
 
 - explicit allowed lesson-family scope for self-improving capture
 - explicit allowed lesson-family scope for learned-guidance advisory planning
 - explicit default suggestion-budget control for inline advisory planning
+- explicit `off-production` rollout-target gating for self-improving capture
+- explicit `off-production` rollout-target gating for learned-guidance
+  advisory planning
 
 Live rollout signals now include:
 
@@ -149,22 +179,23 @@ Still not next:
 
 The next main implementation sequence should now be:
 
-1. bounded promotion follow-through for the strongest explicit docs-localization
-   and file-reference packet shapes
-2. bounded off-production enablement using the now-cleaner Main-session and the
-   already-landed rollout controls / observability
-3. collect real evidence on usefulness, replay noise, conflict suppression,
-   and prompt cost
-4. only then decide whether any broader phrasing class, self-improving scope,
-   or advisory scope should widen
-5. cross-domain family expansion only after those rollout answers are clear
+1. bounded off-production usage and evidence review for the promotion-eligible
+   explicit docs-localization and file-reference packet shapes plus the narrow
+   self-improving / inline-advisory seams
+2. collect real evidence on usefulness, replay noise, conflict suppression,
+   provenance clarity, and prompt cost
+3. only then decide whether any broader phrasing class, self-improving scope,
+   or advisory scope should widen or stay narrow longer
+4. cross-domain family expansion only after those rollout answers are clear
 
 Reason:
 
 - the Main-session leak is fixed structurally
-- the strongest manual-UX-backed docs/file packet shapes now have cleaner
-  canonical lanes
-- the remaining missing truth is still evidence under bounded rollout, not
-  missing architecture
+- the strongest manual-UX-backed docs/file packet shapes now promote cleanly
+  under their intended families
+- the narrow self-improving and inline-advisory seams now have explicit
+  default-off versus off-production activation boundaries
+- the remaining missing truth is still evidence under bounded off-production
+  usage, not missing architecture or missing enablement control
 - widening vague packet classes before evidence exists would risk promoting the
   wrong memories for the wrong reasons

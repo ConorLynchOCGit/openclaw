@@ -90,6 +90,7 @@ export type SelfImprovingCandidateDuplicateOutcome =
 
 export type SelfImprovingCandidateCaptureRolloutScope = {
   rolloutPhase: "bounded_rollout_proof_v1";
+  enablementTarget: "default-off" | "off-production";
   sourceProfile: "reduced_profile_candidate_only";
   target: "candidate_only";
   requiresProjectId: true;
@@ -120,9 +121,11 @@ type ResolvedSelfImprovingWorkflowImprovement = Awaited<
 
 function buildRolloutScope(
   allowedLessonFamilies: ReadonlyArray<"supported_lesson" | "generalized_workflow_lesson">,
+  enablementTarget: "default-off" | "off-production",
 ): SelfImprovingCandidateCaptureRolloutScope {
   return {
     rolloutPhase: "bounded_rollout_proof_v1",
+    enablementTarget,
     sourceProfile: "reduced_profile_candidate_only",
     target: "candidate_only",
     requiresProjectId: true,
@@ -652,9 +655,13 @@ export function createSelfImprovingCandidateCapturePort(params: {
       ...DEFAULT_SELF_IMPROVING_ALLOWED_LESSON_FAMILIES,
     ],
   );
-  const rolloutScope = buildRolloutScope([...allowedLessonFamilies]);
+  const enablementTarget =
+    params.config.selfImprovingCapture?.rolloutTarget === "off-production"
+      ? "off-production"
+      : "default-off";
+  const rolloutScope = buildRolloutScope([...allowedLessonFamilies], enablementTarget);
 
-  if (params.mode !== "candidate-only") {
+  if (params.mode !== "candidate-only" || enablementTarget !== "off-production") {
     return {
       async capture(input) {
         return {
@@ -662,7 +669,10 @@ export function createSelfImprovingCandidateCapturePort(params: {
           status: "disabled",
           kind: input.kind,
           target: "candidate_only",
-          reason: SELF_IMPROVING_CAPTURE_MODE_DISABLED_REASON,
+          reason:
+            params.mode !== "candidate-only"
+              ? SELF_IMPROVING_CAPTURE_MODE_DISABLED_REASON
+              : "self-improving candidate capture is only enabled for an explicit off-production rollout target",
           rolloutScope,
           evaluation: buildEvaluation({
             outcomeCode: "capture_disabled",

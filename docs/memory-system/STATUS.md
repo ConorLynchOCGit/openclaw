@@ -21,6 +21,9 @@ The bounded rollout-proof and reevaluation batch is now also landed.
 The Main-session reminder isolation and memory-consolidation follow-through
 batch is now also landed.
 
+The bounded promotion and off-production rollout-enablement batch is now also
+landed.
+
 ## What is live now
 
 Live families:
@@ -49,6 +52,12 @@ Live substrate properties:
 - Main-session internal reminder isolation for cron / exec reminder turns
 - stronger docs-localization project-rule normalization
 - stronger file-reference response-style normalization and retrieval hinting
+- bounded promotion follow-through for explicit docs-localization and
+  file-reference packet shapes
+- explicit off-production rollout-target gating for self-improving capture and
+  learned-guidance advisory planning
+- approved-over-candidate cluster preference for bounded retrieval of stronger
+  explicit docs/file packet shapes
 
 ## What is live but still bounded
 
@@ -63,11 +72,15 @@ Current live bounds:
 - self-improving capture is candidate-only
 - self-improving capture has no direct approval authority
 - self-improving capture now has explicit allowed lesson-family rollout scope
+- self-improving capture now also requires an explicit `off-production`
+  rollout target before it activates
 - learned-guidance planning reads approved retrieval only
 - learned-guidance planning is inline-only and advisory-only
 - learned-guidance planning suppresses conflicting guidance instead of guessing
 - learned-guidance planning now has explicit allowed lesson-family scope and a
   bounded default suggestion budget
+- learned-guidance planning now also requires an explicit `off-production`
+  rollout target before it activates
 
 ## What is still not live by default
 
@@ -154,20 +167,48 @@ It concluded:
 - self-improving capture and learned-guidance advisory planning still do not
   earn broader widening yet
 
+## What the promotion and off-production rollout batch changed
+
+This batch landed three real slices:
+
+1. bounded promotion follow-through
+2. bounded off-production rollout enablement
+3. post-enablement memory judgment
+
+It added:
+
+- promotion-follow-through proof that explicit docs-localization project-rule
+  packets review, promote, and retrieve cleanly
+- promotion-follow-through proof that explicit file-reference response-style
+  packets review, promote, and retrieve cleanly
+- retrieval control-plane preference for stronger approved explicit memory over
+  weaker nearby reviewable candidates within the same bounded subject cluster
+- explicit `off-production` rollout-target gating for self-improving capture
+- explicit `off-production` rollout-target gating for learned-guidance
+  advisory planning
+
+It concluded:
+
+- explicit docs-localization and file-reference packet shapes are now
+  promotion-eligible under bounded follow-through
+- vague shorthand docs/file packet shapes should still stay candidate-heavy
+- self-improving capture and learned-guidance advisory planning remain
+  default-off and narrow outside explicit off-production rollout
+
 ## What happens next
 
-The next major move is no longer another substrate refactor phase.
+The next major move is no longer another substrate refactor phase or another
+enablement-plumbing slice.
 
 The next major move should be:
 
-1. bounded promotion follow-through for the strongest explicit manual-UX-backed
-   docs-localization and file-reference packet shapes
-2. bounded off-production rollout using the cleaned Main-session boundary and
-   the existing rollout controls / observability
-3. evidence collection on usefulness, noise, conflict suppression, and prompt
-   cost
-4. only then a decision on widening or keeping the seams narrow
-5. cross-domain family expansion only after those answers are known
+1. bounded off-production usage and evidence review for the now
+   promotion-eligible explicit docs-localization and file-reference packet
+   shapes plus the narrow self-improving / inline-advisory seams
+2. evidence collection on usefulness, noise, conflict suppression, provenance,
+   and prompt cost
+3. only then a decision on widening or keeping the seams narrow
+4. cross-domain family expansion only after those answers are known
 
 ## What remains intentionally different
 

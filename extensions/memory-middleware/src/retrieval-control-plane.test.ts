@@ -113,4 +113,61 @@ describe("retrieval control plane", () => {
 
     expect(shaped.map((record) => record.id)).toEqual(["fact-1"]);
   });
+
+  it("keeps approved memory ahead of reviewable candidates within the same bounded subject cluster", () => {
+    const records: RankedRetrievedMemoryRecord[] = [
+      {
+        objectType: "memory_object",
+        readSurface: "reviewable_candidates_view",
+        id: "candidate-style-1",
+        memoryKind: "feedback",
+        reviewState: "candidate",
+        content: "Don't use absolute paths when citing files to me.",
+        metadata: {
+          candidateMetadata: {
+            autoCapture: {
+              subjectKey: "file-reference-subject",
+            },
+          },
+        },
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-02T00:00:00.000Z",
+        score: 320,
+        matchedFields: ["response_style_subject_match"],
+      },
+      {
+        objectType: "memory_object",
+        readSurface: "approved_memory_view",
+        id: "approved-style-1",
+        memoryKind: "feedback",
+        reviewState: "approved",
+        content: "When referencing files in chat, use repo-root relative paths.",
+        metadata: {
+          candidateMetadata: {
+            autoCapture: {
+              subjectKey: "file-reference-subject",
+            },
+          },
+        },
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+        score: 300,
+        matchedFields: ["response_style_subject_match"],
+      },
+    ];
+
+    const shaped = shapeRankedRetrievedRecordsForControlPlane({
+      decision: buildMemoryObjectRetrievalControlDecision({
+        input: {
+          query: "how should you cite files here",
+          kind: "feedback",
+          scope: "include_candidates",
+        },
+      }),
+      records,
+      classifyProjectFamily: () => "other",
+    });
+
+    expect(shaped.map((record) => record.id)).toEqual(["approved-style-1", "candidate-style-1"]);
+  });
 });

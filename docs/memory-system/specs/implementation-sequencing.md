@@ -24,6 +24,9 @@ The bounded rollout-proof and reevaluation batch is now also landed.
 The Main-session reminder isolation and memory-consolidation batch is now also
 landed.
 
+The bounded promotion and off-production rollout-enablement batch is now also
+landed.
+
 The next honest phase is therefore no longer:
 
 - another core flattening slice
@@ -32,9 +35,9 @@ The next honest phase is therefore no longer:
 
 The next honest phase is:
 
-- bounded promotion follow-through and off-production rollout enablement for
-  the strongest explicit manual-UX-backed packet shapes and the newly
-  instrumented functional seams
+- bounded off-production evidence review for the strongest explicit
+  promotion-eligible packet shapes and the newly explicit default-off
+  self-improving / advisory seams
 
 ## Completed order so far
 
@@ -60,37 +63,38 @@ Historical completed order:
 18. reduced-profile self-improving and advisory batch v1
 19. bounded rollout proof and reevaluation batch v1
 20. Main-session reminder isolation and memory consolidation batch v1
+21. bounded promotion and off-production rollout batch v1
 
 ## Recommended next order
 
 ### Next major rollout work
 
-1. bounded promotion follow-through for the strongest explicit docs-localization
-   and file-reference packet shapes
-2. bounded off-production rollout enablement and evidence review for the
-   narrow self-improving and learned-guidance seams
-3. widen either seam or any broader phrasing class only if evidence justifies
+1. bounded off-production evidence review for the strongest explicit
+   docs-localization and file-reference packet shapes plus the narrow
+   self-improving and learned-guidance seams
+2. widen either seam or any broader phrasing class only if evidence justifies
    it
 
 ### Later phases
 
-4. cross-domain family expansion tranche 1
-5. cross-domain family expansion tranche 2
+3. cross-domain family expansion tranche 1
+4. cross-domain family expansion tranche 2
 
 ### Could still fix later
 
-6. artifact / read-model convergence if rollout or new-family pressure shows
+5. artifact / read-model convergence if rollout or new-family pressure shows
    it is still needed
-7. narrower retrieval cleanup only if later work exposes honest remaining
+6. narrower retrieval cleanup only if later work exposes honest remaining
    duplication
 
 ## Why this order is recommended
 
 - the shared substrate work for these functional seams is now landed
 - the Main-session reminder leak is now fixed structurally
-- the strongest explicit docs/file packet shapes now have cleaner canonical
-  lanes than they had during the first manual UX pass
-- the newly landed surfaces are intentionally default-off and bounded
+- the strongest explicit docs/file packet shapes now promote cleanly and rank
+  coherently against weaker nearby variants
+- the newly landed functional surfaces are intentionally default-off and
+  bounded, with explicit `off-production` rollout-target gating
 - the remaining question is real rollout behavior and metrics under live usage,
   not architecture
 - widening vague phrasing classes before off-production evidence exists would
@@ -118,11 +122,13 @@ Before widening coverage further, the repo should prove:
 - inline learned-guidance planning stays low-noise and conflict-safe
 - the new rollout-control surfaces are sufficient to measure usefulness, noise,
   and prompt cost
+- the promotion-eligible explicit docs/file packet shapes stay clean under
+  bounded off-production review pressure without dragging vague shorthand along
 
 ## Hard prerequisites before new cross-domain families
 
-- bounded rollout proof and reevaluation for the new functional seams is
-  complete
+- bounded rollout proof, reminder isolation, consolidation, and promotion /
+  off-production enablement for the new functional seams are complete
 - the repo knows whether self-improving input coverage should stay narrow or
   widen
 - advisory planning remains a helper, not a second authority

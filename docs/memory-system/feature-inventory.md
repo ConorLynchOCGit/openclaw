@@ -110,6 +110,11 @@ Backlog / flattening debt:
   lane instead of relying only on overlapping workflow variants
 - explicit file-reference response-style phrasing now has a bounded generalized
   response-style lane plus retrieval subject hinting
+- explicit docs-localization and file-reference packet shapes are now
+  promotion-eligible under bounded follow-through
+- reduced-profile self-improving capture and learned-guidance advisory
+  planning now require an explicit `off-production` rollout target before
+  their bounded runtime paths activate
 - vague shorthand docs/file phrasing still remains intentionally weaker and is
   not accepted as proof that those broader phrasings should auto-promote
 
@@ -121,6 +126,8 @@ Still not live:
 - production-enabled learned-guidance advisory planning
 - new cross-domain families
 - broad automatic promotion for vague shorthand docs/file packet phrasing
+- bounded off-production evidence review results strong enough to justify
+  widening
 
 ## Read next
 

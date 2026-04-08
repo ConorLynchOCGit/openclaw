@@ -26,12 +26,18 @@ function createAcceptedResult(kind: CandidateSubmissionInput["kind"]): Candidate
 
 function createRuntime(params?: {
   mode?: "disabled" | "candidate-only";
+  rolloutTarget?: "off-production" | null;
   allowedLessonFamilies?: Array<"supported_lesson" | "generalized_workflow_lesson">;
   learningResult?: CandidateSubmissionResult;
   correctionResult?: CandidateSubmissionResult;
   procedureResult?: CandidateSubmissionResult;
   improvementResult?: CandidateSubmissionResult;
 }) {
+  const mode = params?.mode ?? "candidate-only";
+  const rolloutTarget =
+    params?.rolloutTarget === null
+      ? undefined
+      : (params?.rolloutTarget ?? (mode === "candidate-only" ? "off-production" : undefined));
   const candidateIngress = {
     submitLearning: vi.fn(async () => params?.learningResult ?? createAcceptedResult("learning")),
     submitCorrectionSuggestion: vi.fn(
@@ -73,7 +79,8 @@ function createRuntime(params?: {
         allowedAgents: ["chief", "main"],
       },
       selfImprovingCapture: {
-        mode: params?.mode ?? "candidate-only",
+        mode,
+        ...(rolloutTarget ? { rolloutTarget } : {}),
         allowedLessonFamilies: params?.allowedLessonFamilies ?? [
           "generalized_workflow_lesson",
           "supported_lesson",
@@ -125,7 +132,8 @@ function createRuntime(params?: {
           allowedAgents: ["chief", "main"],
         },
         selfImprovingCapture: {
-          mode: params?.mode ?? "candidate-only",
+          mode,
+          ...(rolloutTarget ? { rolloutTarget } : {}),
           allowedLessonFamilies: params?.allowedLessonFamilies ?? [
             "generalized_workflow_lesson",
             "supported_lesson",
@@ -149,7 +157,7 @@ function createRuntime(params?: {
           reviewState: "rejected" as const,
         })),
       },
-      mode: params?.mode ?? "candidate-only",
+      mode,
     }),
   } as unknown as MemoryMiddlewareRuntime & {
     candidateIngress: typeof candidateIngress;
@@ -265,6 +273,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
       memoryObjectId: "memory-1",
       rolloutScope: {
         rolloutPhase: "bounded_rollout_proof_v1",
+        enablementTarget: "off-production",
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
@@ -302,6 +311,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
         "reduced-profile self-improving first tranche is limited to workflow-improvement candidates",
       rolloutScope: {
         rolloutPhase: "bounded_rollout_proof_v1",
+        enablementTarget: "off-production",
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
@@ -339,6 +349,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
       blockedOutputPosture: "approved_memory",
       rolloutScope: {
         rolloutPhase: "bounded_rollout_proof_v1",
+        enablementTarget: "off-production",
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
@@ -377,6 +388,48 @@ describe("memory_self_improving_capture_candidate tool", () => {
       reason: "self-improving candidate capture mode is not enabled",
       rolloutScope: {
         rolloutPhase: "bounded_rollout_proof_v1",
+        enablementTarget: "default-off",
+        sourceProfile: "reduced_profile_candidate_only",
+        target: "candidate_only",
+        requiresProjectId: true,
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        retrievalAuthority: "approved_only",
+      },
+      evaluation: {
+        outcomeCode: "capture_disabled",
+        resolution: "disabled",
+        provenanceOrigin: "self_improving_capture",
+        duplicateOutcome: "none",
+        replayBlocked: false,
+        reviewBurden: "no_new_review_required",
+      },
+    });
+
+    const defaultOffRuntime = createRuntime({
+      rolloutTarget: null,
+    });
+    const defaultOffTool = createMemorySelfImprovingCaptureCandidateTool({
+      runtime: defaultOffRuntime,
+    });
+
+    const defaultOffResult = await defaultOffTool.execute("call-3b", {
+      kind: "improvement",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+      projectId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(defaultOffRuntime.candidateIngress.submitImprovementNote).not.toHaveBeenCalled();
+    expect(defaultOffResult.details).toEqual({
+      accepted: false,
+      status: "disabled",
+      kind: "improvement",
+      target: "candidate_only",
+      reason:
+        "self-improving candidate capture is only enabled for an explicit off-production rollout target",
+      rolloutScope: {
+        rolloutPhase: "bounded_rollout_proof_v1",
+        enablementTarget: "default-off",
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
@@ -420,6 +473,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
       reason: "memory middleware database URL is not configured",
       rolloutScope: {
         rolloutPhase: "bounded_rollout_proof_v1",
+        enablementTarget: "off-production",
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
