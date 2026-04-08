@@ -20,7 +20,7 @@ It is still not the end of all procedure-related work:
 
 - validated procedures remain a distinct artifact
 - later artifact / read-model convergence is still optional follow-up work
-- registry authority cleanup still remains
+- registry authority cleanup is now landed
 
 ## What is genuinely different
 

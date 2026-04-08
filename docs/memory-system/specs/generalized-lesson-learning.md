@@ -42,7 +42,7 @@ advantages into:
 - the application-selection layer
 - the retrieval/routing control plane
 - proof adapterization
-- registry authority cleanup
+- registry authority
 
 ## What remains intentionally family-specific
 

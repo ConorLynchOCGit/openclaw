@@ -59,3 +59,24 @@ The first bounded tranche is now live for hybrid memory-object search:
 This reduced the largest honest approved-vs-candidate SQL duplication. It did
 not unify validated procedures or replace the future retrieval/routing control
 plane.
+
+## Additional bounded tranche landed in flattening batch v6
+
+One narrower follow-up tranche also landed once registry authority and
+boundary cleanup were already in place:
+
+- approved and reviewable-candidate `get` / `list` / `basic` memory-object
+  reads now share one bounded read scaffold
+- validated-procedure read/query paths intentionally stayed separate
+
+Why this additional tranche was still honest:
+
+- the remaining approved-vs-reviewable-candidate duplication was still real
+  scaffold debt
+- the remaining validated-procedure duplication reflected a distinct read
+  model, not fake helper pressure
+
+What still properly waits:
+
+- deeper procedure-versus-memory-object artifact/read-model convergence
+- any later normalization that would flatten real read-model differences

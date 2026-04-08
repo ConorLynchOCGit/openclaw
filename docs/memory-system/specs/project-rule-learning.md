@@ -32,7 +32,7 @@ still depend on the broader unfinished substrate for:
 - real application selection
 - retrieval/routing control-plane unification
 - proof adapterization
-- registry authority cleanup
+- registry authority
 
 ## What remains intentionally family-specific
 

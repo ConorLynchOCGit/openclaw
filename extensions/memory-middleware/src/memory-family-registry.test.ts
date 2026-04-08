@@ -4,7 +4,9 @@ import {
   getCaptureMetadataByWorkflowLessonFamily,
   getMemoryFamilyDefinition,
   getMemoryFamilyDefinitionByCaptureClass,
+  getMemoryFamilyIdByWorkflowLessonFamily,
   getMemoryProofDefinition,
+  getPhrasePatternProofFamilyId,
   isMemoryProofFamily,
   isMemoryProofInspectableFamily,
   listMemoryFamilyDefinitions,
@@ -46,6 +48,13 @@ describe("memory-family-registry", () => {
   });
 
   it("maps workflow lesson families onto explicit metadata categories", () => {
+    expect(getMemoryFamilyIdByWorkflowLessonFamily("generalized_project_rule")).toBe(
+      "project_rule",
+    );
+    expect(getMemoryFamilyIdByWorkflowLessonFamily("generalized_unmet_need")).toBe("unmet_need");
+    expect(getMemoryFamilyIdByWorkflowLessonFamily("generalized_workflow_lesson")).toBe(
+      "workflow_improvement",
+    );
     expect(getCaptureMetadataByWorkflowLessonFamily("generalized_project_rule")).toEqual({
       category: "project_rule",
       source: "explicit_project_rule",
@@ -70,6 +79,9 @@ describe("memory-family-registry", () => {
 
   it("exposes registry-driven proof definitions for lifecycle and phrase artifacts", () => {
     expect(isMemoryProofFamily("workflow_phrase_pattern")).toBe(true);
+    expect(getPhrasePatternProofFamilyId("workflow_improvement")).toBe("workflow_phrase_pattern");
+    expect(getPhrasePatternProofFamilyId("response_style")).toBe("response_style_phrase_pattern");
+    expect(getPhrasePatternProofFamilyId("project_fact")).toBeNull();
     expect(getMemoryProofDefinition("project_rule")).toMatchObject({
       inspectionMode: "workflow_improvement_lifecycle",
       artifactMode: "approved_memory_object",

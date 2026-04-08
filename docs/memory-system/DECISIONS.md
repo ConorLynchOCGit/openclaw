@@ -3,7 +3,7 @@
 ## Current active architectural decisions
 
 This file records the currently active architecture decisions that govern the
-memory roadmap after flattening batch v5, substrate support batch v1, and the
+memory roadmap after flattening batch v6, substrate support batch v1, and the
 accepted post-v3 architecture review.
 
 ## 2026-04 — practical parity was enough to enter flattening, not enough to move on
@@ -61,16 +61,15 @@ Current accepted framing:
 - registry authority still remains before proof policy can be called fully
   centralized
 
-## 2026-04 — registry policy is not yet authoritative enough
+## 2026-04 — registry authority cleanup is now landed
 
-The registry is live and useful.
+Current accepted framing:
 
-It is not yet accepted as the full substrate control plane because:
-
-- some policy remains duplicated outside it
-- proof definitions are still separately modeled
-- semantic-routing policy is not yet fully runtime-authoritative
-- workflow-family mapping still exists outside the registry in runtime seams
+- workflow-family mapping now derives from the registry
+- phrase proof-family ownership now derives from the registry
+- the registry is now honest enough to be called the main family policy control
+  plane for the six current families
+- adapters still remain the honest boundary for parser bodies and query bodies
 
 ## 2026-04 — reduced-profile self-improving capture waits for stronger substrate work
 
@@ -82,7 +81,8 @@ Before reduced-profile self-improving capture, the repo must land:
 Those blockers are now landed.
 
 Reduced-profile self-improving capture still remains intentionally deferred
-until registry authority cleanup proves the control plane is honest enough.
+until the post-v6 reevaluation proves the stronger substrate can carry it
+without creating new parallel systems.
 
 ## 2026-04 — new families wait for additional authority and scale cleanup
 
@@ -92,7 +92,19 @@ Before new memory families, the repo must also land:
 4. registry authority cleanup
 5. memory-family contract / boundary cleanup
 
-Proof-runner adapterization is now landed.
+Proof-runner adapterization, registry authority cleanup, and memory-family
+contract / boundary cleanup are now landed.
+
+## 2026-04 — the public family-policy SDK seam is now real
+
+Current accepted framing:
+
+- `src/plugin-sdk/memory-family-policy.ts` now owns the shared family policy
+  contract directly
+- `memory-core` no longer reaches that contract through a middleware
+  implementation re-export
+- later contract trimming may still happen, but the old boundary smell is no
+  longer accepted as current state
 
 ## 2026-04 — should-fix-soon cleanup is real but secondary
 
@@ -106,4 +118,9 @@ The following work is accepted as already-landed near-term cleanup:
   registration
 
 These improved proofability and rollout safety, but they did not replace the
-primary blocker sequence above.
+primary blocker sequence above while it was still open.
+
+One later bounded retrieval cleanup also landed in flattening batch v6:
+
+- approved-vs-reviewable-candidate `get` / `list` / `basic` memory-object SQL
+  scaffolding reduction

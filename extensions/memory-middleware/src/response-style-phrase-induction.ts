@@ -1,6 +1,9 @@
 import type { PluginLogger } from "../api.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
-import { getMemoryFamilyDefinition } from "./memory-family-registry.js";
+import {
+  getMemoryFamilyDefinition,
+  getPhrasePatternProofFamilyId,
+} from "./memory-family-registry.js";
 import {
   buildReviewedPhrasePatternProposal,
   findApprovedReviewedPhrasePatternRows,
@@ -20,7 +23,6 @@ import {
 
 const RESPONSE_STYLE_PHRASE_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
 const RESPONSE_STYLE_PHRASE_CONFIRMATION_MIN_AGE_MS = 5_000;
-const PHRASE_PATTERN_ARTIFACT_FAMILY = "response_style_phrase_pattern";
 const RESPONSE_STYLE_PHRASE_STOPWORDS = new Set([
   "about",
   "after",
@@ -41,6 +43,16 @@ const RESPONSE_STYLE_PHRASE_STOPWORDS = new Set([
   "with",
   "would",
 ]);
+
+function requireResponseStylePhrasePatternArtifactFamily(): string {
+  const proofFamilyId = getPhrasePatternProofFamilyId("response_style");
+  if (!proofFamilyId) {
+    throw new Error("response_style is missing phrase-pattern proof policy");
+  }
+  return proofFamilyId;
+}
+
+const PHRASE_PATTERN_ARTIFACT_FAMILY = requireResponseStylePhrasePatternArtifactFamily();
 
 type ResponseStyleApprovedPhraseRow = ApprovedPhrasePatternRowBase & {
   resolved_target_template: string | null;

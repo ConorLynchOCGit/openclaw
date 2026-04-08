@@ -1,20 +1,18 @@
 # Flattening Execution Plan
 
-## Why this plan changed after batches v3 and v4
+## Why this plan changed after batches v3-v6
 
-The first four flattening batches plus the first support batch landed real
-shared substrate work.
-
-The accepted post-v3 architecture review was still correct:
+The accepted post-v3 architecture review was correct:
 
 - flattening was not down to one narrow closeout slice
 
-Batch v4 then landed the next three main control-plane slices, which changes
-the remaining execution posture again.
+The repo then landed flattening batches v4-v6 plus substrate support batch v1.
 
-The remaining work is now smaller, but still real:
+That changes the execution posture again:
 
-- registry / boundary cleanup
+- the remaining core flattening slices are now landed
+- later bounded cleanup may still exist, but it is no longer honest to describe
+  it as the old core flattening sequence
 
 ## What is genuinely flattened already
 
@@ -31,41 +29,28 @@ The remaining work is now smaller, but still real:
 9. prompt-facing application selection with selected/suppressed family guidance
 10. shared hybrid retrieval-control decisions for query hints, project-family
     shaping, and semantic fallback family routing
-11. less fragmented proof-family wiring
-12. stronger unit seams for retrieval intent, prompt-facing application
+11. recurring-procedure staged substrate
+12. declarative correction-policy execution kinds / target kinds
+13. proof lifecycle/artifact adapters
+14. stronger unit seams for retrieval intent, prompt-facing application
     planning, and semantic fallback
-13. shared hybrid memory-object SQL scaffolding for approved and
+15. shared hybrid memory-object SQL scaffolding for approved and
     reviewable-candidate surfaces
-14. typed correction-promotion policy inside the correction engine
+16. typed correction-promotion policy inside the correction engine
+17. registry-owned workflow-family mapping and phrase proof-family ownership
+18. plugin-sdk-owned shared memory-family policy contract
+19. shared approved-vs-reviewable-candidate `get` / `list` / `basic`
+    memory-object read scaffolding
 
 ### What remains only partially flattened
 
-- registry authority
-- memory-family contract boundaries
-- deeper retrieval normalization after the procedure redesign
+- application selection is still prompt-facing rather than the final
+  retrieval-fed per-memory-item substrate
+- validated-procedure and memory-object artifact/read-model convergence may
+  still deserve later cleanup if future pressure shows the split is still too
+  awkward
 
-## Remaining execution sequence
-
-### Phase C — remaining major slices
-
-1. registry authority cleanup
-2. memory-family contract / boundary cleanup
-
-### Could fix later
-
-6. deeper retrieval SQL normalization after the procedure redesign
-7. artifact / read-model convergence after the procedure redesign proves out
-
-## Why this remaining order is recommended
-
-- procedures are the last major family-specific subsystem that still has too
-  much historical shape
-- correction policy should become declarative before learned capture increases
-  candidate pressure
-- proofing, registry authority, and boundary cleanup matter most before new
-  families start leaning on the substrate
-
-## Slice-by-slice status
+## Completed execution sequence
 
 ### Slice 10 — full ingestion control-plane flattening
 
@@ -100,7 +85,7 @@ Landed:
 
 Still partial:
 
-- deeper retrieval normalization still remains after the procedure redesign
+- later artifact/read-model convergence may still remain
 
 ### Slice 13 — recurring-procedure staged substrate redesign
 
@@ -128,41 +113,45 @@ Landed:
 
 ### Slice 16 — registry authority cleanup
 
-Next:
+Landed:
 
-- make registry policy actually authoritative
-- remove duplicate proof-definition and workflow-family mapping surfaces
-- align semantic-routing policy with runtime use
+- registry policy now owns workflow-family mapping
+- phrase proof-family ownership now derives from registry policy
+- runtime seams no longer need local mapping helpers or local phrase proof
+  family strings
 
 ### Slice 17 — memory-family contract / boundary cleanup
 
-Next:
+Landed:
 
-- replace the current boundary smell around family-policy exposure
-- define the stable core-owned/shared contract across memory-core,
-  memory-middleware, and plugin-sdk
+- the public SDK family-policy path now owns the shared contract directly
+- `memory-core` no longer crosses the boundary through a middleware
+  implementation re-export
+- `memory-middleware` now consumes the same shared contract through a local
+  barrel
 
-## Recently landed support work
+### Slice 18 — deeper retrieval SQL normalization
 
-These are already landed and remain relevant supporting improvements:
+Landed, narrowly:
 
-- retrieval-intent helpers now have direct unit coverage
-- prompt-facing application planning is explicit and testable
-- semantic fallback eligibility now has pure decision seams
-- approved and candidate hybrid memory-object SQL shares one surface scaffold
-- immediate bounded correction uses typed promotion policy inside the
-  correction engine
+- approved-vs-reviewable-candidate `get` / `list` / `basic` memory-object
+  reads now share one bounded scaffold
+- validated-procedure query paths intentionally stayed separate because that
+  remaining duplication reflects a distinct read model, not fake scaffold debt
 
-## Likely remaining slice count
+## What comes next
 
-Honest estimate now:
+The next major move is no longer flattening.
 
-- before the next honest reduced-profile self-improving capture reevaluation:
-  1 major slice
-- likely before new families: 2 major slices
-- plus later bounded hardening only if code reality still warrants it
+It should now be:
 
-## What must remain unchanged while executing this plan
+1. reduced-profile self-improving capture reevaluation
+2. bounded reduced-profile self-improving capture first tranche if that
+   reevaluation remains honest
+3. learned-guidance advisory planning only after that
+4. new families only after those phases
+
+## What must remain unchanged while leaving flattening
 
 - approved-only user-facing retrieval
 - hybrid-first retrieval posture
@@ -170,13 +159,13 @@ Honest estimate now:
 - procedures remain `suggestion_first` and direct-use only on clear ask
 - project facts remain explicit, scoped, and stricter than guidance
 - response style remains bounded
-- reduced-profile self-improving capture remains disabled
+- reduced-profile self-improving capture remains disabled until its own phase
 - learned-guidance advisory planning remains disabled
 - no new families yet
 
 ## Deletion rule
 
-For every remaining substrate seam:
+For every later substrate seam:
 
 1. land the shared replacement
 2. prove parity

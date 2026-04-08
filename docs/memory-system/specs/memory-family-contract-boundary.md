@@ -60,3 +60,22 @@ Prove:
 1. memory-core no longer depends on a boundary that is effectively a middleware
    implementation re-export
 2. family policy can evolve without expanding unstable cross-package coupling
+
+## Landed in flattening batch v6
+
+This slice is now live.
+
+What landed:
+
+- `src/plugin-sdk/memory-family-policy.ts` now owns the shared family policy
+  contract directly
+- `memory-core` consumes that contract without crossing through a middleware
+  implementation file
+- `memory-middleware` now reuses the same shared contract through a local
+  barrel instead of acting as the hidden source of truth
+
+What this did not do:
+
+- expose parser/query adapter bodies as the public contract
+- claim that every later family-policy field trim is finished forever
+- make learned/self-improving rollout proof unnecessary

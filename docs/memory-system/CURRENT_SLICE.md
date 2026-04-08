@@ -2,96 +2,96 @@
 
 ## Active slice
 
-Registry authority cleanup
+Reduced-profile self-improving capture reevaluation
 
 ## Objective
 
-Land the next remaining substrate authority slice after flattening batch v5:
+Start the first honest post-flattening phase after flattening batch v6:
 
-- registry authority cleanup
+- reevaluate whether reduced-profile self-improving capture can now use the
+  landed family substrate without recreating old parallel systems
+- do not enable it blindly just because the flattening checklist is finished
 
-## What just landed in flattening batch v5
+## What just landed in flattening batch v6
 
-### Slice 13 — recurring-procedure staged substrate redesign
+### Slice 16 — registry authority cleanup
 
-- recurring procedures now advance through one explicit staged substrate:
-  candidate review, draft promotion, validation, embedding, and optional
-  validated-procedure supersede
-- transcript-side auto-capture and tool-side candidate submission now reuse the
-  same staged procedure transition helper
-- procedure lifecycle inspection now feeds one staged inspection surface instead
-  of forcing callers to reconstruct candidate-versus-validated posture locally
+- workflow-family mapping now derives from the registry instead of local helper
+  switches
+- phrase proof-family ownership now derives from the registry instead of local
+  policy strings
+- proof-family visibility for phrase artifacts and workflow capture mapping no
+  longer require separate runtime policy sources
 
-### Slice 14 — correction-policy cleanup
+### Slice 17 — memory-family contract / boundary cleanup
 
-- correction planning now has explicit execution kinds for:
-  - held correction
-  - approved-memory supersede
-  - validated-procedure supersede
-- correction target kind and target-required posture now come from family policy
-- procedure correction now fits the staged procedure substrate without being
-  forced through the memory-object supersede path
+- `src/plugin-sdk/memory-family-policy.ts` now owns the shared family policy
+  contract directly
+- `memory-core` no longer reaches a middleware implementation file through the
+  public SDK path
+- `memory-middleware` now consumes the same shared contract through a local
+  barrel instead of acting as the hidden source of truth
 
-### Slice 15 — proof-runner adapterization
+### Slice 18 — deeper retrieval SQL normalization
 
-- proof-runner lifecycle dispatch now resolves through registered lifecycle
-  adapters instead of a central inspection-mode switch
-- proof artifact extraction now resolves through registered artifact adapters
-  instead of a central artifact-mode switch
-- proof definitions for the six main families now derive from the family
-  registry instead of living in a second duplicated proof-definition map
+- approved and reviewable-candidate `get` / `list` / `basic` memory-object read
+  surfaces now share one bounded read scaffold
+- the batch explicitly did not flatten validated procedures into that helper,
+  because those query paths still reflect a distinct read model rather than
+  fake SQL duplication
 
-## What batch v5 actually removed or reduced
+## What batch v6 actually removed or reduced
 
-- duplicate procedure stage progression across transcript capture and tool
-  submission
-- caller-coupled procedure correction decisions that depended on old
-  memory-object assumptions
-- the central proof-runner lifecycle dispatch switch
-- the central proof-runner artifact extraction switch
-- the duplicated proof-definition entries for the six main memory families
+- local workflow-family resolution switches outside the registry
+- local phrase proof-family policy strings outside the registry
+- the public SDK middleware re-export boundary smell around family policy
+- another approved-vs-reviewable-candidate query scaffold in simple memory
+  object reads
 
-## What batch v5 did not replace
+## What batch v6 did not replace
 
-- registry authority is still not fully honest
-- memory-family contract / boundary cleanup is still ahead
 - application selection is now structural at the prompt-facing layer, but not
   yet the final retrieval-fed per-memory-item substrate
-- deeper retrieval normalization and later artifact/read-model convergence still
-  remain optional follow-up work
+- later artifact/read-model convergence may still remain worthwhile if
+  self-improving or future-family pressure exposes more procedure/read-model
+  awkwardness
+- reduced-profile self-improving capture still requires an honest dedicated
+  reevaluation and rollout plan
 
 ## What remains major substrate work
 
-### Remaining major slices before moving on
+### Core flattening sequence
 
-1. registry authority cleanup
-2. memory-family contract / boundary cleanup
+The remaining core flattening sequence is now landed.
 
 ### Could fix later
 
-- more aggressive normalization of retrieval SQL generation once the retrieval
-  control plane is stronger
 - better artifact / read-model convergence if procedure and memory-object
   storage still feel too separate after the staged redesign
 
 ## What is now live but still partial
 
-- recurring-procedure staged substrate
-  - live for shared staged transition handling across transcript and tool flows
-  - later artifact/read-model convergence may still be warranted
-- correction-policy substrate
-  - live for declarative execution kind and target kind across the six families
-  - later registry authority cleanup still remains
+- registry authority
+  - live for workflow-family mapping and phrase proof-family ownership
+  - adapters still remain the honest boundary for parser bodies and query bodies
+- memory-family contract boundary
+  - live for a plugin-sdk-owned shared family policy contract
+  - later contract trimming may still happen, but the middleware re-export
+    smell is gone
 - application-selection layer
   - live for prompt-facing family posture selection and suppression
   - not yet the final retrieval-fed per-memory-item application substrate
 - retrieval + semantic-routing control plane
   - live for hybrid query intent, project-family shaping, and semantic fallback
     family routing
-  - not yet the end-state for all later retrieval normalization work
-- proof adapter substrate
-  - live for lifecycle and artifact dispatch
-  - registry authority cleanup still remains
+  - later artifact/read-model convergence may still remain
+
+## Why the next phase is not “just enable capture”
+
+- the flattening blockers are now gone
+- that changes what is allowed to be evaluated next
+- it does not remove the need for a dedicated reduced-profile
+  self-improving-capture proof and rollout plan
 
 ## Must remain intentionally different
 
@@ -110,20 +110,19 @@ Still not next:
 - learned-guidance advisory planning
 - new cross-domain families
 
-Those phases still wait for the remaining substrate work above.
+Those phases still wait for the reduced-profile self-improving capture
+reevaluation and bounded first tranche above.
 
 ## The next main implementation slice
 
 The next main implementation slice should now be:
 
-- registry authority cleanup
+- reduced-profile self-improving capture reevaluation and bounded first
+  implementation tranche
 
 Reason:
 
-- more runtime policy now genuinely flows through shared substrates, but the
-  registry still is not yet authoritative enough to be called the honest
-  control plane
-- proof definitions for phrase surfaces still remain outside the main family
-  registry path
-- memory-family expansion and later learned pressure should not lean on a
-  registry that still leaves policy duplicated elsewhere
+- the remaining core flattening blockers are now landed
+- the next honest question is whether reduced-profile self-improving capture
+  can use the same shared family substrate without adding new parallel systems
+- learned-guidance advisory planning and new families remain later than that

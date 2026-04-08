@@ -20,7 +20,7 @@ This is a real declarative correction substrate for the current six families.
 
 It is still not the final authority model:
 
-- registry authority cleanup still remains
+- registry authority cleanup is now landed
 - later family expansion should not treat the current registry surfaces as the
   finished control plane yet
 

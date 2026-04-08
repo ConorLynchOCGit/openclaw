@@ -189,6 +189,15 @@ describe("plugin-sdk subpath exports", () => {
       "createDirectTextMediaOutbound",
       "createScopedChannelMediaMaxBytesResolver",
     ]);
+    expectSourceMentions("memory-family-policy", [
+      "getMemoryFamilyDefinition",
+      "getMemoryProofDefinition",
+      "getMemoryFamilyIdByWorkflowLessonFamily",
+    ]);
+    expectSourceOmitsImportPattern(
+      "memory-family-policy",
+      "../../extensions/memory-middleware/src/memory-family-registry.js",
+    );
     expectSourceMentions("telegram-core", [
       "ChannelMessageActionAdapter",
       "TelegramAccountConfig",

@@ -16,7 +16,10 @@ import {
   resolveMemoryCorrectionPromotionPolicy,
   resolveMemoryCorrectionPlan,
 } from "./memory-correction-engine.js";
-import { getCaptureMetadataByCaptureClass } from "./memory-family-registry.js";
+import {
+  getCaptureMetadataByCaptureClass,
+  getMemoryFamilyIdByWorkflowLessonFamily,
+} from "./memory-family-registry.js";
 import {
   resolveProjectFactIngestion,
   resolveRecurringProcedureIngestion,
@@ -2705,19 +2708,6 @@ function isAutoReviewedManagedImprovementDecision(
   return decision.lessonFamily !== "supported_lesson";
 }
 
-function getMemoryFamilyIdForWorkflowLessonFamily(
-  lessonFamily: WorkflowImprovementLessonFamily,
-): "workflow_improvement" | "project_rule" | "unmet_need" {
-  switch (lessonFamily) {
-    case "generalized_project_rule":
-      return "project_rule";
-    case "generalized_unmet_need":
-      return "unmet_need";
-    default:
-      return "workflow_improvement";
-  }
-}
-
 function findConflictingApprovedGeneralizedGuidanceEntries(params: {
   inspection: WorkflowImprovementLifecycleInspection | null | undefined;
   key: string;
@@ -4301,7 +4291,9 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       }
 
       const workflowCorrectionPlan = resolveMemoryCorrectionPlan({
-        familyId: getMemoryFamilyIdForWorkflowLessonFamily(effectiveDecision.lessonFamily),
+        familyId:
+          getMemoryFamilyIdByWorkflowLessonFamily(effectiveDecision.lessonFamily) ??
+          "workflow_improvement",
         trigger: "cluster_auto_review",
         conflictingApprovedObjectIds: conflictingApprovedGeneralizedEntries.map(
           (entry) => entry.id,

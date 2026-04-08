@@ -31,23 +31,23 @@ This inventory tracks:
 
 ## Substrate inventory
 
-| Substrate seam                             | Status          | Current truth                                                                                                                                           | Category          |
-| ------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| Family-definition registry                 | `built_partial` | six-family registry is live, but proof definitions, workflow-family mapping, semantic policy, and other control points are still duplicated             | architecture debt |
-| Unified ingestion resolver                 | `built_live`    | all six landed families now resolve through one shared ingestion substrate across transcript and tool submission, with family adapters preserved        | architecture debt |
-| Unified clustered lifecycle                | `built_partial` | shared for several memory-object families, and procedures now share explicit staged transition handling even though validated artifacts remain distinct | architecture debt |
-| Unified correction / supersede             | `built_live`    | declarative correction plans now own execution kind, target kind, and held-versus-immediate posture for the current families                            | architecture debt |
-| Unified phrase-pattern engine              | `built_partial` | one reviewed phrase substrate serves workflow lessons and response style; family eligibility remains intentionally narrow                               | architecture debt |
-| Retrieval feature framework                | `built_partial` | shared score composition exists, but deeper retrieval normalization still remains                                                                       | architecture debt |
-| Behavior-profile bridge                    | `built_partial` | shared prompt-support bridge remains live and now feeds the structured prompt-facing application layer                                                  | architecture debt |
-| Application-selection / behavior planner   | `built_partial` | selected/suppressed family guidance plus rendering hints are now structural for the prompt-facing durable-memory layer                                  | architecture debt |
-| Retrieval + semantic-routing control plane | `built_partial` | hybrid retrieval now shares normalized control decisions for hints, project-family shaping, and semantic fallback family routing                        | architecture debt |
-| Registry-driven proof inspection           | `built_partial` | registered lifecycle/artifact adapters now drive proof dispatch, but registry authority is still not the final proof control plane                      | architecture debt |
-| Memory testability hardening               | `built_partial` | retrieval intent, prompt-facing application planning, and semantic fallback eligibility now have real unit seams                                        | supporting seam   |
-| Hybrid memory-surface SQL scaffolding      | `built_partial` | approved and reviewable-candidate hybrid memory-object search shares one surface scaffold, but broader retrieval normalization still remains            | supporting seam   |
-| Typed correction-promotion policy          | `built_partial` | the support-slice promotion-policy union remains a live subcomponent inside the broader declarative correction substrate                                | supporting seam   |
-| Registry authority cleanup                 | `not_built`     | registry is not yet authoritative enough to be called the full control plane                                                                            | architecture debt |
-| Memory-family contract boundary cleanup    | `not_built`     | the family-policy boundary is still smellier than it should be                                                                                          | architecture debt |
+| Substrate seam                             | Status          | Current truth                                                                                                                                            | Category          |
+| ------------------------------------------ | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| Family-definition registry                 | `built_live`    | six-family registry is now the runtime source of truth for workflow-family mapping, proof-family ownership, and the main family policy surfaces          | architecture debt |
+| Unified ingestion resolver                 | `built_live`    | all six landed families now resolve through one shared ingestion substrate across transcript and tool submission, with family adapters preserved         | architecture debt |
+| Unified clustered lifecycle                | `built_partial` | shared for several memory-object families, and procedures now share explicit staged transition handling even though validated artifacts remain distinct  | architecture debt |
+| Unified correction / supersede             | `built_live`    | declarative correction plans now own execution kind, target kind, and held-versus-immediate posture for the current families                             | architecture debt |
+| Unified phrase-pattern engine              | `built_partial` | one reviewed phrase substrate serves workflow lessons and response style; family eligibility remains intentionally narrow                                | architecture debt |
+| Retrieval feature framework                | `built_partial` | shared feature composition exists and approved-vs-candidate read scaffolding is flatter, but validated-procedure read-model convergence may still remain | architecture debt |
+| Behavior-profile bridge                    | `built_partial` | shared prompt-support bridge remains live and now feeds the structured prompt-facing application layer                                                   | architecture debt |
+| Application-selection / behavior planner   | `built_partial` | selected/suppressed family guidance plus rendering hints are now structural for the prompt-facing durable-memory layer                                   | architecture debt |
+| Retrieval + semantic-routing control plane | `built_partial` | hybrid retrieval now shares normalized control decisions for hints, project-family shaping, and semantic fallback family routing                         | architecture debt |
+| Registry-driven proof inspection           | `built_live`    | registry-owned proof policy plus adapterized lifecycle/artifact dispatch now form one honest proof control path for the current family set               | architecture debt |
+| Memory testability hardening               | `built_partial` | retrieval intent, prompt-facing application planning, and semantic fallback eligibility now have real unit seams                                         | supporting seam   |
+| Hybrid memory-surface SQL scaffolding      | `built_live`    | approved and reviewable-candidate hybrid, get, list, and basic memory-object reads now share bounded scaffolding where the read surfaces already align   | supporting seam   |
+| Typed correction-promotion policy          | `built_partial` | the support-slice promotion-policy union remains a live subcomponent inside the broader declarative correction substrate                                 | supporting seam   |
+| Registry authority cleanup                 | `built_live`    | registry-owned family policy now drives workflow-family mapping and phrase proof-family ownership without competing local runtime maps                   | architecture debt |
+| Memory-family contract boundary cleanup    | `built_live`    | plugin-sdk now owns the shared family policy contract directly instead of re-exporting middleware implementation                                         | architecture debt |
 
 ## Recently cleared blockers
 
@@ -59,8 +59,7 @@ These slices are now landed:
 
 ## Remaining main substrate slices
 
-1. registry authority cleanup
-2. memory-family contract / boundary cleanup
+The remaining core flattening slices are now landed.
 
 ## Recently landed work
 
@@ -76,8 +75,9 @@ These slices are now landed:
 
 ## Could fix later
 
-- deeper retrieval SQL normalization once the control plane is stronger
 - tighter artifact / read-model convergence after the procedure redesign
+- narrower retrieval cleanup only if later self-improving or future-family work
+  exposes honest remaining debt
 
 ## Deliberate policy differences versus backlog
 
@@ -94,15 +94,15 @@ Backlog / flattening debt:
 
 - application selection is structural for the prompt-facing durable-memory
   layer, but not yet the final retrieval-fed per-memory-item substrate
-- retrieval control is much flatter, but procedure redesign and later SQL
-  normalization still remain
-- registry authority and cross-boundary policy exposure still need cleanup
+- retrieval control is much flatter, but later artifact/read-model convergence
+  may still remain
+- reduced-profile self-improving capture still needs its own reevaluation and
+  rollout proof before it becomes live
 
 ## Not live yet
 
 Still not live:
 
-- full post-v5 substrate completion
 - reduced-profile self-improving capture on top of the stronger substrate
 - learned-guidance advisory planning
 - new cross-domain families

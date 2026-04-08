@@ -149,24 +149,33 @@ self-improving capture can land on honest shared substrate.
 
 This phase should land before the repo adds new memory families.
 
-### Remaining blockers before new families
+### Landed in flattening batch v6
 
 1. registry authority cleanup
 2. memory-family contract / boundary cleanup
+3. deeper retrieval SQL normalization for approved-vs-reviewable-candidate
+   simple memory-object reads
 
-### Why these are blockers
+### What this changed
 
-- the registry should be authoritative before it becomes the expansion control
-  plane
-- memory-family policy should cross the `memory-core` /
-  `memory-middleware` / plugin-sdk boundary cleanly
+- the registry is now authoritative enough to be called the honest family
+  policy control plane for the six current families
+- memory-family policy now crosses the `memory-core` /
+  `memory-middleware` / plugin-sdk boundary through a shared contract instead
+  of a middleware implementation re-export
+- the remaining approved-vs-reviewable-candidate `get` / `list` / `basic`
+  memory-object SQL duplication is reduced
+
+### What still remains later
+
+- artifact / read-model convergence if later self-improving or family-expansion
+  pressure shows the procedure-versus-memory-object split is still too awkward
 
 ## Phase E — reduced-profile self-improving capture
 
-This remains later.
+This is now the next major roadmap phase.
 
-It should begin only after the remaining parts of phase D are landed strongly
-enough that:
+It should begin only after phase D is landed strongly enough that:
 
 - self-improving candidates enter the same family substrate
 - provenance stays explicit

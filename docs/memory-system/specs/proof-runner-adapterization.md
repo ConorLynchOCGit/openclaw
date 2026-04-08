@@ -18,8 +18,9 @@ This is a real proof substrate change.
 
 It is not yet the final registry-authority story:
 
-- phrase proof families still remain outside the main family-definition table
-- registry authority cleanup still remains
+- phrase proof families still remain distinct proof artifacts rather than
+  ordinary family definitions
+- registry authority cleanup is now landed
 
 ## Why this exists
 

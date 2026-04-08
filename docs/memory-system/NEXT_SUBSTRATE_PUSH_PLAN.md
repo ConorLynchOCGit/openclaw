@@ -2,14 +2,14 @@
 
 ## Purpose
 
-This doc turns the accepted post-v3 architecture review into the concrete
-execution order for the remaining substrate push after flattening batch v5.
+This doc records the honest next move after flattening batch v6 landed the
+remaining core flattening slices.
 
 ## What is now already landed
 
 The following batches are already landed:
 
-- flattening batches v1-v5
+- flattening batches v1-v6
 - substrate support batch v1
 
 Most importantly, the repo now has live landings for:
@@ -20,96 +20,106 @@ Most importantly, the repo now has live landings for:
 - recurring-procedure staged substrate redesign
 - declarative correction-policy execution kinds / target kinds
 - proof lifecycle/artifact adapter dispatch
+- registry authority cleanup
+- memory-family contract / boundary cleanup
+- deeper retrieval SQL normalization for approved-vs-reviewable-candidate
+  simple memory-object reads
 
-## Remaining recommended slice sequence
+## What flattening batch v6 changed
 
-### Remaining main substrate slices
+- the registry now owns workflow-family mapping and phrase proof-family
+  ownership
+- plugin-sdk now owns the shared memory-family policy contract directly
+- approved-vs-reviewable-candidate `get` / `list` / `basic` reads now share
+  one bounded scaffold where the read surfaces already align
 
-1. registry authority cleanup
-2. memory-family contract / boundary cleanup
+## Remaining recommended sequence
 
-### Later improvements
+### Next major phase
 
-3. deeper retrieval SQL normalization once the retrieval/routing control plane
-   is stronger
-4. artifact / read-model convergence if procedure and memory-object storage
-   still feel too separate after the staged redesign
+1. reduced-profile self-improving capture reevaluation
+2. bounded reduced-profile self-improving capture first tranche if the
+   reevaluation stays honest
+3. learned-guidance advisory planning only after that
+4. new families only after those phases
+
+### Later bounded cleanup only if justified
+
+- artifact / read-model convergence if procedure and memory-object storage
+  still feel too separate under later pressure
+- narrower retrieval cleanup only if later work exposes honest remaining
+  duplication
 
 ## Updated likely slice count
 
 Honest estimate now:
 
-- before the next honest reevaluation of reduced-profile self-improving
-  capture: 1 major slice remains
-- before new families: 2 major slices remain
-- plus later bounded follow-up hardening only if code reality still warrants it
+- remaining core flattening slices: 0
+- next major roadmap phase before any new family work: reduced-profile
+  self-improving capture reevaluation and then its bounded first tranche
+- later bounded cleanup remains conditional, not precommitted
 
 ## What should land next
 
 The next implementation slice should now be:
 
-- registry authority cleanup
+- reduced-profile self-improving capture reevaluation
 
 Why:
 
-- the registry now governs more live runtime policy, but it is still not
-  authoritative enough to be called the honest control plane
-- phrase proof families and other remaining surfaces still sit outside the main
-  family registry path
-- reduced-profile self-improving capture remains intentionally deferred until
-  the registry authority slice proves this boundary is real
+- the old substrate blockers for registry authority and cross-boundary family
+  policy are now landed
+- the next honest question is whether reduced-profile self-improving capture
+  can use those shared substrates without creating a fresh parallel system
+- learned-guidance advisory planning and new families are still later than that
 
 ## What can be parallelized
 
-Once registry authority cleanup is stable:
+Once reduced-profile self-improving capture reevaluation is stable:
 
-- memory-family contract boundary design
-- any bounded reduced-profile self-improving capture reevaluation
+- bounded reduced-profile self-improving capture first-tranche implementation
+- later artifact/read-model convergence reevaluation if capture pressure
+  exposes it
 
 During implementation, only parallelize slices with genuinely disjoint write
 scopes or clearly one-way dependencies.
 
 ## What should not be parallelized prematurely
 
-- reduced-profile self-improving capture implementation
+- learned-guidance advisory planning implementation
 - new family implementation
-- broad boundary changes before registry authority cleanup is stable
-- aggressive SQL normalization before the post-procedure retrieval shape is
-  stable
+- broad artifact/read-model redesign before reduced-profile self-improving
+  capture reevaluation says it is necessary
 
 ## Validation posture
 
-Higher-risk remaining slices that should expect broader validation:
+Higher-risk next phase:
 
-- registry authority cleanup
-- memory-family contract / boundary cleanup
+- reduced-profile self-improving capture reevaluation and first bounded tranche
 
-Moderate-risk remaining slices:
+Moderate-risk later follow-up:
 
-- any bounded reduced-profile self-improving capture reevaluation
-
-The support batch plus flattening batches v4-v5 are already landed. They
-reduced proof burden and control-plane duplication, but they did not replace
-the remaining registry and boundary work.
+- artifact/read-model convergence if later pressure shows it is still needed
 
 ## What not to do during the remaining push
 
-- do not enable reduced-profile self-improving capture
-- do not enable learned-guidance advisory planning
-- do not add new memory families
+- do not enable reduced-profile self-improving capture blindly
+- do not enable learned-guidance advisory planning yet
+- do not add new memory families yet
 - do not erase real family-policy differences
-- do not accept “shared helper” as proof that a duplicated system is gone
-- do not leave procedures as a quasi-separate product while claiming the
-  family substrate is finished
+- do not accept “the flattening checklist is done” as proof that rollout risk
+  is gone
 
 ## Recommended grouping from here
 
 If you want the cheapest credible remaining order, use this grouping:
 
-1. registry authority cleanup
-2. memory-family contract / boundary cleanup
-3. only then reevaluate reduced-profile self-improving capture
-4. only later bounded hardening that still remains honest after those slices
+1. reevaluate reduced-profile self-improving capture on the now-flatter
+   substrate
+2. land the smallest honest bounded first tranche if that reevaluation stays
+   positive
+3. only then consider learned-guidance advisory planning
+4. only later bounded hardening that still remains honest after those phases
    land
 
 ## Exit criteria before moving on
@@ -119,7 +129,8 @@ Before new families:
 - proofing remains adapter-driven
 - registry authority is honest
 - memory-family policy crosses core/middleware/plugin boundaries cleanly
+- reduced-profile self-improving capture is proven on the shared substrate
 
 ## Next implementation slice
 
-- registry authority cleanup
+- reduced-profile self-improving capture reevaluation

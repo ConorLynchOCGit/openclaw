@@ -1,6 +1,9 @@
 import type { PluginLogger } from "../api.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
-import { getMemoryFamilyDefinition } from "./memory-family-registry.js";
+import {
+  getMemoryFamilyDefinition,
+  getPhrasePatternProofFamilyId,
+} from "./memory-family-registry.js";
 import {
   buildReviewedPhrasePatternProposal,
   findApprovedReviewedPhrasePatternRows,
@@ -19,7 +22,6 @@ import {
 
 const WORKFLOW_PHRASE_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
 const WORKFLOW_PHRASE_CONFIRMATION_MIN_AGE_MS = 5_000;
-const PHRASE_PATTERN_ARTIFACT_FAMILY = "workflow_phrase_pattern";
 const WORKFLOW_PHRASE_STOPWORDS = new Set([
   "about",
   "after",
@@ -40,6 +42,16 @@ const WORKFLOW_PHRASE_STOPWORDS = new Set([
   "with",
   "would",
 ]);
+
+function requireWorkflowPhrasePatternArtifactFamily(): string {
+  const proofFamilyId = getPhrasePatternProofFamilyId("workflow_improvement");
+  if (!proofFamilyId) {
+    throw new Error("workflow_improvement is missing phrase-pattern proof policy");
+  }
+  return proofFamilyId;
+}
+
+const PHRASE_PATTERN_ARTIFACT_FAMILY = requireWorkflowPhrasePatternArtifactFamily();
 
 type WorkflowApprovedPhraseRow = ApprovedPhrasePatternRowBase & {
   resolved_target_lesson_family: string | null;

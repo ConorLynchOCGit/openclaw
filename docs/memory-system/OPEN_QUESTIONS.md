@@ -1,48 +1,34 @@
 # Open Questions
 
-## Active questions inside the stronger substrate plan
+## Active questions after flattening batch v6
 
-These are the remaining real open questions after the accepted post-v3 review.
+These are the remaining real open questions now that the core flattening
+sequence is landed.
 
-They are narrower than the earlier roadmap questions because the high-level
-sequence is now accepted.
+They are no longer about whether registry authority and boundary cleanup should
+happen. They are about what the next post-flattening phase should do on top of
+the stronger substrate.
 
-1. For the full ingestion control plane, how much adapter logic should live in:
-   - registry-declared typed policy
-   - adapter modules
-   - or both
-2. For the application-selection layer, should suppression reason codes be:
-   - shared across families
-   - or shared with a small family-specific extension vocabulary
-3. For retrieval/routing control-plane flattening, how much approved,
-   candidate, and validated-procedure planning can honestly converge without
-   obscuring real storage differences?
-4. For registry authority cleanup, which policy surfaces should be generated
-   from registry definitions versus hand-authored adapter declarations?
-5. For memory-family contract boundary cleanup, what should become the
-   core-owned/shared memory-family contract without over-exposing middleware
-   internals?
-
-## Should-fix-soon questions
-
-1. What exact unit seams will reduce the most integration-test pressure first:
-   - retrieval intent
-   - application selection
-   - semantic fallback
-2. How much approved-versus-candidate SQL scaffolding can be shared before the
-   retrieval/routing control plane lands?
-3. Which remaining stringly control-flow points should be upgraded first to
-   reduce rollout risk most cheaply?
+1. For reduced-profile self-improving capture, what exact bounded input set
+   should the first tranche consume without recreating a second family policy
+   path?
+2. Which provenance and review posture should the first reduced-profile
+   self-improving capture tranche require so that later learned pressure stays
+   auditable?
+3. Should the first reduced-profile self-improving capture tranche write into
+   existing family surfaces only, or does it need any narrower gating before
+   that is honest?
+4. How much later artifact / read-model convergence is still truly needed now
+   that registry authority, boundary cleanup, and the bounded retrieval SQL
+   cleanup are landed?
 
 ## Later-phase questions that remain intentionally later
 
-These stay open, but are not part of the current docs/spec replanning slice:
+These stay open, but they are not the next implementation phase:
 
-1. What exact bounded input set should the first reduced-profile
-   self-improving capture source consume once registry authority cleanup is
-   landed strongly enough?
-2. What exact advisory posture should learned-guidance planning take once both
-   the stronger substrate work and reduced-profile self-improving capture are
-   live?
-3. Which cross-domain family should land first after the stronger substrate
-   work, self-improving capture, and advisory planning?
+1. What exact advisory posture should learned-guidance planning take once
+   reduced-profile self-improving capture is live and proven?
+2. Which cross-domain family should land first after the stronger substrate,
+   reduced-profile self-improving capture, and advisory planning?
+3. Which later artifact/read-model cleanup, if any, should happen before the
+   first new cross-domain family tranche?

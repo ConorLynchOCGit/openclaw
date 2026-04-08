@@ -65,3 +65,22 @@ Prove:
 2. proof-family policy no longer requires a separate competing source of truth
 3. semantic-routing policy is either truly authoritative or explicitly removed
    from the registry until it is
+
+## Landed in flattening batch v6
+
+This slice is now live.
+
+What landed:
+
+- workflow-family mapping now derives from registry policy instead of local
+  transcript/tool helper switches
+- phrase proof-family ownership now derives from registry policy instead of
+  local phrase-induction policy strings
+- runtime seams now read those policy surfaces from the registry path rather
+  than reconstructing them locally
+
+What this did not do:
+
+- move parser bodies into the registry
+- move query bodies into the registry
+- remove adapters as the honest runtime boundary

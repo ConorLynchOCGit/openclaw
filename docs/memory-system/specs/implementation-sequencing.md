@@ -12,17 +12,20 @@ for:
 
 ## Current sequencing conclusion
 
-The six landed families are still close enough to practical parity to move
-forward.
+The accepted post-v3 review required multiple more flatten/refactor slices.
 
-But after the accepted post-v3 review, the next honest phase is not:
+Those remaining core slices are now landed through flattening batch v6.
 
-- one narrow flattening closeout slice
-- reduced-profile self-improving capture
+The next honest phase is therefore no longer:
+
+- another core flattening slice
 - learned-guidance advisory planning
 - broad family expansion
 
-The next honest phase is a broader substrate push.
+The next honest phase is:
+
+- reduced-profile self-improving capture reevaluation on the stronger
+  substrate
 
 ## Completed order so far
 
@@ -43,41 +46,47 @@ Historical completed order:
 13. substrate support batch v1
 14. flattening batch v4
 15. flattening batch v5
+16. flattening batch v6
 
 ## Recommended next order
 
-### Remaining substrate work
+### Next major substrate work
 
-1. registry authority cleanup
-2. memory-family contract / boundary cleanup
+1. reduced-profile self-improving capture reevaluation
+2. bounded reduced-profile self-improving capture first tranche if the
+   reevaluation stays honest
 
 ### Could fix later
 
-3. deeper retrieval SQL normalization once the retrieval/routing control plane
-   is stronger
-4. artifact / read-model convergence if procedure and memory-object storage
-   still feel too separate after the staged redesign
+3. artifact / read-model convergence if procedure and memory-object storage
+   still feel too separate under later pressure
+4. narrower retrieval cleanup only if later work exposes honest remaining
+   duplication
 
 ### Later phases
 
-5. reduced-profile self-improving capture integration
-6. learned-guidance advisory planning
-7. cross-domain family expansion tranche 1
-8. cross-domain family expansion tranche 2
+5. learned-guidance advisory planning
+6. cross-domain family expansion tranche 1
+7. cross-domain family expansion tranche 2
 
 ## Why this order is recommended
 
-- registry authority should become honest before learned capture or new families
-  lean on it as a control plane
-- memory-family policy should cross core/middleware/plugin seams cleanly before
-  new families extend the substrate
+- the old flattening blockers for registry authority and family-policy boundary
+  exposure are now landed
+- reduced-profile self-improving capture should now be reevaluated on the
+  stronger substrate instead of being deferred by stale roadmap posture
+- learned-guidance advisory planning should still wait until reduced-profile
+  self-improving capture is proven
 
 ## Hard prerequisites before reduced-profile self-improving capture
+
+These are now landed:
 
 - recurring procedures are on a cleaner staged substrate
 - correction policy no longer depends on legacy stringly gates
 - proofing is adapter-driven
 - registry authority is honest enough to carry later learned pressure
+- memory-family policy crosses core/middleware/plugin seams cleanly
 
 ## Hard prerequisites before learned-guidance advisory planning
 
@@ -87,33 +96,34 @@ Historical completed order:
 
 ## Hard prerequisites before new cross-domain families
 
-- proofing is adapter-driven enough to scale
-- registry authority is honest
-- memory-family contract boundaries are clean enough to extend
+- reduced-profile self-improving capture is proven on the shared substrate
+- learned-guidance advisory planning is stable enough to extend
+- the later artifact/read-model cleanup queue is understood well enough not to
+  surprise new families immediately after landing
 
 ## What can proceed in parallel
 
-Once registry authority cleanup is stable:
+Once reduced-profile self-improving capture reevaluation is stable:
 
-- memory-family contract boundary design
-- bounded reduced-profile self-improving capture design reevaluation
+- bounded reduced-profile self-improving capture first-tranche implementation
+- later artifact/read-model convergence design only if capture pressure
+  exposes it
 
 Implementation itself should still stay narrow and proofable.
 
 ## What must not proceed in parallel
 
-- self-improving capture implementation
+- learned-guidance advisory planning implementation
 - new family implementation
-- deep proof-runner refactors before retrieval/application shape is settled
-- aggressive SQL normalization before retrieval/routing control-plane work is
-  defined
+- broad artifact/read-model redesign before reduced-profile self-improving
+  capture reevaluation says it is necessary
 
 ## Proof posture
 
-Every substrate slice must prove both:
+Every remaining substrate-adjacent slice must prove both:
 
 1. no regression in current family behavior
 2. real reduction in accidental parallelism
 
-Substrate slices are not honest if they only wrap existing duplication in a new
-helper and leave the old system effectively intact.
+The post-flattening phases are not honest if they reintroduce family-specific
+control planes on top of the now-shared substrate.

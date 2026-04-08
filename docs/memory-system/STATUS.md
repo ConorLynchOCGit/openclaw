@@ -3,12 +3,25 @@
 ## Current status snapshot
 
 The memory system completed practical parity across the six landed families and
-then landed four flattening batches plus one support batch.
+then landed flattening batches v1-v6 plus substrate support batch v1.
 
-That is now enough to say the substrate is materially flatter in ingestion,
-prompt-facing application planning, and hybrid retrieval/routing behavior.
+That is now enough to say the remaining core flattening work is landed.
 
-It is still not enough to call flattening complete.
+The substrate is materially flatter in:
+
+- ingestion
+- prompt-facing application planning
+- hybrid retrieval/routing behavior
+- recurring-procedure staging
+- declarative correction policy
+- proof dispatch
+- registry authority
+- memory-family boundary ownership
+
+Flattening is no longer blocked on the old registry/boundary pair.
+
+That does not mean every later improvement is done. It means the remaining
+work is now later bounded follow-up, not the old core flattening sequence.
 
 ## What is live now
 
@@ -45,98 +58,100 @@ Live substrate properties:
   rendering hints
 - shared hybrid retrieval-control decisions for query hints, project-family
   shaping, and semantic fallback family routing
+- registry-owned workflow-family mapping and phrase-proof-family ownership
+- plugin-sdk-owned shared memory-family policy contract consumed by both
+  `memory-core` and `memory-middleware`
+- shared approved-vs-reviewable-candidate read scaffolding for hybrid, get,
+  list, and basic memory-object reads
 
 ## What is live but still only partially flattened
 
-- family-definition registry
+- application-selection layer
+- retrieval + semantic-routing control plane
 - unified clustered lifecycle
-- unified correction / supersede
 - unified phrase-pattern engine
 - retrieval feature framework
-- prompt-facing application-selection layer
-- retrieval + semantic-routing control plane
-- registry-driven proof inspection
 
 These are all real landed substrate improvements.
 
 They are also still partial in at least one important way:
 
-- the registry is not yet fully authoritative
 - application selection is not yet the final retrieval-fed per-memory-item
   substrate
-- memory-family contract boundaries are still not clean enough
+- later artifact / read-model convergence may still be warranted if procedures
+  and memory objects still feel too separate under later pressure
 
-## What batch v5 just improved
+## What batch v6 just improved
 
-Flattening batch v5 landed the next three main substrate slices:
+Flattening batch v6 landed the remaining core flattening work plus one bounded
+retrieval cleanup slice:
 
-- recurring-procedure staged substrate redesign
-- correction-policy cleanup
-- proof-runner adapterization
+1. registry authority cleanup
+2. memory-family contract / boundary cleanup
+3. deeper retrieval SQL normalization
 
 Those improvements are real.
 
 They removed or reduced:
 
-- duplicate procedure stage progression across transcript capture and tool
-  submission
-- caller-coupled procedure correction decisions that assumed only the
-  approved-memory supersede path
-- proof-runner lifecycle and artifact switches
-- a second proof-definition map for the six main memory families
+- duplicate workflow-family mapping helpers outside the registry
+- phrase proof-family ownership living outside the registry
+- the public SDK middleware re-export boundary smell around family policy
+- repeated approved-vs-reviewable-candidate `get` / `list` / `basic` query
+  scaffolding
+- another layer of accidental duplication around simple memory-object
+  read-surface selection
 
 They did not replace:
 
-- registry authority cleanup
-- memory-family contract / boundary cleanup
 - the final retrieval-fed per-memory-item application substrate
-- optional later retrieval SQL and artifact/read-model normalization work
+- optional later artifact/read-model convergence work
+- the need to reevaluate reduced-profile self-improving capture honestly before
+  enabling it
 
 ## What happens next
 
-The next major phase is still flattening the family substrate.
+The next major phase is no longer core flattening.
 
-The remaining execution order is now:
+The next major move should now be:
 
-### Remaining main substrate slices
+- reduced-profile self-improving capture reevaluation and bounded integration
+  planning
 
-1. registry authority cleanup
-2. memory-family contract / boundary cleanup
+Why:
 
-### Recently landed support work
+- the remaining core flattening blockers are now landed
+- the substrate is now honest enough to evaluate whether reduced-profile
+  self-improving capture can use the same family control planes cleanly
+- learned-guidance advisory planning and new families still remain later than
+  that reevaluation
 
-- stronger unit seams around retrieval intent, prompt-facing application
-  planning, and semantic fallback
-- reduced hybrid SQL scaffolding duplication between approved and candidate
-  read surfaces
-- replacement of the correction engine's raw profile-string gate with typed
-  policy
+Later bounded cleanup can still remain:
 
-### Could fix later
+- artifact / read-model convergence if later self-improving or new-family
+  pressure shows the current procedure-versus-memory-object split is still too
+  awkward
 
-- more aggressive normalization of retrieval SQL generation once the
-  control-plane rewrite is stronger
-- better artifact / read-model convergence if procedures still feel too
-  separate after the staged redesign
+## Why future expansion still remains later
 
-## Why flattening still comes before future expansion
+The old flattening blockers are now cleared.
 
-Flattening still remains required before:
+Future expansion still waits on later phases, not because flattening is still
+unfinished, but because rollout sequencing still matters.
+
+Still not next:
 
 - reduced-profile self-improving capture
 - learned-guidance advisory planning
 - major cross-domain family expansion
 
-The reason is still architectural:
+The reason is now sequencing and proof posture:
 
-- the six active families now share much more substrate
-- the largest remaining risk is registry authority and cross-boundary policy
-  exposure
-- reduced-profile self-improving capture is no longer blocked by the original
-  procedure/correction pair, but it remains intentionally deferred until the
-  registry is honest enough to carry that pressure
-- new families would still lean on registry/boundary seams that are not ready
-  to scale honestly
+- reduced-profile self-improving capture should be reevaluated first on the
+  stronger substrate rather than turned on by roadmap habit
+- learned-guidance advisory planning still waits for reduced-profile
+  self-improving capture proof
+- new families remain later than both of those phases
 
 ## What remains intentionally different
 
@@ -151,8 +166,7 @@ The reason is still architectural:
 
 Still not live:
 
-- fully finished family substrate flattening
-- reduced-profile self-improving capture on top of the stronger substrate
+- reduced-profile self-improving capture on top of the now-stronger substrate
 - learned-guidance advisory planning
 - new cross-domain families beyond the current six
 
