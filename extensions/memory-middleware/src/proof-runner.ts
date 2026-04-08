@@ -12,31 +12,13 @@ import {
 } from "./memory-family-registry.js";
 import { createOrdinaryTurnAutoCaptureHandler } from "./ordinary-turn-auto-capture.js";
 import {
-  inspectProjectFactLifecycle,
-  type ProjectFactLifecycleInspection,
-} from "./project-fact-lifecycle.js";
-import {
-  inspectRecurringProcedureLifecycle,
-  type RecurringProcedureLifecycleInspection,
-} from "./recurring-procedure-lifecycle.js";
-import {
-  inspectResponseStyleLifecycle,
-  type ResponseStyleLifecycleInspection,
-} from "./response-style-lifecycle.js";
-import {
-  inspectResponseStylePhrasePatternLifecycle,
-  type ResponseStylePhraseLifecycleInspection,
-} from "./response-style-phrase-induction.js";
+  buildProofLifecycleArtifacts as buildProofLifecycleArtifactsFromAdapters,
+  resolveProofLifecycleAdapter,
+  type MemoryProofStepArtifacts,
+  type ProofLifecycleDetails,
+} from "./proof-adapters.js";
 import type { MemoryMiddlewareRuntime } from "./runtime.js";
 import { searchMemoryObjectsHybridFromTool } from "./tools/memory-object-search-hybrid.js";
-import {
-  inspectWorkflowImprovementLifecycle,
-  type WorkflowImprovementLifecycleInspection,
-} from "./workflow-improvement-lifecycle.js";
-import {
-  inspectWorkflowPhrasePatternLifecycle,
-  type WorkflowPhraseLifecycleInspection,
-} from "./workflow-phrase-induction.js";
 
 const MemoryProofModeSchema = z.enum(["isolated", "production"]);
 const MemoryProofFamilySchema = z.enum(MEMORY_PROOF_FAMILY_IDS);
@@ -178,14 +160,6 @@ export type MemoryProofPlan = z.infer<typeof MemoryProofPlanSchema>;
 export type MemoryProofStep = z.infer<typeof MemoryProofStepSchema>;
 export type MemoryProofCaptureExpectation = z.infer<typeof MemoryProofCaptureExpectationSchema>;
 
-type ProofLifecycleDetails =
-  | ResponseStyleLifecycleInspection
-  | ProjectFactLifecycleInspection
-  | RecurringProcedureLifecycleInspection
-  | WorkflowImprovementLifecycleInspection
-  | WorkflowPhraseLifecycleInspection
-  | ResponseStylePhraseLifecycleInspection;
-
 type LifecycleInspection = {
   family: MemoryProofFamilyId;
   inspection: ProofLifecycleDetails;
@@ -200,16 +174,6 @@ export type MemoryProofHealthSnapshot = {
   statusCode?: number;
   body?: unknown;
   error?: string;
-};
-
-export type MemoryProofStepArtifacts = {
-  candidateId?: string;
-  candidateEventId?: string;
-  approvedObjectId?: string;
-  promotedMemoryObjectId?: string;
-  procedureId?: string;
-  validatedProcedureId?: string;
-  reviewId?: string;
 };
 
 export type MemoryProofStepResult =
@@ -338,183 +302,28 @@ async function inspectRegisteredLifecycle(params: {
   family: MemoryProofFamilyId;
 }): Promise<LifecycleInspection> {
   const definition = getMemoryProofDefinition(params.family);
-  const key = params.expectation.key;
-  assert(key, "capture expectation key is required");
-  switch (definition.inspectionMode) {
-    case "response_style_lifecycle": {
-      const subjectKey = params.expectation.subjectKey;
-      assert(subjectKey, "capture expectation subjectKey is required");
-      const inspection = await inspectResponseStyleLifecycle({
-        config: params.config,
-        key,
-        subjectKey,
-        logger: params.logger,
-      });
-      assert(inspection, "response-style lifecycle inspection unavailable");
-      return {
-        family: params.family,
-        inspection,
-        artifacts: buildProofLifecycleArtifacts({
-          artifactMode: definition.artifactMode,
-          inspection,
-        }),
-      };
-    }
-    case "project_fact_lifecycle": {
-      const subjectKey = params.expectation.subjectKey;
-      assert(subjectKey, "capture expectation subjectKey is required");
-      const inspection = await inspectProjectFactLifecycle({
-        config: params.config,
-        key,
-        subjectKey,
-        projectId: params.expectation.projectId,
-        logger: params.logger,
-      });
-      assert(inspection, "project-fact lifecycle inspection unavailable");
-      return {
-        family: params.family,
-        inspection,
-        artifacts: buildProofLifecycleArtifacts({
-          artifactMode: definition.artifactMode,
-          inspection,
-        }),
-      };
-    }
-    case "workflow_improvement_lifecycle": {
-      const subjectKey = params.expectation.subjectKey;
-      assert(subjectKey, "capture expectation subjectKey is required");
-      const inspection = await inspectWorkflowImprovementLifecycle({
-        config: params.config,
-        key,
-        subjectKey,
-        projectId: params.expectation.projectId,
-        logger: params.logger,
-      });
-      assert(inspection, `${params.family} lifecycle inspection unavailable`);
-      return {
-        family: params.family,
-        inspection,
-        artifacts: buildProofLifecycleArtifacts({
-          artifactMode: definition.artifactMode,
-          inspection,
-        }),
-      };
-    }
-    case "recurring_procedure_lifecycle": {
-      const subjectKey = params.expectation.subjectKey;
-      assert(subjectKey, "capture expectation subjectKey is required");
-      const inspection = await inspectRecurringProcedureLifecycle({
-        config: params.config,
-        key,
-        subjectKey,
-        logger: params.logger,
-      });
-      assert(inspection, "recurring-procedure lifecycle inspection unavailable");
-      return {
-        family: params.family,
-        inspection,
-        artifacts: buildProofLifecycleArtifacts({
-          artifactMode: definition.artifactMode,
-          inspection,
-        }),
-      };
-    }
-    case "workflow_phrase_pattern_lifecycle": {
-      const subjectKey = params.expectation.subjectKey;
-      assert(subjectKey, "capture expectation subjectKey is required");
-      assert(
-        params.expectation.normalizedPhrase,
-        "capture expectation normalizedPhrase is required",
-      );
-      const inspection = await inspectWorkflowPhrasePatternLifecycle({
-        config: params.config,
-        patternKey: key,
-        targetKey: subjectKey,
-        normalizedPhrase: params.expectation.normalizedPhrase,
-        projectId: params.expectation.projectId,
-        logger: params.logger,
-      });
-      assert(inspection, "workflow phrase-pattern lifecycle inspection unavailable");
-      return {
-        family: params.family,
-        inspection,
-        artifacts: buildProofLifecycleArtifacts({
-          artifactMode: definition.artifactMode,
-          inspection,
-        }),
-      };
-    }
-    case "response_style_phrase_pattern_lifecycle": {
-      const subjectKey = params.expectation.subjectKey;
-      assert(subjectKey, "capture expectation subjectKey is required");
-      assert(
-        params.expectation.normalizedPhrase,
-        "capture expectation normalizedPhrase is required",
-      );
-      const inspection = await inspectResponseStylePhrasePatternLifecycle({
-        config: params.config,
-        patternKey: key,
-        targetKey: subjectKey,
-        normalizedPhrase: params.expectation.normalizedPhrase,
-        logger: params.logger,
-      });
-      assert(inspection, "response-style phrase-pattern lifecycle inspection unavailable");
-      return {
-        family: params.family,
-        inspection,
-        artifacts: buildProofLifecycleArtifacts({
-          artifactMode: definition.artifactMode,
-          inspection,
-        }),
-      };
-    }
-  }
+  const lifecycleAdapter = resolveProofLifecycleAdapter(definition.inspectionMode);
+  const inspection = await lifecycleAdapter.inspect({
+    config: params.config,
+    logger: params.logger,
+    expectation: params.expectation,
+  });
+  assert(inspection, `${params.family} lifecycle inspection unavailable`);
+  return {
+    family: params.family,
+    inspection,
+    artifacts: buildProofLifecycleArtifacts({
+      artifactMode: definition.artifactMode,
+      inspection,
+    }),
+  };
 }
 
 export function buildProofLifecycleArtifacts(params: {
   artifactMode: ReturnType<typeof getMemoryProofDefinition>["artifactMode"];
   inspection: ProofLifecycleDetails;
 }): MemoryProofStepArtifacts {
-  switch (params.artifactMode) {
-    case "approved_memory_object": {
-      const inspection = params.inspection as
-        | ResponseStyleLifecycleInspection
-        | ProjectFactLifecycleInspection
-        | WorkflowImprovementLifecycleInspection;
-      return {
-        ...(inspection.pendingCandidate?.id ? { candidateId: inspection.pendingCandidate.id } : {}),
-        ...(inspection.pendingCandidate?.sourceEventId
-          ? { candidateEventId: inspection.pendingCandidate.sourceEventId }
-          : {}),
-        ...(inspection.matchingApprovedObjectId
-          ? { approvedObjectId: inspection.matchingApprovedObjectId }
-          : {}),
-      };
-    }
-    case "phrase_pattern": {
-      const inspection = params.inspection as
-        | WorkflowPhraseLifecycleInspection
-        | ResponseStylePhraseLifecycleInspection;
-      return {
-        ...(inspection.pendingCandidate?.id ? { candidateId: inspection.pendingCandidate.id } : {}),
-        ...(inspection.matchingApprovedObjectId
-          ? { approvedObjectId: inspection.matchingApprovedObjectId }
-          : {}),
-      };
-    }
-    case "validated_procedure": {
-      const inspection = params.inspection as RecurringProcedureLifecycleInspection;
-      return {
-        ...(inspection.pendingCandidate?.id ? { candidateId: inspection.pendingCandidate.id } : {}),
-        ...(inspection.pendingCandidate?.sourceEventId
-          ? { candidateEventId: inspection.pendingCandidate.sourceEventId }
-          : {}),
-        ...(inspection.matchingValidatedProcedureId
-          ? { validatedProcedureId: inspection.matchingValidatedProcedureId }
-          : {}),
-      };
-    }
-  }
+  return buildProofLifecycleArtifactsFromAdapters(params);
 }
 
 export function validateHybridSearchProofResult(params: {

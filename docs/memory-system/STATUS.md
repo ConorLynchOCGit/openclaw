@@ -62,38 +62,35 @@ These are all real landed substrate improvements.
 They are also still partial in at least one important way:
 
 - the registry is not yet fully authoritative
-- procedures still keep too much separate staged subsystem shape
-- correction policy is still not fully declarative
 - application selection is not yet the final retrieval-fed per-memory-item
   substrate
-- proofing is not yet adapter-driven
+- memory-family contract boundaries are still not clean enough
 
-## What batch v4 just improved
+## What batch v5 just improved
 
-Flattening batch v4 landed three main control-plane slices:
+Flattening batch v5 landed the next three main substrate slices:
 
-- full ingestion control-plane flattening
-- application-selection / behavior-planning layer
-- retrieval + semantic-routing control-plane flattening
+- recurring-procedure staged substrate redesign
+- correction-policy cleanup
+- proof-runner adapterization
 
 Those improvements are real.
 
 They removed or reduced:
 
-- the remaining duplicated transcript/tool ingestion paths for response style,
-  project facts, and recurring procedures
-- prompt rendering as the effective durable-memory policy owner
-- duplicated hybrid query-intent inference between the query layer and tool
-  wrapper
-- unconditional semantic fallback routing for clearly scoped hybrid asks
+- duplicate procedure stage progression across transcript capture and tool
+  submission
+- caller-coupled procedure correction decisions that assumed only the
+  approved-memory supersede path
+- proof-runner lifecycle and artifact switches
+- a second proof-definition map for the six main memory families
 
 They did not replace:
 
-- recurring-procedure staged substrate redesign
-- correction-policy cleanup
-- proof-runner adapterization
 - registry authority cleanup
 - memory-family contract / boundary cleanup
+- the final retrieval-fed per-memory-item application substrate
+- optional later retrieval SQL and artifact/read-model normalization work
 
 ## What happens next
 
@@ -101,16 +98,10 @@ The next major phase is still flattening the family substrate.
 
 The remaining execution order is now:
 
-### Remaining blockers before reduced-profile self-improving capture
+### Remaining main substrate slices
 
-1. recurring-procedure staged substrate redesign
-2. correction-policy cleanup
-
-### Remaining blockers before adding new families
-
-3. proof-runner adapterization
-4. registry authority cleanup
-5. memory-family contract / boundary cleanup
+1. registry authority cleanup
+2. memory-family contract / boundary cleanup
 
 ### Recently landed support work
 
@@ -139,12 +130,13 @@ Flattening still remains required before:
 The reason is still architectural:
 
 - the six active families now share much more substrate
-- the largest remaining risk is the procedure subsystem and the remaining
-  authority/proof boundaries
-- self-improving capture would still increase pressure on the not-yet-finished
-  staged and proofing substrate
-- new families would still lean on registry/proof/boundary seams that are not
-  ready to scale honestly
+- the largest remaining risk is registry authority and cross-boundary policy
+  exposure
+- reduced-profile self-improving capture is no longer blocked by the original
+  procedure/correction pair, but it remains intentionally deferred until the
+  registry is honest enough to carry that pressure
+- new families would still lean on registry/boundary seams that are not ready
+  to scale honestly
 
 ## What remains intentionally different
 

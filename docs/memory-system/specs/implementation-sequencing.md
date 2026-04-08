@@ -42,47 +42,42 @@ Historical completed order:
 12. flattening batch v3
 13. substrate support batch v1
 14. flattening batch v4
+15. flattening batch v5
 
 ## Recommended next order
 
-### Before reduced-profile self-improving capture
+### Remaining substrate work
 
-1. recurring-procedure staged substrate redesign
-2. correction-policy cleanup
+1. registry authority cleanup
+2. memory-family contract / boundary cleanup
 
-### Before new families
+### Could fix later
 
-3. proof-runner adapterization
-4. registry authority cleanup
-5. memory-family contract / boundary cleanup
-
-### Should fix soon
-
-6. deeper retrieval SQL normalization once the retrieval/routing control plane
+3. deeper retrieval SQL normalization once the retrieval/routing control plane
    is stronger
-7. artifact / read-model convergence if procedure and memory-object storage
+4. artifact / read-model convergence if procedure and memory-object storage
    still feel too separate after the staged redesign
 
 ### Later phases
 
-8. reduced-profile self-improving capture integration
-9. learned-guidance advisory planning
-10. cross-domain family expansion tranche 1
-11. cross-domain family expansion tranche 2
+5. reduced-profile self-improving capture integration
+6. learned-guidance advisory planning
+7. cross-domain family expansion tranche 1
+8. cross-domain family expansion tranche 2
 
 ## Why this order is recommended
 
-- recurring procedures should preserve real policy differences without
-  remaining a semi-separate subsystem
-- correction policy should become declarative before learned capture expands
-  candidate pressure
-- proofing, registry authority, and boundary cleanup matter most before new
-  families start leaning on the substrate
+- registry authority should become honest before learned capture or new families
+  lean on it as a control plane
+- memory-family policy should cross core/middleware/plugin seams cleanly before
+  new families extend the substrate
 
 ## Hard prerequisites before reduced-profile self-improving capture
 
 - recurring procedures are on a cleaner staged substrate
 - correction policy no longer depends on legacy stringly gates
+- proofing is adapter-driven
+- registry authority is honest enough to carry later learned pressure
 
 ## Hard prerequisites before learned-guidance advisory planning
 
@@ -98,11 +93,10 @@ Historical completed order:
 
 ## What can proceed in parallel
 
-Once the recurring-procedure staged substrate contract is stable:
+Once registry authority cleanup is stable:
 
-- proof adapter design
-- registry authority design
 - memory-family contract boundary design
+- bounded reduced-profile self-improving capture design reevaluation
 
 Implementation itself should still stay narrow and proofable.
 

@@ -14,9 +14,7 @@ the remaining execution posture again.
 
 The remaining work is now smaller, but still real:
 
-- procedure redesign
-- correction-policy cleanup
-- proof / registry / boundary cleanup
+- registry / boundary cleanup
 
 ## What is genuinely flattened already
 
@@ -42,25 +40,16 @@ The remaining work is now smaller, but still real:
 
 ### What remains only partially flattened
 
-- recurring-procedure substrate shape
-- correction-policy control plane
-- proofing
 - registry authority
 - memory-family contract boundaries
 - deeper retrieval normalization after the procedure redesign
 
 ## Remaining execution sequence
 
-### Phase C — remaining blockers before reduced-profile self-improving capture
+### Phase C — remaining major slices
 
-1. recurring-procedure staged substrate redesign
-2. correction-policy cleanup
-
-### Phase D — remaining blockers before new families
-
-3. proof-runner adapterization
-4. registry authority cleanup
-5. memory-family contract / boundary cleanup
+1. registry authority cleanup
+2. memory-family contract / boundary cleanup
 
 ### Could fix later
 
@@ -115,7 +104,7 @@ Still partial:
 
 ### Slice 13 — recurring-procedure staged substrate redesign
 
-Next:
+Landed:
 
 - preserve `suggestion_first`
 - preserve clear-ask direct use
@@ -124,7 +113,7 @@ Next:
 
 ### Slice 14 — correction-policy cleanup
 
-Next:
+Landed:
 
 - remove remaining legacy gating
 - declarative immediate-versus-held correction policy
@@ -132,7 +121,7 @@ Next:
 
 ### Slice 15 — proof-runner adapterization
 
-Next:
+Landed:
 
 - registered lifecycle/artifact adapters
 - eliminate the remaining registry-plus-switch proof structure
@@ -168,8 +157,9 @@ These are already landed and remain relevant supporting improvements:
 
 Honest estimate now:
 
-- minimum before self-improving capture: 2 major slices
-- likely before new families: 5 major slices
+- before the next honest reduced-profile self-improving capture reevaluation:
+  1 major slice
+- likely before new families: 2 major slices
 - plus later bounded hardening only if code reality still warrants it
 
 ## What must remain unchanged while executing this plan

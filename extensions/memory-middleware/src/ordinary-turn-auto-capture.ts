@@ -12,6 +12,7 @@ import {
 } from "./config.js";
 import {
   executeMemoryObjectCorrectionPlan,
+  isExecutableMemoryObjectCorrectionPlan,
   resolveMemoryCorrectionPromotionPolicy,
   resolveMemoryCorrectionPlan,
 } from "./memory-correction-engine.js";
@@ -58,6 +59,10 @@ import {
   type RecurringProcedureSemanticConfidence,
 } from "./recurring-procedure-semantic.js";
 import {
+  advanceRecurringProcedureCandidateStages,
+  buildRecurringProcedureStagedInspection,
+} from "./recurring-procedure-staged-substrate.js";
+import {
   type ResponseStyleForgetResult,
   type ResponseStyleLifecycleInspection,
   forgetApprovedResponseStyleBySubjectKey,
@@ -82,7 +87,6 @@ import {
   storeApprovedApiWorkaroundSemanticEmbedding,
   storeApprovedEnvironmentConstraintSemanticEmbedding,
   storeApprovedWorkflowToolGotchaSemanticEmbedding,
-  storeValidatedProcedureSemanticEmbedding,
 } from "./semantic-retrieval-routing.js";
 import {
   type WorkflowImprovementLifecycleInspection,
@@ -2296,6 +2300,7 @@ async function autoPromoteRecurringProcedureCandidate(params: {
   title: string;
   subjectKey: string;
   captureClass: OrdinaryTurnAutoCaptureMatch["captureClass"];
+  correctionPlan?: ReturnType<typeof resolveMemoryCorrectionPlan> | null;
   agentExternalKey: string;
   sessionKey: string;
   reviewerAgentId?: string;
@@ -2307,106 +2312,34 @@ async function autoPromoteRecurringProcedureCandidate(params: {
   metadata: Record<string, unknown>;
   logContext: Record<string, unknown>;
 }): Promise<boolean> {
-  const reviewResult = await params.reviewCandidate({
-    candidateId: params.candidateId,
-    outcome: "accepted",
-    reviewerAgentId: params.reviewerAgentId,
-    metadata: params.metadata,
-  });
-  if (!reviewResult.accepted) {
-    params.logger.warn(
-      formatLog("memory-middleware recurring-procedure auto-review rejected", {
-        ...params.logContext,
-        candidateId: params.candidateId,
-        reason: reviewResult.reason ?? "unknown",
-      }),
-    );
+  if (
+    params.captureClass === "recurring_procedure_correction" &&
+    (!params.correctionPlan ||
+      params.correctionPlan.status !== "execute" ||
+      params.correctionPlan.executionKind !== "validated_procedure_supersede")
+  ) {
     return false;
   }
-
-  const promotionResult = await params.promoteToProcedureDraft({
+  const result = await advanceRecurringProcedureCandidateStages({
+    config: params.config,
+    cfg: params.cfg,
     candidateId: params.candidateId,
-    promoterAgentId: params.reviewerAgentId,
     title: params.title,
+    subjectKey: params.subjectKey,
+    correctionPlan: params.correctionPlan,
+    agentExternalKey: params.agentExternalKey,
+    sessionKey: params.sessionKey,
+    reviewerAgentId: params.reviewerAgentId,
+    logger: params.logger,
+    reviewCandidate: params.reviewCandidate,
+    promoteToProcedureDraft: params.promoteToProcedureDraft,
+    validateProcedure: params.validateProcedure,
+    supersedeValidatedProceduresBySubjectKey: params.supersedeValidatedProceduresBySubjectKey,
     metadata: params.metadata,
+    logLabel: "recurring-procedure",
+    logContext: params.logContext,
   });
-  if (!promotionResult.accepted || !promotionResult.procedureId) {
-    params.logger.warn(
-      formatLog("memory-middleware recurring-procedure draft promotion failed", {
-        ...params.logContext,
-        candidateId: params.candidateId,
-        reason: promotionResult.reason ?? "unknown",
-      }),
-    );
-    return false;
-  }
-
-  const validationResult = await params.validateProcedure({
-    procedureId: promotionResult.procedureId,
-    validatorAgentId: params.reviewerAgentId,
-    metadata: params.metadata,
-  });
-  if (!validationResult.accepted || !validationResult.procedureId) {
-    params.logger.warn(
-      formatLog("memory-middleware recurring-procedure validation failed", {
-        ...params.logContext,
-        candidateId: params.candidateId,
-        procedureId: promotionResult.procedureId,
-        reason: validationResult.reason ?? "unknown",
-      }),
-    );
-    return false;
-  }
-
-  try {
-    await storeValidatedProcedureSemanticEmbedding({
-      config: params.config,
-      cfg: params.cfg,
-      agentId: params.agentExternalKey,
-      sessionKey: params.sessionKey,
-      procedureId: validationResult.procedureId,
-      logger: params.logger,
-    });
-  } catch (error) {
-    params.logger.warn(
-      formatLog("memory-middleware recurring-procedure semantic embedding update failed", {
-        ...params.logContext,
-        candidateId: params.candidateId,
-        procedureId: validationResult.procedureId,
-        error: error instanceof Error ? error.message : String(error),
-      }),
-    );
-  }
-
-  if (params.captureClass === "recurring_procedure_correction") {
-    const supersedeResult = await params.supersedeValidatedProceduresBySubjectKey({
-      config: params.config,
-      subjectKey: params.subjectKey,
-      supersededByProcedureId: validationResult.procedureId,
-      metadata: params.metadata,
-    });
-    if (!supersedeResult.accepted) {
-      params.logger.warn(
-        formatLog("memory-middleware recurring-procedure supersede failed", {
-          ...params.logContext,
-          candidateId: params.candidateId,
-          procedureId: validationResult.procedureId,
-          reason: supersedeResult.reason ?? "unknown",
-        }),
-      );
-      return false;
-    }
-  }
-
-  params.logger.info(
-    formatLog("memory-middleware recurring-procedure auto-promotion accepted", {
-      ...params.logContext,
-      candidateId: params.candidateId,
-      procedureId: validationResult.procedureId,
-      procedureRunId: validationResult.procedureRunId,
-    }),
-  );
-  return true;
+  return result.accepted;
 }
 
 function buildResponseStyleAutoPromotionMetadata(params: {
@@ -3297,7 +3230,8 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     }
 
     if (
-      responseStyleCorrectionPlan?.status === "execute" &&
+      responseStyleCorrectionPlan &&
+      isExecutableMemoryObjectCorrectionPlan(responseStyleCorrectionPlan) &&
       autoPromotionAgents.has(decisionParams.agentExternalKey) &&
       result.memoryObjectId
     ) {
@@ -3647,7 +3581,8 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         : null;
 
     if (
-      projectFactCorrectionPlan?.status === "execute" &&
+      projectFactCorrectionPlan &&
+      isExecutableMemoryObjectCorrectionPlan(projectFactCorrectionPlan) &&
       autoPromotionAgents.has(decisionParams.agentExternalKey) &&
       result.memoryObjectId
     ) {
@@ -3741,12 +3676,14 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         : {}),
     });
 
-    const inspection = await deps.inspectRecurringProcedureLifecycle({
-      config: params.config,
-      key: match.key,
-      subjectKey: match.subjectKey,
-      logger: params.logger,
-    });
+    const inspection = buildRecurringProcedureStagedInspection(
+      await deps.inspectRecurringProcedureLifecycle({
+        config: params.config,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        logger: params.logger,
+      }),
+    );
     const attribution = await deps.resolveAttribution({
       config: params.config,
       agentExternalKey: decisionParams.agentExternalKey,
@@ -3797,7 +3734,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
 
     if (
       match.captureClass !== "recurring_procedure_correction" &&
-      inspection?.activeValidatedSubjectProcedureIds.length
+      inspection?.hasActiveValidatedSubjectTargets
     ) {
       params.logger.debug?.(
         formatLog("memory-middleware recurring-procedure capture skipped existing active title", {
@@ -3874,6 +3811,16 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           : {}),
       },
     });
+    const recurringProcedureCorrectionPlan =
+      match.captureClass === "recurring_procedure_correction"
+        ? resolveMemoryCorrectionPlan({
+            familyId: "recurring_procedure",
+            trigger: "explicit_correction",
+            promotionPolicy: resolveMemoryCorrectionPromotionPolicy(autoPromotion.profile),
+            activeValidatedSubjectProcedureIds:
+              inspection?.activeValidatedSubjectProcedureIds ?? [],
+          })
+        : null;
 
     if (
       inspection?.pendingCandidate &&
@@ -3887,6 +3834,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         title: resolvedTitle,
         subjectKey: match.subjectKey,
         captureClass: match.captureClass,
+        correctionPlan: recurringProcedureCorrectionPlan,
         agentExternalKey: decisionParams.agentExternalKey,
         sessionKey: decisionParams.sessionKey,
         reviewerAgentId: attribution.agentId,
@@ -3975,7 +3923,8 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       autoPromotion.profile === "explicit-user-preference-v1" &&
       autoPromotionAgents.has(decisionParams.agentExternalKey) &&
       result.memoryObjectId &&
-      (match.captureClass === "recurring_procedure_correction" ||
+      ((recurringProcedureCorrectionPlan?.status === "execute" &&
+        recurringProcedureCorrectionPlan.executionKind === "validated_procedure_supersede") ||
         (decisionParams.decision.procedureFamily === "supported_key" &&
           decisionParams.decision.confidence === "high"));
 
@@ -3987,6 +3936,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         title: resolvedTitle,
         subjectKey: match.subjectKey,
         captureClass: match.captureClass,
+        correctionPlan: recurringProcedureCorrectionPlan,
         agentExternalKey: decisionParams.agentExternalKey,
         sessionKey: decisionParams.sessionKey,
         reviewerAgentId: attribution.agentId,

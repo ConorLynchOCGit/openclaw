@@ -5,6 +5,25 @@
 Finish the move from partially shared correction plumbing to a declarative
 correction policy substrate.
 
+## Current landed state
+
+Flattening batch v5 landed the main bounded version of this cleanup:
+
+- correction plans now carry explicit execution kinds
+- family policy now declares target kind and whether an existing target is
+  required
+- recurring procedures now use a validated-procedure supersede path instead of
+  pretending all executable correction is memory-object supersede
+- held correction for unmet needs remains policy, not an accidental omission
+
+This is a real declarative correction substrate for the current six families.
+
+It is still not the final authority model:
+
+- registry authority cleanup still remains
+- later family expansion should not treat the current registry surfaces as the
+  finished control plane yet
+
 ## Why this exists
 
 The current correction engine is materially better than before, but it still
@@ -98,10 +117,7 @@ Prove:
 
 ## Current bridge state
 
-Support batch v1 landed the first bounded part of this cleanup:
+Support batch v1 landed the first bounded part of this cleanup.
 
-- immediate bounded correction inside the correction engine now depends on an
-  explicit correction-promotion policy union rather than a raw profile string
-
-That is not the full cleanup. Family correction policy is still not fully
-declarative, and held-versus-immediate posture still needs the larger slice.
+Flattening batch v5 completed the main declarative control-plane landing for
+the six current families.

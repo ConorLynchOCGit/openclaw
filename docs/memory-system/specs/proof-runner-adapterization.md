@@ -5,6 +5,22 @@
 Replace registry-plus-switch proofing with adapter-driven proof inspection so
 adding families or artifacts does not keep expanding `proof-runner.ts`.
 
+## Current landed state
+
+Flattening batch v5 landed the core adapter model:
+
+- lifecycle inspection now dispatches through registered lifecycle adapters
+- artifact extraction now dispatches through registered artifact adapters
+- proof definitions for the six main memory families now derive from the family
+  registry instead of a second duplicated proof-definition map
+
+This is a real proof substrate change.
+
+It is not yet the final registry-authority story:
+
+- phrase proof families still remain outside the main family-definition table
+- registry authority cleanup still remains
+
 ## Why this exists
 
 Current proofing is flatter than before, but it still depends on:

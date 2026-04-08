@@ -12,6 +12,7 @@ import {
 } from "../db/runtime.js";
 import {
   executeMemoryObjectCorrectionPlan,
+  isExecutableMemoryObjectCorrectionPlan,
   resolveMemoryCorrectionPromotionPolicy,
   resolveMemoryCorrectionPlan,
 } from "../memory-correction-engine.js";
@@ -60,6 +61,10 @@ import {
   type RecurringProcedureKey,
   type RecurringProcedureSemanticConfidence,
 } from "../recurring-procedure-semantic.js";
+import {
+  advanceRecurringProcedureCandidateStages,
+  buildRecurringProcedureStagedInspection,
+} from "../recurring-procedure-staged-substrate.js";
 import {
   inspectResponseStyleLifecycle,
   isExpiredPendingResponseStyleCandidate,
@@ -1056,7 +1061,7 @@ async function autoPromoteRecurringProcedureCandidateFromTool(params: {
   subjectKey: string;
   procedureFamily: RecurringProcedureFamily;
   procedureKey?: RecurringProcedureKey;
-  correctionPromotion: boolean;
+  correctionPlan?: ReturnType<typeof resolveMemoryCorrectionPlan> | null;
   confirmationState?: "confirmed";
 }): Promise<CandidateSubmissionResult> {
   const promotionMetadata = buildToolRecurringProcedureAutoPromotionMetadata({
@@ -1065,68 +1070,47 @@ async function autoPromoteRecurringProcedureCandidateFromTool(params: {
       ? params.procedureFamily === "generalized_named_checklist"
         ? "recurring_procedure_generalized_confirmation_v1"
         : "recurring_procedure_confirmation_v1"
-      : params.correctionPromotion
+      : params.correctionPlan?.status === "execute" &&
+          params.correctionPlan.executionKind === "validated_procedure_supersede"
         ? params.procedureFamily === "generalized_named_checklist"
           ? "recurring_procedure_generalized_correction_v1"
           : "recurring_procedure_correction_v1"
         : "recurring_procedure_direct_v1",
     ...(params.confirmationState ? { confirmationState: params.confirmationState } : {}),
   });
-  const reviewResult = await params.runtime.candidateReview.review({
-    candidateId: params.candidateId,
-    outcome: "accepted",
-    metadata: promotionMetadata,
-  });
-  if (!reviewResult.accepted) {
-    return {
-      accepted: false,
-      status: "failed",
-      kind: "procedure",
-      reason: reviewResult.reason,
-    };
-  }
-  const procedurePromotion = await params.runtime.candidatePromotion.promoteToProcedureDraft({
+  const transition = await advanceRecurringProcedureCandidateStages({
+    config: params.runtime.config,
     candidateId: params.candidateId,
     title: params.title,
+    subjectKey: params.subjectKey,
+    correctionPlan: params.correctionPlan,
+    agentExternalKey: params.input.agentId,
+    sessionKey: params.input.sessionId,
+    reviewCandidate: (input) => params.runtime.candidateReview.review(input),
+    promoteToProcedureDraft: (input) =>
+      params.runtime.candidatePromotion.promoteToProcedureDraft(input),
+    validateProcedure: (input) => params.runtime.procedureValidation.validate(input),
+    supersedeValidatedProceduresBySubjectKey,
     metadata: promotionMetadata,
-  });
-  if (!procedurePromotion.accepted || !procedurePromotion.procedureId) {
-    return {
-      accepted: false,
-      status: "failed",
-      kind: "procedure",
-      reason: !procedurePromotion.accepted
-        ? procedurePromotion.reason
-        : "procedure promotion failed",
-    };
-  }
-  const validation = await params.runtime.procedureValidation.validate({
-    procedureId: procedurePromotion.procedureId,
-    metadata: promotionMetadata,
-  });
-  if (!validation.accepted || !validation.procedureId) {
-    return {
-      accepted: false,
-      status: "failed",
-      kind: "procedure",
-      reason: !validation.accepted ? validation.reason : "procedure validation failed",
-    };
-  }
-  if (params.correctionPromotion) {
-    const supersedeResult = await supersedeValidatedProceduresBySubjectKey({
-      config: params.runtime.config,
+    logLabel: "recurring-procedure tool",
+    logContext: {
+      candidateId: params.candidateId,
       subjectKey: params.subjectKey,
-      supersededByProcedureId: validation.procedureId,
-      metadata: promotionMetadata,
-    });
-    if (!supersedeResult.accepted) {
-      return {
-        accepted: false,
-        status: "failed",
-        kind: "procedure",
-        reason: supersedeResult.reason ?? "validated procedure supersede failed",
-      };
-    }
+      correctionPromotion:
+        params.correctionPlan?.status === "execute" &&
+        params.correctionPlan.executionKind === "validated_procedure_supersede",
+      ...(params.procedureKey ? { procedureKey: params.procedureKey } : {}),
+    },
+  });
+  if (!transition.accepted || !transition.artifacts.validatedProcedureId) {
+    return {
+      accepted: false,
+      status: "failed",
+      kind: "procedure",
+      reason: transition.accepted
+        ? "validated procedure stage transition did not produce a validated procedure id"
+        : transition.reason,
+    };
   }
   return {
     accepted: true,
@@ -1135,11 +1119,25 @@ async function autoPromoteRecurringProcedureCandidateFromTool(params: {
     storage: "database",
     reviewState: "approved",
     eventId:
-      procedurePromotion.sourceEventId ??
+      transition.artifacts.candidateEventId ??
       readNestedMetadataString(params.input.metadata, ["sourceEventId"]) ??
       params.candidateId,
-    memoryObjectId: validation.procedureId,
+    memoryObjectId: transition.artifacts.validatedProcedureId,
   };
+}
+
+async function inspectStagedRecurringProcedureLifecycle(params: {
+  runtime: MemoryMiddlewareRuntime;
+  key: string;
+  subjectKey: string;
+}): Promise<ReturnType<typeof buildRecurringProcedureStagedInspection>> {
+  return buildRecurringProcedureStagedInspection(
+    await inspectRecurringProcedureLifecycle({
+      config: params.runtime.config,
+      key: params.key,
+      subjectKey: params.subjectKey,
+    }),
+  );
 }
 
 async function maybeResolveExistingRecurringProcedureCandidate(params: {
@@ -1178,8 +1176,8 @@ async function maybeResolveExistingRecurringProcedureCandidate(params: {
     return null;
   }
 
-  const inspection = await inspectRecurringProcedureLifecycle({
-    config: params.runtime.config,
+  const inspection = await inspectStagedRecurringProcedureLifecycle({
+    runtime: params.runtime,
     key,
     subjectKey,
   });
@@ -1222,8 +1220,18 @@ async function maybeResolveExistingRecurringProcedureCandidate(params: {
     "captureClass",
   ]);
   const isCorrection = captureClass === "recurring_procedure_correction";
+  const autoPromotion =
+    params.runtime.config.autoPromotion ?? DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG;
+  const recurringProcedureCorrectionPlan = isCorrection
+    ? resolveMemoryCorrectionPlan({
+        familyId: "recurring_procedure",
+        trigger: "explicit_correction",
+        promotionPolicy: resolveMemoryCorrectionPromotionPolicy(autoPromotion.profile),
+        activeValidatedSubjectProcedureIds: inspection.activeValidatedSubjectProcedureIds,
+      })
+    : null;
 
-  if (inspection.activeValidatedSubjectProcedureIds.length > 0 && !isCorrection) {
+  if (inspection.hasActiveValidatedSubjectTargets && !isCorrection) {
     return {
       accepted: false,
       status: "failed",
@@ -1244,8 +1252,6 @@ async function maybeResolveExistingRecurringProcedureCandidate(params: {
         reason: `recurring-procedure confirmation candidate ${inspection.pendingCandidate.id} already exists`,
       };
     }
-    const autoPromotion =
-      params.runtime.config.autoPromotion ?? DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG;
     if (autoPromotion.profile !== "explicit-user-preference-v1") {
       return {
         accepted: false,
@@ -1262,7 +1268,7 @@ async function maybeResolveExistingRecurringProcedureCandidate(params: {
       subjectKey,
       procedureFamily,
       ...(procedureKey && isSupportedRecurringProcedureKey(procedureKey) ? { procedureKey } : {}),
-      correctionPromotion: isCorrection,
+      correctionPlan: recurringProcedureCorrectionPlan,
       confirmationState: "confirmed",
     });
   }
@@ -3286,7 +3292,7 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
     promotionPolicy: resolveMemoryCorrectionPromotionPolicy(autoPromotion.profile),
     activeApprovedSubjectObjectIds: inspection.activeApprovedSubjectObjectIds,
   });
-  if (correctionPlan.status !== "execute") {
+  if (!isExecutableMemoryObjectCorrectionPlan(correctionPlan)) {
     return params.result;
   }
   const correctionResult = await executeMemoryObjectCorrectionPlan({
@@ -3382,8 +3388,8 @@ async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {
     return params.result;
   }
 
-  const inspection = await inspectRecurringProcedureLifecycle({
-    config: params.runtime.config,
+  const inspection = await inspectStagedRecurringProcedureLifecycle({
+    runtime: params.runtime,
     key:
       readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]) ??
       params.result.memoryObjectId,
@@ -3401,12 +3407,12 @@ async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {
       subjectKey,
       procedureFamily,
       ...(procedureKey && isSupportedRecurringProcedureKey(procedureKey) ? { procedureKey } : {}),
-      correctionPromotion: false,
+      correctionPlan: null,
     });
   }
 
   if (
-    inspection.activeValidatedSubjectProcedureIds.length > 0 &&
+    inspection.hasActiveValidatedSubjectTargets &&
     captureClass !== "recurring_procedure_correction"
   ) {
     return params.result;
@@ -3419,6 +3425,16 @@ async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {
     return params.result;
   }
 
+  const recurringProcedureCorrectionPlan =
+    captureClass === "recurring_procedure_correction"
+      ? resolveMemoryCorrectionPlan({
+          familyId: "recurring_procedure",
+          trigger: "explicit_correction",
+          promotionPolicy: resolveMemoryCorrectionPromotionPolicy(autoPromotion.profile),
+          activeValidatedSubjectProcedureIds: inspection.activeValidatedSubjectProcedureIds,
+        })
+      : null;
+
   return autoPromoteRecurringProcedureCandidateFromTool({
     runtime: params.runtime,
     candidateId: params.result.memoryObjectId,
@@ -3427,7 +3443,7 @@ async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {
     subjectKey,
     procedureFamily,
     ...(procedureKey && isSupportedRecurringProcedureKey(procedureKey) ? { procedureKey } : {}),
-    correctionPromotion: captureClass === "recurring_procedure_correction",
+    correctionPlan: recurringProcedureCorrectionPlan,
   });
 }
 

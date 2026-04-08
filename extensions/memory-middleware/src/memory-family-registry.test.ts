@@ -103,4 +103,22 @@ describe("memory-family-registry", () => {
       }),
     });
   });
+
+  it("encodes declarative correction targets in the family registry", () => {
+    expect(getMemoryFamilyDefinition("response_style").correctionPolicy).toMatchObject({
+      mode: "approved_memory_object_supersede_when_targeted",
+      targetKind: "approved_memory_object",
+      requiresExistingTarget: true,
+    });
+    expect(getMemoryFamilyDefinition("recurring_procedure").correctionPolicy).toMatchObject({
+      mode: "validated_procedure_supersede_when_targeted",
+      targetKind: "validated_procedure",
+      requiresExistingTarget: false,
+    });
+    expect(getMemoryFamilyDefinition("unmet_need").correctionPolicy).toMatchObject({
+      mode: "held_correction",
+      targetKind: "approved_memory_object",
+      requiresExistingTarget: true,
+    });
+  });
 });

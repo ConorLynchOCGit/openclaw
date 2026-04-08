@@ -8,44 +8,73 @@ export type MemoryCorrectionTrigger = "explicit_correction" | "cluster_auto_revi
 export type MemoryCorrectionPromotionPolicy =
   | "defer_immediate_bounded_correction"
   | "allow_immediate_bounded_correction";
+export type MemoryCorrectionExecutionKind =
+  | "hold"
+  | "approved_memory_object_supersede"
+  | "validated_procedure_supersede";
+
+export type SkippedMemoryCorrectionPlan = {
+  status: "skip";
+  reason: string;
+  executionKind: Exclude<MemoryCorrectionExecutionKind, "hold">;
+  supersedeTargetIds: [];
+};
+
+export type HeldMemoryCorrectionPlan = {
+  status: "hold";
+  reason: string;
+  executionKind: "hold";
+  supersedeTargetIds: [];
+};
+
+export type ExecutableMemoryObjectCorrectionPlan = {
+  status: "execute";
+  reason: string;
+  executionKind: "approved_memory_object_supersede";
+  supersedeTargetIds: string[];
+};
+
+export type ExecutableValidatedProcedureCorrectionPlan = {
+  status: "execute";
+  reason: string;
+  executionKind: "validated_procedure_supersede";
+  supersedeTargetIds: string[];
+};
 
 export type MemoryCorrectionPlan =
-  | {
-      status: "skip";
-      reason: string;
-      supersedeTargetIds: [];
-    }
-  | {
-      status: "hold";
-      reason: string;
-      supersedeTargetIds: [];
-    }
-  | {
-      status: "execute";
-      reason: string;
-      supersedeTargetIds: string[];
-    };
+  | SkippedMemoryCorrectionPlan
+  | HeldMemoryCorrectionPlan
+  | ExecutableMemoryObjectCorrectionPlan
+  | ExecutableValidatedProcedureCorrectionPlan;
 
 export function resolveMemoryCorrectionPlan(params: {
   familyId: MemoryFamilyId;
   trigger: MemoryCorrectionTrigger;
   promotionPolicy?: MemoryCorrectionPromotionPolicy;
+  activeSubjectTargetIds?: readonly string[];
   activeApprovedSubjectObjectIds?: readonly string[];
+  activeValidatedSubjectProcedureIds?: readonly string[];
   conflictingApprovedObjectIds?: readonly string[];
 }): MemoryCorrectionPlan {
   const definition = getMemoryFamilyDefinition(params.familyId);
+  const explicitExecutionKind =
+    definition.correctionPolicy.targetKind === "validated_procedure"
+      ? "validated_procedure_supersede"
+      : "approved_memory_object_supersede";
   if (params.trigger === "cluster_auto_review") {
     const supersedeTargetIds = [...(params.conflictingApprovedObjectIds ?? [])];
     if (supersedeTargetIds.length === 0) {
       return {
         status: "skip",
         reason: "no conflicting approved subject targets",
+        executionKind: "approved_memory_object_supersede",
         supersedeTargetIds: [],
       };
     }
     return {
       status: "execute",
       reason: "cluster auto-review supersedes older conflicting approved subject targets",
+      executionKind: "approved_memory_object_supersede",
       supersedeTargetIds,
     };
   }
@@ -54,15 +83,22 @@ export function resolveMemoryCorrectionPlan(params: {
     return {
       status: "hold",
       reason: "family correction policy remains held until a later slice activates it",
+      executionKind: "hold",
       supersedeTargetIds: [],
     };
   }
 
-  const supersedeTargetIds = [...(params.activeApprovedSubjectObjectIds ?? [])];
-  if (supersedeTargetIds.length === 0) {
+  const supersedeTargetIds = [
+    ...(params.activeSubjectTargetIds ??
+      params.activeValidatedSubjectProcedureIds ??
+      params.activeApprovedSubjectObjectIds ??
+      []),
+  ];
+  if (definition.correctionPolicy.requiresExistingTarget && supersedeTargetIds.length === 0) {
     return {
       status: "skip",
       reason: "no approved subject target exists to supersede",
+      executionKind: explicitExecutionKind,
       supersedeTargetIds: [],
     };
   }
@@ -70,15 +106,26 @@ export function resolveMemoryCorrectionPlan(params: {
     return {
       status: "skip",
       reason: "correction promotion policy does not permit immediate correction promotion",
+      executionKind: explicitExecutionKind,
       supersedeTargetIds: [],
     };
   }
 
   return {
     status: "execute",
-    reason: "bounded correction should immediately supersede an approved subject target",
+    reason:
+      explicitExecutionKind === "validated_procedure_supersede"
+        ? "bounded correction should immediately validate and supersede the active procedure subject"
+        : "bounded correction should immediately supersede an approved subject target",
+    executionKind: explicitExecutionKind,
     supersedeTargetIds,
   };
+}
+
+export function isExecutableMemoryObjectCorrectionPlan(
+  plan: MemoryCorrectionPlan,
+): plan is ExecutableMemoryObjectCorrectionPlan {
+  return plan.status === "execute" && plan.executionKind === "approved_memory_object_supersede";
 }
 
 export function resolveMemoryCorrectionPromotionPolicy(
@@ -91,7 +138,7 @@ export function resolveMemoryCorrectionPromotionPolicy(
 
 export async function executeMemoryObjectCorrectionPlan(params: {
   familyId: MemoryFamilyId;
-  plan: Extract<MemoryCorrectionPlan, { status: "execute" }>;
+  plan: ExecutableMemoryObjectCorrectionPlan;
   candidateId: string;
   schema: string;
   reviewerAgentId?: string;

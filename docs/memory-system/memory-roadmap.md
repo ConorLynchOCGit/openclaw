@@ -132,31 +132,30 @@ It is broader than the previously documented “remaining flattening closeout.�
 Finish the control-plane work that must exist before reduced-profile
 self-improving capture can land on honest shared substrate.
 
-### Blockers before reduced-profile self-improving capture
+### Landed in flattening batch v5
 
 1. recurring-procedure staged substrate redesign
 2. correction-policy cleanup
+3. proof-runner adapterization
 
-### Why these are blockers
+### What this changed
 
-- procedures should preserve real policy differences without keeping a quasi-
-  separate subsystem
-- correction policy should be declarative and auditable before the system can
-  generate more candidates
+- procedures now behave like a staged family instead of a quasi-separate
+  product
+- correction policy is now declarative enough for the current family set
+- proofing no longer scales through central lifecycle/artifact switches
 
 ## Phase D — substrate authority and scale cleanup
 
 This phase should land before the repo adds new memory families.
 
-### Blockers before new families
+### Remaining blockers before new families
 
-3. proof-runner adapterization
-4. registry authority cleanup
-5. memory-family contract / boundary cleanup
+1. registry authority cleanup
+2. memory-family contract / boundary cleanup
 
 ### Why these are blockers
 
-- adding families should not require new proof-runner switches
 - the registry should be authoritative before it becomes the expansion control
   plane
 - memory-family policy should cross the `memory-core` /
@@ -166,8 +165,8 @@ This phase should land before the repo adds new memory families.
 
 This remains later.
 
-It should begin only after phases C and the required parts of phase D are
-landed strongly enough that:
+It should begin only after the remaining parts of phase D are landed strongly
+enough that:
 
 - self-improving candidates enter the same family substrate
 - provenance stays explicit

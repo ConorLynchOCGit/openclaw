@@ -49,7 +49,12 @@ export type MemoryFamilyLifecycleMode =
   | "clustered_hold_auto_review"
   | "procedure_validation";
 
-export type MemoryFamilyCorrectionMode = "held_correction" | "immediate_supersede_when_targeted";
+export type MemoryFamilyCorrectionMode =
+  | "held_correction"
+  | "approved_memory_object_supersede_when_targeted"
+  | "validated_procedure_supersede_when_targeted";
+
+export type MemoryFamilyCorrectionTargetKind = "approved_memory_object" | "validated_procedure";
 
 export type MemoryFamilyPhraseMode = "unsupported" | "approved_pattern_reviewed";
 
@@ -133,8 +138,10 @@ export type MemoryFamilyDefinition = {
   };
   correctionPolicy: {
     mode: MemoryFamilyCorrectionMode;
+    targetKind: MemoryFamilyCorrectionTargetKind;
     targetFields: readonly MemoryFamilyCanonicalField[];
     explicitCorrectionRequired: boolean;
+    requiresExistingTarget: boolean;
   };
   phrasePolicy: {
     mode: MemoryFamilyPhraseMode;
@@ -160,6 +167,7 @@ export type MemoryFamilyDefinition = {
   };
   proofPolicy: {
     inspectionMode: MemoryFamilyProofInspectionMode;
+    artifactMode: MemoryProofArtifactMode;
   };
   captureMetadata?: MemoryFamilyCaptureMetadata;
   workflowLessonFamilies?: readonly string[];
@@ -189,9 +197,11 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
       staleWindowDays: 3,
     },
     correctionPolicy: {
-      mode: "immediate_supersede_when_targeted",
+      mode: "approved_memory_object_supersede_when_targeted",
+      targetKind: "approved_memory_object",
       targetFields: ["subject", "value"],
       explicitCorrectionRequired: true,
+      requiresExistingTarget: true,
     },
     phrasePolicy: {
       mode: "approved_pattern_reviewed",
@@ -219,6 +229,7 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     proofPolicy: {
       inspectionMode: "response_style_lifecycle",
+      artifactMode: "approved_memory_object",
     },
   },
   project_fact: {
@@ -237,9 +248,11 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
       staleWindowDays: 3,
     },
     correctionPolicy: {
-      mode: "immediate_supersede_when_targeted",
+      mode: "approved_memory_object_supersede_when_targeted",
+      targetKind: "approved_memory_object",
       targetFields: ["scope", "subject", "value"],
       explicitCorrectionRequired: true,
+      requiresExistingTarget: true,
     },
     phrasePolicy: {
       mode: "unsupported",
@@ -268,6 +281,7 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     proofPolicy: {
       inspectionMode: "project_fact_lifecycle",
+      artifactMode: "approved_memory_object",
     },
     captureMetadata: {
       category: "project_fact",
@@ -292,9 +306,11 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
       staleWindowDays: 3,
     },
     correctionPolicy: {
-      mode: "immediate_supersede_when_targeted",
+      mode: "validated_procedure_supersede_when_targeted",
+      targetKind: "validated_procedure",
       targetFields: ["subject", "value", "procedure_title"],
       explicitCorrectionRequired: true,
+      requiresExistingTarget: false,
     },
     phrasePolicy: {
       mode: "unsupported",
@@ -320,6 +336,7 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     proofPolicy: {
       inspectionMode: "recurring_procedure_lifecycle",
+      artifactMode: "validated_procedure",
     },
     captureMetadata: {
       category: "recurring_procedure",
@@ -362,9 +379,11 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
       staleWindowDays: 3,
     },
     correctionPolicy: {
-      mode: "immediate_supersede_when_targeted",
+      mode: "approved_memory_object_supersede_when_targeted",
+      targetKind: "approved_memory_object",
       targetFields: ["scope", "subject", "recommended_action", "avoid_action"],
       explicitCorrectionRequired: true,
+      requiresExistingTarget: true,
     },
     phrasePolicy: {
       mode: "approved_pattern_reviewed",
@@ -393,6 +412,7 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     proofPolicy: {
       inspectionMode: "workflow_improvement_lifecycle",
+      artifactMode: "approved_memory_object",
     },
     captureMetadata: {
       category: "workflow_improvement",
@@ -429,9 +449,11 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
       staleWindowDays: 3,
     },
     correctionPolicy: {
-      mode: "immediate_supersede_when_targeted",
+      mode: "approved_memory_object_supersede_when_targeted",
+      targetKind: "approved_memory_object",
       targetFields: ["scope", "subject", "recommended_action", "avoid_action"],
       explicitCorrectionRequired: true,
+      requiresExistingTarget: true,
     },
     phrasePolicy: {
       mode: "unsupported",
@@ -462,6 +484,7 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     proofPolicy: {
       inspectionMode: "workflow_improvement_lifecycle",
+      artifactMode: "approved_memory_object",
     },
     captureMetadata: {
       category: "project_rule",
@@ -488,8 +511,10 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     correctionPolicy: {
       mode: "held_correction",
+      targetKind: "approved_memory_object",
       targetFields: ["scope", "subject", "needed_capability"],
       explicitCorrectionRequired: true,
+      requiresExistingTarget: true,
     },
     phrasePolicy: {
       mode: "unsupported",
@@ -518,6 +543,7 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     },
     proofPolicy: {
       inspectionMode: "workflow_improvement_lifecycle",
+      artifactMode: "approved_memory_object",
     },
     captureMetadata: {
       category: "unmet_need",
@@ -531,37 +557,10 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
 
 const CAPTURE_CLASS_TO_FAMILY_ID = new Map<string, MemoryFamilyId>();
 const WORKFLOW_LESSON_FAMILY_TO_FAMILY_ID = new Map<string, MemoryFamilyId>();
-const MEMORY_PROOF_DEFINITIONS: Record<MemoryProofFamilyId, MemoryProofDefinition> = {
-  response_style: {
-    id: "response_style",
-    inspectionMode: "response_style_lifecycle",
-    artifactMode: "approved_memory_object",
-  },
-  project_fact: {
-    id: "project_fact",
-    inspectionMode: "project_fact_lifecycle",
-    artifactMode: "approved_memory_object",
-  },
-  recurring_procedure: {
-    id: "recurring_procedure",
-    inspectionMode: "recurring_procedure_lifecycle",
-    artifactMode: "validated_procedure",
-  },
-  workflow_improvement: {
-    id: "workflow_improvement",
-    inspectionMode: "workflow_improvement_lifecycle",
-    artifactMode: "approved_memory_object",
-  },
-  project_rule: {
-    id: "project_rule",
-    inspectionMode: "workflow_improvement_lifecycle",
-    artifactMode: "approved_memory_object",
-  },
-  unmet_need: {
-    id: "unmet_need",
-    inspectionMode: "workflow_improvement_lifecycle",
-    artifactMode: "approved_memory_object",
-  },
+const NON_FAMILY_MEMORY_PROOF_DEFINITIONS: Record<
+  Exclude<MemoryProofFamilyId, MemoryFamilyId>,
+  MemoryProofDefinition
+> = {
   workflow_phrase_pattern: {
     id: "workflow_phrase_pattern",
     inspectionMode: "workflow_phrase_pattern_lifecycle",
@@ -616,7 +615,17 @@ export function isMemoryProofFamily(value: string): value is MemoryProofFamilyId
 }
 
 export function getMemoryProofDefinition(familyId: MemoryProofFamilyId): MemoryProofDefinition {
-  return MEMORY_PROOF_DEFINITIONS[familyId];
+  if (MEMORY_FAMILY_IDS.includes(familyId as MemoryFamilyId)) {
+    const definition = getMemoryFamilyDefinition(familyId as MemoryFamilyId);
+    return {
+      id: familyId,
+      inspectionMode: definition.proofPolicy.inspectionMode,
+      artifactMode: definition.proofPolicy.artifactMode,
+    };
+  }
+  return NON_FAMILY_MEMORY_PROOF_DEFINITIONS[
+    familyId as Exclude<MemoryProofFamilyId, MemoryFamilyId>
+  ];
 }
 
 export function getCaptureMetadataByCaptureClass(

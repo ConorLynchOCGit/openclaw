@@ -5,6 +5,23 @@
 Redesign recurring procedures so they preserve real product-policy differences
 without retaining more historical subsystem shape than necessary.
 
+## Current landed state
+
+Flattening batch v5 landed the first honest version of this substrate:
+
+- transcript capture and tool submission now share one staged transition helper
+- the candidate -> draft -> validated transition is explicit in runtime code
+- validated-procedure supersede now plugs into that staged transition instead
+  of forcing procedure correction back through the memory-object path
+
+This is a real landing, not just a naming cleanup.
+
+It is still not the end of all procedure-related work:
+
+- validated procedures remain a distinct artifact
+- later artifact / read-model convergence is still optional follow-up work
+- registry authority cleanup still remains
+
 ## What is genuinely different
 
 These differences are real and should remain:

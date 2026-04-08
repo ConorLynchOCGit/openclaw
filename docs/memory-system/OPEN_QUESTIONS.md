@@ -17,19 +17,9 @@ sequence is now accepted.
 3. For retrieval/routing control-plane flattening, how much approved,
    candidate, and validated-procedure planning can honestly converge without
    obscuring real storage differences?
-4. For recurring procedures, what is the narrowest staged model that preserves:
-   - `suggestion_first`
-   - clear-ask direct use
-   - validated artifact distinction
-     while still removing historical subsystem duplication?
-5. For correction-policy cleanup, how should unmet-need conservative correction
-   posture be represented declaratively?
-6. For proof-runner adapterization, what is the smallest backward-compatible
-   proof output contract that still lets the runtime and proofing share one
-   policy source of truth?
-7. For registry authority cleanup, which policy surfaces should be generated
+4. For registry authority cleanup, which policy surfaces should be generated
    from registry definitions versus hand-authored adapter declarations?
-8. For memory-family contract boundary cleanup, what should become the
+5. For memory-family contract boundary cleanup, what should become the
    core-owned/shared memory-family contract without over-exposing middleware
    internals?
 
@@ -49,8 +39,8 @@ sequence is now accepted.
 These stay open, but are not part of the current docs/spec replanning slice:
 
 1. What exact bounded input set should the first reduced-profile
-   self-improving capture source consume once the stronger substrate work is
-   landed?
+   self-improving capture source consume once registry authority cleanup is
+   landed strongly enough?
 2. What exact advisory posture should learned-guidance planning take once both
    the stronger substrate work and reduced-profile self-improving capture are
    live?

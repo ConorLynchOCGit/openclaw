@@ -3,7 +3,7 @@
 ## Current active architectural decisions
 
 This file records the currently active architecture decisions that govern the
-memory roadmap after flattening batch v4, substrate support batch v1, and the
+memory roadmap after flattening batch v5, substrate support batch v1, and the
 accepted post-v3 architecture review.
 
 ## 2026-04 — practical parity was enough to enter flattening, not enough to move on
@@ -50,15 +50,16 @@ The next substrate work must collapse accidental duplication across:
 - registry authority
 - memory-family contract boundaries
 
-## 2026-04 — application selection and proofing are only partially landed
+## 2026-04 — application selection is partial and proofing is adapterized
 
 Current accepted framing:
 
 - the repo now has prompt-facing application selection with selected items,
   suppressed items, and rendering hints
 - it is not yet the final retrieval-fed per-memory-item selection substrate
-- proofing is partially flattened
-- it is not yet a fully adapter-driven proof substrate
+- proofing is now adapter-driven
+- registry authority still remains before proof policy can be called fully
+  centralized
 
 ## 2026-04 — registry policy is not yet authoritative enough
 
@@ -78,6 +79,11 @@ Before reduced-profile self-improving capture, the repo must land:
 1. recurring-procedure staged substrate redesign
 2. correction-policy cleanup
 
+Those blockers are now landed.
+
+Reduced-profile self-improving capture still remains intentionally deferred
+until registry authority cleanup proves the control plane is honest enough.
+
 ## 2026-04 — new families wait for additional authority and scale cleanup
 
 Before new memory families, the repo must also land:
@@ -85,6 +91,8 @@ Before new memory families, the repo must also land:
 3. proof-runner adapterization
 4. registry authority cleanup
 5. memory-family contract / boundary cleanup
+
+Proof-runner adapterization is now landed.
 
 ## 2026-04 — should-fix-soon cleanup is real but secondary
 

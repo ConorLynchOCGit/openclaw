@@ -2,85 +2,70 @@
 
 ## Active slice
 
-Flattening batch v4
+Registry authority cleanup
 
 ## Objective
 
-Land the next three main control-plane flattening slices after substrate support
-batch v1:
+Land the next remaining substrate authority slice after flattening batch v5:
 
-- full ingestion control-plane flattening
-- application-selection / behavior-planning layer
-- retrieval + semantic-routing control-plane flattening
+- registry authority cleanup
 
-## What just landed in flattening batch v4
+## What just landed in flattening batch v5
 
-### Slice 10 — full ingestion control-plane flattening
+### Slice 13 — recurring-procedure staged substrate redesign
 
-- all six landed families now resolve through the shared ingestion substrate
+- recurring procedures now advance through one explicit staged substrate:
+  candidate review, draft promotion, validation, embedding, and optional
+  validated-procedure supersede
 - transcript-side auto-capture and tool-side candidate submission now reuse the
-  same family resolution flow for response style, project facts, recurring
-  procedures, and the workflow-family cluster
-- shared canonical match conversion now sits in one ingestion seam instead of
-  being duplicated across transcript and tool callers
+  same staged procedure transition helper
+- procedure lifecycle inspection now feeds one staged inspection surface instead
+  of forcing callers to reconstruct candidate-versus-validated posture locally
 
-### Slice 11 — application-selection / behavior-planning layer
+### Slice 14 — correction-policy cleanup
 
-- durable-memory application selection is now a structured runtime artifact for
-  the current prompt-facing boundary
-- prompt rendering now consumes:
-  - query intent
-  - selected items
-  - suppressed items
-  - rendering hints
-- prompt rendering is no longer the practical source of family application
-  posture for durable-memory guidance
-- this landing is still prompt-surface scoped rather than the final
-  retrieval-fed per-memory-item selection substrate
+- correction planning now has explicit execution kinds for:
+  - held correction
+  - approved-memory supersede
+  - validated-procedure supersede
+- correction target kind and target-required posture now come from family policy
+- procedure correction now fits the staged procedure substrate without being
+  forced through the memory-object supersede path
 
-### Slice 12 — retrieval + semantic-routing control-plane flattening
+### Slice 15 — proof-runner adapterization
 
-- hybrid retrieval now uses one shared control decision for:
-  - normalized query hints
-  - project-family shaping
-  - semantic fallback family selection
-- the hybrid tool no longer sprays every semantic fallback family for clearly
-  scoped asks
-- `db/queries.ts` now reads shared retrieval-control decisions instead of
-  re-deriving query hints and project-intent reshaping locally
+- proof-runner lifecycle dispatch now resolves through registered lifecycle
+  adapters instead of a central inspection-mode switch
+- proof artifact extraction now resolves through registered artifact adapters
+  instead of a central artifact-mode switch
+- proof definitions for the six main families now derive from the family
+  registry instead of living in a second duplicated proof-definition map
 
-## What batch v4 actually removed or reduced
+## What batch v5 actually removed or reduced
 
-- the remaining separate response-style transcript/tool ingestion path
-- the remaining separate project-fact transcript/tool ingestion path
-- the remaining separate recurring-procedure transcript/tool ingestion path
-- prompt-section family-policy branching as the effective durable-memory
-  application owner
-- duplicated hybrid query-intent inference across the query layer and tool
-  wrapper
-- unconditional semantic fallback routing from the hybrid tool
+- duplicate procedure stage progression across transcript capture and tool
+  submission
+- caller-coupled procedure correction decisions that depended on old
+  memory-object assumptions
+- the central proof-runner lifecycle dispatch switch
+- the central proof-runner artifact extraction switch
+- the duplicated proof-definition entries for the six main memory families
 
-## What batch v4 did not replace
+## What batch v5 did not replace
 
-- recurring procedures still retain too much staged subsystem shape
-- correction policy is still not fully declarative
-- proofing is still registry-plus-switch
-- registry authority and memory-family boundary cleanup are still ahead
+- registry authority is still not fully honest
+- memory-family contract / boundary cleanup is still ahead
 - application selection is now structural at the prompt-facing layer, but not
   yet the final retrieval-fed per-memory-item substrate
+- deeper retrieval normalization and later artifact/read-model convergence still
+  remain optional follow-up work
 
 ## What remains major substrate work
 
-### Remaining blockers before reduced-profile self-improving capture
+### Remaining major slices before moving on
 
-1. recurring-procedure staged substrate redesign
-2. correction-policy cleanup
-
-### Remaining blockers before adding new families
-
-3. proof-runner adapterization
-4. registry authority cleanup
-5. memory-family contract / boundary cleanup
+1. registry authority cleanup
+2. memory-family contract / boundary cleanup
 
 ### Could fix later
 
@@ -91,6 +76,12 @@ batch v1:
 
 ## What is now live but still partial
 
+- recurring-procedure staged substrate
+  - live for shared staged transition handling across transcript and tool flows
+  - later artifact/read-model convergence may still be warranted
+- correction-policy substrate
+  - live for declarative execution kind and target kind across the six families
+  - later registry authority cleanup still remains
 - application-selection layer
   - live for prompt-facing family posture selection and suppression
   - not yet the final retrieval-fed per-memory-item application substrate
@@ -98,8 +89,9 @@ batch v1:
   - live for hybrid query intent, project-family shaping, and semantic fallback
     family routing
   - not yet the end-state for all later retrieval normalization work
-- registry-driven proof inspection
-  - still helper-and-switch based rather than adapter-driven
+- proof adapter substrate
+  - live for lifecycle and artifact dispatch
+  - registry authority cleanup still remains
 
 ## Must remain intentionally different
 
@@ -124,13 +116,14 @@ Those phases still wait for the remaining substrate work above.
 
 The next main implementation slice should now be:
 
-- recurring-procedure staged substrate redesign
+- registry authority cleanup
 
 Reason:
 
-- procedure posture differences are real, but too much implementation shape is
-  still separate
-- procedure lifecycle, retrieval, correction, and proof concerns are still the
-  biggest remaining family-specific subsystem
-- self-improving capture should not land until procedures are a staged family on
-  the shared substrate rather than a quasi-separate product
+- more runtime policy now genuinely flows through shared substrates, but the
+  registry still is not yet authoritative enough to be called the honest
+  control plane
+- proof definitions for phrase surfaces still remain outside the main family
+  registry path
+- memory-family expansion and later learned pressure should not lean on a
+  registry that still leaves policy duplicated elsewhere
