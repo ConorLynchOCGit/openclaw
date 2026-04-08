@@ -1,5 +1,24 @@
 # Action-Stage Orchestration Hardening
 
+## Landed status
+
+Landed in pre-capture hardening batch v1, plus one bounded carryover closeout
+for proof-step dispatch.
+
+What landed:
+
+- shared ordered resolution and post-submit stages in `candidate-submit`
+- ordered capture-decision stages in `ordinary-turn-auto-capture`
+- explicit shared write-stage helpers with focused tests
+- stronger executor-level proof coverage
+- bounded proof-step dispatch table closeout
+
+What did not land:
+
+- one helper tree per family
+- a total subsystem rewrite
+- flattening procedures or phrase artifacts into generic memory-object behavior
+
 ## Purpose
 
 Define the third post-v6 hardening slice that should land before any

@@ -1,5 +1,21 @@
 # Application And Token-Efficiency Hardening
 
+## Landed status
+
+Landed in pre-capture hardening batch v1.
+
+What landed:
+
+- a compact policy-shaped durable-memory prompt section
+- lower ordinary-run prompt tax for durable-memory guidance
+- structural family posture preserved while broad static narration was reduced
+
+What did not land:
+
+- a widened host contract for true retrieval-fed prompt shaping
+- self-improving capture itself
+- a generic prompt-system rewrite
+
 ## Purpose
 
 Define the second post-v6 hardening slice that should land before any

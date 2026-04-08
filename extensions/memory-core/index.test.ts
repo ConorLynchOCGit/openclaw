@@ -63,51 +63,23 @@ describe("buildPromptSection", () => {
     });
 
     expect(result[0]).toBe("## Durable Memory");
-    expect(result[1]).toContain("inspect existing approved memory");
-    expect(result[2]).toContain("search approved durable memory before answering");
-    expect(result[3]).toContain("format-sensitive or step-by-step replies");
-    expect(result[4]).toContain("follow that preference in the current reply");
-    expect(result[5]).toContain("memory_object_search_hybrid");
-    expect(result[6]).toContain("exact style in the hybrid-search query");
-    expect(result[7]).toContain("named-project fact questions");
-    expect(result).toContainEqual(expect.stringContaining("stored checklist may help"));
+    expect(result[1]).toContain(
+      "Use approved durable memory only when it can materially change the answer",
+    );
+    expect(result).toContainEqual(expect.stringContaining("Behavior memory:"));
+    expect(result).toContainEqual(expect.stringContaining("Project memory:"));
+    expect(result).toContainEqual(expect.stringContaining("Workflow guidance:"));
+    expect(result).toContainEqual(expect.stringContaining("Procedure memory:"));
     expect(result).toContainEqual(
-      expect.stringContaining(
-        "For repo-operating or provider-troubleshooting asks where a remembered workflow lesson may matter",
-      ),
+      expect.stringContaining("Use memory_candidate_submit for bounded durable items"),
     );
     expect(result).toContainEqual(
-      expect.stringContaining("include the scope plus the competing actions or signals"),
+      expect.stringContaining("Natural correction phrasing still counts for bounded durable items"),
     );
-    expect(result).toContainEqual(
-      expect.stringContaining("direct asks about how a named project should be operated"),
-    );
-    expect(result).toContainEqual(expect.stringContaining("what a named project is still missing"));
-    expect(result).toContainEqual(expect.stringContaining("top fact-like project result"));
-    expect(result).toContainEqual(expect.stringContaining("top project-rule result"));
-    expect(result).toContainEqual(expect.stringContaining("top unmet-need result"));
-    expect(result).toContainEqual(expect.stringContaining("directly answers the question"));
-    expect(result).toContainEqual(expect.stringContaining("stored checklist exists"));
-    expect(result).toContainEqual(expect.stringContaining("suggestion-first as an option"));
-    expect(result).toContainEqual(
-      expect.stringContaining("surface only the top directly relevant guidance hint or two"),
-    );
-    expect(result).toContainEqual(expect.stringContaining("known environment constraint"));
-    expect(result).toContainEqual(expect.stringContaining("memory_candidate_submit"));
-    expect(result).toContainEqual(expect.stringContaining("Actually, No, I meant, Sorry"));
-    expect(result).toContainEqual(
-      expect.stringContaining("use numbered steps when giving instructions"),
-    );
-    expect(result).toContainEqual(
-      expect.stringContaining("For project Atlas, the staging branch is atlas-staging"),
-    );
-    expect(result).toContainEqual(expect.stringContaining("use pnpm test -- <path-or-filter>"));
-    expect(result).toContainEqual(expect.stringContaining("store, remember, or save"));
-    expect(result).toContainEqual(expect.stringContaining("plain favorite/preferred preference"));
-    expect(result).toContainEqual(expect.stringContaining("some low-risk classes auto-promote"));
     expect(result).toContainEqual(
       expect.stringContaining("memory_session_get and memory_session_update"),
     );
+    expect(result.length).toBeLessThan(13);
     expect(result.at(-1)).toBe("");
   });
 
@@ -124,37 +96,13 @@ describe("buildPromptSection", () => {
     expect(result[0]).toBe("## Memory Recall");
     expect(result).toContain("## Durable Memory");
     expect(result).toContain(
-      "When the user shares a recurring requirement, important correction, reusable procedure, or project improvement that should survive beyond the current turn, submit a concise candidate with memory_candidate_submit.",
+      "Use memory_candidate_submit for bounded durable items when the user explicitly asks to store them, or when they make a clear in-scope durable correction.",
     );
     expect(result).toContain(
-      "Natural correction phrasing still counts: if the user says things like Actually, No, I meant, Sorry, or That's not right to correct a durable preference, default, recurring requirement, or tightly bounded named project fact, submit it as kind=correction even without an explicit save request.",
+      "Capture scope: response-style requirements and durable user corrections, explicit named-project facts, reusable named procedures, and repo-local workflow lessons, project rules, or unmet needs.",
     );
     expect(result).toContain(
-      "If the user states a bounded recurring response requirement in plain language, such as keep replies concise, use bullet points when listing items, use plain English, do not use tables unless asked, or use numbered steps when giving instructions, submit it as a learning candidate.",
-    );
-    expect(result).toContain(
-      "If the user states a tightly bounded named project fact in explicit declarative form, such as For project Atlas, the staging branch is atlas-staging or For project Atlas, the evidence dashboard is atlas-rollout, submit it as a learning candidate. Keep the broader generic path bounded to explicit reference-like project facts rather than speculative summaries.",
-    );
-    expect(result).toContainEqual(
-      expect.stringContaining(
-        "If the user explicitly teaches a repo-local workflow lesson in plain language, with a bounded scope plus a recommended action, avoided action, or trusted signal, submit it as kind=improvement.",
-      ),
-    );
-    expect(result).toContainEqual(
-      expect.stringContaining(
-        "If the user explicitly teaches a durable named-project operating rule in plain language",
-      ),
-    );
-    expect(result).toContainEqual(
-      expect.stringContaining(
-        "If the user explicitly teaches a durable named-project unmet need in plain language",
-      ),
-    );
-    expect(result).toContain(
-      "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",
-    );
-    expect(result).toContain(
-      "Do not call memory_candidate_submit just because the user naturally states a plain favorite/preferred preference in ordinary conversation; that narrow low-risk preference class may be auto-captured already.",
+      "Natural correction phrasing still counts for bounded durable items, but do not store transient chatter, one-off logistics, secrets, or plain favorite statements that low-risk auto-capture may already handle.",
     );
   });
 });

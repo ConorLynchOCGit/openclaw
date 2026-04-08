@@ -244,62 +244,63 @@ export function renderDurableMemoryApplicationSelection(
 ): string[] {
   const lines: string[] = ["## Durable Memory"];
   const guidancePlan = selection.renderingHints;
+  const selectedGuidance = new Set(
+    selection.selectedItems.flatMap((item) =>
+      item.selectedGuidanceKinds.map((kind) => `${item.familyId}:${kind}`),
+    ),
+  );
+
+  const hasSelectedGuidance = (
+    familyId: MemoryFamilyId,
+    kind: DurableMemoryApplicationGuidanceKind,
+  ): boolean => selectedGuidance.has(`${familyId}:${kind}`);
 
   if (guidancePlan.hasObjectSurface) {
     lines.push(
-      "Before claiming durable long-term memory about a project, preference, decision, correction, or procedure, inspect existing approved memory with the memory_object search/list/get tools when that helps avoid duplicates or contradictions.",
-    );
-    lines.push(
-      "When the user asks about their own preferences, defaults, recurring requirements, or prior corrections, search approved durable memory before answering instead of relying on unstated recollection. Candidate backlog is not durable memory unless you are explicitly reviewing candidates.",
-    );
-    lines.push(
-      "For format-sensitive or step-by-step replies, search approved durable feedback memory for response-style requirements before answering when that can change how you should present the answer.",
-    );
-    lines.push(
-      "If approved durable memory says the user prefers concise replies, bullet points, plain English, no tables, or numbered steps for instructions, follow that preference in the current reply whenever it is relevant instead of treating it as passive metadata.",
+      "Use approved durable memory only when it can materially change the answer. Candidate backlog is not durable memory unless you are explicitly reviewing candidates.",
     );
 
     if (selection.flags.hasObjectSearchHybrid) {
-      for (const item of selection.selectedItems.filter((candidate) =>
-        candidate.selectedGuidanceKinds.includes("search"),
-      )) {
-        lines.push(...item.searchGuidance);
+      if (hasSelectedGuidance("response_style", "search")) {
+        lines.push(
+          "Behavior memory: for durable user preferences, corrections, or response-style requirements, search approved feedback memory first and apply the stored style when it is relevant to the reply.",
+        );
       }
-      lines.push(
-        "When a direct named-project ask is clearly about where or what something is, use the top fact-like project result. When it is clearly about what to use, trust, or avoid, use the top project-rule result. When it is clearly about what is still missing or needed, use the top unmet-need result. Do not blend adjacent project memories from other families unless they directly corroborate the same answer.",
-      );
+      if (
+        hasSelectedGuidance("project_fact", "search") ||
+        hasSelectedGuidance("project_rule", "search") ||
+        hasSelectedGuidance("unmet_need", "search")
+      ) {
+        lines.push(
+          "Project memory: for named-project asks, search approved project memory first and use the top fact, rule, or unmet-need result that directly matches the question instead of blending adjacent project families.",
+        );
+      }
+      if (hasSelectedGuidance("workflow_improvement", "search")) {
+        lines.push(
+          "Workflow guidance: for repo-operating, provider-troubleshooting, or environment-constraint asks, search approved workflow guidance first and surface only the top directly relevant hint or two.",
+        );
+      }
+      if (hasSelectedGuidance("recurring_procedure", "search")) {
+        lines.push(
+          "Procedure memory: for clear checklist or recurring-step asks, search validated procedures first; for nearby advice, surface the stored checklist suggestion-first instead of forcing it.",
+        );
+      }
     }
 
     lines.push(
-      "If an approved durable memory result directly answers the question, use it in the normal reply without asking the user to restate it. If no approved result exists, answer normally and say you did not find stored memory only when that context matters.",
+      "If approved durable memory directly answers the question, use it in the normal reply. If nothing relevant is stored, answer normally.",
     );
-    for (const item of selection.selectedItems.filter((candidate) =>
-      candidate.selectedGuidanceKinds.includes("application"),
-    )) {
-      lines.push(...item.applicationGuidance);
-    }
   }
 
   if (guidancePlan.hasCandidateSurface) {
     lines.push(
-      "When the user shares a recurring requirement, important correction, reusable procedure, or project improvement that should survive beyond the current turn, submit a concise candidate with memory_candidate_submit.",
+      "Use memory_candidate_submit for bounded durable items when the user explicitly asks to store them, or when they make a clear in-scope durable correction.",
     );
     lines.push(
-      "Natural correction phrasing still counts: if the user says things like Actually, No, I meant, Sorry, or That's not right to correct a durable preference, default, recurring requirement, or tightly bounded named project fact, submit it as kind=correction even without an explicit save request.",
-    );
-    for (const item of selection.selectedItems.filter((candidate) =>
-      candidate.selectedGuidanceKinds.includes("capture"),
-    )) {
-      lines.push(...item.captureGuidance);
-    }
-    lines.push(
-      "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",
+      "Capture scope: response-style requirements and durable user corrections, explicit named-project facts, reusable named procedures, and repo-local workflow lessons, project rules, or unmet needs.",
     );
     lines.push(
-      "Do not call memory_candidate_submit just because the user naturally states a plain favorite/preferred preference in ordinary conversation; that narrow low-risk preference class may be auto-captured already.",
-    );
-    lines.push(
-      "Do not submit transient chatter, one-off logistics, secrets, credentials, or anything the user asked not to retain. Candidate submission stays bounded even when some low-risk classes auto-promote.",
+      "Natural correction phrasing still counts for bounded durable items, but do not store transient chatter, one-off logistics, secrets, or plain favorite statements that low-risk auto-capture may already handle.",
     );
   }
 

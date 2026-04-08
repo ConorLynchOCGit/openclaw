@@ -39,9 +39,10 @@ This inventory tracks:
 | Unified correction / supersede             | `built_live`    | declarative correction plans now own execution kind, target kind, and held-versus-immediate posture for the current families                             | architecture debt |
 | Unified phrase-pattern engine              | `built_partial` | one reviewed phrase substrate serves workflow lessons and response style; family eligibility remains intentionally narrow                                | architecture debt |
 | Retrieval feature framework                | `built_partial` | shared feature composition exists and approved-vs-candidate read scaffolding is flatter, but validated-procedure read-model convergence may still remain | architecture debt |
-| Behavior-profile bridge                    | `built_partial` | shared prompt-support bridge remains live and now feeds the structured prompt-facing application layer                                                   | architecture debt |
-| Application-selection / behavior planner   | `built_partial` | selected/suppressed family guidance plus rendering hints are now structural for the prompt-facing durable-memory layer                                   | architecture debt |
-| Retrieval + semantic-routing control plane | `built_partial` | hybrid retrieval now shares normalized control decisions for hints, project-family shaping, and semantic fallback family routing                         | architecture debt |
+| Behavior-profile bridge                    | `built_partial` | shared prompt-support bridge remains live and now feeds a cheaper, more compact prompt-facing application layer                                          | architecture debt |
+| Application-selection / behavior planner   | `built_partial` | selected/suppressed family guidance plus rendering hints are now structural for the prompt-facing durable-memory layer and render with lower prompt tax  | architecture debt |
+| Retrieval + semantic-routing control plane | `built_partial` | hybrid retrieval now shares normalized control decisions for hints, project-family shaping, and one shared project semantic fallback query cycle         | architecture debt |
+| Write action-stage orchestration           | `built_partial` | candidate submit, transcript auto-capture dispatch, and proof-step execution now share explicit ordered stage seams instead of only top-level switches   | architecture debt |
 | Registry-driven proof inspection           | `built_live`    | registry-owned proof policy plus adapterized lifecycle/artifact dispatch now form one honest proof control path for the current family set               | architecture debt |
 | Memory testability hardening               | `built_partial` | retrieval intent, prompt-facing application planning, and semantic fallback eligibility now have real unit seams                                         | supporting seam   |
 | Hybrid memory-surface SQL scaffolding      | `built_live`    | approved and reviewable-candidate hybrid, get, list, and basic memory-object reads now share bounded scaffolding where the read surfaces already align   | supporting seam   |
@@ -60,6 +61,7 @@ These slices are now landed:
 ## Remaining main substrate slices
 
 The remaining core flattening slices are now landed.
+The pre-capture hardening tranche is also now landed.
 
 ## Recently landed work
 
@@ -98,8 +100,8 @@ Backlog / flattening debt:
   may still remain
 - reduced-profile self-improving capture still needs its own reevaluation and
   rollout proof before it becomes live
-- the next hardening tranche should scale write paths through finite shared
-  action stages rather than one helper per family
+- reduced-profile self-improving capture reevaluation is now the next main
+  substrate move
 
 ## Not live yet
 

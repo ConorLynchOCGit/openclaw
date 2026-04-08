@@ -1,9 +1,9 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@sinclair/typebox";
-import { Client } from "pg";
 import type { AnyAgentTool, OpenClawPluginToolContext } from "../../api.js";
 import { DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG } from "../config.js";
+import { withMemoryMiddlewarePgClient } from "../db/pg-pool.js";
 import {
   CANDIDATE_SUBMISSION_KINDS,
   type CandidateSubmissionInput,
@@ -106,6 +106,11 @@ import {
   type WorkflowImprovementToolKey,
 } from "../workflow-improvement-semantic.js";
 import { maybeInduceWorkflowPhrasePattern } from "../workflow-phrase-induction.js";
+import {
+  runWriteResolutionStages,
+  runWriteResultStages,
+  submitCandidateByKind,
+} from "../write-action-stages.js";
 import {
   asJsonToolResult as asJsonToolResultBase,
   readContextUuid,
@@ -1765,87 +1770,122 @@ export async function submitCandidateFromTool(params: {
     input: params.input,
     context: params.context,
   });
-  const resolvedExisting = await maybeResolveExistingResponseStyleCandidate({
+  const executionContext = {
     runtime: params.runtime,
     input: normalizedInput,
-    context: params.context,
+    ...(params.context ? { context: params.context } : {}),
+  };
+  const resolvedExisting = await runWriteResolutionStages({
+    context: executionContext,
+    stages: [
+      {
+        id: "resolve_response_style",
+        resolve: ({ runtime, input, context }) =>
+          maybeResolveExistingResponseStyleCandidate({
+            runtime,
+            input,
+            ...(context ? { context } : {}),
+          }),
+      },
+      {
+        id: "resolve_project_fact",
+        resolve: ({ runtime, input }) =>
+          maybeResolveExistingProjectFactCandidate({
+            runtime,
+            input,
+          }),
+      },
+      {
+        id: "resolve_recurring_procedure",
+        resolve: ({ runtime, input }) =>
+          maybeResolveExistingRecurringProcedureCandidate({
+            runtime,
+            input,
+          }),
+      },
+      {
+        id: "resolve_workflow_improvement",
+        resolve: ({ runtime, input, context }) =>
+          maybeResolveExistingWorkflowImprovementCandidate({
+            runtime,
+            input,
+            ...(context ? { context } : {}),
+          }),
+      },
+    ],
   });
   if (resolvedExisting) {
     return resolvedExisting;
   }
-  const resolvedExistingProjectFact = await maybeResolveExistingProjectFactCandidate({
+  const duplicateGuard = await runWriteResolutionStages({
+    context: executionContext,
+    stages:
+      normalizedInput.kind === "learning" ||
+      normalizedInput.kind === "correction" ||
+      normalizedInput.kind === "improvement"
+        ? [
+            {
+              id: "reject_auto_capture_duplicate",
+              resolve: async ({ runtime, input, context }) => {
+                const duplicate = await findExistingAutoCaptureManagedDuplicate({
+                  runtime,
+                  input,
+                  ...(context ? { context } : {}),
+                });
+                if (!duplicate) {
+                  return null;
+                }
+                return {
+                  accepted: false as const,
+                  status: "failed" as const,
+                  kind: input.kind,
+                  reason: `ordinary-turn auto-capture already created ${duplicate.reviewState} candidate ${duplicate.id}`,
+                };
+              },
+            },
+          ]
+        : [],
+  });
+  if (duplicateGuard) {
+    return duplicateGuard;
+  }
+  const submitted = await submitCandidateByKind({
     runtime: params.runtime,
     input: normalizedInput,
   });
-  if (resolvedExistingProjectFact) {
-    return resolvedExistingProjectFact;
-  }
-  const resolvedExistingRecurringProcedure = await maybeResolveExistingRecurringProcedureCandidate({
-    runtime: params.runtime,
-    input: normalizedInput,
+  return runWriteResultStages({
+    context: executionContext,
+    result: submitted,
+    stages: [
+      {
+        id: "auto_promote_preference",
+        apply: ({ context, result }) =>
+          maybeAutoPromoteToolSubmittedPreference({
+            runtime: context.runtime,
+            input: context.input,
+            result,
+          }),
+      },
+      {
+        id: "auto_promote_project_fact",
+        apply: ({ context, result }) =>
+          maybeAutoPromoteToolSubmittedProjectFact({
+            runtime: context.runtime,
+            input: context.input,
+            result,
+          }),
+      },
+      {
+        id: "auto_promote_recurring_procedure",
+        apply: ({ context, result }) =>
+          maybeAutoPromoteToolSubmittedRecurringProcedure({
+            runtime: context.runtime,
+            input: context.input,
+            result,
+          }),
+      },
+    ],
   });
-  if (resolvedExistingRecurringProcedure) {
-    return resolvedExistingRecurringProcedure;
-  }
-  const resolvedExistingWorkflowImprovement =
-    await maybeResolveExistingWorkflowImprovementCandidate({
-      runtime: params.runtime,
-      input: normalizedInput,
-      context: params.context,
-    });
-  if (resolvedExistingWorkflowImprovement) {
-    return resolvedExistingWorkflowImprovement;
-  }
-  if (
-    normalizedInput.kind === "learning" ||
-    normalizedInput.kind === "correction" ||
-    normalizedInput.kind === "improvement"
-  ) {
-    const duplicate = await findExistingAutoCaptureManagedDuplicate({
-      runtime: params.runtime,
-      input: normalizedInput,
-      context: params.context,
-    });
-    if (duplicate) {
-      return {
-        accepted: false,
-        status: "failed",
-        kind: normalizedInput.kind,
-        reason: `ordinary-turn auto-capture already created ${duplicate.reviewState} candidate ${duplicate.id}`,
-      };
-    }
-  }
-  let result: CandidateSubmissionResult;
-  switch (normalizedInput.kind) {
-    case "learning":
-      result = await params.runtime.candidateIngress.submitLearning(normalizedInput);
-      break;
-    case "correction":
-      result = await params.runtime.candidateIngress.submitCorrectionSuggestion(normalizedInput);
-      break;
-    case "procedure":
-      result = await params.runtime.candidateIngress.submitProcedureSuggestion(normalizedInput);
-      break;
-    case "improvement":
-      result = await params.runtime.candidateIngress.submitImprovementNote(normalizedInput);
-      break;
-  }
-  result = await maybeAutoPromoteToolSubmittedPreference({
-    runtime: params.runtime,
-    input: normalizedInput,
-    result,
-  });
-  result = await maybeAutoPromoteToolSubmittedProjectFact({
-    runtime: params.runtime,
-    input: normalizedInput,
-    result,
-  });
-  result = await maybeAutoPromoteToolSubmittedRecurringProcedure({
-    runtime: params.runtime,
-    input: normalizedInput,
-    result,
-  });
-  return result;
 }
 
 function resolveAutoPromotableFeedbackSubmission(
@@ -3506,7 +3546,6 @@ async function findExistingAutoCaptureManagedDuplicate(params: {
   }
 
   const schema = params.runtime.config.database.schema ?? "memory_middleware";
-  const client = new Client({ connectionString: databaseUrl });
   const inputCategory = readNestedMetadataString(params.input.metadata, ["category"]);
   const projectScopedAutoCaptureProjectId =
     typeof params.input.projectId === "string" &&
@@ -3516,9 +3555,11 @@ async function findExistingAutoCaptureManagedDuplicate(params: {
       ? params.input.projectId
       : null;
   try {
-    await client.connect();
-    const result = await client.query<{ id: string; review_state: string }>(
-      `
+    return await withMemoryMiddlewarePgClient({
+      config: params.runtime.config,
+      run: async (client) => {
+        const result = await client.query<{ id: string; review_state: string }>(
+          `
         select id::text as id, review_state::text as review_state
         from "${schema}"."memory_objects"
         where (
@@ -3529,15 +3570,15 @@ async function findExistingAutoCaptureManagedDuplicate(params: {
           and review_state in ('candidate', 'approved', 'corrected')
         order by created_at desc
         limit 1
-      `,
-      [key, projectScopedAutoCaptureProjectId],
-    );
-    const row = result.rows[0];
-    return row ? { id: row.id, reviewState: row.review_state } : null;
+          `,
+          [key, projectScopedAutoCaptureProjectId],
+        );
+        const row = result.rows[0];
+        return row ? { id: row.id, reviewState: row.review_state } : null;
+      },
+    });
   } catch {
     return null;
-  } finally {
-    await client.end().catch(() => {});
   }
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildProofLifecycleArtifacts,
   parseMemoryProofPlan,
+  runMemoryProofPlan,
   validateHybridSearchProofResult,
 } from "./proof-runner.js";
 
@@ -381,5 +382,90 @@ describe("registry-driven proof helpers", () => {
         },
       }),
     ).not.toThrow();
+  });
+});
+
+describe("runMemoryProofPlan", () => {
+  it("executes sequential proof steps and threads artifacts between them", async () => {
+    const review = async () => ({
+      accepted: true as const,
+      status: "recorded" as const,
+      candidateId: "candidate-1",
+      outcome: "accepted" as const,
+      reviewId: "review-1",
+      memoryObjectStateChanged: false,
+      reviewState: "candidate" as const,
+    });
+    const promoteToMemory = async () => ({
+      accepted: true as const,
+      status: "promoted" as const,
+      candidateId: "candidate-1",
+      promotedMemoryObjectId: "approved-1",
+      promotedMemoryKind: "project" as const,
+      promotedReviewState: "approved" as const,
+      sourceEventId: "event-1",
+    });
+
+    const result = await runMemoryProofPlan({
+      plan: parseMemoryProofPlan({
+        mode: "isolated",
+        label: "executor proof",
+        steps: [
+          {
+            id: "review",
+            kind: "candidate_review",
+            candidateId: "candidate-1",
+            outcome: "accepted",
+          },
+          {
+            id: "promote",
+            kind: "candidate_promote_memory",
+            candidateIdFromStep: "review",
+          },
+        ],
+      }),
+      cfg: { plugins: {} } as never,
+      runtime: {
+        config: {
+          database: {
+            driver: "postgres",
+            schema: "memory_middleware",
+            url: "",
+          },
+        },
+        candidateReview: { review },
+        candidatePromotion: { promoteToMemory },
+      } as never,
+      logger: {
+        info() {},
+        warn() {},
+        error() {},
+        debug() {},
+      },
+    });
+
+    expect(result.steps).toEqual([
+      {
+        id: "review",
+        kind: "candidate_review",
+        artifacts: {
+          candidateId: "candidate-1",
+          reviewId: "review-1",
+        },
+        outcome: "accepted",
+        accepted: true,
+        status: "recorded",
+      },
+      {
+        id: "promote",
+        kind: "candidate_promote_memory",
+        artifacts: {
+          candidateId: "candidate-1",
+          promotedMemoryObjectId: "approved-1",
+        },
+        accepted: true,
+        status: "promoted",
+      },
+    ]);
   });
 });

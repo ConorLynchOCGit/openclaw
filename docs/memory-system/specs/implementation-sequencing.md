@@ -51,33 +51,31 @@ Historical completed order:
 
 ### Next major substrate work
 
-1. request-path cost hardening
-2. application/token-efficiency hardening
-3. write-path action-stage decomposition
-4. reduced-profile self-improving capture reevaluation
-5. bounded reduced-profile self-improving capture first tranche if the
+1. reduced-profile self-improving capture reevaluation
+2. bounded reduced-profile self-improving capture first tranche if the
    reevaluation stays honest
 
 ### Could fix later
 
-6. artifact / read-model convergence if procedure and memory-object storage
+3. artifact / read-model convergence if procedure and memory-object storage
    still feel too separate under later pressure
-7. narrower retrieval cleanup only if later work exposes honest remaining
+4. narrower retrieval cleanup only if later work exposes honest remaining
    duplication
 
 ### Later phases
 
-8. learned-guidance advisory planning
-9. cross-domain family expansion tranche 1
-10. cross-domain family expansion tranche 2
+5. learned-guidance advisory planning
+6. cross-domain family expansion tranche 1
+7. cross-domain family expansion tranche 2
 
 ## Why this order is recommended
 
 - the old flattening blockers for registry authority and family-policy boundary
   exposure are now landed
 - the post-v6 deep review found that the request path, prompt/application
-  layer, and orchestration surfaces still need hardening before capture
-  reevaluation is honest
+  layer, and orchestration surfaces needed hardening before capture
+  reevaluation was honest
+- the pre-capture hardening tranche is now landed
 - learned-guidance advisory planning should still wait until reduced-profile
   self-improving capture is proven
 
@@ -91,16 +89,15 @@ These are now landed:
 - registry authority is honest enough to carry later learned pressure
 - memory-family policy crosses core/middleware/plugin seams cleanly
 
-These still need hardening:
+These hardening prerequisites are now landed:
 
-- database access and semantic fallback hot paths are cheap enough for added
-  capture pressure
-- durable-memory application selection is query-aware and token-budgeted enough
-  not to bloat normal runs
-- transcript auto-capture, candidate submit, and proof execution scale through
-  finite shared action stages rather than one branch pile per family
-- proof execution is tested strongly enough not to become the next hidden
-  control-plane bottleneck
+- database access and semantic fallback hot paths are flatter and cheaper in
+  the touched request path
+- durable-memory application shaping is more compact and less static
+- transcript auto-capture, candidate submit, and proof execution now expose
+  ordered stage seams instead of only top-level branch piles
+- proof execution now has executor-level coverage in addition to parser/helper
+  coverage
 
 ## Hard prerequisites before learned-guidance advisory planning
 

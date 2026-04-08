@@ -23,11 +23,13 @@ import {
 } from "./retrieval-intent.js";
 import type { MemoryMiddlewareRuntime } from "./runtime.js";
 import {
+  createSemanticFallbackSharedState,
   maybeApplyApiWorkaroundSemanticFallback,
   maybeApplyEnvironmentConstraintSemanticFallback,
   maybeApplyProcedureSemanticFallback,
   maybeApplyWorkflowToolGotchaSemanticFallback,
   type SemanticFallbackFamily,
+  type SemanticFallbackSharedState,
 } from "./semantic-retrieval-routing.js";
 
 export type MemoryObjectRetrievalControlDecision = {
@@ -50,6 +52,7 @@ type HybridSemanticFallbackApplyParams = {
   cfg?: OpenClawPluginToolContext["runtimeConfig"] | OpenClawPluginToolContext["config"];
   agentId?: string;
   sessionKey?: string;
+  shared?: SemanticFallbackSharedState;
 };
 
 type HybridSemanticFallbackApply = (
@@ -201,6 +204,7 @@ async function applySemanticFallbackSafely(params: {
   cfg?: OpenClawPluginToolContext["runtimeConfig"] | OpenClawPluginToolContext["config"];
   agentId?: string;
   sessionKey?: string;
+  shared?: SemanticFallbackSharedState;
 }): Promise<MemoryObjectSearchHybridResult> {
   try {
     return await params.apply({
@@ -210,6 +214,7 @@ async function applySemanticFallbackSafely(params: {
       cfg: params.cfg,
       agentId: params.agentId,
       sessionKey: params.sessionKey,
+      ...(params.shared ? { shared: params.shared } : {}),
     });
   } catch {
     return params.hybridResult;
@@ -239,6 +244,7 @@ export async function applyHybridRetrievalControlPlane(params: {
   sessionKey?: string;
 }): Promise<MemoryObjectSearchHybridResult> {
   let result = params.hybridResult;
+  const shared = createSemanticFallbackSharedState();
   for (const family of params.decision.semanticFallbackFamilies) {
     result = await applySemanticFallbackSafely({
       hybridResult: result,
@@ -248,6 +254,7 @@ export async function applyHybridRetrievalControlPlane(params: {
       cfg: params.cfg,
       agentId: params.agentId,
       sessionKey: params.sessionKey,
+      shared,
     });
   }
   return result;

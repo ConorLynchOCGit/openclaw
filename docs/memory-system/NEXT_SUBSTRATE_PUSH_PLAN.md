@@ -37,16 +37,12 @@ Most importantly, the repo now has live landings for:
 
 ### Next major phase
 
-1. request-path cost hardening for database access and semantic fallback
-2. application/token-efficiency hardening for durable-memory application
-   selection and prompt rendering
-3. write-path action-stage decomposition for transcript auto-capture,
-   candidate submit, and proof execution
-4. reduced-profile self-improving capture reevaluation only after those slices
-5. bounded reduced-profile self-improving capture first tranche if the
+1. reduced-profile self-improving capture reevaluation on the hardened
+   substrate
+2. bounded reduced-profile self-improving capture first tranche if the
    reevaluation stays honest
-6. learned-guidance advisory planning only after that
-7. new families only after those phases
+3. learned-guidance advisory planning only after that
+4. new families only after those phases
 
 ### Later bounded cleanup only if justified
 
@@ -60,27 +56,25 @@ Most importantly, the repo now has live landings for:
 Honest estimate now:
 
 - remaining core flattening slices: 0
-- next major roadmap phase before any new family work: post-v6 memory
-  hardening, then reduced-profile self-improving capture reevaluation and only
-  then its bounded first tranche
+- pre-capture hardening tranche: landed
+- next major roadmap phase before any new family work: reduced-profile
+  self-improving capture reevaluation and only then its bounded first tranche
 - later bounded cleanup remains conditional, not precommitted
 
 ## What should land next
 
 The next implementation slice should now be:
 
-- request-path cost hardening before reduced-profile self-improving capture
-  reevaluation
+- reduced-profile self-improving capture reevaluation
 
 Why:
 
 - the old substrate blockers for registry authority and cross-boundary family
   policy are now landed
-- the post-v6 deep architecture review found that the request path,
-  prompt-facing application layer, and orchestration surfaces are still too
-  expensive and too indirect for self-improving capture pressure
+- the hardening tranche already addressed the request path, prompt/application
+  shaping, and write-path orchestration risks surfaced by the deep review
 - reduced-profile self-improving capture, learned-guidance advisory planning,
-  and new families are all later than that hardening work
+  and new families remain ordered after that landing
 
 ## Hardening tranche design rule
 
@@ -115,9 +109,6 @@ scopes or clearly one-way dependencies.
 
 Higher-risk next phase:
 
-- request-path cost hardening
-- application/token-efficiency hardening
-- write-path action-stage decomposition
 - reduced-profile self-improving capture reevaluation and first bounded tranche
 
 Moderate-risk later follow-up:
@@ -137,8 +128,8 @@ Moderate-risk later follow-up:
 
 If you want the cheapest credible remaining order, use this grouping:
 
-1. reevaluate reduced-profile self-improving capture on the now-flatter
-   substrate only after request-path, application, and write-path hardening
+1. reevaluate reduced-profile self-improving capture on the now-hardened
+   substrate
 2. land the smallest honest bounded first tranche if that reevaluation stays
    positive
 3. only then consider learned-guidance advisory planning
@@ -160,5 +151,4 @@ Before new families:
 
 ## Next implementation slice
 
-- request-path cost hardening before reduced-profile self-improving capture
-  reevaluation
+- reduced-profile self-improving capture reevaluation

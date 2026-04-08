@@ -173,17 +173,18 @@ This phase should land before the repo adds new memory families.
 
 ## Phase E — post-flattening hardening before reduced-profile self-improving capture
 
-This is now the next major roadmap phase.
+This phase is now landed.
 
 The post-v6 deep review changed the next-step truth.
 
-It should begin before reduced-profile self-improving capture because the
-current code still needs:
+It landed because the post-v6 deep review found that the current code still
+needed:
 
 - request-path cost hardening for database access and semantic fallback
 - application/token-efficiency hardening for durable-memory prompt behavior
 - write-path action-stage decomposition for transcript auto-capture, candidate
   submit, and proof execution
+- one bounded proof-step dispatch closeout slice
 
 The accepted decomposition rule for that work is:
 
@@ -191,17 +192,18 @@ The accepted decomposition rule for that work is:
 - family variance in registry policy and bounded adapters
 - special cases only where the runtime structure is honestly distinct
 
-That hardening should finish strongly enough that:
+That hardening is now strong enough that:
 
 - request-path cost is acceptable under higher capture and retrieval pressure
 - application policy is structurally selected and cheap enough to render
 - proof and orchestration behavior are not hidden regression traps
 
-## Phase F — reduced-profile self-improving capture
+## Phase F — reduced-profile self-improving capture reevaluation
 
-This remains the next major product phase after Phase E.
+This is now the next major product phase after Phase E landed.
 
-It should begin only after phases D and E are landed strongly enough that:
+It should begin now by proving whether reduced-profile self-improving capture
+can land on the hardened substrate strongly enough that:
 
 - self-improving candidates enter the same family substrate
 - provenance stays explicit
@@ -209,7 +211,11 @@ It should begin only after phases D and E are landed strongly enough that:
 - retrieval/routing policy does not have to be re-implemented per family
 - proofing can scale without bespoke family branches
 
-## Phase G — learned-guidance advisory planning
+## Phase G — reduced-profile self-improving capture bounded first tranche
+
+This remains conditional on Phase F staying positive.
+
+## Phase H — learned-guidance advisory planning
 
 This remains later than both flattening and reduced-profile self-improving
 capture.
@@ -221,7 +227,7 @@ It should build on:
 - explicit application selection
 - explicit provenance from self-improving-origin candidates where relevant
 
-## Phase H — cross-domain family expansion
+## Phase I — cross-domain family expansion
 
 Cross-domain family expansion resumes only after:
 

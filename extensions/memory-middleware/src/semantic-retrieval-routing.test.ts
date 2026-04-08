@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MemoryObjectSearchHybridResult } from "./db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "./runtime.js";
 import {
+  createSemanticFallbackSharedState,
   maybeApplyApiWorkaroundSemanticFallback,
   maybeApplyEnvironmentConstraintSemanticFallback,
   maybeApplyProcedureSemanticFallback,
@@ -539,6 +540,112 @@ describe("semantic retrieval routing", () => {
       }),
     );
     expect(result.records[1]?.id).toBe("env-weak");
+  });
+
+  it("reuses one query embedding and one semantic search across shared workflow fallback lanes", async () => {
+    const runtime = {
+      config: {
+        database: {
+          driver: "postgres",
+          schema: "memory_middleware",
+          url: "",
+        },
+      },
+      memoryObjectQuery: {
+        searchSemantic: vi.fn(async () => ({
+          accepted: true as const,
+          status: "ok" as const,
+          scope: "approved_only" as const,
+          embeddingModel: "test-embed",
+          embeddingVersion: "v1",
+          records: [
+            {
+              objectType: "memory_object" as const,
+              readSurface: "approved_memory_view" as const,
+              id: "env-semantic",
+              memoryKind: "project" as const,
+              reviewState: "approved" as const,
+              content:
+                "Environment constraint: python command is not available in this environment; use node --input-type=module or tsx instead.",
+              metadata: {
+                autoCapture: {
+                  lessonKey: "python_command_unavailable",
+                },
+              },
+              createdAt: "2026-04-02T00:00:00.000Z",
+              updatedAt: "2026-04-02T00:00:00.000Z",
+              score: 0.93,
+              distance: 0.07,
+              matchedFields: ["semantic_embedding"],
+              embeddingModel: "test-embed",
+              embeddingVersion: "v1",
+              chunkIndex: 0,
+            },
+            {
+              objectType: "memory_object" as const,
+              readSurface: "approved_memory_view" as const,
+              id: "tool-gotcha-semantic",
+              memoryKind: "project" as const,
+              reviewState: "approved" as const,
+              content:
+                'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+              metadata: {
+                autoCapture: {
+                  lessonKey: "scripts_committer_required",
+                },
+              },
+              createdAt: "2026-04-02T00:00:00.000Z",
+              updatedAt: "2026-04-02T00:00:00.000Z",
+              score: 0.91,
+              distance: 0.09,
+              matchedFields: ["semantic_embedding"],
+              embeddingModel: "test-embed",
+              embeddingVersion: "v1",
+              chunkIndex: 0,
+            },
+          ],
+        })),
+      },
+    } as unknown as MemoryMiddlewareRuntime;
+
+    const shared = createSemanticFallbackSharedState();
+
+    const environmentResult = await maybeApplyEnvironmentConstraintSemanticFallback({
+      runtime,
+      input: {
+        query: "what should I use for quick scripting here",
+        kind: "project",
+        scope: "approved_only",
+      },
+      hybridResult: createWeakEnvironmentConstraintHybridResult(),
+      cfg: { plugins: {} } as never,
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      shared,
+    });
+
+    const workflowResult = await maybeApplyWorkflowToolGotchaSemanticFallback({
+      runtime,
+      input: {
+        query: "how should I keep staging narrow here",
+        kind: "project",
+        scope: "approved_only",
+      },
+      hybridResult: createWeakWorkflowToolGotchaHybridResult(),
+      cfg: { plugins: {} } as never,
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      shared,
+    });
+
+    expect(embedMemorySearchQuery).toHaveBeenCalledTimes(1);
+    expect(runtime.memoryObjectQuery.searchSemantic).toHaveBeenCalledTimes(1);
+    expect(environmentResult.accepted).toBe(true);
+    expect(workflowResult.accepted).toBe(true);
+    if (environmentResult.accepted && workflowResult.accepted) {
+      expect(environmentResult.records[0]?.id).toBe("env-semantic");
+      expect(workflowResult.records[0]?.id).toBe("tool-gotcha-semantic");
+    }
   });
 
   it("filters semantic fallback to supported approved environment constraints only", async () => {

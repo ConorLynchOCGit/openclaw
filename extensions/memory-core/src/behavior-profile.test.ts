@@ -57,9 +57,11 @@ describe("behavior profile guidance plan", () => {
       buildDurableMemoryApplicationSelectionFromProfile(profile),
     ).join("\n");
     expect(lines).not.toContain("memory_candidate_submit");
-    expect(lines).not.toContain("memory_object_search_hybrid with kind=project");
+    expect(lines).not.toContain("Workflow guidance:");
     expect(lines).toContain("memory_session_get and memory_session_update");
-    expect(lines).toContain("Before claiming durable long-term memory");
+    expect(lines).toContain(
+      "Use approved durable memory only when it can materially change the answer.",
+    );
   });
 
   it("builds a structured application selection with selected and suppressed guidance kinds", () => {
@@ -123,10 +125,12 @@ describe("behavior profile guidance plan", () => {
 
     const selection = buildDurableMemoryApplicationSelectionFromProfile(profile);
     const lines = renderDurableMemoryApplicationSelection(selection).join("\n");
-    expect(lines).toContain("memory_object_search_hybrid with kind=feedback");
-    expect(lines).toContain("stored checklist exists");
-    expect(lines).toContain("surface only the top directly relevant guidance hint or two");
-    expect(lines).toContain("memory_candidate_submit");
+    expect(lines).toContain("Behavior memory:");
+    expect(lines).toContain("Project memory:");
+    expect(lines).toContain("Workflow guidance:");
+    expect(lines).toContain("Procedure memory:");
+    expect(lines).toContain("Use memory_candidate_submit for bounded durable items");
     expect(lines).toContain("memory_session_get and memory_session_update");
+    expect(lines.split("\n").length).toBeLessThan(13);
   });
 });

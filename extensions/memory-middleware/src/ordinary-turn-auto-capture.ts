@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/memory-core";
-import { Client } from "pg";
 import type { PluginLogger } from "../api.js";
 import type { CandidateIngressPort } from "./candidate-ingress.js";
 import {
@@ -10,6 +9,7 @@ import {
   DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG,
   type MemoryMiddlewareConfig,
 } from "./config.js";
+import { withMemoryMiddlewarePgClient } from "./db/pg-pool.js";
 import {
   executeMemoryObjectCorrectionPlan,
   isExecutableMemoryObjectCorrectionPlan,
@@ -115,6 +115,7 @@ import {
   findApprovedWorkflowPhrasePatternMatch,
   maybeInduceWorkflowPhrasePattern,
 } from "./workflow-phrase-induction.js";
+import { runWriteHandledStages } from "./write-action-stages.js";
 
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const AUTO_CAPTURE_SOURCE = "ordinary_turn_auto_capture";
@@ -1608,13 +1609,13 @@ async function resolveAttributionWithDatabase(params: {
   const schema = params.config.database.schema ?? "memory_middleware";
   const agentsTable = `${quoteIdentifier(schema)}.${quoteIdentifier("agents")}`;
   const sessionsTable = `${quoteIdentifier(schema)}.${quoteIdentifier("sessions")}`;
-  const client = new Client({ connectionString: params.config.database.url });
-
-  try {
-    await client.connect();
-    await client.query("begin");
-    const agentResult = await client.query<{ id: string }>(
-      `
+  return withMemoryMiddlewarePgClient({
+    config: params.config,
+    run: async (client) => {
+      await client.query("begin");
+      try {
+        const agentResult = await client.query<{ id: string }>(
+          `
         insert into ${agentsTable} (external_key, name, role, metadata)
         values ($1, $2, $3, $4::jsonb)
         on conflict (external_key) do update
@@ -1623,21 +1624,21 @@ async function resolveAttributionWithDatabase(params: {
               updated_at = now()
         returning id::text as id
       `,
-      [
-        params.agentExternalKey,
-        params.agentExternalKey,
-        "assistant",
-        JSON.stringify({
-          source: AUTO_CAPTURE_SOURCE,
-        }),
-      ],
-    );
-    const agentId = agentResult.rows[0]?.id;
-    if (!agentId) {
-      throw new Error("failed to resolve agent attribution");
-    }
-    const sessionResult = await client.query<{ id: string; project_id: string | null }>(
-      `
+          [
+            params.agentExternalKey,
+            params.agentExternalKey,
+            "assistant",
+            JSON.stringify({
+              source: AUTO_CAPTURE_SOURCE,
+            }),
+          ],
+        );
+        const agentId = agentResult.rows[0]?.id;
+        if (!agentId) {
+          throw new Error("failed to resolve agent attribution");
+        }
+        const sessionResult = await client.query<{ id: string; project_id: string | null }>(
+          `
         insert into ${sessionsTable} (agent_id, session_key, metadata)
         values ($1::uuid, $2, $3::jsonb)
         on conflict (session_key) do update
@@ -1646,35 +1647,37 @@ async function resolveAttributionWithDatabase(params: {
               updated_at = now()
         returning id::text as id, project_id::text as project_id
       `,
-      [
-        agentId,
-        params.sessionKey,
-        JSON.stringify({
-          source: AUTO_CAPTURE_SOURCE,
-          transcriptFile: params.transcriptFile,
-        }),
-      ],
-    );
-    const sessionId = sessionResult.rows[0]?.id;
-    if (!sessionId) {
-      throw new Error("failed to resolve session attribution");
-    }
-    await client.query("commit");
-    return {
-      agentId,
-      sessionId,
-      ...(sessionResult.rows[0]?.project_id ? { projectId: sessionResult.rows[0].project_id } : {}),
-    };
-  } catch (error) {
-    try {
-      await client.query("rollback");
-    } catch {
-      // Best effort only.
-    }
-    throw error;
-  } finally {
-    await client.end().catch(() => {});
-  }
+          [
+            agentId,
+            params.sessionKey,
+            JSON.stringify({
+              source: AUTO_CAPTURE_SOURCE,
+              transcriptFile: params.transcriptFile,
+            }),
+          ],
+        );
+        const sessionId = sessionResult.rows[0]?.id;
+        if (!sessionId) {
+          throw new Error("failed to resolve session attribution");
+        }
+        await client.query("commit");
+        return {
+          agentId,
+          sessionId,
+          ...(sessionResult.rows[0]?.project_id
+            ? { projectId: sessionResult.rows[0].project_id }
+            : {}),
+        };
+      } catch (error) {
+        try {
+          await client.query("rollback");
+        } catch {
+          // Best effort only.
+        }
+        throw error;
+      }
+    },
+  });
 }
 
 async function findExistingByKeyWithDatabase(params: {
@@ -1686,12 +1689,11 @@ async function findExistingByKeyWithDatabase(params: {
   }
   const schema = params.config.database.schema ?? "memory_middleware";
   const memoryObjectsTable = `${quoteIdentifier(schema)}.${quoteIdentifier("memory_objects")}`;
-  const client = new Client({ connectionString: params.config.database.url });
-
-  try {
-    await client.connect();
-    const result = await client.query<{ id: string; review_state: string }>(
-      `
+  return withMemoryMiddlewarePgClient({
+    config: params.config,
+    run: async (client) => {
+      const result = await client.query<{ id: string; review_state: string }>(
+        `
         select id::text as id, review_state::text as review_state
         from ${memoryObjectsTable}
         where (
@@ -1701,14 +1703,13 @@ async function findExistingByKeyWithDatabase(params: {
           and review_state in ('candidate', 'approved', 'corrected')
         order by created_at desc
         limit 1
-      `,
-      [params.key],
-    );
-    const row = result.rows[0];
-    return row ? { id: row.id, reviewState: row.review_state } : null;
-  } finally {
-    await client.end().catch(() => {});
-  }
+        `,
+        [params.key],
+      );
+      const row = result.rows[0];
+      return row ? { id: row.id, reviewState: row.review_state } : null;
+    },
+  });
 }
 
 function createDefaultDeps(
@@ -4517,6 +4518,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     if (autoCapture.profile === "disabled") {
       return;
     }
+    const autoCaptureProfile = autoCapture.profile;
     const transcriptFile = normalizeText(update.sessionFile);
     const sessionKey = normalizeText(
       typeof update.sessionKey === "string" && update.sessionKey.trim()
@@ -4539,100 +4541,133 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       return;
     }
     const timestamp = extractTranscriptTimestamp(transcriptMessage);
-    const deterministicResponseStylePhraseMatch = await findApprovedResponseStylePhrasePatternMatch(
-      {
-        config: params.config,
+    const handledByDecisionStages = await runWriteHandledStages({
+      context: {
         text,
-        logger: params.logger,
+        agentExternalKey,
+        sessionKey,
+        transcriptFile,
+        ...(timestamp ? { timestamp } : {}),
       },
-    );
-    if (
-      deterministicResponseStylePhraseMatch &&
-      (await handleResponseStyleDecision({
-        decision: {
-          action: "capture",
-          confidence: "high",
-          detectionSource: "deterministic",
-          evidence: ["approved_phrase_pattern_match"],
-          responseStyleFamily: deterministicResponseStylePhraseMatch.match.family,
-          match: toOrdinaryTurnResponseStyleMatch(deterministicResponseStylePhraseMatch.match),
-          reviewMode:
-            deterministicResponseStylePhraseMatch.match.family === "generalized_guidance"
-              ? "hold_for_more_evidence"
-              : "direct",
+      stages: [
+        {
+          id: "deterministic_response_style_phrase",
+          handle: async (context) => {
+            const deterministicResponseStylePhraseMatch =
+              await findApprovedResponseStylePhrasePatternMatch({
+                config: params.config,
+                text: context.text,
+                logger: params.logger,
+              });
+            if (!deterministicResponseStylePhraseMatch) {
+              return false;
+            }
+            return handleResponseStyleDecision({
+              decision: {
+                action: "capture",
+                confidence: "high",
+                detectionSource: "deterministic",
+                evidence: ["approved_phrase_pattern_match"],
+                responseStyleFamily: deterministicResponseStylePhraseMatch.match.family,
+                match: toOrdinaryTurnResponseStyleMatch(
+                  deterministicResponseStylePhraseMatch.match,
+                ),
+                reviewMode:
+                  deterministicResponseStylePhraseMatch.match.family === "generalized_guidance"
+                    ? "hold_for_more_evidence"
+                    : "direct",
+              },
+              observedText: context.text,
+              agentExternalKey: context.agentExternalKey,
+              sessionKey: context.sessionKey,
+              transcriptFile: context.transcriptFile,
+              ...(context.timestamp ? { timestamp: context.timestamp } : {}),
+            });
+          },
         },
-        observedText: text,
-        agentExternalKey,
-        sessionKey,
-        transcriptFile,
-        ...(timestamp ? { timestamp } : {}),
-      }))
-    ) {
-      return;
-    }
-    const responseStyleDecision = await detectResponseStyleCaptureDecision(
-      text,
-      autoCapture.profile,
-      params.config,
-    );
-    if (
-      responseStyleDecision &&
-      (await handleResponseStyleDecision({
-        decision: responseStyleDecision,
-        observedText: text,
-        agentExternalKey,
-        sessionKey,
-        transcriptFile,
-        ...(timestamp ? { timestamp } : {}),
-      }))
-    ) {
-      return;
-    }
-    const projectFactDecision = await detectProjectFactCaptureDecision(text, autoCapture.profile);
-    if (
-      projectFactDecision &&
-      (await handleProjectFactDecision({
-        decision: projectFactDecision,
-        agentExternalKey,
-        sessionKey,
-        transcriptFile,
-        ...(timestamp ? { timestamp } : {}),
-      }))
-    ) {
-      return;
-    }
-    const recurringProcedureDecision = await detectRecurringProcedureCaptureDecision(
-      text,
-      autoCapture.profile,
-    );
-    if (
-      recurringProcedureDecision &&
-      (await handleRecurringProcedureDecision({
-        decision: recurringProcedureDecision,
-        agentExternalKey,
-        sessionKey,
-        transcriptFile,
-        ...(timestamp ? { timestamp } : {}),
-      }))
-    ) {
-      return;
-    }
-    const workflowImprovementDecision = await detectWorkflowImprovementCaptureDecision(
-      text,
-      autoCapture.profile,
-      params.config,
-    );
-    if (
-      workflowImprovementDecision &&
-      (await handleWorkflowImprovementDecision({
-        decision: workflowImprovementDecision,
-        text,
-        agentExternalKey,
-        sessionKey,
-        transcriptFile,
-        ...(timestamp ? { timestamp } : {}),
-      }))
-    ) {
+        {
+          id: "response_style",
+          handle: async (context) => {
+            const responseStyleDecision = await detectResponseStyleCaptureDecision(
+              context.text,
+              autoCaptureProfile,
+              params.config,
+            );
+            if (!responseStyleDecision) {
+              return false;
+            }
+            return handleResponseStyleDecision({
+              decision: responseStyleDecision,
+              observedText: context.text,
+              agentExternalKey: context.agentExternalKey,
+              sessionKey: context.sessionKey,
+              transcriptFile: context.transcriptFile,
+              ...(context.timestamp ? { timestamp: context.timestamp } : {}),
+            });
+          },
+        },
+        {
+          id: "project_fact",
+          handle: async (context) => {
+            const projectFactDecision = await detectProjectFactCaptureDecision(
+              context.text,
+              autoCaptureProfile,
+            );
+            if (!projectFactDecision) {
+              return false;
+            }
+            return handleProjectFactDecision({
+              decision: projectFactDecision,
+              agentExternalKey: context.agentExternalKey,
+              sessionKey: context.sessionKey,
+              transcriptFile: context.transcriptFile,
+              ...(context.timestamp ? { timestamp: context.timestamp } : {}),
+            });
+          },
+        },
+        {
+          id: "recurring_procedure",
+          handle: async (context) => {
+            const recurringProcedureDecision = await detectRecurringProcedureCaptureDecision(
+              context.text,
+              autoCaptureProfile,
+            );
+            if (!recurringProcedureDecision) {
+              return false;
+            }
+            return handleRecurringProcedureDecision({
+              decision: recurringProcedureDecision,
+              agentExternalKey: context.agentExternalKey,
+              sessionKey: context.sessionKey,
+              transcriptFile: context.transcriptFile,
+              ...(context.timestamp ? { timestamp: context.timestamp } : {}),
+            });
+          },
+        },
+        {
+          id: "workflow_improvement",
+          handle: async (context) => {
+            const workflowImprovementDecision = await detectWorkflowImprovementCaptureDecision(
+              context.text,
+              autoCaptureProfile,
+              params.config,
+            );
+            if (!workflowImprovementDecision) {
+              return false;
+            }
+            return handleWorkflowImprovementDecision({
+              decision: workflowImprovementDecision,
+              text: context.text,
+              agentExternalKey: context.agentExternalKey,
+              sessionKey: context.sessionKey,
+              transcriptFile: context.transcriptFile,
+              ...(context.timestamp ? { timestamp: context.timestamp } : {}),
+            });
+          },
+        },
+      ],
+    });
+    if (handledByDecisionStages) {
       return;
     }
     const match = parseOrdinaryTurnAutoCapturePreference(text, autoCapture.profile);

@@ -115,20 +115,26 @@ The next major phase is no longer core flattening.
 
 The post-v6 deep review changed the next move again.
 
-The next major move should now be:
+The pre-capture hardening tranche is now landed.
 
-- request-path cost hardening
-- application/token-efficiency hardening
-- write-path action-stage decomposition
+It delivered:
+
+- request-path cost hardening for shared semantic fallback work and shared
+  database access in touched hot paths
+- cheaper prompt-facing durable-memory application shaping
+- shared write-path action stages for candidate resolution/dispatch
+- proof-step dispatch hardening as bounded carryover closeout
 
 Why:
 
 - the remaining core flattening blockers are now landed
-- the post-v6 deep review found that the request path is still too expensive,
-  the durable-memory application layer is still too prompt-heavy, and the main
-  write-path orchestrators are still too monolithic for self-improving capture
-- learned-guidance advisory planning and new families still remain later than
-  that hardening tranche and any later capture reevaluation
+- the post-v6 deep review found that the request path was still too expensive,
+  the durable-memory application layer was still too prompt-heavy, and the
+  main write-path orchestrators were still too monolithic for self-improving
+  capture
+- those hardening slices are now live, so the next honest move is reduced-profile
+  self-improving capture reevaluation rather than more substrate hardening by
+  default
 
 Later bounded cleanup can still remain:
 
@@ -143,7 +149,7 @@ The old flattening blockers are now cleared.
 Future expansion still waits on later phases, not because flattening is still
 unfinished, but because rollout sequencing still matters.
 
-Still not next:
+Still not live:
 
 - reduced-profile self-improving capture
 - learned-guidance advisory planning
@@ -151,9 +157,8 @@ Still not next:
 
 The reason is now sequencing and proof posture:
 
-- reduced-profile self-improving capture should be reevaluated first on the
-  stronger substrate only after the new hardening tranche rather than turned on
-  by roadmap habit
+- reduced-profile self-improving capture should be reevaluated now on the
+  hardened substrate rather than turned on by roadmap habit
 - learned-guidance advisory planning still waits for reduced-profile
   self-improving capture proof
 - new families remain later than both of those phases
@@ -181,11 +186,41 @@ The review did not reopen core flattening.
 
 It did change the next-step truth:
 
-- reduced-profile self-improving capture should not proceed next
-- the next honest work is hardening the request path, application/token
+- reduced-profile self-improving capture should not have proceeded directly
+- the next honest work was hardening the request path, application/token
   efficiency, and write-path action-stage structure before capture reevaluation
 - the flattening landings were real, but they were not proof that hot-path
   cost and scale risk were already acceptable
+
+## What pre-capture hardening batch v1 just improved
+
+The hardening tranche is now landed.
+
+It removed or reduced:
+
+- repeated query embedding, semantic backfill passes, and project semantic
+  search across fallback lanes
+- raw per-call `pg.Client` setup in the touched hot and semi-hot direct
+  callers
+- broad static durable-memory prompt narration in favor of smaller policy-shaped
+  guidance
+- branch-heavy top-level orchestration in candidate submit and ordinary-turn
+  auto-capture
+- the remaining central proof-step switch in the proof executor
+
+It did not replace:
+
+- reduced-profile self-improving capture itself
+- later learned-guidance advisory planning
+- later new-family expansion
+
+## What happens next
+
+The next major move should now be:
+
+- reduced-profile self-improving capture reevaluation on the hardened substrate
+- then the smallest honest bounded first tranche only if that reevaluation
+  stays positive
 
 ## How the hardening tranche scales
 

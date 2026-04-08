@@ -236,6 +236,15 @@ export type MemoryProofRunResult = {
   steps: MemoryProofStepResult[];
 };
 
+type MemoryProofStepRunnerParams = {
+  step: MemoryProofStep;
+  runtime: MemoryMiddlewareRuntime;
+  cfg: OpenClawConfig;
+  config: MemoryMiddlewareConfig;
+  logger: PluginLogger;
+  resultsById: Map<string, MemoryProofStepResult>;
+};
+
 type SubmittedCaptureRecord = {
   metadata?: Record<string, unknown>;
   eventId?: string;
@@ -792,6 +801,85 @@ async function runHybridSearchStep(params: {
   };
 }
 
+const MEMORY_PROOF_STEP_RUNNERS = {
+  transcript_capture: async (
+    params: MemoryProofStepRunnerParams & {
+      step: z.infer<typeof MemoryProofTranscriptCaptureStepSchema>;
+    },
+  ) =>
+    runTranscriptCaptureStep({
+      step: params.step,
+      runtime: params.runtime,
+      cfg: params.cfg,
+      config: params.config,
+      logger: params.logger,
+    }),
+  candidate_review: async (
+    params: MemoryProofStepRunnerParams & {
+      step: z.infer<typeof MemoryProofCandidateReviewStepSchema>;
+    },
+  ) =>
+    runCandidateReviewStep({
+      step: params.step,
+      runtime: params.runtime,
+      resultsById: params.resultsById,
+    }),
+  candidate_promote_memory: async (
+    params: MemoryProofStepRunnerParams & {
+      step: z.infer<typeof MemoryProofCandidatePromoteMemoryStepSchema>;
+    },
+  ) =>
+    runCandidatePromoteMemoryStep({
+      step: params.step,
+      runtime: params.runtime,
+      resultsById: params.resultsById,
+    }),
+  candidate_promote_procedure: async (
+    params: MemoryProofStepRunnerParams & {
+      step: z.infer<typeof MemoryProofCandidatePromoteProcedureStepSchema>;
+    },
+  ) =>
+    runCandidatePromoteProcedureStep({
+      step: params.step,
+      runtime: params.runtime,
+      resultsById: params.resultsById,
+    }),
+  procedure_validate: async (
+    params: MemoryProofStepRunnerParams & {
+      step: z.infer<typeof MemoryProofProcedureValidateStepSchema>;
+    },
+  ) =>
+    runProcedureValidateStep({
+      step: params.step,
+      runtime: params.runtime,
+      resultsById: params.resultsById,
+    }),
+  hybrid_search: async (
+    params: MemoryProofStepRunnerParams & {
+      step: z.infer<typeof MemoryProofHybridSearchStepSchema>;
+    },
+  ) =>
+    runHybridSearchStep({
+      step: params.step,
+      runtime: params.runtime,
+      cfg: params.cfg,
+      resultsById: params.resultsById,
+    }),
+} satisfies {
+  [K in MemoryProofStep["kind"]]: (
+    params: MemoryProofStepRunnerParams & { step: Extract<MemoryProofStep, { kind: K }> },
+  ) => Promise<MemoryProofStepResult>;
+};
+
+async function runMemoryProofStep(
+  params: MemoryProofStepRunnerParams,
+): Promise<MemoryProofStepResult> {
+  const runner = MEMORY_PROOF_STEP_RUNNERS[params.step.kind] as (
+    params: MemoryProofStepRunnerParams,
+  ) => Promise<MemoryProofStepResult>;
+  return runner(params);
+}
+
 export function parseMemoryProofPlan(raw: unknown): MemoryProofPlan {
   const plan = MemoryProofPlanSchema.parse(raw);
   const seenIds = new Set<string>();
@@ -817,54 +905,14 @@ export async function runMemoryProofPlan(params: {
 
   const before = await snapshotGatewayHealth(params.gatewayBaseUrl);
   for (const step of params.plan.steps) {
-    let result: MemoryProofStepResult;
-    switch (step.kind) {
-      case "transcript_capture":
-        result = await runTranscriptCaptureStep({
-          step,
-          runtime: params.runtime,
-          cfg: params.cfg,
-          config,
-          logger: params.logger,
-        });
-        break;
-      case "candidate_review":
-        result = await runCandidateReviewStep({
-          step,
-          runtime: params.runtime,
-          resultsById,
-        });
-        break;
-      case "candidate_promote_memory":
-        result = await runCandidatePromoteMemoryStep({
-          step,
-          runtime: params.runtime,
-          resultsById,
-        });
-        break;
-      case "candidate_promote_procedure":
-        result = await runCandidatePromoteProcedureStep({
-          step,
-          runtime: params.runtime,
-          resultsById,
-        });
-        break;
-      case "procedure_validate":
-        result = await runProcedureValidateStep({
-          step,
-          runtime: params.runtime,
-          resultsById,
-        });
-        break;
-      case "hybrid_search":
-        result = await runHybridSearchStep({
-          step,
-          runtime: params.runtime,
-          cfg: params.cfg,
-          resultsById,
-        });
-        break;
-    }
+    const result = await runMemoryProofStep({
+      step,
+      runtime: params.runtime,
+      cfg: params.cfg,
+      config,
+      logger: params.logger,
+      resultsById,
+    });
     steps.push(result);
     resultsById.set(result.id, result);
   }

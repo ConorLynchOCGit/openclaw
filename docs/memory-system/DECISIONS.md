@@ -117,6 +117,19 @@ Current accepted framing:
 - family variance should live in registry policy and bounded adapters unless a
   path is honestly structurally distinct
 
+## 2026-04 — the pre-capture hardening tranche is now landed
+
+Current accepted framing:
+
+- request-path hardening is now live for shared semantic fallback work and
+  pooled access in the touched direct callers
+- prompt-facing durable-memory guidance is now intentionally compact and
+  policy-shaped rather than a long static speech
+- write-path orchestration now scales through explicit ordered stages in the
+  touched submission, auto-capture, and proof seams
+- reduced-profile self-improving capture reevaluation is now the next honest
+  move, not more default substrate hardening
+
 ## 2026-04 — should-fix-soon cleanup is real but secondary
 
 The following work is accepted as already-landed near-term cleanup:

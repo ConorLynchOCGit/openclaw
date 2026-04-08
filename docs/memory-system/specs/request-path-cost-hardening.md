@@ -1,5 +1,22 @@
 # Request-Path Cost Hardening
 
+## Landed status
+
+Landed in pre-capture hardening batch v1.
+
+What landed:
+
+- shared query-embedding reuse across semantic fallback lanes
+- one shared approved-project semantic search and workflow backfill pass for
+  the project semantic fallback families
+- pooled/shared database access in the touched hot and semi-hot direct callers
+
+What did not land:
+
+- a repo-wide database access rewrite
+- a retrieval-policy redesign
+- a full off-request-path background backfill system
+
 ## Purpose
 
 Define the first post-v6 hardening slice that should land before any

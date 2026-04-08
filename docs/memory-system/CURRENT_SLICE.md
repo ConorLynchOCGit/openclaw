@@ -2,26 +2,48 @@
 
 ## Active slice
 
-Post-v6 memory hardening before self-improving capture
+Reduced-profile self-improving capture reevaluation
 
 ## Objective
 
-Start the first honest post-flattening phase after flattening batch v6:
+Use the hardened post-v6 substrate to decide whether reduced-profile
+self-improving capture can now land without creating a second parallel memory
+system.
 
-- harden the remaining hot-path and orchestration weaknesses surfaced by the
-  post-v6 deep architecture review
-- do not move on to reduced-profile self-improving capture just because the
-  flattening checklist is finished
+- do not move directly to capture implementation by roadmap habit
+- do use the landed hardening batch as the baseline truth for the reevaluation
 
-## The three hardening slices
+## What just landed in pre-capture hardening batch v1
 
-1. request-path cost hardening
-2. application and token-efficiency hardening
-3. write-path action-stage decomposition
+### Slice 1 — request-path cost hardening
 
-## What just landed in flattening batch v6
+- project semantic fallback lanes now reuse one query embedding, one workflow
+  backfill pass, and one approved-project semantic search per request
+- touched hot/semi-hot direct callers now use shared pooled database access
+  instead of raw per-call `pg.Client` setup
 
-### Slice 16 — registry authority cleanup
+### Slice 2 — application and token-efficiency hardening
+
+- the durable-memory prompt section now renders as a compact policy-shaped
+  summary instead of a long static family speech
+- prompt guidance stays structural, but the ordinary-run token tax is lower
+
+### Slice 3 — write-path action-stage decomposition
+
+- candidate submit now runs through shared ordered stages for resolve-existing,
+  duplicate guard, submit, and post-submit auto-promotion
+- ordinary-turn auto-capture now dispatches capture handling through ordered
+  shared decision stages
+- proof coverage now includes executor-level stage threading
+
+### Slice 4 — bounded carryover closeout
+
+- proof-runner step execution now uses a shared step-runner table instead of a
+  remaining central switch
+
+## What just landed before this batch
+
+### Flattening batch v6
 
 - workflow-family mapping now derives from the registry instead of local helper
   switches
@@ -30,16 +52,12 @@ Start the first honest post-flattening phase after flattening batch v6:
 - proof-family visibility for phrase artifacts and workflow capture mapping no
   longer require separate runtime policy sources
 
-### Slice 17 — memory-family contract / boundary cleanup
-
 - `src/plugin-sdk/memory-family-policy.ts` now owns the shared family policy
   contract directly
 - `memory-core` no longer reaches a middleware implementation file through the
   public SDK path
 - `memory-middleware` now consumes the same shared contract through a local
   barrel instead of acting as the hidden source of truth
-
-### Slice 18 — deeper retrieval SQL normalization
 
 - approved and reviewable-candidate `get` / `list` / `basic` memory-object read
   surfaces now share one bounded read scaffold
@@ -71,12 +89,12 @@ Start the first honest post-flattening phase after flattening batch v6:
 
 The remaining core flattening sequence is now landed.
 
-### Must happen before capture reevaluation
+### Capture reevaluation baseline is now ready
 
-- request-path cost hardening for database access and semantic fallback
-- application/token-efficiency hardening for durable-memory prompt behavior
-- write-path action-stage decomposition for transcript auto-capture, candidate
-  submit, and proof execution
+- request-path cost hardening is landed
+- application/token-efficiency hardening is landed
+- write-path action-stage decomposition is landed
+- bounded proof-step dispatch closeout is landed
 
 ### Could still fix later
 
@@ -104,9 +122,11 @@ The remaining core flattening sequence is now landed.
 
 - the flattening blockers are now gone
 - the post-v6 deep review still found hot-path cost, prompt-weight, and
-  orchestration risks that make capture reevaluation premature
-- it does not remove the need for a dedicated reduced-profile
-  self-improving-capture proof and rollout plan after those issues are hardened
+  orchestration risks that made capture reevaluation premature until the new
+  hardening tranche landed
+- the hardening tranche is now landed, so the next honest work is the dedicated
+  reduced-profile self-improving-capture proof and rollout decision, not blind
+  enablement
 
 ## Decomposition rule for the hardening tranche
 
@@ -128,25 +148,24 @@ The remaining core flattening sequence is now landed.
 
 Still not next:
 
-- reduced-profile self-improving capture reevaluation
 - reduced-profile self-improving capture integration
 - learned-guidance advisory planning
 - new cross-domain families
 
-Those phases still wait for the post-v6 hardening tranche above.
+Those later phases still wait for the reevaluation outcome and any bounded
+first capture tranche.
 
 ## The next main implementation sequence
 
 The next main implementation sequence should now be:
 
-- request-path cost hardening, followed by application and token-efficiency
-  hardening, followed by write-path action-stage decomposition
+- reduced-profile self-improving capture reevaluation
+- bounded first capture tranche only if the reevaluation stays honest
 
 Reason:
 
 - the remaining core flattening blockers are now landed
-- the post-v6 deep review found that the current request path and
-  prompt/application shape are still too expensive and too indirect for
-  self-improving capture pressure
+- the pre-capture hardening tranche is now landed on top of that flatter
+  substrate
 - learned-guidance advisory planning and new families remain later than both
-  the hardening tranche and any later capture reevaluation
+  the reevaluation and any later bounded capture tranche
