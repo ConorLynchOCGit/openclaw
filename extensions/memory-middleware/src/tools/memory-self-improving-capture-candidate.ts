@@ -14,12 +14,12 @@ const MemorySelfImprovingCaptureCandidateToolSchema = Type.Object(
   {
     kind: Type.String({
       description:
-        "Reduced-profile self-improving output kind: learning, correction, procedure, or improvement.",
+        "Reduced-profile self-improving output kind. The current bounded tranche accepts improvement only.",
       minLength: 1,
     }),
     content: Type.String({
       description:
-        "Candidate-only self-improving adaptation content to route through the existing middleware candidate submission seam.",
+        "Candidate-only self-improving workflow-guidance content to route through the existing middleware candidate submission seam.",
       minLength: 1,
     }),
     requestedOutputPosture: Type.Optional(
@@ -83,7 +83,7 @@ export function createMemorySelfImprovingCaptureCandidateTool(params: {
     name: "memory_self_improving_capture_candidate",
     label: "Memory Self Improving Capture Candidate",
     description:
-      "Capture reduced-profile self-improving learnings, corrections, procedure suggestions, or improvement notes only as candidate-state artifacts through the existing memory middleware candidate seam.",
+      "Capture reduced-profile self-improving workflow-guidance outputs only as candidate-state artifacts through the existing memory middleware candidate seam.",
     parameters: MemorySelfImprovingCaptureCandidateToolSchema,
     async execute(_toolCallId: string, rawParams: MemorySelfImprovingCaptureCandidateRawParams) {
       const input = normalizeSelfImprovingCandidateCaptureInput({

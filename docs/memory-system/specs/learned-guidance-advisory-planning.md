@@ -25,14 +25,21 @@ already-auditable learned guidance.
 Live today:
 
 - approved lessons can influence retrieval and replies in bounded families
+- an inline learned-guidance advisory planner now exists behind
+  `learnedGuidanceAdvisoryPlanning.mode = inline-only`
+- the first live tranche is approved-only, workflow-guidance-only, and
+  advisory-only
+- conflicting workflow guidance is suppressed instead of silently collapsed
 - bounded proactive maintenance classes exist for:
   - `proactive_plan`
   - `proactive_execute_run_drift_check`
 
 Not live today:
 
-- advisory planning driven by approved generalized lessons
+- broader approved learned-guidance coverage beyond the bounded workflow
+  tranche
 - learned guidance influencing proactive plan suggestions
+- production enablement by default
 
 ## Non-goals
 

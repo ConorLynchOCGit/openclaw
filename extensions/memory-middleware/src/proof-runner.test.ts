@@ -90,6 +90,55 @@ describe("parseMemoryProofPlan", () => {
     });
   });
 
+  it("accepts self-improving capture steps with explicit lifecycle expectations", () => {
+    const plan = parseMemoryProofPlan({
+      mode: "isolated",
+      label: "self-improving workflow proof",
+      steps: [
+        {
+          id: "self_improving_capture",
+          kind: "self_improving_capture",
+          submissionKind: "improvement",
+          content:
+            "Workflow improvement: use scripts/committer instead of manual git add / git commit.",
+          projectId: "project-1",
+          expectation: {
+            family: "workflow_improvement",
+            key: "workflow_tool_gotcha:scripts_committer_required",
+            subjectKey: "workflow_tool_gotcha:scripts_committer_required",
+            projectId: "project-1",
+          },
+        },
+      ],
+    });
+
+    expect(plan.steps[0]).toMatchObject({
+      kind: "self_improving_capture",
+      submissionKind: "improvement",
+      expectation: {
+        family: "workflow_improvement",
+        key: "workflow_tool_gotcha:scripts_committer_required",
+      },
+    });
+  });
+
+  it("requires self-improving capture to declare either expectation or ignore mode", () => {
+    expect(() =>
+      parseMemoryProofPlan({
+        mode: "isolated",
+        label: "missing self-improving expectation",
+        steps: [
+          {
+            id: "self_improving_capture",
+            kind: "self_improving_capture",
+            submissionKind: "learning",
+            content: "Bounded learning without lifecycle expectation.",
+          },
+        ],
+      }),
+    ).toThrow(/self_improving_capture requires expectation or expectNoLifecycle/i);
+  });
+
   it("accepts workflow phrase-pattern transcript capture expectations", () => {
     const plan = parseMemoryProofPlan({
       mode: "isolated",
@@ -465,6 +514,63 @@ describe("runMemoryProofPlan", () => {
         },
         accepted: true,
         status: "promoted",
+      },
+    ]);
+  });
+
+  it("executes self-improving capture proof steps through the bounded runtime seam", async () => {
+    const capture = async () => ({
+      accepted: false as const,
+      status: "disabled" as const,
+      kind: "improvement" as const,
+      target: "candidate_only" as const,
+      reason: "self-improving candidate capture mode is not enabled",
+    });
+
+    const result = await runMemoryProofPlan({
+      plan: parseMemoryProofPlan({
+        mode: "isolated",
+        label: "self-improving executor proof",
+        steps: [
+          {
+            id: "self_improving_capture",
+            kind: "self_improving_capture",
+            submissionKind: "improvement",
+            content: "Workflow improvement: use scripts/committer for scoped commits.",
+            expectNoLifecycle: true,
+          },
+        ],
+      }),
+      cfg: { plugins: {} } as never,
+      runtime: {
+        config: {
+          database: {
+            driver: "postgres",
+            schema: "memory_middleware",
+            url: "",
+          },
+        },
+        selfImprovingCandidateCapture: { capture },
+      } as never,
+      logger: {
+        info() {},
+        warn() {},
+        error() {},
+        debug() {},
+      },
+    });
+
+    expect(result.steps).toEqual([
+      {
+        id: "self_improving_capture",
+        kind: "self_improving_capture",
+        artifacts: {},
+        submissionKind: "improvement",
+        accepted: false,
+        status: "disabled",
+        reason: "self-improving candidate capture mode is not enabled",
+        target: "candidate_only",
+        ignored: true,
       },
     ]);
   });

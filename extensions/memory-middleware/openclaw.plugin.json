@@ -88,6 +88,26 @@
           }
         }
       },
+      "selfImprovingCapture": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["disabled", "candidate-only"]
+          }
+        }
+      },
+      "learnedGuidanceAdvisoryPlanning": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["disabled", "inline-only"]
+          }
+        }
+      },
       "backgroundJobs": {
         "type": "object",
         "additionalProperties": false,

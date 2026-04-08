@@ -30,14 +30,17 @@ Live today:
 
 - a reduced-profile self-improving capture surface exists
 - it is candidate-only by design
-- it is disabled
-- provenance is already expected to distinguish self-improving origin
+- it is now integrated into the shared candidate pipeline
+- it is gated by `selfImprovingCapture.mode = candidate-only`
+- provenance distinguishes self-improving origin explicitly
+- blocked replay and duplicate handling now run on the shared workflow
+  improvement substrate
 
 Not live today:
 
-- integration into the generalized lesson pipeline
-- automatic conflict handling against native semantic capture
-- any production activation
+- production enablement by default
+- broader family coverage beyond the bounded workflow-guidance tranche
+- any direct approval or action-taking path
 
 ## Non-goals
 
@@ -92,6 +95,7 @@ as:
 
 The first integrated version may propose only:
 
+- supported workflow lessons
 - generalized workflow lessons
 - later approved extension targets explicitly added by spec
 
@@ -209,6 +213,9 @@ capture immediately after flattening. The stronger substrate work and the
 post-v6 hardening tranche documented in the roadmap and sequencing docs are
 hard prerequisites.
 
+That prerequisite sequence is now landed, but rollout still remains default-off
+until bounded proof shows the first tranche is worth enabling more broadly.
+
 ## Observability and audit
 
 Track at minimum:
@@ -246,5 +253,6 @@ The first implementation slice for this spec must prove:
 
 ## Open questions
 
-- should the first enabled self-improving input be transcript-derived only, or
-  may it also use bounded feedback memory as an input source?
+- should the first enabled self-improving input stay limited to the explicit
+  workflow-guidance source, or may one additional bounded source follow after
+  rollout proof?

@@ -45,6 +45,14 @@ export type MemoryMiddlewareAutoPromotionConfig = {
   allowedAgents: string[];
 };
 
+export type MemoryMiddlewareSelfImprovingCaptureConfig = {
+  mode: "disabled" | "candidate-only";
+};
+
+export type MemoryMiddlewareLearnedGuidanceAdvisoryPlanningConfig = {
+  mode: "disabled" | "inline-only";
+};
+
 export type MemoryMiddlewareConfig = {
   database: MemoryMiddlewareDbConfig;
   candidateIngress: MemoryMiddlewareCandidateIngressConfig;
@@ -52,6 +60,8 @@ export type MemoryMiddlewareConfig = {
   backgroundJobs: MemoryMiddlewareBackgroundJobConfig;
   autoCapture?: MemoryMiddlewareAutoCaptureConfig;
   autoPromotion?: MemoryMiddlewareAutoPromotionConfig;
+  selfImprovingCapture?: MemoryMiddlewareSelfImprovingCaptureConfig;
+  learnedGuidanceAdvisoryPlanning?: MemoryMiddlewareLearnedGuidanceAdvisoryPlanningConfig;
 };
 
 export const DEFAULT_MEMORY_MIDDLEWARE_AUTO_CAPTURE_CONFIG: MemoryMiddlewareAutoCaptureConfig = {
@@ -158,6 +168,20 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
           },
         },
       },
+      selfImprovingCapture: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          mode: { type: "string", enum: ["disabled", "candidate-only"] },
+        },
+      },
+      learnedGuidanceAdvisoryPlanning: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          mode: { type: "string", enum: ["disabled", "inline-only"] },
+        },
+      },
     },
   },
 };
@@ -174,6 +198,8 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
   const backgroundJobs = asRecord(root.backgroundJobs);
   const autoCapture = asRecord(root.autoCapture);
   const autoPromotion = asRecord(root.autoPromotion);
+  const selfImprovingCapture = asRecord(root.selfImprovingCapture);
+  const learnedGuidanceAdvisoryPlanning = asRecord(root.learnedGuidanceAdvisoryPlanning);
 
   const driver = database.driver === "postgres" ? "postgres" : "postgres";
   const url =
@@ -284,6 +310,10 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
         ),
       ].sort((left, right) => left.localeCompare(right))
     : ["chief", "main"];
+  const selfImprovingCaptureMode =
+    selfImprovingCapture.mode === "candidate-only" ? "candidate-only" : "disabled";
+  const learnedGuidanceAdvisoryPlanningMode =
+    learnedGuidanceAdvisoryPlanning.mode === "inline-only" ? "inline-only" : "disabled";
 
   return {
     database: {
@@ -318,6 +348,12 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
         autoPromotionAllowedAgents.length > 0
           ? [...autoPromotionAllowedAgents]
           : [...DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG.allowedAgents],
+    },
+    selfImprovingCapture: {
+      mode: selfImprovingCaptureMode,
+    },
+    learnedGuidanceAdvisoryPlanning: {
+      mode: learnedGuidanceAdvisoryPlanningMode,
     },
   };
 }

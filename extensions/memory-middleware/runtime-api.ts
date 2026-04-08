@@ -17,6 +17,7 @@ export {
   type MemoryMiddlewareCandidateIngressConfig,
   type MemoryMiddlewareDbConfig,
   type MemoryMiddlewareBackgroundJobConfig,
+  type MemoryMiddlewareLearnedGuidanceAdvisoryPlanningConfig,
   type MemoryMiddlewareMemoryObjectQueryConfig,
 } from "./src/config.js";
 export { createMemoryMiddlewareRuntime, type MemoryMiddlewareRuntime } from "./src/runtime.js";
@@ -197,6 +198,15 @@ export {
   type SelfImprovingCandidateCaptureRejectedResult,
   type SelfImprovingCandidateCaptureResult,
 } from "./src/self-improving-candidate-capture.js";
+export {
+  createLearnedGuidanceAdvisoryPlanningPort,
+  type LearnedGuidanceAdvisoryConflict,
+  type LearnedGuidanceAdvisoryPlanningInput,
+  type LearnedGuidanceAdvisoryPlanningPort,
+  type LearnedGuidanceAdvisoryPlanningRejectedResult,
+  type LearnedGuidanceAdvisoryPlanningResult,
+  type LearnedGuidanceAdvisoryPlanningSuggestion,
+} from "./src/learned-guidance-advisory-planning.js";
 export {
   createBackgroundJobSchedulerPort,
   type BackgroundJobSchedulerPort,

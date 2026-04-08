@@ -200,10 +200,10 @@ That hardening is now strong enough that:
 
 ## Phase F — reduced-profile self-improving capture reevaluation
 
-This is now the next major product phase after Phase E landed.
+This phase is now landed.
 
-It should begin now by proving whether reduced-profile self-improving capture
-can land on the hardened substrate strongly enough that:
+It proved that reduced-profile self-improving capture can land on the hardened
+substrate strongly enough that:
 
 - self-improving candidates enter the same family substrate
 - provenance stays explicit
@@ -213,19 +213,34 @@ can land on the hardened substrate strongly enough that:
 
 ## Phase G — reduced-profile self-improving capture bounded first tranche
 
-This remains conditional on Phase F staying positive.
+This phase is now landed as a bounded first tranche.
+
+Current tranche shape:
+
+- default-off through `selfImprovingCapture.mode = candidate-only`
+- workflow-guidance-only
+- candidate-only
+- explicit provenance
+- duplicate/replay handling on the shared substrate
 
 ## Phase H — learned-guidance advisory planning
 
-This remains later than both flattening and reduced-profile self-improving
-capture.
+This phase is now landed as a bounded inline-only advisory slice.
 
-It should build on:
+Current tranche shape:
 
-- the stronger flattened substrate
+- default-off through `learnedGuidanceAdvisoryPlanning.mode = inline-only`
 - approved-only retrieval
 - explicit application selection
-- explicit provenance from self-improving-origin candidates where relevant
+- advisory-only inline suggestions
+- conflict suppression instead of silent collapse
+
+## What comes next after Phase H
+
+The next honest move is not another missing implementation phase here.
+
+It is bounded rollout proof and observability for the newly landed
+self-improving and inline-advisory seams.
 
 ## Phase I — cross-domain family expansion
 
@@ -235,6 +250,7 @@ Cross-domain family expansion resumes only after:
 2. substrate authority / scale cleanup
 3. reduced-profile self-improving capture
 4. learned-guidance advisory planning
+5. bounded rollout proof for those new functional seams
 
 Recommended first tranche:
 

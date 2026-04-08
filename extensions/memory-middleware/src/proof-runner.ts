@@ -59,6 +59,27 @@ const MemoryProofTranscriptCaptureStepSchema = z
     message: "transcript_capture cannot combine expectation with expectNoLifecycle",
   });
 
+const MemoryProofSelfImprovingCaptureStepSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: z.literal("self_improving_capture"),
+    submissionKind: z.enum(["learning", "correction", "procedure", "improvement"]),
+    content: z.string().min(1),
+    sessionId: z.string().min(1).optional(),
+    projectId: z.string().min(1).optional(),
+    agentId: z.string().min(1).optional(),
+    requestedOutputPosture: z.string().min(1).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+    expectation: MemoryProofCaptureExpectationSchema.optional(),
+    expectNoLifecycle: z.literal(true).optional(),
+  })
+  .refine((value) => Boolean(value.expectation || value.expectNoLifecycle), {
+    message: "self_improving_capture requires expectation or expectNoLifecycle",
+  })
+  .refine((value) => !(value.expectation && value.expectNoLifecycle), {
+    message: "self_improving_capture cannot combine expectation with expectNoLifecycle",
+  });
+
 const MemoryProofCandidateReviewStepSchema = z
   .object({
     id: z.string().min(1),
@@ -141,6 +162,7 @@ const MemoryProofHybridSearchStepSchema = z.object({
 
 const MemoryProofStepSchema = z.discriminatedUnion("kind", [
   MemoryProofTranscriptCaptureStepSchema,
+  MemoryProofSelfImprovingCaptureStepSchema,
   MemoryProofCandidateReviewStepSchema,
   MemoryProofCandidatePromoteMemoryStepSchema,
   MemoryProofCandidatePromoteProcedureStepSchema,
@@ -181,6 +203,19 @@ export type MemoryProofStepResult =
       id: string;
       kind: "transcript_capture";
       artifacts: MemoryProofStepArtifacts;
+      expectation?: MemoryProofCaptureExpectation;
+      lifecycle?: LifecycleInspection;
+      ignored?: boolean;
+    }
+  | {
+      id: string;
+      kind: "self_improving_capture";
+      artifacts: MemoryProofStepArtifacts;
+      submissionKind: "learning" | "correction" | "procedure" | "improvement";
+      accepted: boolean;
+      status?: string;
+      reason?: string;
+      target?: "candidate_only";
       expectation?: MemoryProofCaptureExpectation;
       lifecycle?: LifecycleInspection;
       ignored?: boolean;
@@ -635,6 +670,78 @@ async function runTranscriptCaptureStep(params: {
   };
 }
 
+async function runSelfImprovingCaptureStep(params: {
+  step: z.infer<typeof MemoryProofSelfImprovingCaptureStepSchema>;
+  runtime: MemoryMiddlewareRuntime;
+  config: MemoryMiddlewareConfig;
+  logger: PluginLogger;
+}): Promise<MemoryProofStepResult> {
+  const result = await params.runtime.selfImprovingCandidateCapture.capture({
+    kind: params.step.submissionKind,
+    content: params.step.content,
+    ...(params.step.sessionId ? { sessionId: params.step.sessionId } : {}),
+    ...(params.step.projectId ? { projectId: params.step.projectId } : {}),
+    ...(params.step.agentId ? { agentId: params.step.agentId } : {}),
+    ...(params.step.requestedOutputPosture
+      ? { requestedOutputPosture: params.step.requestedOutputPosture }
+      : {}),
+    ...(params.step.metadata ? { metadata: params.step.metadata } : {}),
+  });
+
+  if (params.step.expectNoLifecycle) {
+    assert(
+      !result.accepted,
+      `self_improving_capture ${params.step.id} unexpectedly created lifecycle evidence`,
+    );
+    return {
+      id: params.step.id,
+      kind: "self_improving_capture",
+      artifacts: {},
+      submissionKind: params.step.submissionKind,
+      accepted: false,
+      status: result.status,
+      reason: result.reason,
+      target: result.target,
+      ignored: true,
+    };
+  }
+
+  assert(
+    result.accepted,
+    `self_improving_capture ${params.step.id} failed: ${
+      result.accepted ? "unexpected accepted result shape" : result.reason
+    }`,
+  );
+  assert(params.step.expectation, `self_improving_capture ${params.step.id} missing expectation`);
+  const lifecycle = await inspectLifecycle({
+    config: params.config,
+    logger: params.logger,
+    expectation: params.step.expectation,
+  });
+  const artifacts = lifecycle.artifacts;
+
+  assert(
+    artifacts.candidateId || artifacts.approvedObjectId || artifacts.validatedProcedureId,
+    `self_improving_capture ${params.step.id} did not create pending or approved lifecycle evidence`,
+  );
+
+  return {
+    id: params.step.id,
+    kind: "self_improving_capture",
+    artifacts: {
+      ...artifacts,
+      candidateEventId: result.eventId,
+      ...(artifacts.candidateId ? {} : { candidateId: result.memoryObjectId }),
+    },
+    submissionKind: params.step.submissionKind,
+    accepted: true,
+    status: result.status,
+    target: result.target,
+    expectation: params.step.expectation,
+    lifecycle,
+  };
+}
+
 async function runCandidateReviewStep(params: {
   step: z.infer<typeof MemoryProofCandidateReviewStepSchema>;
   runtime: MemoryMiddlewareRuntime;
@@ -811,6 +918,17 @@ const MEMORY_PROOF_STEP_RUNNERS = {
       step: params.step,
       runtime: params.runtime,
       cfg: params.cfg,
+      config: params.config,
+      logger: params.logger,
+    }),
+  self_improving_capture: async (
+    params: MemoryProofStepRunnerParams & {
+      step: z.infer<typeof MemoryProofSelfImprovingCaptureStepSchema>;
+    },
+  ) =>
+    runSelfImprovingCaptureStep({
+      step: params.step,
+      runtime: params.runtime,
       config: params.config,
       logger: params.logger,
     }),

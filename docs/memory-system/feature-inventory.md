@@ -98,17 +98,17 @@ Backlog / flattening debt:
   layer, but not yet the final retrieval-fed per-memory-item substrate
 - retrieval control is much flatter, but later artifact/read-model convergence
   may still remain
-- reduced-profile self-improving capture still needs its own reevaluation and
-  rollout proof before it becomes live
-- reduced-profile self-improving capture reevaluation is now the next main
-  substrate move
+- reduced-profile self-improving capture is now implemented as a bounded
+  default-off tranche and still needs rollout proof before wider enablement
+- learned-guidance advisory planning is now implemented as a bounded
+  default-off inline slice and still needs rollout proof before wider enablement
 
 ## Not live yet
 
 Still not live:
 
-- reduced-profile self-improving capture on top of the stronger substrate
-- learned-guidance advisory planning
+- production-enabled reduced-profile self-improving capture
+- production-enabled learned-guidance advisory planning
 - new cross-domain families
 
 ## Read next

@@ -16,6 +16,7 @@ import {
   createDriftCheckExecutionPort,
   createFullCompactionFallbackPort,
   createMemoryObjectQueryPort,
+  createLearnedGuidanceAdvisoryPlanningPort,
   createProactiveExecutionPort,
   createProactivePlanningPort,
   createSessionMemoryCompactionPort,
@@ -37,6 +38,7 @@ import {
   createSelfImprovingCandidateCapturePort,
 } from "../../runtime-api.js";
 import { createCandidateIngressPort } from "../candidate-ingress.js";
+import { closeMemoryMiddlewarePgPools } from "../db/pg-pool.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import { findApprovedWorkflowPhrasePatternMatch } from "../workflow-phrase-induction.js";
 import { createCandidateGetTool } from "./candidate-get.js";
@@ -55,6 +57,7 @@ import { createMemoryConsolidationExecuteTool } from "./memory-consolidation-exe
 import { createMemoryConsolidationPlanTool } from "./memory-consolidation-plan.js";
 import { createMemoryDriftCheckExecuteTool } from "./memory-drift-check-execute.js";
 import { createMemoryFullCompactionFallbackExecuteTool } from "./memory-full-compaction-fallback-execute.js";
+import { createMemoryLearnedGuidancePlanTool } from "./memory-learned-guidance-plan.js";
 import { createMemoryObjectGetTool } from "./memory-object-get.js";
 import { createMemoryObjectListTool } from "./memory-object-list.js";
 import { createMemoryObjectSearchBasicTool } from "./memory-object-search-basic.js";
@@ -455,6 +458,8 @@ function createRuntime(params: {
     | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
     | "candidate-only";
   autoPromotionProfile?: "disabled" | "explicit-user-preference-v1";
+  selfImprovingMode?: "disabled" | "candidate-only";
+  learnedGuidanceMode?: "disabled" | "inline-only";
   queryMode?: "disabled" | "read-only" | "candidate-only";
   backgroundJobInspectionMode?: "disabled" | "enabled";
   backgroundJobAdvisorySchedulingMode?: "disabled" | "candidate-only";
@@ -480,6 +485,8 @@ function createRuntime(params: {
     mode: params.mode,
   });
   const fullCandidateMode = params.mode === "candidate-only" ? "candidate-only" : "disabled";
+  const selfImprovingMode = params.selfImprovingMode ?? "disabled";
+  const learnedGuidanceMode = params.learnedGuidanceMode ?? "disabled";
   const backgroundJobInspectionMode = params.backgroundJobInspectionMode ?? "disabled";
   const backgroundJobAdvisorySchedulingMode =
     params.backgroundJobAdvisorySchedulingMode ?? fullCandidateMode;
@@ -623,6 +630,14 @@ function createRuntime(params: {
     driftCheckExecution: scheduledDriftCheckExecution,
     mode: backgroundJobExecuteSchedulingMode,
   });
+  const candidateReview = createCandidateReviewPort({
+    db,
+    mode: candidateReviewMode,
+  });
+  const memoryObjectQuery = createMemoryObjectQueryPort({
+    db,
+    mode: queryMode,
+  });
 
   return {
     config: {
@@ -637,6 +652,12 @@ function createRuntime(params: {
       autoPromotion: {
         profile: params.autoPromotionProfile ?? "disabled",
         allowedAgents: ["chief", "main"],
+      },
+      selfImprovingCapture: {
+        mode: selfImprovingMode,
+      },
+      learnedGuidanceAdvisoryPlanning: {
+        mode: learnedGuidanceMode,
       },
       memoryObjectQuery: {
         mode: queryMode,
@@ -657,16 +678,53 @@ function createRuntime(params: {
     db,
     candidateIngress,
     selfImprovingCandidateCapture: createSelfImprovingCandidateCapturePort({
+      config: {
+        database: {
+          driver: "postgres",
+          url: params.connectionString,
+          schema: "memory_middleware",
+        },
+        candidateIngress: {
+          mode: params.mode,
+        },
+        autoPromotion: {
+          profile: params.autoPromotionProfile ?? "disabled",
+          allowedAgents: ["chief", "main"],
+        },
+        selfImprovingCapture: {
+          mode: selfImprovingMode,
+        },
+        learnedGuidanceAdvisoryPlanning: {
+          mode: learnedGuidanceMode,
+        },
+        memoryObjectQuery: {
+          mode: queryMode,
+        },
+        backgroundJobs: {
+          inspectionMode: backgroundJobInspectionMode,
+          advisorySchedulingMode:
+            backgroundJobAdvisorySchedulingMode === "candidate-only" ? "enabled" : "disabled",
+          advisoryJobClasses: backgroundJobAdvisoryJobClasses,
+          executeSchedulingMode:
+            backgroundJobExecuteSchedulingMode === "candidate-only" ? "enabled" : "disabled",
+          executeJobClasses: backgroundJobExecuteJobClasses,
+          ...(params.backgroundJobRunnerOwnerId
+            ? { runnerOwnerId: params.backgroundJobRunnerOwnerId }
+            : {}),
+        },
+      },
       candidateIngress,
-      mode: fullCandidateMode,
+      candidateReview,
+      mode: selfImprovingMode,
     }),
     candidateQuery: createCandidateQueryPort({
       db,
       mode: fullCandidateMode,
     }),
-    memoryObjectQuery: createMemoryObjectQueryPort({
-      db,
-      mode: queryMode,
+    memoryObjectQuery,
+    learnedGuidanceAdvisoryPlanning: createLearnedGuidanceAdvisoryPlanningPort({
+      memoryObjectQuery,
+      mode: learnedGuidanceMode,
     }),
     toolResultStore: createToolResultStorePort({
       db,
@@ -706,10 +764,7 @@ function createRuntime(params: {
       executeJobClasses: backgroundJobExecuteJobClasses,
       runnerOwnerId: params.backgroundJobRunnerOwnerId,
     }),
-    candidateReview: createCandidateReviewPort({
-      db,
-      mode: candidateReviewMode,
-    }),
+    candidateReview,
     candidatePromotionPlan: createCandidatePromotionPlanPort({
       db,
       mode: candidatePromotionMode,
@@ -856,7 +911,8 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     dbEnvironment = await startPostgresValidationEnvironment();
   }, 60_000);
 
-  afterAll(() => {
+  afterAll(async () => {
+    await closeMemoryMiddlewarePgPools();
     if (!dbEnvironment?.containerName) {
       return;
     }
@@ -1046,11 +1102,12 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
-  it("routes reduced-profile self-improving outputs only through the bounded candidate path", async () => {
+  it("routes reduced-profile self-improving workflow guidance only through the bounded candidate path", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
       mode: "candidate-only",
+      selfImprovingMode: "candidate-only",
       autoPromotionProfile: "explicit-user-preference-v1",
     });
     const tool = createMemorySelfImprovingCaptureCandidateTool({
@@ -1064,8 +1121,9 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     const countsBefore = await readTableCounts(dbEnvironment.connectionString);
 
     const result = await tool.execute("call-self-1", {
-      kind: "learning",
-      content: "Capture this as a bounded self-improving learning candidate.",
+      kind: "improvement",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
       projectId: seeded.projectId,
       metadata: {
         source: "integration-test",
@@ -1076,7 +1134,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     expect(result.details).toMatchObject({
       accepted: true,
       status: "accepted",
-      kind: "learning",
+      kind: "improvement",
       target: "candidate_only",
       storage: "database",
       reviewState: "candidate",
@@ -1092,15 +1150,29 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       event_name: string;
       payload: {
         submissionKind: string;
+        content: string;
         candidateMetadata: {
+          category: string;
           source: string;
           trigger: string;
+          subject_key: string;
           selfImprovingAdaptation: {
             source: string;
             upstreamSkill: string;
             profile: string;
+            origin: string;
             allowedOutputKind: string;
+            allowedFamilyId: string;
+            allowedLessonFamily: string;
             outputPosture: string;
+          };
+          autoCapture: {
+            source: string;
+            captureSeam: string;
+            lessonFamily: string;
+            key: string;
+            subjectKey: string;
+            toolName: string;
           };
         };
       };
@@ -1121,14 +1193,27 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       metadata: {
         submissionKind: string;
         candidateMetadata: {
+          category: string;
           source: string;
           trigger: string;
+          subject_key: string;
           selfImprovingAdaptation: {
             source: string;
             upstreamSkill: string;
             profile: string;
+            origin: string;
             allowedOutputKind: string;
+            allowedFamilyId: string;
+            allowedLessonFamily: string;
             outputPosture: string;
+          };
+          autoCapture: {
+            source: string;
+            captureSeam: string;
+            lessonFamily: string;
+            key: string;
+            subjectKey: string;
+            toolName: string;
           };
         };
       };
@@ -1143,21 +1228,36 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     );
     const countsAfter = await readTableCounts(dbEnvironment.connectionString);
 
-    expect(eventRow).toEqual({
+    expect(eventRow).toMatchObject({
       event_kind: "candidate_submission",
-      event_name: "candidate_submission.learning",
+      event_name: "candidate_submission.improvement",
       payload: {
-        submissionKind: "learning",
-        content: "Capture this as a bounded self-improving learning candidate.",
+        submissionKind: "improvement",
+        content: expect.stringContaining(
+          'Workflow improvement: use scripts/committer "<msg>" <file...>',
+        ),
         candidateMetadata: {
-          source: "integration-test",
+          category: "workflow_improvement",
+          source: "explicit_workflow_improvement",
           trigger: "repeated_mistake",
+          subject_key: expect.any(String),
           selfImprovingAdaptation: {
             source: "memory_self_improving_capture_candidate",
             upstreamSkill: "self-improving-agent",
             profile: "reduced_profile_candidate_only",
-            allowedOutputKind: "learning",
+            origin: "self_improving_capture",
+            allowedOutputKind: "improvement",
+            allowedFamilyId: "workflow_improvement",
+            allowedLessonFamily: "supported_lesson",
             outputPosture: "candidate_only",
+          },
+          autoCapture: {
+            source: "memory_self_improving_capture_candidate",
+            captureSeam: "self_improving_reduced_profile",
+            lessonFamily: "supported_lesson",
+            key: expect.any(String),
+            subjectKey: expect.any(String),
+            toolName: "memory_self_improving_capture_candidate",
           },
         },
       },
@@ -1165,19 +1265,32 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         source: "candidate-only-ingress",
       },
     });
-    expect(memoryRow).toEqual({
+    expect(memoryRow).toMatchObject({
       review_state: "candidate",
       metadata: {
-        submissionKind: "learning",
+        submissionKind: "improvement",
         candidateMetadata: {
-          source: "integration-test",
+          category: "workflow_improvement",
+          source: "explicit_workflow_improvement",
           trigger: "repeated_mistake",
+          subject_key: expect.any(String),
           selfImprovingAdaptation: {
             source: "memory_self_improving_capture_candidate",
             upstreamSkill: "self-improving-agent",
             profile: "reduced_profile_candidate_only",
-            allowedOutputKind: "learning",
+            origin: "self_improving_capture",
+            allowedOutputKind: "improvement",
+            allowedFamilyId: "workflow_improvement",
+            allowedLessonFamily: "supported_lesson",
             outputPosture: "candidate_only",
+          },
+          autoCapture: {
+            source: "memory_self_improving_capture_candidate",
+            captureSeam: "self_improving_reduced_profile",
+            lessonFamily: "supported_lesson",
+            key: expect.any(String),
+            subjectKey: expect.any(String),
+            toolName: "memory_self_improving_capture_candidate",
           },
         },
       },
@@ -1206,11 +1319,74 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
+  it("blocks self-improving replay after a matching candidate already exists", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      selfImprovingMode: "candidate-only",
+    });
+
+    const firstAttempt = await runtime.selfImprovingCandidateCapture.capture({
+      kind: "improvement",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+      projectId: seeded.projectId,
+      agentId: seeded.agentId,
+      sessionId: seeded.sessionId,
+      metadata: {
+        source: "integration-test",
+        trigger: "initial_capture",
+      },
+    });
+    expect(firstAttempt).toMatchObject({
+      accepted: true,
+      status: "accepted",
+      kind: "improvement",
+      target: "candidate_only",
+    });
+
+    const secondAttempt = await runtime.selfImprovingCandidateCapture.capture({
+      kind: "improvement",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+      projectId: seeded.projectId,
+      agentId: seeded.agentId,
+      sessionId: seeded.sessionId,
+      metadata: {
+        source: "integration-test",
+        trigger: "replay_capture",
+      },
+    });
+
+    expect(secondAttempt).toMatchObject({
+      accepted: false,
+      status: "blocked",
+      kind: "improvement",
+      target: "candidate_only",
+      reason: expect.stringContaining("already gathering evidence"),
+    });
+
+    const counts = await readTableCounts(dbEnvironment.connectionString);
+    expect(counts).toEqual({
+      memory_events: "1",
+      memory_objects: "1",
+      memory_reviews: "0",
+      procedures: "0",
+      procedure_runs: "0",
+      skill_candidates: "0",
+      memory_links: "0",
+      memory_sources: "1",
+      background_jobs: "0",
+    });
+  });
+
   it("blocks forbidden self-improving output targets without touching the database", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
       mode: "candidate-only",
+      selfImprovingMode: "candidate-only",
     });
     const tool = createMemorySelfImprovingCaptureCandidateTool({
       runtime,
@@ -1222,7 +1398,8 @@ integrationDescribe("memory candidate submit postgres integration", () => {
 
     const result = await tool.execute("call-self-2", {
       kind: "improvement",
-      content: "Do not allow direct approved output posture.",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
       projectId: seeded.projectId,
       requestedOutputPosture: "approved_memory",
     });
@@ -1255,6 +1432,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
       mode: "disabled",
+      selfImprovingMode: "disabled",
     });
     const tool = createMemorySelfImprovingCaptureCandidateTool({
       runtime,
@@ -1297,18 +1475,21 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       connectionString:
         "postgresql://postgres@127.0.0.1:1/memory_middleware_test?connect_timeout=1",
       mode: "candidate-only",
+      selfImprovingMode: "candidate-only",
     });
     const tool = createMemorySelfImprovingCaptureCandidateTool({ runtime });
 
     const result = await tool.execute("call-self-4", {
-      kind: "procedure",
-      content: "should fail cleanly when postgres is unreachable",
+      kind: "improvement",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+      projectId: randomUUID(),
     });
 
     expect(result.details).toMatchObject({
       accepted: false,
       status: "failed",
-      kind: "procedure",
+      kind: "improvement",
       target: "candidate_only",
     });
     expect((result.details as { reason: string }).reason).toContain("database is unavailable");
@@ -1406,7 +1587,8 @@ integrationDescribe("memory candidate submit postgres integration", () => {
 
     const result = await tool.execute("call-4", {
       kind: "correction",
-      content: "should fail cleanly when postgres is unreachable",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
     });
 
     expect(result.details).toMatchObject({
@@ -20486,6 +20668,193 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       embeddingModel: "missing-model",
       embeddingVersion: "v1",
       records: [],
+    });
+  });
+
+  it("returns advisory learned guidance from approved workflow memory without writing any rows", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
+      learnedGuidanceMode: "inline-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const learnedGuidanceTool = createMemoryLearnedGuidancePlanTool({ runtime });
+
+    const firstSubmit = await submitTool.execute("call-learned-guidance-1", {
+      kind: "improvement",
+      content: "Use pnpm test -- src/foo.test.ts instead of raw vitest here.",
+      projectId: seeded.projectId,
+    });
+    const candidateId = (firstSubmit.details as { memoryObjectId: string }).memoryObjectId;
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          update memory_middleware.memory_objects
+          set
+            created_at = now() - interval '10 seconds',
+            updated_at = now() - interval '10 seconds'
+          where id = $1::uuid
+        `,
+        [candidateId],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const confirmingSubmit = await submitTool.execute("call-learned-guidance-2", {
+      kind: "improvement",
+      content: "Use pnpm test -- src/foo.test.ts instead of raw vitest here.",
+      projectId: seeded.projectId,
+    });
+    const approvedMemoryObjectId = (
+      confirmingSubmit.details as { accepted: true; memoryObjectId: string }
+    ).memoryObjectId;
+
+    const countsBefore = await readTableCounts(dbEnvironment.connectionString);
+    const result = await learnedGuidanceTool.execute("call-learned-guidance-3", {
+      query: "should I use vitest or pnpm test here?",
+      projectId: seeded.projectId,
+      maxSuggestions: 2,
+    });
+    const countsAfter = await readTableCounts(dbEnvironment.connectionString);
+
+    expect(countsAfter).toEqual(countsBefore);
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "ok",
+      outcome: "guidance_available",
+      advisoryOnly: true,
+      applicationMode: "guidance_only",
+      suggestions: [
+        expect.objectContaining({
+          memoryObjectId: approvedMemoryObjectId,
+          toolKey: "vitest",
+          provenance: "native_capture",
+        }),
+      ],
+    });
+  });
+
+  it("suppresses conflicting approved learned guidance instead of guessing", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      learnedGuidanceMode: "inline-only",
+    });
+    const learnedGuidanceTool = createMemoryLearnedGuidancePlanTool({ runtime });
+
+    let conflictingMemoryIds: string[] = [];
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      const insert = await client.query<{ id: string }>(
+        `
+          insert into memory_middleware.memory_objects (
+            project_id,
+            agent_id,
+            session_id,
+            memory_kind,
+            review_state,
+            content,
+            metadata
+          )
+          values
+            ($1::uuid, $2::uuid, $3::uuid, 'project', 'approved', $4, $5::jsonb),
+            ($1::uuid, $2::uuid, $3::uuid, 'project', 'approved', $6, $7::jsonb)
+          returning id::text as id
+        `,
+        [
+          seeded.projectId,
+          seeded.agentId,
+          seeded.sessionId,
+          "Workflow improvement: for release proof notes, use PRE_CAPTURE_HARDENING_BATCH_REPORT_V1.md instead of ad hoc scratch notes.",
+          JSON.stringify({
+            candidateMetadata: {
+              autoCapture: {
+                lessonFamily: "generalized_workflow_lesson",
+                subjectKey: "release-proof-notes",
+                guidancePattern: "use_instead_of",
+                recommendedAction: "PRE_CAPTURE_HARDENING_BATCH_REPORT_V1.md",
+                avoidAction: "ad hoc scratch notes",
+              },
+              candidateLifecycle: {
+                family: "workflow_improvement",
+              },
+            },
+          }),
+          "Workflow improvement: for release proof notes, use SELF_IMPROVING_AND_ADVISORY_BATCH_REPORT_V1.md instead of ad hoc scratch notes.",
+          JSON.stringify({
+            candidateMetadata: {
+              autoCapture: {
+                lessonFamily: "generalized_workflow_lesson",
+                subjectKey: "release-proof-notes",
+                guidancePattern: "use_instead_of",
+                recommendedAction: "SELF_IMPROVING_AND_ADVISORY_BATCH_REPORT_V1.md",
+                avoidAction: "ad hoc scratch notes",
+              },
+              candidateLifecycle: {
+                family: "workflow_improvement",
+              },
+            },
+          }),
+        ],
+      );
+      conflictingMemoryIds = insert.rows.map((row) => row.id);
+    } finally {
+      await client.end();
+    }
+
+    const countsBefore = await readTableCounts(dbEnvironment.connectionString);
+    const result = await learnedGuidanceTool.execute("call-learned-guidance-4", {
+      query: "what should I use for release proof notes?",
+      projectId: seeded.projectId,
+    });
+    const countsAfter = await readTableCounts(dbEnvironment.connectionString);
+
+    expect(countsAfter).toEqual(countsBefore);
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "ok",
+      outcome: "conflict_suppressed",
+      suggestions: [],
+      suppressedConflicts: [
+        {
+          subjectKey: "release-proof-notes",
+          memoryObjectIds: conflictingMemoryIds,
+        },
+      ],
+    });
+  });
+
+  it("returns disabled for learned-guidance planning before touching the database when mode is off", async () => {
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      learnedGuidanceMode: "disabled",
+    });
+    const learnedGuidanceTool = createMemoryLearnedGuidancePlanTool({ runtime });
+
+    const countsBefore = await readTableCounts(dbEnvironment.connectionString);
+    const result = await learnedGuidanceTool.execute("call-learned-guidance-5", {
+      query: "what should I use for release proof notes?",
+    });
+    const countsAfter = await readTableCounts(dbEnvironment.connectionString);
+
+    expect(countsAfter).toEqual(countsBefore);
+    expect(result.details).toEqual({
+      accepted: false,
+      status: "disabled",
+      reason: "learned guidance advisory planning mode is not enabled",
     });
   });
 

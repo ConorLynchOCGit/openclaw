@@ -45,9 +45,91 @@ function createRuntime(params?: {
   };
 
   return {
+    config: {
+      database: {
+        driver: "postgres",
+        schema: "memory_middleware",
+      },
+      candidateIngress: {
+        mode: "candidate-only",
+      },
+      memoryObjectQuery: {
+        mode: "disabled",
+      },
+      backgroundJobs: {
+        inspectionMode: "disabled",
+        advisorySchedulingMode: "disabled",
+        executeSchedulingMode: "disabled",
+        advisoryJobClasses: ["proactive_plan"],
+        executeJobClasses: ["proactive_execute_run_drift_check"],
+      },
+      autoCapture: {
+        profile: "disabled",
+        allowedAgents: ["chief", "main"],
+      },
+      autoPromotion: {
+        profile: "disabled",
+        allowedAgents: ["chief", "main"],
+      },
+      selfImprovingCapture: {
+        mode: params?.mode ?? "candidate-only",
+      },
+    },
     candidateIngress,
+    candidateReview: {
+      review: vi.fn(async () => ({
+        accepted: true as const,
+        status: "recorded" as const,
+        candidateId: "candidate-previous",
+        outcome: "rejected" as const,
+        reviewId: "review-1",
+        memoryObjectStateChanged: true as const,
+        reviewState: "rejected" as const,
+      })),
+    },
     selfImprovingCandidateCapture: createSelfImprovingCandidateCapturePort({
+      config: {
+        database: {
+          driver: "postgres",
+          schema: "memory_middleware",
+        },
+        candidateIngress: {
+          mode: "candidate-only",
+        },
+        memoryObjectQuery: {
+          mode: "disabled",
+        },
+        backgroundJobs: {
+          inspectionMode: "disabled",
+          advisorySchedulingMode: "disabled",
+          executeSchedulingMode: "disabled",
+          advisoryJobClasses: ["proactive_plan"],
+          executeJobClasses: ["proactive_execute_run_drift_check"],
+        },
+        autoCapture: {
+          profile: "disabled",
+          allowedAgents: ["chief", "main"],
+        },
+        autoPromotion: {
+          profile: "disabled",
+          allowedAgents: ["chief", "main"],
+        },
+        selfImprovingCapture: {
+          mode: params?.mode ?? "candidate-only",
+        },
+      },
       candidateIngress: candidateIngress as unknown as CandidateIngressPort,
+      candidateReview: {
+        review: vi.fn(async () => ({
+          accepted: true as const,
+          status: "recorded" as const,
+          candidateId: "candidate-previous",
+          outcome: "rejected" as const,
+          reviewId: "review-1",
+          memoryObjectStateChanged: true as const,
+          reviewState: "rejected" as const,
+        })),
+      },
       mode: params?.mode ?? "candidate-only",
     }),
   } as unknown as MemoryMiddlewareRuntime & {
@@ -78,7 +160,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
     });
   });
 
-  it("routes valid reduced-profile outputs through the candidate-only ingress seam with provenance", async () => {
+  it("routes valid reduced-profile workflow-improvement outputs through the candidate-only ingress seam with provenance", async () => {
     const runtime = createRuntime();
     const tool = createMemorySelfImprovingCaptureCandidateTool({
       runtime,
@@ -89,35 +171,94 @@ describe("memory_self_improving_capture_candidate tool", () => {
     });
 
     const result = await tool.execute("call-1", {
-      kind: "procedure",
-      content: "Suggest a bounded procedure candidate from repeated success.",
-      projectId: "project-1",
+      kind: "improvement",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+      projectId: "11111111-1111-4111-8111-111111111111",
       metadata: { source: "unit-test" },
     });
 
-    expect(runtime.candidateIngress.submitProcedureSuggestion).toHaveBeenCalledWith({
-      kind: "procedure",
-      content: "Suggest a bounded procedure candidate from repeated success.",
-      metadata: {
-        source: "unit-test",
+    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+      projectId: "11111111-1111-4111-8111-111111111111",
+      metadata: expect.objectContaining({
+        category: "workflow_improvement",
+        source: "explicit_workflow_improvement",
+        subject_key: expect.any(String),
+        workflowPhraseInduction: {
+          observedText:
+            'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+        },
+        autoCapture: expect.objectContaining({
+          source: "memory_self_improving_capture_candidate",
+          captureSeam: "self_improving_reduced_profile",
+          captureClass: "workflow_tool_gotcha",
+          lessonFamily: "supported_lesson",
+          lessonKey: "scripts_committer_required",
+          toolKey: "scripts_committer",
+          key: expect.any(String),
+          subjectKey: expect.any(String),
+          toolName: "memory_self_improving_capture_candidate",
+        }),
+        semanticDetection: {
+          source: "workflow_improvement_semantic_v2",
+          detectionSource: "semantic",
+          confidence: "high",
+          lessonFamily: "supported_lesson",
+          lessonKey: "scripts_committer_required",
+          toolKey: "scripts_committer",
+          evidence: ["tool_scripts_committer", "commit_guidance", "replacement_phrase"],
+        },
+        candidateLifecycle: expect.objectContaining({
+          family: "workflow_improvement",
+          state: "pending_confirmation",
+          lessonFamily: "supported_lesson",
+          lessonKey: "scripts_committer_required",
+          toolKey: "scripts_committer",
+        }),
         selfImprovingAdaptation: {
           source: "memory_self_improving_capture_candidate",
           upstreamSkill: "self-improving-agent",
           profile: "reduced_profile_candidate_only",
-          allowedOutputKind: "procedure",
+          origin: "self_improving_capture",
+          allowedOutputKind: "improvement",
+          allowedFamilyId: "workflow_improvement",
+          allowedLessonFamily: "supported_lesson",
           outputPosture: "candidate_only",
         },
-      },
+      }),
     });
     expect(result.details).toEqual({
       accepted: true,
       status: "accepted",
-      kind: "procedure",
+      kind: "improvement",
       target: "candidate_only",
       storage: "database",
       reviewState: "candidate",
       eventId: "event-1",
       memoryObjectId: "memory-1",
+    });
+  });
+
+  it("blocks non-workflow-improvement kinds in the bounded first tranche", async () => {
+    const runtime = createRuntime();
+    const tool = createMemorySelfImprovingCaptureCandidateTool({ runtime });
+
+    const result = await tool.execute("call-1b", {
+      kind: "procedure",
+      content: "Suggest a bounded procedure candidate from repeated success.",
+      projectId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(runtime.candidateIngress.submitProcedureSuggestion).not.toHaveBeenCalled();
+    expect(result.details).toEqual({
+      accepted: false,
+      status: "blocked",
+      kind: "procedure",
+      target: "candidate_only",
+      reason:
+        "reduced-profile self-improving first tranche is limited to workflow-improvement candidates",
     });
   });
 
@@ -164,10 +305,10 @@ describe("memory_self_improving_capture_candidate tool", () => {
     });
 
     const notConfiguredRuntime = createRuntime({
-      learningResult: {
+      improvementResult: {
         accepted: false,
         status: "not_configured",
-        kind: "learning",
+        kind: "improvement",
         reason: "memory middleware database URL is not configured",
       },
     });
@@ -176,14 +317,16 @@ describe("memory_self_improving_capture_candidate tool", () => {
     });
 
     const notConfiguredResult = await notConfiguredTool.execute("call-4", {
-      kind: "learning",
-      content: "not configured path",
+      kind: "improvement",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+      projectId: "11111111-1111-4111-8111-111111111111",
     });
 
     expect(notConfiguredResult.details).toEqual({
       accepted: false,
       status: "not_configured",
-      kind: "learning",
+      kind: "improvement",
       target: "candidate_only",
       reason: "memory middleware database URL is not configured",
     });

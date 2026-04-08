@@ -2,153 +2,91 @@
 
 ## Purpose
 
-This doc records the honest next move after flattening batch v6 landed the
-remaining core flattening slices.
+This doc records the honest next move now that the first bounded
+self-improving and inline advisory batch is landed.
 
-## What is now already landed
+## What is already landed
 
-The following batches are already landed:
+The following are already landed:
 
 - flattening batches v1-v6
-- substrate support batch v1
+- pre-capture hardening batch v1
+- reduced-profile self-improving and advisory batch v1
 
 Most importantly, the repo now has live landings for:
 
-- full ingestion control-plane flattening
-- prompt-facing application-selection / behavior-planning
-- hybrid retrieval + semantic-routing control decisions
-- recurring-procedure staged substrate redesign
-- declarative correction-policy execution kinds / target kinds
-- proof lifecycle/artifact adapter dispatch
-- registry authority cleanup
-- memory-family contract / boundary cleanup
-- deeper retrieval SQL normalization for approved-vs-reviewable-candidate
-  simple memory-object reads
+- shared ingestion / review / proof substrate
+- shared family-policy contract ownership
+- request-path hardening
+- prompt/token-efficiency hardening
+- write-path action-stage hardening
+- reduced-profile self-improving capture on the shared candidate substrate
+- inline learned-guidance advisory planning on approved retrieval
 
-## What flattening batch v6 changed
+## Current bounded live posture
 
-- the registry now owns workflow-family mapping and phrase proof-family
-  ownership
-- plugin-sdk now owns the shared memory-family policy contract directly
-- approved-vs-reviewable-candidate `get` / `list` / `basic` reads now share
-  one bounded scaffold where the read surfaces already align
+The newly landed functional seams remain intentionally bounded:
+
+- `selfImprovingCapture.mode = candidate-only`
+- `learnedGuidanceAdvisoryPlanning.mode = inline-only`
+
+Current tranche boundaries:
+
+- self-improving capture is workflow-guidance-only
+- self-improving capture is candidate-only
+- learned-guidance planning is approved-only
+- learned-guidance planning is inline-only
+- learned-guidance planning is advisory-only
 
 ## Remaining recommended sequence
 
 ### Next major phase
 
-1. reduced-profile self-improving capture reevaluation on the hardened
-   substrate
-2. bounded reduced-profile self-improving capture first tranche if the
-   reevaluation stays honest
-3. learned-guidance advisory planning only after that
-4. new families only after those phases
+1. bounded rollout proof and observability for the new self-improving and
+   inline-advisory seams
+2. decide whether self-improving input coverage should widen or stay narrow
+3. cross-domain family expansion only after those rollout answers are clear
 
 ### Later bounded cleanup only if justified
 
-- artifact / read-model convergence if procedure and memory-object storage
-  still feel too separate under later pressure
+- artifact / read-model convergence if later rollout or new-family pressure
+  shows the procedure-versus-memory-object split is still too awkward
 - narrower retrieval cleanup only if later work exposes honest remaining
   duplication
-
-## Updated likely slice count
-
-Honest estimate now:
-
-- remaining core flattening slices: 0
-- pre-capture hardening tranche: landed
-- next major roadmap phase before any new family work: reduced-profile
-  self-improving capture reevaluation and only then its bounded first tranche
-- later bounded cleanup remains conditional, not precommitted
 
 ## What should land next
 
 The next implementation slice should now be:
 
-- reduced-profile self-improving capture reevaluation
+- bounded rollout proof for reduced-profile self-improving capture and inline
+  learned-guidance planning
 
 Why:
 
-- the old substrate blockers for registry authority and cross-boundary family
-  policy are now landed
-- the hardening tranche already addressed the request path, prompt/application
-  shaping, and write-path orchestration risks surfaced by the deep review
-- reduced-profile self-improving capture, learned-guidance advisory planning,
-  and new families remain ordered after that landing
-
-## Hardening tranche design rule
-
-The hardening tranche should scale through:
-
-- finite shared action stages
-- registry policy
-- bounded adapters
-
-It should not scale through one helper or runner per future family.
-
-## What can be parallelized
-
-Once the hardening tranche and reduced-profile self-improving capture
-reevaluation are stable:
-
-- bounded reduced-profile self-improving capture first-tranche implementation
-- later artifact/read-model convergence reevaluation if capture pressure
-  exposes it
-
-During implementation, only parallelize slices with genuinely disjoint write
-scopes or clearly one-way dependencies.
+- the substrate implementation work for these phases is now landed
+- the remaining risk is rollout truth, not missing shared architecture
+- widening scope before rollout proof would be the fastest way to recreate
+  accidental parallel policy paths
 
 ## What should not be parallelized prematurely
 
-- learned-guidance advisory planning implementation
+- broader self-improving family expansion
+- learned-guidance background scheduling or proactive execution
 - new family implementation
-- broad artifact/read-model redesign before the hardening tranche and later
-  capture reevaluation say it is necessary
-
-## Validation posture
-
-Higher-risk next phase:
-
-- reduced-profile self-improving capture reevaluation and first bounded tranche
-
-Moderate-risk later follow-up:
-
-- artifact/read-model convergence if later pressure shows it is still needed
-
-## What not to do during the remaining push
-
-- do not enable reduced-profile self-improving capture blindly
-- do not enable learned-guidance advisory planning yet
-- do not add new memory families yet
-- do not erase real family-policy differences
-- do not accept “the flattening checklist is done” as proof that request-path
-  and prompt-path cost is acceptable
-
-## Recommended grouping from here
-
-If you want the cheapest credible remaining order, use this grouping:
-
-1. reevaluate reduced-profile self-improving capture on the now-hardened
-   substrate
-2. land the smallest honest bounded first tranche if that reevaluation stays
-   positive
-3. only then consider learned-guidance advisory planning
-4. only later bounded hardening that still remains honest after those phases
-   land
+- broad artifact/read-model redesign before rollout pressure says it is needed
 
 ## Exit criteria before moving on
 
 Before new families:
 
-- proofing remains adapter-driven
-- registry authority is honest
-- memory-family policy crosses core/middleware/plugin boundaries cleanly
-- request-path cost is hardened enough not to collapse under added capture
-  pressure
-- write-path control surfaces scale through finite shared action stages rather
-  than one growing branch pile per family
-- reduced-profile self-improving capture is proven on the shared substrate
+- bounded rollout proof shows the self-improving tranche adds useful coverage
+  without noisy replay
+- provenance and audit stay explicit
+- approved retrieval remains the only authority for later application
+- inline advisory planning stays suggestion-only and conflict-safe
+- the new surfaces do not create a second hidden policy system
 
 ## Next implementation slice
 
-- reduced-profile self-improving capture reevaluation
+- bounded rollout proof and observability for the newly landed functional
+  seams

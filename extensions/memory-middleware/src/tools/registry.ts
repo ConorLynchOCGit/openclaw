@@ -16,6 +16,7 @@ import { createMemoryConsolidationExecuteTool } from "./memory-consolidation-exe
 import { createMemoryConsolidationPlanTool } from "./memory-consolidation-plan.js";
 import { createMemoryDriftCheckExecuteTool } from "./memory-drift-check-execute.js";
 import { createMemoryFullCompactionFallbackExecuteTool } from "./memory-full-compaction-fallback-execute.js";
+import { createMemoryLearnedGuidancePlanTool } from "./memory-learned-guidance-plan.js";
 import { createMemoryObjectGetTool } from "./memory-object-get.js";
 import { createMemoryObjectListTool } from "./memory-object-list.js";
 import { createMemoryObjectSearchBasicTool } from "./memory-object-search-basic.js";
@@ -63,6 +64,14 @@ export function registerMemoryMiddlewareTools(
         context: ctx,
       })) as OpenClawPluginToolFactory,
     { name: "memory_self_improving_capture_candidate" },
+  );
+  api.registerTool(
+    ((ctx) =>
+      createMemoryLearnedGuidancePlanTool({
+        runtime,
+        context: ctx,
+      })) as OpenClawPluginToolFactory,
+    { name: "memory_learned_guidance_plan" },
   );
   api.registerTool(
     ((ctx) =>

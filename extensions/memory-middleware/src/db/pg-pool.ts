@@ -40,3 +40,9 @@ export async function withMemoryMiddlewarePgClient<T>(params: {
     client.release();
   }
 }
+
+export async function closeMemoryMiddlewarePgPools(): Promise<void> {
+  const pools = [...poolsByConnectionString.values()];
+  poolsByConnectionString.clear();
+  await Promise.allSettled(pools.map((pool) => pool.end()));
+}

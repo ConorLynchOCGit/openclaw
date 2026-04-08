@@ -14,6 +14,12 @@ describe("resolveMemoryMiddlewareConfig", () => {
         profile: "disabled",
         allowedAgents: ["chief", "main"],
       },
+      selfImprovingCapture: {
+        mode: "disabled",
+      },
+      learnedGuidanceAdvisoryPlanning: {
+        mode: "disabled",
+      },
       backgroundJobs: {
         inspectionMode: "disabled",
         advisorySchedulingMode: "disabled",
@@ -31,6 +37,8 @@ describe("resolveMemoryMiddlewareConfig", () => {
       }),
     ).toMatchObject({
       candidateIngress: { mode: "candidate-only" },
+      selfImprovingCapture: { mode: "disabled" },
+      learnedGuidanceAdvisoryPlanning: { mode: "disabled" },
       backgroundJobs: {
         inspectionMode: "disabled",
         advisorySchedulingMode: "disabled",
@@ -91,6 +99,30 @@ describe("resolveMemoryMiddlewareConfig", () => {
         profile: "explicit-user-preference-v1",
         allowedAgents: ["chief", "main"],
       },
+    });
+  });
+
+  it("requires self-improving capture to opt in explicitly even when candidate ingress is candidate-only", () => {
+    expect(
+      resolveMemoryMiddlewareConfig({
+        candidateIngress: { mode: "candidate-only" },
+        selfImprovingCapture: { mode: "candidate-only" },
+      }),
+    ).toMatchObject({
+      candidateIngress: { mode: "candidate-only" },
+      selfImprovingCapture: { mode: "candidate-only" },
+    });
+  });
+
+  it("requires learned-guidance advisory planning to opt in explicitly", () => {
+    expect(
+      resolveMemoryMiddlewareConfig({
+        candidateIngress: { mode: "candidate-only" },
+        learnedGuidanceAdvisoryPlanning: { mode: "inline-only" },
+      }),
+    ).toMatchObject({
+      candidateIngress: { mode: "candidate-only" },
+      learnedGuidanceAdvisoryPlanning: { mode: "inline-only" },
     });
   });
 

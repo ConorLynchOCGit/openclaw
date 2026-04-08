@@ -2,26 +2,19 @@
 
 ## Current status snapshot
 
-The memory system completed practical parity across the six landed families and
-then landed flattening batches v1-v6 plus substrate support batch v1.
+The memory system has now completed:
 
-That is now enough to say the remaining core flattening work is landed.
+- practical family parity across the six current families
+- flattening batches v1-v6
+- the pre-capture hardening tranche
+- the first functional self-improving and learned-guidance batch
 
-The substrate is materially flatter in:
+Core flattening is landed.
 
-- ingestion
-- prompt-facing application planning
-- hybrid retrieval/routing behavior
-- recurring-procedure staging
-- declarative correction policy
-- proof dispatch
-- registry authority
-- memory-family boundary ownership
+Pre-capture hardening is landed.
 
-Flattening is no longer blocked on the old registry/boundary pair.
-
-That does not mean every later improvement is done. It means the remaining
-work is now later bounded follow-up, not the old core flattening sequence.
+The first bounded self-improving and inline advisory functionality is now
+implemented on the shared substrate.
 
 ## What is live now
 
@@ -38,130 +31,77 @@ Live substrate properties:
 
 - approved durable memory objects and validated procedures
 - approved-only hybrid retrieval
-- bounded clustered hold / approve / reject behavior where appropriate
-- explicit correction / supersede paths where appropriate
-- bounded reviewed phrase induction where justified
-- six-family registry
-- shared ingestion control plane across all six families
-- shared memory-object lifecycle inspection for several families
-- shared bounded correction / supersede substrate for several families
-- shared phrase-pattern substrate for workflow lessons and response style
-- shared retrieval feature composition for multiple approved-memory families
-- shared reviewable-candidate retrieval feature composition
-- shared validated-procedure subject-match feature composition
-- stronger unit seams for retrieval intent, prompt-facing application planning,
-  and semantic fallback eligibility
-- shared hybrid SQL scaffolding for approved and reviewable-candidate
-  memory-object search
-- typed correction-promotion policy inside the correction engine
-- prompt-facing application selection with selected items, suppressed items, and
-  rendering hints
-- shared hybrid retrieval-control decisions for query hints, project-family
-  shaping, and semantic fallback family routing
-- registry-owned workflow-family mapping and phrase-proof-family ownership
-- plugin-sdk-owned shared memory-family policy contract consumed by both
-  `memory-core` and `memory-middleware`
-- shared approved-vs-reviewable-candidate read scaffolding for hybrid, get,
-  list, and basic memory-object reads
+- shared family registry and shared family-policy SDK seam
+- staged recurring-procedure substrate
+- declarative correction policy
+- adapterized proof execution
+- shared write-path action stages in the touched capture/submit seams
+- request-path hardening for pooled access and shared semantic fallback work
+- compact prompt-facing durable-memory application shaping
+- reduced-profile self-improving capture proof support
+- reduced-profile self-improving capture first tranche
+- inline learned-guidance advisory planning first tranche
 
-## What is live but still only partially flattened
+## What is live but still bounded
 
-- application-selection layer
-- retrieval + semantic-routing control plane
-- unified clustered lifecycle
-- unified phrase-pattern engine
-- retrieval feature framework
+The newly landed functional surfaces are intentionally bounded:
 
-These are all real landed substrate improvements.
+- `selfImprovingCapture.mode = candidate-only`
+- `learnedGuidanceAdvisoryPlanning.mode = inline-only`
 
-They are also still partial in at least one important way:
+Current live bounds:
 
-- application selection is not yet the final retrieval-fed per-memory-item
-  substrate
-- later artifact / read-model convergence may still be warranted if procedures
-  and memory objects still feel too separate under later pressure
+- self-improving capture is workflow-guidance-only
+- self-improving capture is candidate-only
+- self-improving capture has no direct approval authority
+- learned-guidance planning reads approved retrieval only
+- learned-guidance planning is inline-only and advisory-only
+- learned-guidance planning suppresses conflicting guidance instead of guessing
 
-## What batch v6 just improved
+## What is still not live by default
 
-Flattening batch v6 landed the remaining core flattening work plus one bounded
-retrieval cleanup slice:
+Still not live by default:
 
-1. registry authority cleanup
-2. memory-family contract / boundary cleanup
-3. deeper retrieval SQL normalization
+- production-enabled reduced-profile self-improving capture
+- production-enabled learned-guidance advisory planning
+- broader self-improving family coverage
+- learned-guidance planning that feeds proactive execution or scheduling
+- new cross-domain memory families
 
-Those improvements are real.
+## What the functional batch changed
 
-They removed or reduced:
+The functional batch landed three real slices:
 
-- duplicate workflow-family mapping helpers outside the registry
-- phrase proof-family ownership living outside the registry
-- the public SDK middleware re-export boundary smell around family policy
-- repeated approved-vs-reviewable-candidate `get` / `list` / `basic` query
-  scaffolding
-- another layer of accidental duplication around simple memory-object
-  read-surface selection
+1. reduced-profile self-improving capture reevaluation
+2. bounded reduced-profile self-improving capture first tranche
+3. learned-guidance advisory planning
 
-They did not replace:
+It removed or reduced:
 
-- the final retrieval-fed per-memory-item application substrate
-- optional later artifact/read-model convergence work
-- the need to reevaluate reduced-profile self-improving capture honestly before
-  enabling it
+- docs-only uncertainty about whether self-improving capture could fit the
+  shared substrate
+- the risk of creating a second parallel candidate/review system for the first
+  self-improving tranche
+- the need to hide learned guidance inside vague prompt prose instead of a
+  structural runtime seam
+
+It did not replace:
+
+- production rollout proof
+- wider self-improving input coverage
+- new family expansion
 
 ## What happens next
 
-The next major phase is no longer core flattening.
+The next major move is no longer another substrate refactor phase.
 
-The post-v6 deep review changed the next move again.
+The next major move should be:
 
-The pre-capture hardening tranche is now landed.
-
-It delivered:
-
-- request-path cost hardening for shared semantic fallback work and shared
-  database access in touched hot paths
-- cheaper prompt-facing durable-memory application shaping
-- shared write-path action stages for candidate resolution/dispatch
-- proof-step dispatch hardening as bounded carryover closeout
-
-Why:
-
-- the remaining core flattening blockers are now landed
-- the post-v6 deep review found that the request path was still too expensive,
-  the durable-memory application layer was still too prompt-heavy, and the
-  main write-path orchestrators were still too monolithic for self-improving
-  capture
-- those hardening slices are now live, so the next honest move is reduced-profile
-  self-improving capture reevaluation rather than more substrate hardening by
-  default
-
-Later bounded cleanup can still remain:
-
-- artifact / read-model convergence if later self-improving or new-family
-  pressure shows the current procedure-versus-memory-object split is still too
-  awkward
-
-## Why future expansion still remains later
-
-The old flattening blockers are now cleared.
-
-Future expansion still waits on later phases, not because flattening is still
-unfinished, but because rollout sequencing still matters.
-
-Still not live:
-
-- reduced-profile self-improving capture
-- learned-guidance advisory planning
-- major cross-domain family expansion
-
-The reason is now sequencing and proof posture:
-
-- reduced-profile self-improving capture should be reevaluated now on the
-  hardened substrate rather than turned on by roadmap habit
-- learned-guidance advisory planning still waits for reduced-profile
-  self-improving capture proof
-- new families remain later than both of those phases
+1. bounded rollout proof and observability for the new self-improving and
+   inline learned-guidance seams
+2. only then a decision on widening the self-improving tranche or keeping it
+   narrow
+3. cross-domain family expansion only after those answers are known
 
 ## What remains intentionally different
 
@@ -172,68 +112,9 @@ The reason is now sequencing and proof posture:
 - semantic routing remains hybrid-first and family-gated
 - phrase induction remains family-eligible, not universal
 
-## Not live yet
-
-Still not live:
-
-- reduced-profile self-improving capture on top of the now-stronger substrate
-- learned-guidance advisory planning
-- new cross-domain families beyond the current six
-
-## What the post-v6 deep review changed
-
-The review did not reopen core flattening.
-
-It did change the next-step truth:
-
-- reduced-profile self-improving capture should not have proceeded directly
-- the next honest work was hardening the request path, application/token
-  efficiency, and write-path action-stage structure before capture reevaluation
-- the flattening landings were real, but they were not proof that hot-path
-  cost and scale risk were already acceptable
-
-## What pre-capture hardening batch v1 just improved
-
-The hardening tranche is now landed.
-
-It removed or reduced:
-
-- repeated query embedding, semantic backfill passes, and project semantic
-  search across fallback lanes
-- raw per-call `pg.Client` setup in the touched hot and semi-hot direct
-  callers
-- broad static durable-memory prompt narration in favor of smaller policy-shaped
-  guidance
-- branch-heavy top-level orchestration in candidate submit and ordinary-turn
-  auto-capture
-- the remaining central proof-step switch in the proof executor
-
-It did not replace:
-
-- reduced-profile self-improving capture itself
-- later learned-guidance advisory planning
-- later new-family expansion
-
-## What happens next
-
-The next major move should now be:
-
-- reduced-profile self-improving capture reevaluation on the hardened substrate
-- then the smallest honest bounded first tranche only if that reevaluation
-  stays positive
-
-## How the hardening tranche scales
-
-The accepted design rule for this tranche is:
-
-- do not decompose into one helper per family
-- do decompose into finite shared action stages
-- move family variance into registry policy and bounded adapters
-- keep only genuinely structurally distinct paths special-cased
-
 ## Read next
 
 - `/memory-system/CURRENT_SLICE`
 - `/memory-system/NEXT_SUBSTRATE_PUSH_PLAN`
-- `/memory-system/FLATTENING_EXECUTION_PLAN`
 - `/memory-system/memory-roadmap`
+- `/memory-system/specs/implementation-sequencing`

@@ -130,6 +130,38 @@ Current accepted framing:
 - reduced-profile self-improving capture reevaluation is now the next honest
   move, not more default substrate hardening
 
+## 2026-04 — the first self-improving tranche is workflow-guidance-only
+
+Current accepted framing:
+
+- reduced-profile self-improving capture now lands through an explicit
+  `selfImprovingCapture.mode = candidate-only` gate
+- the first live tranche is bounded to workflow-guidance improvement candidates
+- the seam remains candidate-only and provenance-explicit
+- the first tranche must not write approved memory directly or bypass the
+  shared review path
+
+## 2026-04 — learned-guidance advisory planning is inline-only and approved-only
+
+Current accepted framing:
+
+- learned-guidance advisory planning now lands through an explicit
+  `learnedGuidanceAdvisoryPlanning.mode = inline-only` gate
+- the first live tranche reads only approved workflow guidance through the
+  normal approved retrieval path
+- it remains advisory-only, conflict-safe, and non-authoritative
+- it must not enqueue work, execute actions, or silently redefine family
+  policy
+
+## 2026-04 — rollout proof is now the next honest move
+
+Current accepted framing:
+
+- the self-improving and learned-guidance implementation slices are now landed
+- the next missing truth is rollout behavior, not shared substrate design
+- the repo should not widen self-improving coverage or start new family work
+  until rollout proof shows the bounded tranche is worth extending
+
 ## 2026-04 — should-fix-soon cleanup is real but secondary
 
 The following work is accepted as already-landed near-term cleanup:

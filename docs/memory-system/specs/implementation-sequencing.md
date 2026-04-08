@@ -12,19 +12,23 @@ for:
 
 ## Current sequencing conclusion
 
-The accepted post-v3 review required multiple more flatten/refactor slices.
+The old core flattening sequence is landed.
 
-Those remaining core slices are now landed through flattening batch v6.
+The pre-capture hardening tranche is landed.
+
+The first bounded self-improving and learned-guidance functionality batch is
+also landed.
 
 The next honest phase is therefore no longer:
 
 - another core flattening slice
-- learned-guidance advisory planning
-- broad family expansion
+- another default hardening slice
+- another missing self-improving/advisory implementation slice
 
 The next honest phase is:
 
-- post-v6 memory hardening on the stronger substrate
+- bounded rollout proof and observability for the newly landed functional
+  seams
 
 ## Completed order so far
 
@@ -46,103 +50,89 @@ Historical completed order:
 14. flattening batch v4
 15. flattening batch v5
 16. flattening batch v6
+17. pre-capture hardening batch v1
+18. reduced-profile self-improving and advisory batch v1
 
 ## Recommended next order
 
-### Next major substrate work
+### Next major rollout work
 
-1. reduced-profile self-improving capture reevaluation
-2. bounded reduced-profile self-improving capture first tranche if the
-   reevaluation stays honest
-
-### Could fix later
-
-3. artifact / read-model convergence if procedure and memory-object storage
-   still feel too separate under later pressure
-4. narrower retrieval cleanup only if later work exposes honest remaining
-   duplication
+1. bounded rollout proof for reduced-profile self-improving capture and inline
+   learned-guidance planning
+2. widen the self-improving tranche only if rollout evidence justifies it
 
 ### Later phases
 
-5. learned-guidance advisory planning
-6. cross-domain family expansion tranche 1
-7. cross-domain family expansion tranche 2
+3. cross-domain family expansion tranche 1
+4. cross-domain family expansion tranche 2
+
+### Could still fix later
+
+5. artifact / read-model convergence if rollout or new-family pressure shows
+   it is still needed
+6. narrower retrieval cleanup only if later work exposes honest remaining
+   duplication
 
 ## Why this order is recommended
 
-- the old flattening blockers for registry authority and family-policy boundary
-  exposure are now landed
-- the post-v6 deep review found that the request path, prompt/application
-  layer, and orchestration surfaces needed hardening before capture
-  reevaluation was honest
-- the pre-capture hardening tranche is now landed
-- learned-guidance advisory planning should still wait until reduced-profile
-  self-improving capture is proven
+- the shared substrate work for these functional seams is now landed
+- the newly landed surfaces are intentionally default-off and bounded
+- the remaining question is rollout behavior and metrics, not architecture
+- widening scope before rollout proof would risk recreating hidden policy paths
 
-## Hard prerequisites before reduced-profile self-improving capture
+## Hard prerequisites before widening self-improving coverage
 
 These are now landed:
 
 - recurring procedures are on a cleaner staged substrate
-- correction policy no longer depends on legacy stringly gates
+- correction policy no longer depends on legacy string gates
 - proofing is adapter-driven
 - registry authority is honest enough to carry later learned pressure
 - memory-family policy crosses core/middleware/plugin seams cleanly
+- request-path cost, prompt shaping, and write-path orchestration hardening
+  are live
+- reduced-profile self-improving capture is integrated into the shared
+  candidate substrate
+- inline learned-guidance advisory planning reads through approved retrieval
 
-These hardening prerequisites are now landed:
+Before widening coverage further, the repo should prove:
 
-- database access and semantic fallback hot paths are flatter and cheaper in
-  the touched request path
-- durable-memory application shaping is more compact and less static
-- transcript auto-capture, candidate submit, and proof execution now expose
-  ordered stage seams instead of only top-level branch piles
-- proof execution now has executor-level coverage in addition to parser/helper
-  coverage
-
-## Hard prerequisites before learned-guidance advisory planning
-
-- reduced-profile self-improving capture is production-proven
-- application selection and retrieval/routing are stable enough that advisory
-  logic is not compensating for substrate gaps
+- the first self-improving tranche adds useful signal instead of replay noise
+- provenance remains explicit through review and later approval
+- inline learned-guidance planning stays low-noise and conflict-safe
 
 ## Hard prerequisites before new cross-domain families
 
-- reduced-profile self-improving capture is proven on the shared substrate
-- learned-guidance advisory planning is stable enough to extend
-- the later artifact/read-model cleanup queue is understood well enough not to
-  surprise new families immediately after landing
+- bounded rollout proof for the new functional seams is complete
+- the repo knows whether self-improving input coverage should stay narrow or
+  widen
+- advisory planning remains a helper, not a second authority
 
-## What can proceed in parallel
+## What can proceed in parallel later
 
-Once the hardening tranche and reduced-profile self-improving capture
-reevaluation are stable:
+Once rollout proof is stable:
 
-- bounded reduced-profile self-improving capture first-tranche implementation
-- later artifact/read-model convergence design only if capture pressure
+- design for cross-domain family expansion tranche 1
+- later artifact/read-model convergence design only if rollout pressure
   exposes it
 
 Implementation itself should still stay narrow and proofable.
 
 ## What must not proceed in parallel
 
-- learned-guidance advisory planning implementation
-- new family implementation
-- broad artifact/read-model redesign before the hardening tranche and later
-  capture reevaluation say it is necessary
+- broader self-improving family expansion before rollout proof
+- learned-guidance background execution
+- new family implementation before rollout truth is clear
 
 ## Proof posture
 
-Every remaining substrate-adjacent slice must prove both:
+Every remaining phase must prove both:
 
 1. no regression in current family behavior
-2. real reduction in accidental parallelism
+2. no reintroduction of parallel authority paths
 
-The post-flattening phases are not honest if they reintroduce family-specific
-control planes on top of the now-shared substrate.
+The self-improving and learned-guidance phases are only honest while:
 
-For the write-path hardening slice specifically:
-
-- family count must not become the new decomposition axis
-- action-stage count should remain the shared axis
-- registry policy and bounded adapters should carry family variance wherever
-  the runtime structure is not honestly distinct
+- self-improving capture remains candidate-only unless explicitly widened later
+- approved retrieval remains the only authority for later application
+- advisory planning remains read-and-suggest only

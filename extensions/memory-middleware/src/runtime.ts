@@ -36,6 +36,10 @@ import {
   createFullCompactionFallbackPort,
   type FullCompactionFallbackPort,
 } from "./full-compaction-fallback.js";
+import {
+  createLearnedGuidanceAdvisoryPlanningPort,
+  type LearnedGuidanceAdvisoryPlanningPort,
+} from "./learned-guidance-advisory-planning.js";
 import { createMemoryObjectQueryPort, type MemoryObjectQueryPort } from "./memory-object-query.js";
 import {
   createProactiveExecutionPort,
@@ -103,6 +107,7 @@ export type MemoryMiddlewareRuntime = {
   db: MemoryMiddlewareDb;
   candidateIngress: CandidateIngressPort;
   selfImprovingCandidateCapture: SelfImprovingCandidateCapturePort;
+  learnedGuidanceAdvisoryPlanning: LearnedGuidanceAdvisoryPlanningPort;
   candidateQuery: CandidateQueryPort;
   memoryObjectQuery: MemoryObjectQueryPort;
   toolResultStore: ToolResultStorePort;
@@ -340,6 +345,10 @@ function skillCandidateInstallMode(
 export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMiddlewareRuntime {
   const config = resolveMemoryMiddlewareConfig(api.pluginConfig);
   const fullCandidateMode = isFullCandidateMode(config) ? "candidate-only" : "disabled";
+  const selfImprovingCaptureMode =
+    config.selfImprovingCapture?.mode === "candidate-only" ? "candidate-only" : "disabled";
+  const learnedGuidanceAdvisoryPlanningMode =
+    config.learnedGuidanceAdvisoryPlanning?.mode === "inline-only" ? "inline-only" : "disabled";
   const submitMode = candidateIngressMode(config);
   const reviewMode = candidateReviewMode(config);
   const promotionMode = candidatePromotionMode(config);
@@ -366,6 +375,10 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
   const candidateIngress = createCandidateIngressPort({
     db,
     mode: submitMode,
+  });
+  const candidateReview = createCandidateReviewPort({
+    db,
+    mode: reviewMode,
   });
   const driftCheckExecution = createDriftCheckExecutionPort({
     db,
@@ -405,23 +418,30 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
     driftCheckExecution: scheduledDriftCheckExecution,
     mode: backgroundJobExecuteSchedulingMode,
   });
+  const memoryObjectQuery = createMemoryObjectQueryPort({
+    db,
+    mode: config.memoryObjectQuery.mode,
+  });
 
   return {
     config,
     db,
     candidateIngress,
     selfImprovingCandidateCapture: createSelfImprovingCandidateCapturePort({
+      config,
       candidateIngress,
-      mode: fullCandidateMode,
+      candidateReview,
+      mode: selfImprovingCaptureMode,
+    }),
+    learnedGuidanceAdvisoryPlanning: createLearnedGuidanceAdvisoryPlanningPort({
+      memoryObjectQuery,
+      mode: learnedGuidanceAdvisoryPlanningMode,
     }),
     candidateQuery: createCandidateQueryPort({
       db,
       mode: fullCandidateMode,
     }),
-    memoryObjectQuery: createMemoryObjectQueryPort({
-      db,
-      mode: config.memoryObjectQuery.mode,
-    }),
+    memoryObjectQuery,
     toolResultStore: createToolResultStorePort({
       db,
       mode: fullCandidateMode,
@@ -460,10 +480,7 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
       executeJobClasses: config.backgroundJobs.executeJobClasses,
       runnerOwnerId: config.backgroundJobs.runnerOwnerId,
     }),
-    candidateReview: createCandidateReviewPort({
-      db,
-      mode: reviewMode,
-    }),
+    candidateReview,
     candidatePromotionPlan: createCandidatePromotionPlanPort({
       db,
       mode: promotionMode,
