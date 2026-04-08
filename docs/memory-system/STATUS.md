@@ -3,8 +3,12 @@
 ## Current status snapshot
 
 The memory system completed practical parity across the six landed families and
-then landed three flattening batches. That was enough to materially reduce
-duplication. It was not enough to honestly say flattening is almost done.
+then landed four flattening batches plus one support batch.
+
+That is now enough to say the substrate is materially flatter in ingestion,
+prompt-facing application planning, and hybrid retrieval/routing behavior.
+
+It is still not enough to call flattening complete.
 
 ## What is live now
 
@@ -25,98 +29,92 @@ Live substrate properties:
 - explicit correction / supersede paths where appropriate
 - bounded reviewed phrase induction where justified
 - six-family registry
-- shared workflow-family ingestion resolver
+- shared ingestion control plane across all six families
 - shared memory-object lifecycle inspection for several families
 - shared bounded correction / supersede substrate for several families
 - shared phrase-pattern substrate for workflow lessons and response style
 - shared retrieval feature composition for multiple approved-memory families
 - shared reviewable-candidate retrieval feature composition
 - shared validated-procedure subject-match feature composition
-- unit seams for retrieval intent, current durable-memory guidance planning,
+- stronger unit seams for retrieval intent, prompt-facing application planning,
   and semantic fallback eligibility
 - shared hybrid SQL scaffolding for approved and reviewable-candidate
   memory-object search
 - typed correction-promotion policy inside the correction engine
+- prompt-facing application selection with selected items, suppressed items, and
+  rendering hints
+- shared hybrid retrieval-control decisions for query hints, project-family
+  shaping, and semantic fallback family routing
 
-## What is live but only partially flattened
+## What is live but still only partially flattened
 
 - family-definition registry
-- unified ingestion resolver
 - unified clustered lifecycle
 - unified correction / supersede
+- unified phrase-pattern engine
 - retrieval feature framework
-- behavior-profile layer
+- prompt-facing application-selection layer
+- retrieval + semantic-routing control plane
 - registry-driven proof inspection
 
 These are all real landed substrate improvements.
 
-They are also all still partial in at least one important way:
+They are also still partial in at least one important way:
 
 - the registry is not yet fully authoritative
-- ingestion is not yet unified across all six families
-- retrieval is not yet one control plane
-- behavior-profile is not yet the actual application-selection layer
+- procedures still keep too much separate staged subsystem shape
+- correction policy is still not fully declarative
+- application selection is not yet the final retrieval-fed per-memory-item
+  substrate
 - proofing is not yet adapter-driven
 
-## What the support batch just improved
+## What batch v4 just improved
 
-The first support batch landed three bounded improvements:
+Flattening batch v4 landed three main control-plane slices:
 
-- testability hardening
-- hybrid SQL scaffolding reduction
-- stringly correction-policy cleanup
+- full ingestion control-plane flattening
+- application-selection / behavior-planning layer
+- retrieval + semantic-routing control-plane flattening
 
-Those improvements are real, but they did not replace the main substrate work.
+Those improvements are real.
 
-They de-risked:
+They removed or reduced:
 
-- future retrieval/routing flattening proof
-- future application-selection implementation proof
-- future correction-policy cleanup
+- the remaining duplicated transcript/tool ingestion paths for response style,
+  project facts, and recurring procedures
+- prompt rendering as the effective durable-memory policy owner
+- duplicated hybrid query-intent inference between the query layer and tool
+  wrapper
+- unconditional semantic fallback routing for clearly scoped hybrid asks
 
 They did not replace:
 
-- ingestion control-plane flattening
-- application-selection layer work
-- retrieval + semantic-routing control-plane flattening
-
-## What the accepted review changed
-
-The accepted post-v3 review concluded that the old roadmap/status/current-slice
-pack was too optimistic.
-
-The main correction is:
-
-- the repo is not down to one narrow flattening closeout slice
-
-Instead, the remaining work still includes major substrate seams that should be
-fixed before reduced-profile self-improving capture, and some additional seams
-that should be fixed before new families.
+- recurring-procedure staged substrate redesign
+- correction-policy cleanup
+- proof-runner adapterization
+- registry authority cleanup
+- memory-family contract / boundary cleanup
 
 ## What happens next
 
 The next major phase is still flattening the family substrate.
 
-But the remaining flattening work is now explicitly larger than previously
-stated.
+The remaining execution order is now:
 
-### Blockers before reduced-profile self-improving capture
+### Remaining blockers before reduced-profile self-improving capture
 
-1. full ingestion control-plane flattening
-2. real application-selection / behavior-planning layer
-3. retrieval + semantic-routing control-plane flattening
-4. recurring-procedure staged substrate redesign
-5. correction-policy cleanup
+1. recurring-procedure staged substrate redesign
+2. correction-policy cleanup
 
-### Blockers before adding new families
+### Remaining blockers before adding new families
 
-6. proof-runner adapterization
-7. registry authority cleanup
-8. memory-family contract / boundary cleanup
+3. proof-runner adapterization
+4. registry authority cleanup
+5. memory-family contract / boundary cleanup
 
 ### Recently landed support work
 
-- stronger unit seams around retrieval intent, current behavior guidance
+- stronger unit seams around retrieval intent, prompt-facing application
   planning, and semantic fallback
 - reduced hybrid SQL scaffolding duplication between approved and candidate
   read surfaces
@@ -132,7 +130,7 @@ stated.
 
 ## Why flattening still comes before future expansion
 
-Flattening remains required before:
+Flattening still remains required before:
 
 - reduced-profile self-improving capture
 - learned-guidance advisory planning
@@ -140,12 +138,13 @@ Flattening remains required before:
 
 The reason is still architectural:
 
-- the current six families are functionally close enough
-- the remaining problem is still accidental parallelism
-- self-improving capture would increase pressure on the still-incomplete shared
-  substrate
-- new families would still expand several branch-heavy control planes if added
-  now
+- the six active families now share much more substrate
+- the largest remaining risk is the procedure subsystem and the remaining
+  authority/proof boundaries
+- self-improving capture would still increase pressure on the not-yet-finished
+  staged and proofing substrate
+- new families would still lean on registry/proof/boundary seams that are not
+  ready to scale honestly
 
 ## What remains intentionally different
 
@@ -160,7 +159,7 @@ The reason is still architectural:
 
 Still not live:
 
-- fully flattened family substrate
+- fully finished family substrate flattening
 - reduced-profile self-improving capture on top of the stronger substrate
 - learned-guidance advisory planning
 - new cross-domain families beyond the current six
@@ -168,6 +167,6 @@ Still not live:
 ## Read next
 
 - `/memory-system/CURRENT_SLICE`
-- `/memory-system/POST_V3_ARCHITECTURE_REVIEW`
 - `/memory-system/NEXT_SUBSTRATE_PUSH_PLAN`
+- `/memory-system/FLATTENING_EXECUTION_PLAN`
 - `/memory-system/memory-roadmap`

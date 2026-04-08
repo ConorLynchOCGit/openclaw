@@ -3,8 +3,8 @@
 ## Current active architectural decisions
 
 This file records the currently active architecture decisions that govern the
-memory roadmap after flattening batch v3 and the accepted post-v3 architecture
-review.
+memory roadmap after flattening batch v4, substrate support batch v1, and the
+accepted post-v3 architecture review.
 
 ## 2026-04 — practical parity was enough to enter flattening, not enough to move on
 
@@ -50,12 +50,13 @@ The next substrate work must collapse accidental duplication across:
 - registry authority
 - memory-family contract boundaries
 
-## 2026-04 — behavior-profile and proofing are only partially landed
+## 2026-04 — application selection and proofing are only partially landed
 
 Current accepted framing:
 
-- behavior-profile is partially landed as prompt-support infrastructure
-- it is not yet the real application-selection layer
+- the repo now has prompt-facing application selection with selected items,
+  suppressed items, and rendering hints
+- it is not yet the final retrieval-fed per-memory-item selection substrate
 - proofing is partially flattened
 - it is not yet a fully adapter-driven proof substrate
 
@@ -74,23 +75,20 @@ It is not yet accepted as the full substrate control plane because:
 
 Before reduced-profile self-improving capture, the repo must land:
 
-1. full ingestion control-plane flattening
-2. real application-selection / behavior-planning layer
-3. retrieval + semantic-routing control-plane flattening
-4. recurring-procedure staged substrate redesign
-5. correction-policy cleanup
+1. recurring-procedure staged substrate redesign
+2. correction-policy cleanup
 
 ## 2026-04 — new families wait for additional authority and scale cleanup
 
 Before new memory families, the repo must also land:
 
-6. proof-runner adapterization
-7. registry authority cleanup
-8. memory-family contract / boundary cleanup
+3. proof-runner adapterization
+4. registry authority cleanup
+5. memory-family contract / boundary cleanup
 
 ## 2026-04 — should-fix-soon cleanup is real but secondary
 
-The following work is accepted as important near-term cleanup:
+The following work is accepted as already-landed near-term cleanup:
 
 - improve unit seams around retrieval intent, application selection, and
   semantic fallback
@@ -99,5 +97,5 @@ The following work is accepted as important near-term cleanup:
 - replace remaining stringly control-flow with closed policy enums or adapter
   registration
 
-These should be planned soon, but they do not replace the primary blocker
-sequence above.
+These improved proofability and rollout safety, but they did not replace the
+primary blocker sequence above.

@@ -1,121 +1,121 @@
 # Flattening Execution Plan
 
-## Why this plan changed after batch v3
+## Why this plan changed after batches v3 and v4
 
-The first three flattening batches landed real shared substrate work.
+The first four flattening batches plus the first support batch landed real
+shared substrate work.
 
-They did not, however, honestly reduce the remaining work to one narrow
-closeout slice.
+The accepted post-v3 architecture review was still correct:
 
-The accepted post-v3 architecture review changed the execution posture from:
+- flattening was not down to one narrow closeout slice
 
-- one more flattening cleanup slice
+Batch v4 then landed the next three main control-plane slices, which changes
+the remaining execution posture again.
 
-to:
+The remaining work is now smaller, but still real:
 
-- multiple more control-plane and authority cleanup slices before
-  self-improving capture
+- procedure redesign
+- correction-policy cleanup
+- proof / registry / boundary cleanup
 
 ## What is genuinely flattened already
 
 ### Landed shared substrate
 
 1. family-definition registry
-2. workflow-family ingestion resolver
+2. full ingestion control plane across all six families
 3. shared clustered lifecycle inspection for several memory-object families
 4. bounded correction / supersede planning for several families
 5. shared phrase-pattern engine for workflow lessons and response style
 6. approved-memory retrieval feature composition across several families
 7. reviewable-candidate retrieval feature composition bridge
 8. validated-procedure subject-match retrieval feature bridge
-9. shared prompt-support behavior-profile helper
-10. less fragmented proof-family wiring
-11. stronger unit seams for retrieval intent, current durable-memory guidance
+9. prompt-facing application selection with selected/suppressed family guidance
+10. shared hybrid retrieval-control decisions for query hints, project-family
+    shaping, and semantic fallback family routing
+11. less fragmented proof-family wiring
+12. stronger unit seams for retrieval intent, prompt-facing application
     planning, and semantic fallback
-12. shared hybrid memory-object SQL scaffolding for approved and
+13. shared hybrid memory-object SQL scaffolding for approved and
     reviewable-candidate surfaces
-13. typed correction-promotion policy inside the correction engine
+14. typed correction-promotion policy inside the correction engine
 
 ### What remains only partially flattened
 
-- ingestion across all six families
-- behavior/application selection
-- retrieval and semantic routing
 - recurring-procedure substrate shape
 - correction-policy control plane
 - proofing
 - registry authority
 - memory-family contract boundaries
+- deeper retrieval normalization after the procedure redesign
 
 ## Remaining execution sequence
 
-### Phase C — blockers before reduced-profile self-improving capture
+### Phase C — remaining blockers before reduced-profile self-improving capture
 
-1. full ingestion control-plane flattening
-2. real application-selection / behavior-planning layer
-3. retrieval + semantic-routing control-plane flattening
-4. recurring-procedure staged substrate redesign
-5. correction-policy cleanup
+1. recurring-procedure staged substrate redesign
+2. correction-policy cleanup
 
-### Phase D — blockers before new families
+### Phase D — remaining blockers before new families
 
-6. proof-runner adapterization
-7. registry authority cleanup
-8. memory-family contract / boundary cleanup
-
-### Recently landed support work
-
-9. memory testability hardening
-10. retrieval SQL scaffolding reduction
-11. stringly-control-flow cleanup
+3. proof-runner adapterization
+4. registry authority cleanup
+5. memory-family contract / boundary cleanup
 
 ### Could fix later
 
-12. deeper retrieval SQL normalization after control-plane unification
-13. artifact / read-model convergence after the procedure redesign proves out
+6. deeper retrieval SQL normalization after the procedure redesign
+7. artifact / read-model convergence after the procedure redesign proves out
 
-## Why this order is recommended
+## Why this remaining order is recommended
 
-- ingestion is still the largest duplicated family-control seam
-- application selection should not stay implied by prompt text or query
-  reshaping
-- retrieval/routing should flatten before new learned capture increases
+- procedures are the last major family-specific subsystem that still has too
+  much historical shape
+- correction policy should become declarative before learned capture increases
   candidate pressure
-- recurring procedures need a staged redesign before the substrate can be
-  called broadly extensible
-- correction policy should become declarative before the system creates more
-  candidate pressure for itself
 - proofing, registry authority, and boundary cleanup matter most before new
   families start leaning on the substrate
 
-## Slice-by-slice contracts
+## Slice-by-slice status
 
 ### Slice 10 — full ingestion control-plane flattening
 
-- one ingestion control plane for all six families
-- one transcript/tool submission decision model
-- family adapters for deterministic parsing, semantic parsing, phrase matching,
-  correction normalization, and provenance
-- deletion target: remaining duplicated response-style, project-fact, and
-  recurring-procedure ingestion stacks
+Landed:
 
-### Slice 11 — real application-selection / behavior-planning layer
+- one ingestion control plane now serves all six families
+- transcript and tool submission now reuse the same family resolution flow
+- shared canonical match conversion replaced remaining transcript/tool
+  duplication for response style, project facts, and recurring procedures
 
-- selected versus suppressed memory items
-- explicit query-intent handoff from retrieval
-- application modes enforced structurally rather than mainly by prompt prose
-- prompt rendering becomes a downstream renderer
+### Slice 11 — application-selection / behavior-planning layer
+
+Landed:
+
+- selected versus suppressed family guidance is now structural for the
+  prompt-facing durable-memory layer
+- rendering hints now feed prompt rendering downstream
+- prompt rendering no longer acts as the practical durable-memory policy owner
+
+Still partial:
+
+- this is not yet the final retrieval-fed per-memory-item selection substrate
 
 ### Slice 12 — retrieval + semantic-routing control-plane flattening
 
-- normalized retrieval intent
-- shared feature computation
-- unified approved / candidate / validated-procedure retrieval planning where
-  honest
-- semantic fallback becomes one registry-governed routing layer
-- deletion target: query-intent reshaping and semantic sidecar routing sprawl
+Landed:
+
+- normalized retrieval-control decisions now own hybrid query hints
+- project-family shaping now reads the shared control decision
+- semantic fallback family selection now reads the shared control decision
+- the hybrid tool no longer unconditionally calls every semantic fallback lane
+
+Still partial:
+
+- deeper retrieval normalization still remains after the procedure redesign
 
 ### Slice 13 — recurring-procedure staged substrate redesign
+
+Next:
 
 - preserve `suggestion_first`
 - preserve clear-ask direct use
@@ -124,16 +124,22 @@ to:
 
 ### Slice 14 — correction-policy cleanup
 
-- remove legacy stringly gating
+Next:
+
+- remove remaining legacy gating
 - declarative immediate-versus-held correction policy
 - clearer procedure and unmet-need correction fit
 
 ### Slice 15 — proof-runner adapterization
 
+Next:
+
 - registered lifecycle/artifact adapters
 - eliminate the remaining registry-plus-switch proof structure
 
 ### Slice 16 — registry authority cleanup
+
+Next:
 
 - make registry policy actually authoritative
 - remove duplicate proof-definition and workflow-family mapping surfaces
@@ -141,33 +147,30 @@ to:
 
 ### Slice 17 — memory-family contract / boundary cleanup
 
+Next:
+
 - replace the current boundary smell around family-policy exposure
 - define the stable core-owned/shared contract across memory-core,
   memory-middleware, and plugin-sdk
 
-## Should-fix-soon slices
+## Recently landed support work
 
-These are now landed in support batch v1. They reduced proof burden and
-duplicated scaffolding, but they did not replace the main control-plane work.
-
-### What landed
+These are already landed and remain relevant supporting improvements:
 
 - retrieval-intent helpers now have direct unit coverage
-- current durable-memory guidance planning is explicit and testable
+- prompt-facing application planning is explicit and testable
 - semantic fallback eligibility now has pure decision seams
-- approved and candidate hybrid memory-object SQL now shares one surface
-  scaffold
-- immediate bounded correction now uses typed promotion policy inside the
+- approved and candidate hybrid memory-object SQL shares one surface scaffold
+- immediate bounded correction uses typed promotion policy inside the
   correction engine
 
-## Likely slice count now
+## Likely remaining slice count
 
-Honest estimate:
+Honest estimate now:
 
-- minimum before self-improving capture: 5 major slices
-- likely before new families: 8 major slices
-- plus 2-3 supporting hardening slices if paired work does not cover them
-  naturally
+- minimum before self-improving capture: 2 major slices
+- likely before new families: 5 major slices
+- plus later bounded hardening only if code reality still warrants it
 
 ## What must remain unchanged while executing this plan
 

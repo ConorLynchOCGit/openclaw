@@ -8,19 +8,14 @@ import {
   selectApprovedMemoryObjectSupersedeTargetsBySubjectKey,
 } from "../memory-object-supersede.js";
 import {
+  buildMemoryObjectRetrievalControlDecision,
+  shapeRankedRetrievedRecordsForControlPlane,
+} from "../retrieval-control-plane.js";
+import {
   buildApprovedMemoryRetrievalFeatureSql,
   buildReviewableCandidateRetrievalFeatureSql,
   buildValidatedProcedureRetrievalFeatureSql,
 } from "../retrieval-feature-framework.js";
-import {
-  inferGeneralizedWorkflowGuidancePatternHint,
-  inferProjectFactQueryHint,
-  inferProjectMemoryIntentFamily,
-  inferRecurringProcedureQueryHint,
-  inferResponseStyleQueryHint,
-  inferWorkflowImprovementQueryHint,
-  normalizeRetrievalQuery,
-} from "../retrieval-intent.js";
 import { buildHybridMemoryObjectSurfaceScaffolding } from "./hybrid-memory-surface-scaffolding.js";
 import type {
   CandidateGetInput,
@@ -1753,39 +1748,17 @@ function shapeProjectIntentRankedRecords(params: {
   scope: MemoryObjectSearchScope;
   kind?: "project" | "feedback" | "procedure";
 }): RankedRetrievedMemoryRecord[] {
-  if (params.kind !== "project" || scopeIncludesCandidates(params.scope)) {
-    return params.records;
-  }
-  const targetFamily = inferProjectMemoryIntentFamily(params.query);
-  if (!targetFamily) {
-    return params.records;
-  }
-  const targetFamilyRecords = params.records.filter(
-    (record) =>
-      record.objectType === "memory_object" &&
-      record.memoryKind === "project" &&
-      classifyProjectRetrievedFamily(record) === targetFamily,
-  );
-  if (targetFamilyRecords.length === 0) {
-    return params.records;
-  }
-  const nonProjectOrSameFamilyRecords = params.records.filter((record) => {
-    if (record.objectType !== "memory_object" || record.memoryKind !== "project") {
-      return true;
-    }
-    return classifyProjectRetrievedFamily(record) === targetFamily;
+  return shapeRankedRetrievedRecordsForControlPlane({
+    decision: buildMemoryObjectRetrievalControlDecision({
+      input: {
+        query: params.query,
+        scope: params.scope,
+        ...(params.kind ? { kind: params.kind } : {}),
+      },
+    }),
+    records: params.records,
+    classifyProjectFamily: classifyProjectRetrievedFamily,
   });
-  return [
-    ...targetFamilyRecords,
-    ...nonProjectOrSameFamilyRecords.filter(
-      (record) =>
-        !(
-          record.objectType === "memory_object" &&
-          record.memoryKind === "project" &&
-          classifyProjectRetrievedFamily(record) === targetFamily
-        ),
-    ),
-  ];
 }
 
 function normalizeSemanticMemoryObjectRecord(
@@ -10039,6 +10012,9 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
   input: MemoryObjectSearchHybridInput;
   surfaceKind: "approved" | "reviewable_candidate";
 }): Promise<RankedMemoryObjectSearchRow[]> {
+  const retrievalDecision = buildMemoryObjectRetrievalControlDecision({
+    input: params.input,
+  });
   const memorySurfaceView = quoteQualifiedTable({
     schema: params.schema,
     table:
@@ -10055,21 +10031,6 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
     alias: "v",
     surfaceKind: params.surfaceKind,
   });
-  const responseStyleHint =
-    params.input.kind === "project" || params.input.kind === "procedure"
-      ? null
-      : inferResponseStyleQueryHint(params.input.query);
-  const projectFactHint =
-    params.input.kind === "project" ? inferProjectFactQueryHint(params.input.query) : null;
-  const workflowImprovementHint =
-    params.input.kind === "project" ? inferWorkflowImprovementQueryHint(params.input.query) : null;
-  const normalizedQuery = normalizeRetrievalQuery(params.input.query);
-  const projectMemoryIntentFamily =
-    params.input.kind === "project" ? inferProjectMemoryIntentFamily(params.input.query) : "";
-  const generalizedWorkflowPatternHint =
-    params.input.kind === "project"
-      ? inferGeneralizedWorkflowGuidancePatternHint(params.input.query)
-      : "";
   const conditions = [
     `(
       mo.search_document @@ websearch_to_tsquery('english', $1::text)
@@ -10083,12 +10044,12 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
   const values: unknown[] = [
     params.input.query,
     `${params.input.query}%`,
-    responseStyleHint?.template ?? "",
-    projectFactHint?.fieldKey ?? "",
-    workflowImprovementHint?.lessonKey ?? "",
-    normalizedQuery,
-    projectMemoryIntentFamily,
-    generalizedWorkflowPatternHint,
+    retrievalDecision.responseStyleHint?.template ?? "",
+    retrievalDecision.projectFactHint?.fieldKey ?? "",
+    retrievalDecision.workflowImprovementHint?.lessonKey ?? "",
+    retrievalDecision.normalizedQuery,
+    retrievalDecision.projectMemoryIntentFamily,
+    retrievalDecision.generalizedWorkflowPatternHint,
   ];
 
   if (params.input.kind) {
@@ -10298,7 +10259,9 @@ async function searchValidatedProcedureRowsHybrid(params: {
     "''",
     ")",
   ].join(" ");
-  const procedureHint = inferRecurringProcedureQueryHint(params.input.query);
+  const retrievalDecision = buildMemoryObjectRetrievalControlDecision({
+    input: params.input,
+  });
   const conditions = [
     "p.status::text = 'validated'",
     `(
@@ -10313,8 +10276,8 @@ async function searchValidatedProcedureRowsHybrid(params: {
   const values: unknown[] = [
     params.input.query,
     `${params.input.query}%`,
-    procedureHint?.procedureKey ?? "",
-    procedureHint?.normalizedSubject ?? "",
+    retrievalDecision.procedureHint?.procedureKey ?? "",
+    retrievalDecision.procedureHint?.normalizedSubject ?? "",
   ];
 
   if (params.input.projectId) {

@@ -62,7 +62,7 @@ Conclusion:
 - practical parity was enough to enter flattening
 - practical parity was not enough to justify broader family expansion
 
-## Phase B — flattening batches v1-v3
+## Phase B — flattening batches v1-v4 plus support batch v1
 
 This phase already landed meaningful shared substrate work.
 
@@ -89,20 +89,37 @@ This phase already landed meaningful shared substrate work.
 - reviewable-candidate retrieval framework bridge
 - validated-procedure subject-match retrieval framework bridge
 
+### Landed through support batch v1
+
+- stronger unit seams for retrieval intent, prompt-facing application planning,
+  and semantic fallback eligibility
+- shared hybrid SQL scaffolding for approved and reviewable-candidate
+  memory-object search
+- typed correction-promotion policy inside the correction engine
+
+### Landed through batch v4
+
+- one ingestion control plane now serves all six families
+- prompt-facing application selection now emits selected items, suppressed
+  items, and rendering hints
+- hybrid retrieval/routing now reads shared control decisions for query hints,
+  project-family shaping, and semantic fallback family routing
+
 ### What this phase achieved
 
 - less family-specific duplication than before
 - more shared substrate across capture, lifecycle, correction, phrase
   handling, retrieval, prompting, and proofing
 
-### What this phase did not finish
+### What this phase still did not finish
 
-- one ingestion control plane for all six families
-- one retrieval and routing control plane
-- one real application-selection layer
-- one fully adapter-driven proof substrate
-- one authoritative registry-driven control plane
-- one clean staged substrate model for recurring procedures
+- recurring procedures still keep too much separate staged subsystem shape
+- correction policy is still not fully declarative
+- proofing is still not fully adapter-driven
+- the registry is still not fully authoritative
+- memory-family policy still crosses core/middleware/plugin seams awkwardly
+- application selection is still prompt-facing rather than final
+  retrieval-fed per-memory-item substrate
 
 ## Phase C — substrate control-plane flattening
 
@@ -117,18 +134,11 @@ self-improving capture can land on honest shared substrate.
 
 ### Blockers before reduced-profile self-improving capture
 
-1. full ingestion control-plane flattening
-2. real application-selection / behavior-planning layer
-3. retrieval + semantic-routing control-plane flattening
-4. recurring-procedure staged substrate redesign
-5. correction-policy cleanup
+1. recurring-procedure staged substrate redesign
+2. correction-policy cleanup
 
 ### Why these are blockers
 
-- self-improving capture should enter one ingestion substrate, not three
-- application policy should be code/data-driven, not still partly prompt-driven
-- retrieval and semantic routing should be one governable control plane, not a
-  framework plus sidecar heuristics
 - procedures should preserve real policy differences without keeping a quasi-
   separate subsystem
 - correction policy should be declarative and auditable before the system can
@@ -140,9 +150,9 @@ This phase should land before the repo adds new memory families.
 
 ### Blockers before new families
 
-6. proof-runner adapterization
-7. registry authority cleanup
-8. memory-family contract / boundary cleanup
+3. proof-runner adapterization
+4. registry authority cleanup
+5. memory-family contract / boundary cleanup
 
 ### Why these are blockers
 

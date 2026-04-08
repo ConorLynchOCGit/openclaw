@@ -1,7 +1,7 @@
 import type { MemoryPromptSectionBuilder } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import {
-  buildDurableMemoryBehaviorProfile,
-  renderDurableMemoryBehaviorProfile,
+  buildDurableMemoryApplicationSelection,
+  renderDurableMemoryApplicationSelection,
 } from "./behavior-profile.js";
 
 export const buildPromptSection: MemoryPromptSectionBuilder = ({
@@ -61,9 +61,9 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
   }
 
   if (hasDurableMemorySection) {
-    const profile = buildDurableMemoryBehaviorProfile({ availableTools });
-    if (profile) {
-      lines.push(...renderDurableMemoryBehaviorProfile(profile));
+    const selection = buildDurableMemoryApplicationSelection({ availableTools });
+    if (selection) {
+      lines.push(...renderDurableMemoryApplicationSelection(selection));
     }
   }
 

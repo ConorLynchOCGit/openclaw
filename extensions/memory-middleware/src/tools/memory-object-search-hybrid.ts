@@ -1,18 +1,12 @@
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool, OpenClawPluginToolContext } from "../../api.js";
-import type {
-  MemoryObjectSearchHybridInput,
-  MemoryObjectSearchHybridResult,
-  MemoryObjectSearchScope,
-} from "../db/runtime.js";
+import type { MemoryObjectSearchHybridInput, MemoryObjectSearchScope } from "../db/runtime.js";
 import { MEMORY_OBJECT_SEARCH_SCOPES } from "../db/runtime.js";
-import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
-  maybeApplyApiWorkaroundSemanticFallback,
-  maybeApplyEnvironmentConstraintSemanticFallback,
-  maybeApplyProcedureSemanticFallback,
-  maybeApplyWorkflowToolGotchaSemanticFallback,
-} from "../semantic-retrieval-routing.js";
+  applyHybridRetrievalControlPlane,
+  buildMemoryObjectRetrievalControlDecision,
+} from "../retrieval-control-plane.js";
+import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   CandidateToolInputError,
   asJsonToolResult,
@@ -95,68 +89,20 @@ export async function searchMemoryObjectsHybridFromTool(params: {
   runtime: MemoryMiddlewareRuntime;
   input: MemoryObjectSearchHybridInput;
   context?: OpenClawPluginToolContext;
-}): Promise<MemoryObjectSearchHybridResult> {
-  let result = await params.runtime.memoryObjectQuery.searchHybrid(params.input);
-  const fallbackParams = {
+}) {
+  const decision = buildMemoryObjectRetrievalControlDecision({
+    input: params.input,
+  });
+  const result = await params.runtime.memoryObjectQuery.searchHybrid(params.input);
+  return applyHybridRetrievalControlPlane({
+    decision,
     runtime: params.runtime,
     input: params.input,
+    hybridResult: result,
     cfg: params.context?.runtimeConfig ?? params.context?.config,
     agentId: params.context?.agentId,
     sessionKey: params.context?.sessionKey,
-  };
-  result = await applySemanticFallbackSafely({
-    hybridResult: result,
-    apply: maybeApplyProcedureSemanticFallback,
-    ...fallbackParams,
   });
-  result = await applySemanticFallbackSafely({
-    hybridResult: result,
-    apply: maybeApplyEnvironmentConstraintSemanticFallback,
-    ...fallbackParams,
-  });
-  result = await applySemanticFallbackSafely({
-    hybridResult: result,
-    apply: maybeApplyWorkflowToolGotchaSemanticFallback,
-    ...fallbackParams,
-  });
-  result = await applySemanticFallbackSafely({
-    hybridResult: result,
-    apply: maybeApplyApiWorkaroundSemanticFallback,
-    ...fallbackParams,
-  });
-  return result;
-}
-
-async function applySemanticFallbackSafely(params: {
-  runtime: MemoryMiddlewareRuntime;
-  input: MemoryObjectSearchHybridInput;
-  hybridResult: MemoryObjectSearchHybridResult;
-  cfg?: OpenClawPluginToolContext["runtimeConfig"] | OpenClawPluginToolContext["config"];
-  agentId?: string;
-  sessionKey?: string;
-  apply: (input: {
-    runtime: MemoryMiddlewareRuntime;
-    input: MemoryObjectSearchHybridInput;
-    hybridResult: MemoryObjectSearchHybridResult;
-    cfg?: OpenClawPluginToolContext["runtimeConfig"] | OpenClawPluginToolContext["config"];
-    agentId?: string;
-    sessionKey?: string;
-  }) => Promise<MemoryObjectSearchHybridResult>;
-}): Promise<MemoryObjectSearchHybridResult> {
-  try {
-    return await params.apply({
-      runtime: params.runtime,
-      input: params.input,
-      hybridResult: params.hybridResult,
-      cfg: params.cfg,
-      agentId: params.agentId,
-      sessionKey: params.sessionKey,
-    });
-  } catch {
-    // Semantic fallbacks are optional ranking upgrades. If they fail, keep the
-    // text-ranked hybrid result instead of failing the whole retrieval call.
-    return params.hybridResult;
-  }
 }
 
 export function createMemoryObjectSearchHybridTool(params: {

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MemoryObjectSearchHybridResult } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
@@ -62,6 +62,13 @@ function createRuntime() {
 }
 
 describe("memory object hybrid search tool", () => {
+  beforeEach(() => {
+    maybeApplyProcedureSemanticFallback.mockClear();
+    maybeApplyEnvironmentConstraintSemanticFallback.mockClear();
+    maybeApplyWorkflowToolGotchaSemanticFallback.mockClear();
+    maybeApplyApiWorkaroundSemanticFallback.mockClear();
+  });
+
   it("normalizes a hybrid search payload", () => {
     expect(
       normalizeMemoryObjectSearchHybridInput({
@@ -107,42 +114,9 @@ describe("memory object hybrid search tool", () => {
         sessionKey: undefined,
       }),
     );
-    expect(maybeApplyEnvironmentConstraintSemanticFallback).toHaveBeenCalledWith(
-      expect.objectContaining({
-        input: {
-          query: "deploy agent",
-          scope: "include_validated_procedures",
-          kind: "procedure",
-        },
-        cfg: undefined,
-        agentId: undefined,
-        sessionKey: undefined,
-      }),
-    );
-    expect(maybeApplyWorkflowToolGotchaSemanticFallback).toHaveBeenCalledWith(
-      expect.objectContaining({
-        input: {
-          query: "deploy agent",
-          scope: "include_validated_procedures",
-          kind: "procedure",
-        },
-        cfg: undefined,
-        agentId: undefined,
-        sessionKey: undefined,
-      }),
-    );
-    expect(maybeApplyApiWorkaroundSemanticFallback).toHaveBeenCalledWith(
-      expect.objectContaining({
-        input: {
-          query: "deploy agent",
-          scope: "include_validated_procedures",
-          kind: "procedure",
-        },
-        cfg: undefined,
-        agentId: undefined,
-        sessionKey: undefined,
-      }),
-    );
+    expect(maybeApplyEnvironmentConstraintSemanticFallback).not.toHaveBeenCalled();
+    expect(maybeApplyWorkflowToolGotchaSemanticFallback).not.toHaveBeenCalled();
+    expect(maybeApplyApiWorkaroundSemanticFallback).not.toHaveBeenCalled();
     expect(result.details).toEqual(createAcceptedSearchResult());
   });
 
@@ -184,6 +158,10 @@ describe("memory object hybrid search tool", () => {
     });
 
     expect(result.details).toEqual(createAcceptedSearchResult());
+    expect(maybeApplyProcedureSemanticFallback).not.toHaveBeenCalled();
+    expect(maybeApplyEnvironmentConstraintSemanticFallback).toHaveBeenCalledTimes(1);
+    expect(maybeApplyWorkflowToolGotchaSemanticFallback).toHaveBeenCalledTimes(1);
+    expect(maybeApplyApiWorkaroundSemanticFallback).toHaveBeenCalledTimes(1);
   });
 
   it("returns semantic fallback ordering when the family router rewrites weak procedure results", async () => {
@@ -229,6 +207,9 @@ describe("memory object hybrid search tool", () => {
         matchedFields: ["semantic_embedding", "semantic_fallback"],
       }),
     );
+    expect(maybeApplyProcedureSemanticFallback).toHaveBeenCalledTimes(1);
+    expect(maybeApplyWorkflowToolGotchaSemanticFallback).not.toHaveBeenCalled();
+    expect(maybeApplyApiWorkaroundSemanticFallback).not.toHaveBeenCalled();
   });
 
   it("rejects unsupported ranked-search payloads", () => {
@@ -265,27 +246,9 @@ describe("memory object hybrid search tool", () => {
         sessionKey: "agent:main:main",
       }),
     );
-    expect(maybeApplyEnvironmentConstraintSemanticFallback).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        cfg: expect.objectContaining({ plugins: { memory: { provider: "openai" } } }),
-        agentId: "main",
-        sessionKey: "agent:main:main",
-      }),
-    );
-    expect(maybeApplyWorkflowToolGotchaSemanticFallback).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        cfg: expect.objectContaining({ plugins: { memory: { provider: "openai" } } }),
-        agentId: "main",
-        sessionKey: "agent:main:main",
-      }),
-    );
-    expect(maybeApplyApiWorkaroundSemanticFallback).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        cfg: expect.objectContaining({ plugins: { memory: { provider: "openai" } } }),
-        agentId: "main",
-        sessionKey: "agent:main:main",
-      }),
-    );
+    expect(maybeApplyEnvironmentConstraintSemanticFallback).not.toHaveBeenCalled();
+    expect(maybeApplyWorkflowToolGotchaSemanticFallback).not.toHaveBeenCalled();
+    expect(maybeApplyApiWorkaroundSemanticFallback).not.toHaveBeenCalled();
   });
 
   it("returns semantic fallback ordering when the family router rewrites weak environment guidance results", async () => {

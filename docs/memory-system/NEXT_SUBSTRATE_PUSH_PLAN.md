@@ -3,71 +3,72 @@
 ## Purpose
 
 This doc turns the accepted post-v3 architecture review into the concrete
-execution order for the next substrate push.
+execution order for the remaining substrate push after flattening batch v4.
 
-It exists so implementation can proceed without rediscovering sequence, scope,
-or non-goals slice by slice.
+## What is now already landed
 
-## Recommended remaining slice sequence
+The following batches are already landed:
 
-### Blockers before reduced-profile self-improving capture
+- flattening batches v1-v4
+- substrate support batch v1
 
-1. full ingestion control-plane flattening
-2. real application-selection / behavior-planning layer
-3. retrieval + semantic-routing control-plane flattening
-4. recurring-procedure staged substrate redesign
-5. correction-policy cleanup
+Most importantly, the repo now has live landings for:
 
-### Blockers before new families
+- full ingestion control-plane flattening
+- prompt-facing application-selection / behavior-planning
+- hybrid retrieval + semantic-routing control decisions
 
-6. proof-runner adapterization
-7. registry authority cleanup
-8. memory-family contract / boundary cleanup
+## Remaining recommended slice sequence
 
-### Recently landed support work
+### Remaining blockers before reduced-profile self-improving capture
 
-9. memory testability hardening
-10. retrieval SQL scaffolding reduction
-11. stringly-control-flow cleanup
+1. recurring-procedure staged substrate redesign
+2. correction-policy cleanup
+
+### Remaining blockers before new families
+
+3. proof-runner adapterization
+4. registry authority cleanup
+5. memory-family contract / boundary cleanup
 
 ### Later improvements
 
-12. deeper retrieval SQL normalization once the retrieval/routing control plane
-    is stronger
-13. artifact / read-model convergence if procedure and memory-object storage
-    still feel too separate after the staged redesign
+6. deeper retrieval SQL normalization once the retrieval/routing control plane
+   is stronger
+7. artifact / read-model convergence if procedure and memory-object storage
+   still feel too separate after the staged redesign
 
-## Likely slice count
+## Updated likely slice count
 
-Honest estimate:
+Honest estimate now:
 
-- before reduced-profile self-improving capture: 5 major slices
-- before new families: 8 major slices
+- before reduced-profile self-improving capture: 2 major slices remain
+- before new families: 5 major slices remain
 - plus later bounded follow-up hardening only if code reality still warrants it
 
-## What should land first
+## What should land next
 
-The next implementation slice should be:
+The next implementation slice should now be:
 
-- full ingestion control-plane flattening
+- recurring-procedure staged substrate redesign
 
 Why:
 
-- it is still the largest duplicated family-control seam
-- it unlocks cleaner application selection and later retrieval/routing
-  unification
-- it also reduces the risk that later self-improving capture lands on multiple
-  ingestion paths
+- procedure posture differences are real, but too much implementation shape is
+  still separate
+- procedure lifecycle, retrieval, correction, and proof concerns are still the
+  largest remaining family-specific subsystem
+- self-improving capture should not land until procedures behave like a staged
+  family on the shared substrate rather than a quasi-separate product
 
 ## What can be parallelized
 
-Once the ingestion-control-plane contract is stable:
+Once the recurring-procedure staged substrate contract is stable:
 
-- application-selection planning work
-- retrieval/routing planning work
+- correction-policy cleanup design
 - proof-runner adapter design
 - registry authority cleanup design
-- testability hardening design
+- memory-family contract boundary design
 
 During implementation, only parallelize slices with genuinely disjoint write
 scopes or clearly one-way dependencies.
@@ -76,59 +77,52 @@ scopes or clearly one-way dependencies.
 
 - self-improving capture implementation
 - new family implementation
-- deep proof-runner refactors before the retrieval/application plan is stable
-- aggressive SQL normalization before the retrieval/routing control plane is
-  defined
+- deep proof-runner refactors before the procedure redesign is stable
+- aggressive SQL normalization before the post-procedure retrieval shape is
+  stable
 
 ## Validation posture
 
-Higher-risk slices that should expect broader validation:
+Higher-risk remaining slices that should expect broader validation:
 
-- retrieval + semantic-routing control-plane flattening
 - recurring-procedure staged substrate redesign
 - proof-runner adapterization
 - memory-family contract / boundary cleanup
 
-Moderate-risk slices:
+Moderate-risk remaining slices:
 
-- full ingestion control-plane flattening
-- application-selection / behavior-planning layer
 - correction-policy cleanup
+- registry authority cleanup
 
-The first support batch is already landed. It de-risked proof and cleanup, but
-it did not replace the main control-plane slices.
+The support batch and flattening batch v4 are already landed. They reduced
+proof burden and control-plane duplication, but they did not replace the
+remaining procedure, proof, registry, and boundary work.
 
-## What not to do during this push
+## What not to do during the remaining push
 
 - do not enable reduced-profile self-improving capture
 - do not enable learned-guidance advisory planning
 - do not add new memory families
 - do not erase real family-policy differences
 - do not accept “shared helper” as proof that a duplicated system is gone
-- do not leave runtime policy split between registry, prompt prose, SQL
-  heuristics, and sidecar routing if the slice claims to flatten that seam
+- do not leave procedures as a quasi-separate product while claiming the
+  family substrate is finished
 
-## Recommended grouping
+## Recommended grouping from here
 
-If you want the cheapest credible execution order, use this grouping:
+If you want the cheapest credible remaining order, use this grouping:
 
-1. full ingestion control-plane flattening
-2. application-selection / behavior-planning layer
-3. retrieval + semantic-routing control-plane flattening
-4. recurring-procedure staged substrate redesign
-5. correction-policy cleanup
-6. proof-runner adapterization
-7. registry authority cleanup + memory-family contract / boundary cleanup
-8. only later bounded hardening that still remains honest after the main
-   slices land
+1. recurring-procedure staged substrate redesign
+2. correction-policy cleanup
+3. proof-runner adapterization
+4. registry authority cleanup + memory-family contract / boundary cleanup
+5. only later bounded hardening that still remains honest after those slices
+   land
 
 ## Exit criteria before moving on
 
 Before reduced-profile self-improving capture:
 
-- one ingestion control plane exists for the active families
-- application selection is structurally represented
-- retrieval/routing is one governable control plane
 - procedures preserve distinct posture without remaining a quasi-separate
   subsystem
 - correction policy is declarative enough for later learned capture pressure
@@ -141,7 +135,4 @@ Before new families:
 
 ## Next implementation slice
 
-- full ingestion control-plane flattening
-
-The support work is now landed. The next slice should stay on the main
-substrate path.
+- recurring-procedure staged substrate redesign

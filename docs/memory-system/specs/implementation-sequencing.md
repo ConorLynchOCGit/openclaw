@@ -40,43 +40,38 @@ Historical completed order:
 10. flattening batch v1
 11. flattening batch v2
 12. flattening batch v3
+13. substrate support batch v1
+14. flattening batch v4
 
 ## Recommended next order
 
 ### Before reduced-profile self-improving capture
 
-1. full ingestion control-plane flattening
-2. real application-selection / behavior-planning layer
-3. retrieval + semantic-routing control-plane flattening
-4. recurring-procedure staged substrate redesign
-5. correction-policy cleanup
+1. recurring-procedure staged substrate redesign
+2. correction-policy cleanup
 
 ### Before new families
 
-6. proof-runner adapterization
-7. registry authority cleanup
-8. memory-family contract / boundary cleanup
+3. proof-runner adapterization
+4. registry authority cleanup
+5. memory-family contract / boundary cleanup
 
 ### Should fix soon
 
-9. memory testability hardening
-10. retrieval SQL scaffolding reduction
-11. stringly-control-flow cleanup
+6. deeper retrieval SQL normalization once the retrieval/routing control plane
+   is stronger
+7. artifact / read-model convergence if procedure and memory-object storage
+   still feel too separate after the staged redesign
 
 ### Later phases
 
-12. reduced-profile self-improving capture integration
-13. learned-guidance advisory planning
-14. cross-domain family expansion tranche 1
-15. cross-domain family expansion tranche 2
+8. reduced-profile self-improving capture integration
+9. learned-guidance advisory planning
+10. cross-domain family expansion tranche 1
+11. cross-domain family expansion tranche 2
 
 ## Why this order is recommended
 
-- ingestion is still the largest duplicated family-control seam
-- application selection should become structural before later learned capture
-  increases memory pressure
-- retrieval and semantic routing should become one governable control plane
-  before later phases depend on them
 - recurring procedures should preserve real policy differences without
   remaining a semi-separate subsystem
 - correction policy should become declarative before learned capture expands
@@ -86,10 +81,6 @@ Historical completed order:
 
 ## Hard prerequisites before reduced-profile self-improving capture
 
-- one ingestion control plane exists for the active families
-- application selection is structurally represented
-- retrieval/routing policy is not split across framework + sidecar + prompt
-  prose
 - recurring procedures are on a cleaner staged substrate
 - correction policy no longer depends on legacy stringly gates
 
@@ -107,13 +98,11 @@ Historical completed order:
 
 ## What can proceed in parallel
 
-Once the ingestion-control-plane contract is stable:
+Once the recurring-procedure staged substrate contract is stable:
 
-- application-selection design
-- retrieval/routing design
 - proof adapter design
 - registry authority design
-- testability hardening design
+- memory-family contract boundary design
 
 Implementation itself should still stay narrow and proofable.
 

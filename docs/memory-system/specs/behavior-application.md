@@ -11,13 +11,15 @@ This spec remains the canonical bridge between:
 
 ## Updated conclusion
 
-The repo now accepts that the currently landed behavior-profile layer improved
-prompt support but did not yet complete application architecture.
+The repo now has a prompt-facing application-selection layer.
 
-The correct target is:
+That means:
 
-- structural application selection first
-- prompt rendering second
+- structural application selection is now live for the current durable-memory
+  prompt boundary
+- prompt rendering is now downstream of that selection artifact
+
+It does not yet mean the full end-state is complete.
 
 ## Current live posture
 
@@ -34,14 +36,14 @@ Those differences remain valid.
 
 ## Remaining problem
 
-Application policy is still too split across:
+Application policy is no longer mainly owned by prompt text.
 
-- retrieval intent shaping
-- post-query suppression
-- prompt guidance
+The remaining gap is narrower:
 
-That means prompt text is no longer the only policy source, but it is still too
-close to the decision path.
+- the current landed selection layer is still prompt-facing
+- the final retrieval-fed per-memory-item application substrate still remains
+- procedure redesign still sits between the current state and the final
+  end-state
 
 ## Target architecture
 
@@ -54,6 +56,8 @@ The application-selection layer should become the runtime owner of:
 - rendering hints
 
 Prompt rendering should remain a consumer.
+
+That is now true for the prompt-facing durable-memory layer.
 
 ## Read with
 

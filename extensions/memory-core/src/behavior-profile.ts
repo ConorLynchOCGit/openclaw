@@ -41,6 +41,43 @@ export type DurableMemoryGuidancePlan = {
   captureFamilies: MemoryFamilyId[];
 };
 
+export type DurableMemoryApplicationGuidanceKind = "search" | "application" | "capture";
+
+export type DurableMemoryApplicationQueryIntent = {
+  kind: "tool_surface_guidance";
+  hasObjectSurface: boolean;
+  hasCandidateSurface: boolean;
+  hasSessionSurface: boolean;
+};
+
+export type DurableMemorySelectedApplicationItem = {
+  familyId: MemoryFamilyId;
+  applicationMode: MemoryFamilyApplicationMode;
+  directUseOnlyOnClearAsk: boolean;
+  retrievalMode: MemoryFamilyDefinition["retrievalPolicy"]["mode"];
+  promptSection: MemoryFamilyDefinition["applicationPolicy"]["promptSection"];
+  selectedGuidanceKinds: DurableMemoryApplicationGuidanceKind[];
+  selectionReasonCodes: string[];
+  searchGuidance: string[];
+  applicationGuidance: string[];
+  captureGuidance: string[];
+};
+
+export type DurableMemorySuppressedApplicationItem = {
+  familyId: MemoryFamilyId;
+  applicationMode: MemoryFamilyApplicationMode;
+  suppressedGuidanceKinds: DurableMemoryApplicationGuidanceKind[];
+  suppressionReasonCodes: string[];
+};
+
+export type DurableMemoryApplicationSelection = {
+  flags: DurableMemoryToolFlags;
+  queryIntent: DurableMemoryApplicationQueryIntent;
+  selectedItems: DurableMemorySelectedApplicationItem[];
+  suppressedItems: DurableMemorySuppressedApplicationItem[];
+  renderingHints: DurableMemoryGuidancePlan;
+};
+
 export function buildDurableMemoryBehaviorProfile(params: {
   availableTools: Set<string>;
 }): DurableMemoryBehaviorProfile | null {
@@ -101,11 +138,112 @@ export function resolveDurableMemoryGuidancePlan(
   };
 }
 
+export function buildDurableMemoryApplicationSelection(params: {
+  availableTools: Set<string>;
+}): DurableMemoryApplicationSelection | null {
+  const profile = buildDurableMemoryBehaviorProfile(params);
+  return profile ? buildDurableMemoryApplicationSelectionFromProfile(profile) : null;
+}
+
+export function buildDurableMemoryApplicationSelectionFromProfile(
+  profile: DurableMemoryBehaviorProfile,
+): DurableMemoryApplicationSelection {
+  const guidancePlan = resolveDurableMemoryGuidancePlan(profile.flags);
+  const selectedItems: DurableMemorySelectedApplicationItem[] = [];
+  const suppressedItems: DurableMemorySuppressedApplicationItem[] = [];
+
+  for (const family of profile.families) {
+    const selectedGuidanceKinds: DurableMemoryApplicationGuidanceKind[] = [];
+    const selectionReasonCodes: string[] = [];
+    const suppressedGuidanceKinds: DurableMemoryApplicationGuidanceKind[] = [];
+    const suppressionReasonCodes: string[] = [];
+
+    if (guidancePlan.searchFamilies.includes(family.familyId)) {
+      selectedGuidanceKinds.push("search");
+      selectionReasonCodes.push("search_surface_available");
+    } else {
+      suppressedGuidanceKinds.push("search");
+      suppressionReasonCodes.push(
+        guidancePlan.hasObjectSurface
+          ? "search_surface_not_enabled_for_family"
+          : "object_surface_unavailable",
+      );
+    }
+
+    if (guidancePlan.applicationFamilies.includes(family.familyId)) {
+      selectedGuidanceKinds.push("application");
+      selectionReasonCodes.push("application_surface_available");
+    } else {
+      suppressedGuidanceKinds.push("application");
+      suppressionReasonCodes.push(
+        guidancePlan.hasObjectSurface
+          ? "application_surface_not_enabled_for_family"
+          : "object_surface_unavailable",
+      );
+    }
+
+    if (guidancePlan.captureFamilies.includes(family.familyId)) {
+      selectedGuidanceKinds.push("capture");
+      selectionReasonCodes.push("candidate_surface_available");
+    } else {
+      suppressedGuidanceKinds.push("capture");
+      suppressionReasonCodes.push("candidate_surface_unavailable");
+    }
+
+    if (selectedGuidanceKinds.length > 0) {
+      selectedItems.push({
+        familyId: family.familyId,
+        applicationMode: family.applicationMode,
+        directUseOnlyOnClearAsk: family.directUseOnlyOnClearAsk,
+        retrievalMode: family.retrievalMode,
+        promptSection: family.promptSection,
+        selectedGuidanceKinds,
+        selectionReasonCodes,
+        searchGuidance: selectedGuidanceKinds.includes("search") ? family.searchGuidance : [],
+        applicationGuidance: selectedGuidanceKinds.includes("application")
+          ? family.applicationGuidance
+          : [],
+        captureGuidance: selectedGuidanceKinds.includes("capture") ? family.captureGuidance : [],
+      });
+    }
+
+    if (suppressedGuidanceKinds.length > 0) {
+      suppressedItems.push({
+        familyId: family.familyId,
+        applicationMode: family.applicationMode,
+        suppressedGuidanceKinds,
+        suppressionReasonCodes,
+      });
+    }
+  }
+
+  return {
+    flags: profile.flags,
+    queryIntent: {
+      kind: "tool_surface_guidance",
+      hasObjectSurface: guidancePlan.hasObjectSurface,
+      hasCandidateSurface: guidancePlan.hasCandidateSurface,
+      hasSessionSurface: guidancePlan.hasSessionSurface,
+    },
+    selectedItems,
+    suppressedItems,
+    renderingHints: guidancePlan,
+  };
+}
+
 export function renderDurableMemoryBehaviorProfile(
   profile: DurableMemoryBehaviorProfile,
 ): string[] {
+  return renderDurableMemoryApplicationSelection(
+    buildDurableMemoryApplicationSelectionFromProfile(profile),
+  );
+}
+
+export function renderDurableMemoryApplicationSelection(
+  selection: DurableMemoryApplicationSelection,
+): string[] {
   const lines: string[] = ["## Durable Memory"];
-  const guidancePlan = resolveDurableMemoryGuidancePlan(profile.flags);
+  const guidancePlan = selection.renderingHints;
 
   if (guidancePlan.hasObjectSurface) {
     lines.push(
@@ -121,9 +259,11 @@ export function renderDurableMemoryBehaviorProfile(
       "If approved durable memory says the user prefers concise replies, bullet points, plain English, no tables, or numbered steps for instructions, follow that preference in the current reply whenever it is relevant instead of treating it as passive metadata.",
     );
 
-    if (profile.flags.hasObjectSearchHybrid) {
-      for (const familyId of guidancePlan.searchFamilies) {
-        lines.push(...getFamilyProfile(profile, familyId).searchGuidance);
+    if (selection.flags.hasObjectSearchHybrid) {
+      for (const item of selection.selectedItems.filter((candidate) =>
+        candidate.selectedGuidanceKinds.includes("search"),
+      )) {
+        lines.push(...item.searchGuidance);
       }
       lines.push(
         "When a direct named-project ask is clearly about where or what something is, use the top fact-like project result. When it is clearly about what to use, trust, or avoid, use the top project-rule result. When it is clearly about what is still missing or needed, use the top unmet-need result. Do not blend adjacent project memories from other families unless they directly corroborate the same answer.",
@@ -133,8 +273,10 @@ export function renderDurableMemoryBehaviorProfile(
     lines.push(
       "If an approved durable memory result directly answers the question, use it in the normal reply without asking the user to restate it. If no approved result exists, answer normally and say you did not find stored memory only when that context matters.",
     );
-    for (const familyId of guidancePlan.applicationFamilies) {
-      lines.push(...getFamilyProfile(profile, familyId).applicationGuidance);
+    for (const item of selection.selectedItems.filter((candidate) =>
+      candidate.selectedGuidanceKinds.includes("application"),
+    )) {
+      lines.push(...item.applicationGuidance);
     }
   }
 
@@ -145,8 +287,10 @@ export function renderDurableMemoryBehaviorProfile(
     lines.push(
       "Natural correction phrasing still counts: if the user says things like Actually, No, I meant, Sorry, or That's not right to correct a durable preference, default, recurring requirement, or tightly bounded named project fact, submit it as kind=correction even without an explicit save request.",
     );
-    for (const familyId of guidancePlan.captureFamilies) {
-      lines.push(...getFamilyProfile(profile, familyId).captureGuidance);
+    for (const item of selection.selectedItems.filter((candidate) =>
+      candidate.selectedGuidanceKinds.includes("capture"),
+    )) {
+      lines.push(...item.captureGuidance);
     }
     lines.push(
       "If the user explicitly asks you to store, remember, or save one of those durable items, call memory_candidate_submit before you answer unless the content is disallowed.",
@@ -181,17 +325,6 @@ function buildFamilyProfile(familyId: MemoryFamilyId): MemoryBehaviorFamilyProfi
     applicationGuidance: buildFamilyApplicationGuidance(familyId),
     captureGuidance: buildFamilyCaptureGuidance(familyId),
   };
-}
-
-function getFamilyProfile(
-  profile: DurableMemoryBehaviorProfile,
-  familyId: MemoryFamilyId,
-): MemoryBehaviorFamilyProfile {
-  const found = profile.families.find((candidate) => candidate.familyId === familyId);
-  if (!found) {
-    throw new Error(`unknown behavior profile family: ${familyId}`);
-  }
-  return found;
 }
 
 function buildFamilySearchGuidance(familyId: MemoryFamilyId): string[] {

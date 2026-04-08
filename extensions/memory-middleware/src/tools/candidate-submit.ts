@@ -16,12 +16,22 @@ import {
   resolveMemoryCorrectionPlan,
 } from "../memory-correction-engine.js";
 import { getCaptureMetadataByWorkflowLessonFamily } from "../memory-family-registry.js";
-import { resolveWorkflowImprovementIngestion } from "../memory-ingestion-resolver.js";
+import {
+  resolveProjectFactIngestion,
+  resolveRecurringProcedureIngestion,
+  resolveResponseStyleIngestion,
+  resolveWorkflowImprovementIngestion,
+} from "../memory-ingestion-resolver.js";
+import {
+  type OrdinaryTurnAutoCaptureMatch,
+  toOrdinaryTurnProjectFactMatch,
+  toOrdinaryTurnRecurringProcedureMatch,
+  toOrdinaryTurnResponseStyleMatch,
+} from "../memory-ingestion-types.js";
 import {
   parseAutoCaptureManagedCandidateContent,
   parseManagedCorrectionCandidateContent,
   parseOrdinaryTurnAutoCapturePreference,
-  type OrdinaryTurnAutoCaptureMatch,
 } from "../ordinary-turn-auto-capture.js";
 import {
   inspectProjectFactLifecycle,
@@ -2136,104 +2146,6 @@ function buildWorkflowImprovementPendingConfirmationMetadata(params: {
   };
 }
 
-function toOrdinaryTurnResponseStyleMatch(match: {
-  captureClass: "explicit_requirement" | "requirement_correction";
-  candidateKind: "learning" | "correction";
-  reasonCode: "explicit_requirement_statement" | "explicit_requirement_correction";
-  template: OrdinaryTurnAutoCaptureMatch["template"];
-  subject: string;
-  value: string;
-  normalizedSubject: string;
-  normalizedValue: string;
-  content: string;
-  subjectKey: string;
-  key: string;
-}): OrdinaryTurnAutoCaptureMatch {
-  return {
-    profile: "user-preference-v2",
-    captureClass: match.captureClass,
-    candidateKind: match.candidateKind,
-    reasonCode: match.reasonCode,
-    template: match.template,
-    subject: match.subject,
-    value: match.value,
-    normalizedSubject: match.normalizedSubject,
-    normalizedValue: match.normalizedValue,
-    content: match.content,
-    subjectKey: match.subjectKey,
-    key: match.key,
-  };
-}
-
-function toOrdinaryTurnProjectFactMatch(match: {
-  captureClass: "explicit_project_fact" | "project_fact_correction";
-  candidateKind: "learning" | "correction";
-  reasonCode: "explicit_project_fact_statement" | "explicit_project_fact_correction";
-  template: OrdinaryTurnAutoCaptureMatch["template"];
-  projectScope: string;
-  normalizedProjectScope: string;
-  subject: string;
-  value: string;
-  normalizedSubject: string;
-  normalizedValue: string;
-  content: string;
-  subjectKey: string;
-  key: string;
-}): OrdinaryTurnAutoCaptureMatch {
-  return {
-    profile: "user-preference-v2",
-    captureClass: match.captureClass,
-    candidateKind: match.candidateKind,
-    reasonCode: match.reasonCode,
-    template: match.template,
-    subject: match.subject,
-    value: match.value,
-    normalizedSubject: match.normalizedSubject,
-    normalizedValue: match.normalizedValue,
-    content: match.content,
-    subjectKey: match.subjectKey,
-    key: match.key,
-    projectScope: match.projectScope,
-    normalizedProjectScope: match.normalizedProjectScope,
-  };
-}
-
-function toOrdinaryTurnRecurringProcedureMatch(match: {
-  captureClass: "explicit_recurring_procedure" | "recurring_procedure_correction";
-  candidateKind: "procedure";
-  reasonCode: "explicit_recurring_procedure_statement" | "recurring_procedure_correction";
-  template: OrdinaryTurnAutoCaptureMatch["template"];
-  procedureFamily: RecurringProcedureFamily;
-  procedureKey?: RecurringProcedureKey;
-  title: string;
-  body: string;
-  steps: string[];
-  normalizedTitle: string;
-  normalizedBody: string;
-  content: string;
-  subjectKey: string;
-  key: string;
-}): OrdinaryTurnAutoCaptureMatch {
-  return {
-    profile: "user-preference-v2",
-    captureClass: match.captureClass,
-    candidateKind: match.candidateKind,
-    reasonCode: match.reasonCode,
-    template: match.template,
-    subject: match.title,
-    value: match.body,
-    normalizedSubject: match.normalizedTitle,
-    normalizedValue: match.normalizedBody,
-    content: match.content,
-    subjectKey: match.subjectKey,
-    key: match.key,
-    procedureFamily: match.procedureFamily,
-    ...(match.procedureKey ? { procedureKey: match.procedureKey } : {}),
-    title: match.title,
-    steps: match.steps,
-  };
-}
-
 type TranscriptUserMessage = {
   role?: unknown;
   content?: unknown;
@@ -2288,53 +2200,6 @@ type ManagedWorkflowImprovementResolution = {
   evidence: string[];
   observedText: string;
 };
-
-function inferProjectFactFieldKeyFromSubject(subject: string): ProjectFactFieldKey | null {
-  const fieldLabel = subject.split("/").pop()?.trim().toLowerCase() ?? "";
-  return fieldLabel === "default branch"
-    ? "default_branch"
-    : fieldLabel === "staging branch"
-      ? "staging_branch"
-      : fieldLabel === "repository url"
-        ? "repository_url"
-        : fieldLabel === "deployment url"
-          ? "deployment_url"
-          : fieldLabel === "documentation url"
-            ? "documentation_url"
-            : fieldLabel === "runbook url"
-              ? "runbook_url"
-              : fieldLabel === "primary package manager"
-                ? "primary_package_manager"
-                : fieldLabel === "primary environment name"
-                  ? "primary_environment_name"
-                  : null;
-}
-
-function inferGenericProjectFactSubjectLabel(subject: string): string | null {
-  const fieldLabel = subject.split("/").pop()?.trim() ?? "";
-  if (!fieldLabel) {
-    return null;
-  }
-  return normalizeGenericProjectFactSubjectLabel(fieldLabel);
-}
-
-function isGeneralizedProjectFactMatch(match: OrdinaryTurnAutoCaptureMatch): boolean {
-  return (
-    match.template === "project_fact_generalized_named_scope" ||
-    match.factFamily === "generalized_reference"
-  );
-}
-
-function isBoundedGenericProjectFactMatch(match: OrdinaryTurnAutoCaptureMatch): boolean {
-  const subjectLabel = inferGenericProjectFactSubjectLabel(match.subject);
-  if (!subjectLabel) {
-    return false;
-  }
-  return isBoundedGenericProjectFactReference({
-    subjectLabel,
-    value: match.value,
-  });
-}
 
 function extractTranscriptUserText(message: TranscriptUserMessage | null): string | null {
   if (!message || message.role !== "user") {
@@ -2502,14 +2367,6 @@ function isManagedCorrectionMatch(
   );
 }
 
-function isManagedResponseStyleMatch(
-  parsed: OrdinaryTurnAutoCaptureMatch | null,
-): parsed is OrdinaryTurnAutoCaptureMatch {
-  return Boolean(
-    parsed && (isResponseStyleLearningMatch(parsed) || isResponseStyleCorrectionMatch(parsed)),
-  );
-}
-
 function buildResponseStyleCanonicalMatchFromInput(input: CandidateSubmissionInput) {
   const template = readNestedMetadataString(input.metadata, ["autoCapture", "template"]);
   const family =
@@ -2544,262 +2401,46 @@ async function resolveManagedResponseStyleLearning(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
 }): Promise<ManagedResponseStyleResolution | null> {
-  const { input } = params;
-  const parsedFromContent = parseAutoCaptureManagedCandidateContent(input.content);
-  if (isManagedResponseStyleMatch(parsedFromContent)) {
-    return {
-      parsed: parsedFromContent,
-      responseStyleFamily: parsedFromContent.responseStyleFamily ?? "supported_template",
-      reviewMode: "direct",
-      source: "content",
-      detectionSource: "deterministic",
-      confidence: "high",
-      evidence: ["managed_content_pattern_match"],
-    };
-  }
-
-  const deterministicFromContent = await findApprovedResponseStylePhrasePatternMatch({
+  const rawCandidates =
+    typeof params.input.metadata?.raw === "string" && params.input.metadata.raw.trim().length > 0
+      ? [params.input.metadata.raw]
+      : [];
+  const resolution = await resolveResponseStyleIngestion({
     config: params.runtime.config,
-    text: input.content,
+    content: params.input.content,
+    primarySource: "content",
+    rawCandidates,
+    mode: "candidate_learning",
+    allowPhrasePatternMatch: true,
   });
-  if (deterministicFromContent) {
-    return {
-      parsed: toOrdinaryTurnResponseStyleMatch(deterministicFromContent.match),
-      responseStyleFamily: deterministicFromContent.match.family,
-      reviewMode:
-        deterministicFromContent.match.family === "generalized_guidance"
-          ? "hold_for_more_evidence"
-          : "direct",
-      source: "content",
-      detectionSource: "deterministic",
-      confidence: "high",
-      evidence: ["approved_phrase_pattern_match"],
-    };
-  }
-
-  if (typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0) {
-    const parsedFromRaw = parseOrdinaryTurnAutoCapturePreference(
-      input.metadata.raw,
-      "user-preference-v2",
-    );
-    if (isManagedResponseStyleMatch(parsedFromRaw)) {
-      return {
-        parsed: parsedFromRaw,
-        responseStyleFamily: parsedFromRaw.responseStyleFamily ?? "supported_template",
-        reviewMode: "direct",
-        source: "raw",
-        detectionSource: "deterministic",
-        confidence: "high",
-        evidence: ["raw_turn_pattern_match"],
-      };
-    }
-    const deterministicFromRaw = await findApprovedResponseStylePhrasePatternMatch({
-      config: params.runtime.config,
-      text: input.metadata.raw,
-    });
-    if (deterministicFromRaw) {
-      return {
-        parsed: toOrdinaryTurnResponseStyleMatch(deterministicFromRaw.match),
-        responseStyleFamily: deterministicFromRaw.match.family,
-        reviewMode:
-          deterministicFromRaw.match.family === "generalized_guidance"
-            ? "hold_for_more_evidence"
-            : "direct",
-        source: "raw",
-        detectionSource: "deterministic",
-        confidence: "high",
-        evidence: ["approved_phrase_pattern_match"],
-      };
-    }
-    const semanticFromRaw = detectResponseStyleSemanticDecision(input.metadata.raw);
-    if (semanticFromRaw.action === "capture") {
-      return {
-        parsed: toOrdinaryTurnResponseStyleMatch(semanticFromRaw.match),
-        responseStyleFamily: semanticFromRaw.match.family,
-        reviewMode:
-          semanticFromRaw.match.family === "generalized_guidance"
-            ? "hold_for_more_evidence"
-            : semanticFromRaw.confidence === "high"
-              ? "direct"
-              : "pending_confirmation",
-        source: "raw",
-        detectionSource: "semantic",
-        confidence: semanticFromRaw.confidence,
-        evidence: semanticFromRaw.evidence,
-      };
-    }
-  }
-
-  const semanticFromContent = detectResponseStyleSemanticDecision(input.content);
-  if (semanticFromContent.action === "capture") {
-    return {
-      parsed: toOrdinaryTurnResponseStyleMatch(semanticFromContent.match),
-      responseStyleFamily: semanticFromContent.match.family,
-      reviewMode:
-        semanticFromContent.match.family === "generalized_guidance"
-          ? "hold_for_more_evidence"
-          : semanticFromContent.confidence === "high"
-            ? "direct"
-            : "pending_confirmation",
-      source: "content",
-      detectionSource: "semantic",
-      confidence: semanticFromContent.confidence,
-      evidence: semanticFromContent.evidence,
-    };
-  }
-
-  return null;
+  return resolution?.action === "capture"
+    ? {
+        ...resolution,
+        source: resolution.source === "transcript" ? "content" : resolution.source,
+      }
+    : null;
 }
 
-function isManagedProjectFactMatch(
-  parsed: OrdinaryTurnAutoCaptureMatch | null,
-): parsed is OrdinaryTurnAutoCaptureMatch {
-  return Boolean(
-    parsed &&
-    (parsed.template === "project_fact_named_scope" ||
-      parsed.template === "project_fact_generalized_named_scope") &&
-    (parsed.captureClass === "explicit_project_fact" ||
-      parsed.captureClass === "project_fact_correction"),
-  );
-}
-
-function resolveManagedProjectFactLearning(
+async function resolveManagedProjectFactLearning(
   input: CandidateSubmissionInput,
-): ManagedProjectFactResolution | null {
-  const parsedFromContent = parseAutoCaptureManagedCandidateContent(input.content);
-  if (
-    isManagedProjectFactMatch(parsedFromContent) &&
-    parsedFromContent.captureClass === "explicit_project_fact"
-  ) {
-    const fieldKey = inferProjectFactFieldKeyFromSubject(parsedFromContent.subject);
-    if (fieldKey && isSupportedProjectFactField(fieldKey)) {
-      return {
-        parsed: parsedFromContent,
-        factFamily: "supported_field",
-        fieldKey,
-        source: "content",
-        detectionSource: "deterministic",
-        confidence: "high",
-        evidence: ["managed_content_pattern_match"],
-      };
-    }
-    if (
-      isGeneralizedProjectFactMatch(parsedFromContent) &&
-      isBoundedGenericProjectFactMatch(parsedFromContent)
-    ) {
-      return {
-        parsed: parsedFromContent,
-        factFamily: "generalized_reference",
-        source: "content",
-        detectionSource: "deterministic",
-        confidence: "high",
-        evidence: ["managed_content_pattern_match"],
-      };
-    }
-  }
-
-  if (typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0) {
-    const parsedFromRaw = parseOrdinaryTurnAutoCapturePreference(
-      input.metadata.raw,
-      "user-preference-v2",
-    );
-    if (
-      isManagedProjectFactMatch(parsedFromRaw) &&
-      parsedFromRaw.captureClass === "explicit_project_fact"
-    ) {
-      const fieldKey = inferProjectFactFieldKeyFromSubject(parsedFromRaw.subject);
-      if (fieldKey && isSupportedProjectFactField(fieldKey)) {
-        return {
-          parsed: parsedFromRaw,
-          factFamily: "supported_field",
-          fieldKey,
-          source: "raw",
-          detectionSource: "deterministic",
-          confidence: "high",
-          evidence: ["raw_turn_pattern_match"],
-        };
-      }
-      if (
-        isGeneralizedProjectFactMatch(parsedFromRaw) &&
-        isBoundedGenericProjectFactMatch(parsedFromRaw)
-      ) {
-        return {
-          parsed: parsedFromRaw,
-          factFamily: "generalized_reference",
-          source: "raw",
-          detectionSource: "deterministic",
-          confidence: "high",
-          evidence: ["raw_turn_pattern_match"],
-        };
-      }
-    }
-
-    const semanticFromRaw = detectProjectFactSemanticDecision(input.metadata.raw);
-    if (
-      semanticFromRaw.action === "capture" &&
-      semanticFromRaw.match.captureClass === "explicit_project_fact"
-    ) {
-      return {
-        parsed: toOrdinaryTurnProjectFactMatch(semanticFromRaw.match),
-        factFamily: semanticFromRaw.match.factFamily,
-        ...(semanticFromRaw.match.fieldKey ? { fieldKey: semanticFromRaw.match.fieldKey } : {}),
-        source: "raw",
-        detectionSource: "semantic",
-        confidence: semanticFromRaw.confidence,
-        evidence: semanticFromRaw.evidence,
-      };
-    }
-
-    const genericFromRaw = detectGenericProjectFactSemanticDecision(input.metadata.raw);
-    if (
-      genericFromRaw.action === "capture" &&
-      genericFromRaw.match.captureClass === "explicit_project_fact"
-    ) {
-      return {
-        parsed: toOrdinaryTurnProjectFactMatch(genericFromRaw.match),
-        factFamily: genericFromRaw.match.factFamily,
-        source: "raw",
-        detectionSource: "semantic",
-        confidence: genericFromRaw.confidence,
-        evidence: genericFromRaw.evidence,
-      };
-    }
-  }
-
-  const semanticFromContent = detectProjectFactSemanticDecision(input.content);
-  if (
-    semanticFromContent.action === "capture" &&
-    semanticFromContent.match.captureClass === "explicit_project_fact"
-  ) {
-    return {
-      parsed: toOrdinaryTurnProjectFactMatch(semanticFromContent.match),
-      factFamily: semanticFromContent.match.factFamily,
-      ...(semanticFromContent.match.fieldKey
-        ? { fieldKey: semanticFromContent.match.fieldKey }
-        : {}),
-      source: "content",
-      detectionSource: "semantic",
-      confidence: semanticFromContent.confidence,
-      evidence: semanticFromContent.evidence,
-    };
-  }
-
-  const genericFromContent = detectGenericProjectFactSemanticDecision(input.content);
-  if (
-    genericFromContent.action === "capture" &&
-    genericFromContent.match.captureClass === "explicit_project_fact"
-  ) {
-    return {
-      parsed: toOrdinaryTurnProjectFactMatch(genericFromContent.match),
-      factFamily: genericFromContent.match.factFamily,
-      source: "content",
-      detectionSource: "semantic",
-      confidence: genericFromContent.confidence,
-      evidence: genericFromContent.evidence,
-    };
-  }
-
-  return null;
+): Promise<ManagedProjectFactResolution | null> {
+  const rawCandidates =
+    typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0
+      ? [input.metadata.raw]
+      : [];
+  return resolveProjectFactIngestion({
+    content: input.content,
+    primarySource: "content",
+    rawCandidates,
+    mode: "candidate_learning",
+  }).then((resolution) =>
+    resolution
+      ? {
+          ...resolution,
+          source: resolution.source === "transcript" ? "content" : resolution.source,
+        }
+      : null,
+  );
 }
 
 async function resolveManagedProjectFactCorrection(params: {
@@ -2807,38 +2448,6 @@ async function resolveManagedProjectFactCorrection(params: {
   context?: OpenClawPluginToolContext;
 }): Promise<ManagedProjectFactResolution | null> {
   const { input, context } = params;
-  const parsedFromContent = parseManagedCorrectionCandidateContent(input.content);
-  if (
-    isManagedProjectFactMatch(parsedFromContent) &&
-    parsedFromContent.captureClass === "project_fact_correction"
-  ) {
-    const fieldKey = inferProjectFactFieldKeyFromSubject(parsedFromContent.subject);
-    if (fieldKey && isSupportedProjectFactField(fieldKey)) {
-      return {
-        parsed: parsedFromContent,
-        factFamily: "supported_field",
-        fieldKey,
-        source: "content",
-        detectionSource: "deterministic",
-        confidence: "high",
-        evidence: ["managed_content_pattern_match"],
-      };
-    }
-    if (
-      isGeneralizedProjectFactMatch(parsedFromContent) &&
-      isBoundedGenericProjectFactMatch(parsedFromContent)
-    ) {
-      return {
-        parsed: parsedFromContent,
-        factFamily: "generalized_reference",
-        source: "content",
-        detectionSource: "deterministic",
-        confidence: "high",
-        evidence: ["managed_content_pattern_match"],
-      };
-    }
-  }
-
   const rawCandidates: string[] = [];
   if (typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0) {
     rawCandidates.push(input.metadata.raw);
@@ -2847,109 +2456,19 @@ async function resolveManagedProjectFactCorrection(params: {
   if (rawFromContext && !rawCandidates.includes(rawFromContext)) {
     rawCandidates.push(rawFromContext);
   }
-
-  for (const rawCandidate of rawCandidates) {
-    const parsedFromRaw = parseOrdinaryTurnAutoCapturePreference(
-      rawCandidate,
-      "user-preference-v2",
-    );
-    if (
-      isManagedProjectFactMatch(parsedFromRaw) &&
-      parsedFromRaw.captureClass === "project_fact_correction"
-    ) {
-      const fieldKey = inferProjectFactFieldKeyFromSubject(parsedFromRaw.subject);
-      if (fieldKey && isSupportedProjectFactField(fieldKey)) {
-        return {
-          parsed: parsedFromRaw,
-          factFamily: "supported_field",
-          fieldKey,
-          source: "raw",
-          detectionSource: "deterministic",
-          confidence: "high",
-          evidence: ["raw_turn_pattern_match"],
-        };
-      }
-      if (
-        isGeneralizedProjectFactMatch(parsedFromRaw) &&
-        isBoundedGenericProjectFactMatch(parsedFromRaw)
-      ) {
-        return {
-          parsed: parsedFromRaw,
-          factFamily: "generalized_reference",
-          source: "raw",
-          detectionSource: "deterministic",
-          confidence: "high",
-          evidence: ["raw_turn_pattern_match"],
-        };
-      }
-    }
-
-    const semanticFromRaw = detectProjectFactSemanticDecision(rawCandidate);
-    if (
-      semanticFromRaw.action === "capture" &&
-      semanticFromRaw.match.captureClass === "project_fact_correction"
-    ) {
-      return {
-        parsed: toOrdinaryTurnProjectFactMatch(semanticFromRaw.match),
-        factFamily: semanticFromRaw.match.factFamily,
-        ...(semanticFromRaw.match.fieldKey ? { fieldKey: semanticFromRaw.match.fieldKey } : {}),
-        source: "raw",
-        detectionSource: "semantic",
-        confidence: semanticFromRaw.confidence,
-        evidence: semanticFromRaw.evidence,
-      };
-    }
-
-    const genericFromRaw = detectGenericProjectFactSemanticDecision(rawCandidate);
-    if (
-      genericFromRaw.action === "capture" &&
-      genericFromRaw.match.captureClass === "project_fact_correction"
-    ) {
-      return {
-        parsed: toOrdinaryTurnProjectFactMatch(genericFromRaw.match),
-        factFamily: genericFromRaw.match.factFamily,
-        source: "raw",
-        detectionSource: "semantic",
-        confidence: genericFromRaw.confidence,
-        evidence: genericFromRaw.evidence,
-      };
-    }
-  }
-
-  const semanticFromContent = detectProjectFactSemanticDecision(input.content);
-  if (
-    semanticFromContent.action === "capture" &&
-    semanticFromContent.match.captureClass === "project_fact_correction"
-  ) {
-    return {
-      parsed: toOrdinaryTurnProjectFactMatch(semanticFromContent.match),
-      factFamily: semanticFromContent.match.factFamily,
-      ...(semanticFromContent.match.fieldKey
-        ? { fieldKey: semanticFromContent.match.fieldKey }
-        : {}),
-      source: "content",
-      detectionSource: "semantic",
-      confidence: semanticFromContent.confidence,
-      evidence: semanticFromContent.evidence,
-    };
-  }
-
-  const genericFromContent = detectGenericProjectFactSemanticDecision(input.content);
-  if (
-    genericFromContent.action === "capture" &&
-    genericFromContent.match.captureClass === "project_fact_correction"
-  ) {
-    return {
-      parsed: toOrdinaryTurnProjectFactMatch(genericFromContent.match),
-      factFamily: genericFromContent.match.factFamily,
-      source: "content",
-      detectionSource: "semantic",
-      confidence: genericFromContent.confidence,
-      evidence: genericFromContent.evidence,
-    };
-  }
-
-  return null;
+  return resolveProjectFactIngestion({
+    content: input.content,
+    primarySource: "content",
+    rawCandidates,
+    mode: "candidate_correction",
+  }).then((resolution) =>
+    resolution
+      ? {
+          ...resolution,
+          source: resolution.source === "transcript" ? "content" : resolution.source,
+        }
+      : null,
+  );
 }
 
 async function resolveManagedRecurringProcedureSubmission(params: {
@@ -2957,25 +2476,6 @@ async function resolveManagedRecurringProcedureSubmission(params: {
   context?: OpenClawPluginToolContext;
 }): Promise<ManagedRecurringProcedureResolution | null> {
   const { input, context } = params;
-  const contentDecision = detectRecurringProcedureSemanticDecision(input.content);
-  if (contentDecision.action === "capture") {
-    return {
-      parsed: toOrdinaryTurnRecurringProcedureMatch(contentDecision.match),
-      procedureFamily: contentDecision.match.procedureFamily,
-      ...(contentDecision.match.procedureKey
-        ? { procedureKey: contentDecision.match.procedureKey }
-        : {}),
-      reviewMode:
-        contentDecision.match.procedureFamily === "supported_key"
-          ? "pending_confirmation"
-          : "hold_for_more_evidence",
-      source: "content",
-      detectionSource: "semantic",
-      confidence: contentDecision.confidence,
-      evidence: contentDecision.evidence,
-    };
-  }
-
   const rawCandidates: string[] = [];
   if (typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0) {
     rawCandidates.push(input.metadata.raw);
@@ -2984,30 +2484,18 @@ async function resolveManagedRecurringProcedureSubmission(params: {
   if (rawFromContext && !rawCandidates.includes(rawFromContext)) {
     rawCandidates.push(rawFromContext);
   }
-
-  for (const rawCandidate of rawCandidates) {
-    const semanticFromRaw = detectRecurringProcedureSemanticDecision(rawCandidate);
-    if (semanticFromRaw.action !== "capture") {
-      continue;
-    }
-    return {
-      parsed: toOrdinaryTurnRecurringProcedureMatch(semanticFromRaw.match),
-      procedureFamily: semanticFromRaw.match.procedureFamily,
-      ...(semanticFromRaw.match.procedureKey
-        ? { procedureKey: semanticFromRaw.match.procedureKey }
-        : {}),
-      reviewMode:
-        semanticFromRaw.match.procedureFamily === "supported_key"
-          ? "pending_confirmation"
-          : "hold_for_more_evidence",
-      source: "raw",
-      detectionSource: "semantic",
-      confidence: semanticFromRaw.confidence,
-      evidence: semanticFromRaw.evidence,
-    };
-  }
-
-  return null;
+  return resolveRecurringProcedureIngestion({
+    content: input.content,
+    primarySource: "content",
+    rawCandidates,
+  }).then((resolution) =>
+    resolution
+      ? {
+          ...resolution,
+          source: resolution.source === "transcript" ? "content" : resolution.source,
+        }
+      : null,
+  );
 }
 
 async function resolveManagedWorkflowImprovementSubmission(params: {
@@ -3230,7 +2718,7 @@ async function normalizeManagedToolCandidateInput(params: {
       });
     }
 
-    const projectFactResolution = resolveManagedProjectFactLearning(input);
+    const projectFactResolution = await resolveManagedProjectFactLearning(input);
     if (projectFactResolution) {
       return mergeCandidateMetadata(input, {
         category: "project_fact",

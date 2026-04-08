@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MemoryMiddlewareConfig } from "./config.js";
+import type { ApprovedResponseStylePhrasePatternMatch } from "./response-style-phrase-induction.js";
 import type { ApprovedWorkflowPhrasePatternMatch } from "./workflow-phrase-induction.js";
 
 const findApprovedWorkflowPhrasePatternMatch = vi.hoisted(() =>
   vi.fn<() => Promise<ApprovedWorkflowPhrasePatternMatch | null>>(async () => null),
+);
+const findApprovedResponseStylePhrasePatternMatch = vi.hoisted(() =>
+  vi.fn<() => Promise<ApprovedResponseStylePhrasePatternMatch | null>>(async () => null),
 );
 
 vi.mock("./workflow-phrase-induction.js", async () => {
@@ -15,8 +19,22 @@ vi.mock("./workflow-phrase-induction.js", async () => {
     findApprovedWorkflowPhrasePatternMatch,
   };
 });
+vi.mock("./response-style-phrase-induction.js", async () => {
+  const actual = await vi.importActual<typeof import("./response-style-phrase-induction.js")>(
+    "./response-style-phrase-induction.js",
+  );
+  return {
+    ...actual,
+    findApprovedResponseStylePhrasePatternMatch,
+  };
+});
 
-import { resolveWorkflowImprovementIngestion } from "./memory-ingestion-resolver.js";
+import {
+  resolveProjectFactIngestion,
+  resolveRecurringProcedureIngestion,
+  resolveResponseStyleIngestion,
+  resolveWorkflowImprovementIngestion,
+} from "./memory-ingestion-resolver.js";
 
 function createConfig(): MemoryMiddlewareConfig {
   return {
@@ -53,6 +71,78 @@ describe("resolveWorkflowImprovementIngestion", () => {
   beforeEach(() => {
     findApprovedWorkflowPhrasePatternMatch.mockReset();
     findApprovedWorkflowPhrasePatternMatch.mockResolvedValue(null);
+    findApprovedResponseStylePhrasePatternMatch.mockReset();
+    findApprovedResponseStylePhrasePatternMatch.mockResolvedValue(null);
+  });
+
+  it("resolves response-style tool learning through the shared control plane", async () => {
+    await expect(
+      resolveResponseStyleIngestion({
+        config: createConfig(),
+        content: "User requirement: use plain English.",
+        primarySource: "content",
+        mode: "candidate_learning",
+        allowPhrasePatternMatch: true,
+      }),
+    ).resolves.toMatchObject({
+      action: "capture",
+      familyId: "response_style",
+      source: "content",
+      detectionSource: "deterministic",
+      reviewMode: "direct",
+      parsed: {
+        captureClass: "explicit_requirement",
+        template: "responses_plain_english",
+      },
+    });
+  });
+
+  it("resolves project-fact correction from raw fallback through the shared control plane", async () => {
+    await expect(
+      resolveProjectFactIngestion({
+        content: "Please save this correction.",
+        primarySource: "content",
+        rawCandidates: ["Actually, for project atlas forge, the staging branch is atlas-green."],
+        mode: "candidate_correction",
+      }),
+    ).resolves.toMatchObject({
+      familyId: "project_fact",
+      source: "raw",
+      detectionSource: "deterministic",
+      reviewMode: "pending_confirmation",
+      factFamily: "supported_field",
+      fieldKey: "staging_branch",
+      parsed: {
+        captureClass: "project_fact_correction",
+        template: "project_fact_named_scope",
+        projectScope: "atlas forge",
+      },
+    });
+  });
+
+  it("resolves recurring procedures from raw fallback through the shared control plane", async () => {
+    await expect(
+      resolveRecurringProcedureIngestion({
+        content: "Store this checklist.",
+        primarySource: "content",
+        rawCandidates: [
+          [
+            "My deploy checklist:",
+            "1. Open the canary lane.",
+            "2. Verify health.",
+            "3. Watch the error budget.",
+          ].join("\n"),
+        ],
+      }),
+    ).resolves.toMatchObject({
+      familyId: "recurring_procedure",
+      source: "raw",
+      detectionSource: "semantic",
+      parsed: {
+        captureClass: "explicit_recurring_procedure",
+        procedureKey: "deploy_checklist",
+      },
+    });
   });
 
   it("resolves project-rule guidance from transcript content", async () => {

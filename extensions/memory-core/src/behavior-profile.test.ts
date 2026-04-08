@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildDurableMemoryApplicationSelection,
   buildDurableMemoryBehaviorProfile,
-  renderDurableMemoryBehaviorProfile,
+  buildDurableMemoryApplicationSelectionFromProfile,
+  renderDurableMemoryApplicationSelection,
   resolveDurableMemoryGuidancePlan,
 } from "./behavior-profile.js";
 
@@ -51,10 +53,80 @@ describe("behavior profile guidance plan", () => {
       throw new Error("expected durable memory profile");
     }
 
-    const lines = renderDurableMemoryBehaviorProfile(profile).join("\n");
+    const lines = renderDurableMemoryApplicationSelection(
+      buildDurableMemoryApplicationSelectionFromProfile(profile),
+    ).join("\n");
     expect(lines).not.toContain("memory_candidate_submit");
     expect(lines).not.toContain("memory_object_search_hybrid with kind=project");
     expect(lines).toContain("memory_session_get and memory_session_update");
     expect(lines).toContain("Before claiming durable long-term memory");
+  });
+
+  it("builds a structured application selection with selected and suppressed guidance kinds", () => {
+    const selection = buildDurableMemoryApplicationSelection({
+      availableTools: new Set(["memory_object_search_basic", "memory_session_get"]),
+    });
+
+    expect(selection).not.toBeNull();
+    if (!selection) {
+      throw new Error("expected durable memory application selection");
+    }
+
+    expect(selection.queryIntent).toEqual({
+      kind: "tool_surface_guidance",
+      hasObjectSurface: true,
+      hasCandidateSurface: false,
+      hasSessionSurface: true,
+    });
+    expect(selection.selectedItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          familyId: "workflow_improvement",
+          applicationMode: "guidance_only",
+          selectedGuidanceKinds: ["application"],
+        }),
+        expect.objectContaining({
+          familyId: "recurring_procedure",
+          applicationMode: "suggestion_first",
+          selectedGuidanceKinds: ["application"],
+          directUseOnlyOnClearAsk: true,
+        }),
+      ]),
+    );
+    expect(selection.suppressedItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          familyId: "response_style",
+          suppressedGuidanceKinds: expect.arrayContaining(["search", "application", "capture"]),
+        }),
+        expect.objectContaining({
+          familyId: "project_fact",
+          suppressedGuidanceKinds: expect.arrayContaining(["search", "application", "capture"]),
+        }),
+      ]),
+    );
+  });
+
+  it("renders durable-memory guidance from the structured application selection", () => {
+    const profile = buildDurableMemoryBehaviorProfile({
+      availableTools: new Set([
+        "memory_candidate_submit",
+        "memory_object_search_hybrid",
+        "memory_session_update",
+      ]),
+    });
+
+    expect(profile).not.toBeNull();
+    if (!profile) {
+      throw new Error("expected durable memory profile");
+    }
+
+    const selection = buildDurableMemoryApplicationSelectionFromProfile(profile);
+    const lines = renderDurableMemoryApplicationSelection(selection).join("\n");
+    expect(lines).toContain("memory_object_search_hybrid with kind=feedback");
+    expect(lines).toContain("stored checklist exists");
+    expect(lines).toContain("surface only the top directly relevant guidance hint or two");
+    expect(lines).toContain("memory_candidate_submit");
+    expect(lines).toContain("memory_session_get and memory_session_update");
   });
 });

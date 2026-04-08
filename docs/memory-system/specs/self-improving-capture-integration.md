@@ -146,17 +146,18 @@ following are true:
 
 1. the post-v3 substrate blockers before self-improving capture are landed:
    - full ingestion control-plane flattening
-   - real application-selection / behavior-planning layer
+   - prompt-facing application-selection / behavior-planning layer
    - retrieval + semantic-routing control-plane flattening
+2. the remaining post-v4 blockers before self-improving capture are landed:
    - recurring-procedure staged substrate redesign where relevant
    - correction-policy cleanup
-2. generalized lesson normalization is stable
-3. generalized lesson auto-review exists
-4. candidate backlog-control rules are live
-5. conflict handling against native capture is implemented
-6. proof-runner support exists for this provenance path on the adapterized
+3. generalized lesson normalization is stable
+4. generalized lesson auto-review exists
+5. candidate backlog-control rules are live
+6. conflict handling against native capture is implemented
+7. proof-runner support exists for this provenance path on the adapterized
    proof substrate
-7. operator observability can distinguish self-improving-origin decisions
+8. operator observability can distinguish self-improving-origin decisions
 
 ## Candidate-only posture
 

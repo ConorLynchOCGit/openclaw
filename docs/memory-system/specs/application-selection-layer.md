@@ -2,65 +2,48 @@
 
 ## Purpose
 
-Define the real application-selection / behavior-planning layer that should sit
-between retrieval and prompt rendering.
+Define and now record the landing of the real prompt-facing
+application-selection / behavior-planning layer that sits between durable-memory
+policy and prompt rendering.
 
-This supersedes the current interpretation of behavior-profile as “complete
-enough.”
+This supersedes the old interpretation of behavior-profile as merely
+“complete enough” prompt guidance.
 
-## Why this exists
+## Landed status
 
-The current behavior-profile layer is useful, but it is still mostly a
-prompt-support helper.
+This slice is now live for the current prompt-facing boundary.
 
-The substrate still lacks one runtime control plane that answers:
+The repo now has a structured durable-memory application-selection artifact
+that includes:
 
-- which retrieved memories were selected
-- which were suppressed
-- why they were selected or suppressed
-- how each selected memory is allowed to apply
+- query intent
+- selected items
+- suppressed items
+- rendering hints
 
-## Target model
+Prompt rendering now consumes that artifact instead of carrying family posture
+inline.
+
+## Current landed model
 
 ```ts
-type ApplicationSelection = {
-  queryIntent: QueryIntent;
-  selectedItems: SelectedMemoryItem[];
-  suppressedItems: SuppressedMemoryItem[];
-  renderingHints: RenderingHints;
+type DurableMemoryApplicationSelection = {
+  queryIntent: DurableMemoryApplicationQueryIntent;
+  selectedItems: DurableMemorySelectedApplicationItem[];
+  suppressedItems: DurableMemorySuppressedApplicationItem[];
+  renderingHints: DurableMemoryGuidancePlan;
 };
 ```
 
-Where:
+For the current landed boundary:
 
-- `queryIntent` comes from retrieval/routing control-plane normalization
-- `selectedItems` are the memories allowed to shape the reply
-- `suppressedItems` are the memories intentionally filtered out
-- `renderingHints` are downstream prompt/rendering inputs, not the policy
-  source of truth
+- `queryIntent` is tool-surface guidance intent for the durable-memory prompt
+  layer
+- `selectedItems` are the family guidance items allowed to render
+- `suppressedItems` are the family guidance items intentionally omitted
+- `renderingHints` drive downstream prompt rendering
 
-## Selected item contract
-
-Each selected item should include:
-
-- family id
-- storage surface
-- memory id
-- application mode
-- reason codes
-- whether direct use is allowed
-- whether the item is corroborating or primary
-
-## Suppressed item contract
-
-Each suppressed item should include:
-
-- family id
-- memory id
-- suppression reason code
-- optional stronger winner reference
-
-## Family application modes
+## Family application modes still preserved
 
 These modes remain valid:
 
@@ -70,57 +53,13 @@ These modes remain valid:
 - `recommendation_only`
 - `suggestion_first`
 
-## Structural meaning of each mode
+## What this slice changed structurally
 
-### `shape_reply`
-
-- shapes wording, formatting, and style
-- does not become a factual answer by itself
-
-### `direct_answer`
-
-- can directly answer a scoped factual ask
-- should win clearly over adjacent project guidance families when the query
-  intent is factual
-
-### `guidance_only`
-
-- can provide reusable guidance
-- should not silently become autonomous action
-
-### `recommendation_only`
-
-- can surface remembered gaps or missing capabilities
-- should not become procurement, install, or approval action
-
-### `suggestion_first`
-
-- can surface a stored checklist or procedure as an option
-- can become direct-use only on clear checklist/procedure asks
-
-## Retrieval-to-application handoff
-
-The retrieval/routing control plane should hand this layer:
-
-- normalized query intent
-- ranked records
-- family policy
-- any family-intent or semantic-routing evidence already computed
-
-This layer should decide selected/suppressed outcomes.
-Prompt rendering should not re-derive those decisions.
-
-## Relationship to behavior-profile
-
-The current behavior-profile layer should be reframed as:
-
-- an early prompt-support bridge already landed
-
-The target behavior/application architecture is:
-
-1. retrieval/routing produces ranked candidates plus intent
-2. application-selection layer decides selected/suppressed items
-3. prompt rendering consumes that structured profile
+- prompt rendering is now downstream of a structured selection result
+- selected versus suppressed family guidance is explicit
+- rendering hints now exist structurally rather than being re-derived inside
+  the renderer
+- family application posture is no longer mostly implicit in prompt prose
 
 ## What remains family-specific
 
@@ -130,13 +69,22 @@ The target behavior/application architecture is:
 - bounded response-style role
 - recommendation-only unmet-need posture
 
-## Proof requirements
+## What this slice did not replace
 
-Prove:
+This is not yet the final end-state described in the broader architecture docs.
 
-1. at least three families with different application modes use the same
-   selection substrate
-2. direct named-project family suppression is represented structurally rather
-   than only by SQL reshaping or prompt text
+Still ahead:
+
+- retrieval-fed per-memory-item application selection
+- stronger handoff after recurring-procedure staged redesign
+- later proof / registry / boundary cleanup
+
+## Proof status
+
+This slice now proves:
+
+1. at least three families with different application modes use one selection
+   substrate
+2. selection and suppression are represented structurally
 3. prompt output still respects family posture after rendering becomes
    downstream-only

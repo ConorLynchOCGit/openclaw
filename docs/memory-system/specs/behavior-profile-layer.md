@@ -14,6 +14,8 @@ The current behavior-profile layer did improve the architecture:
   inline
 - family posture is now less ad hoc and more registry-aligned
 - prompt support is cleaner than before
+- the behavior-profile bridge now feeds a structured prompt-facing
+  application-selection artifact instead of only raw guidance assembly
 
 ## Why this spec is now explicitly partial
 
@@ -21,25 +23,22 @@ The current layer is not yet the final application-selection substrate.
 
 It is still mostly:
 
-- a prompt-support helper
+- the bridge that feeds the prompt-facing application-selection layer
 - family guidance assembly
 - registry-backed posture rendering
 
 It is not yet:
 
-- selected/suppressed memory planning
-- retrieval-to-application handoff
-- application reason-code attribution
-- the runtime source of truth for what memory actually applied
+- the final retrieval-fed per-memory-item application substrate
+- full retrieval-to-application handoff
+- the last runtime source of truth for what memory actually applied
 
 ## Current-state gap
 
-The repo still lacks one structured runtime artifact that answers:
+The repo no longer lacks a structured prompt-facing selection artifact.
 
-- what was selected
-- what was suppressed
-- why it was selected or suppressed
-- how each selected family is allowed to apply
+The remaining gap is that the final runtime still does not yet answer those
+same questions at the later retrieval-fed memory-item boundary.
 
 ## Relationship to the new target layer
 
@@ -59,10 +58,9 @@ That later layer should extend and partially supersede this one.
 
 ## What remains incomplete
 
-- structural selected/suppressed outputs
 - explicit handoff from retrieval intent and ranked records
-- suppression reason codes
-- structural procedure direct-use gating
+- later per-memory-item selected/suppressed outputs
+- structural procedure direct-use gating after the procedure redesign
 
 ## Implementation rule
 

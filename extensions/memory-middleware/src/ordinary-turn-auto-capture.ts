@@ -16,7 +16,19 @@ import {
   resolveMemoryCorrectionPlan,
 } from "./memory-correction-engine.js";
 import { getCaptureMetadataByCaptureClass } from "./memory-family-registry.js";
-import { resolveWorkflowImprovementIngestion } from "./memory-ingestion-resolver.js";
+import {
+  resolveProjectFactIngestion,
+  resolveRecurringProcedureIngestion,
+  resolveResponseStyleIngestion,
+  resolveWorkflowImprovementIngestion,
+} from "./memory-ingestion-resolver.js";
+import {
+  type OrdinaryTurnAutoCaptureMatch,
+  toOrdinaryTurnProjectFactMatch,
+  toOrdinaryTurnRecurringProcedureMatch,
+  toOrdinaryTurnResponseStyleMatch,
+  toOrdinaryTurnWorkflowImprovementMatch,
+} from "./memory-ingestion-types.js";
 import {
   type ProjectFactLifecycleInspection,
   inspectProjectFactLifecycle,
@@ -593,89 +605,6 @@ type TranscriptUserMessage = {
   role: "user";
   content: string | Array<{ text?: unknown }>;
   timestamp?: number;
-};
-
-export type OrdinaryTurnAutoCaptureMatch = {
-  profile: "user-preference-v1" | "user-preference-v2";
-  captureClass:
-    | "explicit_preference"
-    | "preference_correction"
-    | "explicit_requirement"
-    | "requirement_correction"
-    | "explicit_project_fact"
-    | "project_fact_correction"
-    | "explicit_recurring_procedure"
-    | "recurring_procedure_correction"
-    | "workflow_tool_gotcha"
-    | "workflow_environment_constraint"
-    | "workflow_api_workaround"
-    | "workflow_generalized_guidance"
-    | "project_rule_guidance"
-    | "unmet_need_recommendation";
-  candidateKind: "learning" | "correction" | "procedure" | "improvement";
-  reasonCode:
-    | "explicit_preference_statement"
-    | "explicit_preference_correction"
-    | "explicit_requirement_statement"
-    | "explicit_requirement_correction"
-    | "explicit_project_fact_statement"
-    | "explicit_project_fact_correction"
-    | "explicit_recurring_procedure_statement"
-    | "recurring_procedure_correction"
-    | "workflow_tool_gotcha_statement"
-    | "workflow_environment_constraint_statement"
-    | "workflow_api_workaround_statement"
-    | "workflow_generalized_guidance_statement"
-    | "project_rule_guidance_statement"
-    | "unmet_need_recommendation_statement";
-  template:
-    | "my_preferred_is"
-    | "my_favorite_is"
-    | "responses_concise"
-    | "responses_bullets"
-    | "responses_plain_english"
-    | "responses_no_tables"
-    | "responses_numbered_steps"
-    | "response_style_generalized_guidance"
-    | "project_fact_named_scope"
-    | "project_fact_generalized_named_scope"
-    | "named_recurring_checklist"
-    | "generalized_recurring_checklist"
-    | "workflow_tool_gotcha"
-    | "workflow_environment_constraint"
-    | "workflow_api_workaround"
-    | "workflow_generalized_guidance"
-    | "project_rule_guidance"
-    | "unmet_need_recommendation";
-  subject: string;
-  value: string;
-  normalizedSubject: string;
-  normalizedValue: string;
-  content: string;
-  subjectKey: string;
-  key: string;
-  projectScope?: string;
-  normalizedProjectScope?: string;
-  responseStyleFamily?: ResponseStyleFamily;
-  factFamily?: ProjectFactFamily;
-  fieldKey?: ProjectFactFieldKey;
-  procedureFamily?: RecurringProcedureFamily;
-  procedureKey?: RecurringProcedureKey;
-  title?: string;
-  steps?: string[];
-  lessonFamily?: WorkflowImprovementLessonFamily;
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
-  guidancePattern?: WorkflowImprovementGuidancePattern;
-  needCategory?: WorkflowImprovementNeedCategory;
-  neededCapability?: string;
-  normalizedNeededCapability?: string;
-  recommendedAction?: string;
-  normalizedRecommendedAction?: string;
-  avoidAction?: string;
-  normalizedAvoidAction?: string;
-  rationale?: string;
-  normalizedRationale?: string;
 };
 
 type ResolvedAttribution = {
@@ -1518,26 +1447,6 @@ export function parseManagedCorrectionCandidateContent(
   return null;
 }
 
-function toOrdinaryTurnResponseStyleMatch(
-  match: ResponseStyleCanonicalMatch,
-): OrdinaryTurnAutoCaptureMatch {
-  return {
-    profile: "user-preference-v2",
-    captureClass: match.captureClass,
-    candidateKind: match.candidateKind,
-    reasonCode: match.reasonCode,
-    template: match.template,
-    subject: match.subject,
-    value: match.value,
-    normalizedSubject: match.normalizedSubject,
-    normalizedValue: match.normalizedValue,
-    content: match.content,
-    subjectKey: match.subjectKey,
-    key: match.key,
-    responseStyleFamily: match.family,
-  };
-}
-
 function inferSupportedProjectFactFieldKey(
   match: OrdinaryTurnAutoCaptureMatch,
 ): ProjectFactFieldKey | null {
@@ -1555,267 +1464,95 @@ function isGeneralizedProjectFactMatch(match: OrdinaryTurnAutoCaptureMatch): boo
   );
 }
 
-function toOrdinaryTurnProjectFactMatch(
-  match: ProjectFactCanonicalMatch,
-): OrdinaryTurnAutoCaptureMatch {
-  return {
-    profile: "user-preference-v2",
-    captureClass: match.captureClass,
-    candidateKind: match.candidateKind,
-    reasonCode: match.reasonCode,
-    template: match.template,
-    subject: match.subject,
-    value: match.value,
-    normalizedSubject: match.normalizedSubject,
-    normalizedValue: match.normalizedValue,
-    content: match.content,
-    subjectKey: match.subjectKey,
-    key: match.key,
-    projectScope: match.projectScope,
-    normalizedProjectScope: match.normalizedProjectScope,
-    factFamily: match.factFamily,
-    ...(match.fieldKey ? { fieldKey: match.fieldKey } : {}),
-  };
-}
-
-function toOrdinaryTurnRecurringProcedureMatch(
-  match: RecurringProcedureCanonicalMatch,
-): OrdinaryTurnAutoCaptureMatch {
-  return {
-    profile: "user-preference-v2",
-    captureClass: match.captureClass,
-    candidateKind: match.candidateKind,
-    reasonCode: match.reasonCode,
-    template: match.template,
-    subject: match.title,
-    value: match.body,
-    normalizedSubject: match.normalizedTitle,
-    normalizedValue: match.normalizedBody,
-    content: match.content,
-    subjectKey: match.subjectKey,
-    key: match.key,
-    procedureFamily: match.procedureFamily,
-    ...(match.procedureKey ? { procedureKey: match.procedureKey } : {}),
-    title: match.title,
-    steps: match.steps,
-  };
-}
-
-function toOrdinaryTurnWorkflowImprovementMatch(match: {
-  captureClass: WorkflowImprovementCaptureClass;
-  candidateKind: "improvement";
-  reasonCode: WorkflowImprovementReasonCode;
-  template: WorkflowImprovementTemplate;
-  lessonFamily: WorkflowImprovementLessonFamily;
-  projectScope?: string;
-  normalizedProjectScope?: string;
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
-  guidancePattern?: WorkflowImprovementGuidancePattern;
-  needCategory?: WorkflowImprovementNeedCategory;
-  subject: string;
-  value: string;
-  normalizedSubject: string;
-  normalizedValue: string;
-  content: string;
-  subjectKey: string;
-  key: string;
-  neededCapability?: string;
-  normalizedNeededCapability?: string;
-  recommendedAction?: string;
-  normalizedRecommendedAction?: string;
-  avoidAction?: string;
-  normalizedAvoidAction?: string;
-  rationale?: string;
-  normalizedRationale?: string;
-}): OrdinaryTurnAutoCaptureMatch {
-  return {
-    profile: "user-preference-v2",
-    captureClass: match.captureClass,
-    candidateKind: match.candidateKind,
-    reasonCode: match.reasonCode,
-    template: match.template,
-    lessonFamily: match.lessonFamily,
-    subject: match.subject,
-    value: match.value,
-    normalizedSubject: match.normalizedSubject,
-    normalizedValue: match.normalizedValue,
-    content: match.content,
-    subjectKey: match.subjectKey,
-    key: match.key,
-    ...(match.projectScope ? { projectScope: match.projectScope } : {}),
-    ...(match.normalizedProjectScope
-      ? { normalizedProjectScope: match.normalizedProjectScope }
-      : {}),
-    ...(match.lessonKey ? { lessonKey: match.lessonKey } : {}),
-    ...(match.toolKey ? { toolKey: match.toolKey } : {}),
-    ...(match.guidancePattern ? { guidancePattern: match.guidancePattern } : {}),
-    ...(match.needCategory ? { needCategory: match.needCategory } : {}),
-    ...(match.neededCapability ? { neededCapability: match.neededCapability } : {}),
-    ...(match.normalizedNeededCapability
-      ? { normalizedNeededCapability: match.normalizedNeededCapability }
-      : {}),
-    ...(match.recommendedAction ? { recommendedAction: match.recommendedAction } : {}),
-    ...(match.normalizedRecommendedAction
-      ? { normalizedRecommendedAction: match.normalizedRecommendedAction }
-      : {}),
-    ...(match.avoidAction ? { avoidAction: match.avoidAction } : {}),
-    ...(match.normalizedAvoidAction ? { normalizedAvoidAction: match.normalizedAvoidAction } : {}),
-    ...(match.rationale ? { rationale: match.rationale } : {}),
-    ...(match.normalizedRationale ? { normalizedRationale: match.normalizedRationale } : {}),
-  };
-}
-
-function detectResponseStyleCaptureDecision(
+async function detectResponseStyleCaptureDecision(
   text: string,
   profile: "user-preference-v1" | "user-preference-v2",
-): ResponseStyleCaptureDecision | null {
+  config: MemoryMiddlewareConfig,
+): Promise<ResponseStyleCaptureDecision | null> {
   if (profile !== "user-preference-v2") {
     return null;
   }
-
-  const exactMatch = parseOrdinaryTurnAutoCapturePreference(text, profile);
-  if (exactMatch && isSupportedResponseStyleTemplate(exactMatch.template)) {
-    return {
-      action: "capture",
-      confidence: "high",
-      detectionSource: "deterministic",
-      evidence: ["deterministic_pattern_match"],
-      responseStyleFamily: "supported_template",
-      match: exactMatch,
-      reviewMode: "direct",
-    };
-  }
-
-  const semanticDecision = detectResponseStyleSemanticDecision(text);
-  if (semanticDecision.action === "ignore") {
+  const resolution = await resolveResponseStyleIngestion({
+    config,
+    content: text,
+    primarySource: "transcript",
+    mode: "ordinary_turn",
+    allowPhrasePatternMatch: false,
+  });
+  if (!resolution) {
     return null;
   }
-  if (semanticDecision.action === "forget") {
+  if (resolution.action === "forget") {
     return {
       action: "forget",
-      confidence: "high",
-      detectionSource: "semantic",
-      evidence: semanticDecision.evidence,
-      subject: semanticDecision.subject,
-      subjectKey: semanticDecision.subjectKey,
-    };
-  }
-
-  const match = toOrdinaryTurnResponseStyleMatch(semanticDecision.match);
-  if (semanticDecision.confidence === "high") {
-    return {
-      action: "capture",
-      confidence: "high",
-      detectionSource: "semantic",
-      evidence: semanticDecision.evidence,
-      responseStyleFamily: semanticDecision.match.family,
-      match,
-      reviewMode:
-        semanticDecision.match.family === "generalized_guidance"
-          ? "hold_for_more_evidence"
-          : "direct",
+      confidence: resolution.confidence,
+      detectionSource: resolution.detectionSource,
+      evidence: resolution.evidence,
+      subject: resolution.subject,
+      subjectKey: resolution.subjectKey,
     };
   }
   return {
     action: "capture",
-    confidence: "medium",
-    detectionSource: "semantic",
-    evidence: semanticDecision.evidence,
-    responseStyleFamily: semanticDecision.match.family,
-    match,
-    reviewMode:
-      semanticDecision.match.family === "generalized_guidance"
-        ? "hold_for_more_evidence"
-        : "pending_confirmation",
+    confidence: resolution.confidence,
+    detectionSource: resolution.detectionSource,
+    evidence: resolution.evidence,
+    responseStyleFamily: resolution.responseStyleFamily,
+    match: resolution.parsed,
+    reviewMode: resolution.reviewMode,
   };
 }
 
-function detectProjectFactCaptureDecision(
+async function detectProjectFactCaptureDecision(
   text: string,
   profile: "user-preference-v1" | "user-preference-v2",
-): ProjectFactCaptureDecision | null {
+): Promise<ProjectFactCaptureDecision | null> {
   if (profile !== "user-preference-v2") {
     return null;
   }
-
-  const exactMatch = parseOrdinaryTurnAutoCapturePreference(text, profile);
-  const exactFieldKey = exactMatch ? inferSupportedProjectFactFieldKey(exactMatch) : null;
-  if (
-    exactMatch &&
-    exactFieldKey &&
-    (exactMatch.captureClass === "explicit_project_fact" ||
-      exactMatch.captureClass === "project_fact_correction")
-  ) {
-    return {
-      action: "capture",
-      confidence: "high",
-      detectionSource: "deterministic",
-      evidence: ["deterministic_pattern_match"],
-      reviewMode: "pending_confirmation",
-      factFamily: "supported_field",
-      fieldKey: exactFieldKey,
-      match: exactMatch,
-    };
-  }
-
-  const semanticDecision = detectProjectFactSemanticDecision(text);
-  if (semanticDecision.action === "capture") {
-    return {
-      action: "capture",
-      confidence: semanticDecision.confidence,
-      detectionSource: "semantic",
-      evidence: semanticDecision.evidence,
-      reviewMode: "pending_confirmation",
-      factFamily: semanticDecision.match.factFamily,
-      fieldKey: semanticDecision.match.fieldKey,
-      match: toOrdinaryTurnProjectFactMatch(semanticDecision.match),
-    };
-  }
-
-  const genericDecision = detectGenericProjectFactSemanticDecision(text);
-  if (genericDecision.action === "capture") {
-    return {
-      action: "capture",
-      confidence: genericDecision.confidence,
-      detectionSource: "semantic",
-      evidence: genericDecision.evidence,
-      reviewMode: "hold_for_more_evidence",
-      factFamily: genericDecision.match.factFamily,
-      match: toOrdinaryTurnProjectFactMatch(genericDecision.match),
-    };
-  }
-
-  return null;
-}
-
-function detectRecurringProcedureCaptureDecision(
-  text: string,
-  profile: "user-preference-v1" | "user-preference-v2",
-): RecurringProcedureCaptureDecision | null {
-  if (profile !== "user-preference-v2") {
+  const resolution = await resolveProjectFactIngestion({
+    content: text,
+    primarySource: "transcript",
+    mode: "ordinary_turn",
+  });
+  if (!resolution) {
     return null;
   }
-
-  const semanticDecision = detectRecurringProcedureSemanticDecision(text);
-  if (semanticDecision.action === "ignore") {
-    return null;
-  }
-
   return {
     action: "capture",
-    confidence: semanticDecision.confidence,
-    detectionSource: "semantic",
-    evidence: semanticDecision.evidence,
-    reviewMode:
-      semanticDecision.match.procedureFamily === "supported_key"
-        ? "pending_confirmation"
-        : "hold_for_more_evidence",
-    procedureFamily: semanticDecision.match.procedureFamily,
-    ...(semanticDecision.match.procedureKey
-      ? { procedureKey: semanticDecision.match.procedureKey }
-      : {}),
-    match: toOrdinaryTurnRecurringProcedureMatch(semanticDecision.match),
+    confidence: resolution.confidence,
+    detectionSource: resolution.detectionSource,
+    evidence: resolution.evidence,
+    reviewMode: resolution.reviewMode,
+    factFamily: resolution.factFamily,
+    ...(resolution.fieldKey ? { fieldKey: resolution.fieldKey } : {}),
+    match: resolution.parsed,
+  };
+}
+
+async function detectRecurringProcedureCaptureDecision(
+  text: string,
+  profile: "user-preference-v1" | "user-preference-v2",
+): Promise<RecurringProcedureCaptureDecision | null> {
+  if (profile !== "user-preference-v2") {
+    return null;
+  }
+  const resolution = await resolveRecurringProcedureIngestion({
+    content: text,
+    primarySource: "transcript",
+  });
+  if (!resolution) {
+    return null;
+  }
+  return {
+    action: "capture",
+    confidence: resolution.confidence,
+    detectionSource: resolution.detectionSource,
+    evidence: resolution.evidence,
+    reviewMode: resolution.reviewMode,
+    procedureFamily: resolution.procedureFamily,
+    ...(resolution.procedureKey ? { procedureKey: resolution.procedureKey } : {}),
+    match: resolution.parsed,
   };
 }
 
@@ -4891,7 +4628,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     ) {
       return;
     }
-    const responseStyleDecision = detectResponseStyleCaptureDecision(text, autoCapture.profile);
+    const responseStyleDecision = await detectResponseStyleCaptureDecision(
+      text,
+      autoCapture.profile,
+      params.config,
+    );
     if (
       responseStyleDecision &&
       (await handleResponseStyleDecision({
@@ -4905,7 +4646,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     ) {
       return;
     }
-    const projectFactDecision = detectProjectFactCaptureDecision(text, autoCapture.profile);
+    const projectFactDecision = await detectProjectFactCaptureDecision(text, autoCapture.profile);
     if (
       projectFactDecision &&
       (await handleProjectFactDecision({
@@ -4918,7 +4659,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     ) {
       return;
     }
-    const recurringProcedureDecision = detectRecurringProcedureCaptureDecision(
+    const recurringProcedureDecision = await detectRecurringProcedureCaptureDecision(
       text,
       autoCapture.profile,
     );
