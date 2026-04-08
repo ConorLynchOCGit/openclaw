@@ -18,6 +18,9 @@ implemented on the shared substrate.
 
 The bounded rollout-proof and reevaluation batch is now also landed.
 
+The Main-session reminder isolation and memory-consolidation follow-through
+batch is now also landed.
+
 ## What is live now
 
 Live families:
@@ -43,6 +46,9 @@ Live substrate properties:
 - reduced-profile self-improving capture proof support
 - reduced-profile self-improving capture first tranche
 - inline learned-guidance advisory planning first tranche
+- Main-session internal reminder isolation for cron / exec reminder turns
+- stronger docs-localization project-rule normalization
+- stronger file-reference response-style normalization and retrieval hinting
 
 ## What is live but still bounded
 
@@ -121,17 +127,47 @@ It concluded:
 - the repo is now ready for bounded off-production evidence collection, not
   automatic widening
 
+## What the reminder-isolation and consolidation batch changed
+
+This batch landed three real slices:
+
+1. Main-session reminder isolation
+2. docs and formatting memory consolidation
+3. bounded rollout follow-through judgment
+
+It added:
+
+- structural isolation for internal-only cron / exec reminder turns so they no
+  longer leak visible system payloads into Main chat
+- a bounded project-rule semantic lane for explicit docs-localization policy
+  phrasing with project scope
+- a bounded generalized response-style lane for file-reference preferences
+- response-style subject hinting for file-reference retrieval
+- sharper project-rule routing for docs i18n / translation / `docs/zh-CN`
+  queries
+
+It concluded:
+
+- explicit docs-localization and file-reference packet shapes are now strong
+  enough for bounded promotion follow-through
+- vague shorthand packet shapes should stay narrow and candidate-heavy
+- self-improving capture and learned-guidance advisory planning still do not
+  earn broader widening yet
+
 ## What happens next
 
 The next major move is no longer another substrate refactor phase.
 
 The next major move should be:
 
-1. bounded off-production rollout using the new controls and observability
-2. evidence collection on usefulness, noise, conflict suppression, and prompt
+1. bounded promotion follow-through for the strongest explicit manual-UX-backed
+   docs-localization and file-reference packet shapes
+2. bounded off-production rollout using the cleaned Main-session boundary and
+   the existing rollout controls / observability
+3. evidence collection on usefulness, noise, conflict suppression, and prompt
    cost
-3. only then a decision on widening or keeping the seams narrow
-4. cross-domain family expansion only after those answers are known
+4. only then a decision on widening or keeping the seams narrow
+5. cross-domain family expansion only after those answers are known
 
 ## What remains intentionally different
 

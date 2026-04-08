@@ -1,6 +1,6 @@
 # Open Questions
 
-## Active questions after the rollout-proof and reevaluation batch
+## Active questions after reminder isolation and memory consolidation
 
 These are the remaining real open questions now that the core flattening
 sequence, pre-capture hardening, and the first bounded self-improving and
@@ -9,15 +9,20 @@ inline-advisory slices are landed.
 They are no longer about whether the seams can be implemented. They are about
 how far they should be enabled and widened.
 
-1. What exact off-production evidence threshold should self-improving capture
+1. What exact bounded promotion evidence threshold should explicit
+   docs-localization project-rule packets meet before broader promotion is
+   justified?
+2. What exact bounded promotion evidence threshold should explicit
+   file-reference response-style packets meet before broader promotion is
+   justified?
+3. What exact off-production evidence threshold should self-improving capture
    meet before it is widened beyond the current workflow-guidance scope?
-2. What exact off-production evidence threshold should learned-guidance
+4. What exact off-production evidence threshold should learned-guidance
    advisory planning meet before it widens beyond inline approved workflow
    guidance?
-3. Does the new rollout observability show enough signal to justify real
-   bounded enablement, or is one more thin evidence surface still needed?
-4. How much later artifact / read-model convergence is still truly needed now
-   that the rollout-control tranche is landed on the shared substrate?
+5. How much later artifact / read-model convergence is still truly needed now
+   that reminder isolation and overlap consolidation are landed on top of the
+   rollout-control tranche?
 
 ## Later-phase questions that remain intentionally later
 

@@ -9976,6 +9976,7 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
     params.input.query,
     `${params.input.query}%`,
     retrievalDecision.responseStyleHint?.template ?? "",
+    retrievalDecision.responseStyleHint?.normalizedSubject ?? "",
     retrievalDecision.projectFactHint?.fieldKey ?? "",
     retrievalDecision.workflowImprovementHint?.lessonKey ?? "",
     retrievalDecision.normalizedQuery,
@@ -10018,9 +10019,10 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
               surfaceScaffolding.autoCaptureNormalizedValueExpression,
           },
           paramRefs: {
-            normalizedQueryRef: "$6::text",
-            projectMemoryIntentFamilyRef: "$7::text",
-            generalizedWorkflowPatternHintRef: "$8::text",
+            responseStyleNormalizedSubjectHintRef: "$4::text",
+            normalizedQueryRef: "$7::text",
+            projectMemoryIntentFamilyRef: "$8::text",
+            generalizedWorkflowPatternHintRef: "$9::text",
           },
         })
       : buildReviewableCandidateRetrievalFeatureSql({
@@ -10046,9 +10048,10 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
               surfaceScaffolding.autoCaptureNormalizedValueExpression,
           },
           paramRefs: {
-            normalizedQueryRef: "$6::text",
-            projectMemoryIntentFamilyRef: "$7::text",
-            generalizedWorkflowPatternHintRef: "$8::text",
+            responseStyleNormalizedSubjectHintRef: "$4::text",
+            normalizedQueryRef: "$7::text",
+            projectMemoryIntentFamilyRef: "$8::text",
+            generalizedWorkflowPatternHintRef: "$9::text",
           },
         });
 
@@ -10074,8 +10077,8 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
           + case when lower(coalesce(v.title, '')) like lower($2::text) then 110 else 0 end
           + case when ${combinedTextExpression} like lower($2::text) then 90 else 0 end
           + case when $3::text <> '' and ${surfaceScaffolding.autoCaptureTemplateExpression} = $3::text then 135 else 0 end
-          + case when $4::text <> '' and ${surfaceScaffolding.autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
-          + case when $5::text <> '' and ${surfaceScaffolding.autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
+          + case when $5::text <> '' and ${surfaceScaffolding.autoCaptureFieldKeyExpression} = $5::text then 220 else 0 end
+          + case when $6::text <> '' and ${surfaceScaffolding.autoCaptureLessonKeyExpression} = $6::text then 185 else 0 end
           ${retrievalFeatureSql.scoreClauses.map((clause) => `+ ${clause}`).join("\n          ")}
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
@@ -10089,10 +10092,10 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
             case when $3::text <> '' and ${surfaceScaffolding.autoCaptureTemplateExpression} = $3::text
               then 'auto_capture_template_match'
             end,
-            case when $4::text <> '' and ${surfaceScaffolding.autoCaptureFieldKeyExpression} = $4::text
+            case when $5::text <> '' and ${surfaceScaffolding.autoCaptureFieldKeyExpression} = $5::text
               then 'auto_capture_field_match'
             end,
-            case when $5::text <> '' and ${surfaceScaffolding.autoCaptureLessonKeyExpression} = $5::text
+            case when $6::text <> '' and ${surfaceScaffolding.autoCaptureLessonKeyExpression} = $6::text
               then 'auto_capture_lesson_match'
             end,
             ${retrievalFeatureSql.matchedFieldClauses.join(",\n            ")},

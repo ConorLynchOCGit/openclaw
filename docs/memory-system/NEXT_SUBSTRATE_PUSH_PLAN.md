@@ -48,15 +48,21 @@ Current reevaluation judgment:
 - self-improving capture should stay narrow
 - learned-guidance planning should stay narrow
 - neither seam should widen before bounded off-production evidence exists
+- explicit docs-localization and file-reference packet shapes are now strong
+  enough for bounded promotion follow-through
+- vague shorthand packet shapes should stay narrow
 
 ## Remaining recommended sequence
 
 ### Next major phase
 
-1. bounded off-production rollout using the landed controls and observability
-2. decide whether either seam should widen or stay narrow based on real
-   evidence
-3. cross-domain family expansion only after those rollout answers are clear
+1. bounded promotion follow-through for the strongest explicit docs-localization
+   and file-reference packet shapes
+2. bounded off-production rollout using the landed controls, observability, and
+   the cleaned Main-session boundary
+3. decide whether either seam or any broader phrasing class should widen or
+   stay narrow based on real evidence
+4. cross-domain family expansion only after those rollout answers are clear
 
 ### Later bounded cleanup only if justified
 
@@ -69,17 +75,18 @@ Current reevaluation judgment:
 
 The next implementation slice should now be:
 
-- bounded off-production rollout enablement and evidence review for the narrow
-  self-improving and inline-advisory seams
+- bounded promotion follow-through and off-production rollout enablement for
+  the strongest explicit manual-UX-backed packet shapes
 
 Why:
 
-- the substrate and rollout-control implementation work for these phases is now
-  landed
-- the remaining risk is rollout truth under real usage pressure, not missing
-  shared architecture
-- widening scope before evidence exists would be the fastest way to recreate
-  accidental parallel policy paths
+- the Main-session reminder leak is now fixed
+- the docs/file overlap cases from the manual UX pass now have cleaner
+  canonical lanes
+- the remaining risk is still rollout truth under real usage pressure, not
+  missing shared architecture
+- widening vague phrasing classes before evidence exists would recreate
+  accidental parallel policy paths faster than it would add useful coverage
 
 ## What should not be parallelized prematurely
 
@@ -99,8 +106,11 @@ Before new families:
 - inline advisory planning stays suggestion-only, conflict-safe, and cheap
   enough in prompt cost
 - the new surfaces do not create a second hidden policy system
+- the strongest explicit docs/file packet shapes promote cleanly without
+  dragging vague shorthand phrasings along with them
 
 ## Next implementation slice
 
-- bounded off-production rollout enablement and evidence review for the newly
-  instrumented functional seams
+- bounded promotion follow-through and off-production rollout enablement for
+  the newly isolated Main-session boundary and the stronger explicit docs/file
+  packet shapes

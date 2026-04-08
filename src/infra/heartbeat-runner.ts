@@ -578,38 +578,16 @@ export async function runHeartbeatOnce(opts: {
   const { entry, sessionKey, storePath } = preflight.session;
   const previousUpdatedAt = entry?.updatedAt;
 
-  // When isolatedSession is enabled, create a fresh session via the same
-  // pattern as cron sessionTarget: "isolated". This gives the heartbeat
-  // a new session ID (empty transcript) each run, avoiding the cost of
-  // sending the full conversation history (~100K tokens) to the LLM.
-  // Delivery routing still uses the main session entry (lastChannel, lastTo).
-  const useIsolatedSession = heartbeat?.isolatedSession === true;
-  let runSessionKey = sessionKey;
-  let runStorePath = storePath;
-  if (useIsolatedSession) {
-    const isolatedKey = `${sessionKey}:heartbeat`;
-    const cronSession = resolveCronSession({
-      cfg,
-      sessionKey: isolatedKey,
-      agentId,
-      nowMs: startedAt,
-      forceNew: true,
-    });
-    cronSession.store[isolatedKey] = cronSession.sessionEntry;
-    await saveSessionStore(cronSession.storePath, cronSession.store);
-    runSessionKey = isolatedKey;
-    runStorePath = cronSession.storePath;
-  }
-
   const delivery = resolveHeartbeatDeliveryTarget({
     cfg,
     entry,
     heartbeat,
-    // Isolated heartbeat runs drain system events from their dedicated
+    // Configured isolated heartbeat runs drain system events from their dedicated
     // `:heartbeat` session, not from the base session we peek during preflight.
-    // Reusing base-session turnSource routing here can pin later isolated runs
+    // Reusing base-session turnSource routing there can pin later isolated runs
     // to stale channels/threads because that base-session event context remains queued.
-    turnSource: useIsolatedSession ? undefined : preflight.turnSourceDeliveryContext,
+    turnSource:
+      heartbeat?.isolatedSession === true ? undefined : preflight.turnSourceDeliveryContext,
   });
   const heartbeatAccountId = heartbeat?.accountId?.trim();
   if (delivery.reason === "unknown-account") {
@@ -641,6 +619,28 @@ export async function runHeartbeatOnce(opts: {
   const canRelayToUser = Boolean(
     delivery.channel !== "none" && delivery.to && visibility.showAlerts,
   );
+  const useIsolatedSession =
+    heartbeat?.isolatedSession === true ||
+    (!canRelayToUser && (preflight.isExecEventReason || preflight.isCronEventReason));
+  let runSessionKey = sessionKey;
+  let runStorePath = storePath;
+  if (useIsolatedSession) {
+    // Internal-only reminder/exec turns should not pollute the visible Main transcript.
+    // Reuse the isolated heartbeat seam so the work still runs, but the prompt stays off
+    // the user-facing session history.
+    const isolatedKey = `${sessionKey}:heartbeat`;
+    const cronSession = resolveCronSession({
+      cfg,
+      sessionKey: isolatedKey,
+      agentId,
+      nowMs: startedAt,
+      forceNew: true,
+    });
+    cronSession.store[isolatedKey] = cronSession.sessionEntry;
+    await saveSessionStore(cronSession.storePath, cronSession.store);
+    runSessionKey = isolatedKey;
+    runStorePath = cronSession.storePath;
+  }
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
   const { prompt, hasExecCompletion, hasCronEvents } = resolveHeartbeatRunPrompt({
     cfg,

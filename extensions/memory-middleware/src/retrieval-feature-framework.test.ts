@@ -22,15 +22,17 @@ describe("retrieval-feature-framework", () => {
         autoCaptureNormalizedValueExpression: "value_expr",
       },
       paramRefs: {
-        normalizedQueryRef: "$6::text",
-        projectMemoryIntentFamilyRef: "$7::text",
-        generalizedWorkflowPatternHintRef: "$8::text",
+        responseStyleNormalizedSubjectHintRef: "$4::text",
+        normalizedQueryRef: "$7::text",
+        projectMemoryIntentFamilyRef: "$8::text",
+        generalizedWorkflowPatternHintRef: "$9::text",
       },
     });
 
     expect(sql.scoreClauses).toEqual(
       expect.arrayContaining([
         expect.stringContaining("response_style_generalized_guidance"),
+        expect.stringContaining("subject_expr = $4::text"),
         expect.stringContaining("fact_family_expr in ('supported_field', 'generalized_reference')"),
         expect.stringContaining("lesson_family_expr = 'generalized_project_rule'"),
         expect.stringContaining("lesson_family_expr = 'generalized_unmet_need'"),
@@ -63,9 +65,10 @@ describe("retrieval-feature-framework", () => {
         autoCaptureNormalizedValueExpression: "value_expr",
       },
       paramRefs: {
-        normalizedQueryRef: "$6::text",
-        projectMemoryIntentFamilyRef: "$7::text",
-        generalizedWorkflowPatternHintRef: "$8::text",
+        responseStyleNormalizedSubjectHintRef: "$4::text",
+        normalizedQueryRef: "$7::text",
+        projectMemoryIntentFamilyRef: "$8::text",
+        generalizedWorkflowPatternHintRef: "$9::text",
       },
     });
     const candidateSql = buildReviewableCandidateRetrievalFeatureSql({
@@ -83,9 +86,10 @@ describe("retrieval-feature-framework", () => {
         autoCaptureNormalizedValueExpression: "value_expr",
       },
       paramRefs: {
-        normalizedQueryRef: "$6::text",
-        projectMemoryIntentFamilyRef: "$7::text",
-        generalizedWorkflowPatternHintRef: "$8::text",
+        responseStyleNormalizedSubjectHintRef: "$4::text",
+        normalizedQueryRef: "$7::text",
+        projectMemoryIntentFamilyRef: "$8::text",
+        generalizedWorkflowPatternHintRef: "$9::text",
       },
     });
 

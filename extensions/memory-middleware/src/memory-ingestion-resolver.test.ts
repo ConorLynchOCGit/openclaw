@@ -171,6 +171,56 @@ describe("resolveWorkflowImprovementIngestion", () => {
     expect(findApprovedWorkflowPhrasePatternMatch).not.toHaveBeenCalled();
   });
 
+  it("resolves docs localization policy as a project rule from transcript content", async () => {
+    await expect(
+      resolveWorkflowImprovementIngestion({
+        config: createConfig(),
+        content:
+          "For OpenClaw docs, update English docs first and rerun docs i18n instead of editing docs/zh-CN directly.",
+        primarySource: "transcript",
+        allowPhrasePatternMatch: false,
+      }),
+    ).resolves.toMatchObject({
+      familyId: "project_rule",
+      lessonFamily: "generalized_project_rule",
+      source: "transcript",
+      detectionSource: "semantic",
+      reviewMode: "hold_for_more_evidence",
+      parsed: {
+        captureClass: "project_rule_guidance",
+        projectScope: "OpenClaw",
+        guidancePattern: "use_instead_of",
+        subject: "docs localization changes",
+        recommendedAction: "update English docs first and rerun docs i18n",
+        avoidAction: "edit docs/zh-CN directly",
+      },
+    });
+  });
+
+  it("resolves file-reference response-style guidance through the shared control plane", async () => {
+    await expect(
+      resolveResponseStyleIngestion({
+        config: createConfig(),
+        content: "When referencing files in chat, use repo-root relative paths.",
+        primarySource: "content",
+        mode: "candidate_learning",
+        allowPhrasePatternMatch: true,
+      }),
+    ).resolves.toMatchObject({
+      action: "capture",
+      familyId: "response_style",
+      source: "content",
+      detectionSource: "semantic",
+      reviewMode: "hold_for_more_evidence",
+      parsed: {
+        captureClass: "explicit_requirement",
+        template: "response_style_generalized_guidance",
+        subject: "file references",
+        value: "When referencing files in chat, use repo-root relative paths",
+      },
+    });
+  });
+
   it("falls back to raw unmet-need text when content does not resolve", async () => {
     await expect(
       resolveWorkflowImprovementIngestion({

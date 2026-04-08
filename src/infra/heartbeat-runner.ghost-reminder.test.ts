@@ -81,7 +81,12 @@ describe("Ghost reminder bug (issue #13317)", () => {
   ): Promise<{
     result: Awaited<ReturnType<typeof runHeartbeatOnce>>;
     sendTelegram: ReturnType<typeof vi.fn>;
-    calledCtx: { Provider?: string; Body?: string; ForceSenderIsOwnerFalse?: boolean } | null;
+    calledCtx: {
+      Provider?: string;
+      Body?: string;
+      ForceSenderIsOwnerFalse?: boolean;
+      SessionKey?: string;
+    } | null;
   }> => {
     return runHeartbeatCase({
       tmpPrefix,
@@ -100,7 +105,12 @@ describe("Ghost reminder bug (issue #13317)", () => {
   }): Promise<{
     result: Awaited<ReturnType<typeof runHeartbeatOnce>>;
     sendTelegram: ReturnType<typeof vi.fn>;
-    calledCtx: { Provider?: string; Body?: string; ForceSenderIsOwnerFalse?: boolean } | null;
+    calledCtx: {
+      Provider?: string;
+      Body?: string;
+      ForceSenderIsOwnerFalse?: boolean;
+      SessionKey?: string;
+    } | null;
     replyCallCount: number;
   }> => {
     return withTempHeartbeatSandbox(
@@ -123,6 +133,8 @@ describe("Ghost reminder bug (issue #13317)", () => {
         const calledCtx = (getReplySpy.mock.calls[0]?.[0] ?? null) as {
           Provider?: string;
           Body?: string;
+          SessionKey?: string;
+          ForceSenderIsOwnerFalse?: boolean;
         } | null;
         return {
           result,
@@ -161,6 +173,7 @@ describe("Ghost reminder bug (issue #13317)", () => {
     );
     expect(result.status).toBe("ran");
     expectCronEventPrompt(calledCtx, "Reminder: Check Base Scout results");
+    expect(calledCtx?.SessionKey).not.toMatch(/:heartbeat$/);
     expect(sendTelegram).toHaveBeenCalled();
   });
 
@@ -211,6 +224,7 @@ describe("Ghost reminder bug (issue #13317)", () => {
 
     expect(result.status).toBe("ran");
     expect(calledCtx?.Provider).toBe("cron-event");
+    expect(calledCtx?.SessionKey).toMatch(/:heartbeat$/);
     expect(calledCtx?.Body).toContain("Handle this reminder internally");
     expect(sendTelegram).not.toHaveBeenCalled();
   });
@@ -228,6 +242,7 @@ describe("Ghost reminder bug (issue #13317)", () => {
 
     expect(result.status).toBe("ran");
     expect(calledCtx?.Provider).toBe("exec-event");
+    expect(calledCtx?.SessionKey).toMatch(/:heartbeat$/);
     expect(calledCtx?.ForceSenderIsOwnerFalse).toBe(true);
     expect(calledCtx?.Body).toContain("Handle the result internally");
     expect(sendTelegram).not.toHaveBeenCalled();

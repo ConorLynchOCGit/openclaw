@@ -75,6 +75,13 @@ import { createMemoryToolResultMicrocompactPlanTool } from "./memory-tool-result
 import { createMemoryToolResultPersistTool } from "./memory-tool-result-persist.js";
 import { createProcedureValidatePlanTool } from "./procedure-validate-plan.js";
 import { createProcedureValidateTool } from "./procedure-validate.js";
+import {
+  REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET,
+  REAL_WORKSPACE_PROJECT_FACT_PACKET,
+  REAL_WORKSPACE_PROJECT_RULE_PACKET,
+  REAL_WORKSPACE_RESPONSE_STYLE_PACKET,
+  REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET,
+} from "./real-workspace-memory-packets.fixture.js";
 import { createSkillCandidateApprovalPlanTool } from "./skill-candidate-approval-plan.js";
 import { createSkillCandidateApproveTool } from "./skill-candidate-approve.js";
 import { createSkillCandidateCreateTool } from "./skill-candidate-create.js";
@@ -107,6 +114,10 @@ type DbEnvironment = {
   connectionString: string;
   schemaV1MigrationApplied: boolean;
   securityRetrievalMigrationApplied: boolean;
+};
+
+type ToolExecutePort = {
+  execute(toolCallId: string, rawParams: Record<string, unknown>): Promise<{ details: unknown }>;
 };
 
 function docker(args: string[]): string {
@@ -885,6 +896,90 @@ async function readTableCounts(connectionString: string): Promise<Record<string,
   }
 
   return row;
+}
+
+async function approveAndPromoteCandidateWithTools(params: {
+  reviewTool: ToolExecutePort;
+  promoteTool: ToolExecutePort;
+  candidateId: string;
+  callPrefix: string;
+  rationale?: string;
+}): Promise<string> {
+  await params.reviewTool.execute(`${params.callPrefix}-review`, {
+    candidateId: params.candidateId,
+    outcome: "accepted",
+    ...(params.rationale ? { rationale: params.rationale } : {}),
+  });
+  const promotion = await params.promoteTool.execute(`${params.callPrefix}-promote`, {
+    candidateId: params.candidateId,
+  });
+  return (promotion.details as { promotedMemoryObjectId: string }).promotedMemoryObjectId;
+}
+
+async function submitAndApproveWorkspacePacket(params: {
+  submitTool: ToolExecutePort;
+  reviewTool: ToolExecutePort;
+  promoteTool: ToolExecutePort;
+  callPrefix: string;
+  kind: CandidateSubmissionKind;
+  content: string;
+  projectId: string;
+  metadata?: Record<string, unknown>;
+  rationale?: string;
+}): Promise<{ candidateId: string; approvedMemoryObjectId: string }> {
+  const submission = await params.submitTool.execute(`${params.callPrefix}-submit`, {
+    kind: params.kind,
+    content: params.content,
+    projectId: params.projectId,
+    ...(params.metadata ? { metadata: params.metadata } : {}),
+  });
+  const candidateId = (submission.details as { memoryObjectId: string }).memoryObjectId;
+  const approvedMemoryObjectId = await approveAndPromoteCandidateWithTools({
+    reviewTool: params.reviewTool,
+    promoteTool: params.promoteTool,
+    candidateId,
+    callPrefix: params.callPrefix,
+    rationale: params.rationale,
+  });
+  return { candidateId, approvedMemoryObjectId };
+}
+
+async function captureAndApproveSelfImprovingWorkspacePacket(params: {
+  selfImprovingTool: ToolExecutePort;
+  reviewTool: ToolExecutePort;
+  promoteTool: ToolExecutePort;
+  callPrefix: string;
+  projectId: string;
+  metadata?: Record<string, unknown>;
+  rationale?: string;
+}): Promise<{ candidateId: string; approvedMemoryObjectId: string }> {
+  const capture = await params.selfImprovingTool.execute(`${params.callPrefix}-capture`, {
+    kind: REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.kind,
+    content: REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.content,
+    projectId: params.projectId,
+    ...(params.metadata ? { metadata: params.metadata } : {}),
+  });
+
+  expect(capture.details).toMatchObject({
+    accepted: true,
+    status: "accepted",
+    kind: "improvement",
+    target: "candidate_only",
+    reviewState: "candidate",
+    evaluation: {
+      outcomeCode: "candidate_created",
+    },
+  });
+
+  const candidateId = (capture.details as { memoryObjectId: string }).memoryObjectId;
+  const approvedMemoryObjectId = await approveAndPromoteCandidateWithTools({
+    reviewTool: params.reviewTool,
+    promoteTool: params.promoteTool,
+    candidateId,
+    callPrefix: params.callPrefix,
+    rationale: params.rationale,
+  });
+  return { candidateId, approvedMemoryObjectId };
 }
 
 async function insertMemoryEmbedding(params: {
@@ -20876,6 +20971,310 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         suggestionCount: 1,
         eligibleWorkflowGuidanceCount: 1,
         filteredOutByScopeCount: 0,
+      },
+    });
+  });
+
+  it("captures real workspace memory packets and retrieves the right approved memory for each query", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      selfImprovingMode: "candidate-only",
+      learnedGuidanceMode: "inline-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const selfImprovingTool = createMemorySelfImprovingCaptureCandidateTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const searchTool = createMemoryObjectSearchHybridTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      } as never,
+    });
+
+    const nativeWorkflow = await submitAndApproveWorkspacePacket({
+      submitTool,
+      reviewTool,
+      promoteTool,
+      callPrefix: "call-real-packets-native-workflow",
+      kind: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.submissionKind,
+      content: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.content,
+      projectId: seeded.projectId,
+      rationale: "Approve the repo test-wrapper workflow packet for retrieval proof.",
+    });
+    const selfImprovingWorkflow = await captureAndApproveSelfImprovingWorkspacePacket({
+      selfImprovingTool,
+      reviewTool,
+      promoteTool,
+      callPrefix: "call-real-packets-self-improving-workflow",
+      projectId: seeded.projectId,
+      metadata: {
+        source: "workspace-packet-eval",
+        packetId: REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.id,
+      },
+      rationale: "Approve the scoped-commit self-improving packet for retrieval proof.",
+    });
+    const projectRule = await submitAndApproveWorkspacePacket({
+      submitTool,
+      reviewTool,
+      promoteTool,
+      callPrefix: "call-real-packets-project-rule",
+      kind: REAL_WORKSPACE_PROJECT_RULE_PACKET.submissionKind,
+      content: REAL_WORKSPACE_PROJECT_RULE_PACKET.content,
+      projectId: seeded.projectId,
+      rationale: "Approve the docs i18n project rule packet for retrieval proof.",
+    });
+    const projectFact = await submitAndApproveWorkspacePacket({
+      submitTool,
+      reviewTool,
+      promoteTool,
+      callPrefix: "call-real-packets-project-fact",
+      kind: REAL_WORKSPACE_PROJECT_FACT_PACKET.submissionKind,
+      content: REAL_WORKSPACE_PROJECT_FACT_PACKET.content,
+      projectId: seeded.projectId,
+      metadata: REAL_WORKSPACE_PROJECT_FACT_PACKET.metadata,
+      rationale: "Approve the docs URL project fact packet for retrieval proof.",
+    });
+    const responseStyle = await submitAndApproveWorkspacePacket({
+      submitTool,
+      reviewTool,
+      promoteTool,
+      callPrefix: "call-real-packets-response-style",
+      kind: REAL_WORKSPACE_RESPONSE_STYLE_PACKET.submissionKind,
+      content: REAL_WORKSPACE_RESPONSE_STYLE_PACKET.content,
+      projectId: seeded.projectId,
+      metadata: REAL_WORKSPACE_RESPONSE_STYLE_PACKET.metadata,
+      rationale: "Approve the high-level-by-default response-style packet for retrieval proof.",
+    });
+
+    const nativeWorkflowSearch = await searchTool.execute("call-real-packets-search-native", {
+      query: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.retrievalQuery,
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+    const selfImprovingWorkflowSearch = await searchTool.execute(
+      "call-real-packets-search-self-improving",
+      {
+        query: REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.retrievalQuery,
+        kind: "project",
+        projectId: seeded.projectId,
+      },
+    );
+    const projectRuleSearch = await searchTool.execute("call-real-packets-search-rule", {
+      query: REAL_WORKSPACE_PROJECT_RULE_PACKET.retrievalQuery,
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+    const projectFactSearch = await searchTool.execute("call-real-packets-search-fact", {
+      query: REAL_WORKSPACE_PROJECT_FACT_PACKET.retrievalQuery,
+      kind: "project",
+      projectId: seeded.projectId,
+    });
+    const responseStyleSearch = await searchTool.execute("call-real-packets-search-style", {
+      query: REAL_WORKSPACE_RESPONSE_STYLE_PACKET.retrievalQuery,
+      kind: "feedback",
+      projectId: seeded.projectId,
+    });
+
+    expect(
+      (
+        nativeWorkflowSearch.details as {
+          records: Array<{ id: string; matchedFields: string[] }>;
+        }
+      ).records[0],
+    ).toEqual(
+      expect.objectContaining({
+        id: nativeWorkflow.approvedMemoryObjectId,
+        matchedFields: expect.arrayContaining(["auto_capture_lesson_match"]),
+      }),
+    );
+    expect(
+      (
+        selfImprovingWorkflowSearch.details as {
+          records: Array<{ id: string }>;
+        }
+      ).records[0],
+    ).toEqual(
+      expect.objectContaining({
+        id: selfImprovingWorkflow.approvedMemoryObjectId,
+      }),
+    );
+    expect(
+      (
+        projectRuleSearch.details as {
+          records: Array<{ id: string; matchedFields: string[] }>;
+        }
+      ).records[0],
+    ).toEqual(
+      expect.objectContaining({
+        id: projectRule.approvedMemoryObjectId,
+        matchedFields: expect.arrayContaining(["fts_search_document"]),
+      }),
+    );
+    expect(
+      (
+        projectFactSearch.details as {
+          records: Array<{ id: string; matchedFields: string[] }>;
+        }
+      ).records[0],
+    ).toEqual(
+      expect.objectContaining({
+        id: projectFact.approvedMemoryObjectId,
+        matchedFields: expect.arrayContaining([
+          "auto_capture_field_match",
+          "project_fact_intent_match",
+        ]),
+      }),
+    );
+    expect(
+      (
+        responseStyleSearch.details as {
+          records: Array<{ id: string; matchedFields: string[] }>;
+        }
+      ).records[0],
+    ).toEqual(
+      expect.objectContaining({
+        id: responseStyle.approvedMemoryObjectId,
+        matchedFields: expect.arrayContaining(["response_style_subject_match"]),
+      }),
+    );
+  });
+
+  it("surfaces real workspace workflow packets through inline advisory planning with provenance intact", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      selfImprovingMode: "candidate-only",
+      learnedGuidanceMode: "inline-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const selfImprovingTool = createMemorySelfImprovingCaptureCandidateTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const learnedGuidanceTool = createMemoryLearnedGuidancePlanTool({ runtime });
+
+    const nativeWorkflow = await submitAndApproveWorkspacePacket({
+      submitTool,
+      reviewTool,
+      promoteTool,
+      callPrefix: "call-real-guidance-native-workflow",
+      kind: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.submissionKind,
+      content: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.content,
+      projectId: seeded.projectId,
+      rationale: "Approve the repo test-wrapper workflow packet for advisory proof.",
+    });
+    const selfImprovingWorkflow = await captureAndApproveSelfImprovingWorkspacePacket({
+      selfImprovingTool,
+      reviewTool,
+      promoteTool,
+      callPrefix: "call-real-guidance-self-improving-workflow",
+      projectId: seeded.projectId,
+      metadata: {
+        source: "workspace-packet-eval",
+        packetId: REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.id,
+      },
+      rationale: "Approve the scoped-commit self-improving packet for advisory proof.",
+    });
+
+    const countsBefore = await readTableCounts(dbEnvironment.connectionString);
+    const testWrapperGuidance = await learnedGuidanceTool.execute("call-real-guidance-native", {
+      query: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.advisoryQuery,
+      projectId: seeded.projectId,
+      maxSuggestions: 2,
+    });
+    const scopedCommitGuidance = await learnedGuidanceTool.execute(
+      "call-real-guidance-self-improving",
+      {
+        query: REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.advisoryQuery,
+        projectId: seeded.projectId,
+        maxSuggestions: 2,
+      },
+    );
+    const countsAfter = await readTableCounts(dbEnvironment.connectionString);
+
+    expect(countsAfter).toEqual(countsBefore);
+    expect(testWrapperGuidance.details).toMatchObject({
+      accepted: true,
+      status: "ok",
+      outcome: "guidance_available",
+      suggestions: [
+        expect.objectContaining({
+          memoryObjectId: nativeWorkflow.approvedMemoryObjectId,
+          toolKey: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedToolKey,
+          provenance: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedProvenance,
+        }),
+      ],
+      observability: {
+        outcomeCode: "guidance_available",
+        suggestionCount: 1,
+        nativeSuggestionCount: 1,
+        selfImprovingSuggestionCount: 0,
+      },
+    });
+    expect(scopedCommitGuidance.details).toMatchObject({
+      accepted: true,
+      status: "ok",
+      outcome: "guidance_available",
+      suggestions: [
+        expect.objectContaining({
+          memoryObjectId: selfImprovingWorkflow.approvedMemoryObjectId,
+          toolKey: REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedToolKey,
+          provenance: REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedProvenance,
+        }),
+      ],
+      observability: {
+        outcomeCode: "guidance_available",
+        suggestionCount: 1,
+        nativeSuggestionCount: 0,
+        selfImprovingSuggestionCount: 1,
       },
     });
   });

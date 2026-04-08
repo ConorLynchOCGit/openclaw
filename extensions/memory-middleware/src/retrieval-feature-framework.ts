@@ -21,6 +21,7 @@ type RetrievalSqlExpressions = {
 };
 
 type RetrievalParamRefs = {
+  responseStyleNormalizedSubjectHintRef: string;
   normalizedQueryRef: string;
   projectMemoryIntentFamilyRef: string;
   generalizedWorkflowPatternHintRef: string;
@@ -181,7 +182,10 @@ function buildApprovedMemoryFeatureClause(params: {
   if (!familyGuard || !valueExpression) {
     return null;
   }
-  const whenClause = `${familyGuard} and ${valueExpression} <> '' and ${paramRefs.normalizedQueryRef} like '%' || ${valueExpression} || '%'`;
+  const whenClause =
+    definition.id === "response_style" && feature === "subject_match"
+      ? `${familyGuard} and ${valueExpression} <> '' and ((${paramRefs.responseStyleNormalizedSubjectHintRef} <> '' and ${valueExpression} = ${paramRefs.responseStyleNormalizedSubjectHintRef}) or ${paramRefs.normalizedQueryRef} like '%' || ${valueExpression} || '%')`
+      : `${familyGuard} and ${valueExpression} <> '' and ${paramRefs.normalizedQueryRef} like '%' || ${valueExpression} || '%'`;
   return {
     scoreClause: `case when ${whenClause} then ${weight} else 0 end`,
     matchedFieldClause: `case when ${whenClause} then '${label}' end`,

@@ -2,26 +2,35 @@
 
 ## Active slice
 
-Bounded off-production rollout enablement and evidence review for
-reduced-profile self-improving capture and inline learned-guidance planning
+Bounded promotion follow-through and off-production rollout enablement for
+the stronger explicit memory packet shapes proved in Main-session UX testing
 
 ## Objective
 
-Use the newly landed rollout-control and observability surfaces to collect
-real evidence before any widening decision.
+Use the newly landed reminder-isolation and overlap-consolidation work to
+promote the strongest explicit packet shapes honestly, then collect
+off-production evidence before any widening decision.
 
 The current accepted answer is:
 
 - both seams now have real rollout controls and structured observability
 - both seams should stay narrow for now
 - neither seam has earned broader authority or broader family coverage yet
-- the next missing truth is bounded off-production rollout evidence, not more
-  shared-substrate design
+- Main session no longer needs to leak internal reminder payloads into visible
+  chat to support internal reminder execution
+- explicit docs-localization rules and file-reference response-style packets
+  now have stronger canonical lanes than they had before the manual UX pass
+- the next missing truth is bounded promotion follow-through plus off-production
+  evidence, not more shared-substrate design
 
 This slice does not answer production enablement by default.
 
-It answers whether bounded off-production usage shows enough usefulness,
-low-enough noise, and low-enough prompt cost to justify later widening.
+It answers:
+
+- which explicit packet shapes are now strong enough for bounded promotion
+  follow-through
+- whether bounded off-production usage shows enough usefulness, low-enough
+  noise, and low-enough prompt cost to justify later widening
 
 The rollout still must avoid creating:
 
@@ -31,36 +40,51 @@ The rollout still must avoid creating:
 
 ## What just landed
 
-### Slice 1 — reduced-profile self-improving capture reevaluation
+### Slice 1 — Main-session reminder isolation
 
-- the reevaluation ended positive on the hardened shared substrate
-- proof-runner support now includes a dedicated `self_improving_capture` step
-- the proof path now validates candidate-only posture explicitly instead of
-  relying on docs-only assumptions
+- internal-only cron / exec reminder execution no longer reuses the visible
+  Main chat transcript path
+- those reminder turns now isolate onto the heartbeat session instead of
+  surfacing the system payload in Main
+- ordinary user prompts and ordinary assistant replies remain visible in Main
 
-### Slice 2 — bounded reduced-profile self-improving capture first tranche
+### Slice 2 — docs and formatting memory consolidation
 
-- the self-improving seam now has an explicit gate:
-  - `selfImprovingCapture.mode = candidate-only`
-- the first tranche is bounded to workflow-guidance improvement candidates only
-- proposals route through the normal candidate pipeline
-- provenance, duplicate clustering, blocked replay handling, and review posture
-  stay inside the shared substrate
-- approved retrieval behavior remains unchanged unless a candidate is later
-  approved through the normal path
+- explicit docs-localization policy phrasing now has a bounded project-rule
+  semantic path when it includes clear project scope
+- docs i18n / translation / `docs/zh-CN` rule queries now route more cleanly
+  toward project-rule retrieval instead of falling back toward generic project
+  facts
+- file-reference response-style guidance now has a bounded generalized subject:
+  `file references`
+- file-reference retrieval now gets a subject-level ranking hint instead of
+  relying only on loose text overlap
 
-### Slice 3 — learned-guidance advisory planning
+### Slice 3 — bounded rollout follow-through judgment
 
-- the learned-guidance planner now has an explicit gate:
-  - `learnedGuidanceAdvisoryPlanning.mode = inline-only`
-- the first advisory slice is:
-  - approved-only
-  - workflow-guidance-only
-  - inline-only
-  - read-and-suggest only
-- it reads through the normal approved retrieval path
-- it suppresses conflicting guidance instead of collapsing it into one
-  misleading recommendation
+- explicit natural memory packet shapes are now strong enough to continue with
+  bounded promotion follow-through
+- vague shorthand packet shapes still have not earned broader normalization or
+  broader promotion
+- self-improving capture and learned-guidance advisory planning still stay
+  narrow; this batch did not change that widening judgment
+
+## What is now strong enough for bounded promotion follow-through
+
+- explicit docs-localization operating rules with clear project scope
+- explicit file-reference response-style guidance
+- already-strong commit / test workflow lessons
+
+These are strong enough for bounded promotion follow-through, not automatic
+widening.
+
+## What remains intentionally narrow
+
+- vague shorthand workflow memories
+- vague shorthand docs-localization memories
+- vague shorthand file-formatting memories
+- broader self-improving family coverage
+- broader learned-guidance advisory coverage
 
 ## What remains intentionally disabled
 
@@ -81,6 +105,10 @@ Still intentionally disabled:
   inline-only workflow-guidance seam
 - both seams now expose explicit rollout scope and structured evaluation /
   observability fields in their runtime results
+- Main-session internal reminders now execute without leaking their system
+  payloads into visible Main chat
+- explicit docs/file packet shapes now have tighter semantic and retrieval
+  control-plane support
 
 Live rollout controls now include:
 
@@ -121,18 +149,22 @@ Still not next:
 
 The next main implementation sequence should now be:
 
-1. bounded off-production enablement using the now-live rollout controls and
-   observability
-2. collect real evidence on usefulness, replay noise, conflict suppression,
+1. bounded promotion follow-through for the strongest explicit docs-localization
+   and file-reference packet shapes
+2. bounded off-production enablement using the now-cleaner Main-session and the
+   already-landed rollout controls / observability
+3. collect real evidence on usefulness, replay noise, conflict suppression,
    and prompt cost
-3. only then decide whether either seam should widen or stay narrow longer
-4. cross-domain family expansion only after those rollout answers are clear
+4. only then decide whether any broader phrasing class, self-improving scope,
+   or advisory scope should widen
+5. cross-domain family expansion only after those rollout answers are clear
 
 Reason:
 
-- the substrate and rollout-control implementation work for these phases is now
-  landed
-- the remaining missing truth is real rollout evidence, not missing shared
-  architecture or missing observability
-- widening scope before evidence exists would risk rebuilding parallel policy
-  paths by accident
+- the Main-session leak is fixed structurally
+- the strongest manual-UX-backed docs/file packet shapes now have cleaner
+  canonical lanes
+- the remaining missing truth is still evidence under bounded rollout, not
+  missing architecture
+- widening vague packet classes before evidence exists would risk promoting the
+  wrong memories for the wrong reasons

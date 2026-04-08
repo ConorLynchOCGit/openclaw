@@ -4,7 +4,9 @@ export type ResponseStyleQueryHint = {
     | "responses_bullets"
     | "responses_plain_english"
     | "responses_no_tables"
-    | "responses_numbered_steps";
+    | "responses_numbered_steps"
+    | "response_style_generalized_guidance";
+  normalizedSubject?: "file references";
 };
 
 export type ProjectFactQueryHint = {
@@ -138,6 +140,21 @@ export function inferProjectMemoryIntentFamily(query: string): ProjectMemoryInte
     return "unmet_need";
   }
   if (
+    (normalized.includes("docs") || normalized.includes("documentation")) &&
+    (normalized.includes("i18n") ||
+      normalized.includes("translation") ||
+      normalized.includes("translated") ||
+      normalized.includes("localized") ||
+      normalized.includes("localization") ||
+      normalized.includes("zh-cn") ||
+      normalized.includes("workflow") ||
+      normalized.includes("rule") ||
+      normalized.includes("edit") ||
+      normalized.includes("update english"))
+  ) {
+    return "project_rule";
+  }
+  if (
     normalized.includes("should i use") ||
     normalized.includes("what should i use") ||
     normalized.includes("what should we use") ||
@@ -179,6 +196,24 @@ export function inferResponseStyleQueryHint(query: string): ResponseStyleQueryHi
   const normalized = normalizeRetrievalQuery(query);
   if (!normalized) {
     return null;
+  }
+  if (
+    (normalized.includes("file") || normalized.includes("files") || normalized.includes("path")) &&
+    (normalized.includes("repo-root relative") ||
+      normalized.includes("repo root relative") ||
+      normalized.includes("repo-relative") ||
+      normalized.includes("repo relative") ||
+      normalized.includes("absolute path") ||
+      normalized.includes("absolute paths") ||
+      normalized.includes("cite files") ||
+      normalized.includes("file references") ||
+      normalized.includes("referencing files") ||
+      normalized.includes("path style"))
+  ) {
+    return {
+      template: "response_style_generalized_guidance",
+      normalizedSubject: "file references",
+    };
   }
   if (normalized.includes("plain english") || normalized.includes("jargon")) {
     return { template: "responses_plain_english" };

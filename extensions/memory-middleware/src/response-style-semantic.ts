@@ -193,7 +193,25 @@ type GenericResponseStyleSubjectSpec = {
   match: (normalizedDirective: string) => boolean;
 };
 
+function matchesFileReferenceDirective(normalizedDirective: string): boolean {
+  const hasFileReferenceContext =
+    /\b(?:file|files|path|paths)\b/.test(normalizedDirective) &&
+    (/\b(?:refer|reference|referencing|references|cite|citing)\b/.test(normalizedDirective) ||
+      /\b(?:relative|absolute|repo root|repo relative)\b/.test(normalizedDirective));
+  if (!hasFileReferenceContext) {
+    return false;
+  }
+  return (
+    /\b(?:use|keep|stick|prefer)\b/.test(normalizedDirective) ||
+    /\b(?:do not|dont|don't|avoid|never)\b/.test(normalizedDirective)
+  );
+}
+
 const GENERIC_RESPONSE_STYLE_SUBJECT_SPECS: GenericResponseStyleSubjectSpec[] = [
+  {
+    subject: "file references",
+    match: (normalizedDirective) => matchesFileReferenceDirective(normalizedDirective),
+  },
   {
     subject: "response opening",
     match: (normalizedDirective) =>
@@ -790,6 +808,11 @@ function extractGenericResponseStyleDirective(text: string): {
     return directive ? { directive, correction } : null;
   }
 
+  if (matchesFileReferenceDirective(normalizeResponseStyleSemanticText(normalized))) {
+    const directive = normalizeGenericResponseStyleDirective(normalized);
+    return directive ? { directive, correction } : null;
+  }
+
   if (correction) {
     const directive = normalizeGenericResponseStyleDirective(normalized);
     return directive ? { directive, correction } : null;
@@ -855,21 +878,23 @@ function detectGenericResponseStyleCapture(text: string): {
     return null;
   }
   const normalizedDirective = normalizeResponseStyleSemanticText(extracted.directive);
-  if (
-    !normalizedDirective ||
-    normalizedDirective.length < 8 ||
-    normalizedDirective.length > 96 ||
-    GENERIC_RESPONSE_STYLE_SITUATIONAL_PATTERN.test(normalizedDirective) ||
-    GENERIC_RESPONSE_STYLE_CONTENT_BLOCKLIST.test(normalizedDirective)
-  ) {
+  if (!normalizedDirective || normalizedDirective.length < 8 || normalizedDirective.length > 96) {
     return null;
   }
   const subject = inferGenericResponseStyleSubject(extracted.directive);
   if (!subject) {
     return null;
   }
+  if (
+    GENERIC_RESPONSE_STYLE_SITUATIONAL_PATTERN.test(normalizedDirective) ||
+    (subject !== "file references" &&
+      GENERIC_RESPONSE_STYLE_CONTENT_BLOCKLIST.test(normalizedDirective))
+  ) {
+    return null;
+  }
   const confidence =
     extracted.correction ||
+    subject === "file references" ||
     GENERIC_RESPONSE_STYLE_DURABLE_PREFIX_PATTERNS.some((pattern) => pattern.test(text))
       ? "high"
       : "medium";

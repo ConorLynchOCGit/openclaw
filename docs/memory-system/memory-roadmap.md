@@ -257,12 +257,36 @@ It concluded:
 - the next missing truth is real bounded rollout evidence, not more missing
   substrate implementation
 
-## What comes next after Phase I
+## Phase J — Main-session reminder isolation and memory consolidation
 
-The next honest move is bounded off-production rollout enablement and evidence
-review for the narrow self-improving and inline-advisory seams.
+This phase is now landed.
 
-## Phase J — cross-domain family expansion
+It added:
+
+- structural isolation for internal-only cron / exec reminder turns so they do
+  not leak visible system payloads into Main chat
+- a bounded project-rule semantic lane for explicit docs-localization policy
+  phrasing
+- a bounded generalized response-style lane for explicit file-reference
+  preferences
+- retrieval intent and ranking support for docs i18n rule questions and
+  file-reference style questions
+
+It concluded:
+
+- the strongest explicit docs/file packet shapes are now good enough for
+  bounded promotion follow-through
+- vague shorthand packet shapes should stay narrow
+- the next missing truth is still bounded off-production evidence, but now on
+  top of a cleaner Main-session boundary and cleaner explicit packet shapes
+
+## What comes next after Phase J
+
+The next honest move is bounded promotion follow-through and off-production
+rollout enablement for the narrow self-improving and inline-advisory seams plus
+the stronger explicit docs/file packet shapes.
+
+## Phase K — cross-domain family expansion
 
 Cross-domain family expansion resumes only after:
 
@@ -271,7 +295,7 @@ Cross-domain family expansion resumes only after:
 3. reduced-profile self-improving capture
 4. learned-guidance advisory planning
 5. bounded rollout proof and reevaluation for those new functional seams
-6. bounded off-production rollout evidence review
+6. bounded promotion follow-through and off-production rollout evidence review
 
 Recommended first tranche:
 

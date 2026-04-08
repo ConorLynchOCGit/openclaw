@@ -25,6 +25,10 @@ describe("retrieval intent helpers", () => {
     expect(inferProjectMemoryIntentFamily("What is the Atlas staging branch?")).toBe(
       "project_fact",
     );
+    expect(inferProjectMemoryIntentFamily("What's the docs i18n rule again?")).toBe("project_rule");
+    expect(inferProjectMemoryIntentFamily("Where are the OpenClaw docs hosted?")).toBe(
+      "project_fact",
+    );
   });
 
   it("recognizes response-style retrieval hints", () => {
@@ -33,6 +37,12 @@ describe("retrieval intent helpers", () => {
     });
     expect(inferResponseStyleQueryHint("keep it concise")).toEqual({
       template: "responses_concise",
+    });
+    expect(
+      inferResponseStyleQueryHint("When you cite files for me, what path style should you use?"),
+    ).toEqual({
+      template: "response_style_generalized_guidance",
+      normalizedSubject: "file references",
     });
   });
 

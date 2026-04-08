@@ -228,6 +228,8 @@ The current accepted reevaluation result is still:
 - stay narrow
 - keep the seam default-off
 - gather bounded off-production evidence before widening
+- do not widen vague shorthand packet shapes automatically just because
+  stronger explicit natural wording now works
 
 The repo should not widen this seam automatically just because the shared
 substrate and the first rollout-proof signals now exist.
@@ -277,3 +279,5 @@ The first implementation slice for this spec must prove:
   current bounded workflow-guidance lesson scope?
 - is the current structured rollout evaluation sufficient for reviewer burden
   judgment, or is one thinner review-facing surface still needed?
+- how much of the next follow-through should start from explicit manual-UX
+  packet shapes versus broader paraphrase capture?

@@ -177,6 +177,32 @@ Current accepted framing:
   - self-improving capture stays narrow
   - learned-guidance advisory planning stays narrow
 
+## 2026-04 — internal reminders must not leak into visible Main chat
+
+Current accepted framing:
+
+- internal-only cron / exec reminder execution is legitimate
+- visible Main chat is not the right transcript surface for those internal
+  reminder payloads
+- the honest fix is typed/session-level isolation, not string-based hiding
+- internal-only reminder turns should run on the isolated heartbeat session
+  when they do not need user-visible delivery
+
+## 2026-04 — explicit packet shapes can strengthen before vague ones widen
+
+Current accepted framing:
+
+- manual Main-session UX evidence showed that explicit natural wording works
+  materially better than vague shorthand
+- explicit docs-localization operating rules can now justify a bounded
+  project-rule semantic lane
+- explicit file-reference response-style guidance can now justify a bounded
+  generalized response-style lane
+- vague shorthand variants should remain candidate-heavy until stronger
+  evidence exists
+- widening should start from the strongest explicit packet shapes, not from the
+  weakest paraphrases
+
 ## 2026-04 — should-fix-soon cleanup is real but secondary
 
 The following work is accepted as already-landed near-term cleanup:

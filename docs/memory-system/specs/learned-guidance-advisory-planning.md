@@ -165,6 +165,8 @@ The current accepted reevaluation result is still:
 - stay narrow
 - keep the planner default-off
 - gather bounded off-production evidence before widening
+- keep relying on approved strong packet shapes instead of widening vague
+  shorthand guidance automatically
 
 ## Proof requirements
 
@@ -190,3 +192,5 @@ The first implementation slice for this spec must prove:
   current workflow-guidance advisory slice?
 - is the current prompt-cost observability sufficient, or does later rollout
   need one thinner runtime token-cost measurement surface?
+- should the next bounded enablement focus first on the explicit docs/file
+  packet shapes that now retrieve more coherently after consolidation?

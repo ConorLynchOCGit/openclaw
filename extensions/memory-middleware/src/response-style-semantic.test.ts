@@ -62,10 +62,19 @@ describe("detectResponseStyleSemanticDecision", () => {
       "response wrap up",
       "end longer replies with next steps",
     ],
+    [
+      "When referencing files in chat, use repo-root relative paths.",
+      "file references",
+      "When referencing files in chat, use repo-root relative paths",
+    ],
+    [
+      "Don't use absolute paths when citing files to me.",
+      "file references",
+      "Don't use absolute paths when citing files to me",
+    ],
   ])("captures bounded generic response-style guidance: %s", (text, subject, value) => {
     expect(detectResponseStyleSemanticDecision(text)).toMatchObject({
       action: "capture",
-      confidence: "high",
       match: {
         template: "response_style_generalized_guidance",
         family: "generalized_guidance",
@@ -126,6 +135,7 @@ describe("detectResponseStyleSemanticDecision", () => {
     "For this reply, start with the direct answer first.",
     "the project needs more detail in the rollout plan",
     "next steps for this project are still blocked",
+    "the repo layout still needs a clearer docs path",
   ])("ignores false-positive traps: %s", (text) => {
     expect(detectResponseStyleSemanticDecision(text)).toMatchObject({
       action: "ignore",

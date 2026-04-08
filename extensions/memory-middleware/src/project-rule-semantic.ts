@@ -213,6 +213,26 @@ export function detectProjectRuleSemanticDecision(
     };
   }
 
+  const docsLocalizationRuleMatch = normalized.match(
+    /^for ([a-z0-9][a-z0-9 -]{0,47}) docs,\s*(update (?:the )?english docs first(?: and rerun docs i18n)?)\s+(?:instead of\s+(?:editing?\s+docs\/zh-cn\s+directly|editing?\s+translated docs by hand)|and\s+(?:do not|don't|dont|avoid|never)\s+(?:edit\s+docs\/zh-cn\s+directly|edit\s+translated docs by hand))(?:\s+because\s+(.{3,120}?))?[.!?]?$/i,
+  );
+  if (docsLocalizationRuleMatch) {
+    const [, projectScope, recommendedAction, rationale] = docsLocalizationRuleMatch;
+    return {
+      action: "capture",
+      confidence: "high",
+      evidence: ["project_rule_pattern", "docs_localization_policy", "explicit_project_scope"],
+      match: createProjectRuleMatch({
+        projectScope,
+        guidancePattern: "use_instead_of",
+        subject: "docs localization changes",
+        recommendedAction,
+        avoidAction: "edit docs/zh-CN directly",
+        ...(rationale ? { rationale } : {}),
+      }),
+    };
+  }
+
   const useInsteadMatch = normalized.match(
     /^for project ([a-z0-9][a-z0-9 -]{0,47}),\s*(?:prefer|use)\s+(.{2,140}?)\s+for\s+(.{3,96}?)\s+instead of\s+(.{2,140}?)(?:\s+because\s+(.{3,120}?))?[.!?]?$/i,
   );

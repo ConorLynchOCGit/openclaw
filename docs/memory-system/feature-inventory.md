@@ -104,6 +104,14 @@ Backlog / flattening debt:
 - learned-guidance advisory planning is now implemented as a bounded
   default-off inline slice, now has explicit rollout controls plus structured
   observability, and should still stay narrow before wider enablement
+- Main-session internal reminder execution is now structurally isolated from
+  visible Main chat
+- explicit docs-localization policy phrasing now has a stricter project-rule
+  lane instead of relying only on overlapping workflow variants
+- explicit file-reference response-style phrasing now has a bounded generalized
+  response-style lane plus retrieval subject hinting
+- vague shorthand docs/file phrasing still remains intentionally weaker and is
+  not accepted as proof that those broader phrasings should auto-promote
 
 ## Not live yet
 
@@ -112,6 +120,7 @@ Still not live:
 - production-enabled reduced-profile self-improving capture
 - production-enabled learned-guidance advisory planning
 - new cross-domain families
+- broad automatic promotion for vague shorthand docs/file packet phrasing
 
 ## Read next
 
