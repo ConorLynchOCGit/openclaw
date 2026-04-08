@@ -1,13 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { resolveMemoryCorrectionPlan } from "./memory-correction-engine.js";
+import {
+  resolveMemoryCorrectionPlan,
+  resolveMemoryCorrectionPromotionPolicy,
+} from "./memory-correction-engine.js";
 
 describe("resolveMemoryCorrectionPlan", () => {
+  it("maps auto-promotion profiles onto a closed correction policy", () => {
+    expect(resolveMemoryCorrectionPromotionPolicy("explicit-user-preference-v1")).toBe(
+      "allow_immediate_bounded_correction",
+    );
+    expect(resolveMemoryCorrectionPromotionPolicy("disabled")).toBe(
+      "defer_immediate_bounded_correction",
+    );
+  });
+
   it("executes immediate bounded correction for response style when an approved subject target exists", () => {
     expect(
       resolveMemoryCorrectionPlan({
         familyId: "response_style",
         trigger: "explicit_correction",
-        autoPromotionProfile: "explicit-user-preference-v1",
+        promotionPolicy: resolveMemoryCorrectionPromotionPolicy("explicit-user-preference-v1"),
         activeApprovedSubjectObjectIds: ["memory-approved-1"],
       }),
     ).toEqual({
@@ -22,7 +34,7 @@ describe("resolveMemoryCorrectionPlan", () => {
       resolveMemoryCorrectionPlan({
         familyId: "unmet_need",
         trigger: "explicit_correction",
-        autoPromotionProfile: "explicit-user-preference-v1",
+        promotionPolicy: resolveMemoryCorrectionPromotionPolicy("explicit-user-preference-v1"),
         activeApprovedSubjectObjectIds: ["memory-approved-need-1"],
       }),
     ).toEqual({

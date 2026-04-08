@@ -24,7 +24,7 @@ or non-goals slice by slice.
 7. registry authority cleanup
 8. memory-family contract / boundary cleanup
 
-### Should-fix-soon support work
+### Recently landed support work
 
 9. memory testability hardening
 10. retrieval SQL scaffolding reduction
@@ -43,7 +43,7 @@ Honest estimate:
 
 - before reduced-profile self-improving capture: 5 major slices
 - before new families: 8 major slices
-- plus 2-3 support slices if they do not pair naturally with the main work
+- plus later bounded follow-up hardening only if code reality still warrants it
 
 ## What should land first
 
@@ -95,12 +95,8 @@ Moderate-risk slices:
 - application-selection / behavior-planning layer
 - correction-policy cleanup
 
-Support work validation should still be honest, but it can usually stay more
-targeted:
-
-- memory testability hardening
-- retrieval SQL scaffolding reduction
-- stringly-control-flow cleanup
+The first support batch is already landed. It de-risked proof and cleanup, but
+it did not replace the main control-plane slices.
 
 ## What not to do during this push
 
@@ -123,8 +119,8 @@ If you want the cheapest credible execution order, use this grouping:
 5. correction-policy cleanup
 6. proof-runner adapterization
 7. registry authority cleanup + memory-family contract / boundary cleanup
-8. memory testability hardening + stringly-control-flow cleanup + bounded SQL
-   scaffolding reduction where honest
+8. only later bounded hardening that still remains honest after the main
+   slices land
 
 ## Exit criteria before moving on
 
@@ -146,3 +142,6 @@ Before new families:
 ## Next implementation slice
 
 - full ingestion control-plane flattening
+
+The support work is now landed. The next slice should stay on the main
+substrate path.

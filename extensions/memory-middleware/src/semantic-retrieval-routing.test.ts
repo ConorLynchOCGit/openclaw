@@ -6,6 +6,8 @@ import {
   maybeApplyEnvironmentConstraintSemanticFallback,
   maybeApplyProcedureSemanticFallback,
   maybeApplyWorkflowToolGotchaSemanticFallback,
+  resolveProcedureSemanticFallbackEligibility,
+  resolveProjectSemanticFallbackEligibility,
 } from "./semantic-retrieval-routing.js";
 
 const embedMemorySearchQuery = vi.hoisted(() =>
@@ -183,6 +185,127 @@ function createWeakApiWorkaroundHybridResult(): MemoryObjectSearchHybridResult {
 describe("semantic retrieval routing", () => {
   beforeEach(() => {
     embedMemorySearchQuery.mockClear();
+  });
+
+  it("exposes pure procedure fallback eligibility decisions", () => {
+    expect(
+      resolveProcedureSemanticFallbackEligibility({
+        input: {
+          query: "deploy checklist",
+          kind: "procedure",
+          scope: "include_validated_procedures",
+        },
+        hybridResult: {
+          accepted: true,
+          status: "ok",
+          scope: "include_validated_procedures",
+          query: "deploy checklist",
+          records: [
+            {
+              objectType: "procedure",
+              readSurface: "validated_procedure_read_model",
+              id: "procedure-strong",
+              status: "validated",
+              title: "Deploy checklist",
+              body: "Open canary lane.\nVerify health.",
+              createdAt: "2026-04-01T00:00:00.000Z",
+              updatedAt: "2026-04-01T00:00:00.000Z",
+              score: 220,
+              matchedFields: ["procedure_key_match"],
+            },
+          ],
+        },
+        cfg: { plugins: {} } as never,
+      }),
+    ).toEqual({ eligible: false, reason: "strong_hybrid_match" });
+
+    expect(
+      resolveProcedureSemanticFallbackEligibility({
+        input: {
+          query: "how should I carefully put this live",
+          kind: "procedure",
+          scope: "include_validated_procedures",
+        },
+        hybridResult: createWeakProcedureHybridResult(),
+        cfg: { plugins: {} } as never,
+      }),
+    ).toEqual({ eligible: true });
+  });
+
+  it("exposes pure project fallback eligibility decisions for workflow guidance lanes", () => {
+    expect(
+      resolveProjectSemanticFallbackEligibility({
+        family: "workflow_tool_gotcha",
+        input: {
+          query: "how should I keep staging narrow here",
+          kind: "project",
+          scope: "approved_only",
+        },
+        hybridResult: {
+          accepted: true,
+          status: "ok",
+          scope: "approved_only",
+          query: "how should I keep staging narrow here",
+          records: [
+            {
+              objectType: "memory_object",
+              readSurface: "approved_memory_view",
+              id: "tool-gotcha-strong",
+              memoryKind: "project",
+              reviewState: "approved",
+              content:
+                'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+              metadata: {
+                autoCapture: {
+                  lessonKey: "scripts_committer_required",
+                  subject: "scoped commit workflow",
+                  value:
+                    'use scripts/committer "<msg>" <file...> instead of manual git add / git commit',
+                },
+              },
+              createdAt: "2026-04-01T00:00:00.000Z",
+              updatedAt: "2026-04-01T00:00:00.000Z",
+              score: 90,
+              matchedFields: ["auto_capture_lesson_match"],
+            },
+          ],
+        },
+        cfg: { plugins: {} } as never,
+      }),
+    ).toEqual({ eligible: false, reason: "strong_hybrid_match" });
+
+    expect(
+      resolveProjectSemanticFallbackEligibility({
+        family: "workflow_tool_gotcha",
+        input: {
+          query: "how should I land this carefully",
+          kind: "project",
+          scope: "approved_only",
+        },
+        hybridResult: {
+          accepted: true,
+          status: "ok",
+          scope: "approved_only",
+          query: "how should I land this carefully",
+          records: [
+            {
+              objectType: "memory_object",
+              readSurface: "approved_memory_view",
+              id: "weak-project",
+              memoryKind: "project",
+              reviewState: "approved",
+              content: "Generic nearby project guidance.",
+              metadata: {},
+              createdAt: "2026-04-01T00:00:00.000Z",
+              updatedAt: "2026-04-01T00:00:00.000Z",
+              score: 25,
+              matchedFields: ["fts_search_document"],
+            },
+          ],
+        },
+        cfg: { plugins: {} } as never,
+      }),
+    ).toEqual({ eligible: true });
   });
 
   it("keeps strong typed procedure matches on the hybrid path", async () => {

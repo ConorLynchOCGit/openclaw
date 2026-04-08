@@ -12,6 +12,16 @@ import {
   buildReviewableCandidateRetrievalFeatureSql,
   buildValidatedProcedureRetrievalFeatureSql,
 } from "../retrieval-feature-framework.js";
+import {
+  inferGeneralizedWorkflowGuidancePatternHint,
+  inferProjectFactQueryHint,
+  inferProjectMemoryIntentFamily,
+  inferRecurringProcedureQueryHint,
+  inferResponseStyleQueryHint,
+  inferWorkflowImprovementQueryHint,
+  normalizeRetrievalQuery,
+} from "../retrieval-intent.js";
+import { buildHybridMemoryObjectSurfaceScaffolding } from "./hybrid-memory-surface-scaffolding.js";
 import type {
   CandidateGetInput,
   CandidateGetResult,
@@ -1272,423 +1282,6 @@ function normalizeMemoryObjectSearchLimit(limit: number | undefined): number {
     Math.max(Math.trunc(limit ?? DEFAULT_MEMORY_OBJECT_SEARCH_LIMIT), 1),
     MAX_MEMORY_OBJECT_SEARCH_LIMIT,
   );
-}
-
-type ResponseStyleQueryHint = {
-  template:
-    | "responses_concise"
-    | "responses_bullets"
-    | "responses_plain_english"
-    | "responses_no_tables"
-    | "responses_numbered_steps";
-};
-
-type ProjectFactQueryHint = {
-  fieldKey:
-    | "default_branch"
-    | "staging_branch"
-    | "repository_url"
-    | "deployment_url"
-    | "documentation_url"
-    | "runbook_url"
-    | "primary_package_manager"
-    | "primary_environment_name";
-};
-
-type RecurringProcedureQueryHint = {
-  procedureKey?:
-    | "deploy_checklist"
-    | "release_checklist"
-    | "triage_checklist"
-    | "investigation_checklist";
-  normalizedSubject?: string;
-};
-
-function inferSupportedRecurringProcedureKeyFromSubject(
-  normalizedSubject: string,
-):
-  | "deploy_checklist"
-  | "release_checklist"
-  | "triage_checklist"
-  | "investigation_checklist"
-  | null {
-  if (normalizedSubject === "deploy checklist" || normalizedSubject === "deployment checklist") {
-    return "deploy_checklist";
-  }
-  if (normalizedSubject === "release checklist" || normalizedSubject === "release steps") {
-    return "release_checklist";
-  }
-  if (normalizedSubject === "triage checklist" || normalizedSubject === "triage steps") {
-    return "triage_checklist";
-  }
-  if (
-    normalizedSubject === "investigation checklist" ||
-    normalizedSubject === "investigation steps" ||
-    normalizedSubject === "debug checklist"
-  ) {
-    return "investigation_checklist";
-  }
-  return null;
-}
-
-type WorkflowImprovementQueryHint = {
-  lessonKey:
-    | "vitest_wrapper_required"
-    | "scripts_committer_required"
-    | "git_stash_unsafe"
-    | "docs_only_check_fast"
-    | "memory_proof_runner_required"
-    | "readyz_for_readiness"
-    | "python_command_unavailable"
-    | "gateway_tools_invoke_forbidden"
-    | "openai_embeddings_api_key_required"
-    | "anthropic_context1m_eligible_credential_required";
-};
-
-type GeneralizedWorkflowGuidancePatternHint =
-  | ""
-  | "use_instead_of"
-  | "trust_for_scope"
-  | "avoid_only";
-
-type ProjectMemoryIntentFamily = "" | "project_fact" | "project_rule" | "unmet_need";
-
-function normalizeRetrievalQuery(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function inferGeneralizedWorkflowGuidancePatternHint(
-  query: string,
-): GeneralizedWorkflowGuidancePatternHint {
-  const normalized = normalizeRetrievalQuery(query);
-  if (!normalized) {
-    return "";
-  }
-  if (
-    normalized.includes("what should i trust") ||
-    normalized.includes("which signal should i trust") ||
-    normalized.includes("which source should i trust") ||
-    normalized.includes("what source should i trust") ||
-    normalized.includes("rely on") ||
-    normalized.includes("trust")
-  ) {
-    return "trust_for_scope";
-  }
-  if (
-    normalized.includes("what should i avoid") ||
-    normalized.includes("avoid") ||
-    normalized.includes("don't use") ||
-    normalized.includes("do not use")
-  ) {
-    return "avoid_only";
-  }
-  if (
-    normalized.includes("should i use") ||
-    normalized.includes("what should i use") ||
-    normalized.includes("instead of")
-  ) {
-    return "use_instead_of";
-  }
-  return "";
-}
-
-function inferProjectMemoryIntentFamily(query: string): ProjectMemoryIntentFamily {
-  const normalized = normalizeRetrievalQuery(query);
-  if (!normalized) {
-    return "";
-  }
-  if (
-    normalized.includes("still missing") ||
-    normalized.includes("still need") ||
-    normalized.includes("still needed") ||
-    normalized.includes("what do we need") ||
-    normalized.includes("what are we missing") ||
-    normalized.includes("what is missing") ||
-    normalized.includes("what's missing") ||
-    normalized.includes("are we missing") ||
-    normalized.includes("do we need") ||
-    normalized.includes("what do we still need") ||
-    normalized.includes("what are we still missing") ||
-    normalized.includes("should have next")
-  ) {
-    return "unmet_need";
-  }
-  if (
-    normalized.includes("should i use") ||
-    normalized.includes("what should i use") ||
-    normalized.includes("what should we use") ||
-    normalized.includes("which should i use") ||
-    normalized.includes("which should we use") ||
-    normalized.includes("what should i trust") ||
-    normalized.includes("what should we trust") ||
-    normalized.includes("which signal should i trust") ||
-    normalized.includes("which source should i trust") ||
-    normalized.includes("what should i avoid") ||
-    normalized.includes("what should we avoid") ||
-    normalized.includes("instead of") ||
-    normalized.includes("rely on") ||
-    normalized.includes("trust") ||
-    normalized.includes("avoid") ||
-    normalized.includes("prefer ")
-  ) {
-    return "project_rule";
-  }
-  if (
-    normalized.includes("where is") ||
-    normalized.includes("what is the") ||
-    normalized.includes("what's the") ||
-    normalized.includes("which branch") ||
-    normalized.includes("url") ||
-    normalized.includes("link") ||
-    normalized.includes("dashboard") ||
-    normalized.includes("report") ||
-    normalized.includes("runbook") ||
-    normalized.includes("docs") ||
-    normalized.includes("documentation")
-  ) {
-    return "project_fact";
-  }
-  return "";
-}
-
-function inferResponseStyleQueryHint(query: string): ResponseStyleQueryHint | null {
-  const normalized = normalizeRetrievalQuery(query);
-  if (!normalized) {
-    return null;
-  }
-  if (normalized.includes("plain english") || normalized.includes("jargon")) {
-    return { template: "responses_plain_english" };
-  }
-  if (normalized.includes("bullet points") || normalized.includes("bullet-point")) {
-    return { template: "responses_bullets" };
-  }
-  if (normalized.includes("numbered steps") || normalized.includes("numbered lists")) {
-    return { template: "responses_numbered_steps" };
-  }
-  if (normalized.includes("table")) {
-    return { template: "responses_no_tables" };
-  }
-  if (
-    normalized.includes("concise") ||
-    normalized.includes("brief") ||
-    normalized.includes("short replies") ||
-    normalized.includes("short responses")
-  ) {
-    return { template: "responses_concise" };
-  }
-  return null;
-}
-
-function inferProjectFactQueryHint(query: string): ProjectFactQueryHint | null {
-  const normalized = normalizeRetrievalQuery(query);
-  if (!normalized) {
-    return null;
-  }
-  if (normalized.includes("default branch")) {
-    return { fieldKey: "default_branch" };
-  }
-  if (normalized.includes("staging branch")) {
-    return { fieldKey: "staging_branch" };
-  }
-  if (
-    normalized.includes("repository url") ||
-    normalized.includes("repo url") ||
-    normalized.includes("repository link") ||
-    normalized.includes("repo link")
-  ) {
-    return { fieldKey: "repository_url" };
-  }
-  if (
-    normalized.includes("deployment url") ||
-    normalized.includes("deploy url") ||
-    normalized.includes("deployed url") ||
-    normalized.includes("deployment link")
-  ) {
-    return { fieldKey: "deployment_url" };
-  }
-  if (
-    normalized.includes("documentation url") ||
-    normalized.includes("docs url") ||
-    normalized.includes("documentation link") ||
-    normalized.includes("docs link")
-  ) {
-    return { fieldKey: "documentation_url" };
-  }
-  if (normalized.includes("runbook url") || normalized.includes("runbook link")) {
-    return { fieldKey: "runbook_url" };
-  }
-  if (
-    normalized.includes("package manager") ||
-    normalized.includes("pnpm") ||
-    normalized.includes("npm") ||
-    normalized.includes("yarn") ||
-    normalized.includes("bun")
-  ) {
-    return { fieldKey: "primary_package_manager" };
-  }
-  if (normalized.includes("environment")) {
-    return { fieldKey: "primary_environment_name" };
-  }
-  return null;
-}
-
-function inferRecurringProcedureQueryHint(query: string): RecurringProcedureQueryHint | null {
-  const normalized = normalizeRetrievalQuery(query);
-  if (!normalized) {
-    return null;
-  }
-  const genericNormalized = normalized
-    .replace(
-      /^(?:give me|show me|use|return|find|what(?: are| is)?|where(?: are| is)?|how should we|how do we|can you show me|can you give me)\s+/,
-      "",
-    )
-    .replace(/\bmy\b\s+/g, "")
-    .trim();
-  const genericSubjectMatch = normalized.match(
-    /\b(?:our|the)?\s*([a-z0-9][a-z0-9 /_-]{3,80}?)\s+(checklist|procedure|runbook|playbook|steps)\b/,
-  );
-  const fallbackGenericSubjectMatch = genericNormalized.match(
-    /\b(?:our|the)?\s*([a-z0-9][a-z0-9 /_-]{3,80}?)\s+(checklist|procedure|runbook|playbook|steps)\b/,
-  );
-  const subjectMatch = genericSubjectMatch ?? fallbackGenericSubjectMatch;
-  if (subjectMatch) {
-    const normalizedSubject =
-      `${subjectMatch[1]?.trim() ?? ""} ${subjectMatch[2]?.trim() ?? ""}`.trim();
-    const supportedProcedureKey = inferSupportedRecurringProcedureKeyFromSubject(normalizedSubject);
-    if (supportedProcedureKey) {
-      return { procedureKey: supportedProcedureKey };
-    }
-    return {
-      normalizedSubject,
-    };
-  }
-  if (
-    normalized.includes("deploy checklist") ||
-    normalized.includes("deployment checklist") ||
-    /\bdeploy\b/.test(normalized) ||
-    /\bdeployment\b/.test(normalized) ||
-    /\broll out\b/.test(normalized) ||
-    /\brollout\b/.test(normalized)
-  ) {
-    return { procedureKey: "deploy_checklist" };
-  }
-  if (
-    normalized.includes("release checklist") ||
-    normalized.includes("release steps") ||
-    /\brelease\b/.test(normalized) ||
-    /\bship\b/.test(normalized)
-  ) {
-    return { procedureKey: "release_checklist" };
-  }
-  if (
-    normalized.includes("triage checklist") ||
-    normalized.includes("triage steps") ||
-    /\btriage\b/.test(normalized)
-  ) {
-    return { procedureKey: "triage_checklist" };
-  }
-  if (
-    normalized.includes("investigation checklist") ||
-    normalized.includes("investigation steps") ||
-    /\binvestigate\b/.test(normalized) ||
-    /\binvestigation\b/.test(normalized) ||
-    /\bdebug\b/.test(normalized)
-  ) {
-    return { procedureKey: "investigation_checklist" };
-  }
-  return null;
-}
-
-function inferWorkflowImprovementQueryHint(query: string): WorkflowImprovementQueryHint | null {
-  const normalized = normalizeRetrievalQuery(query);
-  if (!normalized) {
-    return null;
-  }
-  if (
-    normalized.includes("vitest") ||
-    normalized.includes("pnpm test") ||
-    normalized.includes("test wrapper") ||
-    normalized.includes("run tests")
-  ) {
-    return { lessonKey: "vitest_wrapper_required" };
-  }
-  if (
-    normalized.includes("scripts/committer") ||
-    normalized.includes("git add") ||
-    normalized.includes("git commit") ||
-    normalized.includes("scoped commit")
-  ) {
-    return { lessonKey: "scripts_committer_required" };
-  }
-  if (normalized.includes("git stash") || normalized.includes("stash")) {
-    return { lessonKey: "git_stash_unsafe" };
-  }
-  if (
-    (normalized.includes("docs-only") ||
-      normalized.includes("docs only") ||
-      normalized.includes("process-only") ||
-      normalized.includes("process only") ||
-      normalized.includes("changelog-only") ||
-      normalized.includes("changelog only")) &&
-    (normalized.includes("check:fast") ||
-      normalized.includes("check fast") ||
-      normalized.includes("pnpm check") ||
-      normalized.includes("pnpm build"))
-  ) {
-    return { lessonKey: "docs_only_check_fast" };
-  }
-  if (
-    normalized.includes("memory:proof") ||
-    (normalized.includes("memory proof") &&
-      (normalized.includes("proof runner") ||
-        normalized.includes("isolated proof") ||
-        normalized.includes("production proof")))
-  ) {
-    return { lessonKey: "memory_proof_runner_required" };
-  }
-  if (
-    normalized.includes("readyz") ||
-    ((normalized.includes("healthz") || normalized.includes("liveness")) &&
-      normalized.includes("readiness"))
-  ) {
-    return { lessonKey: "readyz_for_readiness" };
-  }
-  if (
-    (normalized.includes("python") &&
-      (normalized.includes("not available") ||
-        normalized.includes("unavailable") ||
-        normalized.includes("without python") ||
-        normalized.includes("python command"))) ||
-    normalized.includes("tsx")
-  ) {
-    return { lessonKey: "python_command_unavailable" };
-  }
-  if (
-    normalized.includes("/tools/invoke") ||
-    normalized.includes("tools invoke") ||
-    (normalized.includes("gateway") && normalized.includes("runtime invocation"))
-  ) {
-    return { lessonKey: "gateway_tools_invoke_forbidden" };
-  }
-  if (
-    (normalized.includes("embedding") || normalized.includes("semantic memory search")) &&
-    (normalized.includes("codex oauth") ||
-      normalized.includes("codex") ||
-      normalized.includes("chatgpt oauth")) &&
-    (normalized.includes("api key") || normalized.includes("openai_api_key"))
-  ) {
-    return { lessonKey: "openai_embeddings_api_key_required" };
-  }
-  if (
-    (normalized.includes("anthropic") || normalized.includes("claude")) &&
-    (normalized.includes("long context") || normalized.includes("context1m")) &&
-    (normalized.includes("extra usage") ||
-      normalized.includes("429") ||
-      normalized.includes("fallback model"))
-  ) {
-    return { lessonKey: "anthropic_context1m_eligible_credential_required" };
-  }
-  return null;
 }
 
 function normalizeConsolidationPlanLimit(limit: number | undefined): number {
@@ -10440,139 +10033,28 @@ async function searchValidatedProcedureRowsBasic(params: {
   return result.rows;
 }
 
-async function searchApprovedMemorySurfaceRowsHybrid(params: {
+async function searchMemoryObjectSurfaceRowsHybrid(params: {
   client: Client;
   schema: string;
   input: MemoryObjectSearchHybridInput;
+  surfaceKind: "approved" | "reviewable_candidate";
 }): Promise<RankedMemoryObjectSearchRow[]> {
-  const approvedMemoryView = quoteQualifiedTable({
+  const memorySurfaceView = quoteQualifiedTable({
     schema: params.schema,
-    table: "internal_approved_memory_v",
+    table:
+      params.surfaceKind === "approved"
+        ? "internal_approved_memory_v"
+        : "internal_reviewable_candidates_v",
   });
   const memoryObjectsTable = quoteQualifiedTable({
     schema: params.schema,
     table: "memory_objects",
   });
   const combinedTextExpression = "lower(coalesce(v.title, '') || ' ' || coalesce(v.content, ''))";
-  const autoCaptureTemplateExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'template',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'template',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureFieldKeyExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'fieldKey',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'fieldKey',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'fieldKey',",
-    "v.metadata->'autoPromotion'->>'fieldKey',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureFactFamilyExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'factFamily',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'factFamily',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'factFamily',",
-    "v.metadata->'autoPromotion'->>'factFamily',",
-    "case when coalesce(",
-    "v.metadata->'autoCapture'->>'fieldKey',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'fieldKey',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'fieldKey',",
-    "v.metadata->'autoPromotion'->>'fieldKey',",
-    "''",
-    ") <> '' then 'supported_field' else '' end",
-    ")",
-  ].join(" ");
-  const autoCaptureLessonKeyExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'lessonKey',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'lessonKey',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'lessonKey',",
-    "v.metadata->'autoPromotion'->>'lessonKey',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureLessonFamilyExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'lessonFamily',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'lessonFamily',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'lessonFamily',",
-    "v.metadata->'autoPromotion'->>'lessonFamily',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureGuidancePatternExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'guidancePattern',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'guidancePattern',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'guidancePattern',",
-    "v.metadata->'autoPromotion'->>'guidancePattern',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureNormalizedSubjectExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'normalizedSubject',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedSubject',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedSubject',",
-    "v.metadata->'autoPromotion'->>'normalizedSubject',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureNormalizedProjectFactLabelExpression = [
-    "case",
-    `when position(' :: ' in ${autoCaptureNormalizedSubjectExpression}) > 0`,
-    `then split_part(${autoCaptureNormalizedSubjectExpression}, ' :: ', 2)`,
-    `else ${autoCaptureNormalizedSubjectExpression}`,
-    "end",
-  ].join(" ");
-  const autoCaptureNormalizedProjectScopeExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'normalizedProjectScope',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedProjectScope',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedProjectScope',",
-    "v.metadata->'autoPromotion'->>'normalizedProjectScope',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureNormalizedRecommendedActionExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'normalizedRecommendedAction',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedRecommendedAction',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedRecommendedAction',",
-    "v.metadata->'autoPromotion'->>'normalizedRecommendedAction',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureNormalizedAvoidActionExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'normalizedAvoidAction',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedAvoidAction',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedAvoidAction',",
-    "v.metadata->'autoPromotion'->>'normalizedAvoidAction',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureNormalizedNeededCapabilityExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'normalizedNeededCapability',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedNeededCapability',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedNeededCapability',",
-    "v.metadata->'autoPromotion'->>'normalizedNeededCapability',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureNormalizedValueExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'normalizedValue',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedValue',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedValue',",
-    "v.metadata->'autoPromotion'->>'normalizedValue',",
-    "''",
-    ")",
-  ].join(" ");
+  const surfaceScaffolding = buildHybridMemoryObjectSurfaceScaffolding({
+    alias: "v",
+    surfaceKind: params.surfaceKind,
+  });
   const responseStyleHint =
     params.input.kind === "project" || params.input.kind === "procedure"
       ? null
@@ -10594,7 +10076,9 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
       or ${combinedTextExpression} like lower($2::text)
       or similarity(${combinedTextExpression}, lower($1::text)) >= 0.15
     )`,
-    buildApprovedMemoryArtifactVisibilityCondition("v"),
+    ...(params.surfaceKind === "approved"
+      ? [buildApprovedMemoryArtifactVisibilityCondition("v")]
+      : ["v.review_state = 'candidate'"]),
   ];
   const values: unknown[] = [
     params.input.query,
@@ -10617,35 +10101,73 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
   }
 
   values.push(normalizeMemoryObjectSearchLimit(params.input.limit));
-  const retrievalFeatureSql = buildApprovedMemoryRetrievalFeatureSql({
-    expressions: {
-      autoCaptureTemplateExpression,
-      autoCaptureFactFamilyExpression,
-      autoCaptureLessonFamilyExpression,
-      autoCaptureGuidancePatternExpression,
-      autoCaptureNormalizedSubjectExpression,
-      autoCaptureNormalizedProjectFactLabelExpression,
-      autoCaptureNormalizedProjectScopeExpression,
-      autoCaptureNormalizedRecommendedActionExpression,
-      autoCaptureNormalizedAvoidActionExpression,
-      autoCaptureNormalizedNeededCapabilityExpression,
-      autoCaptureNormalizedValueExpression,
-    },
-    paramRefs: {
-      normalizedQueryRef: "$6::text",
-      projectMemoryIntentFamilyRef: "$7::text",
-      generalizedWorkflowPatternHintRef: "$8::text",
-    },
-  });
+  const retrievalFeatureSql =
+    params.surfaceKind === "approved"
+      ? buildApprovedMemoryRetrievalFeatureSql({
+          expressions: {
+            autoCaptureTemplateExpression: surfaceScaffolding.autoCaptureTemplateExpression,
+            autoCaptureFactFamilyExpression: surfaceScaffolding.autoCaptureFactFamilyExpression,
+            autoCaptureLessonFamilyExpression: surfaceScaffolding.autoCaptureLessonFamilyExpression,
+            autoCaptureGuidancePatternExpression:
+              surfaceScaffolding.autoCaptureGuidancePatternExpression,
+            autoCaptureNormalizedSubjectExpression:
+              surfaceScaffolding.autoCaptureNormalizedSubjectExpression,
+            autoCaptureNormalizedProjectFactLabelExpression:
+              surfaceScaffolding.autoCaptureNormalizedProjectFactLabelExpression,
+            autoCaptureNormalizedProjectScopeExpression:
+              surfaceScaffolding.autoCaptureNormalizedProjectScopeExpression,
+            autoCaptureNormalizedRecommendedActionExpression:
+              surfaceScaffolding.autoCaptureNormalizedRecommendedActionExpression,
+            autoCaptureNormalizedAvoidActionExpression:
+              surfaceScaffolding.autoCaptureNormalizedAvoidActionExpression,
+            autoCaptureNormalizedNeededCapabilityExpression:
+              surfaceScaffolding.autoCaptureNormalizedNeededCapabilityExpression,
+            autoCaptureNormalizedValueExpression:
+              surfaceScaffolding.autoCaptureNormalizedValueExpression,
+          },
+          paramRefs: {
+            normalizedQueryRef: "$6::text",
+            projectMemoryIntentFamilyRef: "$7::text",
+            generalizedWorkflowPatternHintRef: "$8::text",
+          },
+        })
+      : buildReviewableCandidateRetrievalFeatureSql({
+          expressions: {
+            autoCaptureTemplateExpression: surfaceScaffolding.autoCaptureTemplateExpression,
+            autoCaptureFactFamilyExpression: surfaceScaffolding.autoCaptureFactFamilyExpression,
+            autoCaptureLessonFamilyExpression: surfaceScaffolding.autoCaptureLessonFamilyExpression,
+            autoCaptureGuidancePatternExpression:
+              surfaceScaffolding.autoCaptureGuidancePatternExpression,
+            autoCaptureNormalizedSubjectExpression:
+              surfaceScaffolding.autoCaptureNormalizedSubjectExpression,
+            autoCaptureNormalizedProjectFactLabelExpression:
+              surfaceScaffolding.autoCaptureNormalizedProjectFactLabelExpression,
+            autoCaptureNormalizedProjectScopeExpression:
+              surfaceScaffolding.autoCaptureNormalizedProjectScopeExpression,
+            autoCaptureNormalizedRecommendedActionExpression:
+              surfaceScaffolding.autoCaptureNormalizedRecommendedActionExpression,
+            autoCaptureNormalizedAvoidActionExpression:
+              surfaceScaffolding.autoCaptureNormalizedAvoidActionExpression,
+            autoCaptureNormalizedNeededCapabilityExpression:
+              surfaceScaffolding.autoCaptureNormalizedNeededCapabilityExpression,
+            autoCaptureNormalizedValueExpression:
+              surfaceScaffolding.autoCaptureNormalizedValueExpression,
+          },
+          paramRefs: {
+            normalizedQueryRef: "$6::text",
+            projectMemoryIntentFamilyRef: "$7::text",
+            generalizedWorkflowPatternHintRef: "$8::text",
+          },
+        });
 
   const result = await params.client.query<RankedMemoryObjectSearchRow>(
     `
       select
         'memory_object'::text as object_type,
-        'approved_memory_view'::text as read_surface,
+        '${surfaceScaffolding.readSurface}'::text as read_surface,
         v.id::text as id,
         v.memory_kind::text as memory_kind,
-        'approved'::text as review_state,
+        ${surfaceScaffolding.reviewStateExpression} as review_state,
         v.content,
         v.project_id::text as project_id,
         v.agent_id::text as agent_id,
@@ -10659,9 +10181,9 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
           + case when ${combinedTextExpression} = lower($1::text) then 120 else 0 end
           + case when lower(coalesce(v.title, '')) like lower($2::text) then 110 else 0 end
           + case when ${combinedTextExpression} like lower($2::text) then 90 else 0 end
-          + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
-          + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
-          + case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
+          + case when $3::text <> '' and ${surfaceScaffolding.autoCaptureTemplateExpression} = $3::text then 135 else 0 end
+          + case when $4::text <> '' and ${surfaceScaffolding.autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
+          + case when $5::text <> '' and ${surfaceScaffolding.autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
           ${retrievalFeatureSql.scoreClauses.map((clause) => `+ ${clause}`).join("\n          ")}
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
@@ -10672,15 +10194,15 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
             case when ${combinedTextExpression} = lower($1::text) then 'content_exact' end,
             case when lower(coalesce(v.title, '')) like lower($2::text) then 'title_prefix' end,
             case when ${combinedTextExpression} like lower($2::text) then 'content_prefix' end,
-            case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text
+            case when $3::text <> '' and ${surfaceScaffolding.autoCaptureTemplateExpression} = $3::text
               then 'auto_capture_template_match'
             end,
-            case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text
+            case when $4::text <> '' and ${surfaceScaffolding.autoCaptureFieldKeyExpression} = $4::text
               then 'auto_capture_field_match'
             end,
-            case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text
+            case when $5::text <> '' and ${surfaceScaffolding.autoCaptureLessonKeyExpression} = $5::text
               then 'auto_capture_lesson_match'
-            end${retrievalFeatureSql.matchedFieldClauses.length > 0 ? "," : ""}
+            end,
             ${retrievalFeatureSql.matchedFieldClauses.join(",\n            ")},
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
               then 'fts_search_document'
@@ -10691,7 +10213,7 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
           ],
           null
         )::text[] as matched_fields
-      from ${approvedMemoryView} v
+      from ${memorySurfaceView} v
       inner join ${memoryObjectsTable} mo
         on mo.id = v.id
       where ${conditions.join("\n        and ")}
@@ -10704,269 +10226,26 @@ async function searchApprovedMemorySurfaceRowsHybrid(params: {
   return result.rows;
 }
 
+async function searchApprovedMemorySurfaceRowsHybrid(params: {
+  client: Client;
+  schema: string;
+  input: MemoryObjectSearchHybridInput;
+}): Promise<RankedMemoryObjectSearchRow[]> {
+  return searchMemoryObjectSurfaceRowsHybrid({
+    ...params,
+    surfaceKind: "approved",
+  });
+}
+
 async function searchReviewableCandidateSurfaceRowsHybrid(params: {
   client: Client;
   schema: string;
   input: MemoryObjectSearchHybridInput;
 }): Promise<RankedMemoryObjectSearchRow[]> {
-  const reviewableCandidatesView = quoteQualifiedTable({
-    schema: params.schema,
-    table: "internal_reviewable_candidates_v",
+  return searchMemoryObjectSurfaceRowsHybrid({
+    ...params,
+    surfaceKind: "reviewable_candidate",
   });
-  const memoryObjectsTable = quoteQualifiedTable({
-    schema: params.schema,
-    table: "memory_objects",
-  });
-  const combinedTextExpression = "lower(coalesce(v.title, '') || ' ' || coalesce(v.content, ''))";
-  const autoCaptureTemplateExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'template',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'template',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureFieldKeyExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'fieldKey',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'fieldKey',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'fieldKey',",
-    "v.metadata->'autoPromotion'->>'fieldKey',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureFactFamilyExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'factFamily',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'factFamily',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'factFamily',",
-    "v.metadata->'autoPromotion'->>'factFamily',",
-    "case when",
-    "  coalesce(",
-    "    v.metadata->'autoCapture'->>'fieldKey',",
-    "    v.metadata->'candidateMetadata'->'autoCapture'->>'fieldKey',",
-    "    v.metadata->'promotionMetadata'->'autoPromotion'->>'fieldKey',",
-    "    v.metadata->'autoPromotion'->>'fieldKey',",
-    "    ''",
-    "  ) <> '' then 'supported_field' else '' end",
-    ")",
-  ].join(" ");
-  const autoCaptureLessonKeyExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'lessonKey',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'lessonKey',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'lessonKey',",
-    "v.metadata->'autoPromotion'->>'lessonKey',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureLessonFamilyExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'lessonFamily',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'lessonFamily',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'lessonFamily',",
-    "v.metadata->'autoPromotion'->>'lessonFamily',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureGuidancePatternExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'guidancePattern',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'guidancePattern',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'guidancePattern',",
-    "v.metadata->'autoPromotion'->>'guidancePattern',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureNormalizedSubjectExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'normalizedSubject',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedSubject',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedSubject',",
-    "v.metadata->'autoPromotion'->>'normalizedSubject',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureNormalizedProjectFactLabelExpression = [
-    "case",
-    `when position(' :: ' in ${autoCaptureNormalizedSubjectExpression}) > 0`,
-    `then split_part(${autoCaptureNormalizedSubjectExpression}, ' :: ', 2)`,
-    `else ${autoCaptureNormalizedSubjectExpression}`,
-    "end",
-  ].join(" ");
-  const autoCaptureNormalizedProjectScopeExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'normalizedProjectScope',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedProjectScope',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedProjectScope',",
-    "v.metadata->'autoPromotion'->>'normalizedProjectScope',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureNormalizedRecommendedActionExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'normalizedRecommendedAction',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedRecommendedAction',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedRecommendedAction',",
-    "v.metadata->'autoPromotion'->>'normalizedRecommendedAction',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureNormalizedAvoidActionExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'normalizedAvoidAction',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedAvoidAction',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedAvoidAction',",
-    "v.metadata->'autoPromotion'->>'normalizedAvoidAction',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureNormalizedNeededCapabilityExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'normalizedNeededCapability',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedNeededCapability',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedNeededCapability',",
-    "v.metadata->'autoPromotion'->>'normalizedNeededCapability',",
-    "''",
-    ")",
-  ].join(" ");
-  const autoCaptureNormalizedValueExpression = [
-    "coalesce(",
-    "v.metadata->'autoCapture'->>'normalizedValue',",
-    "v.metadata->'candidateMetadata'->'autoCapture'->>'normalizedValue',",
-    "v.metadata->'promotionMetadata'->'autoPromotion'->>'normalizedValue',",
-    "v.metadata->'autoPromotion'->>'normalizedValue',",
-    "''",
-    ")",
-  ].join(" ");
-  const responseStyleHint =
-    params.input.kind === "project" || params.input.kind === "procedure"
-      ? null
-      : inferResponseStyleQueryHint(params.input.query);
-  const projectFactHint =
-    params.input.kind === "project" ? inferProjectFactQueryHint(params.input.query) : null;
-  const workflowImprovementHint =
-    params.input.kind === "project" ? inferWorkflowImprovementQueryHint(params.input.query) : null;
-  const normalizedQuery = normalizeRetrievalQuery(params.input.query);
-  const projectMemoryIntentFamily =
-    params.input.kind === "project" ? inferProjectMemoryIntentFamily(params.input.query) : "";
-  const generalizedWorkflowPatternHint =
-    params.input.kind === "project"
-      ? inferGeneralizedWorkflowGuidancePatternHint(params.input.query)
-      : "";
-  const conditions = [
-    "v.review_state = 'candidate'",
-    `(
-      mo.search_document @@ websearch_to_tsquery('english', $1::text)
-      or ${combinedTextExpression} like lower($2::text)
-      or similarity(${combinedTextExpression}, lower($1::text)) >= 0.15
-    )`,
-  ];
-  const values: unknown[] = [
-    params.input.query,
-    `${params.input.query}%`,
-    responseStyleHint?.template ?? "",
-    projectFactHint?.fieldKey ?? "",
-    workflowImprovementHint?.lessonKey ?? "",
-    normalizedQuery,
-    projectMemoryIntentFamily,
-    generalizedWorkflowPatternHint,
-  ];
-
-  if (params.input.kind) {
-    values.push(params.input.kind);
-    conditions.push(`v.memory_kind::text = $${values.length}::text`);
-  }
-  if (params.input.projectId) {
-    values.push(params.input.projectId);
-    conditions.push(`v.project_id = $${values.length}::uuid`);
-  }
-
-  values.push(normalizeMemoryObjectSearchLimit(params.input.limit));
-  const retrievalFeatureSql = buildReviewableCandidateRetrievalFeatureSql({
-    expressions: {
-      autoCaptureTemplateExpression,
-      autoCaptureFactFamilyExpression,
-      autoCaptureLessonFamilyExpression,
-      autoCaptureGuidancePatternExpression,
-      autoCaptureNormalizedSubjectExpression,
-      autoCaptureNormalizedProjectFactLabelExpression,
-      autoCaptureNormalizedProjectScopeExpression,
-      autoCaptureNormalizedRecommendedActionExpression,
-      autoCaptureNormalizedAvoidActionExpression,
-      autoCaptureNormalizedNeededCapabilityExpression,
-      autoCaptureNormalizedValueExpression,
-    },
-    paramRefs: {
-      normalizedQueryRef: "$6::text",
-      projectMemoryIntentFamilyRef: "$7::text",
-      generalizedWorkflowPatternHintRef: "$8::text",
-    },
-  });
-
-  const result = await params.client.query<RankedMemoryObjectSearchRow>(
-    `
-      select
-        'memory_object'::text as object_type,
-        'reviewable_candidates_view'::text as read_surface,
-        v.id::text as id,
-        v.memory_kind::text as memory_kind,
-        v.review_state::text as review_state,
-        v.content,
-        v.project_id::text as project_id,
-        v.agent_id::text as agent_id,
-        v.session_id::text as session_id,
-        null::text as source_event_id,
-        v.metadata,
-        v.created_at::text as created_at,
-        v.updated_at::text as updated_at,
-        (
-          case when lower(coalesce(v.title, '')) = lower($1::text) then 140 else 0 end
-          + case when ${combinedTextExpression} = lower($1::text) then 120 else 0 end
-          + case when lower(coalesce(v.title, '')) like lower($2::text) then 110 else 0 end
-          + case when ${combinedTextExpression} like lower($2::text) then 90 else 0 end
-          + case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text then 135 else 0 end
-          + case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text then 220 else 0 end
-          + case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text then 185 else 0 end
-          ${retrievalFeatureSql.scoreClauses.map((clause) => `+ ${clause}`).join("\n          ")}
-          + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
-          + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
-        )::float8 as score,
-        array_remove(
-          array[
-            case when lower(coalesce(v.title, '')) = lower($1::text) then 'title_exact' end,
-            case when ${combinedTextExpression} = lower($1::text) then 'content_exact' end,
-            case when lower(coalesce(v.title, '')) like lower($2::text) then 'title_prefix' end,
-            case when ${combinedTextExpression} like lower($2::text) then 'content_prefix' end,
-            case when $3::text <> '' and ${autoCaptureTemplateExpression} = $3::text
-              then 'auto_capture_template_match'
-            end,
-            case when $4::text <> '' and ${autoCaptureFieldKeyExpression} = $4::text
-              then 'auto_capture_field_match'
-            end,
-            case when $5::text <> '' and ${autoCaptureLessonKeyExpression} = $5::text
-              then 'auto_capture_lesson_match'
-            end,
-            ${retrievalFeatureSql.matchedFieldClauses.join(",\n            ")},
-            case when mo.search_document @@ websearch_to_tsquery('english', $1::text)
-              then 'fts_search_document'
-            end,
-            case when similarity(${combinedTextExpression}, lower($1::text)) >= 0.15
-              then 'trigram_similarity'
-            end
-          ],
-          null
-        )::text[] as matched_fields
-      from ${reviewableCandidatesView} v
-      inner join ${memoryObjectsTable} mo
-        on mo.id = v.id
-      where ${conditions.join("\n        and ")}
-      order by score desc, v.updated_at desc
-      limit $${values.length}::int
-    `,
-    values,
-  );
-
-  return result.rows;
 }
 
 async function searchMemoryObjectRowsHybrid(params: {

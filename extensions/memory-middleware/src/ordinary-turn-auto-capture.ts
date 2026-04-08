@@ -12,6 +12,7 @@ import {
 } from "./config.js";
 import {
   executeMemoryObjectCorrectionPlan,
+  resolveMemoryCorrectionPromotionPolicy,
   resolveMemoryCorrectionPlan,
 } from "./memory-correction-engine.js";
 import { getCaptureMetadataByCaptureClass } from "./memory-family-registry.js";
@@ -3494,7 +3495,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         ? resolveMemoryCorrectionPlan({
             familyId: "response_style",
             trigger: "explicit_correction",
-            autoPromotionProfile: autoPromotion.profile,
+            promotionPolicy: resolveMemoryCorrectionPromotionPolicy(autoPromotion.profile),
             activeApprovedSubjectObjectIds: inspection?.activeApprovedSubjectObjectIds ?? [],
           })
         : null;
@@ -3903,7 +3904,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         ? resolveMemoryCorrectionPlan({
             familyId: "project_fact",
             trigger: "explicit_correction",
-            autoPromotionProfile: autoPromotion.profile,
+            promotionPolicy: resolveMemoryCorrectionPromotionPolicy(autoPromotion.profile),
             activeApprovedSubjectObjectIds: inspection?.activeApprovedSubjectObjectIds ?? [],
           })
         : null;

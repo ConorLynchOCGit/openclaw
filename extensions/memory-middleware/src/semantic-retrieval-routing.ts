@@ -53,6 +53,29 @@ type SupportedApiWorkaroundLessonKey =
   | "openai_embeddings_api_key_required"
   | "anthropic_context1m_eligible_credential_required";
 
+export type SemanticFallbackFamily =
+  | "procedure"
+  | "environment_constraint"
+  | "workflow_tool_gotcha"
+  | "api_workaround";
+
+export type SemanticFallbackEligibility =
+  | { eligible: true }
+  | {
+      eligible: false;
+      reason:
+        | "hybrid_not_ok"
+        | "missing_cfg"
+        | "kind_mismatch"
+        | "scope_mismatch"
+        | "strong_hybrid_match";
+    };
+
+type AcceptedHybridSearchResult = Extract<
+  MemoryObjectSearchHybridResult,
+  { accepted: true; status: "ok" }
+>;
+
 const SUPPORTED_ENVIRONMENT_CONSTRAINT_LESSON_KEYS =
   new Set<SupportedEnvironmentConstraintLessonKey>([
     "python_command_unavailable",
@@ -212,6 +235,65 @@ function hasStrongTypedProjectHybridMatch(
       field === "title_prefix" ||
       field === "content_prefix",
   );
+}
+
+export function resolveProcedureSemanticFallbackEligibility(params: {
+  input: MemoryObjectSearchHybridInput;
+  hybridResult: MemoryObjectSearchHybridResult;
+  cfg?: OpenClawConfig;
+}): SemanticFallbackEligibility {
+  if (!params.hybridResult.accepted || params.hybridResult.status !== "ok") {
+    return { eligible: false, reason: "hybrid_not_ok" };
+  }
+  if (!params.cfg) {
+    return { eligible: false, reason: "missing_cfg" };
+  }
+  if (params.input.kind !== "procedure") {
+    return { eligible: false, reason: "kind_mismatch" };
+  }
+  if ((params.input.scope ?? "approved_only") !== "include_validated_procedures") {
+    return { eligible: false, reason: "scope_mismatch" };
+  }
+  if (hasStrongProcedureHybridMatch(params.hybridResult.records[0])) {
+    return { eligible: false, reason: "strong_hybrid_match" };
+  }
+  return { eligible: true };
+}
+
+export function resolveProjectSemanticFallbackEligibility(params: {
+  family: Exclude<SemanticFallbackFamily, "procedure">;
+  input: MemoryObjectSearchHybridInput;
+  hybridResult: MemoryObjectSearchHybridResult;
+  cfg?: OpenClawConfig;
+}): SemanticFallbackEligibility {
+  if (!params.hybridResult.accepted || params.hybridResult.status !== "ok") {
+    return { eligible: false, reason: "hybrid_not_ok" };
+  }
+  if (!params.cfg) {
+    return { eligible: false, reason: "missing_cfg" };
+  }
+  if (params.input.kind !== "project") {
+    return { eligible: false, reason: "kind_mismatch" };
+  }
+  if ((params.input.scope ?? "approved_only") !== "approved_only") {
+    return { eligible: false, reason: "scope_mismatch" };
+  }
+  if (hasStrongTypedProjectHybridMatch(params.hybridResult.records[0])) {
+    return { eligible: false, reason: "strong_hybrid_match" };
+  }
+
+  const topRecord = params.hybridResult.records[0];
+  if (
+    (params.family === "environment_constraint" &&
+      hasStrongEnvironmentConstraintHybridMatch(topRecord)) ||
+    (params.family === "workflow_tool_gotcha" &&
+      hasStrongWorkflowToolGotchaHybridMatch(topRecord)) ||
+    (params.family === "api_workaround" && hasStrongApiWorkaroundHybridMatch(topRecord))
+  ) {
+    return { eligible: false, reason: "strong_hybrid_match" };
+  }
+
+  return { eligible: true };
 }
 
 function resolveAgentId(params: {
@@ -1025,23 +1107,17 @@ export async function maybeApplyProcedureSemanticFallback(params: {
   agentId?: string;
   sessionKey?: string;
 }): Promise<MemoryObjectSearchHybridResult> {
-  if (!params.hybridResult.accepted || params.hybridResult.status !== "ok") {
+  const eligibility = resolveProcedureSemanticFallbackEligibility(params);
+  if (!eligibility.eligible) {
     return params.hybridResult;
   }
-  const scope = params.input.scope ?? "approved_only";
-  if (
-    !params.cfg ||
-    params.input.kind !== "procedure" ||
-    scope !== "include_validated_procedures" ||
-    hasStrongProcedureHybridMatch(params.hybridResult.records[0])
-  ) {
-    return params.hybridResult;
-  }
+  const hybridResult = params.hybridResult as AcceptedHybridSearchResult;
+  const cfg = params.cfg as OpenClawConfig;
 
   const queryEmbedding = await embedMemorySearchQuery({
-    cfg: params.cfg,
+    cfg,
     agentId: resolveAgentId({
-      cfg: params.cfg,
+      cfg,
       agentId: params.agentId,
       sessionKey: params.sessionKey,
     }),
@@ -1068,11 +1144,13 @@ export async function maybeApplyProcedureSemanticFallback(params: {
     return params.hybridResult;
   }
 
-  const existingById = new Map(params.hybridResult.records.map((record) => [record.id, record]));
+  const existingById = new Map(
+    hybridResult.records.map((record: RankedRetrievedMemoryRecord) => [record.id, record]),
+  );
   const scoreBase =
     Math.max(
       1,
-      ...params.hybridResult.records.map((record) => record.score),
+      ...hybridResult.records.map((record: RankedRetrievedMemoryRecord) => record.score),
       semanticResult.records.length,
     ) +
     semanticResult.records.length +
@@ -1092,14 +1170,14 @@ export async function maybeApplyProcedureSemanticFallback(params: {
     seen.add(record.id);
   });
 
-  for (const record of params.hybridResult.records) {
+  for (const record of hybridResult.records) {
     if (!seen.has(record.id)) {
       records.push(record);
     }
   }
 
   return {
-    ...params.hybridResult,
+    ...hybridResult,
     records,
   };
 }
@@ -1113,24 +1191,22 @@ export async function maybeApplyEnvironmentConstraintSemanticFallback(params: {
   sessionKey?: string;
   logger?: PluginLogger;
 }): Promise<MemoryObjectSearchHybridResult> {
-  if (!params.hybridResult.accepted || params.hybridResult.status !== "ok") {
+  const eligibility = resolveProjectSemanticFallbackEligibility({
+    family: "environment_constraint",
+    input: params.input,
+    hybridResult: params.hybridResult,
+    cfg: params.cfg,
+  });
+  if (!eligibility.eligible) {
     return params.hybridResult;
   }
-  const scope = params.input.scope ?? "approved_only";
-  if (
-    !params.cfg ||
-    params.input.kind !== "project" ||
-    scope !== "approved_only" ||
-    hasStrongTypedProjectHybridMatch(params.hybridResult.records[0]) ||
-    hasStrongEnvironmentConstraintHybridMatch(params.hybridResult.records[0])
-  ) {
-    return params.hybridResult;
-  }
+  const hybridResult = params.hybridResult as AcceptedHybridSearchResult;
+  const cfg = params.cfg as OpenClawConfig;
 
   const queryEmbedding = await embedMemorySearchQuery({
-    cfg: params.cfg,
+    cfg,
     agentId: resolveAgentId({
-      cfg: params.cfg,
+      cfg,
       agentId: params.agentId,
       sessionKey: params.sessionKey,
     }),
@@ -1142,7 +1218,7 @@ export async function maybeApplyEnvironmentConstraintSemanticFallback(params: {
 
   await ensureApprovedEnvironmentConstraintSemanticEmbeddings({
     config: params.runtime.config,
-    cfg: params.cfg,
+    cfg,
     embeddingModel: queryEmbedding.embeddingModel,
     embeddingVersion: queryEmbedding.embeddingVersion,
     ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
@@ -1178,11 +1254,13 @@ export async function maybeApplyEnvironmentConstraintSemanticFallback(params: {
     return params.hybridResult;
   }
 
-  const existingById = new Map(params.hybridResult.records.map((record) => [record.id, record]));
+  const existingById = new Map(
+    hybridResult.records.map((record: RankedRetrievedMemoryRecord) => [record.id, record]),
+  );
   const scoreBase =
     Math.max(
       1,
-      ...params.hybridResult.records.map((record) => record.score),
+      ...hybridResult.records.map((record: RankedRetrievedMemoryRecord) => record.score),
       semanticEnvironmentRecords.length,
     ) +
     semanticEnvironmentRecords.length +
@@ -1202,14 +1280,14 @@ export async function maybeApplyEnvironmentConstraintSemanticFallback(params: {
     seen.add(record.id);
   });
 
-  for (const record of params.hybridResult.records) {
+  for (const record of hybridResult.records) {
     if (!seen.has(record.id)) {
       records.push(record);
     }
   }
 
   return {
-    ...params.hybridResult,
+    ...hybridResult,
     records,
   };
 }
@@ -1223,24 +1301,22 @@ export async function maybeApplyWorkflowToolGotchaSemanticFallback(params: {
   sessionKey?: string;
   logger?: PluginLogger;
 }): Promise<MemoryObjectSearchHybridResult> {
-  if (!params.hybridResult.accepted || params.hybridResult.status !== "ok") {
+  const eligibility = resolveProjectSemanticFallbackEligibility({
+    family: "workflow_tool_gotcha",
+    input: params.input,
+    hybridResult: params.hybridResult,
+    cfg: params.cfg,
+  });
+  if (!eligibility.eligible) {
     return params.hybridResult;
   }
-  const scope = params.input.scope ?? "approved_only";
-  if (
-    !params.cfg ||
-    params.input.kind !== "project" ||
-    scope !== "approved_only" ||
-    hasStrongTypedProjectHybridMatch(params.hybridResult.records[0]) ||
-    hasStrongWorkflowToolGotchaHybridMatch(params.hybridResult.records[0])
-  ) {
-    return params.hybridResult;
-  }
+  const hybridResult = params.hybridResult as AcceptedHybridSearchResult;
+  const cfg = params.cfg as OpenClawConfig;
 
   const queryEmbedding = await embedMemorySearchQuery({
-    cfg: params.cfg,
+    cfg,
     agentId: resolveAgentId({
-      cfg: params.cfg,
+      cfg,
       agentId: params.agentId,
       sessionKey: params.sessionKey,
     }),
@@ -1252,7 +1328,7 @@ export async function maybeApplyWorkflowToolGotchaSemanticFallback(params: {
 
   await ensureApprovedWorkflowToolGotchaSemanticEmbeddings({
     config: params.runtime.config,
-    cfg: params.cfg,
+    cfg,
     embeddingModel: queryEmbedding.embeddingModel,
     embeddingVersion: queryEmbedding.embeddingVersion,
     ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
@@ -1288,11 +1364,13 @@ export async function maybeApplyWorkflowToolGotchaSemanticFallback(params: {
     return params.hybridResult;
   }
 
-  const existingById = new Map(params.hybridResult.records.map((record) => [record.id, record]));
+  const existingById = new Map(
+    hybridResult.records.map((record: RankedRetrievedMemoryRecord) => [record.id, record]),
+  );
   const scoreBase =
     Math.max(
       1,
-      ...params.hybridResult.records.map((record) => record.score),
+      ...hybridResult.records.map((record: RankedRetrievedMemoryRecord) => record.score),
       semanticToolGotchaRecords.length,
     ) +
     semanticToolGotchaRecords.length +
@@ -1312,14 +1390,14 @@ export async function maybeApplyWorkflowToolGotchaSemanticFallback(params: {
     seen.add(record.id);
   });
 
-  for (const record of params.hybridResult.records) {
+  for (const record of hybridResult.records) {
     if (!seen.has(record.id)) {
       records.push(record);
     }
   }
 
   return {
-    ...params.hybridResult,
+    ...hybridResult,
     records,
   };
 }
@@ -1333,24 +1411,22 @@ export async function maybeApplyApiWorkaroundSemanticFallback(params: {
   sessionKey?: string;
   logger?: PluginLogger;
 }): Promise<MemoryObjectSearchHybridResult> {
-  if (!params.hybridResult.accepted || params.hybridResult.status !== "ok") {
+  const eligibility = resolveProjectSemanticFallbackEligibility({
+    family: "api_workaround",
+    input: params.input,
+    hybridResult: params.hybridResult,
+    cfg: params.cfg,
+  });
+  if (!eligibility.eligible) {
     return params.hybridResult;
   }
-  const scope = params.input.scope ?? "approved_only";
-  if (
-    !params.cfg ||
-    params.input.kind !== "project" ||
-    scope !== "approved_only" ||
-    hasStrongTypedProjectHybridMatch(params.hybridResult.records[0]) ||
-    hasStrongApiWorkaroundHybridMatch(params.hybridResult.records[0])
-  ) {
-    return params.hybridResult;
-  }
+  const hybridResult = params.hybridResult as AcceptedHybridSearchResult;
+  const cfg = params.cfg as OpenClawConfig;
 
   const queryEmbedding = await embedMemorySearchQuery({
-    cfg: params.cfg,
+    cfg,
     agentId: resolveAgentId({
-      cfg: params.cfg,
+      cfg,
       agentId: params.agentId,
       sessionKey: params.sessionKey,
     }),
@@ -1362,7 +1438,7 @@ export async function maybeApplyApiWorkaroundSemanticFallback(params: {
 
   await ensureApprovedApiWorkaroundSemanticEmbeddings({
     config: params.runtime.config,
-    cfg: params.cfg,
+    cfg,
     embeddingModel: queryEmbedding.embeddingModel,
     embeddingVersion: queryEmbedding.embeddingVersion,
     ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
@@ -1398,11 +1474,13 @@ export async function maybeApplyApiWorkaroundSemanticFallback(params: {
     return params.hybridResult;
   }
 
-  const existingById = new Map(params.hybridResult.records.map((record) => [record.id, record]));
+  const existingById = new Map(
+    hybridResult.records.map((record: RankedRetrievedMemoryRecord) => [record.id, record]),
+  );
   const scoreBase =
     Math.max(
       1,
-      ...params.hybridResult.records.map((record) => record.score),
+      ...hybridResult.records.map((record: RankedRetrievedMemoryRecord) => record.score),
       semanticApiWorkaroundRecords.length,
     ) +
     semanticApiWorkaroundRecords.length +
@@ -1422,14 +1500,14 @@ export async function maybeApplyApiWorkaroundSemanticFallback(params: {
     seen.add(record.id);
   });
 
-  for (const record of params.hybridResult.records) {
+  for (const record of hybridResult.records) {
     if (!seen.has(record.id)) {
       records.push(record);
     }
   }
 
   return {
-    ...params.hybridResult,
+    ...hybridResult,
     records,
   };
 }

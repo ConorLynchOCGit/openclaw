@@ -95,3 +95,13 @@ Prove:
 2. two families with different correction postures still use one declarative
    substrate
 3. lineage stays explicit and auditable
+
+## Current bridge state
+
+Support batch v1 landed the first bounded part of this cleanup:
+
+- immediate bounded correction inside the correction engine now depends on an
+  explicit correction-promotion policy union rather than a raw profile string
+
+That is not the full cleanup. Family correction policy is still not fully
+declarative, and held-versus-immediate posture still needs the larger slice.

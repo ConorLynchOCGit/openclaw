@@ -41,6 +41,9 @@ This inventory tracks:
 | Retrieval feature framework                | `built_partial` | shared score composition exists, but retrieval intent, suppression, semantic routing, and plan shaping are still split                      | architecture debt |
 | Behavior-profile layer                     | `built_partial` | shared prompt-support layer exists, but it is not yet the real application-selection layer                                                  | architecture debt |
 | Registry-driven proof inspection           | `built_partial` | proof-family definitions and shared helpers exist, but proofing is still registry-plus-switch rather than adapter-driven                    | architecture debt |
+| Memory testability hardening               | `built_partial` | retrieval intent, current durable-memory guidance planning, and semantic fallback eligibility now have real unit seams                      | supporting seam   |
+| Hybrid memory-surface SQL scaffolding      | `built_partial` | approved and reviewable-candidate hybrid memory-object search now shares one surface scaffold, but broader retrieval control remains split  | supporting seam   |
+| Typed correction-promotion policy          | `built_partial` | correction gating now uses an explicit promotion-policy union in the correction engine, but full declarative correction policy is not built | supporting seam   |
 | Retrieval + semantic-routing control plane | `not_built`     | no single control plane yet covers intent, feature planning, suppression, and semantic fallback                                             | architecture debt |
 | Application-selection / behavior planner   | `not_built`     | selected/suppressed memory attribution is not yet a runtime control plane                                                                   | architecture debt |
 | Registry authority cleanup                 | `not_built`     | registry is not yet authoritative enough to be called the full control plane                                                                | architecture debt |
@@ -64,14 +67,14 @@ Required first:
 7. registry authority cleanup
 8. memory-family contract / boundary cleanup
 
-## Should fix soon
+## Recently landed support work
 
-- stronger unit seams around retrieval intent, application selection, and
-  semantic fallback
-- reduced SQL scaffolding duplication between approved and candidate read
-  surfaces
-- replacement of remaining stringly control-flow with typed policy or adapter
-  registration
+- stronger unit seams around retrieval intent, current behavior guidance
+  planning, and semantic fallback
+- reduced hybrid SQL scaffolding duplication between approved and candidate
+  read surfaces
+- replacement of the correction engine's raw profile-string gate with typed
+  policy
 
 ## Could fix later
 
@@ -97,7 +100,7 @@ Backlog / flattening debt:
 - retrieval intent and suppression are still split across multiple layers
 - semantic routing is still a hardcoded sidecar subsystem
 - recurring procedures still retain too much separate subsystem shape
-- correction policy still includes legacy stringly/runtime-coupled gating
+- correction policy is less stringly than before, but still not declarative
 - proofing still scales through switches more than adapters
 
 ## Not live yet

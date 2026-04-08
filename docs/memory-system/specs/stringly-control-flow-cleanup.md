@@ -47,3 +47,16 @@ Non-blocking cleanup:
 - replace the highest-risk string gates first
 - keep proof output and external behavior stable
 - prefer typed intermediate contracts before deleting old string pathways
+
+## Landed in support batch v1
+
+The first bounded cleanup is now live:
+
+- the correction engine no longer branches on a raw auto-promotion profile
+  string for immediate bounded correction
+- callers now translate config profile into an explicit correction-promotion
+  policy union before calling the correction engine
+
+This is intentionally partial. Broader control-plane strings still remain for
+later slices where the owning architecture is larger than a safe support-batch
+cleanup.

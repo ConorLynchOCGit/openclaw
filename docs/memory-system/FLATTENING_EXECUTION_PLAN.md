@@ -30,6 +30,11 @@ to:
 8. validated-procedure subject-match retrieval feature bridge
 9. shared prompt-support behavior-profile helper
 10. less fragmented proof-family wiring
+11. stronger unit seams for retrieval intent, current durable-memory guidance
+    planning, and semantic fallback
+12. shared hybrid memory-object SQL scaffolding for approved and
+    reviewable-candidate surfaces
+13. typed correction-promotion policy inside the correction engine
 
 ### What remains only partially flattened
 
@@ -58,7 +63,7 @@ to:
 7. registry authority cleanup
 8. memory-family contract / boundary cleanup
 
-### Should fix soon
+### Recently landed support work
 
 9. memory testability hardening
 10. retrieval SQL scaffolding reduction
@@ -142,25 +147,18 @@ to:
 
 ## Should-fix-soon slices
 
-These should be planned close to the main substrate push and may land as
-supporting slices or paired slices if the touched code overlaps honestly.
+These are now landed in support batch v1. They reduced proof burden and
+duplicated scaffolding, but they did not replace the main control-plane work.
 
-### Memory testability hardening
+### What landed
 
-- stronger unit seams around retrieval intent, application selection, and
-  semantic fallback
-- lower dependence on full integration proof for every control-plane change
-
-### Retrieval SQL scaffolding reduction
-
-- reduce approved-versus-candidate SQL duplication where it is already honest
-  to share
-- do not over-normalize before the retrieval control-plane rewrite lands
-
-### Stringly-control-flow cleanup
-
-- replace profile strings and ad hoc decision strings with enums, adapters, or
-  typed policy
+- retrieval-intent helpers now have direct unit coverage
+- current durable-memory guidance planning is explicit and testable
+- semantic fallback eligibility now has pure decision seams
+- approved and candidate hybrid memory-object SQL now shares one surface
+  scaffold
+- immediate bounded correction now uses typed promotion policy inside the
+  correction engine
 
 ## Likely slice count now
 

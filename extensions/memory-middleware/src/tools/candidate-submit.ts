@@ -12,6 +12,7 @@ import {
 } from "../db/runtime.js";
 import {
   executeMemoryObjectCorrectionPlan,
+  resolveMemoryCorrectionPromotionPolicy,
   resolveMemoryCorrectionPlan,
 } from "../memory-correction-engine.js";
 import { getCaptureMetadataByWorkflowLessonFamily } from "../memory-family-registry.js";
@@ -3794,7 +3795,7 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
   const correctionPlan = resolveMemoryCorrectionPlan({
     familyId: "project_fact",
     trigger: "explicit_correction",
-    autoPromotionProfile: autoPromotion.profile,
+    promotionPolicy: resolveMemoryCorrectionPromotionPolicy(autoPromotion.profile),
     activeApprovedSubjectObjectIds: inspection.activeApprovedSubjectObjectIds,
   });
   if (correctionPlan.status !== "execute") {

@@ -46,3 +46,16 @@ Prove:
 2. retrieval behavior did not shift silently
 3. the work did not overreach into control-plane decisions that should wait for
    the larger retrieval/routing slice
+
+## Landed in support batch v1
+
+The first bounded tranche is now live for hybrid memory-object search:
+
+- approved and reviewable-candidate surfaces share one hybrid SQL scaffold
+- shared metadata-expression extraction now feeds both surfaces
+- approved artifact visibility and explicit candidate-state filtering remain
+  separate where behavior genuinely differs
+
+This reduced the largest honest approved-vs-candidate SQL duplication. It did
+not unify validated procedures or replace the future retrieval/routing control
+plane.

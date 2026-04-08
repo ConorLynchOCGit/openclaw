@@ -32,6 +32,15 @@ export type DurableMemoryBehaviorProfile = {
   families: MemoryBehaviorFamilyProfile[];
 };
 
+export type DurableMemoryGuidancePlan = {
+  hasObjectSurface: boolean;
+  hasCandidateSurface: boolean;
+  hasSessionSurface: boolean;
+  searchFamilies: MemoryFamilyId[];
+  applicationFamilies: MemoryFamilyId[];
+  captureFamilies: MemoryFamilyId[];
+};
+
 export function buildDurableMemoryBehaviorProfile(params: {
   availableTools: Set<string>;
 }): DurableMemoryBehaviorProfile | null {
@@ -64,17 +73,41 @@ export function buildDurableMemoryBehaviorProfile(params: {
   };
 }
 
+export function resolveDurableMemoryGuidancePlan(
+  flags: DurableMemoryToolFlags,
+): DurableMemoryGuidancePlan {
+  const hasObjectSurface =
+    flags.hasObjectSearchHybrid ||
+    flags.hasObjectSearchBasic ||
+    flags.hasObjectList ||
+    flags.hasObjectGet;
+
+  return {
+    hasObjectSurface,
+    hasCandidateSurface: flags.hasCandidateSubmit,
+    hasSessionSurface: flags.hasSessionGet || flags.hasSessionUpdate,
+    searchFamilies: flags.hasObjectSearchHybrid
+      ? [
+          "response_style",
+          "project_fact",
+          "recurring_procedure",
+          "workflow_improvement",
+          "project_rule",
+          "unmet_need",
+        ]
+      : [],
+    applicationFamilies: hasObjectSurface ? ["recurring_procedure", "workflow_improvement"] : [],
+    captureFamilies: flags.hasCandidateSubmit ? [...MEMORY_FAMILY_IDS] : [],
+  };
+}
+
 export function renderDurableMemoryBehaviorProfile(
   profile: DurableMemoryBehaviorProfile,
 ): string[] {
   const lines: string[] = ["## Durable Memory"];
-  const hasObjectSurface =
-    profile.flags.hasObjectSearchHybrid ||
-    profile.flags.hasObjectSearchBasic ||
-    profile.flags.hasObjectList ||
-    profile.flags.hasObjectGet;
+  const guidancePlan = resolveDurableMemoryGuidancePlan(profile.flags);
 
-  if (hasObjectSurface) {
+  if (guidancePlan.hasObjectSurface) {
     lines.push(
       "Before claiming durable long-term memory about a project, preference, decision, correction, or procedure, inspect existing approved memory with the memory_object search/list/get tools when that helps avoid duplicates or contradictions.",
     );
@@ -89,14 +122,7 @@ export function renderDurableMemoryBehaviorProfile(
     );
 
     if (profile.flags.hasObjectSearchHybrid) {
-      for (const familyId of [
-        "response_style",
-        "project_fact",
-        "recurring_procedure",
-        "workflow_improvement",
-        "project_rule",
-        "unmet_need",
-      ] satisfies MemoryFamilyId[]) {
+      for (const familyId of guidancePlan.searchFamilies) {
         lines.push(...getFamilyProfile(profile, familyId).searchGuidance);
       }
       lines.push(
@@ -107,22 +133,19 @@ export function renderDurableMemoryBehaviorProfile(
     lines.push(
       "If an approved durable memory result directly answers the question, use it in the normal reply without asking the user to restate it. If no approved result exists, answer normally and say you did not find stored memory only when that context matters.",
     );
-    for (const familyId of [
-      "recurring_procedure",
-      "workflow_improvement",
-    ] satisfies MemoryFamilyId[]) {
+    for (const familyId of guidancePlan.applicationFamilies) {
       lines.push(...getFamilyProfile(profile, familyId).applicationGuidance);
     }
   }
 
-  if (profile.flags.hasCandidateSubmit) {
+  if (guidancePlan.hasCandidateSurface) {
     lines.push(
       "When the user shares a recurring requirement, important correction, reusable procedure, or project improvement that should survive beyond the current turn, submit a concise candidate with memory_candidate_submit.",
     );
     lines.push(
       "Natural correction phrasing still counts: if the user says things like Actually, No, I meant, Sorry, or That's not right to correct a durable preference, default, recurring requirement, or tightly bounded named project fact, submit it as kind=correction even without an explicit save request.",
     );
-    for (const familyId of MEMORY_FAMILY_IDS) {
+    for (const familyId of guidancePlan.captureFamilies) {
       lines.push(...getFamilyProfile(profile, familyId).captureGuidance);
     }
     lines.push(
@@ -136,7 +159,7 @@ export function renderDurableMemoryBehaviorProfile(
     );
   }
 
-  if (profile.flags.hasSessionGet || profile.flags.hasSessionUpdate) {
+  if (guidancePlan.hasSessionSurface) {
     lines.push(
       "Use memory_session_get and memory_session_update for bounded session state and active task context. Keep durable learnings in candidate memory, not only in session state.",
     );

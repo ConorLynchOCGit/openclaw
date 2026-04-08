@@ -32,6 +32,11 @@ Live substrate properties:
 - shared retrieval feature composition for multiple approved-memory families
 - shared reviewable-candidate retrieval feature composition
 - shared validated-procedure subject-match feature composition
+- unit seams for retrieval intent, current durable-memory guidance planning,
+  and semantic fallback eligibility
+- shared hybrid SQL scaffolding for approved and reviewable-candidate
+  memory-object search
+- typed correction-promotion policy inside the correction engine
 
 ## What is live but only partially flattened
 
@@ -52,6 +57,28 @@ They are also all still partial in at least one important way:
 - retrieval is not yet one control plane
 - behavior-profile is not yet the actual application-selection layer
 - proofing is not yet adapter-driven
+
+## What the support batch just improved
+
+The first support batch landed three bounded improvements:
+
+- testability hardening
+- hybrid SQL scaffolding reduction
+- stringly correction-policy cleanup
+
+Those improvements are real, but they did not replace the main substrate work.
+
+They de-risked:
+
+- future retrieval/routing flattening proof
+- future application-selection implementation proof
+- future correction-policy cleanup
+
+They did not replace:
+
+- ingestion control-plane flattening
+- application-selection layer work
+- retrieval + semantic-routing control-plane flattening
 
 ## What the accepted review changed
 
@@ -87,14 +114,14 @@ stated.
 7. registry authority cleanup
 8. memory-family contract / boundary cleanup
 
-### Should fix soon
+### Recently landed support work
 
-- improve unit seams around retrieval intent, application selection, and
-  semantic fallback
-- reduce duplicated SQL expression scaffolding between approved and candidate
+- stronger unit seams around retrieval intent, current behavior guidance
+  planning, and semantic fallback
+- reduced hybrid SQL scaffolding duplication between approved and candidate
   read surfaces
-- replace remaining stringly control-flow with closed policy enums or adapter
-  registration
+- replacement of the correction engine's raw profile-string gate with typed
+  policy
 
 ### Could fix later
 

@@ -65,6 +65,17 @@ The goal is:
 - smaller proof surfaces for control-plane refactors
 - lower regression risk when later self-improving capture lands
 
+## Landed in support batch v1
+
+The first bounded tranche is now live:
+
+- retrieval intent moved into a dedicated helper seam
+- current durable-memory guidance grouping is explicit and unit-testable
+- semantic fallback eligibility now has pure decision helpers
+
+This reduced integration-only proof pressure, but it did not replace the future
+application-selection or retrieval/routing control planes.
+
 ## Future test matrix expectation
 
 Each major substrate slice should target:

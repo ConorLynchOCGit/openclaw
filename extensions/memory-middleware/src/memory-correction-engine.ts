@@ -1,9 +1,13 @@
 import { Client } from "pg";
 import type { PluginLogger } from "../api.js";
+import type { MemoryMiddlewareAutoPromotionConfig } from "./config.js";
 import { getMemoryFamilyDefinition, type MemoryFamilyId } from "./memory-family-registry.js";
 import { executeApprovedMemoryObjectSupersede } from "./memory-object-supersede.js";
 
 export type MemoryCorrectionTrigger = "explicit_correction" | "cluster_auto_review";
+export type MemoryCorrectionPromotionPolicy =
+  | "defer_immediate_bounded_correction"
+  | "allow_immediate_bounded_correction";
 
 export type MemoryCorrectionPlan =
   | {
@@ -25,7 +29,7 @@ export type MemoryCorrectionPlan =
 export function resolveMemoryCorrectionPlan(params: {
   familyId: MemoryFamilyId;
   trigger: MemoryCorrectionTrigger;
-  autoPromotionProfile?: string;
+  promotionPolicy?: MemoryCorrectionPromotionPolicy;
   activeApprovedSubjectObjectIds?: readonly string[];
   conflictingApprovedObjectIds?: readonly string[];
 }): MemoryCorrectionPlan {
@@ -62,10 +66,10 @@ export function resolveMemoryCorrectionPlan(params: {
       supersedeTargetIds: [],
     };
   }
-  if (params.autoPromotionProfile !== "explicit-user-preference-v1") {
+  if (params.promotionPolicy !== "allow_immediate_bounded_correction") {
     return {
       status: "skip",
-      reason: "auto-promotion profile does not permit immediate correction promotion",
+      reason: "correction promotion policy does not permit immediate correction promotion",
       supersedeTargetIds: [],
     };
   }
@@ -75,6 +79,14 @@ export function resolveMemoryCorrectionPlan(params: {
     reason: "bounded correction should immediately supersede an approved subject target",
     supersedeTargetIds,
   };
+}
+
+export function resolveMemoryCorrectionPromotionPolicy(
+  autoPromotionProfile: MemoryMiddlewareAutoPromotionConfig["profile"] | undefined,
+): MemoryCorrectionPromotionPolicy {
+  return autoPromotionProfile === "explicit-user-preference-v1"
+    ? "allow_immediate_bounded_correction"
+    : "defer_immediate_bounded_correction";
 }
 
 export async function executeMemoryObjectCorrectionPlan(params: {

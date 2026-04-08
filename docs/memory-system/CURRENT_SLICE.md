@@ -2,64 +2,62 @@
 
 ## Active slice
 
-Post-v3 substrate replanning and architecture-spec overhaul
+Substrate support batch v1
 
 ## Objective
 
-Rewrite the roadmap and spec pack after the post-v3 architecture review so the
-next implementation push starts from an honest and implementation-ready plan.
+Land the bounded support work that should happen soon around the post-v3
+substrate push:
 
-This slice exists because flattening batch v3 improved the substrate, but it
-did not honestly finish flattening. The current docs were still overstating how
-close the memory system was to self-improving capture.
+- memory testability hardening
+- retrieval SQL scaffolding reduction
+- stringly control-flow cleanup
 
-## What the docs used to claim
+This slice exists to make the larger control-plane flattening work cheaper to
+implement and easier to prove without pretending that the main flattening work
+is already done.
 
-The previous roadmap/status/current-slice pack claimed:
+## What just landed in support batch v1
 
-- one narrow flattening closeout slice remained
-- behavior-profile was complete enough to count as the application layer
-- proof inspection was complete enough to stop future proof-runner branching
-- future work was mostly down to residual ingestion / procedure bridge cleanup
+### Memory testability hardening
 
-That framing is no longer accepted.
+- retrieval-intent classification now lives in a dedicated helper seam
+- current durable-memory guidance planning is now explicit and unit-testable
+- semantic fallback eligibility now has pure decision helpers
 
-## What the accepted review says instead
+### Retrieval SQL scaffolding reduction
 
-The accepted post-v3 review concluded:
+- approved and reviewable-candidate hybrid memory-object search now shares one
+  surface scaffold for metadata expressions, read-surface projection, and
+  review-state projection
+- approved-only artifact visibility and explicit candidate-state filtering
+  remain distinct where they are genuinely different
 
-- the substrate is not flat enough to move on after one more narrow slice
-- behavior-profile is still mostly a prompt helper, not a real
-  application-selection layer
-- ingestion is still only partially flattened
-- retrieval flattening stopped too early at score composition
-- semantic routing is still a separate hardcoded sidecar subsystem
-- proof inspection is still registry-plus-switch rather than truly
-  registry-driven
-- recurring procedures still retain too much subsystem shape
-- the registry is not yet authoritative enough to justify current confidence
-- correction policy still carries legacy stringly/runtime-coupled gating
-- the memory-family contract boundary is smellier than it should be
+### Stringly control-flow cleanup
 
-## What flattening genuinely achieved through batch v3
+- the correction engine no longer gates immediate bounded correction on a raw
+  auto-promotion profile string
+- callers now pass an explicit correction-promotion policy union instead
 
-The first three implementation batches still matter and remain credited:
+## What this support batch de-risked
 
-- six-family declarative registry is live
-- workflow-family ingestion now shares one resolver across transcript and tool
-  submission
-- multiple memory-object families now share clustered lifecycle inspection
-- bounded correction / supersede planning is shared across multiple families
-- workflow lessons and response style share one phrase-pattern engine
-- approved-memory retrieval feature composition is shared across more than one
-  family
-- reviewable-candidate retrieval and part of validated-procedure retrieval now
-  reuse shared framework pieces
-- prompt-section no longer carries all durable-memory posture inline
-- proofing is less split than before
+- future retrieval/routing work can now unit-test intent normalization and
+  semantic fallback eligibility without large integration harnesses
+- future application-selection work now has a real guidance-plan seam to build
+  on rather than only prompt rendering loops
+- future retrieval control-plane work now starts from one shared hybrid
+  memory-object surface scaffold instead of two near-identical SQL builders
+- future correction-policy cleanup no longer has the correction engine itself
+  branching on a freeform profile string
 
-Those are real gains. They are not the same thing as a fully flattened
-substrate.
+## What this support batch did not replace
+
+- no new ingestion control plane exists yet
+- no real application-selection layer exists yet
+- retrieval and semantic routing are still not one control plane
+- recurring procedures still keep too much historical subsystem shape
+- proofing is still registry-plus-switch
+- registry authority and boundary cleanup are still ahead
 
 ## What remains major substrate work
 
@@ -77,14 +75,11 @@ substrate.
 7. registry authority cleanup
 8. memory-family contract / boundary cleanup
 
-### Should fix soon
+### Recently landed support work
 
-- improve unit seams around retrieval intent, application selection, and
-  semantic fallback
-- reduce duplicated SQL expression scaffolding between approved and candidate
-  read surfaces
-- replace remaining stringly control-flow with closed policy enums or adapter
-  registration
+- memory testability hardening
+- retrieval SQL scaffolding reduction
+- stringly control-flow cleanup
 
 ### Could fix later
 
@@ -131,16 +126,15 @@ Still not next:
 Those phases now wait for the stronger substrate work listed above, not just
 for one narrow closeout slice.
 
-## The next implementation slice
+## The next main implementation slice
 
-The next implementation slice should now be:
+The next main implementation slice should still be:
 
 - full ingestion control-plane flattening
 
 Reason:
 
-- it is still the largest duplicated control-plane seam
-- it blocks cleaner application selection, retrieval/routing unification, and
-  later self-improving capture integration
-- it is broader than the old “remaining ingestion migration” framing and should
-  be treated that way
+- the support batch reduced proof burden, not the main control-plane debt
+- ingestion is still the largest duplicated family-control seam
+- it still blocks cleaner application selection and retrieval/routing
+  unification
