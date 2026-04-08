@@ -95,6 +95,13 @@
           "mode": {
             "type": "string",
             "enum": ["disabled", "candidate-only"]
+          },
+          "allowedLessonFamilies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["supported_lesson", "generalized_workflow_lesson"]
+            }
           }
         }
       },
@@ -105,6 +112,18 @@
           "mode": {
             "type": "string",
             "enum": ["disabled", "inline-only"]
+          },
+          "allowedLessonFamilies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["supported_lesson", "generalized_workflow_lesson"]
+            }
+          },
+          "defaultMaxSuggestions": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
           }
         }
       },

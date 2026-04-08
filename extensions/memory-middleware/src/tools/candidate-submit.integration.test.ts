@@ -459,7 +459,10 @@ function createRuntime(params: {
     | "candidate-only";
   autoPromotionProfile?: "disabled" | "explicit-user-preference-v1";
   selfImprovingMode?: "disabled" | "candidate-only";
+  selfImprovingAllowedLessonFamilies?: Array<"supported_lesson" | "generalized_workflow_lesson">;
   learnedGuidanceMode?: "disabled" | "inline-only";
+  learnedGuidanceAllowedLessonFamilies?: Array<"supported_lesson" | "generalized_workflow_lesson">;
+  learnedGuidanceDefaultMaxSuggestions?: number;
   queryMode?: "disabled" | "read-only" | "candidate-only";
   backgroundJobInspectionMode?: "disabled" | "enabled";
   backgroundJobAdvisorySchedulingMode?: "disabled" | "candidate-only";
@@ -486,7 +489,16 @@ function createRuntime(params: {
   });
   const fullCandidateMode = params.mode === "candidate-only" ? "candidate-only" : "disabled";
   const selfImprovingMode = params.selfImprovingMode ?? "disabled";
+  const selfImprovingAllowedLessonFamilies = params.selfImprovingAllowedLessonFamilies ?? [
+    "generalized_workflow_lesson",
+    "supported_lesson",
+  ];
   const learnedGuidanceMode = params.learnedGuidanceMode ?? "disabled";
+  const learnedGuidanceAllowedLessonFamilies = params.learnedGuidanceAllowedLessonFamilies ?? [
+    "generalized_workflow_lesson",
+    "supported_lesson",
+  ];
+  const learnedGuidanceDefaultMaxSuggestions = params.learnedGuidanceDefaultMaxSuggestions ?? 3;
   const backgroundJobInspectionMode = params.backgroundJobInspectionMode ?? "disabled";
   const backgroundJobAdvisorySchedulingMode =
     params.backgroundJobAdvisorySchedulingMode ?? fullCandidateMode;
@@ -655,9 +667,12 @@ function createRuntime(params: {
       },
       selfImprovingCapture: {
         mode: selfImprovingMode,
+        allowedLessonFamilies: selfImprovingAllowedLessonFamilies,
       },
       learnedGuidanceAdvisoryPlanning: {
         mode: learnedGuidanceMode,
+        allowedLessonFamilies: learnedGuidanceAllowedLessonFamilies,
+        defaultMaxSuggestions: learnedGuidanceDefaultMaxSuggestions,
       },
       memoryObjectQuery: {
         mode: queryMode,
@@ -693,9 +708,12 @@ function createRuntime(params: {
         },
         selfImprovingCapture: {
           mode: selfImprovingMode,
+          allowedLessonFamilies: selfImprovingAllowedLessonFamilies,
         },
         learnedGuidanceAdvisoryPlanning: {
           mode: learnedGuidanceMode,
+          allowedLessonFamilies: learnedGuidanceAllowedLessonFamilies,
+          defaultMaxSuggestions: learnedGuidanceDefaultMaxSuggestions,
         },
         memoryObjectQuery: {
           mode: queryMode,
@@ -725,6 +743,8 @@ function createRuntime(params: {
     learnedGuidanceAdvisoryPlanning: createLearnedGuidanceAdvisoryPlanningPort({
       memoryObjectQuery,
       mode: learnedGuidanceMode,
+      allowedLessonFamilies: learnedGuidanceAllowedLessonFamilies,
+      defaultMaxSuggestions: learnedGuidanceDefaultMaxSuggestions,
     }),
     toolResultStore: createToolResultStorePort({
       db,
@@ -1138,6 +1158,14 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       target: "candidate_only",
       storage: "database",
       reviewState: "candidate",
+      rolloutScope: {
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+      },
+      evaluation: {
+        outcomeCode: "candidate_created",
+        duplicateOutcome: "new_candidate_cluster",
+        reviewBurden: "new_candidate_review_required",
+      },
     });
 
     const details = result.details as {
@@ -1251,6 +1279,13 @@ integrationDescribe("memory candidate submit postgres integration", () => {
             allowedLessonFamily: "supported_lesson",
             outputPosture: "candidate_only",
           },
+          selfImprovingRollout: {
+            rolloutPhase: "bounded_rollout_proof_v1",
+            allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+            duplicateOutcome: "new_candidate_cluster",
+            reviewBurden: "new_candidate_review_required",
+            replayBlocked: false,
+          },
           autoCapture: {
             source: "memory_self_improving_capture_candidate",
             captureSeam: "self_improving_reduced_profile",
@@ -1283,6 +1318,13 @@ integrationDescribe("memory candidate submit postgres integration", () => {
             allowedFamilyId: "workflow_improvement",
             allowedLessonFamily: "supported_lesson",
             outputPosture: "candidate_only",
+          },
+          selfImprovingRollout: {
+            rolloutPhase: "bounded_rollout_proof_v1",
+            allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+            duplicateOutcome: "new_candidate_cluster",
+            reviewBurden: "new_candidate_review_required",
+            replayBlocked: false,
           },
           autoCapture: {
             source: "memory_self_improving_capture_candidate",
@@ -1365,6 +1407,11 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       kind: "improvement",
       target: "candidate_only",
       reason: expect.stringContaining("already gathering evidence"),
+      evaluation: {
+        outcomeCode: "pending_candidate_already_exists",
+        duplicateOutcome: "pending_candidate_exists",
+        replayBlocked: true,
+      },
     });
 
     const counts = await readTableCounts(dbEnvironment.connectionString);
@@ -1411,6 +1458,22 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       target: "candidate_only",
       reason: "reduced-profile self-improving adaptation may emit candidate_only outputs only",
       blockedOutputPosture: "approved_memory",
+      rolloutScope: {
+        rolloutPhase: "bounded_rollout_proof_v1",
+        sourceProfile: "reduced_profile_candidate_only",
+        target: "candidate_only",
+        requiresProjectId: true,
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        retrievalAuthority: "approved_only",
+      },
+      evaluation: {
+        outcomeCode: "output_posture_blocked",
+        resolution: "blocked",
+        provenanceOrigin: "self_improving_capture",
+        duplicateOutcome: "none",
+        replayBlocked: false,
+        reviewBurden: "no_new_review_required",
+      },
     });
 
     const counts = await readTableCounts(dbEnvironment.connectionString);
@@ -1454,6 +1517,22 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       kind: "correction",
       target: "candidate_only",
       reason: "self-improving candidate capture mode is not enabled",
+      rolloutScope: {
+        rolloutPhase: "bounded_rollout_proof_v1",
+        sourceProfile: "reduced_profile_candidate_only",
+        target: "candidate_only",
+        requiresProjectId: true,
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        retrievalAuthority: "approved_only",
+      },
+      evaluation: {
+        outcomeCode: "capture_disabled",
+        resolution: "disabled",
+        provenanceOrigin: "self_improving_capture",
+        duplicateOutcome: "none",
+        replayBlocked: false,
+        reviewBurden: "no_new_review_required",
+      },
     });
 
     const counts = await readTableCounts(dbEnvironment.connectionString);
@@ -1491,8 +1570,54 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       status: "failed",
       kind: "improvement",
       target: "candidate_only",
+      evaluation: {
+        outcomeCode: "candidate_submission_failed",
+      },
     });
     expect((result.details as { reason: string }).reason).toContain("database is unavailable");
+  });
+
+  it("keeps self-improving rollout family scope narrow when configured", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      selfImprovingMode: "candidate-only",
+      selfImprovingAllowedLessonFamilies: ["supported_lesson"],
+    });
+    const tool = createMemorySelfImprovingCaptureCandidateTool({ runtime });
+
+    const result = await tool.execute("call-self-5", {
+      kind: "improvement",
+      content:
+        "For release proof notes here, use bulletized proof IDs instead of paraphrased rollout summaries.",
+      projectId: seeded.projectId,
+    });
+
+    expect(result.details).toMatchObject({
+      accepted: false,
+      status: "blocked",
+      rolloutScope: {
+        allowedLessonFamilies: ["supported_lesson"],
+      },
+      evaluation: {
+        outcomeCode: "lesson_family_outside_rollout_scope",
+        duplicateOutcome: "none",
+      },
+    });
+
+    const counts = await readTableCounts(dbEnvironment.connectionString);
+    expect(counts).toEqual({
+      memory_events: "0",
+      memory_objects: "0",
+      memory_reviews: "0",
+      procedures: "0",
+      procedure_runs: "0",
+      skill_candidates: "0",
+      memory_links: "0",
+      memory_sources: "0",
+      background_jobs: "0",
+    });
   });
 
   it("fails safely without partial writes when foreign-key references are invalid", async () => {
@@ -20735,6 +20860,10 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       outcome: "guidance_available",
       advisoryOnly: true,
       applicationMode: "guidance_only",
+      rolloutScope: {
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        defaultMaxSuggestions: 2,
+      },
       suggestions: [
         expect.objectContaining({
           memoryObjectId: approvedMemoryObjectId,
@@ -20742,6 +20871,12 @@ integrationDescribe("memory candidate submit postgres integration", () => {
           provenance: "native_capture",
         }),
       ],
+      observability: {
+        outcomeCode: "guidance_available",
+        suggestionCount: 1,
+        eligibleWorkflowGuidanceCount: 1,
+        filteredOutByScopeCount: 0,
+      },
     });
   });
 
@@ -20833,6 +20968,90 @@ integrationDescribe("memory candidate submit postgres integration", () => {
           memoryObjectIds: conflictingMemoryIds,
         },
       ],
+      observability: {
+        outcomeCode: "conflict_suppressed",
+        suppressedConflictCount: 1,
+        suggestionCount: 0,
+      },
+    });
+  });
+
+  it("keeps advisory rollout scoped to configured workflow lesson families", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      learnedGuidanceMode: "inline-only",
+      learnedGuidanceAllowedLessonFamilies: ["supported_lesson"],
+    });
+    const learnedGuidanceTool = createMemoryLearnedGuidancePlanTool({ runtime });
+
+    const client = await connectClient(dbEnvironment.connectionString);
+    try {
+      await client.query(
+        `
+          insert into memory_middleware.memory_objects (
+            project_id,
+            agent_id,
+            session_id,
+            memory_kind,
+            review_state,
+            content,
+            metadata
+          )
+          values (
+            $1::uuid,
+            $2::uuid,
+            $3::uuid,
+            'project',
+            'approved',
+            $4,
+            $5::jsonb
+          )
+        `,
+        [
+          seeded.projectId,
+          seeded.agentId,
+          seeded.sessionId,
+          "Workflow improvement: use pnpm test -- path instead of raw vitest here.",
+          JSON.stringify({
+            candidateMetadata: {
+              autoCapture: {
+                lessonFamily: "generalized_workflow_lesson",
+                subjectKey: "vitest-wrapper",
+                guidancePattern: "use_instead_of",
+                recommendedAction: "pnpm test -- path",
+                avoidAction: "raw vitest",
+              },
+              candidateLifecycle: {
+                family: "workflow_improvement",
+              },
+            },
+          }),
+        ],
+      );
+    } finally {
+      await client.end();
+    }
+
+    const result = await learnedGuidanceTool.execute("call-learned-guidance-5", {
+      query: "should I use pnpm test or raw vitest here?",
+      projectId: seeded.projectId,
+    });
+
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "ok",
+      outcome: "no_guidance",
+      rolloutScope: {
+        allowedLessonFamilies: ["supported_lesson"],
+      },
+      observability: {
+        outcomeCode: "no_guidance",
+        eligibleWorkflowGuidanceCount: 0,
+        filteredOutByScopeCount: 1,
+        suggestionCount: 0,
+      },
     });
   });
 
@@ -20855,6 +21074,18 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       accepted: false,
       status: "disabled",
       reason: "learned guidance advisory planning mode is not enabled",
+      observability: {
+        outcomeCode: "planner_disabled",
+        retrievedRecordCount: 0,
+        eligibleWorkflowGuidanceCount: 0,
+        filteredOutByScopeCount: 0,
+        suggestionCount: 0,
+        suppressedConflictCount: 0,
+        nativeSuggestionCount: 0,
+        selfImprovingSuggestionCount: 0,
+        estimatedPromptTokens: 0,
+        reasons: ["learned guidance advisory planning mode is not enabled"],
+      },
     });
   });
 

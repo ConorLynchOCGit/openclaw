@@ -32,15 +32,21 @@ Live today:
 - it is candidate-only by design
 - it is now integrated into the shared candidate pipeline
 - it is gated by `selfImprovingCapture.mode = candidate-only`
+- it now has explicit rollout family-scope control through
+  `selfImprovingCapture.allowedLessonFamilies`
 - provenance distinguishes self-improving origin explicitly
 - blocked replay and duplicate handling now run on the shared workflow
   improvement substrate
+- structured rollout evaluation now exposes created, blocked,
+  replay-blocked, disabled, and failed outcomes
+- accepted candidates now carry rollout metadata for later review and audit
 
 Not live today:
 
 - production enablement by default
-- broader family coverage beyond the bounded workflow-guidance tranche
+- broader family coverage beyond the bounded workflow-guidance lesson tranche
 - any direct approval or action-taking path
+- automatic widening beyond the current bounded rollout scope
 
 ## Non-goals
 
@@ -204,17 +210,27 @@ The first rollout must be:
 Production enablement should start with:
 
 - one reduced-profile source
-- one allowed lesson family
+- one explicitly configured allowed lesson family set
 - explicit disablement switch
 - proof that duplicate and conflict handling work
+- review-facing outcome and burden signals
 
 Do not use this spec as permission to start reduced-profile self-improving
 capture immediately after flattening. The stronger substrate work and the
 post-v6 hardening tranche documented in the roadmap and sequencing docs are
 hard prerequisites.
 
-That prerequisite sequence is now landed, but rollout still remains default-off
-until bounded proof shows the first tranche is worth enabling more broadly.
+That prerequisite sequence is now landed, and the rollout-proof batch is also
+landed.
+
+The current accepted reevaluation result is still:
+
+- stay narrow
+- keep the seam default-off
+- gather bounded off-production evidence before widening
+
+The repo should not widen this seam automatically just because the shared
+substrate and the first rollout-proof signals now exist.
 
 ## Observability and audit
 
@@ -226,12 +242,16 @@ Track at minimum:
 - later approval rate
 - contradiction rate
 - repeated blocked replay rate
+- review-burden signals for created-versus-blocked outcomes
+- configured rollout family scope at the time of the decision
+- duplicate-outcome classification for created candidates
 
 Operators must be able to answer:
 
 - how much useful coverage the self-improving source added
 - whether it mainly produced duplicates
 - whether it mainly produced noise
+- whether the current rollout family scope is still too broad or too narrow
 
 ## Proof requirements
 
@@ -253,6 +273,7 @@ The first implementation slice for this spec must prove:
 
 ## Open questions
 
-- should the first enabled self-improving input stay limited to the explicit
-  workflow-guidance source, or may one additional bounded source follow after
-  rollout proof?
+- what off-production evidence threshold should justify widening beyond the
+  current bounded workflow-guidance lesson scope?
+- is the current structured rollout evaluation sufficient for reviewer burden
+  judgment, or is one thinner review-facing surface still needed?

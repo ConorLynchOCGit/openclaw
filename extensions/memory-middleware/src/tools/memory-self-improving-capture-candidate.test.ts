@@ -26,6 +26,7 @@ function createAcceptedResult(kind: CandidateSubmissionInput["kind"]): Candidate
 
 function createRuntime(params?: {
   mode?: "disabled" | "candidate-only";
+  allowedLessonFamilies?: Array<"supported_lesson" | "generalized_workflow_lesson">;
   learningResult?: CandidateSubmissionResult;
   correctionResult?: CandidateSubmissionResult;
   procedureResult?: CandidateSubmissionResult;
@@ -73,6 +74,15 @@ function createRuntime(params?: {
       },
       selfImprovingCapture: {
         mode: params?.mode ?? "candidate-only",
+        allowedLessonFamilies: params?.allowedLessonFamilies ?? [
+          "generalized_workflow_lesson",
+          "supported_lesson",
+        ],
+      },
+      learnedGuidanceAdvisoryPlanning: {
+        mode: "disabled",
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        defaultMaxSuggestions: 3,
       },
     },
     candidateIngress,
@@ -116,6 +126,15 @@ function createRuntime(params?: {
         },
         selfImprovingCapture: {
           mode: params?.mode ?? "candidate-only",
+          allowedLessonFamilies: params?.allowedLessonFamilies ?? [
+            "generalized_workflow_lesson",
+            "supported_lesson",
+          ],
+        },
+        learnedGuidanceAdvisoryPlanning: {
+          mode: "disabled",
+          allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+          defaultMaxSuggestions: 3,
         },
       },
       candidateIngress: candidateIngress as unknown as CandidateIngressPort,
@@ -227,6 +246,12 @@ describe("memory_self_improving_capture_candidate tool", () => {
           allowedLessonFamily: "supported_lesson",
           outputPosture: "candidate_only",
         },
+        selfImprovingRollout: expect.objectContaining({
+          rolloutPhase: "bounded_rollout_proof_v1",
+          allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+          duplicateOutcome: "new_candidate_cluster",
+          reviewBurden: "new_candidate_review_required",
+        }),
       }),
     });
     expect(result.details).toEqual({
@@ -238,6 +263,22 @@ describe("memory_self_improving_capture_candidate tool", () => {
       reviewState: "candidate",
       eventId: "event-1",
       memoryObjectId: "memory-1",
+      rolloutScope: {
+        rolloutPhase: "bounded_rollout_proof_v1",
+        sourceProfile: "reduced_profile_candidate_only",
+        target: "candidate_only",
+        requiresProjectId: true,
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        retrievalAuthority: "approved_only",
+      },
+      evaluation: {
+        outcomeCode: "candidate_created",
+        resolution: "candidate_created",
+        provenanceOrigin: "self_improving_capture",
+        duplicateOutcome: "new_candidate_cluster",
+        replayBlocked: false,
+        reviewBurden: "new_candidate_review_required",
+      },
     });
   });
 
@@ -259,6 +300,22 @@ describe("memory_self_improving_capture_candidate tool", () => {
       target: "candidate_only",
       reason:
         "reduced-profile self-improving first tranche is limited to workflow-improvement candidates",
+      rolloutScope: {
+        rolloutPhase: "bounded_rollout_proof_v1",
+        sourceProfile: "reduced_profile_candidate_only",
+        target: "candidate_only",
+        requiresProjectId: true,
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        retrievalAuthority: "approved_only",
+      },
+      evaluation: {
+        outcomeCode: "submission_kind_blocked",
+        resolution: "blocked",
+        provenanceOrigin: "self_improving_capture",
+        duplicateOutcome: "none",
+        replayBlocked: false,
+        reviewBurden: "no_new_review_required",
+      },
     });
   });
 
@@ -280,6 +337,22 @@ describe("memory_self_improving_capture_candidate tool", () => {
       target: "candidate_only",
       reason: "reduced-profile self-improving adaptation may emit candidate_only outputs only",
       blockedOutputPosture: "approved_memory",
+      rolloutScope: {
+        rolloutPhase: "bounded_rollout_proof_v1",
+        sourceProfile: "reduced_profile_candidate_only",
+        target: "candidate_only",
+        requiresProjectId: true,
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        retrievalAuthority: "approved_only",
+      },
+      evaluation: {
+        outcomeCode: "output_posture_blocked",
+        resolution: "blocked",
+        provenanceOrigin: "self_improving_capture",
+        duplicateOutcome: "none",
+        replayBlocked: false,
+        reviewBurden: "no_new_review_required",
+      },
     });
   });
 
@@ -302,6 +375,22 @@ describe("memory_self_improving_capture_candidate tool", () => {
       kind: "learning",
       target: "candidate_only",
       reason: "self-improving candidate capture mode is not enabled",
+      rolloutScope: {
+        rolloutPhase: "bounded_rollout_proof_v1",
+        sourceProfile: "reduced_profile_candidate_only",
+        target: "candidate_only",
+        requiresProjectId: true,
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        retrievalAuthority: "approved_only",
+      },
+      evaluation: {
+        outcomeCode: "capture_disabled",
+        resolution: "disabled",
+        provenanceOrigin: "self_improving_capture",
+        duplicateOutcome: "none",
+        replayBlocked: false,
+        reviewBurden: "no_new_review_required",
+      },
     });
 
     const notConfiguredRuntime = createRuntime({
@@ -329,6 +418,51 @@ describe("memory_self_improving_capture_candidate tool", () => {
       kind: "improvement",
       target: "candidate_only",
       reason: "memory middleware database URL is not configured",
+      rolloutScope: {
+        rolloutPhase: "bounded_rollout_proof_v1",
+        sourceProfile: "reduced_profile_candidate_only",
+        target: "candidate_only",
+        requiresProjectId: true,
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        retrievalAuthority: "approved_only",
+      },
+      evaluation: {
+        outcomeCode: "candidate_submission_failed",
+        resolution: "failed",
+        provenanceOrigin: "self_improving_capture",
+        duplicateOutcome: "none",
+        replayBlocked: false,
+        reviewBurden: "no_new_review_required",
+      },
+    });
+  });
+
+  it("blocks lesson families outside the configured rollout scope", async () => {
+    const runtime = createRuntime({
+      allowedLessonFamilies: ["supported_lesson"],
+    });
+    const tool = createMemorySelfImprovingCaptureCandidateTool({ runtime });
+
+    const result = await tool.execute("call-5", {
+      kind: "improvement",
+      content:
+        "For release proof notes here, use bulletized proof IDs instead of paraphrased rollout summaries.",
+      projectId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(runtime.candidateIngress.submitImprovementNote).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({
+      accepted: false,
+      status: "blocked",
+      reason:
+        "reduced-profile self-improving first tranche supports workflow-guidance lessons only",
+      rolloutScope: {
+        allowedLessonFamilies: ["supported_lesson"],
+      },
+      evaluation: {
+        outcomeCode: "lesson_family_outside_rollout_scope",
+        duplicateOutcome: "none",
+      },
     });
   });
 

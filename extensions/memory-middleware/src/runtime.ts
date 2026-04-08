@@ -436,6 +436,8 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
     learnedGuidanceAdvisoryPlanning: createLearnedGuidanceAdvisoryPlanningPort({
       memoryObjectQuery,
       mode: learnedGuidanceAdvisoryPlanningMode,
+      allowedLessonFamilies: config.learnedGuidanceAdvisoryPlanning?.allowedLessonFamilies,
+      defaultMaxSuggestions: config.learnedGuidanceAdvisoryPlanning?.defaultMaxSuggestions,
     }),
     candidateQuery: createCandidateQueryPort({
       db,

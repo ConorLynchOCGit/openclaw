@@ -16,6 +16,8 @@ Pre-capture hardening is landed.
 The first bounded self-improving and inline advisory functionality is now
 implemented on the shared substrate.
 
+The bounded rollout-proof and reevaluation batch is now also landed.
+
 ## What is live now
 
 Live families:
@@ -54,9 +56,12 @@ Current live bounds:
 - self-improving capture is workflow-guidance-only
 - self-improving capture is candidate-only
 - self-improving capture has no direct approval authority
+- self-improving capture now has explicit allowed lesson-family rollout scope
 - learned-guidance planning reads approved retrieval only
 - learned-guidance planning is inline-only and advisory-only
 - learned-guidance planning suppresses conflicting guidance instead of guessing
+- learned-guidance planning now has explicit allowed lesson-family scope and a
+  bounded default suggestion budget
 
 ## What is still not live by default
 
@@ -91,17 +96,42 @@ It did not replace:
 - wider self-improving input coverage
 - new family expansion
 
+## What the rollout-proof batch changed
+
+The rollout-proof batch landed three real slices:
+
+1. bounded self-improving capture rollout proof
+2. bounded learned-guidance advisory rollout proof
+3. post-rollout memory reevaluation
+
+It added:
+
+- explicit rollout family-scope controls for self-improving capture and inline
+  advisory planning
+- explicit advisory suggestion-budget control
+- structured self-improving outcome signals for created, blocked,
+  replay-blocked, disabled, and failed outcomes
+- structured advisory observability for surfaced, suppressed, filtered, and
+  no-guidance outcomes, including approximate prompt cost
+
+It concluded:
+
+- self-improving capture should stay narrow for now
+- learned-guidance advisory planning should stay narrow for now
+- the repo is now ready for bounded off-production evidence collection, not
+  automatic widening
+
 ## What happens next
 
 The next major move is no longer another substrate refactor phase.
 
 The next major move should be:
 
-1. bounded rollout proof and observability for the new self-improving and
-   inline learned-guidance seams
-2. only then a decision on widening the self-improving tranche or keeping it
-   narrow
-3. cross-domain family expansion only after those answers are known
+1. bounded off-production rollout using the new controls and observability
+2. evidence collection on usefulness, noise, conflict suppression, and prompt
+   cost
+3. only then a decision on widening or keeping the seams narrow
+4. cross-domain family expansion only after those answers are known
 
 ## What remains intentionally different
 

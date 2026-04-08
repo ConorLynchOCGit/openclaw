@@ -162,6 +162,21 @@ Current accepted framing:
 - the repo should not widen self-improving coverage or start new family work
   until rollout proof shows the bounded tranche is worth extending
 
+## 2026-04 — rollout proof and reevaluation are now landed, but widening is not
+
+Current accepted framing:
+
+- self-improving capture now has explicit rollout family-scope control and
+  structured outcome signals
+- learned-guidance advisory planning now has explicit rollout family-scope
+  control, bounded suggestion-budget control, and structured observability
+- these rollout controls are enough to support bounded off-production evidence
+  collection
+- they are not themselves proof that either seam should widen now
+- current accepted judgment is still:
+  - self-improving capture stays narrow
+  - learned-guidance advisory planning stays narrow
+
 ## 2026-04 — should-fix-soon cleanup is real but secondary
 
 The following work is accepted as already-landed near-term cleanup:

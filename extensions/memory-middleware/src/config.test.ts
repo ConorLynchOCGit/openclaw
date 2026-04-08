@@ -16,9 +16,12 @@ describe("resolveMemoryMiddlewareConfig", () => {
       },
       selfImprovingCapture: {
         mode: "disabled",
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
       },
       learnedGuidanceAdvisoryPlanning: {
         mode: "disabled",
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        defaultMaxSuggestions: 3,
       },
       backgroundJobs: {
         inspectionMode: "disabled",
@@ -38,7 +41,11 @@ describe("resolveMemoryMiddlewareConfig", () => {
     ).toMatchObject({
       candidateIngress: { mode: "candidate-only" },
       selfImprovingCapture: { mode: "disabled" },
-      learnedGuidanceAdvisoryPlanning: { mode: "disabled" },
+      learnedGuidanceAdvisoryPlanning: {
+        mode: "disabled",
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        defaultMaxSuggestions: 3,
+      },
       backgroundJobs: {
         inspectionMode: "disabled",
         advisorySchedulingMode: "disabled",
@@ -110,7 +117,10 @@ describe("resolveMemoryMiddlewareConfig", () => {
       }),
     ).toMatchObject({
       candidateIngress: { mode: "candidate-only" },
-      selfImprovingCapture: { mode: "candidate-only" },
+      selfImprovingCapture: {
+        mode: "candidate-only",
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+      },
     });
   });
 
@@ -122,7 +132,41 @@ describe("resolveMemoryMiddlewareConfig", () => {
       }),
     ).toMatchObject({
       candidateIngress: { mode: "candidate-only" },
-      learnedGuidanceAdvisoryPlanning: { mode: "inline-only" },
+      learnedGuidanceAdvisoryPlanning: {
+        mode: "inline-only",
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        defaultMaxSuggestions: 3,
+      },
+    });
+  });
+
+  it("normalizes bounded self-improving and learned-guidance rollout controls", () => {
+    expect(
+      resolveMemoryMiddlewareConfig({
+        selfImprovingCapture: {
+          mode: "candidate-only",
+          allowedLessonFamilies: [" supported_lesson ", "supported_lesson", "ignored"],
+        },
+        learnedGuidanceAdvisoryPlanning: {
+          mode: "inline-only",
+          allowedLessonFamilies: [
+            "generalized_workflow_lesson",
+            "supported_lesson",
+            "generalized_workflow_lesson",
+          ],
+          defaultMaxSuggestions: 12,
+        },
+      }),
+    ).toMatchObject({
+      selfImprovingCapture: {
+        mode: "candidate-only",
+        allowedLessonFamilies: ["supported_lesson"],
+      },
+      learnedGuidanceAdvisoryPlanning: {
+        mode: "inline-only",
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        defaultMaxSuggestions: 10,
+      },
     });
   });
 

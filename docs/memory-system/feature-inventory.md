@@ -99,9 +99,11 @@ Backlog / flattening debt:
 - retrieval control is much flatter, but later artifact/read-model convergence
   may still remain
 - reduced-profile self-improving capture is now implemented as a bounded
-  default-off tranche and still needs rollout proof before wider enablement
+  default-off tranche, now has explicit rollout controls plus structured
+  outcome signals, and should still stay narrow before wider enablement
 - learned-guidance advisory planning is now implemented as a bounded
-  default-off inline slice and still needs rollout proof before wider enablement
+  default-off inline slice, now has explicit rollout controls plus structured
+  observability, and should still stay narrow before wider enablement
 
 ## Not live yet
 

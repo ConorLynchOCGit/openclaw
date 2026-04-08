@@ -22,6 +22,28 @@ function createRuntime() {
         rationale: [
           "approved workflow-guidance lessons matched the current query strongly enough to surface inline advice",
         ],
+        rolloutScope: {
+          rolloutPhase: "bounded_rollout_proof_v1" as const,
+          mode: "inline-only" as const,
+          source: "approved_workflow_guidance" as const,
+          approvedOnly: true as const,
+          advisoryOnly: true as const,
+          inlineOnly: true as const,
+          allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"] as const,
+          defaultMaxSuggestions: 2,
+        },
+        observability: {
+          outcomeCode: "guidance_available" as const,
+          retrievedRecordCount: 1,
+          eligibleWorkflowGuidanceCount: 1,
+          filteredOutByScopeCount: 0,
+          suggestionCount: 0,
+          suppressedConflictCount: 0,
+          nativeSuggestionCount: 0,
+          selfImprovingSuggestionCount: 0,
+          estimatedPromptTokens: 12,
+          reasons: ["approved workflow guidance matched the current query"],
+        },
       })),
     },
   } as unknown as MemoryMiddlewareRuntime;
@@ -63,6 +85,12 @@ describe("memory learned-guidance-plan tool", () => {
       outcome: "guidance_available",
       advisoryOnly: true,
       applicationMode: "guidance_only",
+      rolloutScope: {
+        defaultMaxSuggestions: 2,
+      },
+      observability: {
+        outcomeCode: "guidance_available",
+      },
     });
   });
 });

@@ -2,20 +2,34 @@
 
 ## Active slice
 
-Bounded rollout proof for reduced-profile self-improving capture and inline
-learned-guidance planning
+Bounded off-production rollout enablement and evidence review for
+reduced-profile self-improving capture and inline learned-guidance planning
 
 ## Objective
 
-Use the newly landed functional batch to decide how far the repo should enable
-these surfaces in off-production and later production settings without
-creating:
+Use the newly landed rollout-control and observability surfaces to collect
+real evidence before any widening decision.
+
+The current accepted answer is:
+
+- both seams now have real rollout controls and structured observability
+- both seams should stay narrow for now
+- neither seam has earned broader authority or broader family coverage yet
+- the next missing truth is bounded off-production rollout evidence, not more
+  shared-substrate design
+
+This slice does not answer production enablement by default.
+
+It answers whether bounded off-production usage shows enough usefulness,
+low-enough noise, and low-enough prompt cost to justify later widening.
+
+The rollout still must avoid creating:
 
 - a second memory authority
 - silent policy mutation
 - broader capture spray across families
 
-## What just landed in the functional batch
+## What just landed
 
 ### Slice 1 — reduced-profile self-improving capture reevaluation
 
@@ -65,6 +79,23 @@ Still intentionally disabled:
   workflow-guidance-only, candidate-only seam
 - learned-guidance advisory planning exists as a default-off, approved-only,
   inline-only workflow-guidance seam
+- both seams now expose explicit rollout scope and structured evaluation /
+  observability fields in their runtime results
+
+Live rollout controls now include:
+
+- explicit allowed lesson-family scope for self-improving capture
+- explicit allowed lesson-family scope for learned-guidance advisory planning
+- explicit default suggestion-budget control for inline advisory planning
+
+Live rollout signals now include:
+
+- self-improving outcome codes for created, blocked, replay-blocked, disabled,
+  and failed decisions
+- self-improving review-burden and duplicate-outcome signals
+- advisory outcome codes for surfaced, suppressed, disabled, and no-guidance
+  decisions
+- advisory record counts, filtered-by-scope counts, and estimated prompt cost
 
 These are live substrate capabilities, not production-wide enablement.
 
@@ -90,15 +121,18 @@ Still not next:
 
 The next main implementation sequence should now be:
 
-1. bounded rollout proof and observability for the newly landed
-   self-improving and inline-advisory seams
-2. only then a decision on whether to widen self-improving input coverage or
-   keep it narrow
-3. cross-domain family expansion only after those rollout answers are clear
+1. bounded off-production enablement using the now-live rollout controls and
+   observability
+2. collect real evidence on usefulness, replay noise, conflict suppression,
+   and prompt cost
+3. only then decide whether either seam should widen or stay narrow longer
+4. cross-domain family expansion only after those rollout answers are clear
 
 Reason:
 
-- the substrate implementation work for these phases is now landed
-- the remaining question is rollout truth, not missing architecture
-- widening scope before rollout proof would risk rebuilding parallel policy
+- the substrate and rollout-control implementation work for these phases is now
+  landed
+- the remaining missing truth is real rollout evidence, not missing shared
+  architecture or missing observability
+- widening scope before evidence exists would risk rebuilding parallel policy
   paths by accident

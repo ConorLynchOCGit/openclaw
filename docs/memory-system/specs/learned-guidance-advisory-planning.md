@@ -29,10 +29,14 @@ Live today:
   `learnedGuidanceAdvisoryPlanning.mode = inline-only`
 - the first live tranche is approved-only, workflow-guidance-only, and
   advisory-only
+- it now has explicit rollout family-scope control through
+  `learnedGuidanceAdvisoryPlanning.allowedLessonFamilies`
+- it now has an explicit bounded default suggestion budget through
+  `learnedGuidanceAdvisoryPlanning.defaultMaxSuggestions`
 - conflicting workflow guidance is suppressed instead of silently collapsed
-- bounded proactive maintenance classes exist for:
-  - `proactive_plan`
-  - `proactive_execute_run_drift_check`
+- structured advisory observability now exposes surfaced, suppressed,
+  filtered, disabled, and no-guidance outcomes, including approximate prompt
+  cost
 
 Not live today:
 
@@ -40,6 +44,7 @@ Not live today:
   tranche
 - learned guidance influencing proactive plan suggestions
 - production enablement by default
+- automatic widening beyond the current bounded rollout scope
 
 ## Non-goals
 
@@ -146,9 +151,20 @@ This is a read-and-suggest layer only.
 - narrow to one advisory use case
 - proof with explicit attribution
 - no shared background scheduling requirement in the first slice
+- explicit family-scope and suggestion-budget controls
+- observability strong enough to judge usefulness, suppression, and prompt
+  cost
 
 The safest first proof is inline advisory planning during repo-operating asks,
 not background execution.
+
+That rollout-proof slice is now landed.
+
+The current accepted reevaluation result is still:
+
+- stay narrow
+- keep the planner default-off
+- gather bounded off-production evidence before widening
 
 ## Proof requirements
 
@@ -165,9 +181,12 @@ The first implementation slice for this spec must prove:
 - advice feels like hidden policy instead of remembered guidance
 - too many advisory reminders create prompt clutter
 - operators assume advisory planning implies execution authority
+- scoped workflow guidance still costs too many prompt tokens under repeated
+  inline use
 
 ## Open questions
 
-- should the first learned-guidance advisory slice run only inline during
-  active asks, or should it later feed the existing advisory background-job
-  planner after inline behavior is proven?
+- what off-production evidence threshold should justify widening beyond the
+  current workflow-guidance advisory slice?
+- is the current prompt-cost observability sufficient, or does later rollout
+  need one thinner runtime token-cost measurement surface?

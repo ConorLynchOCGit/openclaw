@@ -62,6 +62,18 @@ describe("learned-guidance advisory planning", () => {
       accepted: false,
       status: "disabled",
       reason: "learned guidance advisory planning mode is not enabled",
+      observability: {
+        outcomeCode: "planner_disabled",
+        retrievedRecordCount: 0,
+        eligibleWorkflowGuidanceCount: 0,
+        filteredOutByScopeCount: 0,
+        suggestionCount: 0,
+        suppressedConflictCount: 0,
+        nativeSuggestionCount: 0,
+        selfImprovingSuggestionCount: 0,
+        estimatedPromptTokens: 0,
+        reasons: ["learned guidance advisory planning mode is not enabled"],
+      },
     });
   });
 
@@ -98,6 +110,10 @@ describe("learned-guidance advisory planning", () => {
       outcome: "guidance_available",
       advisoryOnly: true,
       applicationMode: "guidance_only",
+      rolloutScope: {
+        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        defaultMaxSuggestions: 3,
+      },
       suggestions: [
         {
           memoryObjectId: "memory-1",
@@ -106,6 +122,14 @@ describe("learned-guidance advisory planning", () => {
           guidancePattern: "use_instead_of",
         },
       ],
+      observability: {
+        outcomeCode: "guidance_available",
+        retrievedRecordCount: 1,
+        eligibleWorkflowGuidanceCount: 1,
+        filteredOutByScopeCount: 0,
+        suggestionCount: 1,
+        selfImprovingSuggestionCount: 1,
+      },
     });
   });
 
@@ -154,6 +178,53 @@ describe("learned-guidance advisory planning", () => {
           memoryObjectIds: ["memory-a", "memory-b"],
         },
       ],
+      observability: {
+        outcomeCode: "conflict_suppressed",
+        suppressedConflictCount: 1,
+        suggestionCount: 0,
+      },
+    });
+  });
+
+  it("keeps approved guidance outside the configured rollout scope suppressed", async () => {
+    const port = createLearnedGuidanceAdvisoryPlanningPort({
+      memoryObjectQuery: {
+        searchHybrid: vi.fn(async () => ({
+          accepted: true as const,
+          status: "ok" as const,
+          scope: "approved_only" as const,
+          query: "how should I run tests here?",
+          records: [
+            createApprovedWorkflowRecord({
+              lessonFamily: "generalized_workflow_lesson",
+              content: "Workflow improvement: use pnpm test -- path instead of raw vitest.",
+              recommendedAction: "pnpm test -- path",
+              avoidAction: "raw vitest",
+            }),
+          ],
+        })),
+      } as never,
+      mode: "inline-only",
+      allowedLessonFamilies: ["supported_lesson"],
+    });
+
+    const result = await port.plan({
+      query: "how should I run tests here?",
+    });
+
+    expect(result).toMatchObject({
+      accepted: true,
+      status: "ok",
+      outcome: "no_guidance",
+      suggestions: [],
+      rolloutScope: {
+        allowedLessonFamilies: ["supported_lesson"],
+      },
+      observability: {
+        outcomeCode: "no_guidance",
+        eligibleWorkflowGuidanceCount: 0,
+        filteredOutByScopeCount: 1,
+      },
     });
   });
 });

@@ -47,10 +47,13 @@ export type MemoryMiddlewareAutoPromotionConfig = {
 
 export type MemoryMiddlewareSelfImprovingCaptureConfig = {
   mode: "disabled" | "candidate-only";
+  allowedLessonFamilies: Array<"supported_lesson" | "generalized_workflow_lesson">;
 };
 
 export type MemoryMiddlewareLearnedGuidanceAdvisoryPlanningConfig = {
   mode: "disabled" | "inline-only";
+  allowedLessonFamilies: Array<"supported_lesson" | "generalized_workflow_lesson">;
+  defaultMaxSuggestions: number;
 };
 
 export type MemoryMiddlewareConfig = {
@@ -74,6 +77,30 @@ export const DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG: MemoryMiddlewareAu
     profile: "disabled",
     allowedAgents: ["chief", "main"],
   };
+
+const DEFAULT_BOUNDED_WORKFLOW_LESSON_FAMILIES = [
+  "generalized_workflow_lesson",
+  "supported_lesson",
+] as const satisfies Array<"supported_lesson" | "generalized_workflow_lesson">;
+
+function normalizeBoundedWorkflowLessonFamilies(
+  value: unknown,
+): Array<"supported_lesson" | "generalized_workflow_lesson"> {
+  if (!Array.isArray(value)) {
+    return [...DEFAULT_BOUNDED_WORKFLOW_LESSON_FAMILIES];
+  }
+
+  const normalized = [
+    ...new Set(
+      value.filter(
+        (entry): entry is "supported_lesson" | "generalized_workflow_lesson" =>
+          entry === "supported_lesson" || entry === "generalized_workflow_lesson",
+      ),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+
+  return normalized.length > 0 ? normalized : [...DEFAULT_BOUNDED_WORKFLOW_LESSON_FAMILIES];
+}
 
 export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
   jsonSchema: {
@@ -173,6 +200,13 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
         additionalProperties: false,
         properties: {
           mode: { type: "string", enum: ["disabled", "candidate-only"] },
+          allowedLessonFamilies: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: ["supported_lesson", "generalized_workflow_lesson"],
+            },
+          },
         },
       },
       learnedGuidanceAdvisoryPlanning: {
@@ -180,6 +214,18 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
         additionalProperties: false,
         properties: {
           mode: { type: "string", enum: ["disabled", "inline-only"] },
+          allowedLessonFamilies: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: ["supported_lesson", "generalized_workflow_lesson"],
+            },
+          },
+          defaultMaxSuggestions: {
+            type: "integer",
+            minimum: 1,
+            maximum: 10,
+          },
         },
       },
     },
@@ -312,8 +358,19 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
     : ["chief", "main"];
   const selfImprovingCaptureMode =
     selfImprovingCapture.mode === "candidate-only" ? "candidate-only" : "disabled";
+  const selfImprovingAllowedLessonFamilies = normalizeBoundedWorkflowLessonFamilies(
+    selfImprovingCapture.allowedLessonFamilies,
+  );
   const learnedGuidanceAdvisoryPlanningMode =
     learnedGuidanceAdvisoryPlanning.mode === "inline-only" ? "inline-only" : "disabled";
+  const learnedGuidanceAllowedLessonFamilies = normalizeBoundedWorkflowLessonFamilies(
+    learnedGuidanceAdvisoryPlanning.allowedLessonFamilies,
+  );
+  const learnedGuidanceDefaultMaxSuggestions =
+    typeof learnedGuidanceAdvisoryPlanning.defaultMaxSuggestions === "number" &&
+    Number.isInteger(learnedGuidanceAdvisoryPlanning.defaultMaxSuggestions)
+      ? Math.min(Math.max(learnedGuidanceAdvisoryPlanning.defaultMaxSuggestions, 1), 10)
+      : 3;
 
   return {
     database: {
@@ -351,9 +408,12 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
     },
     selfImprovingCapture: {
       mode: selfImprovingCaptureMode,
+      allowedLessonFamilies: selfImprovingAllowedLessonFamilies,
     },
     learnedGuidanceAdvisoryPlanning: {
       mode: learnedGuidanceAdvisoryPlanningMode,
+      allowedLessonFamilies: learnedGuidanceAllowedLessonFamilies,
+      defaultMaxSuggestions: learnedGuidanceDefaultMaxSuggestions,
     },
   };
 }

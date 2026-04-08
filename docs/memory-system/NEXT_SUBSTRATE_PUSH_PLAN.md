@@ -2,8 +2,10 @@
 
 ## Purpose
 
-This doc records the honest next move now that the first bounded
-self-improving and inline advisory batch is landed.
+This doc records the honest next move now that:
+
+- the first bounded self-improving and inline advisory batch is landed
+- the bounded rollout-proof and reevaluation batch is also landed
 
 ## What is already landed
 
@@ -34,17 +36,26 @@ Current tranche boundaries:
 
 - self-improving capture is workflow-guidance-only
 - self-improving capture is candidate-only
+- self-improving capture now has explicit allowed lesson-family rollout scope
 - learned-guidance planning is approved-only
 - learned-guidance planning is inline-only
 - learned-guidance planning is advisory-only
+- learned-guidance planning now has explicit allowed lesson-family scope and a
+  bounded default suggestion budget
+
+Current reevaluation judgment:
+
+- self-improving capture should stay narrow
+- learned-guidance planning should stay narrow
+- neither seam should widen before bounded off-production evidence exists
 
 ## Remaining recommended sequence
 
 ### Next major phase
 
-1. bounded rollout proof and observability for the new self-improving and
-   inline-advisory seams
-2. decide whether self-improving input coverage should widen or stay narrow
+1. bounded off-production rollout using the landed controls and observability
+2. decide whether either seam should widen or stay narrow based on real
+   evidence
 3. cross-domain family expansion only after those rollout answers are clear
 
 ### Later bounded cleanup only if justified
@@ -58,14 +69,16 @@ Current tranche boundaries:
 
 The next implementation slice should now be:
 
-- bounded rollout proof for reduced-profile self-improving capture and inline
-  learned-guidance planning
+- bounded off-production rollout enablement and evidence review for the narrow
+  self-improving and inline-advisory seams
 
 Why:
 
-- the substrate implementation work for these phases is now landed
-- the remaining risk is rollout truth, not missing shared architecture
-- widening scope before rollout proof would be the fastest way to recreate
+- the substrate and rollout-control implementation work for these phases is now
+  landed
+- the remaining risk is rollout truth under real usage pressure, not missing
+  shared architecture
+- widening scope before evidence exists would be the fastest way to recreate
   accidental parallel policy paths
 
 ## What should not be parallelized prematurely
@@ -79,14 +92,15 @@ Why:
 
 Before new families:
 
-- bounded rollout proof shows the self-improving tranche adds useful coverage
-  without noisy replay
+- bounded off-production rollout shows the self-improving tranche adds useful
+  coverage without noisy replay
 - provenance and audit stay explicit
 - approved retrieval remains the only authority for later application
-- inline advisory planning stays suggestion-only and conflict-safe
+- inline advisory planning stays suggestion-only, conflict-safe, and cheap
+  enough in prompt cost
 - the new surfaces do not create a second hidden policy system
 
 ## Next implementation slice
 
-- bounded rollout proof and observability for the newly landed functional
-  seams
+- bounded off-production rollout enablement and evidence review for the newly
+  instrumented functional seams

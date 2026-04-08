@@ -22,7 +22,8 @@ Practical parity does not mean:
 
 - all six families share one identical product-policy posture
 - the implementation substrate is already flat enough to scale cleanly
-- reduced-profile self-improving capture is ready to land
+- reduced-profile self-improving capture and learned-guidance planning are
+  ready to widen automatically
 
 That remains the central roadmap fact.
 
@@ -235,14 +236,33 @@ Current tranche shape:
 - advisory-only inline suggestions
 - conflict suppression instead of silent collapse
 
-## What comes next after Phase H
+## Phase I — bounded rollout proof and reevaluation
 
-The next honest move is not another missing implementation phase here.
+This phase is now landed.
 
-It is bounded rollout proof and observability for the newly landed
-self-improving and inline-advisory seams.
+It added:
 
-## Phase I — cross-domain family expansion
+- explicit rollout family-scope control for self-improving capture
+- explicit rollout family-scope control for learned-guidance advisory planning
+- explicit default suggestion-budget control for inline advisory planning
+- structured self-improving outcome signals for created, blocked,
+  replay-blocked, disabled, and failed decisions
+- structured advisory observability for surfaced, suppressed, filtered, and
+  no-guidance decisions, including approximate prompt cost
+
+It concluded:
+
+- self-improving capture should stay narrow for now
+- learned-guidance advisory planning should stay narrow for now
+- the next missing truth is real bounded rollout evidence, not more missing
+  substrate implementation
+
+## What comes next after Phase I
+
+The next honest move is bounded off-production rollout enablement and evidence
+review for the narrow self-improving and inline-advisory seams.
+
+## Phase J — cross-domain family expansion
 
 Cross-domain family expansion resumes only after:
 
@@ -250,7 +270,8 @@ Cross-domain family expansion resumes only after:
 2. substrate authority / scale cleanup
 3. reduced-profile self-improving capture
 4. learned-guidance advisory planning
-5. bounded rollout proof for those new functional seams
+5. bounded rollout proof and reevaluation for those new functional seams
+6. bounded off-production rollout evidence review
 
 Recommended first tranche:
 

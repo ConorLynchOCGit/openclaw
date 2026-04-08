@@ -19,6 +19,8 @@ The pre-capture hardening tranche is landed.
 The first bounded self-improving and learned-guidance functionality batch is
 also landed.
 
+The bounded rollout-proof and reevaluation batch is now also landed.
+
 The next honest phase is therefore no longer:
 
 - another core flattening slice
@@ -27,8 +29,8 @@ The next honest phase is therefore no longer:
 
 The next honest phase is:
 
-- bounded rollout proof and observability for the newly landed functional
-  seams
+- bounded off-production rollout enablement and evidence review for the newly
+  instrumented functional seams
 
 ## Completed order so far
 
@@ -52,14 +54,15 @@ Historical completed order:
 16. flattening batch v6
 17. pre-capture hardening batch v1
 18. reduced-profile self-improving and advisory batch v1
+19. bounded rollout proof and reevaluation batch v1
 
 ## Recommended next order
 
 ### Next major rollout work
 
-1. bounded rollout proof for reduced-profile self-improving capture and inline
-   learned-guidance planning
-2. widen the self-improving tranche only if rollout evidence justifies it
+1. bounded off-production rollout enablement and evidence review for the
+   narrow self-improving and learned-guidance seams
+2. widen either seam only if rollout evidence justifies it
 
 ### Later phases
 
@@ -77,8 +80,10 @@ Historical completed order:
 
 - the shared substrate work for these functional seams is now landed
 - the newly landed surfaces are intentionally default-off and bounded
-- the remaining question is rollout behavior and metrics, not architecture
-- widening scope before rollout proof would risk recreating hidden policy paths
+- the remaining question is real rollout behavior and metrics under live usage,
+  not architecture
+- widening scope before off-production evidence exists would risk recreating
+  hidden policy paths
 
 ## Hard prerequisites before widening self-improving coverage
 
@@ -100,10 +105,13 @@ Before widening coverage further, the repo should prove:
 - the first self-improving tranche adds useful signal instead of replay noise
 - provenance remains explicit through review and later approval
 - inline learned-guidance planning stays low-noise and conflict-safe
+- the new rollout-control surfaces are sufficient to measure usefulness, noise,
+  and prompt cost
 
 ## Hard prerequisites before new cross-domain families
 
-- bounded rollout proof for the new functional seams is complete
+- bounded rollout proof and reevaluation for the new functional seams is
+  complete
 - the repo knows whether self-improving input coverage should stay narrow or
   widen
 - advisory planning remains a helper, not a second authority
