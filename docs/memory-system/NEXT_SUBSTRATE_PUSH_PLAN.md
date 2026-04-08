@@ -8,6 +8,7 @@ This doc records the honest next move now that:
 - the bounded rollout-proof and reevaluation batch is also landed
 - the bounded promotion and off-production rollout-enablement batch is also
   landed
+- the automated eval and production-canary controls batch is also landed
 
 ## What is already landed
 
@@ -39,21 +40,22 @@ Current tranche boundaries:
 - self-improving capture is workflow-guidance-only
 - self-improving capture is candidate-only
 - self-improving capture now has explicit allowed lesson-family rollout scope
-- self-improving capture now also requires an explicit `off-production`
-  rollout target before activation
+- self-improving capture now also requires an explicit `off-production` or
+  `production-canary` rollout target before activation
 - learned-guidance planning is approved-only
 - learned-guidance planning is inline-only
 - learned-guidance planning is advisory-only
 - learned-guidance planning now has explicit allowed lesson-family scope and a
   bounded default suggestion budget
-- learned-guidance planning now also requires an explicit `off-production`
-  rollout target before activation
+- learned-guidance planning now also requires an explicit `off-production` or
+  `production-canary` rollout target before activation
 
 Current reevaluation judgment:
 
 - self-improving capture should stay narrow
 - learned-guidance planning should stay narrow
-- neither seam should widen before bounded off-production evidence exists
+- neither seam should widen before automated eval plus rollbackable canary
+  evidence exists
 - explicit docs-localization and file-reference packet shapes are now
   promotion-eligible under bounded follow-through
 - vague shorthand packet shapes should stay narrow and candidate-heavy
@@ -64,12 +66,12 @@ Current reevaluation judgment:
 
 ### Next major phase
 
-1. bounded promotion follow-through for the strongest explicit docs-localization
-   and file-reference packet shapes
-2. bounded off-production usage and evidence review using the landed controls,
-   observability, and cleaned Main-session boundary
+1. narrow rollbackable production canary runtime test for the control-ready
+   self-improving and learned-guidance seams
+2. explicit observation of docs-localization, file-reference, and native
+   workflow weak spots during that canary
 3. decide whether either seam or any broader phrasing class should widen or
-   stay narrow based on real evidence
+   stay narrow based on automated-eval plus canary evidence
 4. cross-domain family expansion only after those rollout answers are clear
 
 ### Later bounded cleanup only if justified
@@ -83,9 +85,9 @@ Current reevaluation judgment:
 
 The next implementation slice should now be:
 
-- bounded off-production evidence review for the promotion-eligible explicit
-  docs-localization and file-reference packet shapes plus the narrow
-  self-improving / learned-guidance seams
+- narrow rollbackable production canary runtime testing for the control-ready
+  self-improving / learned-guidance seams, while explicitly watching the
+  current docs-localization, file-reference, and native workflow weak spots
 
 Why:
 
@@ -93,9 +95,12 @@ Why:
 - the docs/file overlap cases from the manual UX pass now promote cleanly under
   bounded follow-through
 - the self-improving and learned-guidance seams now have an explicit
-  default-off versus `off-production` enablement boundary
-- the remaining risk is still rollout truth under real usage pressure, not
-  missing shared architecture or missing rollout gating
+  default-off versus `off-production` versus `production-canary` enablement
+  boundary
+- automated eval is now real and already shows the weak spots that the canary
+  must watch
+- the remaining risk is now production-runtime truth under a narrow canary,
+  not missing shared architecture or missing rollout gating
 - widening vague phrasing classes before evidence exists would recreate
   accidental parallel policy paths faster than it would add useful coverage
 
@@ -110,8 +115,8 @@ Why:
 
 Before new families:
 
-- bounded off-production usage shows the self-improving tranche adds useful
-  coverage without noisy replay
+- rollbackable production canary evidence shows the self-improving tranche
+  adds useful coverage without noisy replay
 - provenance and audit stay explicit
 - approved retrieval remains the only authority for later application
 - inline advisory planning stays suggestion-only, conflict-safe, and cheap
@@ -122,6 +127,6 @@ Before new families:
 
 ## Next implementation slice
 
-- bounded off-production evidence review for the newly promotion-eligible
-  explicit docs/file packet shapes and the still-default-off self-improving /
-  learned-guidance seams
+- rollbackable production canary runtime test for the control-ready seams,
+  followed by post-canary judgment for the docs/file and native-workflow weak
+  spots

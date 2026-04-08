@@ -90,7 +90,7 @@ export type SelfImprovingCandidateDuplicateOutcome =
 
 export type SelfImprovingCandidateCaptureRolloutScope = {
   rolloutPhase: "bounded_rollout_proof_v1";
-  enablementTarget: "default-off" | "off-production";
+  enablementTarget: "default-off" | "off-production" | "production-canary";
   sourceProfile: "reduced_profile_candidate_only";
   target: "candidate_only";
   requiresProjectId: true;
@@ -121,7 +121,7 @@ type ResolvedSelfImprovingWorkflowImprovement = Awaited<
 
 function buildRolloutScope(
   allowedLessonFamilies: ReadonlyArray<"supported_lesson" | "generalized_workflow_lesson">,
-  enablementTarget: "default-off" | "off-production",
+  enablementTarget: "default-off" | "off-production" | "production-canary",
 ): SelfImprovingCandidateCaptureRolloutScope {
   return {
     rolloutPhase: "bounded_rollout_proof_v1",
@@ -656,12 +656,13 @@ export function createSelfImprovingCandidateCapturePort(params: {
     ],
   );
   const enablementTarget =
-    params.config.selfImprovingCapture?.rolloutTarget === "off-production"
-      ? "off-production"
+    params.config.selfImprovingCapture?.rolloutTarget === "off-production" ||
+    params.config.selfImprovingCapture?.rolloutTarget === "production-canary"
+      ? params.config.selfImprovingCapture.rolloutTarget
       : "default-off";
   const rolloutScope = buildRolloutScope([...allowedLessonFamilies], enablementTarget);
 
-  if (params.mode !== "candidate-only" || enablementTarget !== "off-production") {
+  if (params.mode !== "candidate-only" || enablementTarget === "default-off") {
     return {
       async capture(input) {
         return {
@@ -672,7 +673,7 @@ export function createSelfImprovingCandidateCapturePort(params: {
           reason:
             params.mode !== "candidate-only"
               ? SELF_IMPROVING_CAPTURE_MODE_DISABLED_REASON
-              : "self-improving candidate capture is only enabled for an explicit off-production rollout target",
+              : "self-improving candidate capture is only enabled for an explicit off-production or production-canary rollout target",
           rolloutScope,
           evaluation: buildEvaluation({
             outcomeCode: "capture_disabled",

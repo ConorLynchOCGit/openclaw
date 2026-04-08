@@ -24,6 +24,8 @@ batch is now also landed.
 The bounded promotion and off-production rollout-enablement batch is now also
 landed.
 
+The automated eval and production-canary controls batch is now also landed.
+
 ## What is live now
 
 Live families:
@@ -56,6 +58,10 @@ Live substrate properties:
   file-reference packet shapes
 - explicit off-production rollout-target gating for self-improving capture and
   learned-guidance advisory planning
+- automated rollout eval runner for the bounded seams and promotion-eligible
+  explicit docs/file packet shapes
+- explicit production-canary rollout-target gating for self-improving capture
+  and learned-guidance advisory planning
 - approved-over-candidate cluster preference for bounded retrieval of stronger
   explicit docs/file packet shapes
 
@@ -72,15 +78,15 @@ Current live bounds:
 - self-improving capture is candidate-only
 - self-improving capture has no direct approval authority
 - self-improving capture now has explicit allowed lesson-family rollout scope
-- self-improving capture now also requires an explicit `off-production`
-  rollout target before it activates
+- self-improving capture now also requires an explicit `off-production` or
+  `production-canary` rollout target before it activates
 - learned-guidance planning reads approved retrieval only
 - learned-guidance planning is inline-only and advisory-only
 - learned-guidance planning suppresses conflicting guidance instead of guessing
 - learned-guidance planning now has explicit allowed lesson-family scope and a
   bounded default suggestion budget
-- learned-guidance planning now also requires an explicit `off-production`
-  rollout target before it activates
+- learned-guidance planning now also requires an explicit `off-production` or
+  `production-canary` rollout target before it activates
 
 ## What is still not live by default
 
@@ -195,6 +201,36 @@ It concluded:
 - self-improving capture and learned-guidance advisory planning remain
   default-off and narrow outside explicit off-production rollout
 
+## What the automated eval and production-canary batch changed
+
+This batch landed three real slices:
+
+1. automated off-production evaluation
+2. rollbackable production-canary controls
+3. post-canary-readiness judgment
+
+It added:
+
+- `pnpm memory:rollout-eval` as a real automated bounded eval path
+- explicit `production-canary` rollout-target control for self-improving
+  capture
+- explicit `production-canary` rollout-target control for learned-guidance
+  advisory planning
+- structured automated-eval evidence for retrieval quality,
+  approved-versus-candidate ranking, duplicate / replay behavior,
+  suppression / conflict behavior, provenance, and prompt-cost estimates
+
+It concluded:
+
+- production-canary control plumbing is now real and default-off
+- the self-improving candidate-only and learned-guidance advisory-only seams
+  are control-ready for a narrow rollbackable production canary
+- automated eval still shows three weak spots:
+  docs-localization explicit ranking / metadata incompleteness,
+  file-reference under-retrieval, and native workflow guidance
+  under-retrieval
+- broad “memory is strong now” claims would still be dishonest
+
 ## What happens next
 
 The next major move is no longer another substrate refactor phase or another
@@ -202,12 +238,13 @@ enablement-plumbing slice.
 
 The next major move should be:
 
-1. bounded off-production usage and evidence review for the now
-   promotion-eligible explicit docs-localization and file-reference packet
-   shapes plus the narrow self-improving / inline-advisory seams
-2. evidence collection on usefulness, noise, conflict suppression, provenance,
-   and prompt cost
-3. only then a decision on widening or keeping the seams narrow
+1. narrow rollbackable production canary runtime testing for the control-ready
+   self-improving and learned-guidance seams
+2. explicit observation of the three current weak spots during that canary:
+   docs-localization ranking / metadata, file-reference retrieval, and native
+   workflow guidance retrieval
+3. post-canary judgment on what is ready to stay live, what still stays
+   default-off, and what must not widen yet
 4. cross-domain family expansion only after those answers are known
 
 ## What remains intentionally different

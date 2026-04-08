@@ -88,7 +88,7 @@ describe("learned-guidance advisory planning", () => {
     });
   });
 
-  it("stays disabled until an explicit off-production rollout target is set", async () => {
+  it("stays disabled until an explicit off-production or production-canary rollout target is set", async () => {
     const port = createLearnedGuidanceAdvisoryPlanningPort({
       memoryObjectQuery: {
         searchHybrid: vi.fn(),
@@ -102,7 +102,7 @@ describe("learned-guidance advisory planning", () => {
       accepted: false,
       status: "disabled",
       reason:
-        "learned guidance advisory planning is only enabled for an explicit off-production rollout target",
+        "learned guidance advisory planning is only enabled for an explicit off-production or production-canary rollout target",
       rolloutScope: {
         enablementTarget: "default-off",
       },
@@ -165,6 +165,41 @@ describe("learned-guidance advisory planning", () => {
         filteredOutByScopeCount: 0,
         suggestionCount: 1,
         selfImprovingSuggestionCount: 1,
+      },
+    });
+  });
+
+  it("supports an explicit production-canary rollout target while staying advisory-only", async () => {
+    const searchHybrid = vi.fn(async () => ({
+      accepted: true as const,
+      status: "ok" as const,
+      scope: "approved_only" as const,
+      query: "how should I commit scoped repo changes?",
+      records: [createApprovedWorkflowRecord({ provenance: "self_improving_capture" })],
+    }));
+    const port = createLearnedGuidanceAdvisoryPlanningPort({
+      memoryObjectQuery: {
+        searchHybrid,
+      } as never,
+      mode: "inline-only",
+      rolloutTarget: "production-canary",
+    });
+
+    const result = await port.plan({
+      query: "how should I commit scoped repo changes?",
+      projectId: "project-1",
+    });
+
+    expect(result).toMatchObject({
+      accepted: true,
+      status: "ok",
+      outcome: "guidance_available",
+      advisoryOnly: true,
+      rolloutScope: {
+        enablementTarget: "production-canary",
+      },
+      observability: {
+        outcomeCode: "guidance_available",
       },
     });
   });

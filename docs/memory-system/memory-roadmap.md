@@ -306,13 +306,35 @@ It concluded:
   unless an explicit `off-production` rollout target is set
 - the next missing truth is real bounded off-production usage evidence
 
-## What comes next after Phase K
+## Phase L — automated eval and production-canary controls
 
-The next honest move is bounded off-production evidence review for the narrow
-self-improving and inline-advisory seams plus the now-promotion-eligible
-explicit docs/file packet shapes.
+This phase is now landed.
 
-## Phase L — cross-domain family expansion
+It added:
+
+- `pnpm memory:rollout-eval` as a real automated bounded eval path
+- explicit `production-canary` rollout-target control for reduced-profile
+  self-improving capture
+- explicit `production-canary` rollout-target control for learned-guidance
+  advisory planning
+
+It concluded:
+
+- automated eval is now the honest pre-canary evidence path
+- the self-improving candidate-only seam and learned-guidance advisory-only
+  seam are control-ready for a narrow rollbackable production canary
+- the current automated eval still exposes three weak spots:
+  docs-localization ranking / metadata incompleteness,
+  file-reference under-retrieval,
+  and native workflow guidance under-retrieval
+
+## What comes next after Phase L
+
+The next honest move is a narrow rollbackable production canary runtime test
+for the control-ready seams, followed by post-canary judgment on the explicit
+docs/file and native-workflow weak spots.
+
+## Phase M — cross-domain family expansion
 
 Cross-domain family expansion resumes only after:
 
@@ -321,7 +343,8 @@ Cross-domain family expansion resumes only after:
 3. reduced-profile self-improving capture
 4. learned-guidance advisory planning
 5. bounded rollout proof and reevaluation for those new functional seams
-6. bounded promotion follow-through and off-production rollout evidence review
+6. bounded promotion follow-through, automated eval, and production-canary
+   evidence review
 
 Recommended first tranche:
 

@@ -152,7 +152,7 @@ This is a read-and-suggest layer only.
 - proof with explicit attribution
 - no shared background scheduling requirement in the first slice
 - explicit family-scope and suggestion-budget controls
-- explicit `off-production` rollout-target control
+- explicit `off-production` / `production-canary` rollout-target control
 - observability strong enough to judge usefulness, suppression, and prompt
   cost
 
@@ -165,8 +165,10 @@ The current accepted reevaluation result is still:
 
 - stay narrow
 - keep the planner default-off
-- require an explicit `off-production` rollout target before activation
-- gather bounded off-production evidence before widening
+- require an explicit `off-production` or `production-canary` rollout target
+  before activation
+- use automated eval first, then gather rollbackable production-canary
+  evidence before widening
 - keep relying on approved strong packet shapes instead of widening vague
   shorthand guidance automatically
 

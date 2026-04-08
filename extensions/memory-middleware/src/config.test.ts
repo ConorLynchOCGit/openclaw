@@ -150,7 +150,7 @@ describe("resolveMemoryMiddlewareConfig", () => {
         },
         learnedGuidanceAdvisoryPlanning: {
           mode: "inline-only",
-          rolloutTarget: "off-production",
+          rolloutTarget: "production-canary",
           allowedLessonFamilies: [
             "generalized_workflow_lesson",
             "supported_lesson",
@@ -167,7 +167,7 @@ describe("resolveMemoryMiddlewareConfig", () => {
       },
       learnedGuidanceAdvisoryPlanning: {
         mode: "inline-only",
-        rolloutTarget: "off-production",
+        rolloutTarget: "production-canary",
         allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
         defaultMaxSuggestions: 10,
       },

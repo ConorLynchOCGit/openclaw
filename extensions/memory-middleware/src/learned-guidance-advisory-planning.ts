@@ -37,7 +37,7 @@ export type LearnedGuidanceAdvisoryConflict = {
 
 export type LearnedGuidanceAdvisoryPlanningRolloutScope = {
   rolloutPhase: "bounded_rollout_proof_v1";
-  enablementTarget: "default-off" | "off-production";
+  enablementTarget: "default-off" | "off-production" | "production-canary";
   mode: "inline-only";
   source: "approved_workflow_guidance";
   approvedOnly: true;
@@ -118,7 +118,7 @@ const DEFAULT_LEARNED_GUIDANCE_ALLOWED_LESSON_FAMILIES = [
 ] as const satisfies Array<"supported_lesson" | "generalized_workflow_lesson">;
 
 function buildRolloutScope(params: {
-  enablementTarget: "default-off" | "off-production";
+  enablementTarget: "default-off" | "off-production" | "production-canary";
   allowedLessonFamilies: ReadonlyArray<"supported_lesson" | "generalized_workflow_lesson">;
   defaultMaxSuggestions: number;
 }): LearnedGuidanceAdvisoryPlanningRolloutScope {
@@ -391,13 +391,16 @@ function buildRejectedResult(params: {
 export function createLearnedGuidanceAdvisoryPlanningPort(params: {
   memoryObjectQuery: MemoryObjectQueryPort;
   mode: "disabled" | "inline-only";
-  rolloutTarget?: "off-production";
+  rolloutTarget?: "off-production" | "production-canary";
   allowedLessonFamilies?: ReadonlyArray<"supported_lesson" | "generalized_workflow_lesson">;
   defaultMaxSuggestions?: number;
 }): LearnedGuidanceAdvisoryPlanningPort {
   const applicationMode = getMemoryFamilyPolicy("workflow_improvement").applicationPolicy.mode;
   const rolloutScope = buildRolloutScope({
-    enablementTarget: params.rolloutTarget === "off-production" ? "off-production" : "default-off",
+    enablementTarget:
+      params.rolloutTarget === "off-production" || params.rolloutTarget === "production-canary"
+        ? params.rolloutTarget
+        : "default-off",
     allowedLessonFamilies: params.allowedLessonFamilies ?? [
       ...DEFAULT_LEARNED_GUIDANCE_ALLOWED_LESSON_FAMILIES,
     ],
@@ -405,7 +408,7 @@ export function createLearnedGuidanceAdvisoryPlanningPort(params: {
   });
   const allowedLessonFamilies = new Set(rolloutScope.allowedLessonFamilies);
 
-  if (params.mode !== "inline-only" || params.rolloutTarget !== "off-production") {
+  if (params.mode !== "inline-only" || rolloutScope.enablementTarget === "default-off") {
     return {
       async plan() {
         return {
@@ -414,7 +417,7 @@ export function createLearnedGuidanceAdvisoryPlanningPort(params: {
           reason:
             params.mode !== "inline-only"
               ? "learned guidance advisory planning mode is not enabled"
-              : "learned guidance advisory planning is only enabled for an explicit off-production rollout target",
+              : "learned guidance advisory planning is only enabled for an explicit off-production or production-canary rollout target",
           rolloutScope,
           observability: {
             outcomeCode: "planner_disabled",
@@ -429,7 +432,7 @@ export function createLearnedGuidanceAdvisoryPlanningPort(params: {
             reasons: [
               params.mode !== "inline-only"
                 ? "learned guidance advisory planning mode is not enabled"
-                : "learned guidance advisory planning is only enabled for an explicit off-production rollout target",
+                : "learned guidance advisory planning is only enabled for an explicit off-production or production-canary rollout target",
             ],
           },
         };

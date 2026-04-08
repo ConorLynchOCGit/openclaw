@@ -2,14 +2,14 @@
 
 ## Active slice
 
-Bounded off-production evidence review for the promotion-eligible explicit
-packet shapes and the still-narrow self-improving / inline-advisory seams
+Rollbackable production canary runtime testing for the bounded seams after
+automated eval and explicit canary-control proof
 
 ## Objective
 
-Use the newly landed promotion follow-through and explicit off-production
-enablement path to gather real bounded evidence before any widening or
-default-on decision.
+Use the newly landed automated eval path and explicit production-canary
+controls to decide what is honestly ready for a rollbackable production runtime
+test before any widening or default-on decision.
 
 The current accepted answer is:
 
@@ -21,19 +21,26 @@ The current accepted answer is:
 - explicit docs-localization rules and file-reference response-style packets
   now have bounded promotion follow-through evidence behind them
 - the narrow self-improving and inline-advisory seams now require an explicit
-  `off-production` rollout target before they activate at all
-- the next missing truth is real bounded off-production usage evidence, not
-  more shared-substrate design or more enablement plumbing
+  `off-production` or `production-canary` rollout target before they activate
+- the repo now has a real automated eval runner for the narrow seams and
+  promotion-eligible explicit packet shapes
+- automated eval currently exposes three honest weak spots:
+  - docs-localization explicit ranking / metadata is still incomplete in the
+    mixed-corpus eval
+  - file-reference explicit retrieval is still underpowered in that eval
+  - native workflow guidance is still under-retrieved in that eval
+- the next missing truth is a narrow rollbackable production canary runtime
+  test, not more rollout-control plumbing
 
 This slice still does not answer production enablement by default.
 
 It answers:
 
-- whether bounded off-production usage shows enough usefulness, low-enough
-  noise, low-enough prompt cost, and clean-enough provenance to justify later
-  widening
-- whether the strongest explicit docs/file packet shapes stay clean under
-  review/promotion pressure while nearby vague shorthand remains bounded
+- whether a narrow rollbackable production canary stays safe, low-authority,
+  low-noise, and easy to disable
+- whether the explicit docs/file and native-workflow weak spots observed in the
+  automated eval remain acceptable for a narrow canary or still need more
+  cleanup first
 
 The rollout still must avoid creating:
 
@@ -92,6 +99,22 @@ The rollout still must avoid creating:
 - self-improving capture and learned-guidance advisory planning still stay
   default-off and narrow outside explicit off-production rollout
 
+### Slice 6 — automated eval and production-canary controls
+
+- `pnpm memory:rollout-eval` now runs a real automated bounded eval over the
+  promotion-eligible explicit docs/file packet shapes plus the narrow
+  self-improving and learned-guidance seams
+- the eval runner now supports explicit rollout targets:
+  `off-production` and `production-canary`
+- both narrow seams now distinguish `default-off`, `off-production`, and
+  `production-canary` in rollout scope / observability instead of treating
+  mode alone as activation
+- automated eval currently reports three weak spots:
+  docs-localization explicit ranking / metadata incompleteness,
+  file-reference under-retrieval, and native workflow guidance under-retrieval
+- production-canary controls are now real and default-off, but the current
+  readiness judgment is still mixed
+
 ## What is now strong enough for bounded promotion follow-through
 
 - explicit docs-localization operating rules with clear project scope
@@ -126,10 +149,12 @@ Still intentionally disabled:
   workflow-guidance-only, candidate-only seam
 - learned-guidance advisory planning exists as a default-off, approved-only,
   inline-only workflow-guidance seam
-- both seams now require an explicit `off-production` rollout target before
-  the bounded runtime path activates
+- both seams now require an explicit `off-production` or
+  `production-canary` rollout target before the bounded runtime path activates
 - both seams now expose explicit rollout scope and structured evaluation /
   observability fields in their runtime results
+- automated eval now exists as a real repeatable proof surface:
+  `pnpm memory:rollout-eval`
 - Main-session internal reminders now execute without leaking their system
   payloads into visible Main chat
 - explicit docs/file packet shapes now have tighter semantic and retrieval
@@ -143,7 +168,11 @@ Live rollout controls now include:
 - explicit allowed lesson-family scope for learned-guidance advisory planning
 - explicit default suggestion-budget control for inline advisory planning
 - explicit `off-production` rollout-target gating for self-improving capture
+- explicit `production-canary` rollout-target gating for self-improving
+  capture
 - explicit `off-production` rollout-target gating for learned-guidance
+  advisory planning
+- explicit `production-canary` rollout-target gating for learned-guidance
   advisory planning
 
 Live rollout signals now include:
@@ -179,14 +208,17 @@ Still not next:
 
 The next main implementation sequence should now be:
 
-1. bounded off-production usage and evidence review for the promotion-eligible
-   explicit docs-localization and file-reference packet shapes plus the narrow
-   self-improving / inline-advisory seams
-2. collect real evidence on usefulness, replay noise, conflict suppression,
-   provenance clarity, and prompt cost
-3. only then decide whether any broader phrasing class, self-improving scope,
+1. narrow rollbackable production canary runtime test for the control-ready
+   self-improving and learned-guidance seams
+2. use that canary to watch the three current weak spots explicitly:
+   docs-localization ranking / metadata,
+   file-reference retrieval,
+   and native workflow guidance retrieval
+3. post-canary judgment on what is actually ready, what still stays narrow,
+   and what still should not widen
+4. only then decide whether any broader phrasing class, self-improving scope,
    or advisory scope should widen or stay narrow longer
-4. cross-domain family expansion only after those rollout answers are clear
+5. cross-domain family expansion only after those rollout answers are clear
 
 Reason:
 
@@ -194,8 +226,11 @@ Reason:
 - the strongest manual-UX-backed docs/file packet shapes now promote cleanly
   under their intended families
 - the narrow self-improving and inline-advisory seams now have explicit
-  default-off versus off-production activation boundaries
-- the remaining missing truth is still evidence under bounded off-production
-  usage, not missing architecture or missing enablement control
+  default-off versus off-production versus production-canary activation
+  boundaries
+- automated eval now exists and already surfaces the honest weak spots that
+  the canary needs to watch explicitly
+- the remaining missing truth is production-runtime behavior under a narrow
+  rollbackable canary, not missing architecture or missing enablement control
 - widening vague packet classes before evidence exists would risk promoting the
   wrong memories for the wrong reasons

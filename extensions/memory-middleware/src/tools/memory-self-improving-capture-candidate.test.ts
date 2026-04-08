@@ -26,7 +26,7 @@ function createAcceptedResult(kind: CandidateSubmissionInput["kind"]): Candidate
 
 function createRuntime(params?: {
   mode?: "disabled" | "candidate-only";
-  rolloutTarget?: "off-production" | null;
+  rolloutTarget?: "off-production" | "production-canary" | null;
   allowedLessonFamilies?: Array<"supported_lesson" | "generalized_workflow_lesson">;
   learningResult?: CandidateSubmissionResult;
   correctionResult?: CandidateSubmissionResult;
@@ -426,7 +426,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
       kind: "improvement",
       target: "candidate_only",
       reason:
-        "self-improving candidate capture is only enabled for an explicit off-production rollout target",
+        "self-improving candidate capture is only enabled for an explicit off-production or production-canary rollout target",
       rolloutScope: {
         rolloutPhase: "bounded_rollout_proof_v1",
         enablementTarget: "default-off",
@@ -443,6 +443,33 @@ describe("memory_self_improving_capture_candidate tool", () => {
         duplicateOutcome: "none",
         replayBlocked: false,
         reviewBurden: "no_new_review_required",
+      },
+    });
+
+    const canaryRuntime = createRuntime({
+      rolloutTarget: "production-canary",
+    });
+    const canaryTool = createMemorySelfImprovingCaptureCandidateTool({
+      runtime: canaryRuntime,
+    });
+
+    const canaryResult = await canaryTool.execute("call-3c", {
+      kind: "improvement",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+      projectId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(canaryResult.details).toMatchObject({
+      accepted: true,
+      status: "accepted",
+      target: "candidate_only",
+      rolloutScope: {
+        enablementTarget: "production-canary",
+        target: "candidate_only",
+      },
+      evaluation: {
+        outcomeCode: "candidate_created",
       },
     });
 

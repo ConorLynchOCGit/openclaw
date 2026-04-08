@@ -37,6 +37,7 @@ import {
   type CandidateSubmissionKind,
   createSelfImprovingCandidateCapturePort,
 } from "../../runtime-api.js";
+import { runAutomatedRolloutEval } from "../automated-rollout-eval.js";
 import { createCandidateIngressPort } from "../candidate-ingress.js";
 import { closeMemoryMiddlewarePgPools } from "../db/pg-pool.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
@@ -490,10 +491,10 @@ function createRuntime(params: {
     | "candidate-only";
   autoPromotionProfile?: "disabled" | "explicit-user-preference-v1";
   selfImprovingMode?: "disabled" | "candidate-only";
-  selfImprovingRolloutTarget?: "off-production" | null;
+  selfImprovingRolloutTarget?: "off-production" | "production-canary" | null;
   selfImprovingAllowedLessonFamilies?: Array<"supported_lesson" | "generalized_workflow_lesson">;
   learnedGuidanceMode?: "disabled" | "inline-only";
-  learnedGuidanceRolloutTarget?: "off-production" | null;
+  learnedGuidanceRolloutTarget?: "off-production" | "production-canary" | null;
   learnedGuidanceAllowedLessonFamilies?: Array<"supported_lesson" | "generalized_workflow_lesson">;
   learnedGuidanceDefaultMaxSuggestions?: number;
   queryMode?: "disabled" | "read-only" | "candidate-only";
@@ -1683,7 +1684,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
-  it("keeps self-improving capture default-off until an explicit off-production rollout target is set", async () => {
+  it("keeps self-improving capture default-off until an explicit off-production or production-canary rollout target is set", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
@@ -1715,7 +1716,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       kind: "improvement",
       target: "candidate_only",
       reason:
-        "self-improving candidate capture is only enabled for an explicit off-production rollout target",
+        "self-improving candidate capture is only enabled for an explicit off-production or production-canary rollout target",
       rolloutScope: {
         rolloutPhase: "bounded_rollout_proof_v1",
         enablementTarget: "default-off",
@@ -1732,6 +1733,43 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         duplicateOutcome: "none",
         replayBlocked: false,
         reviewBurden: "no_new_review_required",
+      },
+    });
+  });
+
+  it("accepts self-improving capture for an explicit production-canary rollout target", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      selfImprovingMode: "candidate-only",
+      selfImprovingRolloutTarget: "production-canary",
+    });
+    const tool = createMemorySelfImprovingCaptureCandidateTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+
+    const result = await tool.execute("call-self-3c", {
+      kind: "improvement",
+      content:
+        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+      projectId: seeded.projectId,
+    });
+
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "accepted",
+      target: "candidate_only",
+      rolloutScope: {
+        enablementTarget: "production-canary",
+        target: "candidate_only",
+      },
+      evaluation: {
+        outcomeCode: "candidate_created",
       },
     });
   });
@@ -21072,6 +21110,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
       mode: "candidate-only",
+      autoPromotionProfile: "explicit-user-preference-v1",
       selfImprovingMode: "candidate-only",
       learnedGuidanceMode: "inline-only",
     });
@@ -21499,6 +21538,75 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     }
   });
 
+  it("runs the automated off-production eval path end to end and emits canary-judgment evidence", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      selfImprovingMode: "candidate-only",
+      learnedGuidanceMode: "inline-only",
+    });
+
+    const report = await runAutomatedRolloutEval({
+      runtime,
+      connectionString: dbEnvironment.connectionString,
+      context: seeded,
+      schema: "memory_middleware",
+    });
+
+    expect(report.summary).toEqual({
+      passed: true,
+      docsLocalizationRankingPassed: false,
+      fileReferenceRankingPassed: false,
+      selfImprovingCandidateOnlyPassed: true,
+      learnedGuidanceNativePassed: false,
+      learnedGuidanceSelfImprovingPassed: true,
+      learnedGuidanceConflictPassed: true,
+      remainingWeakSpots: [
+        "docs_localization_explicit_ranking_or_metadata_incomplete",
+        "file_reference_explicit_under_retrieved",
+        "native_workflow_guidance_under_retrieved",
+      ],
+    });
+    expect(report.explicitDocsLocalization).toMatchObject({
+      strongerApprovedRankedFirst: true,
+      approvedReviewState: "approved",
+      weakerReviewState: "candidate",
+    });
+    expect(report.explicitFileReference).toMatchObject({
+      strongerApprovedRankedFirst: false,
+      approvedReviewState: "approved",
+      weakerReviewState: "candidate",
+    });
+    expect(report.selfImprovingCandidateOnly).toMatchObject({
+      initialOutcomeCode: "candidate_created",
+      duplicateReplayAccepted: false,
+      duplicateReplayStatus: "blocked",
+      duplicateReplayOutcomeCode: "approved_memory_already_exists",
+      replayBlocked: false,
+    });
+    expect(report.learnedGuidance.nativeWorkflow).toMatchObject({
+      outcome: "no_guidance",
+      advisoryOnly: true,
+      provenances: [],
+      toolKeys: [],
+    });
+    expect(report.learnedGuidance.selfImprovingWorkflow).toMatchObject({
+      outcome: "guidance_available",
+      advisoryOnly: true,
+      provenances: expect.arrayContaining(["self_improving_capture"]),
+      toolKeys: expect.arrayContaining([
+        REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedToolKey,
+      ]),
+    });
+    expect(report.learnedGuidance.conflictingWorkflowGuidance).toMatchObject({
+      outcome: "conflict_suppressed",
+      advisoryOnly: true,
+      suppressedConflictCount: 1,
+      subjectKeys: ["release-proof-notes"],
+    });
+  });
+
   it("surfaces real workspace workflow packets through inline advisory planning with provenance intact", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
@@ -21833,7 +21941,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
-  it("keeps learned-guidance planning default-off until an explicit off-production rollout target is set", async () => {
+  it("keeps learned-guidance planning default-off until an explicit off-production or production-canary rollout target is set", async () => {
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
       mode: "candidate-only",
@@ -21853,7 +21961,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       accepted: false,
       status: "disabled",
       reason:
-        "learned guidance advisory planning is only enabled for an explicit off-production rollout target",
+        "learned guidance advisory planning is only enabled for an explicit off-production or production-canary rollout target",
       rolloutScope: {
         rolloutPhase: "bounded_rollout_proof_v1",
         enablementTarget: "default-off",
@@ -21876,8 +21984,67 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         selfImprovingSuggestionCount: 0,
         estimatedPromptTokens: 0,
         reasons: [
-          "learned guidance advisory planning is only enabled for an explicit off-production rollout target",
+          "learned guidance advisory planning is only enabled for an explicit off-production or production-canary rollout target",
         ],
+      },
+    });
+  });
+
+  it("accepts learned-guidance planning for an explicit production-canary rollout target", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+      learnedGuidanceMode: "inline-only",
+      learnedGuidanceRolloutTarget: "production-canary",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const promoteTool = createCandidatePromoteMemoryTool({
+      runtime,
+      context: {
+        agentId: seeded.agentId,
+      },
+    });
+    const learnedGuidanceTool = createMemoryLearnedGuidancePlanTool({ runtime });
+
+    await submitAndApproveWorkspacePacket({
+      submitTool,
+      reviewTool,
+      promoteTool,
+      callPrefix: "call-learned-guidance-canary",
+      kind: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.submissionKind,
+      content: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.content,
+      projectId: seeded.projectId,
+      rationale: "Approve the native workflow packet for production-canary learned-guidance proof.",
+    });
+
+    const result = await learnedGuidanceTool.execute("call-learned-guidance-5c", {
+      query: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.advisoryQuery,
+      projectId: seeded.projectId,
+      maxSuggestions: 2,
+    });
+
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "ok",
+      advisoryOnly: true,
+      rolloutScope: {
+        enablementTarget: "production-canary",
+      },
+      observability: {
+        outcomeCode: "guidance_available",
       },
     });
   });

@@ -45,7 +45,7 @@ export type MemoryMiddlewareAutoPromotionConfig = {
   allowedAgents: string[];
 };
 
-export type MemoryMiddlewareRolloutTarget = "off-production";
+export type MemoryMiddlewareRolloutTarget = "off-production" | "production-canary";
 
 export type MemoryMiddlewareSelfImprovingCaptureConfig = {
   mode: "disabled" | "candidate-only";
@@ -206,7 +206,7 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
           mode: { type: "string", enum: ["disabled", "candidate-only"] },
           rolloutTarget: {
             type: "string",
-            enum: ["off-production"],
+            enum: ["off-production", "production-canary"],
           },
           allowedLessonFamilies: {
             type: "array",
@@ -224,7 +224,7 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
           mode: { type: "string", enum: ["disabled", "inline-only"] },
           rolloutTarget: {
             type: "string",
-            enum: ["off-production"],
+            enum: ["off-production", "production-canary"],
           },
           allowedLessonFamilies: {
             type: "array",
@@ -249,7 +249,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function normalizeRolloutTarget(value: unknown): MemoryMiddlewareRolloutTarget | undefined {
-  return value === "off-production" ? "off-production" : undefined;
+  return value === "off-production" || value === "production-canary" ? value : undefined;
 }
 
 export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareConfig {

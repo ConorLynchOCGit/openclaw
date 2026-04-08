@@ -27,6 +27,8 @@ landed.
 The bounded promotion and off-production rollout-enablement batch is now also
 landed.
 
+The automated eval and production-canary controls batch is now also landed.
+
 The next honest phase is therefore no longer:
 
 - another core flattening slice
@@ -35,9 +37,9 @@ The next honest phase is therefore no longer:
 
 The next honest phase is:
 
-- bounded off-production evidence review for the strongest explicit
-  promotion-eligible packet shapes and the newly explicit default-off
-  self-improving / advisory seams
+- narrow rollbackable production canary runtime testing for the control-ready
+  self-improving / advisory seams, using the automated eval results as the
+  explicit watchlist
 
 ## Completed order so far
 
@@ -64,16 +66,16 @@ Historical completed order:
 19. bounded rollout proof and reevaluation batch v1
 20. Main-session reminder isolation and memory consolidation batch v1
 21. bounded promotion and off-production rollout batch v1
+22. automated eval and production-canary controls batch v1
 
 ## Recommended next order
 
 ### Next major rollout work
 
-1. bounded off-production evidence review for the strongest explicit
-   docs-localization and file-reference packet shapes plus the narrow
+1. narrow rollbackable production canary runtime test for the control-ready
    self-improving and learned-guidance seams
-2. widen either seam or any broader phrasing class only if evidence justifies
-   it
+2. post-canary judgment on the docs/file/native-workflow weak spots plus any
+   widening decision
 
 ### Later phases
 
@@ -94,9 +96,12 @@ Historical completed order:
 - the strongest explicit docs/file packet shapes now promote cleanly and rank
   coherently against weaker nearby variants
 - the newly landed functional surfaces are intentionally default-off and
-  bounded, with explicit `off-production` rollout-target gating
-- the remaining question is real rollout behavior and metrics under live usage,
-  not architecture
+  bounded, with explicit `off-production` versus `production-canary`
+  rollout-target gating
+- automated eval is now real and already shows the weak spots that canary
+  testing must watch
+- the remaining question is production-runtime behavior and metrics under a
+  narrow canary, not architecture
 - widening vague phrasing classes before off-production evidence exists would
   risk recreating hidden policy paths
 

@@ -216,7 +216,7 @@ Current accepted framing:
 - vague shorthand docs/file variants still stay candidate-heavy until
   off-production evidence says otherwise
 
-## 2026-04 — off-production rollout must stay an explicit target
+## 2026-04 — rollout targets must stay explicit and separate
 
 Current accepted framing:
 
@@ -224,10 +224,35 @@ Current accepted framing:
   itself to activate the seam
 - learned-guidance advisory planning staying in `inline-only` mode is not
   enough by itself to activate the seam
-- both seams now require an explicit `off-production` rollout target before
-  their bounded runtime paths activate
-- default-off remains the honest default posture until real off-production
-  evidence exists
+- both seams now require an explicit `off-production` or
+  `production-canary` rollout target before their bounded runtime paths
+  activate
+- default-off remains the honest default posture until real automated-eval and
+  canary evidence exists
+
+## 2026-04 — automated eval replaces assumed manual non-production UX
+
+Current accepted framing:
+
+- manual non-production UX is not a hard prerequisite for the next rollout
+  step
+- the repo now has a real automated eval runner instead:
+  `pnpm memory:rollout-eval`
+- automated eval is enough to decide whether canary plumbing is ready and
+  which weak spots still need explicit watch items
+
+## 2026-04 — production canary can be control-ready before all packet lanes are strong
+
+Current accepted framing:
+
+- the production-canary control path can be real and still default-off
+- the self-improving candidate-only seam and learned-guidance advisory-only
+  seam can be control-ready without claiming broad semantic robustness
+- the current automated eval already shows three weak spots that remain honest
+  reasons to keep the canary narrow:
+  docs-localization ranking / metadata incompleteness,
+  file-reference under-retrieval,
+  and native workflow guidance under-retrieval
 
 ## 2026-04 — should-fix-soon cleanup is real but secondary
 

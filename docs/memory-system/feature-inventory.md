@@ -113,8 +113,12 @@ Backlog / flattening debt:
 - explicit docs-localization and file-reference packet shapes are now
   promotion-eligible under bounded follow-through
 - reduced-profile self-improving capture and learned-guidance advisory
-  planning now require an explicit `off-production` rollout target before
-  their bounded runtime paths activate
+  planning now require an explicit `off-production` or
+  `production-canary` rollout target before their bounded runtime paths
+  activate
+- `pnpm memory:rollout-eval` now exists as a real automated bounded eval path
+- explicit `production-canary` rollout-target controls now exist for the
+  narrow self-improving and learned-guidance seams
 - vague shorthand docs/file phrasing still remains intentionally weaker and is
   not accepted as proof that those broader phrasings should auto-promote
 
@@ -126,8 +130,7 @@ Still not live:
 - production-enabled learned-guidance advisory planning
 - new cross-domain families
 - broad automatic promotion for vague shorthand docs/file packet phrasing
-- bounded off-production evidence review results strong enough to justify
-  widening
+- production-canary runtime evidence strong enough to justify widening
 
 ## Read next
 
