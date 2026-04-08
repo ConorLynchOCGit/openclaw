@@ -30,6 +30,11 @@ The Main advisory-routing diagnosis batch is now also landed.
 
 The Main memory-tool bypass diagnosis batch is now also landed.
 
+The multi-memory per-turn capture and rigid-replacement architecture-spec batch
+is now also landed.
+
+The canonical-core tranche of rigid-surface replacement is now also landed.
+
 ## What is live now
 
 Live families:
@@ -73,6 +78,12 @@ Live substrate properties:
   from direct workflow lookup asks
 - Main-only OpenAI/Codex tool-choice steering for strong workflow-preflight
   and direct repo-lookup prompt classes
+- bounded multi-memory capture from a single long user turn when multiple
+  distinct strong candidates are present
+- canonical memory record/envelope types on the public plugin-SDK surface
+- canonical facet/metadata contracts for the 4-kind target model
+- transitional family-policy builders that emit canonical-core-compatible
+  records without replacing the active family runtime yet
 
 ## What is live but still bounded
 
@@ -106,6 +117,51 @@ Still not live by default:
 - broader self-improving family coverage
 - learned-guidance planning that feeds proactive execution or scheduling
 - new cross-domain memory families
+- the canonical 4-kind storage model migration
+- generic flexible replacement of the current rigid family-first seams
+
+## What the multi-memory and architecture-spec batch changed
+
+This batch landed three real outcomes:
+
+1. bounded multi-memory capture on the current transcript auto-capture path
+2. a mandatory roadmap phase for rigid-surface replacement
+3. a canonical 4-kind migration spec grounded in current repo seams
+
+It concluded:
+
+- one long turn can now yield multiple bounded distinct candidates on the
+  current system
+- the current family-heavy architecture is explicitly transitional
+- the next major program is no longer rollout proof for current behavior; it
+  is rigid-surface replacement and canonicalization around:
+  - `User`
+  - `Feedback`
+  - `Project`
+  - `Reference`
+
+## What the canonical-core tranche changed
+
+This tranche and the immediate follow-through slices have now landed:
+
+1. canonical memory record/envelope contracts on the public SDK surface
+2. a generic facet/metadata model for preserving current distinctions without
+   keeping them all as top-level kinds
+3. compatibility builders that let current family-owned seams produce
+   canonical-core-compatible records
+4. generic canonical ingestion candidate contracts
+5. resolver-backed ordinary-turn capture emission of canonical candidates
+6. generic canonical retrieval/ranking plan contracts with compatibility-driven
+   population from the current retrieval hint/control layer
+
+It concluded:
+
+- the canonical 4-kind target is now a real code seam, not just a doc plan
+- the current family-heavy runtime remains active, but real ingestion and
+  retrieval seams now have forward adapter paths into the canonical substrate
+- the next honest migration slice is learned-guidance/hybrid/runtime cutover
+  onto canonical retrieval plans and canonical candidates, plus migration of
+  the remaining family-native capture/retrieval paths
 
 ## What the functional batch changed
 

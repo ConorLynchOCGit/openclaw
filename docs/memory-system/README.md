@@ -48,6 +48,7 @@ Then consult as needed:
 - `specs/messy-language-eval.md`
 - `specs/governance-surface-productionization.md`
 - `specs/implementation-sequencing.md`
+- `specs/canonical-four-kind-memory-migration.md`
 - `specs/premortem.md`
 - `specs/architecture-fit-review.md`
 - `PRODUCTION_ADOPTION_PLAN.md`
@@ -104,14 +105,55 @@ Includes:
 Stores durable, typed memory and learned behavior.
 Includes:
 
-- user memory
-- feedback/corrections
-- project memory
-- reference memory
-- procedures
-- policies
-- skill candidates
-- vetted/installable skills
+- canonical durable memory kinds:
+  - user memory
+  - feedback memory
+  - project memory
+  - reference memory
+- derived or compatibility-owned surfaces:
+  - procedures
+  - policies
+  - skill candidates
+  - vetted/installable skills
+
+## Current transition posture
+
+The current live implementation still uses several family-heavy bounded
+surfaces.
+
+That family-heavy shape is now explicitly transitional.
+
+The target architecture is:
+
+- 4 canonical durable memory kinds:
+  - `User`
+  - `Feedback`
+  - `Project`
+  - `Reference`
+- family-specific behavior preserved only as:
+  - metadata and facets
+  - derived views
+  - retrieval/advisory projections
+  - compatibility adapters during migration
+
+The canonical-core tranche is now also landed in repo code:
+
+- canonical memory record/envelope types now live on the public plugin SDK
+  surface
+- canonical facet/metadata scaffolding now exists in code
+- current family policy can now emit canonical-core-compatible records through
+  explicit compatibility builders
+- canonical ingestion candidate contracts now exist on the public plugin SDK
+  surface
+- the ordinary-turn resolver-backed capture path now emits canonical candidates
+  through explicit compatibility adapters
+- canonical retrieval-plan contracts now exist on the public plugin SDK
+  surface, with the current retrieval hint/control plane now populating them as
+  a transitional adapter layer
+
+Multi-memory capture is now part of the current bounded implementation, but the
+next major program is replacing the remaining rigid family-first seams with
+generic adaptable ones.
 
 ## Rules of engagement
 

@@ -1,3 +1,15 @@
+import type {
+  CanonicalMemoryKind,
+  CanonicalMemoryScope,
+} from "openclaw/plugin-sdk/memory-canonical-core";
+import {
+  createCanonicalMemoryRetrievalPlan,
+  type CanonicalMemoryRetrievalFacetFilter,
+  type CanonicalMemoryRetrievalPlan,
+  type CanonicalMemorySemanticFallbackStrategy,
+} from "openclaw/plugin-sdk/memory-canonical-retrieval";
+import type { MemoryObjectSearchHybridInput, MemoryObjectSearchScope } from "./db/runtime.js";
+
 export type ResponseStyleQueryHint = {
   template:
     | "responses_concise"
@@ -54,6 +66,172 @@ export type ProjectMemoryIntentFamily = "" | "project_fact" | "project_rule" | "
 
 export function normalizeRetrievalQuery(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normalizeMemoryObjectScope(
+  scope: MemoryObjectSearchScope | undefined,
+): MemoryObjectSearchScope {
+  return scope ?? "approved_only";
+}
+
+function scopeIncludesCandidates(scope: MemoryObjectSearchScope): boolean {
+  return scope === "include_candidates" || scope === "include_candidates_and_validated_procedures";
+}
+
+function scopeIncludesValidatedProcedures(scope: MemoryObjectSearchScope): boolean {
+  return (
+    scope === "include_validated_procedures" ||
+    scope === "include_candidates_and_validated_procedures"
+  );
+}
+
+function mapHybridKindToCanonicalKinds(
+  kind: MemoryObjectSearchHybridInput["kind"],
+): readonly CanonicalMemoryKind[] {
+  switch (kind) {
+    case "feedback":
+      return ["user", "feedback"];
+    case "project":
+      return ["project", "feedback", "reference"];
+    case "procedure":
+      return ["reference", "feedback"];
+    default:
+      return ["user", "feedback", "project", "reference"];
+  }
+}
+
+function mapHybridScopeToCanonicalScope(
+  kind: MemoryObjectSearchHybridInput["kind"],
+): CanonicalMemoryScope {
+  return kind === "project" ? { kind: "mixed" } : { kind: "global" };
+}
+
+function buildCanonicalFacetFilters(params: {
+  responseStyleHint: ResponseStyleQueryHint | null;
+  projectFactHint: ProjectFactQueryHint | null;
+  workflowImprovementHint: WorkflowImprovementQueryHint | null;
+  projectMemoryIntentFamily: ProjectMemoryIntentFamily;
+  generalizedWorkflowPatternHint: GeneralizedWorkflowGuidancePatternHint;
+  procedureHint: RecurringProcedureQueryHint | null;
+}): CanonicalMemoryRetrievalFacetFilter[] {
+  const filters: CanonicalMemoryRetrievalFacetFilter[] = [];
+  if (params.responseStyleHint) {
+    filters.push({
+      key: "responseStyleTemplate",
+      operator: "equals",
+      value: params.responseStyleHint.template,
+    });
+    if (params.responseStyleHint.normalizedSubject) {
+      filters.push({
+        key: "normalizedSubject",
+        operator: "equals",
+        value: params.responseStyleHint.normalizedSubject,
+      });
+    }
+  }
+  if (params.projectFactHint) {
+    filters.push({
+      key: "fieldKey",
+      operator: "equals",
+      value: params.projectFactHint.fieldKey,
+    });
+  }
+  if (params.workflowImprovementHint) {
+    filters.push({
+      key: "lessonKey",
+      operator: "equals",
+      value: params.workflowImprovementHint.lessonKey,
+    });
+  }
+  if (params.generalizedWorkflowPatternHint) {
+    filters.push({
+      key: "guidancePattern",
+      operator: "equals",
+      value: params.generalizedWorkflowPatternHint,
+    });
+  }
+  if (params.projectMemoryIntentFamily) {
+    filters.push({
+      key: "projectIntentFamily",
+      operator: "equals",
+      value: params.projectMemoryIntentFamily,
+    });
+  }
+  if (params.procedureHint?.procedureKey) {
+    filters.push({
+      key: "procedureKey",
+      operator: "equals",
+      value: params.procedureHint.procedureKey,
+    });
+  }
+  if (params.procedureHint?.normalizedSubject) {
+    filters.push({
+      key: "normalizedSubject",
+      operator: "equals",
+      value: params.procedureHint.normalizedSubject,
+    });
+  }
+  return filters;
+}
+
+function buildCanonicalDerivedViews(params: {
+  kind: MemoryObjectSearchHybridInput["kind"];
+  responseStyleHint: ResponseStyleQueryHint | null;
+  projectFactHint: ProjectFactQueryHint | null;
+  workflowImprovementHint: WorkflowImprovementQueryHint | null;
+  projectMemoryIntentFamily: ProjectMemoryIntentFamily;
+  procedureHint: RecurringProcedureQueryHint | null;
+}): string[] {
+  const views: string[] = [];
+  if (params.responseStyleHint) {
+    views.push("response_style");
+  }
+  if (params.projectFactHint || params.projectMemoryIntentFamily === "project_fact") {
+    views.push("project_fact");
+  }
+  if (params.workflowImprovementHint) {
+    views.push("workflow_guidance");
+  }
+  if (params.projectMemoryIntentFamily === "project_rule") {
+    views.push("project_rule");
+  }
+  if (params.projectMemoryIntentFamily === "unmet_need") {
+    views.push("unmet_need");
+  }
+  if (params.procedureHint) {
+    views.push("procedure");
+  }
+  if (views.length === 0 && params.kind === "feedback") {
+    views.push("response_style");
+  }
+  return views;
+}
+
+function buildCanonicalSemanticFallbackStrategies(params: {
+  kind: MemoryObjectSearchHybridInput["kind"];
+  scope: MemoryObjectSearchScope;
+  workflowImprovementHint: WorkflowImprovementQueryHint | null;
+}): readonly CanonicalMemorySemanticFallbackStrategy[] {
+  if (params.kind === "procedure" && scopeIncludesValidatedProcedures(params.scope)) {
+    return ["procedure"];
+  }
+  if (params.kind !== "project" || scopeIncludesCandidates(params.scope)) {
+    return [];
+  }
+  switch (params.workflowImprovementHint?.lessonKey) {
+    case "python_command_unavailable":
+    case "gateway_tools_invoke_forbidden":
+      return ["environment_constraint"];
+    case "vitest_wrapper_required":
+    case "scripts_committer_required":
+    case "git_stash_unsafe":
+      return ["workflow_tool_gotcha"];
+    case "openai_embeddings_api_key_required":
+    case "anthropic_context1m_eligible_credential_required":
+      return ["api_workaround"];
+    default:
+      return ["environment_constraint", "workflow_tool_gotcha", "api_workaround"];
+  }
 }
 
 export function inferSupportedRecurringProcedureKeyFromSubject(
@@ -452,4 +630,87 @@ export function inferWorkflowImprovementQueryHint(
     return { lessonKey: "anthropic_context1m_eligible_credential_required" };
   }
   return null;
+}
+
+export function buildCanonicalMemoryRetrievalPlan(params: {
+  input: Pick<MemoryObjectSearchHybridInput, "query" | "kind" | "scope">;
+}): CanonicalMemoryRetrievalPlan {
+  const scope = normalizeMemoryObjectScope(params.input.scope);
+  const normalizedQuery = normalizeRetrievalQuery(params.input.query);
+  const responseStyleHint =
+    params.input.kind === "project" || params.input.kind === "procedure"
+      ? null
+      : inferResponseStyleQueryHint(params.input.query);
+  const projectFactHint =
+    params.input.kind === "project" ? inferProjectFactQueryHint(params.input.query) : null;
+  const workflowImprovementHint =
+    params.input.kind === "project" ? inferWorkflowImprovementQueryHint(params.input.query) : null;
+  const projectMemoryIntentFamily =
+    params.input.kind === "project" ? inferProjectMemoryIntentFamily(params.input.query) : "";
+  const generalizedWorkflowPatternHint =
+    params.input.kind === "project"
+      ? inferGeneralizedWorkflowGuidancePatternHint(params.input.query)
+      : "";
+  const procedureHint = inferRecurringProcedureQueryHint(params.input.query);
+  const facetFilters = buildCanonicalFacetFilters({
+    responseStyleHint,
+    projectFactHint,
+    workflowImprovementHint,
+    projectMemoryIntentFamily,
+    generalizedWorkflowPatternHint,
+    procedureHint,
+  });
+  const derivedViews = buildCanonicalDerivedViews({
+    kind: params.input.kind,
+    responseStyleHint,
+    projectFactHint,
+    workflowImprovementHint,
+    projectMemoryIntentFamily,
+    procedureHint,
+  });
+
+  return createCanonicalMemoryRetrievalPlan({
+    query: {
+      rawQuery: params.input.query,
+      normalizedQuery,
+      requestedKinds: mapHybridKindToCanonicalKinds(params.input.kind),
+      scope: mapHybridScopeToCanonicalScope(params.input.kind),
+      derivedViews,
+      facetFilters,
+      compatibility: {
+        ...(params.input.kind ? { legacyKind: params.input.kind } : {}),
+        legacyScope: scope,
+        metadata: {
+          ...(responseStyleHint?.template
+            ? { responseStyleTemplate: responseStyleHint.template }
+            : {}),
+          ...(responseStyleHint?.normalizedSubject
+            ? { responseStyleNormalizedSubject: responseStyleHint.normalizedSubject }
+            : {}),
+          ...(projectFactHint?.fieldKey ? { projectFactFieldKey: projectFactHint.fieldKey } : {}),
+          ...(workflowImprovementHint?.lessonKey
+            ? { workflowLessonKey: workflowImprovementHint.lessonKey }
+            : {}),
+          ...(projectMemoryIntentFamily ? { projectMemoryIntentFamily } : {}),
+          ...(generalizedWorkflowPatternHint ? { generalizedWorkflowPatternHint } : {}),
+          ...(procedureHint?.procedureKey ? { procedureKey: procedureHint.procedureKey } : {}),
+          ...(procedureHint?.normalizedSubject
+            ? { procedureSubject: procedureHint.normalizedSubject }
+            : {}),
+        },
+      },
+    },
+    ranking: {
+      preferValidationStatuses: scopeIncludesCandidates(scope)
+        ? ["validated", "approved", "pending_confirmation", "observed"]
+        : ["validated", "approved"],
+      boostFacetFilters: facetFilters,
+      preferApprovedWithinSubjectClusters: scopeIncludesCandidates(scope),
+      semanticFallbackStrategies: buildCanonicalSemanticFallbackStrategies({
+        kind: params.input.kind,
+        scope,
+        workflowImprovementHint,
+      }),
+    },
+  });
 }

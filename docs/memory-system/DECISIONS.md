@@ -6,6 +6,50 @@ This file records the currently active architecture decisions that govern the
 memory roadmap after flattening batch v6, substrate support batch v1, and the
 accepted post-v3 architecture review.
 
+## 2026-04 — multi-memory capture is now required baseline behavior
+
+Current accepted framing:
+
+- one long turn may yield multiple distinct bounded candidates
+- first-hit single-candidate transcript capture is no longer acceptable as the
+  steady-state ingestion posture
+- duplicate suppression and review safety still remain mandatory
+- per-turn capture remains intentionally capped
+
+## 2026-04 — the current family-heavy memory architecture is transitional
+
+Current accepted framing:
+
+- the six landed families were useful for getting bounded behavior live
+- they are not the final durable ontology
+- current family-specific tools, lesson keys, and retrieval hints should be
+  treated as transitional adapters or derived views where possible
+
+## 2026-04 — canonical storage converges on four kinds
+
+Current accepted framing:
+
+- the target durable storage model is:
+  - `User`
+  - `Feedback`
+  - `Project`
+  - `Reference`
+- specialized workflow/style/procedure/rule surfaces should survive as facets,
+  metadata, and derived planners rather than permanent top-level kinds
+- migration should be adapter-first and rollbackable
+
+## 2026-04 — canonical core lands before generic ingestion and retrieval cutover
+
+Current accepted framing:
+
+- canonicalization does not start with deleting family modules
+- it starts with a shared canonical record/envelope, shared facet model, and
+  explicit compatibility builders
+- current family-owned seams may remain active temporarily, but they should now
+  target the canonical core instead of inventing a new local substrate again
+- generic ingestion and retrieval should build on that canonical core rather
+  than inventing a second compatibility format
+
 ## 2026-04 — practical parity was enough to enter flattening, not enough to move on
 
 Practical parity across the six landed families was accepted as sufficient to

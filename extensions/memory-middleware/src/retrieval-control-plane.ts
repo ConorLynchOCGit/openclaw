@@ -1,3 +1,4 @@
+import type { CanonicalMemoryRetrievalPlan } from "openclaw/plugin-sdk/memory-canonical-retrieval";
 import type { OpenClawPluginToolContext } from "../api.js";
 import type {
   MemoryObjectSearchHybridInput,
@@ -7,6 +8,7 @@ import type {
 } from "./db/runtime.js";
 import { getMemoryFamilyDefinition, type MemoryFamilyId } from "./memory-family-registry.js";
 import {
+  buildCanonicalMemoryRetrievalPlan,
   inferGeneralizedWorkflowGuidancePatternHint,
   inferProjectFactQueryHint,
   inferProjectMemoryIntentFamily,
@@ -36,6 +38,7 @@ export type MemoryObjectRetrievalControlDecision = {
   scope: MemoryObjectSearchScope;
   kind?: MemoryObjectSearchHybridInput["kind"];
   normalizedQuery: string;
+  canonicalPlan: CanonicalMemoryRetrievalPlan;
   responseStyleHint: ResponseStyleQueryHint | null;
   projectFactHint: ProjectFactQueryHint | null;
   workflowImprovementHint: WorkflowImprovementQueryHint | null;
@@ -152,6 +155,13 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
   input: MemoryObjectSearchHybridInput;
 }): MemoryObjectRetrievalControlDecision {
   const scope = normalizeMemoryObjectScope(params.input.scope);
+  const canonicalPlan = buildCanonicalMemoryRetrievalPlan({
+    input: {
+      query: params.input.query,
+      kind: params.input.kind,
+      scope,
+    },
+  });
   const recurringProcedureDefinition = getMemoryFamilyDefinition("recurring_procedure");
   const workflowImprovementDefinition = getMemoryFamilyDefinition("workflow_improvement");
   const responseStyleHint =
@@ -170,11 +180,14 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
       : "";
   const procedureHint = inferRecurringProcedureQueryHint(params.input.query);
 
+  const preferredStrategies = canonicalPlan.ranking
+    .semanticFallbackStrategies as readonly SemanticFallbackFamily[];
   const semanticFallbackFamilies: SemanticFallbackFamily[] = [];
   if (
     recurringProcedureDefinition.semanticRoutingPolicy.mode === "validated_procedure_only" &&
     params.input.kind === "procedure" &&
-    scopeIncludesValidatedProcedures(scope)
+    scopeIncludesValidatedProcedures(scope) &&
+    preferredStrategies.includes("procedure")
   ) {
     semanticFallbackFamilies.push("procedure");
   }
@@ -184,8 +197,11 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
     !scopeIncludesCandidates(scope) &&
     !scopeIncludesValidatedProcedures(scope)
   ) {
+    const workflowStrategies = preferredStrategies.filter((strategy) => strategy !== "procedure");
     semanticFallbackFamilies.push(
-      ...resolveWorkflowSemanticFallbackFamilies(workflowImprovementHint),
+      ...(workflowStrategies.length > 0
+        ? workflowStrategies
+        : resolveWorkflowSemanticFallbackFamilies(workflowImprovementHint)),
     );
   }
 
@@ -193,6 +209,7 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
     scope,
     kind: params.input.kind,
     normalizedQuery: normalizeRetrievalQuery(params.input.query),
+    canonicalPlan,
     responseStyleHint,
     projectFactHint,
     workflowImprovementHint,

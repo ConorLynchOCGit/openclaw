@@ -629,6 +629,18 @@
       "types": "./dist/plugin-sdk/memory-core-host-runtime-files.d.ts",
       "default": "./dist/plugin-sdk/memory-core-host-runtime-files.js"
     },
+    "./plugin-sdk/memory-canonical-core": {
+      "types": "./dist/plugin-sdk/memory-canonical-core.d.ts",
+      "default": "./dist/plugin-sdk/memory-canonical-core.js"
+    },
+    "./plugin-sdk/memory-canonical-ingestion": {
+      "types": "./dist/plugin-sdk/memory-canonical-ingestion.d.ts",
+      "default": "./dist/plugin-sdk/memory-canonical-ingestion.js"
+    },
+    "./plugin-sdk/memory-canonical-retrieval": {
+      "types": "./dist/plugin-sdk/memory-canonical-retrieval.d.ts",
+      "default": "./dist/plugin-sdk/memory-canonical-retrieval.js"
+    },
     "./plugin-sdk/memory-family-policy": {
       "types": "./dist/plugin-sdk/memory-family-policy.d.ts",
       "default": "./dist/plugin-sdk/memory-family-policy.js"

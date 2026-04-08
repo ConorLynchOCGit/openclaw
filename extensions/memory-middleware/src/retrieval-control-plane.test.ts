@@ -18,6 +18,15 @@ describe("retrieval control plane", () => {
     ).toMatchObject({
       kind: "procedure",
       scope: "include_validated_procedures",
+      canonicalPlan: {
+        query: {
+          requestedKinds: ["reference", "feedback"],
+          derivedViews: expect.arrayContaining(["procedure"]),
+        },
+        ranking: {
+          semanticFallbackStrategies: expect.arrayContaining(["procedure"]),
+        },
+      },
       procedureHint: {
         procedureKey: "deploy_checklist",
       },
@@ -35,6 +44,14 @@ describe("retrieval control plane", () => {
         },
       }),
     ).toMatchObject({
+      canonicalPlan: {
+        query: {
+          derivedViews: expect.arrayContaining(["workflow_guidance"]),
+        },
+        ranking: {
+          semanticFallbackStrategies: expect.arrayContaining(["environment_constraint"]),
+        },
+      },
       workflowImprovementHint: {
         lessonKey: "python_command_unavailable",
       },
@@ -50,6 +67,14 @@ describe("retrieval control plane", () => {
         },
       }),
     ).toMatchObject({
+      canonicalPlan: {
+        query: {
+          derivedViews: expect.arrayContaining(["workflow_guidance"]),
+        },
+        ranking: {
+          semanticFallbackStrategies: expect.arrayContaining(["workflow_tool_gotcha"]),
+        },
+      },
       workflowImprovementHint: {
         lessonKey: "scripts_committer_required",
       },

@@ -1,3 +1,19 @@
+import {
+  createCanonicalMemoryRecord,
+  mergeCanonicalMemoryFacets,
+  type CanonicalMemoryApplicability,
+  type CanonicalMemoryCompatibility,
+  type CanonicalMemoryConfidence,
+  type CanonicalMemoryFacetMap,
+  type CanonicalMemoryKind,
+  type CanonicalMemoryProvenance,
+  type CanonicalMemoryRecord,
+  type CanonicalMemoryRecency,
+  type CanonicalMemoryScope,
+  type CanonicalMemoryStability,
+  type CanonicalMemoryValidationStatus,
+} from "./memory-canonical-core.js";
+
 export const MEMORY_FAMILY_IDS = [
   "response_style",
   "project_fact",
@@ -136,9 +152,18 @@ export type MemoryFamilyCaptureMetadata = {
   subjectKeyMetadata?: "subject_key";
 };
 
+export type MemoryFamilyCanonicalProjection = {
+  kind: CanonicalMemoryKind;
+  defaultTags: readonly string[];
+  defaultFacets: CanonicalMemoryFacetMap;
+  derivedViews: readonly string[];
+  compatibilityStatus: "transitional_family_adapter";
+};
+
 export type MemoryFamilyDefinition = {
   id: MemoryFamilyId;
   displayName: string;
+  canonicalProjection: MemoryFamilyCanonicalProjection;
   storageKinds: readonly MemoryFamilyStorageKind[];
   scopeModel: MemoryFamilyScopeModel;
   canonicalFields: readonly MemoryFamilyCanonicalField[];
@@ -194,6 +219,16 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
   response_style: {
     id: "response_style",
     displayName: "Response Style",
+    canonicalProjection: {
+      kind: "user",
+      defaultTags: ["response_style", "preference", "user"],
+      defaultFacets: {
+        response_style: true,
+        preference: true,
+      },
+      derivedViews: ["response_style"],
+      compatibilityStatus: "transitional_family_adapter",
+    },
     storageKinds: ["memory_object", "phrase_pattern"],
     scopeModel: { kind: "global" },
     canonicalFields: ["subject", "value"],
@@ -255,6 +290,16 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
   project_fact: {
     id: "project_fact",
     displayName: "Project Fact",
+    canonicalProjection: {
+      kind: "project",
+      defaultTags: ["project_fact", "fact", "project"],
+      defaultFacets: {
+        fact: true,
+        project_scope: true,
+      },
+      derivedViews: ["project_fact"],
+      compatibilityStatus: "transitional_family_adapter",
+    },
     storageKinds: ["memory_object"],
     scopeModel: { kind: "project", projectRequired: true },
     canonicalFields: ["scope", "subject", "value"],
@@ -313,6 +358,16 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
   recurring_procedure: {
     id: "recurring_procedure",
     displayName: "Recurring Procedure",
+    canonicalProjection: {
+      kind: "feedback",
+      defaultTags: ["recurring_procedure", "procedure", "validated_approach", "feedback"],
+      defaultFacets: {
+        procedure: true,
+        validated_approach: true,
+      },
+      derivedViews: ["procedure"],
+      compatibilityStatus: "transitional_family_adapter",
+    },
     storageKinds: ["procedure_candidate", "validated_procedure"],
     scopeModel: { kind: "mixed_project", projectPreferred: true },
     canonicalFields: ["subject", "value", "procedure_title", "procedure_steps"],
@@ -368,6 +423,16 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
   workflow_improvement: {
     id: "workflow_improvement",
     displayName: "Workflow Improvement",
+    canonicalProjection: {
+      kind: "feedback",
+      defaultTags: ["workflow_improvement", "workflow_guidance", "feedback"],
+      defaultFacets: {
+        workflow_guidance: true,
+        validated_approach: true,
+      },
+      derivedViews: ["workflow_guidance", "learned_guidance"],
+      compatibilityStatus: "transitional_family_adapter",
+    },
     storageKinds: ["memory_object", "phrase_pattern"],
     scopeModel: { kind: "project", projectRequired: true },
     canonicalFields: [
@@ -454,6 +519,16 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
   project_rule: {
     id: "project_rule",
     displayName: "Project Rule",
+    canonicalProjection: {
+      kind: "feedback",
+      defaultTags: ["project_rule", "rule", "feedback"],
+      defaultFacets: {
+        project_rule: true,
+        rule: true,
+      },
+      derivedViews: ["project_rule"],
+      compatibilityStatus: "transitional_family_adapter",
+    },
     storageKinds: ["memory_object"],
     scopeModel: { kind: "project", projectRequired: true },
     canonicalFields: ["scope", "subject", "guidance_pattern", "recommended_action", "avoid_action"],
@@ -521,6 +596,16 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
   unmet_need: {
     id: "unmet_need",
     displayName: "Unmet Need",
+    canonicalProjection: {
+      kind: "project",
+      defaultTags: ["unmet_need", "open_need", "project"],
+      defaultFacets: {
+        open_need: true,
+        project_scope: true,
+      },
+      derivedViews: ["unmet_need"],
+      compatibilityStatus: "transitional_family_adapter",
+    },
     storageKinds: ["memory_object"],
     scopeModel: { kind: "project", projectRequired: true },
     canonicalFields: ["scope", "subject", "needed_capability"],
@@ -618,6 +703,12 @@ export function getMemoryFamilyPolicy(familyId: MemoryFamilyId): MemoryFamilyDef
   return getMemoryFamilyDefinition(familyId);
 }
 
+export function getMemoryFamilyCanonicalProjection(
+  familyId: MemoryFamilyId,
+): MemoryFamilyCanonicalProjection {
+  return getMemoryFamilyDefinition(familyId).canonicalProjection;
+}
+
 export function getMemoryFamilyDefinitionByCaptureClass(
   captureClass: string,
 ): MemoryFamilyDefinition | null {
@@ -682,4 +773,95 @@ export function getCaptureMetadataByWorkflowLessonFamily(
   lessonFamily: string,
 ): MemoryFamilyCaptureMetadata | null {
   return getMemoryFamilyDefinitionByWorkflowLessonFamily(lessonFamily)?.captureMetadata ?? null;
+}
+
+function resolveCanonicalScope(
+  definition: MemoryFamilyDefinition,
+  projectId?: string,
+): CanonicalMemoryScope {
+  switch (definition.scopeModel.kind) {
+    case "global":
+      return { kind: "global" };
+    case "project":
+      return projectId ? { kind: "project", projectId } : { kind: "project" };
+    case "mixed_project":
+      return projectId ? { kind: "mixed", projectId } : { kind: "mixed" };
+  }
+}
+
+function mergeCanonicalTags(
+  defaultTags: readonly string[],
+  tags: readonly string[] | undefined,
+): readonly string[] {
+  return [...new Set([...defaultTags, ...(tags ?? [])])];
+}
+
+function buildCanonicalCompatibility(
+  definition: MemoryFamilyDefinition,
+  overrides: Partial<CanonicalMemoryCompatibility> | undefined,
+): CanonicalMemoryCompatibility {
+  return {
+    transitionalFamilyId: definition.id,
+    storageKinds: definition.storageKinds,
+    typedFastPaths: definition.typedFastPaths,
+    workflowLessonFamilies: definition.workflowLessonFamilies,
+    captureClasses: definition.captureClasses,
+    captureCategory: definition.captureMetadata?.category,
+    captureSource: definition.captureMetadata?.source,
+    phrasePatternProofFamilyId: definition.proofPolicy.phrasePattern?.familyId,
+    ...overrides,
+  };
+}
+
+function buildCanonicalApplicability(
+  definition: MemoryFamilyDefinition,
+  overrides: CanonicalMemoryApplicability | undefined,
+): CanonicalMemoryApplicability {
+  return {
+    promptSections: [definition.applicationPolicy.promptSection],
+    ...(definition.retrievalPolicy.directIntentClass
+      ? { directIntentClasses: [definition.retrievalPolicy.directIntentClass] }
+      : {}),
+    ...(definition.semanticRoutingPolicy.enabledQueryClasses.length > 0
+      ? { queryClasses: definition.semanticRoutingPolicy.enabledQueryClasses }
+      : {}),
+    ...overrides,
+  };
+}
+
+export type BuildCanonicalMemoryRecordForFamilyParams = {
+  familyId: MemoryFamilyId;
+  subject: string;
+  statement: string;
+  projectId?: string;
+  confidence?: CanonicalMemoryConfidence;
+  validationStatus?: CanonicalMemoryValidationStatus;
+  stability?: CanonicalMemoryStability;
+  recency?: CanonicalMemoryRecency;
+  provenance?: CanonicalMemoryProvenance;
+  tags?: readonly string[];
+  facets?: CanonicalMemoryFacetMap;
+  applicability?: CanonicalMemoryApplicability;
+  compatibility?: Partial<CanonicalMemoryCompatibility>;
+};
+
+export function buildCanonicalMemoryRecordForFamily(
+  params: BuildCanonicalMemoryRecordForFamilyParams,
+): CanonicalMemoryRecord {
+  const definition = getMemoryFamilyDefinition(params.familyId);
+  return createCanonicalMemoryRecord({
+    kind: definition.canonicalProjection.kind,
+    subject: params.subject,
+    statement: params.statement,
+    scope: resolveCanonicalScope(definition, params.projectId),
+    confidence: params.confidence,
+    validationStatus: params.validationStatus,
+    stability: params.stability,
+    recency: params.recency,
+    provenance: params.provenance,
+    tags: mergeCanonicalTags(definition.canonicalProjection.defaultTags, params.tags),
+    facets: mergeCanonicalMemoryFacets(definition.canonicalProjection.defaultFacets, params.facets),
+    applicability: buildCanonicalApplicability(definition, params.applicability),
+    compatibility: buildCanonicalCompatibility(definition, params.compatibility),
+  });
 }

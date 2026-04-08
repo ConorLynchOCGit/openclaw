@@ -116,7 +116,10 @@ function buildMatchedFieldLabel(
   definition: MemoryFamilyDefinition,
   feature: MemoryFamilyRetrievalFeature,
 ): string {
-  const prefix = definition.retrievalPolicy.matchedFieldPrefix ?? definition.id;
+  const prefix =
+    definition.retrievalPolicy.matchedFieldPrefix ??
+    definition.canonicalProjection.derivedViews[0] ??
+    definition.id;
   switch (feature) {
     case "family_intent_match":
       return `${prefix}_intent_match`;

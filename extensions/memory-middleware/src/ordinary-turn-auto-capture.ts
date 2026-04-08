@@ -1,7 +1,15 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import {
+  createCanonicalMemoryIngestionCandidate,
+  type CanonicalMemoryIngestionCandidate,
+} from "openclaw/plugin-sdk/memory-canonical-ingestion";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/memory-core";
+import {
+  buildCanonicalMemoryRecordForFamily,
+  type MemoryFamilyId,
+} from "openclaw/plugin-sdk/memory-family-policy";
 import type { PluginLogger } from "../api.js";
 import type { CandidateIngressPort } from "./candidate-ingress.js";
 import {
@@ -10,6 +18,7 @@ import {
   type MemoryMiddlewareConfig,
 } from "./config.js";
 import { withMemoryMiddlewarePgClient } from "./db/pg-pool.js";
+import { buildCanonicalMemoryIngestionCandidateFromResolvedIngestion } from "./memory-canonical-compat.js";
 import {
   executeMemoryObjectCorrectionPlan,
   isExecutableMemoryObjectCorrectionPlan,
@@ -601,6 +610,8 @@ const EXPLICIT_MEMORY_PATTERNS = [
 const AUTO_CAPTURE_TRANSCRIPT_SCAN_INTERVAL_MS = 5_000;
 const AUTO_CAPTURE_TRANSCRIPT_SCAN_LOOKBACK_MS = 15 * 60_000;
 const AUTO_CAPTURE_TRANSCRIPT_SCAN_LIMIT = 12;
+const AUTO_CAPTURE_MULTI_SEGMENT_LIMIT = 12;
+const AUTO_CAPTURE_MULTI_CAPTURE_LIMIT = 3;
 
 type SessionTranscriptUpdateLike = {
   sessionFile: string;
@@ -743,6 +754,7 @@ type WorkflowImprovementDetectionSource = "semantic" | "deterministic";
 type ResponseStyleCaptureDecision =
   | {
       action: "capture";
+      canonicalCandidate: CanonicalMemoryIngestionCandidate;
       confidence: "high" | ResponseStyleSemanticConfidence;
       detectionSource: "deterministic" | "semantic";
       evidence: string[];
@@ -761,6 +773,7 @@ type ResponseStyleCaptureDecision =
 
 type ProjectFactCaptureDecision = {
   action: "capture";
+  canonicalCandidate: CanonicalMemoryIngestionCandidate;
   confidence: "high" | "medium";
   detectionSource: ProjectFactDetectionSource;
   evidence: string[];
@@ -772,6 +785,7 @@ type ProjectFactCaptureDecision = {
 
 type RecurringProcedureCaptureDecision = {
   action: "capture";
+  canonicalCandidate: CanonicalMemoryIngestionCandidate;
   confidence: "high" | "medium";
   detectionSource: RecurringProcedureDetectionSource;
   evidence: string[];
@@ -783,6 +797,7 @@ type RecurringProcedureCaptureDecision = {
 
 type WorkflowImprovementCaptureDecision = {
   action: "capture";
+  canonicalCandidate: CanonicalMemoryIngestionCandidate;
   confidence: WorkflowImprovementSemanticConfidence;
   detectionSource: WorkflowImprovementDetectionSource;
   evidence: string[];
@@ -792,6 +807,19 @@ type WorkflowImprovementCaptureDecision = {
   toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
   match: OrdinaryTurnAutoCaptureMatch;
+};
+
+type OrdinaryTurnAutoCaptureTurnState = {
+  acceptedKeys: Set<string>;
+};
+
+type OrdinaryTurnAutoCaptureContext = {
+  text: string;
+  agentExternalKey: string;
+  sessionKey: string;
+  transcriptFile: string;
+  turnState: OrdinaryTurnAutoCaptureTurnState;
+  timestamp?: string;
 };
 
 function quoteIdentifier(value: string): string {
@@ -862,7 +890,7 @@ function extractTranscriptUserText(message: unknown): string | null {
     return null;
   }
   if (typeof entry.content === "string") {
-    const text = normalizeText(entry.content);
+    const text = entry.content.replace(/\r\n?/g, "\n").trim();
     return text ? text : null;
   }
   if (!Array.isArray(entry.content)) {
@@ -873,9 +901,59 @@ function extractTranscriptUserText(message: unknown): string | null {
       block && typeof block === "object" && "text" in block ? block.text : undefined,
     )
     .filter((text): text is string => typeof text === "string")
-    .map((text) => normalizeText(text))
+    .map((text) => text.replace(/\r\n?/g, "\n").trim())
     .filter(Boolean);
-  return parts.length > 0 ? parts.join(" ") : null;
+  return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
+function shouldKeepAutoCaptureParagraphWhole(value: string): boolean {
+  const listItems = value.match(/(?:^|\n)\s*(?:[-*]|\d+\.)\s+\S+/gm) ?? [];
+  return listItems.length >= 2;
+}
+
+function splitAutoCaptureParagraphIntoSegments(value: string): string[] {
+  return value
+    .replace(/\n+/g, " ")
+    .split(/(?<=[.!?])\s+/)
+    .map((segment) => normalizeText(segment))
+    .filter(Boolean);
+}
+
+function extractOrdinaryTurnAutoCaptureSegments(messageText: string): string[] {
+  const cleaned = stripTranscriptTimestampPrefix(
+    stripGatewaySenderMetadataPrefix(messageText),
+  ).replace(/\r\n?/g, "\n");
+  const normalized = normalizeText(cleaned);
+  if (!normalized) {
+    return [];
+  }
+
+  const rawParagraphs = cleaned
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+  const segments: string[] = [];
+
+  for (const paragraph of rawParagraphs.length > 0 ? rawParagraphs : [cleaned]) {
+    if (shouldKeepAutoCaptureParagraphWhole(paragraph)) {
+      const segment = normalizeText(paragraph);
+      if (segment) {
+        segments.push(segment);
+      }
+      continue;
+    }
+    segments.push(...splitAutoCaptureParagraphIntoSegments(paragraph));
+  }
+
+  const dedupedSegments = Array.from(
+    new Set(segments.map((segment) => normalizeText(segment)).filter(Boolean)),
+  );
+
+  if (dedupedSegments.length === 0) {
+    return [normalized];
+  }
+
+  return dedupedSegments.slice(0, AUTO_CAPTURE_MULTI_SEGMENT_LIMIT);
 }
 
 function extractTranscriptTimestamp(message: unknown): string | undefined {
@@ -900,6 +978,97 @@ function resolveSessionKeyFromTranscriptFile(sessionFile: string): string | null
   }
   const sessionKey = normalizeText(parsed.name);
   return sessionKey ? sessionKey : null;
+}
+
+function hasReachedMultiCaptureTurnLimit(turnState: OrdinaryTurnAutoCaptureTurnState): boolean {
+  return turnState.acceptedKeys.size >= AUTO_CAPTURE_MULTI_CAPTURE_LIMIT;
+}
+
+function markTurnAcceptedCapture(turnState: OrdinaryTurnAutoCaptureTurnState, key: string): void {
+  turnState.acceptedKeys.add(key);
+}
+
+function mapReviewModeToCanonicalValidationStatus(
+  reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence",
+): "approved" | "pending_confirmation" | "hold_for_more_evidence" {
+  if (reviewMode === "direct") {
+    return "approved";
+  }
+  return reviewMode;
+}
+
+function buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch(params: {
+  familyId: MemoryFamilyId;
+  match: OrdinaryTurnAutoCaptureMatch;
+  reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
+  detectionSource: "deterministic" | "semantic";
+  evidence: readonly string[];
+  observedText: string;
+  projectId?: string;
+  captureProfile: "user-preference-v1" | "user-preference-v2";
+}): CanonicalMemoryIngestionCandidate {
+  const projectId = params.familyId === "response_style" ? undefined : params.projectId;
+  const record = buildCanonicalMemoryRecordForFamily({
+    familyId: params.familyId,
+    subject: params.match.subject,
+    statement: params.match.value,
+    projectId,
+    confidence: {
+      level: params.detectionSource === "deterministic" ? "high" : "medium",
+    },
+    validationStatus: mapReviewModeToCanonicalValidationStatus(params.reviewMode),
+    provenance: {
+      captureSeam: AUTO_CAPTURE_SOURCE,
+      captureProfile: params.captureProfile,
+      reviewState: params.reviewMode,
+    },
+    facets: {
+      subjectKey: params.match.subjectKey,
+      captureClass: params.match.captureClass,
+      reasonCode: params.match.reasonCode,
+      template: params.match.template,
+      ...(params.match.projectScope ? { projectScope: params.match.projectScope } : {}),
+      ...(params.match.responseStyleFamily
+        ? { responseStyleFamily: params.match.responseStyleFamily }
+        : {}),
+      ...(params.match.factFamily ? { factFamily: params.match.factFamily } : {}),
+      ...(params.match.fieldKey ? { fieldKey: params.match.fieldKey } : {}),
+      ...(params.match.procedureFamily ? { procedureFamily: params.match.procedureFamily } : {}),
+      ...(params.match.procedureKey ? { procedureKey: params.match.procedureKey } : {}),
+      ...(params.match.lessonFamily ? { lessonFamily: params.match.lessonFamily } : {}),
+      ...(params.match.lessonKey ? { lessonKey: params.match.lessonKey } : {}),
+      ...(params.match.toolKey ? { toolKey: params.match.toolKey } : {}),
+      ...(params.match.guidancePattern ? { guidancePattern: params.match.guidancePattern } : {}),
+    },
+    tags: [
+      params.familyId,
+      params.detectionSource === "semantic" ? "semantic_ingestion" : "deterministic_ingestion",
+    ],
+  });
+
+  return createCanonicalMemoryIngestionCandidate({
+    record,
+    identity: {
+      dedupeKey: params.match.key,
+      clusterKey: params.match.key,
+      subjectKey: params.match.subjectKey,
+    },
+    capture: {
+      mode: "ordinary_turn",
+      source: "transcript",
+      observedText: params.observedText,
+      evidence: params.evidence,
+      detectionSource: params.detectionSource,
+      reviewMode: params.reviewMode,
+    },
+    compatibility: {
+      transitionalFamilyId: params.familyId,
+      candidateKind: params.match.candidateKind,
+      captureClass: params.match.captureClass,
+      reasonCode: params.match.reasonCode,
+      template: params.match.template,
+    },
+  });
 }
 
 async function readLatestTranscriptUserMessage(
@@ -1502,6 +1671,12 @@ async function detectResponseStyleCaptureDecision(
   }
   return {
     action: "capture",
+    canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion({
+      ingestion: resolution,
+      mode: "ordinary_turn",
+      captureSeam: AUTO_CAPTURE_SOURCE,
+      captureProfile: profile,
+    }),
     confidence: resolution.confidence,
     detectionSource: resolution.detectionSource,
     evidence: resolution.evidence,
@@ -1528,6 +1703,12 @@ async function detectProjectFactCaptureDecision(
   }
   return {
     action: "capture",
+    canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion({
+      ingestion: resolution,
+      mode: "ordinary_turn",
+      captureSeam: AUTO_CAPTURE_SOURCE,
+      captureProfile: profile,
+    }),
     confidence: resolution.confidence,
     detectionSource: resolution.detectionSource,
     evidence: resolution.evidence,
@@ -1554,6 +1735,12 @@ async function detectRecurringProcedureCaptureDecision(
   }
   return {
     action: "capture",
+    canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion({
+      ingestion: resolution,
+      mode: "ordinary_turn",
+      captureSeam: AUTO_CAPTURE_SOURCE,
+      captureProfile: profile,
+    }),
     confidence: resolution.confidence,
     detectionSource: resolution.detectionSource,
     evidence: resolution.evidence,
@@ -1585,6 +1772,12 @@ async function detectWorkflowImprovementCaptureDecision(
 
   return {
     action: "capture",
+    canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion({
+      ingestion: resolution,
+      mode: "ordinary_turn",
+      captureSeam: AUTO_CAPTURE_SOURCE,
+      captureProfile: profile,
+    }),
     confidence: resolution.confidence,
     detectionSource: resolution.detectionSource,
     evidence: resolution.evidence,
@@ -1988,6 +2181,7 @@ function buildSubscriberCaptureMetadata(params: {
   sessionKey: string;
   transcriptFile: string;
   timestamp?: string;
+  canonicalCandidate?: CanonicalMemoryIngestionCandidate;
   autoCaptureExtras?: Record<string, unknown>;
   extraMetadata?: Record<string, unknown>;
 }): Record<string, unknown> {
@@ -2022,6 +2216,11 @@ function buildSubscriberCaptureMetadata(params: {
       ...(params.timestamp ? { transcriptTimestamp: params.timestamp } : {}),
       ...(params.autoCaptureExtras ?? {}),
     },
+    ...(params.canonicalCandidate
+      ? {
+          canonicalIngestionCandidate: params.canonicalCandidate,
+        }
+      : {}),
   };
 
   const familyCaptureMetadata = getCaptureMetadataByCaptureClass(match.captureClass);
@@ -2858,8 +3057,12 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     agentExternalKey: string;
     sessionKey: string;
     transcriptFile: string;
+    turnState: OrdinaryTurnAutoCaptureTurnState;
     timestamp?: string;
   }): Promise<boolean> {
+    if (hasReachedMultiCaptureTurnLimit(decisionParams.turnState)) {
+      return false;
+    }
     const semanticMetadata =
       decisionParams.decision.detectionSource === "semantic"
         ? buildResponseStyleSemanticMetadata({
@@ -3055,6 +3258,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       sessionKey: decisionParams.sessionKey,
       transcriptFile: decisionParams.transcriptFile,
       ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
+      canonicalCandidate: decisionParams.decision.canonicalCandidate,
       extraMetadata: {
         ...(semanticMetadata ?? {}),
         ...(decisionParams.decision.reviewMode !== "direct"
@@ -3103,6 +3307,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         },
       });
       if (promoted) {
+        markTurnAcceptedCapture(decisionParams.turnState, match.key);
         markRecent(match.key);
       }
       return true;
@@ -3142,6 +3347,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     }
 
     markRecent(match.key);
+    markTurnAcceptedCapture(decisionParams.turnState, match.key);
 
     const shouldDirectPromote =
       autoPromotion.profile === "explicit-user-preference-v1" &&
@@ -3317,8 +3523,12 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     agentExternalKey: string;
     sessionKey: string;
     transcriptFile: string;
+    turnState: OrdinaryTurnAutoCaptureTurnState;
     timestamp?: string;
   }): Promise<boolean> {
+    if (hasReachedMultiCaptureTurnLimit(decisionParams.turnState)) {
+      return false;
+    }
     const match = decisionParams.decision.match;
     if (inFlightKeys.has(match.key)) {
       return true;
@@ -3429,6 +3639,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       sessionKey: decisionParams.sessionKey,
       transcriptFile: decisionParams.transcriptFile,
       ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
+      canonicalCandidate: decisionParams.decision.canonicalCandidate,
       autoCaptureExtras: {
         factFamily: decisionParams.decision.factFamily,
         ...(decisionParams.decision.fieldKey ? { fieldKey: decisionParams.decision.fieldKey } : {}),
@@ -3520,6 +3731,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         },
       });
       if (promoted) {
+        markTurnAcceptedCapture(decisionParams.turnState, match.key);
         markRecent(match.key);
       }
       return true;
@@ -3560,6 +3772,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     }
 
     markRecent(match.key);
+    markTurnAcceptedCapture(decisionParams.turnState, match.key);
 
     const projectFactCorrectionPlan =
       result.memoryObjectId && match.captureClass === "project_fact_correction"
@@ -3645,8 +3858,12 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     agentExternalKey: string;
     sessionKey: string;
     transcriptFile: string;
+    turnState: OrdinaryTurnAutoCaptureTurnState;
     timestamp?: string;
   }): Promise<boolean> {
+    if (hasReachedMultiCaptureTurnLimit(decisionParams.turnState)) {
+      return false;
+    }
     const match = decisionParams.decision.match;
     const resolvedTitle =
       match.title ??
@@ -3776,6 +3993,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       sessionKey: decisionParams.sessionKey,
       transcriptFile: decisionParams.transcriptFile,
       ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
+      canonicalCandidate: decisionParams.decision.canonicalCandidate,
       autoCaptureExtras: {
         procedureFamily: decisionParams.decision.procedureFamily,
         ...(decisionParams.decision.procedureKey
@@ -3871,6 +4089,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         },
       });
       if (promoted) {
+        markTurnAcceptedCapture(decisionParams.turnState, match.key);
         markRecent(match.key);
       }
       return true;
@@ -3909,6 +4128,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     }
 
     markRecent(match.key);
+    markTurnAcceptedCapture(decisionParams.turnState, match.key);
 
     const shouldDirectPromote =
       autoPromotion.profile === "explicit-user-preference-v1" &&
@@ -3990,8 +4210,12 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     agentExternalKey: string;
     sessionKey: string;
     transcriptFile: string;
+    turnState: OrdinaryTurnAutoCaptureTurnState;
     timestamp?: string;
   }): Promise<boolean> {
+    if (hasReachedMultiCaptureTurnLimit(decisionParams.turnState)) {
+      return false;
+    }
     let effectiveDecision = decisionParams.decision;
     let match = effectiveDecision.match;
     if (inFlightKeys.has(match.key)) {
@@ -4022,8 +4246,23 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         logger: params.logger,
       });
       if (deterministicPattern) {
+        const deterministicMatch = toOrdinaryTurnWorkflowImprovementMatch(
+          deterministicPattern.match,
+        );
         effectiveDecision = {
           action: "capture",
+          canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch({
+            familyId:
+              getMemoryFamilyIdByWorkflowLessonFamily(deterministicPattern.match.lessonFamily) ??
+              "workflow_improvement",
+            match: deterministicMatch,
+            reviewMode: "hold_for_more_evidence",
+            detectionSource: "deterministic",
+            evidence: ["approved_phrase_pattern_match"],
+            observedText: decisionParams.text,
+            projectId: attribution.projectId,
+            captureProfile: match.profile,
+          }),
           confidence: "high",
           detectionSource: "deterministic",
           evidence: ["approved_phrase_pattern_match"],
@@ -4032,7 +4271,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           ...(deterministicPattern.match.guidancePattern
             ? { guidancePattern: deterministicPattern.match.guidancePattern }
             : {}),
-          match: toOrdinaryTurnWorkflowImprovementMatch(deterministicPattern.match),
+          match: deterministicMatch,
         };
         match = effectiveDecision.match;
       }
@@ -4199,6 +4438,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       sessionKey: decisionParams.sessionKey,
       transcriptFile: decisionParams.transcriptFile,
       ...(decisionParams.timestamp ? { timestamp: decisionParams.timestamp } : {}),
+      canonicalCandidate: decisionParams.decision.canonicalCandidate,
       autoCaptureExtras: {
         lessonFamily: effectiveDecision.lessonFamily,
         ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
@@ -4375,6 +4615,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         }
       }
       if (promotedMemoryObjectId) {
+        markTurnAcceptedCapture(decisionParams.turnState, match.key);
         if (supportsPhraseInduction && attribution.projectId && canonicalMatchForPhraseInduction) {
           await maybeInduceWorkflowPhrasePattern({
             config: params.config,
@@ -4451,6 +4692,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         },
       });
       if (promotedMemoryObjectId) {
+        markTurnAcceptedCapture(decisionParams.turnState, match.key);
         markRecent(match.key);
       }
       return true;
@@ -4496,6 +4738,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     }
 
     markRecent(match.key);
+    markTurnAcceptedCapture(decisionParams.turnState, match.key);
     params.logger.info(
       formatLog("memory-middleware ordinary-turn workflow-improvement capture accepted", {
         key: match.key,
@@ -4541,288 +4784,330 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       return;
     }
     const timestamp = extractTranscriptTimestamp(transcriptMessage);
-    const handledByDecisionStages = await runWriteHandledStages({
-      context: {
-        text,
-        agentExternalKey,
-        sessionKey,
-        transcriptFile,
-        ...(timestamp ? { timestamp } : {}),
-      },
-      stages: [
-        {
-          id: "deterministic_response_style_phrase",
-          handle: async (context) => {
-            const deterministicResponseStylePhraseMatch =
-              await findApprovedResponseStylePhrasePatternMatch({
-                config: params.config,
-                text: context.text,
-                logger: params.logger,
-              });
-            if (!deterministicResponseStylePhraseMatch) {
-              return false;
-            }
-            return handleResponseStyleDecision({
-              decision: {
-                action: "capture",
-                confidence: "high",
-                detectionSource: "deterministic",
-                evidence: ["approved_phrase_pattern_match"],
-                responseStyleFamily: deterministicResponseStylePhraseMatch.match.family,
-                match: toOrdinaryTurnResponseStyleMatch(
-                  deterministicResponseStylePhraseMatch.match,
-                ),
-                reviewMode:
-                  deterministicResponseStylePhraseMatch.match.family === "generalized_guidance"
-                    ? "hold_for_more_evidence"
-                    : "direct",
-              },
-              observedText: context.text,
-              agentExternalKey: context.agentExternalKey,
-              sessionKey: context.sessionKey,
-              transcriptFile: context.transcriptFile,
-              ...(context.timestamp ? { timestamp: context.timestamp } : {}),
-            });
-          },
-        },
-        {
-          id: "response_style",
-          handle: async (context) => {
-            const responseStyleDecision = await detectResponseStyleCaptureDecision(
-              context.text,
-              autoCaptureProfile,
-              params.config,
-            );
-            if (!responseStyleDecision) {
-              return false;
-            }
-            return handleResponseStyleDecision({
-              decision: responseStyleDecision,
-              observedText: context.text,
-              agentExternalKey: context.agentExternalKey,
-              sessionKey: context.sessionKey,
-              transcriptFile: context.transcriptFile,
-              ...(context.timestamp ? { timestamp: context.timestamp } : {}),
-            });
-          },
-        },
-        {
-          id: "project_fact",
-          handle: async (context) => {
-            const projectFactDecision = await detectProjectFactCaptureDecision(
-              context.text,
-              autoCaptureProfile,
-            );
-            if (!projectFactDecision) {
-              return false;
-            }
-            return handleProjectFactDecision({
-              decision: projectFactDecision,
-              agentExternalKey: context.agentExternalKey,
-              sessionKey: context.sessionKey,
-              transcriptFile: context.transcriptFile,
-              ...(context.timestamp ? { timestamp: context.timestamp } : {}),
-            });
-          },
-        },
-        {
-          id: "recurring_procedure",
-          handle: async (context) => {
-            const recurringProcedureDecision = await detectRecurringProcedureCaptureDecision(
-              context.text,
-              autoCaptureProfile,
-            );
-            if (!recurringProcedureDecision) {
-              return false;
-            }
-            return handleRecurringProcedureDecision({
-              decision: recurringProcedureDecision,
-              agentExternalKey: context.agentExternalKey,
-              sessionKey: context.sessionKey,
-              transcriptFile: context.transcriptFile,
-              ...(context.timestamp ? { timestamp: context.timestamp } : {}),
-            });
-          },
-        },
-        {
-          id: "workflow_improvement",
-          handle: async (context) => {
-            const workflowImprovementDecision = await detectWorkflowImprovementCaptureDecision(
-              context.text,
-              autoCaptureProfile,
-              params.config,
-            );
-            if (!workflowImprovementDecision) {
-              return false;
-            }
-            return handleWorkflowImprovementDecision({
-              decision: workflowImprovementDecision,
-              text: context.text,
-              agentExternalKey: context.agentExternalKey,
-              sessionKey: context.sessionKey,
-              transcriptFile: context.transcriptFile,
-              ...(context.timestamp ? { timestamp: context.timestamp } : {}),
-            });
-          },
-        },
-      ],
-    });
-    if (handledByDecisionStages) {
-      return;
-    }
-    const match = parseOrdinaryTurnAutoCapturePreference(text, autoCapture.profile);
-    if (!match) {
-      return;
-    }
-    if (inFlightKeys.has(match.key) || recentKeys.has(match.key)) {
-      return;
-    }
+    const turnState: OrdinaryTurnAutoCaptureTurnState = {
+      acceptedKeys: new Set<string>(),
+    };
+    const captureSegments = extractOrdinaryTurnAutoCaptureSegments(text);
 
-    inFlightKeys.add(match.key);
-    try {
-      const existing = await deps.findExistingByKey({
-        config: params.config,
-        key: match.key,
-      });
-      if (existing) {
-        params.logger.debug?.(
-          formatLog("memory-middleware ordinary-turn auto-capture skipped existing key", {
-            key: match.key,
-            memoryObjectId: existing.id,
-            reviewState: existing.reviewState,
-          }),
-        );
-        markRecent(match.key);
-        return;
+    for (const segment of captureSegments) {
+      if (hasReachedMultiCaptureTurnLimit(turnState)) {
+        break;
       }
-      const attribution = await deps.resolveAttribution({
-        config: params.config,
+
+      const context: OrdinaryTurnAutoCaptureContext = {
+        text: segment,
         agentExternalKey,
         sessionKey,
         transcriptFile,
-      });
-      if (!attribution) {
-        params.logger.warn(
-          formatLog("memory-middleware ordinary-turn auto-capture skipped missing attribution", {
-            agentExternalKey,
-            sessionKey,
-          }),
-        );
-        return;
-      }
-      const candidateMetadata = buildSubscriberCaptureMetadata({
-        match,
-        agentExternalKey,
-        sessionKey,
-        transcriptFile,
+        turnState,
         ...(timestamp ? { timestamp } : {}),
-      });
-      const submit =
-        match.candidateKind === "correction"
-          ? deps.submitCorrectionSuggestion
-          : deps.submitLearning;
-      const result = await submit({
-        content: match.content,
-        agentId: attribution.agentId,
-        sessionId: attribution.sessionId,
-        metadata: candidateMetadata,
-      });
-      if (!result.accepted) {
-        params.logger.warn(
-          formatLog("memory-middleware ordinary-turn auto-capture submission rejected", {
-            key: match.key,
-            reason: result.reason ?? "unknown",
-          }),
-        );
-        return;
-      }
-      markRecent(match.key);
-      if (
-        autoPromotion.profile === "explicit-user-preference-v1" &&
-        autoPromotionAgents.has(agentExternalKey) &&
-        (match.captureClass === "explicit_preference" ||
-          match.captureClass === "explicit_requirement") &&
-        result.memoryObjectId
-      ) {
-        const autoPromotionMetadata = {
-          autoPromotion: {
-            source: AUTO_PROMOTION_SOURCE,
-            captureSeam: "transcript_subscriber_fallback",
-            profile: autoPromotion.profile,
-            captureProfile: match.profile,
-            captureClass: match.captureClass,
-            reasonCode: match.reasonCode,
-            key: match.key,
-            subjectKey: match.subjectKey,
-            subject: match.subject,
-            value: match.value,
-            ...(match.projectScope ? { projectScope: match.projectScope } : {}),
-            agentExternalKey,
-            sessionKey,
-            transcriptFile,
-            ...(timestamp ? { transcriptTimestamp: timestamp } : {}),
+      };
+
+      const handledByDecisionStages = await runWriteHandledStages({
+        context,
+        stages: [
+          {
+            id: "deterministic_response_style_phrase",
+            handle: async (segmentContext) => {
+              const deterministicResponseStylePhraseMatch =
+                await findApprovedResponseStylePhrasePatternMatch({
+                  config: params.config,
+                  text: segmentContext.text,
+                  logger: params.logger,
+                });
+              if (!deterministicResponseStylePhraseMatch) {
+                return false;
+              }
+              const deterministicMatch = toOrdinaryTurnResponseStyleMatch(
+                deterministicResponseStylePhraseMatch.match,
+              );
+              return handleResponseStyleDecision({
+                decision: {
+                  action: "capture",
+                  canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch({
+                    familyId: "response_style",
+                    match: deterministicMatch,
+                    reviewMode:
+                      deterministicResponseStylePhraseMatch.match.family === "generalized_guidance"
+                        ? "hold_for_more_evidence"
+                        : "direct",
+                    detectionSource: "deterministic",
+                    evidence: ["approved_phrase_pattern_match"],
+                    observedText: segmentContext.text,
+                    captureProfile: autoCaptureProfile,
+                  }),
+                  confidence: "high",
+                  detectionSource: "deterministic",
+                  evidence: ["approved_phrase_pattern_match"],
+                  responseStyleFamily: deterministicResponseStylePhraseMatch.match.family,
+                  match: deterministicMatch,
+                  reviewMode:
+                    deterministicResponseStylePhraseMatch.match.family === "generalized_guidance"
+                      ? "hold_for_more_evidence"
+                      : "direct",
+                },
+                observedText: segmentContext.text,
+                agentExternalKey: segmentContext.agentExternalKey,
+                sessionKey: segmentContext.sessionKey,
+                transcriptFile: segmentContext.transcriptFile,
+                turnState: segmentContext.turnState,
+                ...(segmentContext.timestamp ? { timestamp: segmentContext.timestamp } : {}),
+              });
+            },
           },
-        };
-        const reviewResult = await deps.reviewCandidate({
-          candidateId: result.memoryObjectId,
-          outcome: "accepted",
-          reviewerAgentId: attribution.agentId,
-          metadata: autoPromotionMetadata,
+          {
+            id: "response_style",
+            handle: async (segmentContext) => {
+              const responseStyleDecision = await detectResponseStyleCaptureDecision(
+                segmentContext.text,
+                autoCaptureProfile,
+                params.config,
+              );
+              if (!responseStyleDecision) {
+                return false;
+              }
+              return handleResponseStyleDecision({
+                decision: responseStyleDecision,
+                observedText: segmentContext.text,
+                agentExternalKey: segmentContext.agentExternalKey,
+                sessionKey: segmentContext.sessionKey,
+                transcriptFile: segmentContext.transcriptFile,
+                turnState: segmentContext.turnState,
+                ...(segmentContext.timestamp ? { timestamp: segmentContext.timestamp } : {}),
+              });
+            },
+          },
+          {
+            id: "project_fact",
+            handle: async (segmentContext) => {
+              const projectFactDecision = await detectProjectFactCaptureDecision(
+                segmentContext.text,
+                autoCaptureProfile,
+              );
+              if (!projectFactDecision) {
+                return false;
+              }
+              return handleProjectFactDecision({
+                decision: projectFactDecision,
+                agentExternalKey: segmentContext.agentExternalKey,
+                sessionKey: segmentContext.sessionKey,
+                transcriptFile: segmentContext.transcriptFile,
+                turnState: segmentContext.turnState,
+                ...(segmentContext.timestamp ? { timestamp: segmentContext.timestamp } : {}),
+              });
+            },
+          },
+          {
+            id: "recurring_procedure",
+            handle: async (segmentContext) => {
+              const recurringProcedureDecision = await detectRecurringProcedureCaptureDecision(
+                segmentContext.text,
+                autoCaptureProfile,
+              );
+              if (!recurringProcedureDecision) {
+                return false;
+              }
+              return handleRecurringProcedureDecision({
+                decision: recurringProcedureDecision,
+                agentExternalKey: segmentContext.agentExternalKey,
+                sessionKey: segmentContext.sessionKey,
+                transcriptFile: segmentContext.transcriptFile,
+                turnState: segmentContext.turnState,
+                ...(segmentContext.timestamp ? { timestamp: segmentContext.timestamp } : {}),
+              });
+            },
+          },
+          {
+            id: "workflow_improvement",
+            handle: async (segmentContext) => {
+              const workflowImprovementDecision = await detectWorkflowImprovementCaptureDecision(
+                segmentContext.text,
+                autoCaptureProfile,
+                params.config,
+              );
+              if (!workflowImprovementDecision) {
+                return false;
+              }
+              return handleWorkflowImprovementDecision({
+                decision: workflowImprovementDecision,
+                text: segmentContext.text,
+                agentExternalKey: segmentContext.agentExternalKey,
+                sessionKey: segmentContext.sessionKey,
+                transcriptFile: segmentContext.transcriptFile,
+                turnState: segmentContext.turnState,
+                ...(segmentContext.timestamp ? { timestamp: segmentContext.timestamp } : {}),
+              });
+            },
+          },
+        ],
+      });
+      if (handledByDecisionStages) {
+        continue;
+      }
+
+      const match = parseOrdinaryTurnAutoCapturePreference(segment, autoCapture.profile);
+      if (!match || inFlightKeys.has(match.key) || recentKeys.has(match.key)) {
+        continue;
+      }
+
+      inFlightKeys.add(match.key);
+      try {
+        const existing = await deps.findExistingByKey({
+          config: params.config,
+          key: match.key,
         });
-        if (!reviewResult.accepted) {
-          params.logger.warn(
-            formatLog("memory-middleware ordinary-turn auto-promotion review rejected", {
+        if (existing) {
+          params.logger.debug?.(
+            formatLog("memory-middleware ordinary-turn auto-capture skipped existing key", {
               key: match.key,
-              candidateId: result.memoryObjectId,
-              reason: reviewResult.reason ?? "unknown",
+              memoryObjectId: existing.id,
+              reviewState: existing.reviewState,
             }),
           );
-        } else {
-          const promotionResult = await deps.promoteToMemory({
+          markRecent(match.key);
+          continue;
+        }
+        const attribution = await deps.resolveAttribution({
+          config: params.config,
+          agentExternalKey,
+          sessionKey,
+          transcriptFile,
+        });
+        if (!attribution) {
+          params.logger.warn(
+            formatLog("memory-middleware ordinary-turn auto-capture skipped missing attribution", {
+              agentExternalKey,
+              sessionKey,
+            }),
+          );
+          continue;
+        }
+        const candidateMetadata = buildSubscriberCaptureMetadata({
+          match,
+          agentExternalKey,
+          sessionKey,
+          transcriptFile,
+          ...(timestamp ? { timestamp } : {}),
+        });
+        const submit =
+          match.candidateKind === "correction"
+            ? deps.submitCorrectionSuggestion
+            : deps.submitLearning;
+        const result = await submit({
+          content: match.content,
+          agentId: attribution.agentId,
+          sessionId: attribution.sessionId,
+          metadata: candidateMetadata,
+        });
+        if (!result.accepted) {
+          params.logger.warn(
+            formatLog("memory-middleware ordinary-turn auto-capture submission rejected", {
+              key: match.key,
+              reason: result.reason ?? "unknown",
+            }),
+          );
+          continue;
+        }
+        markRecent(match.key);
+        markTurnAcceptedCapture(turnState, match.key);
+        if (
+          autoPromotion.profile === "explicit-user-preference-v1" &&
+          autoPromotionAgents.has(agentExternalKey) &&
+          (match.captureClass === "explicit_preference" ||
+            match.captureClass === "explicit_requirement") &&
+          result.memoryObjectId
+        ) {
+          const autoPromotionMetadata = {
+            autoPromotion: {
+              source: AUTO_PROMOTION_SOURCE,
+              captureSeam: "transcript_subscriber_fallback",
+              profile: autoPromotion.profile,
+              captureProfile: match.profile,
+              captureClass: match.captureClass,
+              reasonCode: match.reasonCode,
+              key: match.key,
+              subjectKey: match.subjectKey,
+              subject: match.subject,
+              value: match.value,
+              ...(match.projectScope ? { projectScope: match.projectScope } : {}),
+              agentExternalKey,
+              sessionKey,
+              transcriptFile,
+              ...(timestamp ? { transcriptTimestamp: timestamp } : {}),
+            },
+          };
+          const reviewResult = await deps.reviewCandidate({
             candidateId: result.memoryObjectId,
-            promoterAgentId: attribution.agentId,
+            outcome: "accepted",
+            reviewerAgentId: attribution.agentId,
             metadata: autoPromotionMetadata,
           });
-          if (!promotionResult.accepted) {
+          if (!reviewResult.accepted) {
             params.logger.warn(
-              formatLog("memory-middleware ordinary-turn auto-promotion failed", {
+              formatLog("memory-middleware ordinary-turn auto-promotion review rejected", {
                 key: match.key,
                 candidateId: result.memoryObjectId,
-                reason: promotionResult.reason ?? "unknown",
+                reason: reviewResult.reason ?? "unknown",
               }),
             );
           } else {
-            params.logger.info(
-              formatLog("memory-middleware ordinary-turn auto-promotion accepted", {
-                key: match.key,
-                profile: autoPromotion.profile,
-                candidateId: result.memoryObjectId,
-                promotedMemoryObjectId: promotionResult.promotedMemoryObjectId,
-              }),
-            );
+            const promotionResult = await deps.promoteToMemory({
+              candidateId: result.memoryObjectId,
+              promoterAgentId: attribution.agentId,
+              metadata: autoPromotionMetadata,
+            });
+            if (!promotionResult.accepted) {
+              params.logger.warn(
+                formatLog("memory-middleware ordinary-turn auto-promotion failed", {
+                  key: match.key,
+                  candidateId: result.memoryObjectId,
+                  reason: promotionResult.reason ?? "unknown",
+                }),
+              );
+            } else {
+              params.logger.info(
+                formatLog("memory-middleware ordinary-turn auto-promotion accepted", {
+                  key: match.key,
+                  profile: autoPromotion.profile,
+                  candidateId: result.memoryObjectId,
+                  promotedMemoryObjectId: promotionResult.promotedMemoryObjectId,
+                }),
+              );
+            }
           }
         }
+        params.logger.info(
+          formatLog("memory-middleware ordinary-turn auto-capture accepted", {
+            key: match.key,
+            profile: match.profile,
+            captureClass: match.captureClass,
+            candidateKind: match.candidateKind,
+            eventId: result.eventId,
+            memoryObjectId: result.memoryObjectId,
+          }),
+        );
+      } catch (error) {
+        params.logger.error(
+          formatLog("memory-middleware ordinary-turn auto-capture failed", {
+            error: error instanceof Error ? error.message : String(error),
+            sessionKey,
+            transcriptFile,
+          }),
+        );
+      } finally {
+        inFlightKeys.delete(match.key);
       }
+    }
+
+    if (captureSegments.length > 1 || turnState.acceptedKeys.size > 1) {
       params.logger.info(
-        formatLog("memory-middleware ordinary-turn auto-capture accepted", {
-          key: match.key,
-          profile: match.profile,
-          captureClass: match.captureClass,
-          candidateKind: match.candidateKind,
-          eventId: result.eventId,
-          memoryObjectId: result.memoryObjectId,
+        formatLog("memory-middleware ordinary-turn multi-capture summary", {
+          segmentCount: captureSegments.length,
+          acceptedCaptureCount: turnState.acceptedKeys.size,
+          acceptedKeys: [...turnState.acceptedKeys],
+          acceptedCaptureLimit: AUTO_CAPTURE_MULTI_CAPTURE_LIMIT,
         }),
       );
-    } catch (error) {
-      params.logger.error(
-        formatLog("memory-middleware ordinary-turn auto-capture failed", {
-          error: error instanceof Error ? error.message : String(error),
-          sessionKey,
-          transcriptFile,
-        }),
-      );
-    } finally {
-      inFlightKeys.delete(match.key);
     }
   };
 }

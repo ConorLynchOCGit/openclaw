@@ -11,8 +11,12 @@ The current roadmap state is:
 2. flattening batches v1-v3 delivered real substrate progress
 3. the substrate is still not flat enough for reduced-profile self-improving
    capture or new families
-4. the next major work is a broader post-v3 substrate push, not one narrow
-   closeout slice
+4. multi-memory per-turn capture is now landed on the current substrate
+5. the next major work is mandatory rigid-surface replacement plus
+   canonicalization around 4 durable memory kinds
+6. the canonical-core tranche of that canonicalization work is now landed in
+   code, and the generic ingestion/retrieval contracts are now landed too, but
+   planner/runtime cutover and family-heavy retirement are not
 
 ## Read order for a fresh session
 
@@ -24,7 +28,8 @@ The current roadmap state is:
 6. `/memory-system/feature-inventory`
 7. `/memory-system/FLATTENING_EXECUTION_PLAN`
 8. `/memory-system/specs/implementation-sequencing`
-9. the specific substrate or family spec you are about to implement
+9. `/memory-system/specs/canonical-four-kind-memory-migration`
+10. the specific substrate or family spec you are about to implement
 
 ## Spec index
 
@@ -60,6 +65,7 @@ These remain important, but several now describe partial bridges rather than
 
 - `/memory-system/specs/architecture-fit-review`
 - `/memory-system/specs/behavior-application`
+- `/memory-system/specs/canonical-four-kind-memory-migration`
 - `/memory-system/specs/semantic-retrieval-routing`
 - `/memory-system/specs/implementation-sequencing`
 - `/memory-system/specs/cross-domain-memory-families`
@@ -83,6 +89,10 @@ These remain important, but several now describe partial bridges rather than
 ## Rules for using this spec pack
 
 - do not add new families on top of the still-partial substrate
+- do not treat multi-memory capture as proof that the family-heavy shape is now
+  acceptable long-term
+- do not treat the canonical-core tranche as proof that generic ingestion,
+  retrieval, or planner migration is already done
 - do not treat a shared helper as proof that the duplicated system is gone
 - do not treat prompt text as the lasting source of application policy
 - do not let semantic routing remain a hidden sidecar if the slice claims to

@@ -374,7 +374,98 @@ rerun with the learned-guidance rollout target actually enabled, focused on:
 
 Only after that rerun should the repo make the next post-canary judgment.
 
-## Phase N — cross-domain family expansion
+After the repo finished proving the existing Main routing / learned-guidance /
+retrieval functionality it already claimed to have, the next roadmap item was
+reliable multi-memory handling within a single turn.
+
+## Phase N — multi-memory per-turn capture and retrieval
+
+This phase is now landed as the bounded next step after the Main proof work.
+
+It focused on:
+
+- reliably capturing more than one distinct memory candidate from one long
+  turn when multiple durable lessons are genuinely present
+- preserving bounded authority so one verbose turn does not become an
+  unbounded ingestion sweep
+- making multi-result retrieval feel intentional rather than incidental when a
+  single query has several genuinely relevant approved memories
+- adding observability strong enough to show:
+  - how many candidate memories were detected from a turn
+  - how many were suppressed or merged
+  - how many were finally submitted / reviewed / promoted
+  - how many retrieval records were surfaced vs actually used in the final
+    answer
+
+This phase concluded:
+
+- a single long turn can yield multiple distinct candidate memories when the
+  content truly supports that
+- retrieval can return and report multiple relevant memories without losing
+  bounded ranking discipline
+- the repo has transcript- and tool-level proof for both multi-capture and
+  multi-retrieval behavior
+
+## Phase O — mandatory rigid-surface replacement and canonicalization
+
+This phase is now the mandatory next program of work.
+
+It exists because the repo has now proven the current bounded behavior well
+enough that the main remaining scaling problem is architectural rigidity, not
+missing one-off family patches.
+
+This phase must:
+
+- replace rigid family-first capture, retrieval, and application seams with
+  generic adaptable contracts
+- move the storage model toward 4 canonical memory kinds:
+  - `User`
+  - `Feedback`
+  - `Project`
+  - `Reference`
+- preserve current useful semantics as facets, metadata, derived views, and
+  compatibility adapters instead of permanent top-level families
+- remove first-order dependence on:
+  - family-specific registry switches
+  - lesson-key switches
+  - template-specific routing
+  - hard-coded retrieval hint tables
+  - first-hit write handling as the dominant substrate shape
+
+Phase O should be sequenced as:
+
+1. canonical record contract and adapter envelope
+2. generic ingestion contract
+3. generic retrieval and ranking contract
+4. learned-guidance and hybrid retrieval re-based onto canonical memories
+5. compatibility shims for old family-owned seams
+6. staged retirement of rigid family-specific branches
+
+Current tranche status:
+
+- Steps 1-3 are now landed:
+  - canonical record/envelope contracts exist in code
+  - canonical facet/metadata scaffolding exists in code
+  - family-policy compatibility builders can emit canonical-core-compatible
+    records
+  - generic ingestion contracts now exist in code
+  - resolver-backed ordinary-turn capture now emits canonical candidates
+  - generic retrieval/ranking contracts now exist in code
+- Step 4 is now the next required slice:
+  - learned-guidance and hybrid retrieval re-based onto canonical memories and
+    canonical retrieval plans
+
+Success for this phase should mean:
+
+- the 4 canonical kinds are the durable storage model
+- the current six-family substrate is clearly transitional rather than
+  permanent
+- current family-specific tools and policies can run as adapters while the
+  canonical model takes over
+- future scaling work no longer depends on adding another family-specific
+  branch for each new memory behavior
+
+## Phase P — cross-domain family expansion
 
 Cross-domain family expansion resumes only after:
 
@@ -385,6 +476,8 @@ Cross-domain family expansion resumes only after:
 5. bounded rollout proof and reevaluation for those new functional seams
 6. bounded promotion follow-through, automated eval, and production-canary
    evidence review
+7. multi-memory per-turn capture / retrieval proof
+8. mandatory rigid-surface replacement / canonicalization
 
 Recommended first tranche:
 
@@ -428,5 +521,6 @@ substrate slice:
 - do not treat practical parity as full capability identity
 - do not enable reduced-profile self-improving capture during the
   docs/spec/architecture-planning slice
-- do not add new families before the stronger substrate work is landed
+- do not add new families before the rigid-surface replacement program is
+  landed strongly enough
 - do not erase real family-policy differences while flattening

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCanonicalMemoryRetrievalPlan,
   inferGeneralizedWorkflowGuidancePatternHint,
   inferProjectMemoryIntentFamily,
   inferRecurringProcedureQueryHint,
@@ -63,6 +64,34 @@ describe("retrieval intent helpers", () => {
       inferWorkflowImprovementQueryHint("Should I use scripts/committer instead of git add?"),
     ).toEqual({
       lessonKey: "scripts_committer_required",
+    });
+  });
+
+  it("builds canonical retrieval plans from current project lookup hints", () => {
+    const plan = buildCanonicalMemoryRetrievalPlan({
+      input: {
+        query: "What is the Atlas staging branch?",
+        kind: "project",
+        scope: "approved_only",
+      },
+    });
+
+    expect(plan).toMatchObject({
+      query: {
+        normalizedQuery: "what is the atlas staging branch?",
+        requestedKinds: ["project", "feedback", "reference"],
+        derivedViews: ["project_fact"],
+        facetFilters: expect.arrayContaining([
+          expect.objectContaining({
+            key: "fieldKey",
+            operator: "equals",
+            value: "staging_branch",
+          }),
+        ]),
+      },
+      ranking: {
+        preferValidationStatuses: ["validated", "approved"],
+      },
     });
   });
 });

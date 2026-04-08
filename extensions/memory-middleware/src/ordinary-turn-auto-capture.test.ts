@@ -3411,6 +3411,288 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).not.toHaveBeenCalled();
   });
 
+  it("captures two distinct memories from one long turn when both segments are strong", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-multi-1",
+      memoryObjectId: "memory-multi-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectProjectFactLifecycle: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-multi-1",
+          sessionId: "session-uuid-multi-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate: vi.fn(async () => ({
+          accepted: true as const,
+          reviewId: "review-multi-1",
+        })),
+        promoteToMemory: vi.fn(async () => ({
+          accepted: true as const,
+          promotedMemoryObjectId: "approved-multi-1",
+        })),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/multi-turn-1.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content:
+          "Please keep your responses concise. For project atlas forge, the staging branch is atlas-staging.",
+        timestamp: Date.parse("2026-04-08T23:00:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(2);
+    const submitLearningCalls = submitLearning.mock.calls as unknown as Array<
+      [{ content: string; metadata?: Record<string, unknown> }]
+    >;
+    expect(submitLearningCalls.map((call) => call[0].content)).toEqual(
+      expect.arrayContaining([
+        "User requirement: keep responses concise.",
+        "Project fact [atlas forge]: staging branch is atlas-staging.",
+      ]),
+    );
+    expect(
+      submitLearningCalls.map(
+        (call) =>
+          (call[0].metadata?.canonicalIngestionCandidate as { record: { kind: string } }).record
+            .kind,
+      ),
+    ).toEqual(expect.arrayContaining(["user", "project"]));
+    expect(
+      submitLearningCalls.map(
+        (call) =>
+          (
+            call[0].metadata?.canonicalIngestionCandidate as {
+              capture: { mode: string };
+              compatibility: { transitionalFamilyId: string };
+            }
+          ).compatibility.transitionalFamilyId,
+      ),
+    ).toEqual(expect.arrayContaining(["response_style", "project_fact"]));
+  });
+
+  it("captures three distinct memories from one long turn when each segment is strong", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-multi-2",
+      memoryObjectId: "memory-multi-2",
+    }));
+    const submitImprovementNote = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "improvement" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-multi-improvement-2",
+      memoryObjectId: "memory-multi-improvement-2",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectProjectFactLifecycle: vi.fn(async () => null),
+        inspectWorkflowImprovementLifecycle: vi.fn(async () => ({
+          activeApprovedSubjectObjectIds: [],
+          pendingSubjectCandidateIds: [],
+          activeApprovedSubjectEntries: [],
+          pendingSubjectCandidates: [],
+        })),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-multi-2",
+          sessionId: "session-uuid-multi-2",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        submitProcedureSuggestion: vi.fn(),
+        submitImprovementNote,
+        reviewCandidate: vi.fn(async () => ({
+          accepted: true as const,
+          reviewId: "review-multi-2",
+        })),
+        promoteToMemory: vi.fn(async () => ({
+          accepted: true as const,
+          promotedMemoryObjectId: "approved-multi-2",
+        })),
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/multi-turn-2.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: [
+          "Please keep your responses concise.",
+          "For project atlas forge, the staging branch is atlas-staging.",
+          "Use pnpm test -- src/foo.test.ts instead of raw vitest here.",
+        ].join(" "),
+        timestamp: Date.parse("2026-04-08T23:01:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(2);
+    expect(submitImprovementNote).toHaveBeenCalledTimes(1);
+    expect(submitImprovementNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          "Workflow improvement: use pnpm test -- <path-or-filter> [vitest args...] instead of raw vitest so the repo test wrapper stays active.",
+        metadata: expect.objectContaining({
+          canonicalIngestionCandidate: expect.objectContaining({
+            record: expect.objectContaining({
+              kind: "feedback",
+            }),
+            capture: expect.objectContaining({
+              mode: "ordinary_turn",
+              source: "transcript",
+            }),
+            compatibility: expect.objectContaining({
+              transitionalFamilyId: "workflow_improvement",
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("dedupes repeated wording inside one long turn down to one capture", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-multi-3",
+      memoryObjectId: "memory-multi-3",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-multi-3",
+          sessionId: "session-uuid-multi-3",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate: vi.fn(async () => ({
+          accepted: true as const,
+          reviewId: "review-multi-3",
+        })),
+        promoteToMemory: vi.fn(async () => ({
+          accepted: true as const,
+          promotedMemoryObjectId: "approved-multi-3",
+        })),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/chief/sessions/multi-turn-3.jsonl",
+      sessionKey: "agent:chief:main",
+      message: {
+        role: "user",
+        content: "Please keep your responses concise. Please keep your responses concise.",
+        timestamp: Date.parse("2026-04-08T23:02:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(1);
+  });
+
+  it("captures only the strong segments from a mixed long turn", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-multi-4",
+      memoryObjectId: "memory-multi-4",
+    }));
+    const submitImprovementNote = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "improvement" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-multi-improvement-4",
+      memoryObjectId: "memory-multi-improvement-4",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectWorkflowImprovementLifecycle: vi.fn(async () => ({
+          activeApprovedSubjectObjectIds: [],
+          pendingSubjectCandidateIds: [],
+          activeApprovedSubjectEntries: [],
+          pendingSubjectCandidates: [],
+        })),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-multi-4",
+          sessionId: "session-uuid-multi-4",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        submitProcedureSuggestion: vi.fn(),
+        submitImprovementNote,
+        reviewCandidate: vi.fn(async () => ({
+          accepted: true as const,
+          reviewId: "review-multi-4",
+        })),
+        promoteToMemory: vi.fn(async () => ({
+          accepted: true as const,
+          promotedMemoryObjectId: "approved-multi-4",
+        })),
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/multi-turn-4.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: [
+          "Please keep your responses concise.",
+          "This might matter later, but I'm not sure yet.",
+          "Use pnpm test -- src/foo.test.ts instead of raw vitest here.",
+        ].join(" "),
+        timestamp: Date.parse("2026-04-08T23:03:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(1);
+    expect(submitImprovementNote).toHaveBeenCalledTimes(1);
+  });
+
   it("captures a bounded environment constraint as an improvement candidate", async () => {
     const submitImprovementNote = vi.fn(async () => ({
       accepted: true as const,

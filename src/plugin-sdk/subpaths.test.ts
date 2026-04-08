@@ -194,6 +194,21 @@ describe("plugin-sdk subpath exports", () => {
       "getMemoryProofDefinition",
       "getMemoryFamilyIdByWorkflowLessonFamily",
     ]);
+    expectSourceMentions("memory-canonical-core", [
+      "createCanonicalMemoryRecord",
+      "mergeCanonicalMemoryFacets",
+      "CANONICAL_MEMORY_KINDS",
+    ]);
+    expectSourceMentions("memory-canonical-ingestion", [
+      "createCanonicalMemoryIngestionCandidate",
+      "createCanonicalMemoryIngestionBatch",
+      "CANONICAL_MEMORY_INGESTION_MODES",
+    ]);
+    expectSourceMentions("memory-canonical-retrieval", [
+      "createCanonicalMemoryRetrievalPlan",
+      "createCanonicalMemoryRankingHint",
+      "CANONICAL_MEMORY_SEMANTIC_FALLBACK_STRATEGIES",
+    ]);
     expectSourceOmitsImportPattern(
       "memory-family-policy",
       "../../extensions/memory-middleware/src/memory-family-registry.js",

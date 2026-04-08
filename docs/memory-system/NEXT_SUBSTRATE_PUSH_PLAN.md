@@ -2,13 +2,13 @@
 
 ## Purpose
 
-This doc records the honest next move now that:
+This doc records the honest next substrate move after:
 
-- the first bounded self-improving and inline advisory batch is landed
-- the bounded rollout-proof and reevaluation batch is also landed
-- the bounded promotion and off-production rollout-enablement batch is also
-  landed
-- the automated eval and production-canary controls batch is also landed
+- the bounded self-improving and inline advisory batches landed
+- the Main routing / learned-guidance / retrieval proof work landed
+- multi-memory per-turn capture landed on the current substrate
+- the repo finished the current-functionality proof loop strongly enough to
+  stop pretending the current rigid family-heavy shape is the long-term model
 
 ## What is already landed
 
@@ -66,20 +66,16 @@ Current reevaluation judgment:
 
 ### Next major phase
 
-1. rerun a narrow rollbackable production-canary Main-session proof with the
-   learned-guidance rollout target actually enabled and the new Main-only
-   tool-choice steering in place
-2. explicitly observe docs-localization, file-reference, and native workflow
-   weak spots during that rerun
-3. decide whether Main now honestly uses:
-   - `memory_learned_guidance_plan` for eligible workflow-preflight asks
-   - `memory_object_search_hybrid` for strong direct workflow lookup asks
-   - direct model answers only for prompts outside those strong memory-informed
-     classes
-4. only then decide whether learned-guidance advisory planning is honestly
-   proven in Main production-canary UX, and whether either seam or any broader
-   phrasing class should widen or stay narrow
-5. cross-domain family expansion only after those rollout answers are clear
+1. replace rigid family-owned memory surfaces with generic adaptable seams
+2. migrate toward 4 canonical durable memory kinds:
+   - `User`
+   - `Feedback`
+   - `Project`
+   - `Reference`
+3. preserve the current family-specific semantics as metadata, derived views,
+   and compatibility adapters during migration
+4. only after that canonicalization work is real should the repo resume any
+   broader family or domain expansion
 
 ### Later bounded cleanup only if justified
 
@@ -90,53 +86,54 @@ Current reevaluation judgment:
 
 ## What should land next
 
-The next implementation slice should now be:
+The next implementation slices should now be:
 
-- rerun narrow rollbackable production-canary Main-session proof for
-  workflow-preflight learned-guidance adoption plus direct lookup retrieval
-  adoption after the Main tool-choice fix, while explicitly watching the
-  current docs-localization, file-reference, and native workflow weak spots
+- learned-guidance and hybrid retrieval rebased onto canonical records instead
+  of family-specific switches
+- remaining family-native capture paths rebased to canonical candidate
+  emission
+- retrieval SQL/control-plane cleanup so canonical plans become the primary
+  substrate rather than a compatibility layer
+
+The canonical-core tranche is now already landed:
+
+- canonical record/envelope contract
+- facet/metadata model
+- family-policy compatibility builders
+- canonical ingestion candidate contract
+- canonical retrieval/ranking contract
 
 Why:
 
-- the Main-session reminder leak is now fixed
-- the docs/file overlap cases from the manual UX pass now promote cleanly under
-  bounded follow-through
-- the self-improving and learned-guidance seams now have an explicit
-  default-off versus `off-production` versus `production-canary` enablement
-  boundary
-- automated eval is now real and already shows the weak spots that the canary
-  must watch
-- the remaining risk is now post-fix Main production-runtime truth under a
-  narrow canary, not missing shared architecture
-- the latest failed rerun mixed a live rollout-state gap with direct memory-tool
-  bypass, so the next rerun must validate both enablement and tool selection
-- widening vague phrasing classes before evidence exists would recreate
-  accidental parallel policy paths faster than it would add useful coverage
+- current user-visible behavior is now proven well enough that the main risk is
+  architectural rigidity
+- the current six-family substrate still duplicates policy, routing, and
+  metadata meaning in too many places
+- multi-memory capture removed one practical limitation, but it did not remove
+  the deeper family-heavy structure that makes the system expensive to scale
+- future work should not add more family-specific seams on top of that
 
 ## What should not be parallelized prematurely
 
 - broader self-improving family expansion
 - learned-guidance background scheduling or proactive execution
-- new family implementation
+- new family implementation before canonicalization
 - broad artifact/read-model redesign before rollout pressure says it is needed
 
 ## Exit criteria before moving on
 
 Before new families:
 
-- rollbackable production canary evidence shows the self-improving tranche
-  adds useful coverage without noisy replay
-- provenance and audit stay explicit
-- approved retrieval remains the only authority for later application
-- inline advisory planning stays suggestion-only, conflict-safe, and cheap
-  enough in prompt cost
-- the new surfaces do not create a second hidden policy system
-- the strongest explicit docs/file packet shapes promote cleanly without
-  dragging vague shorthand phrasings along with them
+- canonical kinds exist as the durable storage model
+- family-specific behavior is mostly adapters or derived views rather than the
+  primary substrate
+- ingestion, retrieval, and application no longer re-derive most policy from
+  family-specific string switches
+- provenance and audit stay explicit during migration
+- the compatibility layer is strong enough to preserve current live behavior
 
 ## Next implementation slice
 
-- rollbackable production canary Main-session rerun with explicit learned-
-  guidance enablement plus post-rerun judgment for advisory, retrieval, and
-  the docs/file/native-workflow weak spots
+- canonical 4-kind replacement architecture work, starting with the generic
+  ingestion and retrieval substrate that can adapt the current family-heavy
+  system instead of extending it
