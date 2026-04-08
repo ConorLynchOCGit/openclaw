@@ -372,6 +372,8 @@ describe("applyExtraParamsToAgent", () => {
     cfg?: Record<string, unknown>;
     extraParamsOverride?: Record<string, unknown>;
     payload?: Record<string, unknown>;
+    context?: Context;
+    agentId?: string;
   }) {
     const payload = params.payload ?? { store: false };
     const baseStreamFn: StreamFn = (model, _context, options) => {
@@ -385,8 +387,10 @@ describe("applyExtraParamsToAgent", () => {
       params.applyProvider,
       params.applyModelId,
       params.extraParamsOverride,
+      undefined,
+      params.agentId,
     );
-    const context: Context = { messages: [] };
+    const context: Context = params.context ?? { messages: [] };
     void agent.streamFn?.(params.model, context, params.options ?? {});
     return payload;
   }
@@ -3151,5 +3155,140 @@ describe("applyExtraParamsToAgent", () => {
     });
     expect(payload.prompt_cache_key).toBe("session-default");
     expect(payload.prompt_cache_retention).toBe("24h");
+  });
+
+  it("pins learned-guidance tool choice for Main workflow-preflight prompts", () => {
+    const payload = runResponsesPayloadMutationCase({
+      applyProvider: "openai-codex",
+      applyModelId: "gpt-5.4",
+      agentId: "main",
+      model: {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4",
+        baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+      } as Model<"openai-codex-responses">,
+      payload: { tool_choice: "auto" },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "I touched typed runtime logic in this repo. Before I push, what should I double-check first?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_learned_guidance_plan" }, { name: "memory_object_search_hybrid" }],
+      } as Context,
+    });
+
+    expect(payload.tool_choice).toEqual({
+      type: "function",
+      function: { name: "memory_learned_guidance_plan" },
+    });
+  });
+
+  it("pins hybrid retrieval for Main direct workflow lookup prompts", () => {
+    const payload = runResponsesPayloadMutationCase({
+      applyProvider: "openai-codex",
+      applyModelId: "gpt-5.4",
+      agentId: "main",
+      model: {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4",
+        baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+      } as Model<"openai-codex-responses">,
+      payload: { tool_choice: "auto" },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "If config schema or config help changes here, what artifact should I update too?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_object_search_hybrid" }],
+      } as Context,
+    });
+
+    expect(payload.tool_choice).toEqual({
+      type: "function",
+      function: { name: "memory_object_search_hybrid" },
+    });
+  });
+
+  it("does not pin memory tool choice after tool loop activity has already started", () => {
+    const payload = runResponsesPayloadMutationCase({
+      applyProvider: "openai-codex",
+      applyModelId: "gpt-5.4",
+      agentId: "main",
+      model: {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4",
+        baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+      } as Model<"openai-codex-responses">,
+      payload: { tool_choice: "auto" },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Before I land this, what should I double-check first?" },
+            ],
+          },
+          {
+            role: "assistant",
+            content: [{ type: "toolCall", name: "memory_object_search_hybrid" }],
+          },
+          {
+            role: "toolResult",
+            content: [{ type: "text", text: '{"status":"ok"}' }],
+          },
+        ],
+        tools: [{ name: "memory_learned_guidance_plan" }, { name: "memory_object_search_hybrid" }],
+      } as Context,
+    });
+
+    expect(payload.tool_choice).toBe("auto");
+  });
+
+  it("does not pin memory tool choice for non-main agents", () => {
+    const payload = runResponsesPayloadMutationCase({
+      applyProvider: "openai-codex",
+      applyModelId: "gpt-5.4",
+      agentId: "reviewer",
+      model: {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4",
+        baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+      } as Model<"openai-codex-responses">,
+      payload: { tool_choice: "auto" },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "I touched typed runtime logic in this repo. Before I push, what should I double-check first?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_learned_guidance_plan" }, { name: "memory_object_search_hybrid" }],
+      } as Context,
+    });
+
+    expect(payload.tool_choice).toBe("auto");
   });
 });

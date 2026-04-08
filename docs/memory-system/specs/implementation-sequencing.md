@@ -31,6 +31,8 @@ The automated eval and production-canary controls batch is now also landed.
 
 The Main advisory-routing diagnosis batch is now also landed.
 
+The Main memory-tool bypass diagnosis batch is now also landed.
+
 The next honest phase is therefore no longer:
 
 - another core flattening slice
@@ -40,8 +42,8 @@ The next honest phase is therefore no longer:
 The next honest phase is:
 
 - post-fix narrow rollbackable production-canary Main-session proof for
-  workflow-preflight advisory routing, using the automated eval results as the
-  explicit watchlist
+  workflow-preflight advisory selection plus direct lookup retrieval selection,
+  using the automated eval results as the explicit watchlist
 
 ## Completed order so far
 
@@ -70,15 +72,17 @@ Historical completed order:
 21. bounded promotion and off-production rollout batch v1
 22. automated eval and production-canary controls batch v1
 23. Main advisory-routing diagnosis batch v1
+24. Main memory-tool bypass diagnosis batch v1
 
 ## Recommended next order
 
 ### Next major rollout work
 
-1. post-fix narrow rollbackable production-canary Main-session proof for
-   workflow-preflight learned-guidance adoption
-2. post-canary judgment on the docs/file/native-workflow weak spots plus any
-   widening decision
+1. post-fix narrow rollbackable production-canary Main-session proof for:
+   - workflow-preflight learned-guidance adoption
+   - direct lookup retrieval adoption
+2. post-canary judgment on advisory, retrieval, and the
+   docs/file/native-workflow weak spots plus any widening decision
 
 ### Later phases
 
@@ -105,6 +109,8 @@ Historical completed order:
   testing must watch
 - the remaining question is post-fix Main production-runtime behavior and
   metrics under a narrow canary, not architecture
+- the latest failed rerun mixed rollout-state error with direct memory-tool
+  bypass, so the next proof must validate both enablement and tool selection
 - widening vague phrasing classes before off-production evidence exists would
   risk recreating hidden policy paths
 

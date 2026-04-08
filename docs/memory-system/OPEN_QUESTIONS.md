@@ -15,16 +15,16 @@ how far they should be enabled and widened.
 1. Is the narrow self-improving candidate-only seam ready for a rollbackable
    production canary as-is, or does it still need stronger pre-canary
    observability?
-2. Does a fresh Main production-canary rerun now actually call
-   `memory_learned_guidance_plan` for eligible workflow-preflight prompts
-   after the routing fix, or does Main still fall back to retrieval/search?
+2. Does a fresh Main production-canary rerun with learned-guidance actually
+   enabled now call `memory_learned_guidance_plan` for eligible
+   workflow-preflight prompts after the Main tool-choice fix?
 3. How much should the current automated-eval weak spots block canary scope:
    docs-localization ranking / metadata incompleteness,
    file-reference under-retrieval, and native workflow guidance
    under-retrieval?
-4. Which direct workflow prompt shapes should remain retrieval-first even
-   after the advisory-routing fix so the planner does not become a second
-   policy engine?
+4. Which direct workflow prompt shapes now honestly hit
+   `memory_object_search_hybrid`, and which prompt shapes should still bypass
+   memory instead of being forced through it?
 5. What exact post-canary evidence threshold should explicit docs-localization
    project-rule packets meet before broader docs phrasing promotion is
    justified?

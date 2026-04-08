@@ -2,16 +2,16 @@
 
 ## Active slice
 
-Main production-canary advisory-routing diagnosis and narrow prompt/profile
+Main production-canary memory-tool bypass diagnosis and narrow Main tool-choice
 follow-through
 
 ## Objective
 
-Use the newly landed automated eval path and explicit production-canary
-controls, plus recent Main-session canary transcript evidence, to decide why
-workflow-preflight prompts were not reaching learned-guidance advisory
-planning and whether a narrow routing fix is honest before any broader canary
-claim.
+Use the newly landed automated eval path, explicit production-canary controls,
+and recent Main-session canary transcript evidence to decide why Main was
+still bypassing memory tools entirely on workflow-preflight and direct lookup
+asks after the advisory-routing fix, and whether a narrow Main-only tool-choice
+fix is honest before any broader canary claim.
 
 The current accepted answer is:
 
@@ -32,23 +32,28 @@ The current accepted answer is:
   - file-reference explicit retrieval is still underpowered in that eval
   - native workflow guidance is still under-retrieved in that eval
 - the next missing truth is not more rollout-control plumbing
-- the recent Main production-canary transcript showed workflow-preflight asks
-  using `memory_object_search_hybrid`, `memory_search`, or no memory tool call
-  instead of `memory_learned_guidance_plan`
-- the current learned-guidance gap is therefore Main advisory adoption, not
-  missing rollout controls
+- the latest Main production-canary rerun showed:
+  - `memory_learned_guidance_plan`: 0 calls
+  - `memory_object_search_hybrid`: 1 call
+  - `memory_search`: 0 calls
+  - most tested prompts using no memory tool at all
+- the rerun also showed a mixed failure:
+  - learned-guidance was not actually enabled in the live canary config, so
+    `memory_learned_guidance_plan` was absent from Main
+  - approved retrieval tools were present, but Main still often answered from
+    direct model reasoning because the OpenAI/Codex path stayed on
+    `tool_choice: auto`
 
 This slice still does not answer production enablement by default.
 
 It answers:
 
-- whether Main workflow-preflight asks can honestly route into the already
-  bounded learned-guidance advisory seam in production-canary posture
-- whether the learned-guidance tool should be visible to Main only when an
-  explicit rollout target enables it
+- whether Main should pin the advisory tool only for strong workflow-preflight
+  asks when that tool is actually enabled
+- whether Main should pin retrieval for strong direct repo-lookup asks instead
+  of leaving those turns on `tool_choice: auto`
 - whether the explicit docs/file and native-workflow weak spots observed in the
-  automated eval remain acceptable watch items once the Main routing issue is
-  narrowed
+  automated eval remain acceptable watch items once the Main bypass is narrowed
 
 The rollout still must avoid creating:
 
@@ -141,6 +146,29 @@ The rollout still must avoid creating:
   advisory behavior until a fresh production-canary transcript shows the tool
   firing
 
+### Slice 8 — Main memory-tool bypass diagnosis
+
+- the latest Main production-canary rerun showed a broader failure than
+  advisory non-selection:
+  workflow-preflight prompts and most direct lookup prompts bypassed memory
+  tools entirely
+- the live rerun was not actually advisory-enabled because the Main canary
+  config did not expose `memory_learned_guidance_plan`
+- retrieval tools such as `memory_object_search_hybrid` were present in Main,
+  but the OpenAI/Codex path still left prompt classes on `tool_choice: auto`,
+  so Main often answered from direct model reasoning instead of using available
+  repo-local memory tools
+- Main now has a narrow OpenAI/Codex tool-choice wrapper:
+  - strong workflow-preflight prompts pin
+    `memory_learned_guidance_plan` when that tool is available
+  - strong direct workflow lookup prompts pin
+    `memory_object_search_hybrid`
+  - only the Main agent gets this steering
+  - turns already inside a tool loop are left alone
+- this lands an honest narrow fix, but Main memory-tool behavior is still not
+  canary-proven until a fresh live transcript shows the right tools actually
+  firing
+
 ## What is now strong enough for bounded promotion follow-through
 
 - explicit docs-localization operating rules with clear project scope
@@ -179,6 +207,8 @@ Still intentionally disabled:
   `production-canary` rollout target before the bounded runtime path activates
 - Main now only sees `memory_learned_guidance_plan` when that explicit rollout
   target is actually active
+- Main now also has bounded tool-choice steering for strong memory-informed
+  prompt classes on the OpenAI/Codex path
 - both seams now expose explicit rollout scope and structured evaluation /
   observability fields in their runtime results
 - automated eval now exists as a real repeatable proof surface:
@@ -236,11 +266,14 @@ Still not next:
 
 The next main implementation sequence should now be:
 
-1. rerun a narrow rollbackable production-canary Main-session proof focused on
-   workflow-preflight prompts after the routing fix
-2. confirm from transcript/tool evidence that eligible preflight asks now hit
-   `memory_learned_guidance_plan` while direct lookup prompts stay
-   retrieval-first
+1. rerun a narrow rollbackable production-canary Main-session proof with the
+   learned-guidance rollout target actually enabled
+2. confirm from transcript/tool evidence that:
+   - eligible workflow-preflight asks now hit
+     `memory_learned_guidance_plan`
+   - strong direct lookup prompts now hit
+     `memory_object_search_hybrid`
+   - prompts outside those strong classes are not forcibly routed
 3. keep watching the three current weak spots explicitly:
    docs-localization ranking / metadata,
    file-reference retrieval,

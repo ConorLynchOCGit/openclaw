@@ -28,6 +28,8 @@ The automated eval and production-canary controls batch is now also landed.
 
 The Main advisory-routing diagnosis batch is now also landed.
 
+The Main memory-tool bypass diagnosis batch is now also landed.
+
 ## What is live now
 
 Live families:
@@ -69,6 +71,8 @@ Live substrate properties:
 - rollout-aligned registration for `memory_learned_guidance_plan`
 - prompt/profile routing that distinguishes workflow-preflight advisory asks
   from direct workflow lookup asks
+- Main-only OpenAI/Codex tool-choice steering for strong workflow-preflight
+  and direct repo-lookup prompt classes
 
 ## What is live but still bounded
 
@@ -262,6 +266,32 @@ It concluded:
 - Main advisory planning is still not proven in production-canary UX until a
   fresh transcript/tool run shows the advisory tool actually firing
 
+## What the Main memory-tool bypass diagnosis batch changed
+
+This batch landed three real slices:
+
+1. transcript-backed Main memory-tool bypass diagnosis
+2. narrow Main/OpenAI tool-choice follow-through
+3. post-diagnosis memory-tool-selection judgment
+
+It added:
+
+- explicit transcript evidence that the latest Main canary rerun used no
+  memory tool for most tested workflow-preflight and direct lookup prompts
+- an explicit diagnosis that the rerun mixed two failures:
+  learned-guidance was not actually enabled in the live canary config, and
+  available retrieval tools were still being bypassed on `tool_choice: auto`
+- Main-only OpenAI/Codex tool-choice steering for strong prompt classes:
+  workflow-preflight pins `memory_learned_guidance_plan` when enabled, and
+  strong direct lookup pins `memory_object_search_hybrid`
+
+It concluded:
+
+- the latest Main failure was not just advisory non-selection
+- a narrow repo-owned fix exists in the Main/OpenAI request path
+- Main memory-tool selection is still not proven in production-canary UX until
+  a fresh transcript/tool rerun shows the right tools actually firing
+
 ## What happens next
 
 The next major move is no longer another substrate refactor phase or another
@@ -269,11 +299,11 @@ enablement-plumbing slice.
 
 The next major move should be:
 
-1. rerun a narrow rollbackable production-canary Main-session proof focused on
-   workflow-preflight prompts after the routing fix
-2. confirm from transcript/tool evidence that eligible preflight asks now hit
-   `memory_learned_guidance_plan` while direct lookup prompts remain
-   retrieval-first
+1. rerun a narrow rollbackable production-canary Main-session proof with the
+   learned-guidance rollout target actually enabled
+2. confirm from transcript/tool evidence that eligible workflow-preflight asks
+   hit `memory_learned_guidance_plan` and strong direct lookup prompts hit
+   `memory_object_search_hybrid`
 3. keep watching the three current weak spots during that rerun:
    docs-localization ranking / metadata, file-reference retrieval, and native
    workflow guidance retrieval

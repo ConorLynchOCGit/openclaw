@@ -348,11 +348,31 @@ It concluded:
   production-canary UX until a fresh transcript/tool rerun shows the planner
   actually firing
 
+Recent follow-through evidence then showed a broader Main problem:
+
+- the latest post-fix rerun still used no memory tool for most workflow-
+  preflight and direct lookup prompts
+- that rerun was also not actually advisory-enabled in live config, so
+  `memory_learned_guidance_plan` was absent from Main
+- a narrow Main-only OpenAI/Codex tool-choice wrapper is now landed so
+  eligible workflow-preflight prompts can pin
+  `memory_learned_guidance_plan` when enabled, and strong direct lookup
+  prompts can pin `memory_object_search_hybrid`
+- Main memory-tool selection is still not production-canary-proven until a
+  fresh live transcript shows the right tools actually firing
+
 ## What comes next after Phase M
 
 The next honest move is a narrow rollbackable production-canary Main-session
-rerun focused on workflow-preflight prompts after the routing fix, followed by
-post-canary judgment on the explicit docs/file and native-workflow weak spots.
+rerun with the learned-guidance rollout target actually enabled, focused on:
+
+- workflow-preflight prompts that should hit
+  `memory_learned_guidance_plan`
+- strong direct lookup prompts that should hit
+  `memory_object_search_hybrid`
+- explicit watch items for docs/file/native-workflow weak spots
+
+Only after that rerun should the repo make the next post-canary judgment.
 
 ## Phase N — cross-domain family expansion
 

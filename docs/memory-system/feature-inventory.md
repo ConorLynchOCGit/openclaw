@@ -125,6 +125,10 @@ Backlog / flattening debt:
 - `memory_learned_guidance_plan` now only registers when an explicit
   `off-production` or `production-canary` rollout target enables the bounded
   advisory seam
+- Main now also has narrow OpenAI/Codex tool-choice steering for the strongest
+  memory-informed prompt classes:
+  workflow-preflight can pin `memory_learned_guidance_plan` when enabled, and
+  strong direct workflow lookup can pin `memory_object_search_hybrid`
 - vague shorthand docs/file phrasing still remains intentionally weaker and is
   not accepted as proof that those broader phrasings should auto-promote
 
@@ -136,6 +140,8 @@ Still not live:
 - production-enabled learned-guidance advisory planning
 - Main production-canary transcript proof that workflow-preflight prompts now
   really use learned-guidance advisory planning after the routing fix
+- Main production-canary transcript proof that strong direct lookup prompts now
+  use retrieval instead of bypassing memory entirely
 - new cross-domain families
 - broad automatic promotion for vague shorthand docs/file packet phrasing
 - production-canary runtime evidence strong enough to justify widening

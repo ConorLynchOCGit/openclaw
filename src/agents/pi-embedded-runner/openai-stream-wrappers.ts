@@ -1,15 +1,161 @@
 import type { StreamFn } from "@mariozechner/pi-agent-core";
 import type { SimpleStreamOptions } from "@mariozechner/pi-ai";
 import { streamSimple } from "@mariozechner/pi-ai";
+import { extractTextFromChatContent } from "../../shared/chat-content.js";
 import { resolveProviderAttributionHeaders } from "../provider-attribution.js";
 import { log } from "./logger.js";
 import { streamWithPayloadPatch } from "./stream-payload-utils.js";
 
 type OpenAIServiceTier = "auto" | "default" | "flex" | "priority";
 type OpenAITextVerbosity = "low" | "medium" | "high";
+type MainMemoryToolChoiceTarget = "memory_learned_guidance_plan" | "memory_object_search_hybrid";
 
 const OPENAI_RESPONSES_APIS = new Set(["openai-responses", "azure-openai-responses"]);
 const OPENAI_RESPONSES_PROVIDERS = new Set(["openai", "azure-openai", "azure-openai-responses"]);
+const MAIN_MEMORY_TOOL_CHOICE_APIS = new Set([
+  "openai-responses",
+  "openai-codex-responses",
+  "azure-openai-responses",
+]);
+const MAIN_MEMORY_PREFLIGHT_PATTERNS = [
+  /\bpreflight\b/i,
+  /\bbefore i (?:land|push|commit|do|finish|wrap up|send|reply|rerun|finalize)\b/i,
+  /\bi(?: am|'m) about to\b/i,
+  /\bdouble-?check first\b/i,
+  /\bwhat should i watch for\b/i,
+];
+const MAIN_MEMORY_DIRECT_LOOKUP_PATTERNS = [
+  /\bwhat should i run first\b/i,
+  /\bwhat extra check should\b/i,
+  /\bwhat command should i use\b/i,
+  /\bwhat repo-specific follow-through\b/i,
+  /\bwhat artifact should (?:i update|move with it)\b/i,
+  /\bhow should .* be written\b/i,
+  /\bshould (?:you|i) use .* or .*\b/i,
+  /\bwhat terminology should\b/i,
+];
+
+function extractMessageText(content: unknown): string {
+  if (typeof content === "string") {
+    return content.trim();
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return (
+    extractTextFromChatContent(content, {
+      joinWith: "\n",
+      normalizeText: (text) => text.trim(),
+    }) ?? ""
+  ).trim();
+}
+
+function findLatestUserMessage(messages: unknown): { index: number; text: string } | null {
+  if (!Array.isArray(messages)) {
+    return null;
+  }
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message || typeof message !== "object") {
+      continue;
+    }
+    if ((message as { role?: unknown }).role !== "user") {
+      continue;
+    }
+    const text = extractMessageText((message as { content?: unknown }).content);
+    if (text) {
+      return { index: i, text };
+    }
+  }
+  return null;
+}
+
+function hasToolLoopActivityAfterIndex(messages: unknown, index: number): boolean {
+  if (!Array.isArray(messages)) {
+    return false;
+  }
+  for (let i = index + 1; i < messages.length; i += 1) {
+    const message = messages[i];
+    if (!message || typeof message !== "object") {
+      continue;
+    }
+    const role = (message as { role?: unknown }).role;
+    if (role === "tool" || role === "toolResult") {
+      return true;
+    }
+    if (role !== "assistant") {
+      continue;
+    }
+    const content = (message as { content?: unknown }).content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+    if (
+      content.some(
+        (block) =>
+          block && typeof block === "object" && (block as { type?: unknown }).type === "toolCall",
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasToolNamed(tools: unknown, targetName: MainMemoryToolChoiceTarget): boolean {
+  return Array.isArray(tools)
+    ? tools.some((tool) => {
+        if (!tool || typeof tool !== "object") {
+          return false;
+        }
+        return (tool as { name?: unknown }).name === targetName;
+      })
+    : false;
+}
+
+function isWorkflowPreflightPrompt(text: string): boolean {
+  return MAIN_MEMORY_PREFLIGHT_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function isDirectWorkflowLookupPrompt(text: string): boolean {
+  return MAIN_MEMORY_DIRECT_LOOKUP_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function resolveMainMemoryToolChoiceTarget(params: {
+  agentId?: string;
+  model: { api?: unknown };
+  context: { messages?: unknown; tools?: unknown };
+}): MainMemoryToolChoiceTarget | null {
+  if (params.agentId?.trim() !== "main") {
+    return null;
+  }
+  if (typeof params.model.api !== "string" || !MAIN_MEMORY_TOOL_CHOICE_APIS.has(params.model.api)) {
+    return null;
+  }
+
+  const latestUserMessage = findLatestUserMessage(params.context.messages);
+  if (!latestUserMessage) {
+    return null;
+  }
+  if (hasToolLoopActivityAfterIndex(params.context.messages, latestUserMessage.index)) {
+    return null;
+  }
+
+  const text = latestUserMessage.text;
+  if (
+    isWorkflowPreflightPrompt(text) &&
+    hasToolNamed(params.context.tools, "memory_learned_guidance_plan")
+  ) {
+    return "memory_learned_guidance_plan";
+  }
+  if (
+    isDirectWorkflowLookupPrompt(text) &&
+    hasToolNamed(params.context.tools, "memory_object_search_hybrid")
+  ) {
+    return "memory_object_search_hybrid";
+  }
+  return null;
+}
 
 function isDirectOpenAIBaseUrl(baseUrl: unknown): boolean {
   if (typeof baseUrl !== "string" || !baseUrl.trim()) {
@@ -467,6 +613,34 @@ export function createOpenAIAttributionHeadersWrapper(
         ...options?.headers,
         ...resolveProviderAttributionHeaders(attributionProvider),
       },
+    });
+  };
+}
+
+export function createMainMemoryToolChoiceWrapper(
+  baseStreamFn: StreamFn | undefined,
+  params: { agentId?: string },
+): StreamFn {
+  const underlying = baseStreamFn ?? streamSimple;
+  return (model, context, options) => {
+    const target = resolveMainMemoryToolChoiceTarget({
+      agentId: params.agentId,
+      model,
+      context: context as { messages?: unknown; tools?: unknown },
+    });
+    if (!target) {
+      return underlying(model, context, options);
+    }
+    return streamWithPayloadPatch(underlying, model, context, options, (payloadObj) => {
+      const existingChoice = payloadObj.tool_choice;
+      if (existingChoice !== undefined && existingChoice !== "auto") {
+        return;
+      }
+      log.debug(`pinning tool_choice=${target} for main memory-informed prompt`);
+      payloadObj.tool_choice = {
+        type: "function",
+        function: { name: target },
+      };
     });
   };
 }

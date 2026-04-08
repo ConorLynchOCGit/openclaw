@@ -34,6 +34,7 @@ import {
   createOpenAIAttributionHeadersWrapper,
   createOpenAIDefaultTransportWrapper,
   createOpenAIFastModeWrapper,
+  createMainMemoryToolChoiceWrapper,
   createOpenAIResponsesContextManagementWrapper,
   createOpenAIServiceTierWrapper,
   createOpenAITextVerbosityWrapper,
@@ -299,6 +300,7 @@ type ApplyExtraParamsContext = {
   cfg: OpenClawConfig | undefined;
   provider: string;
   modelId: string;
+  agentId?: string;
   workspaceDir?: string;
   thinkingLevel?: ThinkLevel;
   model?: ProviderRuntimeModel;
@@ -449,6 +451,10 @@ function applyPostPluginStreamWrappers(
         );
       }
     }
+
+    ctx.agent.streamFn = createMainMemoryToolChoiceWrapper(ctx.agent.streamFn, {
+      agentId: ctx.agentId,
+    });
   }
 
   // Work around upstream pi-ai hardcoding `store: false` for Responses API.
@@ -524,6 +530,7 @@ export function applyExtraParamsToAgent(
     cfg,
     provider,
     modelId,
+    agentId,
     workspaceDir,
     thinkingLevel,
     model,

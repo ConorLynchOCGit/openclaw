@@ -66,15 +66,20 @@ Current reevaluation judgment:
 
 ### Next major phase
 
-1. rerun a narrow rollbackable production-canary Main-session proof focused on
-   workflow-preflight prompts after the advisory-routing fix
+1. rerun a narrow rollbackable production-canary Main-session proof with the
+   learned-guidance rollout target actually enabled and the new Main-only
+   tool-choice steering in place
 2. explicitly observe docs-localization, file-reference, and native workflow
    weak spots during that rerun
-3. decide whether learned-guidance advisory planning is now honestly proven in
-   Main production-canary UX, and whether either seam or any broader phrasing
-   class should widen or stay narrow based on automated-eval plus canary
-   evidence
-4. cross-domain family expansion only after those rollout answers are clear
+3. decide whether Main now honestly uses:
+   - `memory_learned_guidance_plan` for eligible workflow-preflight asks
+   - `memory_object_search_hybrid` for strong direct workflow lookup asks
+   - direct model answers only for prompts outside those strong memory-informed
+     classes
+4. only then decide whether learned-guidance advisory planning is honestly
+   proven in Main production-canary UX, and whether either seam or any broader
+   phrasing class should widen or stay narrow
+5. cross-domain family expansion only after those rollout answers are clear
 
 ### Later bounded cleanup only if justified
 
@@ -88,9 +93,9 @@ Current reevaluation judgment:
 The next implementation slice should now be:
 
 - rerun narrow rollbackable production-canary Main-session proof for
-  workflow-preflight learned-guidance adoption after the routing fix, while
-  explicitly watching the current docs-localization, file-reference, and
-  native workflow weak spots
+  workflow-preflight learned-guidance adoption plus direct lookup retrieval
+  adoption after the Main tool-choice fix, while explicitly watching the
+  current docs-localization, file-reference, and native workflow weak spots
 
 Why:
 
@@ -103,7 +108,9 @@ Why:
 - automated eval is now real and already shows the weak spots that the canary
   must watch
 - the remaining risk is now post-fix Main production-runtime truth under a
-  narrow canary, not missing shared architecture or missing rollout gating
+  narrow canary, not missing shared architecture
+- the latest failed rerun mixed a live rollout-state gap with direct memory-tool
+  bypass, so the next rerun must validate both enablement and tool selection
 - widening vague phrasing classes before evidence exists would recreate
   accidental parallel policy paths faster than it would add useful coverage
 
@@ -130,6 +137,6 @@ Before new families:
 
 ## Next implementation slice
 
-- rollbackable production canary runtime test for the control-ready seams,
-  followed by post-canary judgment for the docs/file and native-workflow weak
-  spots
+- rollbackable production canary Main-session rerun with explicit learned-
+  guidance enablement plus post-rerun judgment for advisory, retrieval, and
+  the docs/file/native-workflow weak spots

@@ -43,6 +43,9 @@ Live today:
 - `memory_learned_guidance_plan` now only registers when an explicit
   `off-production` or `production-canary` rollout target enables the bounded
   seam
+- Main now also has narrow OpenAI/Codex tool-choice steering so strong
+  workflow-preflight asks can pin `memory_learned_guidance_plan` when it is
+  available, instead of leaving those turns on `tool_choice: auto`
 
 Not live today:
 
@@ -53,6 +56,8 @@ Not live today:
 - automatic widening beyond the current bounded rollout scope
 - Main production-canary transcript proof that eligible workflow-preflight
   prompts now actually call the advisory planner after the routing fix
+- Main production-canary transcript proof that the same rerun does not bypass
+  memory tools entirely on strong direct lookup prompts
 
 ## Non-goals
 
@@ -173,6 +178,15 @@ Recent Main production-canary transcript evidence also showed that workflow-
 preflight asks were initially falling back to retrieval/search instead of the
 advisory planner.
 
+Later follow-through evidence showed a broader Main problem:
+
+- the latest rerun used no memory tool for most tested workflow-preflight and
+  direct lookup prompts
+- that rerun was not actually learned-guidance-enabled in live config, so
+  `memory_learned_guidance_plan` was absent from Main
+- retrieval tools could still be bypassed because the Main OpenAI/Codex path
+  left those turns on `tool_choice: auto`
+
 The current accepted follow-through is:
 
 - keep the seam bounded and rollout-gated
@@ -181,6 +195,8 @@ The current accepted follow-through is:
 - teach Main to prefer learned-guidance planning only for workflow-preflight
   asks that fit the current advisory slice
 - keep direct lookup asks retrieval-first
+- add narrow Main-only tool-choice steering so the strongest eligible prompt
+  classes do not rely only on prompt prose
 - require a fresh Main transcript/tool rerun before claiming the advisory seam
   is proven in production-canary UX
 

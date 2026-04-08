@@ -271,6 +271,29 @@ Current accepted framing:
 - landing that routing fix is not by itself proof that Main advisory planning
   is now canary-proven; a fresh transcript/tool rerun is still required
 
+## 2026-04 — Main memory-tool bypass is a mixed enablement-plus-tool-choice problem
+
+Current accepted framing:
+
+- the latest Main production-canary rerun used no memory tool for most tested
+  workflow-preflight and direct lookup prompts
+- that rerun was not actually learned-guidance-enabled in live config, so
+  `memory_learned_guidance_plan` was absent from Main
+- available retrieval tools such as `memory_object_search_hybrid` were still
+  being bypassed because the Main OpenAI/Codex path left those turns on
+  `tool_choice: auto`
+- the honest narrow fix is Main-only tool-choice steering, not broad prompt
+  bloat and not global forced-memory behavior
+- the steering must stay bounded:
+  - workflow-preflight can pin `memory_learned_guidance_plan` only when that
+    tool is actually available
+  - strong direct workflow lookup can pin
+    `memory_object_search_hybrid`
+  - prompts already inside a tool loop must be left alone
+- landing that steering fix is still not by itself proof that Main memory-tool
+  behavior is canary-proven; a fresh live transcript/tool rerun is still
+  required
+
 ## 2026-04 — should-fix-soon cleanup is real but secondary
 
 The following work is accepted as already-landed near-term cleanup:
