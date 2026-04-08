@@ -158,6 +158,10 @@ following are true:
 7. proof-runner support exists for this provenance path on the adapterized
    proof substrate
 8. operator observability can distinguish self-improving-origin decisions
+9. the post-v6 hardening tranche is landed strongly enough that:
+   - request-path cost is acceptable under added capture pressure
+   - durable-memory application selection is query-aware and token-budgeted
+   - write-path control surfaces scale through finite shared action stages
 
 ## Candidate-only posture
 
@@ -201,9 +205,9 @@ Production enablement should start with:
 - proof that duplicate and conflict handling work
 
 Do not use this spec as permission to start reduced-profile self-improving
-capture immediately after one narrow flattening cleanup slice. The stronger
-substrate work now documented in the roadmap and sequencing docs is a hard
-prerequisite.
+capture immediately after flattening. The stronger substrate work and the
+post-v6 hardening tranche documented in the roadmap and sequencing docs are
+hard prerequisites.
 
 ## Observability and audit
 

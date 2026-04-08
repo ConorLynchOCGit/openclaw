@@ -182,8 +182,14 @@ current code still needs:
 
 - request-path cost hardening for database access and semantic fallback
 - application/token-efficiency hardening for durable-memory prompt behavior
-- orchestration/test hardening for transcript auto-capture, candidate submit,
-  and proof execution
+- write-path action-stage decomposition for transcript auto-capture, candidate
+  submit, and proof execution
+
+The accepted decomposition rule for that work is:
+
+- finite shared action stages instead of one helper per family
+- family variance in registry policy and bounded adapters
+- special cases only where the runtime structure is honestly distinct
 
 That hardening should finish strongly enough that:
 
@@ -215,7 +221,7 @@ It should build on:
 - explicit application selection
 - explicit provenance from self-improving-origin candidates where relevant
 
-## Phase G — cross-domain family expansion
+## Phase H — cross-domain family expansion
 
 Cross-domain family expansion resumes only after:
 

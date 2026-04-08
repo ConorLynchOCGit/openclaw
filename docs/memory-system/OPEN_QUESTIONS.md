@@ -14,16 +14,18 @@ the stronger substrate.
    under self-improving capture pressure?
 2. What is the smallest honest change that makes durable-memory application
    selection more query-aware and less prompt-heavy before capture reevaluation?
-3. Which parts of transcript auto-capture, candidate submit, and proof
-   execution need decomposition or stronger tests before self-improving capture
-   adds more pressure to those orchestrators?
-4. Only after the hardening tranche above, what exact bounded input set should
+3. Which write-path actions should become the shared finite stages before
+   self-improving capture adds more pressure to transcript auto-capture,
+   candidate submit, and proof execution?
+4. Which behaviors must remain family-specific even after that action-stage
+   decomposition?
+5. Only after the hardening tranche above, what exact bounded input set should
    the first reduced-profile self-improving capture tranche consume without
    recreating a second family policy path?
-5. After the hardening tranche above, which provenance and review posture
+6. After the hardening tranche above, which provenance and review posture
    should the first reduced-profile self-improving capture tranche require so
    that later learned pressure stays auditable?
-6. How much later artifact / read-model convergence is still truly needed now
+7. How much later artifact / read-model convergence is still truly needed now
    that registry authority, boundary cleanup, and the bounded retrieval SQL
    cleanup are landed?
 

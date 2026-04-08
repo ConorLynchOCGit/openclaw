@@ -119,7 +119,7 @@ The next major move should now be:
 
 - request-path cost hardening
 - application/token-efficiency hardening
-- orchestration/test hardening
+- write-path action-stage decomposition
 
 Why:
 
@@ -183,9 +183,18 @@ It did change the next-step truth:
 
 - reduced-profile self-improving capture should not proceed next
 - the next honest work is hardening the request path, application/token
-  efficiency, and orchestration/test posture before capture reevaluation
+  efficiency, and write-path action-stage structure before capture reevaluation
 - the flattening landings were real, but they were not proof that hot-path
   cost and scale risk were already acceptable
+
+## How the hardening tranche scales
+
+The accepted design rule for this tranche is:
+
+- do not decompose into one helper per family
+- do decompose into finite shared action stages
+- move family variance into registry policy and bounded adapters
+- keep only genuinely structurally distinct paths special-cased
 
 ## Read next
 

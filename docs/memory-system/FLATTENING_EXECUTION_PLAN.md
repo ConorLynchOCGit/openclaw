@@ -147,7 +147,7 @@ It should now be:
 
 1. request-path cost hardening
 2. application/token-efficiency hardening
-3. orchestration/test hardening
+3. write-path action-stage decomposition
 4. reduced-profile self-improving capture reevaluation
 5. bounded reduced-profile self-improving capture first tranche if that
    reevaluation remains honest
@@ -165,6 +165,13 @@ It should now be:
 - reduced-profile self-improving capture remains disabled until its own phase
 - learned-guidance advisory planning remains disabled
 - no new families yet
+
+## How the post-flattening hardening tranche should scale
+
+- do not create one helper per family as the new scaling model
+- do decompose shared work into finite action stages
+- do move family variance into registry policy and bounded adapters
+- do keep only genuinely structurally distinct paths special-cased
 
 ## Deletion rule
 

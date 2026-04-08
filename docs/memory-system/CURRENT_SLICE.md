@@ -13,6 +13,12 @@ Start the first honest post-flattening phase after flattening batch v6:
 - do not move on to reduced-profile self-improving capture just because the
   flattening checklist is finished
 
+## The three hardening slices
+
+1. request-path cost hardening
+2. application and token-efficiency hardening
+3. write-path action-stage decomposition
+
 ## What just landed in flattening batch v6
 
 ### Slice 16 — registry authority cleanup
@@ -69,8 +75,8 @@ The remaining core flattening sequence is now landed.
 
 - request-path cost hardening for database access and semantic fallback
 - application/token-efficiency hardening for durable-memory prompt behavior
-- orchestration/test hardening for transcript auto-capture, candidate submit,
-  and proof execution
+- write-path action-stage decomposition for transcript auto-capture, candidate
+  submit, and proof execution
 
 ### Could still fix later
 
@@ -102,6 +108,13 @@ The remaining core flattening sequence is now landed.
 - it does not remove the need for a dedicated reduced-profile
   self-improving-capture proof and rollout plan after those issues are hardened
 
+## Decomposition rule for the hardening tranche
+
+- do not scale by adding one helper per family
+- do scale by decomposing into finite shared action stages
+- keep family variance in registry policy and bounded adapters
+- keep only genuinely structurally distinct paths special-cased
+
 ## Must remain intentionally different
 
 - procedures remain `suggestion_first` and direct-use only on clear ask
@@ -122,12 +135,12 @@ Still not next:
 
 Those phases still wait for the post-v6 hardening tranche above.
 
-## The next main implementation slice
+## The next main implementation sequence
 
-The next main implementation slice should now be:
+The next main implementation sequence should now be:
 
-- request-path cost hardening and application/token-efficiency hardening before
-  reduced-profile self-improving capture reevaluation
+- request-path cost hardening, followed by application and token-efficiency
+  hardening, followed by write-path action-stage decomposition
 
 Reason:
 

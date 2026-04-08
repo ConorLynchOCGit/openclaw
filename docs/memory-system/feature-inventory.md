@@ -98,6 +98,8 @@ Backlog / flattening debt:
   may still remain
 - reduced-profile self-improving capture still needs its own reevaluation and
   rollout proof before it becomes live
+- the next hardening tranche should scale write paths through finite shared
+  action stages rather than one helper per family
 
 ## Not live yet
 

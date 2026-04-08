@@ -40,8 +40,8 @@ Most importantly, the repo now has live landings for:
 1. request-path cost hardening for database access and semantic fallback
 2. application/token-efficiency hardening for durable-memory application
    selection and prompt rendering
-3. orchestration/test hardening for transcript auto-capture, candidate submit,
-   and proof execution
+3. write-path action-stage decomposition for transcript auto-capture,
+   candidate submit, and proof execution
 4. reduced-profile self-improving capture reevaluation only after those slices
 5. bounded reduced-profile self-improving capture first tranche if the
    reevaluation stays honest
@@ -82,6 +82,16 @@ Why:
 - reduced-profile self-improving capture, learned-guidance advisory planning,
   and new families are all later than that hardening work
 
+## Hardening tranche design rule
+
+The hardening tranche should scale through:
+
+- finite shared action stages
+- registry policy
+- bounded adapters
+
+It should not scale through one helper or runner per future family.
+
 ## What can be parallelized
 
 Once the hardening tranche and reduced-profile self-improving capture
@@ -107,7 +117,7 @@ Higher-risk next phase:
 
 - request-path cost hardening
 - application/token-efficiency hardening
-- orchestration/test hardening
+- write-path action-stage decomposition
 - reduced-profile self-improving capture reevaluation and first bounded tranche
 
 Moderate-risk later follow-up:
@@ -128,7 +138,7 @@ Moderate-risk later follow-up:
 If you want the cheapest credible remaining order, use this grouping:
 
 1. reevaluate reduced-profile self-improving capture on the now-flatter
-   substrate only after request-path, application, and orchestration hardening
+   substrate only after request-path, application, and write-path hardening
 2. land the smallest honest bounded first tranche if that reevaluation stays
    positive
 3. only then consider learned-guidance advisory planning
@@ -144,6 +154,8 @@ Before new families:
 - memory-family policy crosses core/middleware/plugin boundaries cleanly
 - request-path cost is hardened enough not to collapse under added capture
   pressure
+- write-path control surfaces scale through finite shared action stages rather
+  than one growing branch pile per family
 - reduced-profile self-improving capture is proven on the shared substrate
 
 ## Next implementation slice

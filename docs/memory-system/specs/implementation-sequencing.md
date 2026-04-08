@@ -53,7 +53,7 @@ Historical completed order:
 
 1. request-path cost hardening
 2. application/token-efficiency hardening
-3. orchestration/test hardening
+3. write-path action-stage decomposition
 4. reduced-profile self-improving capture reevaluation
 5. bounded reduced-profile self-improving capture first tranche if the
    reevaluation stays honest
@@ -97,8 +97,10 @@ These still need hardening:
   capture pressure
 - durable-memory application selection is query-aware and token-budgeted enough
   not to bloat normal runs
-- transcript auto-capture, candidate submit, and proof execution are split and
-  tested strongly enough not to become the next hidden control-plane bottleneck
+- transcript auto-capture, candidate submit, and proof execution scale through
+  finite shared action stages rather than one branch pile per family
+- proof execution is tested strongly enough not to become the next hidden
+  control-plane bottleneck
 
 ## Hard prerequisites before learned-guidance advisory planning
 
@@ -140,3 +142,10 @@ Every remaining substrate-adjacent slice must prove both:
 
 The post-flattening phases are not honest if they reintroduce family-specific
 control planes on top of the now-shared substrate.
+
+For the write-path hardening slice specifically:
+
+- family count must not become the new decomposition axis
+- action-stage count should remain the shared axis
+- registry policy and bounded adapters should carry family variance wherever
+  the runtime structure is not honestly distinct

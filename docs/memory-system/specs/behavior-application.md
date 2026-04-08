@@ -44,6 +44,8 @@ The remaining gap is narrower:
 - the final retrieval-fed per-memory-item application substrate still remains
 - procedure redesign still sits between the current state and the final
   end-state
+- the next hardening slice should make the layer more query-aware and more
+  token-disciplined before any self-improving capture reevaluation
 
 ## Target architecture
 
@@ -58,6 +60,13 @@ The application-selection layer should become the runtime owner of:
 Prompt rendering should remain a consumer.
 
 That is now true for the prompt-facing durable-memory layer.
+
+The next hardening work should improve this layer by:
+
+- reducing broad static durable-memory narration
+- making selection more query-aware and retrieval-fed
+- preserving real application-mode differences while making prompt behavior
+  cheaper
 
 ## Read with
 

@@ -106,6 +106,17 @@ Current accepted framing:
 - later contract trimming may still happen, but the old boundary smell is no
   longer accepted as current state
 
+## 2026-04 — post-v6 hardening scales through action stages, not family helpers
+
+Current accepted framing:
+
+- the next hardening tranche is not more core flattening
+- it is also not a return to one helper per family as the scaling model
+- request-path cost and prompt/token cost hardening remain shared-system work
+- write-path decomposition should target finite shared action stages
+- family variance should live in registry policy and bounded adapters unless a
+  path is honestly structurally distinct
+
 ## 2026-04 — should-fix-soon cleanup is real but secondary
 
 The following work is accepted as already-landed near-term cleanup:
