@@ -145,11 +145,14 @@ The next major move is no longer flattening.
 
 It should now be:
 
-1. reduced-profile self-improving capture reevaluation
-2. bounded reduced-profile self-improving capture first tranche if that
+1. request-path cost hardening
+2. application/token-efficiency hardening
+3. orchestration/test hardening
+4. reduced-profile self-improving capture reevaluation
+5. bounded reduced-profile self-improving capture first tranche if that
    reevaluation remains honest
-3. learned-guidance advisory planning only after that
-4. new families only after those phases
+6. learned-guidance advisory planning only after that
+7. new families only after those phases
 
 ## What must remain unchanged while leaving flattening
 

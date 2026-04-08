@@ -113,18 +113,22 @@ They did not replace:
 
 The next major phase is no longer core flattening.
 
+The post-v6 deep review changed the next move again.
+
 The next major move should now be:
 
-- reduced-profile self-improving capture reevaluation and bounded integration
-  planning
+- request-path cost hardening
+- application/token-efficiency hardening
+- orchestration/test hardening
 
 Why:
 
 - the remaining core flattening blockers are now landed
-- the substrate is now honest enough to evaluate whether reduced-profile
-  self-improving capture can use the same family control planes cleanly
+- the post-v6 deep review found that the request path is still too expensive,
+  the durable-memory application layer is still too prompt-heavy, and the main
+  write-path orchestrators are still too monolithic for self-improving capture
 - learned-guidance advisory planning and new families still remain later than
-  that reevaluation
+  that hardening tranche and any later capture reevaluation
 
 Later bounded cleanup can still remain:
 
@@ -148,7 +152,8 @@ Still not next:
 The reason is now sequencing and proof posture:
 
 - reduced-profile self-improving capture should be reevaluated first on the
-  stronger substrate rather than turned on by roadmap habit
+  stronger substrate only after the new hardening tranche rather than turned on
+  by roadmap habit
 - learned-guidance advisory planning still waits for reduced-profile
   self-improving capture proof
 - new families remain later than both of those phases
@@ -169,6 +174,18 @@ Still not live:
 - reduced-profile self-improving capture on top of the now-stronger substrate
 - learned-guidance advisory planning
 - new cross-domain families beyond the current six
+
+## What the post-v6 deep review changed
+
+The review did not reopen core flattening.
+
+It did change the next-step truth:
+
+- reduced-profile self-improving capture should not proceed next
+- the next honest work is hardening the request path, application/token
+  efficiency, and orchestration/test posture before capture reevaluation
+- the flattening landings were real, but they were not proof that hot-path
+  cost and scale risk were already acceptable
 
 ## Read next
 

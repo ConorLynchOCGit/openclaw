@@ -2,15 +2,16 @@
 
 ## Active slice
 
-Reduced-profile self-improving capture reevaluation
+Post-v6 memory hardening before self-improving capture
 
 ## Objective
 
 Start the first honest post-flattening phase after flattening batch v6:
 
-- reevaluate whether reduced-profile self-improving capture can now use the
-  landed family substrate without recreating old parallel systems
-- do not enable it blindly just because the flattening checklist is finished
+- harden the remaining hot-path and orchestration weaknesses surfaced by the
+  post-v6 deep architecture review
+- do not move on to reduced-profile self-improving capture just because the
+  flattening checklist is finished
 
 ## What just landed in flattening batch v6
 
@@ -55,8 +56,8 @@ Start the first honest post-flattening phase after flattening batch v6:
 - later artifact/read-model convergence may still remain worthwhile if
   self-improving or future-family pressure exposes more procedure/read-model
   awkwardness
-- reduced-profile self-improving capture still requires an honest dedicated
-  reevaluation and rollout plan
+- reduced-profile self-improving capture still requires both a dedicated
+  reevaluation and pre-capture hardening work
 
 ## What remains major substrate work
 
@@ -64,7 +65,14 @@ Start the first honest post-flattening phase after flattening batch v6:
 
 The remaining core flattening sequence is now landed.
 
-### Could fix later
+### Must happen before capture reevaluation
+
+- request-path cost hardening for database access and semantic fallback
+- application/token-efficiency hardening for durable-memory prompt behavior
+- orchestration/test hardening for transcript auto-capture, candidate submit,
+  and proof execution
+
+### Could still fix later
 
 - better artifact / read-model convergence if procedure and memory-object
   storage still feel too separate after the staged redesign
@@ -86,12 +94,13 @@ The remaining core flattening sequence is now landed.
     family routing
   - later artifact/read-model convergence may still remain
 
-## Why the next phase is not “just enable capture”
+## Why the next phase is not self-improving capture yet
 
 - the flattening blockers are now gone
-- that changes what is allowed to be evaluated next
+- the post-v6 deep review still found hot-path cost, prompt-weight, and
+  orchestration risks that make capture reevaluation premature
 - it does not remove the need for a dedicated reduced-profile
-  self-improving-capture proof and rollout plan
+  self-improving-capture proof and rollout plan after those issues are hardened
 
 ## Must remain intentionally different
 
@@ -106,23 +115,25 @@ The remaining core flattening sequence is now landed.
 
 Still not next:
 
+- reduced-profile self-improving capture reevaluation
 - reduced-profile self-improving capture integration
 - learned-guidance advisory planning
 - new cross-domain families
 
-Those phases still wait for the reduced-profile self-improving capture
-reevaluation and bounded first tranche above.
+Those phases still wait for the post-v6 hardening tranche above.
 
 ## The next main implementation slice
 
 The next main implementation slice should now be:
 
-- reduced-profile self-improving capture reevaluation and bounded first
-  implementation tranche
+- request-path cost hardening and application/token-efficiency hardening before
+  reduced-profile self-improving capture reevaluation
 
 Reason:
 
 - the remaining core flattening blockers are now landed
-- the next honest question is whether reduced-profile self-improving capture
-  can use the same shared family substrate without adding new parallel systems
-- learned-guidance advisory planning and new families remain later than that
+- the post-v6 deep review found that the current request path and
+  prompt/application shape are still too expensive and too indirect for
+  self-improving capture pressure
+- learned-guidance advisory planning and new families remain later than both
+  the hardening tranche and any later capture reevaluation

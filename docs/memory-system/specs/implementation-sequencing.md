@@ -24,8 +24,7 @@ The next honest phase is therefore no longer:
 
 The next honest phase is:
 
-- reduced-profile self-improving capture reevaluation on the stronger
-  substrate
+- post-v6 memory hardening on the stronger substrate
 
 ## Completed order so far
 
@@ -52,29 +51,33 @@ Historical completed order:
 
 ### Next major substrate work
 
-1. reduced-profile self-improving capture reevaluation
-2. bounded reduced-profile self-improving capture first tranche if the
+1. request-path cost hardening
+2. application/token-efficiency hardening
+3. orchestration/test hardening
+4. reduced-profile self-improving capture reevaluation
+5. bounded reduced-profile self-improving capture first tranche if the
    reevaluation stays honest
 
 ### Could fix later
 
-3. artifact / read-model convergence if procedure and memory-object storage
+6. artifact / read-model convergence if procedure and memory-object storage
    still feel too separate under later pressure
-4. narrower retrieval cleanup only if later work exposes honest remaining
+7. narrower retrieval cleanup only if later work exposes honest remaining
    duplication
 
 ### Later phases
 
-5. learned-guidance advisory planning
-6. cross-domain family expansion tranche 1
-7. cross-domain family expansion tranche 2
+8. learned-guidance advisory planning
+9. cross-domain family expansion tranche 1
+10. cross-domain family expansion tranche 2
 
 ## Why this order is recommended
 
 - the old flattening blockers for registry authority and family-policy boundary
   exposure are now landed
-- reduced-profile self-improving capture should now be reevaluated on the
-  stronger substrate instead of being deferred by stale roadmap posture
+- the post-v6 deep review found that the request path, prompt/application
+  layer, and orchestration surfaces still need hardening before capture
+  reevaluation is honest
 - learned-guidance advisory planning should still wait until reduced-profile
   self-improving capture is proven
 
@@ -87,6 +90,15 @@ These are now landed:
 - proofing is adapter-driven
 - registry authority is honest enough to carry later learned pressure
 - memory-family policy crosses core/middleware/plugin seams cleanly
+
+These still need hardening:
+
+- database access and semantic fallback hot paths are cheap enough for added
+  capture pressure
+- durable-memory application selection is query-aware and token-budgeted enough
+  not to bloat normal runs
+- transcript auto-capture, candidate submit, and proof execution are split and
+  tested strongly enough not to become the next hidden control-plane bottleneck
 
 ## Hard prerequisites before learned-guidance advisory planning
 
@@ -103,7 +115,8 @@ These are now landed:
 
 ## What can proceed in parallel
 
-Once reduced-profile self-improving capture reevaluation is stable:
+Once the hardening tranche and reduced-profile self-improving capture
+reevaluation are stable:
 
 - bounded reduced-profile self-improving capture first-tranche implementation
 - later artifact/read-model convergence design only if capture pressure
@@ -115,8 +128,8 @@ Implementation itself should still stay narrow and proofable.
 
 - learned-guidance advisory planning implementation
 - new family implementation
-- broad artifact/read-model redesign before reduced-profile self-improving
-  capture reevaluation says it is necessary
+- broad artifact/read-model redesign before the hardening tranche and later
+  capture reevaluation say it is necessary
 
 ## Proof posture
 

@@ -171,11 +171,31 @@ This phase should land before the repo adds new memory families.
 - artifact / read-model convergence if later self-improving or family-expansion
   pressure shows the procedure-versus-memory-object split is still too awkward
 
-## Phase E — reduced-profile self-improving capture
+## Phase E — post-flattening hardening before reduced-profile self-improving capture
 
 This is now the next major roadmap phase.
 
-It should begin only after phase D is landed strongly enough that:
+The post-v6 deep review changed the next-step truth.
+
+It should begin before reduced-profile self-improving capture because the
+current code still needs:
+
+- request-path cost hardening for database access and semantic fallback
+- application/token-efficiency hardening for durable-memory prompt behavior
+- orchestration/test hardening for transcript auto-capture, candidate submit,
+  and proof execution
+
+That hardening should finish strongly enough that:
+
+- request-path cost is acceptable under higher capture and retrieval pressure
+- application policy is structurally selected and cheap enough to render
+- proof and orchestration behavior are not hidden regression traps
+
+## Phase F — reduced-profile self-improving capture
+
+This remains the next major product phase after Phase E.
+
+It should begin only after phases D and E are landed strongly enough that:
 
 - self-improving candidates enter the same family substrate
 - provenance stays explicit
@@ -183,7 +203,7 @@ It should begin only after phase D is landed strongly enough that:
 - retrieval/routing policy does not have to be re-implemented per family
 - proofing can scale without bespoke family branches
 
-## Phase F — learned-guidance advisory planning
+## Phase G — learned-guidance advisory planning
 
 This remains later than both flattening and reduced-profile self-improving
 capture.

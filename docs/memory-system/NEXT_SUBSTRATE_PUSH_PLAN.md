@@ -37,11 +37,16 @@ Most importantly, the repo now has live landings for:
 
 ### Next major phase
 
-1. reduced-profile self-improving capture reevaluation
-2. bounded reduced-profile self-improving capture first tranche if the
+1. request-path cost hardening for database access and semantic fallback
+2. application/token-efficiency hardening for durable-memory application
+   selection and prompt rendering
+3. orchestration/test hardening for transcript auto-capture, candidate submit,
+   and proof execution
+4. reduced-profile self-improving capture reevaluation only after those slices
+5. bounded reduced-profile self-improving capture first tranche if the
    reevaluation stays honest
-3. learned-guidance advisory planning only after that
-4. new families only after those phases
+6. learned-guidance advisory planning only after that
+7. new families only after those phases
 
 ### Later bounded cleanup only if justified
 
@@ -55,27 +60,32 @@ Most importantly, the repo now has live landings for:
 Honest estimate now:
 
 - remaining core flattening slices: 0
-- next major roadmap phase before any new family work: reduced-profile
-  self-improving capture reevaluation and then its bounded first tranche
+- next major roadmap phase before any new family work: post-v6 memory
+  hardening, then reduced-profile self-improving capture reevaluation and only
+  then its bounded first tranche
 - later bounded cleanup remains conditional, not precommitted
 
 ## What should land next
 
 The next implementation slice should now be:
 
-- reduced-profile self-improving capture reevaluation
+- request-path cost hardening before reduced-profile self-improving capture
+  reevaluation
 
 Why:
 
 - the old substrate blockers for registry authority and cross-boundary family
   policy are now landed
-- the next honest question is whether reduced-profile self-improving capture
-  can use those shared substrates without creating a fresh parallel system
-- learned-guidance advisory planning and new families are still later than that
+- the post-v6 deep architecture review found that the request path,
+  prompt-facing application layer, and orchestration surfaces are still too
+  expensive and too indirect for self-improving capture pressure
+- reduced-profile self-improving capture, learned-guidance advisory planning,
+  and new families are all later than that hardening work
 
 ## What can be parallelized
 
-Once reduced-profile self-improving capture reevaluation is stable:
+Once the hardening tranche and reduced-profile self-improving capture
+reevaluation are stable:
 
 - bounded reduced-profile self-improving capture first-tranche implementation
 - later artifact/read-model convergence reevaluation if capture pressure
@@ -88,13 +98,16 @@ scopes or clearly one-way dependencies.
 
 - learned-guidance advisory planning implementation
 - new family implementation
-- broad artifact/read-model redesign before reduced-profile self-improving
-  capture reevaluation says it is necessary
+- broad artifact/read-model redesign before the hardening tranche and later
+  capture reevaluation say it is necessary
 
 ## Validation posture
 
 Higher-risk next phase:
 
+- request-path cost hardening
+- application/token-efficiency hardening
+- orchestration/test hardening
 - reduced-profile self-improving capture reevaluation and first bounded tranche
 
 Moderate-risk later follow-up:
@@ -107,15 +120,15 @@ Moderate-risk later follow-up:
 - do not enable learned-guidance advisory planning yet
 - do not add new memory families yet
 - do not erase real family-policy differences
-- do not accept “the flattening checklist is done” as proof that rollout risk
-  is gone
+- do not accept “the flattening checklist is done” as proof that request-path
+  and prompt-path cost is acceptable
 
 ## Recommended grouping from here
 
 If you want the cheapest credible remaining order, use this grouping:
 
 1. reevaluate reduced-profile self-improving capture on the now-flatter
-   substrate
+   substrate only after request-path, application, and orchestration hardening
 2. land the smallest honest bounded first tranche if that reevaluation stays
    positive
 3. only then consider learned-guidance advisory planning
@@ -129,8 +142,11 @@ Before new families:
 - proofing remains adapter-driven
 - registry authority is honest
 - memory-family policy crosses core/middleware/plugin boundaries cleanly
+- request-path cost is hardened enough not to collapse under added capture
+  pressure
 - reduced-profile self-improving capture is proven on the shared substrate
 
 ## Next implementation slice
 
-- reduced-profile self-improving capture reevaluation
+- request-path cost hardening before reduced-profile self-improving capture
+  reevaluation
