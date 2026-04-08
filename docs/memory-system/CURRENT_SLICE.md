@@ -2,14 +2,16 @@
 
 ## Active slice
 
-Rollbackable production canary runtime testing for the bounded seams after
-automated eval and explicit canary-control proof
+Main production-canary advisory-routing diagnosis and narrow prompt/profile
+follow-through
 
 ## Objective
 
 Use the newly landed automated eval path and explicit production-canary
-controls to decide what is honestly ready for a rollbackable production runtime
-test before any widening or default-on decision.
+controls, plus recent Main-session canary transcript evidence, to decide why
+workflow-preflight prompts were not reaching learned-guidance advisory
+planning and whether a narrow routing fix is honest before any broader canary
+claim.
 
 The current accepted answer is:
 
@@ -29,18 +31,24 @@ The current accepted answer is:
     mixed-corpus eval
   - file-reference explicit retrieval is still underpowered in that eval
   - native workflow guidance is still under-retrieved in that eval
-- the next missing truth is a narrow rollbackable production canary runtime
-  test, not more rollout-control plumbing
+- the next missing truth is not more rollout-control plumbing
+- the recent Main production-canary transcript showed workflow-preflight asks
+  using `memory_object_search_hybrid`, `memory_search`, or no memory tool call
+  instead of `memory_learned_guidance_plan`
+- the current learned-guidance gap is therefore Main advisory adoption, not
+  missing rollout controls
 
 This slice still does not answer production enablement by default.
 
 It answers:
 
-- whether a narrow rollbackable production canary stays safe, low-authority,
-  low-noise, and easy to disable
+- whether Main workflow-preflight asks can honestly route into the already
+  bounded learned-guidance advisory seam in production-canary posture
+- whether the learned-guidance tool should be visible to Main only when an
+  explicit rollout target enables it
 - whether the explicit docs/file and native-workflow weak spots observed in the
-  automated eval remain acceptable for a narrow canary or still need more
-  cleanup first
+  automated eval remain acceptable watch items once the Main routing issue is
+  narrowed
 
 The rollout still must avoid creating:
 
@@ -115,6 +123,24 @@ The rollout still must avoid creating:
 - production-canary controls are now real and default-off, but the current
   readiness judgment is still mixed
 
+### Slice 7 — Main advisory routing diagnosis
+
+- recent Main production-canary transcript evidence showed no
+  `memory_learned_guidance_plan` calls for workflow-preflight prompts
+- the durable-memory prompt/profile layer was steering workflow asks toward
+  hybrid retrieval instead of teaching when to use learned-guidance advisory
+  planning
+- `memory_learned_guidance_plan` now only registers when an explicit
+  `off-production` or `production-canary` rollout target actually enables the
+  bounded seam
+- the prompt/profile layer now distinguishes workflow-preflight asks from
+  direct lookup asks:
+  workflow-preflight can prefer learned-guidance advisory when the tool is
+  truly available, while direct fact/rule retrieval stays retrieval-first
+- this narrows the Main advisory adoption gap, but does not itself prove Main
+  advisory behavior until a fresh production-canary transcript shows the tool
+  firing
+
 ## What is now strong enough for bounded promotion follow-through
 
 - explicit docs-localization operating rules with clear project scope
@@ -151,6 +177,8 @@ Still intentionally disabled:
   inline-only workflow-guidance seam
 - both seams now require an explicit `off-production` or
   `production-canary` rollout target before the bounded runtime path activates
+- Main now only sees `memory_learned_guidance_plan` when that explicit rollout
+  target is actually active
 - both seams now expose explicit rollout scope and structured evaluation /
   observability fields in their runtime results
 - automated eval now exists as a real repeatable proof surface:
@@ -208,16 +236,17 @@ Still not next:
 
 The next main implementation sequence should now be:
 
-1. narrow rollbackable production canary runtime test for the control-ready
-   self-improving and learned-guidance seams
-2. use that canary to watch the three current weak spots explicitly:
+1. rerun a narrow rollbackable production-canary Main-session proof focused on
+   workflow-preflight prompts after the routing fix
+2. confirm from transcript/tool evidence that eligible preflight asks now hit
+   `memory_learned_guidance_plan` while direct lookup prompts stay
+   retrieval-first
+3. keep watching the three current weak spots explicitly:
    docs-localization ranking / metadata,
    file-reference retrieval,
    and native workflow guidance retrieval
-3. post-canary judgment on what is actually ready, what still stays narrow,
-   and what still should not widen
-4. only then decide whether any broader phrasing class, self-improving scope,
-   or advisory scope should widen or stay narrow longer
+4. only then make the post-canary judgment on what is actually ready, what
+   still stays narrow, and what still should not widen
 5. cross-domain family expansion only after those rollout answers are clear
 
 Reason:

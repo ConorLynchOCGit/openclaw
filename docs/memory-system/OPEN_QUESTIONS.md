@@ -1,6 +1,8 @@
 # Open Questions
 
-## Active questions after automated eval and production-canary controls
+## Active questions after automated eval, production-canary controls, and Main
+
+advisory-routing diagnosis
 
 These are the remaining real open questions now that the core flattening
 sequence, pre-capture hardening, and the first bounded self-improving and
@@ -13,20 +15,23 @@ how far they should be enabled and widened.
 1. Is the narrow self-improving candidate-only seam ready for a rollbackable
    production canary as-is, or does it still need stronger pre-canary
    observability?
-2. Is the narrow learned-guidance advisory-only seam ready for a rollbackable
-   production canary as-is, or does it still need stronger pre-canary
-   retrieval quality?
+2. Does a fresh Main production-canary rerun now actually call
+   `memory_learned_guidance_plan` for eligible workflow-preflight prompts
+   after the routing fix, or does Main still fall back to retrieval/search?
 3. How much should the current automated-eval weak spots block canary scope:
    docs-localization ranking / metadata incompleteness,
    file-reference under-retrieval, and native workflow guidance
    under-retrieval?
-4. What exact post-canary evidence threshold should explicit docs-localization
+4. Which direct workflow prompt shapes should remain retrieval-first even
+   after the advisory-routing fix so the planner does not become a second
+   policy engine?
+5. What exact post-canary evidence threshold should explicit docs-localization
    project-rule packets meet before broader docs phrasing promotion is
    justified?
-5. What exact post-canary evidence threshold should explicit file-reference
+6. What exact post-canary evidence threshold should explicit file-reference
    response-style packets meet before broader file-formatting promotion is
    justified?
-6. How much later artifact / read-model convergence is still truly needed now
+7. How much later artifact / read-model convergence is still truly needed now
    that reminder isolation, overlap consolidation, and bounded promotion
    follow-through are landed on top of the rollout-control tranche?
 

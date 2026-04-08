@@ -119,6 +119,12 @@ Backlog / flattening debt:
 - `pnpm memory:rollout-eval` now exists as a real automated bounded eval path
 - explicit `production-canary` rollout-target controls now exist for the
   narrow self-improving and learned-guidance seams
+- Main prompt/profile routing now distinguishes workflow-preflight advisory
+  asks from direct workflow lookup asks when
+  `memory_learned_guidance_plan` is actually available
+- `memory_learned_guidance_plan` now only registers when an explicit
+  `off-production` or `production-canary` rollout target enables the bounded
+  advisory seam
 - vague shorthand docs/file phrasing still remains intentionally weaker and is
   not accepted as proof that those broader phrasings should auto-promote
 
@@ -128,6 +134,8 @@ Still not live:
 
 - production-enabled reduced-profile self-improving capture
 - production-enabled learned-guidance advisory planning
+- Main production-canary transcript proof that workflow-preflight prompts now
+  really use learned-guidance advisory planning after the routing fix
 - new cross-domain families
 - broad automatic promotion for vague shorthand docs/file packet phrasing
 - production-canary runtime evidence strong enough to justify widening

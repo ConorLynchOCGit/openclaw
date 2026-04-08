@@ -45,6 +45,16 @@ import { createSkillCandidateProcurementRecordCreateTool } from "./skill-candida
 import { createSkillCandidateSkillVetterHandoffTool } from "./skill-candidate-skill-vetter-handoff.js";
 import { createSkillCandidateVettingResultRecordTool } from "./skill-candidate-vetting-result-record.js";
 
+function isLearnedGuidanceAdvisoryToolEnabled(
+  runtime: Pick<MemoryMiddlewareRuntime, "config">,
+): boolean {
+  const config = runtime.config.learnedGuidanceAdvisoryPlanning;
+  return (
+    config?.mode === "inline-only" &&
+    (config.rolloutTarget === "off-production" || config.rolloutTarget === "production-canary")
+  );
+}
+
 export function registerMemoryMiddlewareTools(
   api: OpenClawPluginApi,
   runtime: MemoryMiddlewareRuntime,
@@ -65,14 +75,16 @@ export function registerMemoryMiddlewareTools(
       })) as OpenClawPluginToolFactory,
     { name: "memory_self_improving_capture_candidate" },
   );
-  api.registerTool(
-    ((ctx) =>
-      createMemoryLearnedGuidancePlanTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_learned_guidance_plan" },
-  );
+  if (isLearnedGuidanceAdvisoryToolEnabled(runtime)) {
+    api.registerTool(
+      ((ctx) =>
+        createMemoryLearnedGuidancePlanTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_learned_guidance_plan" },
+    );
+  }
   api.registerTool(
     ((ctx) =>
       createCandidateListTool({

@@ -26,6 +26,8 @@ landed.
 
 The automated eval and production-canary controls batch is now also landed.
 
+The Main advisory-routing diagnosis batch is now also landed.
+
 ## What is live now
 
 Live families:
@@ -64,6 +66,9 @@ Live substrate properties:
   and learned-guidance advisory planning
 - approved-over-candidate cluster preference for bounded retrieval of stronger
   explicit docs/file packet shapes
+- rollout-aligned registration for `memory_learned_guidance_plan`
+- prompt/profile routing that distinguishes workflow-preflight advisory asks
+  from direct workflow lookup asks
 
 ## What is live but still bounded
 
@@ -231,6 +236,32 @@ It concluded:
   under-retrieval
 - broad “memory is strong now” claims would still be dishonest
 
+## What the Main advisory-routing diagnosis batch changed
+
+This batch landed three real slices:
+
+1. transcript-backed Main advisory-routing diagnosis
+2. narrow routing / tool-availability fix
+3. post-diagnosis advisory judgment
+
+It added:
+
+- explicit transcript evidence that recent Main production-canary
+  workflow-preflight prompts were not calling
+  `memory_learned_guidance_plan`
+- a prompt/profile distinction between workflow-preflight asks and direct
+  workflow lookup asks
+- rollout-aligned learned-guidance tool registration so Main only sees
+  `memory_learned_guidance_plan` when the seam is explicitly enabled
+
+It concluded:
+
+- the recent Main failure was a profile/tool-selection gap, not a rollout
+  target bug
+- the narrow fix is honest and landed
+- Main advisory planning is still not proven in production-canary UX until a
+  fresh transcript/tool run shows the advisory tool actually firing
+
 ## What happens next
 
 The next major move is no longer another substrate refactor phase or another
@@ -238,14 +269,16 @@ enablement-plumbing slice.
 
 The next major move should be:
 
-1. narrow rollbackable production canary runtime testing for the control-ready
-   self-improving and learned-guidance seams
-2. explicit observation of the three current weak spots during that canary:
+1. rerun a narrow rollbackable production-canary Main-session proof focused on
+   workflow-preflight prompts after the routing fix
+2. confirm from transcript/tool evidence that eligible preflight asks now hit
+   `memory_learned_guidance_plan` while direct lookup prompts remain
+   retrieval-first
+3. keep watching the three current weak spots during that rerun:
    docs-localization ranking / metadata, file-reference retrieval, and native
    workflow guidance retrieval
-3. post-canary judgment on what is ready to stay live, what still stays
-   default-off, and what must not widen yet
-4. cross-domain family expansion only after those answers are known
+4. only then make the post-canary judgment on what is ready to stay live, what
+   still stays default-off, and what must not widen yet
 
 ## What remains intentionally different
 

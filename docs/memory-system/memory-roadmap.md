@@ -328,13 +328,33 @@ It concluded:
   file-reference under-retrieval,
   and native workflow guidance under-retrieval
 
-## What comes next after Phase L
+## Phase M — Main advisory-routing diagnosis
 
-The next honest move is a narrow rollbackable production canary runtime test
-for the control-ready seams, followed by post-canary judgment on the explicit
-docs/file and native-workflow weak spots.
+This phase is now landed as a narrow diagnosis-and-follow-through slice.
 
-## Phase M — cross-domain family expansion
+It added:
+
+- transcript proof that recent Main production-canary workflow-preflight asks
+  were not calling `memory_learned_guidance_plan`
+- prompt/profile guidance that distinguishes workflow-preflight advisory asks
+  from direct workflow lookup asks
+- rollout-aligned registration for `memory_learned_guidance_plan`
+
+It concluded:
+
+- the Main failure was a profile/tool-selection gap, not a rollout-target bug
+- the narrow routing fix is landed
+- learned-guidance advisory planning is still not Main-proven in
+  production-canary UX until a fresh transcript/tool rerun shows the planner
+  actually firing
+
+## What comes next after Phase M
+
+The next honest move is a narrow rollbackable production-canary Main-session
+rerun focused on workflow-preflight prompts after the routing fix, followed by
+post-canary judgment on the explicit docs/file and native-workflow weak spots.
+
+## Phase N — cross-domain family expansion
 
 Cross-domain family expansion resumes only after:
 

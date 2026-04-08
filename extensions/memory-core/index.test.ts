@@ -57,6 +57,7 @@ describe("buildPromptSection", () => {
     const result = buildPromptSection({
       availableTools: new Set([
         "memory_candidate_submit",
+        "memory_learned_guidance_plan",
         "memory_object_search_hybrid",
         "memory_session_update",
       ]),
@@ -69,6 +70,7 @@ describe("buildPromptSection", () => {
     expect(result).toContainEqual(expect.stringContaining("Behavior memory:"));
     expect(result).toContainEqual(expect.stringContaining("Project memory:"));
     expect(result).toContainEqual(expect.stringContaining("Workflow guidance:"));
+    expect(result).toContainEqual(expect.stringContaining("memory_learned_guidance_plan"));
     expect(result).toContainEqual(expect.stringContaining("Procedure memory:"));
     expect(result).toContainEqual(
       expect.stringContaining("Use memory_candidate_submit for bounded durable items"),
@@ -89,6 +91,7 @@ describe("buildPromptSection", () => {
         "memory_search",
         "memory_get",
         "memory_candidate_submit",
+        "memory_learned_guidance_plan",
         "memory_object_list",
       ]),
     });

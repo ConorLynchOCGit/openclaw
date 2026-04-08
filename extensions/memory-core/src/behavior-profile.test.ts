@@ -12,6 +12,7 @@ describe("behavior profile guidance plan", () => {
     expect(
       resolveDurableMemoryGuidancePlan({
         hasCandidateSubmit: true,
+        hasLearnedGuidancePlan: false,
         hasObjectGet: false,
         hasObjectList: false,
         hasObjectSearchBasic: false,
@@ -22,6 +23,7 @@ describe("behavior profile guidance plan", () => {
     ).toEqual({
       hasObjectSurface: true,
       hasCandidateSurface: true,
+      hasLearnedGuidanceSurface: false,
       hasSessionSurface: false,
       searchFamilies: [
         "response_style",
@@ -78,6 +80,7 @@ describe("behavior profile guidance plan", () => {
       kind: "tool_surface_guidance",
       hasObjectSurface: true,
       hasCandidateSurface: false,
+      hasLearnedGuidanceSurface: false,
       hasSessionSurface: true,
     });
     expect(selection.selectedItems).toEqual(
@@ -113,6 +116,7 @@ describe("behavior profile guidance plan", () => {
     const profile = buildDurableMemoryBehaviorProfile({
       availableTools: new Set([
         "memory_candidate_submit",
+        "memory_learned_guidance_plan",
         "memory_object_search_hybrid",
         "memory_session_update",
       ]),
@@ -128,6 +132,7 @@ describe("behavior profile guidance plan", () => {
     expect(lines).toContain("Behavior memory:");
     expect(lines).toContain("Project memory:");
     expect(lines).toContain("Workflow guidance:");
+    expect(lines).toContain("memory_learned_guidance_plan");
     expect(lines).toContain("Procedure memory:");
     expect(lines).toContain("Use memory_candidate_submit for bounded durable items");
     expect(lines).toContain("memory_session_get and memory_session_update");

@@ -66,12 +66,14 @@ Current reevaluation judgment:
 
 ### Next major phase
 
-1. narrow rollbackable production canary runtime test for the control-ready
-   self-improving and learned-guidance seams
-2. explicit observation of docs-localization, file-reference, and native
-   workflow weak spots during that canary
-3. decide whether either seam or any broader phrasing class should widen or
-   stay narrow based on automated-eval plus canary evidence
+1. rerun a narrow rollbackable production-canary Main-session proof focused on
+   workflow-preflight prompts after the advisory-routing fix
+2. explicitly observe docs-localization, file-reference, and native workflow
+   weak spots during that rerun
+3. decide whether learned-guidance advisory planning is now honestly proven in
+   Main production-canary UX, and whether either seam or any broader phrasing
+   class should widen or stay narrow based on automated-eval plus canary
+   evidence
 4. cross-domain family expansion only after those rollout answers are clear
 
 ### Later bounded cleanup only if justified
@@ -85,9 +87,10 @@ Current reevaluation judgment:
 
 The next implementation slice should now be:
 
-- narrow rollbackable production canary runtime testing for the control-ready
-  self-improving / learned-guidance seams, while explicitly watching the
-  current docs-localization, file-reference, and native workflow weak spots
+- rerun narrow rollbackable production-canary Main-session proof for
+  workflow-preflight learned-guidance adoption after the routing fix, while
+  explicitly watching the current docs-localization, file-reference, and
+  native workflow weak spots
 
 Why:
 
@@ -99,8 +102,8 @@ Why:
   boundary
 - automated eval is now real and already shows the weak spots that the canary
   must watch
-- the remaining risk is now production-runtime truth under a narrow canary,
-  not missing shared architecture or missing rollout gating
+- the remaining risk is now post-fix Main production-runtime truth under a
+  narrow canary, not missing shared architecture or missing rollout gating
 - widening vague phrasing classes before evidence exists would recreate
   accidental parallel policy paths faster than it would add useful coverage
 

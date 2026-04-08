@@ -8,6 +8,7 @@ import {
 
 type DurableMemoryToolFlags = {
   hasCandidateSubmit: boolean;
+  hasLearnedGuidancePlan: boolean;
   hasObjectGet: boolean;
   hasObjectList: boolean;
   hasObjectSearchBasic: boolean;
@@ -35,6 +36,7 @@ export type DurableMemoryBehaviorProfile = {
 export type DurableMemoryGuidancePlan = {
   hasObjectSurface: boolean;
   hasCandidateSurface: boolean;
+  hasLearnedGuidanceSurface: boolean;
   hasSessionSurface: boolean;
   searchFamilies: MemoryFamilyId[];
   applicationFamilies: MemoryFamilyId[];
@@ -47,6 +49,7 @@ export type DurableMemoryApplicationQueryIntent = {
   kind: "tool_surface_guidance";
   hasObjectSurface: boolean;
   hasCandidateSurface: boolean;
+  hasLearnedGuidanceSurface: boolean;
   hasSessionSurface: boolean;
 };
 
@@ -83,6 +86,7 @@ export function buildDurableMemoryBehaviorProfile(params: {
 }): DurableMemoryBehaviorProfile | null {
   const flags: DurableMemoryToolFlags = {
     hasCandidateSubmit: params.availableTools.has("memory_candidate_submit"),
+    hasLearnedGuidancePlan: params.availableTools.has("memory_learned_guidance_plan"),
     hasObjectGet: params.availableTools.has("memory_object_get"),
     hasObjectList: params.availableTools.has("memory_object_list"),
     hasObjectSearchBasic: params.availableTools.has("memory_object_search_basic"),
@@ -93,6 +97,7 @@ export function buildDurableMemoryBehaviorProfile(params: {
 
   const hasDurableMemorySection =
     flags.hasCandidateSubmit ||
+    flags.hasLearnedGuidancePlan ||
     flags.hasObjectGet ||
     flags.hasObjectList ||
     flags.hasObjectSearchBasic ||
@@ -122,6 +127,7 @@ export function resolveDurableMemoryGuidancePlan(
   return {
     hasObjectSurface,
     hasCandidateSurface: flags.hasCandidateSubmit,
+    hasLearnedGuidanceSurface: flags.hasLearnedGuidancePlan,
     hasSessionSurface: flags.hasSessionGet || flags.hasSessionUpdate,
     searchFamilies: flags.hasObjectSearchHybrid
       ? [
@@ -223,6 +229,7 @@ export function buildDurableMemoryApplicationSelectionFromProfile(
       kind: "tool_surface_guidance",
       hasObjectSurface: guidancePlan.hasObjectSurface,
       hasCandidateSurface: guidancePlan.hasCandidateSurface,
+      hasLearnedGuidanceSurface: guidancePlan.hasLearnedGuidanceSurface,
       hasSessionSurface: guidancePlan.hasSessionSurface,
     },
     selectedItems,
@@ -277,7 +284,9 @@ export function renderDurableMemoryApplicationSelection(
       }
       if (hasSelectedGuidance("workflow_improvement", "search")) {
         lines.push(
-          "Workflow guidance: for repo-operating, provider-troubleshooting, or environment-constraint asks, search approved workflow guidance first and surface only the top directly relevant hint or two.",
+          selection.flags.hasLearnedGuidancePlan
+            ? 'Workflow guidance: for workflow-preflight asks such as "before I land/push/do this", "preflight", or "what should I double-check first", prefer memory_learned_guidance_plan and keep the result suggestion-only. For direct repo-operating lookup asks, keep using approved workflow search and surface only the top directly relevant hint or two.'
+            : "Workflow guidance: for repo-operating, provider-troubleshooting, or environment-constraint asks, search approved workflow guidance first and surface only the top directly relevant hint or two.",
         );
       }
       if (hasSelectedGuidance("recurring_procedure", "search")) {
@@ -346,7 +355,8 @@ function buildFamilySearchGuidance(familyId: MemoryFamilyId): string[] {
       ];
     case "workflow_improvement":
       return [
-        "For repo-operating or provider-troubleshooting asks where a remembered workflow lesson may matter, prefer memory_object_search_hybrid with kind=project and approved-only scope before falling back to generic memory_search. This includes both the older bounded workflow lessons and newer approved generic workflow guidance. When asking what to use, avoid, or trust for a repo-local scope, include the scope plus the competing actions or signals in the hybrid query so the most relevant approved generic lesson wins.",
+        'For workflow-preflight asks framed like "before I land/push/do this", "preflight", or "what should I double-check first", prefer memory_learned_guidance_plan when that tool is available. Keep the query close to the current task and let retrieval fallback handle no-guidance or disabled results.',
+        "For direct repo-operating or provider-troubleshooting lookup asks where a remembered workflow lesson may matter, prefer memory_object_search_hybrid with kind=project and approved-only scope before falling back to generic memory_search. This includes both the older bounded workflow lessons and newer approved generic workflow guidance. When asking what to use, avoid, or trust for a repo-local scope, include the scope plus the competing actions or signals in the hybrid query so the most relevant approved generic lesson wins.",
       ];
     case "project_rule":
       return [

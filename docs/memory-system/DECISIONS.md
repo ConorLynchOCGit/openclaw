@@ -254,6 +254,23 @@ Current accepted framing:
   file-reference under-retrieval,
   and native workflow guidance under-retrieval
 
+## 2026-04 — Main advisory adoption is a routing problem before it is a widening problem
+
+Current accepted framing:
+
+- recent Main production-canary transcript evidence showed
+  `memory_learned_guidance_plan` was not being selected for workflow-preflight
+  asks
+- the primary failure was a prompt/profile tool-selection gap, not a
+  rollout-target bug
+- the durable-memory prompt layer should distinguish workflow-preflight asks
+  from direct workflow lookup asks
+- `memory_learned_guidance_plan` should only be visible to Main when an
+  explicit `off-production` or `production-canary` rollout target actually
+  enables the bounded seam
+- landing that routing fix is not by itself proof that Main advisory planning
+  is now canary-proven; a fresh transcript/tool rerun is still required
+
 ## 2026-04 — should-fix-soon cleanup is real but secondary
 
 The following work is accepted as already-landed near-term cleanup:

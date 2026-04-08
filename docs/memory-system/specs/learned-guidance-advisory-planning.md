@@ -37,6 +37,12 @@ Live today:
 - structured advisory observability now exposes surfaced, suppressed,
   filtered, disabled, and no-guidance outcomes, including approximate prompt
   cost
+- Main prompt/profile guidance now distinguishes workflow-preflight asks from
+  direct workflow lookup asks when the learned-guidance tool is actually
+  available
+- `memory_learned_guidance_plan` now only registers when an explicit
+  `off-production` or `production-canary` rollout target enables the bounded
+  seam
 
 Not live today:
 
@@ -45,6 +51,8 @@ Not live today:
 - learned guidance influencing proactive plan suggestions
 - production enablement by default
 - automatic widening beyond the current bounded rollout scope
+- Main production-canary transcript proof that eligible workflow-preflight
+  prompts now actually call the advisory planner after the routing fix
 
 ## Non-goals
 
@@ -160,6 +168,21 @@ The safest first proof is inline advisory planning during repo-operating asks,
 not background execution.
 
 That rollout-proof slice is now landed.
+
+Recent Main production-canary transcript evidence also showed that workflow-
+preflight asks were initially falling back to retrieval/search instead of the
+advisory planner.
+
+The current accepted follow-through is:
+
+- keep the seam bounded and rollout-gated
+- make the learned-guidance tool visible only when the bounded seam is
+  explicitly enabled
+- teach Main to prefer learned-guidance planning only for workflow-preflight
+  asks that fit the current advisory slice
+- keep direct lookup asks retrieval-first
+- require a fresh Main transcript/tool rerun before claiming the advisory seam
+  is proven in production-canary UX
 
 The current accepted reevaluation result is still:
 
