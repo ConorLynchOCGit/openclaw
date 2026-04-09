@@ -1,5 +1,9 @@
 import type { CanonicalMemoryRetrievalPlan } from "openclaw/plugin-sdk/memory-canonical-retrieval";
 import type { MemoryFamilyApplicationMode } from "openclaw/plugin-sdk/memory-family-policy";
+import {
+  BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES,
+  type BoundedWorkflowGuidanceCaptureClass,
+} from "./config.js";
 import type { MemoryObjectSearchHybridResult, RankedRetrievedMemoryRecord } from "./db/runtime.js";
 import { readCanonicalMemoryRecordFromMetadata } from "./memory-canonical-compat.js";
 import type { MemoryObjectQueryPort } from "./memory-object-query.js";
@@ -15,9 +19,10 @@ export type LearnedGuidanceAdvisoryPlanningSuggestion = {
   memoryObjectId: string;
   projectId?: string;
   score: number;
+  memoryState: "approved" | "candidate";
   matchedFields: string[];
   content: string;
-  lessonFamily: "generalized_workflow_lesson";
+  captureClass: BoundedWorkflowGuidanceCaptureClass;
   subjectKey?: string;
   subject?: string;
   guidancePattern?: string;
@@ -38,11 +43,13 @@ export type LearnedGuidanceAdvisoryPlanningRolloutScope = {
   rolloutPhase: "bounded_rollout_proof_v1";
   enablementTarget: "default-off" | "off-production" | "production-canary";
   mode: "inline-only";
-  source: "approved_workflow_guidance";
-  approvedOnly: true;
+  source: "approved_preferred_workflow_guidance";
+  approvedOnly: false;
+  approvedPreferred: true;
+  candidateAdvisoryIncluded: true;
   advisoryOnly: true;
   inlineOnly: true;
-  allowedLessonFamilies: Array<"generalized_workflow_lesson">;
+  allowedCaptureClasses: Array<BoundedWorkflowGuidanceCaptureClass>;
   defaultMaxSuggestions: number;
 };
 
@@ -98,7 +105,8 @@ export type LearnedGuidanceAdvisoryPlanningPort = {
 };
 
 type WorkflowGuidanceMetadata = {
-  lessonFamily: "generalized_workflow_lesson";
+  captureClass: BoundedWorkflowGuidanceCaptureClass;
+  memoryState: "approved" | "candidate";
   subjectKey?: string;
   subject?: string;
   guidancePattern?: string;
@@ -110,24 +118,22 @@ type WorkflowGuidanceMetadata = {
 
 type WorkflowGuidanceRecord = Extract<RankedRetrievedMemoryRecord, { objectType: "memory_object" }>;
 
-const DEFAULT_LEARNED_GUIDANCE_ALLOWED_LESSON_FAMILIES = [
-  "generalized_workflow_lesson",
-] as const satisfies Array<"generalized_workflow_lesson">;
-
 function buildRolloutScope(params: {
   enablementTarget: "default-off" | "off-production" | "production-canary";
-  allowedLessonFamilies: ReadonlyArray<"generalized_workflow_lesson">;
+  allowedCaptureClasses: ReadonlyArray<BoundedWorkflowGuidanceCaptureClass>;
   defaultMaxSuggestions: number;
 }): LearnedGuidanceAdvisoryPlanningRolloutScope {
   return {
     rolloutPhase: "bounded_rollout_proof_v1",
     enablementTarget: params.enablementTarget,
     mode: "inline-only",
-    source: "approved_workflow_guidance",
-    approvedOnly: true,
+    source: "approved_preferred_workflow_guidance",
+    approvedOnly: false,
+    approvedPreferred: true,
+    candidateAdvisoryIncluded: true,
     advisoryOnly: true,
     inlineOnly: true,
-    allowedLessonFamilies: [...params.allowedLessonFamilies],
+    allowedCaptureClasses: [...params.allowedCaptureClasses],
     defaultMaxSuggestions: params.defaultMaxSuggestions,
   };
 }
@@ -167,7 +173,7 @@ function resolveWorkflowGuidanceProvenance(
 
 function extractCanonicalWorkflowGuidanceMetadata(
   record: RankedRetrievedMemoryRecord,
-  allowedLessonFamilies: ReadonlySet<"generalized_workflow_lesson">,
+  allowedCaptureClasses: ReadonlySet<BoundedWorkflowGuidanceCaptureClass>,
   canonicalPlan: CanonicalMemoryRetrievalPlan,
 ): WorkflowGuidanceMetadata | null {
   const canonicalRecord =
@@ -177,7 +183,7 @@ function extractCanonicalWorkflowGuidanceMetadata(
   if (
     !canonicalRecord ||
     record.objectType !== "memory_object" ||
-    record.reviewState !== "approved"
+    (record.reviewState !== "approved" && record.reviewState !== "candidate")
   ) {
     return null;
   }
@@ -189,17 +195,18 @@ function extractCanonicalWorkflowGuidanceMetadata(
     return null;
   }
   const workflowGuidanceFacet = canonicalRecord.facets.workflow_guidance;
-  const lessonFamily = readOptionalString(canonicalRecord.facets, "lessonFamily");
+  const captureClass = readOptionalString(canonicalRecord.facets, "captureClass");
   if (
     workflowGuidanceFacet !== true ||
-    lessonFamily !== "generalized_workflow_lesson" ||
-    !allowedLessonFamilies.has(lessonFamily)
+    !captureClass ||
+    !allowedCaptureClasses.has(captureClass as BoundedWorkflowGuidanceCaptureClass)
   ) {
     return null;
   }
 
   return {
-    lessonFamily,
+    captureClass: captureClass as BoundedWorkflowGuidanceCaptureClass,
+    memoryState: record.reviewState,
     subjectKey: readOptionalString(canonicalRecord.facets, "subjectKey"),
     subject: canonicalRecord.subject,
     guidancePattern: readOptionalString(canonicalRecord.facets, "guidancePattern"),
@@ -213,15 +220,15 @@ function extractCanonicalWorkflowGuidanceMetadata(
 
 function extractWorkflowGuidanceMetadata(
   record: RankedRetrievedMemoryRecord,
-  allowedLessonFamilies: ReadonlySet<"generalized_workflow_lesson">,
+  allowedCaptureClasses: ReadonlySet<BoundedWorkflowGuidanceCaptureClass>,
   canonicalPlan: CanonicalMemoryRetrievalPlan,
 ): WorkflowGuidanceMetadata | null {
-  return extractCanonicalWorkflowGuidanceMetadata(record, allowedLessonFamilies, canonicalPlan);
+  return extractCanonicalWorkflowGuidanceMetadata(record, allowedCaptureClasses, canonicalPlan);
 }
 
 function extractWorkflowGuidanceEntry(params: {
   record: RankedRetrievedMemoryRecord;
-  allowedLessonFamilies: ReadonlySet<"generalized_workflow_lesson">;
+  allowedCaptureClasses: ReadonlySet<BoundedWorkflowGuidanceCaptureClass>;
   canonicalPlan: CanonicalMemoryRetrievalPlan;
 }): {
   record: WorkflowGuidanceRecord;
@@ -229,7 +236,7 @@ function extractWorkflowGuidanceEntry(params: {
 } | null {
   const metadata = extractWorkflowGuidanceMetadata(
     params.record,
-    params.allowedLessonFamilies,
+    params.allowedCaptureClasses,
     params.canonicalPlan,
   );
   if (!metadata || params.record.objectType !== "memory_object") {
@@ -243,7 +250,7 @@ function extractWorkflowGuidanceEntry(params: {
 
 function buildSuggestionSignature(metadata: WorkflowGuidanceMetadata, content: string): string {
   return [
-    metadata.lessonFamily,
+    metadata.captureClass,
     metadata.subjectKey ?? "",
     metadata.guidancePattern ?? "",
     metadata.recommendedAction ?? "",
@@ -256,7 +263,11 @@ function buildRelevance(
   record: RankedRetrievedMemoryRecord,
   metadata: WorkflowGuidanceMetadata,
 ): string[] {
-  const reasons = ["matched approved workflow guidance through the normal approved retrieval path"];
+  const reasons = [
+    metadata.memoryState === "approved"
+      ? "matched approved workflow guidance through the normal retrieval path"
+      : "matched candidate workflow guidance through the candidate-aware retrieval path",
+  ];
 
   if (metadata.subject) {
     reasons.push(`matched workflow guidance about ${metadata.subject}`);
@@ -278,7 +289,7 @@ function buildRelevance(
 function resolveGuidanceSuggestions(params: {
   records: RankedRetrievedMemoryRecord[];
   maxSuggestions: number;
-  allowedLessonFamilies: ReadonlySet<"generalized_workflow_lesson">;
+  allowedCaptureClasses: ReadonlySet<BoundedWorkflowGuidanceCaptureClass>;
   canonicalPlan: CanonicalMemoryRetrievalPlan;
 }): {
   suggestions: LearnedGuidanceAdvisoryPlanningSuggestion[];
@@ -296,18 +307,18 @@ function resolveGuidanceSuggestions(params: {
   for (const record of params.records) {
     const anyBoundedMetadata = extractWorkflowGuidanceMetadata(
       record,
-      new Set(DEFAULT_LEARNED_GUIDANCE_ALLOWED_LESSON_FAMILIES),
+      new Set(BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES),
       params.canonicalPlan,
     );
     const entry = extractWorkflowGuidanceEntry({
       record,
-      allowedLessonFamilies: params.allowedLessonFamilies,
+      allowedCaptureClasses: params.allowedCaptureClasses,
       canonicalPlan: params.canonicalPlan,
     });
     if (!entry) {
       if (
         anyBoundedMetadata &&
-        !params.allowedLessonFamilies.has(anyBoundedMetadata.lessonFamily)
+        !params.allowedCaptureClasses.has(anyBoundedMetadata.captureClass)
       ) {
         filteredOutByScopeCount += 1;
       }
@@ -337,7 +348,7 @@ function resolveGuidanceSuggestions(params: {
         subjectKey,
         memoryObjectIds: entries.map(({ record }) => record.id),
         reason:
-          "multiple approved workflow-guidance lessons matched the same subject with competing advice, so inline advisory output was suppressed",
+          "multiple workflow-guidance records matched the same subject with competing advice, so inline advisory output was suppressed",
       });
       continue;
     }
@@ -351,9 +362,10 @@ function resolveGuidanceSuggestions(params: {
       memoryObjectId: selected.record.id,
       ...(selected.record.projectId ? { projectId: selected.record.projectId } : {}),
       score: selected.record.score,
+      memoryState: selected.metadata.memoryState,
       matchedFields: selected.record.matchedFields,
       content: selected.record.content,
-      lessonFamily: selected.metadata.lessonFamily,
+      captureClass: selected.metadata.captureClass,
       ...(selected.metadata.subjectKey ? { subjectKey: selected.metadata.subjectKey } : {}),
       ...(selected.metadata.subject ? { subject: selected.metadata.subject } : {}),
       ...(selected.metadata.guidancePattern
@@ -429,7 +441,7 @@ export function createLearnedGuidanceAdvisoryPlanningPort(params: {
   memoryObjectQuery: MemoryObjectQueryPort;
   mode: "disabled" | "inline-only";
   rolloutTarget?: "off-production" | "production-canary";
-  allowedLessonFamilies?: ReadonlyArray<"generalized_workflow_lesson">;
+  allowedCaptureClasses?: ReadonlyArray<BoundedWorkflowGuidanceCaptureClass>;
   defaultMaxSuggestions?: number;
 }): LearnedGuidanceAdvisoryPlanningPort {
   const applicationMode: MemoryFamilyApplicationMode = "guidance_only";
@@ -438,12 +450,12 @@ export function createLearnedGuidanceAdvisoryPlanningPort(params: {
       params.rolloutTarget === "off-production" || params.rolloutTarget === "production-canary"
         ? params.rolloutTarget
         : "default-off",
-    allowedLessonFamilies: params.allowedLessonFamilies ?? [
-      ...DEFAULT_LEARNED_GUIDANCE_ALLOWED_LESSON_FAMILIES,
+    allowedCaptureClasses: params.allowedCaptureClasses ?? [
+      ...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES,
     ],
     defaultMaxSuggestions: Math.min(Math.max(params.defaultMaxSuggestions ?? 3, 1), 10),
   });
-  const allowedLessonFamilies = new Set(rolloutScope.allowedLessonFamilies);
+  const allowedCaptureClasses = new Set(rolloutScope.allowedCaptureClasses);
 
   if (params.mode !== "inline-only" || rolloutScope.enablementTarget === "default-off") {
     return {
@@ -485,7 +497,7 @@ export function createLearnedGuidanceAdvisoryPlanningPort(params: {
       );
       const searchResult = await params.memoryObjectQuery.searchHybrid({
         query: input.query,
-        scope: "approved_only",
+        scope: "include_candidates",
         kind: "project",
         ...(input.projectId ? { projectId: input.projectId } : {}),
         limit: Math.max(maxSuggestions * 3, 6),
@@ -506,12 +518,12 @@ export function createLearnedGuidanceAdvisoryPlanningPort(params: {
       } = resolveGuidanceSuggestions({
         records: searchResult.records,
         maxSuggestions,
-        allowedLessonFamilies,
+        allowedCaptureClasses,
         canonicalPlan: buildCanonicalMemoryRetrievalPlan({
           input: {
             query: input.query,
             kind: "project",
-            scope: "approved_only",
+            scope: "include_candidates",
           },
         }),
       });
@@ -521,12 +533,18 @@ export function createLearnedGuidanceAdvisoryPlanningPort(params: {
       const selfImprovingSuggestionCount = suggestions.length - nativeSuggestionCount;
 
       if (suggestions.length > 0) {
+        const includesCandidateGuidance = suggestions.some(
+          (suggestion) => suggestion.memoryState === "candidate",
+        );
         const rationale = [
-          "approved workflow-guidance lessons matched the current query strongly enough to surface inline advice",
-          "durable memory remains the authority and the planner stays suggestion-only",
+          includesCandidateGuidance
+            ? "approved workflow guidance stayed authoritative while candidate guidance was allowed as provisional inline advice"
+            : "approved workflow-guidance lessons matched the current query strongly enough to surface inline advice",
+          "the planner stays suggestion-only and never changes execution authority by itself",
         ];
-        const advisoryNote =
-          "Advisory only. Approved workflow guidance is surfaced as bounded inline suggestions and does not change execution authority.";
+        const advisoryNote = includesCandidateGuidance
+          ? "Advisory only. Approved workflow guidance remains authoritative, and candidate workflow guidance is surfaced as provisional inline advice without changing execution authority."
+          : "Advisory only. Approved workflow guidance is surfaced as bounded inline suggestions and does not change execution authority.";
         return {
           accepted: true,
           status: "ok",

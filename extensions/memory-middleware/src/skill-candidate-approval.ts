@@ -10,20 +10,9 @@ export type SkillCandidateApprovalPort = {
 
 export function createSkillCandidateApprovalPort(params: {
   db: MemoryMiddlewareDb;
-  mode:
-    | "disabled"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-    | "candidate-only";
+  enabled: boolean;
 }): SkillCandidateApprovalPort {
-  const mode = params.mode;
-
-  if (
-    mode !== "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" &&
-    mode !==
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" &&
-    mode !== "candidate-only"
-  ) {
+  if (!params.enabled) {
     return {
       async approve() {
         return {

@@ -15,21 +15,10 @@ export type CandidatePromotionPort = {
 
 export function createCandidatePromotionPort(params: {
   db: MemoryMiddlewareDb;
-  mode:
-    | "disabled"
-    | "submit-review-promote-memory"
-    | "submit-review-promote-memory-procedure"
-    | "submit-review-promote-memory-procedure-validate"
-    | "submit-review-promote-memory-procedure-validate-skill"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-    | "candidate-only";
+  memoryPromotionEnabled: boolean;
+  procedureDraftPromotionEnabled: boolean;
 }): CandidatePromotionPort {
-  const mode = params.mode;
-
-  if (mode === "disabled") {
+  if (!params.memoryPromotionEnabled && !params.procedureDraftPromotionEnabled) {
     return {
       async promoteToMemory() {
         return {
@@ -49,20 +38,18 @@ export function createCandidatePromotionPort(params: {
   }
 
   return {
-    promoteToMemory: (input) => params.db.queries.promoteCandidateToMemory(input),
+    async promoteToMemory(input) {
+      if (!params.memoryPromotionEnabled) {
+        return {
+          accepted: false,
+          status: "disabled",
+          reason: "candidate memory promotion mode is not enabled",
+        };
+      }
+      return params.db.queries.promoteCandidateToMemory(input);
+    },
     async promoteToProcedureDraft(input) {
-      if (
-        mode !==
-          "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" &&
-        mode !==
-          "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" &&
-        mode !== "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" &&
-        mode !== "submit-review-promote-memory-procedure-validate-skill-procurement" &&
-        mode !== "submit-review-promote-memory-procedure-validate-skill" &&
-        mode !== "submit-review-promote-memory-procedure-validate" &&
-        mode !== "submit-review-promote-memory-procedure" &&
-        mode !== "candidate-only"
-      ) {
+      if (!params.procedureDraftPromotionEnabled) {
         return {
           accepted: false,
           status: "disabled",

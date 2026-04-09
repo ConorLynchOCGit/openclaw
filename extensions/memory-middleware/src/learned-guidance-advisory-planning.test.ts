@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES } from "./config.js";
 import { createLearnedGuidanceAdvisoryPlanningPort } from "./learned-guidance-advisory-planning.js";
 
 function createApprovedWorkflowRecord(params?: {
@@ -6,18 +7,22 @@ function createApprovedWorkflowRecord(params?: {
   content?: string;
   score?: number;
   matchedFields?: string[];
-  lessonFamily?: "generalized_workflow_lesson";
+  captureClass?: "workflow_generalized_guidance";
   subjectKey?: string;
   recommendedAction?: string;
   avoidAction?: string;
   provenance?: "native_capture" | "self_improving_capture";
+  reviewState?: "approved" | "candidate";
 }) {
   return {
     objectType: "memory_object" as const,
-    readSurface: "approved_memory_view" as const,
+    readSurface:
+      params?.reviewState === "candidate"
+        ? ("reviewable_candidates_view" as const)
+        : ("approved_memory_view" as const),
     id: params?.id ?? "memory-1",
     memoryKind: "project" as const,
-    reviewState: "approved" as const,
+    reviewState: params?.reviewState ?? ("approved" as const),
     content:
       params?.content ??
       'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
@@ -32,7 +37,7 @@ function createApprovedWorkflowRecord(params?: {
             tags: ["workflow_improvement", "workflow_guidance", "feedback"],
             facets: {
               workflow_guidance: true,
-              lessonFamily: params?.lessonFamily ?? "generalized_workflow_lesson",
+              captureClass: params?.captureClass ?? "workflow_generalized_guidance",
               subjectKey: params?.subjectKey ?? "subject-1",
               guidancePattern: "use_instead_of",
               recommendedAction: params?.recommendedAction ?? 'scripts/committer "<msg>" <file...>',
@@ -57,7 +62,7 @@ function createApprovedCanonicalWorkflowRecord(params?: {
   id?: string;
   content?: string;
   score?: number;
-  lessonFamily?: "generalized_workflow_lesson";
+  captureClass?: "workflow_generalized_guidance";
   subjectKey?: string;
 }) {
   return {
@@ -80,7 +85,7 @@ function createApprovedCanonicalWorkflowRecord(params?: {
             tags: ["workflow_improvement", "workflow_guidance", "feedback"],
             facets: {
               workflow_guidance: true,
-              lessonFamily: params?.lessonFamily ?? "generalized_workflow_lesson",
+              captureClass: params?.captureClass ?? "workflow_generalized_guidance",
               subjectKey: params?.subjectKey ?? "canonical-subject-1",
               guidancePattern: "use_instead_of",
               recommendedAction: 'scripts/committer "<msg>" <file...>',
@@ -117,11 +122,13 @@ describe("learned-guidance advisory planning", () => {
         rolloutPhase: "bounded_rollout_proof_v1",
         enablementTarget: "default-off",
         mode: "inline-only",
-        source: "approved_workflow_guidance",
-        approvedOnly: true,
+        source: "approved_preferred_workflow_guidance",
+        approvedOnly: false,
+        approvedPreferred: true,
+        candidateAdvisoryIncluded: true,
         advisoryOnly: true,
         inlineOnly: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson"],
+        allowedCaptureClasses: [...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES],
         defaultMaxSuggestions: 3,
       },
       observability: {
@@ -167,7 +174,7 @@ describe("learned-guidance advisory planning", () => {
     const searchHybrid = vi.fn(async () => ({
       accepted: true as const,
       status: "ok" as const,
-      scope: "approved_only" as const,
+      scope: "include_candidates" as const,
       query: "how should I commit scoped repo changes?",
       records: [createApprovedWorkflowRecord({ provenance: "self_improving_capture" })],
     }));
@@ -187,7 +194,7 @@ describe("learned-guidance advisory planning", () => {
     expect(searchHybrid).toHaveBeenCalledWith({
       query: "how should I commit scoped repo changes?",
       projectId: "project-1",
-      scope: "approved_only",
+      scope: "include_candidates",
       kind: "project",
       limit: 9,
     });
@@ -198,12 +205,13 @@ describe("learned-guidance advisory planning", () => {
       advisoryOnly: true,
       applicationMode: "guidance_only",
       rolloutScope: {
-        allowedLessonFamilies: ["generalized_workflow_lesson"],
+        allowedCaptureClasses: [...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES],
         defaultMaxSuggestions: 3,
       },
       suggestions: [
         {
           memoryObjectId: "memory-1",
+          memoryState: "approved",
           provenance: "self_improving_capture",
           subject: "scoped commit workflow",
           guidancePattern: "use_instead_of",
@@ -226,7 +234,7 @@ describe("learned-guidance advisory planning", () => {
         searchHybrid: vi.fn(async () => ({
           accepted: true as const,
           status: "ok" as const,
-          scope: "approved_only" as const,
+          scope: "include_candidates" as const,
           query: "how should I commit scoped repo changes?",
           records: [createApprovedCanonicalWorkflowRecord()],
         })),
@@ -246,7 +254,8 @@ describe("learned-guidance advisory planning", () => {
       suggestions: [
         {
           memoryObjectId: "canonical-memory-1",
-          lessonFamily: "generalized_workflow_lesson",
+          memoryState: "approved",
+          captureClass: "workflow_generalized_guidance",
           subject: "scoped commit workflow",
           guidancePattern: "use_instead_of",
         },
@@ -258,7 +267,7 @@ describe("learned-guidance advisory planning", () => {
     const searchHybrid = vi.fn(async () => ({
       accepted: true as const,
       status: "ok" as const,
-      scope: "approved_only" as const,
+      scope: "include_candidates" as const,
       query: "how should I commit scoped repo changes?",
       records: [createApprovedWorkflowRecord({ provenance: "self_improving_capture" })],
     }));
@@ -295,7 +304,7 @@ describe("learned-guidance advisory planning", () => {
         searchHybrid: vi.fn(async () => ({
           accepted: true as const,
           status: "ok" as const,
-          scope: "approved_only" as const,
+          scope: "include_candidates" as const,
           query: "which command should I trust for tests?",
           records: [
             createApprovedWorkflowRecord({
@@ -349,11 +358,11 @@ describe("learned-guidance advisory planning", () => {
         searchHybrid: vi.fn(async () => ({
           accepted: true as const,
           status: "ok" as const,
-          scope: "approved_only" as const,
+          scope: "include_candidates" as const,
           query: "how should I run tests here?",
           records: [
             createApprovedWorkflowRecord({
-              lessonFamily: "generalized_workflow_lesson",
+              captureClass: "workflow_generalized_guidance",
               content: "Workflow improvement: use pnpm test -- path instead of raw vitest.",
               recommendedAction: "pnpm test -- path",
               avoidAction: "raw vitest",
@@ -363,7 +372,7 @@ describe("learned-guidance advisory planning", () => {
       } as never,
       mode: "inline-only",
       rolloutTarget: "off-production",
-      allowedLessonFamilies: [],
+      allowedCaptureClasses: [],
     });
 
     const result = await port.plan({
@@ -376,13 +385,53 @@ describe("learned-guidance advisory planning", () => {
       outcome: "no_guidance",
       suggestions: [],
       rolloutScope: {
-        allowedLessonFamilies: [],
+        allowedCaptureClasses: [],
       },
       observability: {
         outcomeCode: "no_guidance",
         eligibleWorkflowGuidanceCount: 0,
         filteredOutByScopeCount: 1,
       },
+    });
+  });
+
+  it("surfaces candidate workflow guidance as provisional inline advice when no approved record exists", async () => {
+    const port = createLearnedGuidanceAdvisoryPlanningPort({
+      memoryObjectQuery: {
+        searchHybrid: vi.fn(async () => ({
+          accepted: true as const,
+          status: "ok" as const,
+          scope: "include_candidates" as const,
+          query: "how should I run tests here?",
+          records: [
+            createApprovedWorkflowRecord({
+              id: "candidate-guidance-1",
+              reviewState: "candidate",
+              provenance: "self_improving_capture",
+            }),
+          ],
+        })),
+      } as never,
+      mode: "inline-only",
+      rolloutTarget: "off-production",
+    });
+
+    await expect(
+      port.plan({
+        query: "how should I run tests here?",
+      }),
+    ).resolves.toMatchObject({
+      accepted: true,
+      outcome: "guidance_available",
+      suggestions: [
+        {
+          memoryObjectId: "candidate-guidance-1",
+          memoryState: "candidate",
+          provenance: "self_improving_capture",
+        },
+      ],
+      advisoryNote:
+        "Advisory only. Approved workflow guidance remains authoritative, and candidate workflow guidance is surfaced as provisional inline advice without changing execution authority.",
     });
   });
 });

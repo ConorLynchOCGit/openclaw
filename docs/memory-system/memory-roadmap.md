@@ -24,11 +24,30 @@ Practical parity does not mean:
 - the implementation substrate is already flat enough to scale cleanly
 - reduced-profile self-improving capture and learned-guidance planning are
   ready to widen automatically
+- the old candidate-ingress ladder is an honest long-term control model
+- hidden operator review is acceptable as the only way to make advanced
+  candidate flows useful
 
 That remains the central roadmap fact.
 
 The retirement tranche proper is now underway and has real landed code, not
 just review notes.
+
+The latest follow-through work also clarified the product boundary:
+
+- the historical candidate-ingress ladder is now centralized behind one
+  capability resolver
+- candidate follow-up can now flow through a conversational review prompt in
+  chat instead of assuming hidden operator review
+- proactive follow-up can now prepare that conversational review prompt
+  directly instead of stopping at a blocked advisory result
+- proactive procedure-validation and skill-governance follow-up can now also
+  prepare conversational prompts instead of assuming operator-only review
+- learned-guidance advisory now prefers approved workflow guidance but can
+  surface candidate guidance as provisional advice when no stronger approved
+  guidance exists
+- advanced review/promotion/procedure/skill-governance tools are now exposed
+  only when the active runtime posture actually enables them
 
 ## Live baseline
 
@@ -41,16 +60,25 @@ The current live boundary includes:
 - bounded recurring procedures with validated-procedure retrieval and
   suggestion-first posture
 - generalized workflow lessons with auto-review and approved-only retrieval
+- conversational candidate review follow-up for pending candidate-state memory
+  objects
+- proactive candidate-review execution that turns pending candidates into
+  user-facing approve/reject/revise prompts
+- proactive procedure-validation follow-up that turns eligible draft
+  procedures into user-facing validation prompts
+- proactive skill-governance follow-up that turns bounded skill candidates
+  into user-facing governance prompts for the next procurement-planning step
 - generalized project rules with approved-only retrieval
 - bounded unmet needs with recommendation-only retrieval
 
 ## Why flattening still comes before future expansion
 
-The repo still should not move on to reduced-profile self-improving capture or
-new families yet.
+The repo still should not move on to broad self-improving expansion or new
+families yet.
 
 The reason is no longer “missing family features.” It is that the substrate is
-still only partially flattened.
+still only partially flattened, and some advanced follow-up surfaces are still
+bounded governance flows rather than autonomous product behavior.
 
 After the accepted post-v3 architecture review, the roadmap now treats the
 remaining work as several more flatten/refactor tranches, not one narrow

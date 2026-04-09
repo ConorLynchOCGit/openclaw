@@ -2,7 +2,11 @@ import { getCaptureMetadataByCaptureClass } from "openclaw/plugin-sdk/memory-fam
 import { Client } from "pg";
 import type { CandidateIngressPort } from "./candidate-ingress.js";
 import type { CandidateReviewPort } from "./candidate-review.js";
-import type { MemoryMiddlewareConfig } from "./config.js";
+import {
+  BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES,
+  type BoundedWorkflowGuidanceCaptureClass,
+  type MemoryMiddlewareConfig,
+} from "./config.js";
 import type {
   CandidateSubmissionAcceptedResult,
   CandidateSubmissionKind,
@@ -70,7 +74,7 @@ export type SelfImprovingCandidateCaptureOutcomeCode =
   | "submission_kind_blocked"
   | "missing_project_scope"
   | "unrecognized_workflow_guidance"
-  | "lesson_family_outside_rollout_scope"
+  | "capture_class_outside_rollout_scope"
   | "approved_memory_already_exists"
   | "pending_candidate_already_exists"
   | "expired_candidate_replay_blocked"
@@ -91,7 +95,7 @@ export type SelfImprovingCandidateCaptureRolloutScope = {
   sourceProfile: "reduced_profile_candidate_only";
   target: "candidate_only";
   requiresProjectId: true;
-  allowedLessonFamilies: Array<"generalized_workflow_lesson">;
+  allowedCaptureClasses: Array<BoundedWorkflowGuidanceCaptureClass>;
   retrievalAuthority: "approved_only";
 };
 
@@ -107,16 +111,13 @@ export type SelfImprovingCandidateCaptureEvaluation = {
 const SELF_IMPROVING_CAPTURE_SOURCE = "memory_self_improving_capture_candidate";
 const SELF_IMPROVING_CAPTURE_MODE_DISABLED_REASON =
   "self-improving candidate capture mode is not enabled";
-const DEFAULT_SELF_IMPROVING_ALLOWED_LESSON_FAMILIES = [
-  "generalized_workflow_lesson",
-] as const satisfies Array<"generalized_workflow_lesson">;
 
 type ResolvedSelfImprovingWorkflowImprovement = Awaited<
   ReturnType<typeof resolveWorkflowImprovementIngestion>
 >;
 
 function buildRolloutScope(
-  allowedLessonFamilies: ReadonlyArray<"generalized_workflow_lesson">,
+  allowedCaptureClasses: ReadonlyArray<BoundedWorkflowGuidanceCaptureClass>,
   enablementTarget: "default-off" | "off-production" | "production-canary",
 ): SelfImprovingCandidateCaptureRolloutScope {
   return {
@@ -125,7 +126,7 @@ function buildRolloutScope(
     sourceProfile: "reduced_profile_candidate_only",
     target: "candidate_only",
     requiresProjectId: true,
-    allowedLessonFamilies: [...allowedLessonFamilies],
+    allowedCaptureClasses: [...allowedCaptureClasses],
     retrievalAuthority: "approved_only",
   };
 }
@@ -202,6 +203,15 @@ function isAllowedOutputPosture(
   posture: string | undefined,
 ): posture is "candidate_only" | undefined {
   return posture === undefined || posture === "candidate_only";
+}
+
+function asBoundedWorkflowGuidanceCaptureClass(
+  value: string | undefined,
+): BoundedWorkflowGuidanceCaptureClass | null {
+  return value &&
+    BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES.includes(value as BoundedWorkflowGuidanceCaptureClass)
+    ? (value as BoundedWorkflowGuidanceCaptureClass)
+    : null;
 }
 
 function buildWorkflowImprovementSemanticMetadata(params: {
@@ -414,7 +424,12 @@ async function findRecentRejectedWorkflowImprovementCandidate(params: {
           and coalesce(
             metadata->'autoCapture'->>'captureClass',
             metadata->'candidateMetadata'->'autoCapture'->>'captureClass'
-          ) in ('workflow_tool_gotcha', 'workflow_generalized_guidance')
+          ) in (
+            'workflow_api_workaround',
+            'workflow_environment_constraint',
+            'workflow_generalized_guidance',
+            'workflow_tool_gotcha'
+          )
           and ($2::uuid is null or project_id = $2::uuid)
           and updated_at >= now() - ($3::int * interval '1 day')
         order by updated_at desc
@@ -438,7 +453,7 @@ async function submitWorkflowImprovementCandidate(params: {
   candidateReview: CandidateReviewPort;
   input: SelfImprovingCandidateCaptureInput;
   rolloutScope: SelfImprovingCandidateCaptureRolloutScope;
-  allowedLessonFamilies: ReadonlySet<"generalized_workflow_lesson">;
+  allowedCaptureClasses: ReadonlySet<BoundedWorkflowGuidanceCaptureClass>;
 }): Promise<SelfImprovingCandidateCaptureResult> {
   if (!params.input.projectId) {
     return {
@@ -488,20 +503,20 @@ async function submitWorkflowImprovementCandidate(params: {
     };
   }
 
-  if (
-    resolution.lessonFamily !== "generalized_workflow_lesson" ||
-    !params.allowedLessonFamilies.has(resolution.lessonFamily)
-  ) {
+  const resolvedCaptureClass = asBoundedWorkflowGuidanceCaptureClass(
+    resolution.parsed.captureClass,
+  );
+  if (!resolvedCaptureClass || !params.allowedCaptureClasses.has(resolvedCaptureClass)) {
     return {
       accepted: false,
       status: "blocked",
       kind: params.input.kind,
       target: "candidate_only",
       reason:
-        "reduced-profile self-improving first tranche supports workflow-guidance lessons only",
+        "reduced-profile self-improving first tranche supports bounded workflow-guidance capture classes only",
       rolloutScope: params.rolloutScope,
       evaluation: buildEvaluation({
-        outcomeCode: "lesson_family_outside_rollout_scope",
+        outcomeCode: "capture_class_outside_rollout_scope",
         duplicateOutcome: "none",
         replayBlocked: false,
         reviewBurden: "no_new_review_required",
@@ -637,9 +652,9 @@ export function createSelfImprovingCandidateCapturePort(params: {
   candidateReview: CandidateReviewPort;
   mode: "disabled" | "candidate-only";
 }): SelfImprovingCandidateCapturePort {
-  const allowedLessonFamilies = new Set(
-    params.config.selfImprovingCapture?.allowedLessonFamilies ?? [
-      ...DEFAULT_SELF_IMPROVING_ALLOWED_LESSON_FAMILIES,
+  const allowedCaptureClasses = new Set(
+    params.config.selfImprovingCapture?.allowedCaptureClasses ?? [
+      ...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES,
     ],
   );
   const enablementTarget =
@@ -647,7 +662,7 @@ export function createSelfImprovingCandidateCapturePort(params: {
     params.config.selfImprovingCapture?.rolloutTarget === "production-canary"
       ? params.config.selfImprovingCapture.rolloutTarget
       : "default-off";
-  const rolloutScope = buildRolloutScope([...allowedLessonFamilies], enablementTarget);
+  const rolloutScope = buildRolloutScope([...allowedCaptureClasses], enablementTarget);
 
   if (params.mode !== "candidate-only" || enablementTarget === "default-off") {
     return {
@@ -717,7 +732,7 @@ export function createSelfImprovingCandidateCapturePort(params: {
         candidateReview: params.candidateReview,
         input,
         rolloutScope,
-        allowedLessonFamilies,
+        allowedCaptureClasses,
       });
     },
   };

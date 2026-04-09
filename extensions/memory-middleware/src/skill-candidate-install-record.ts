@@ -10,18 +10,9 @@ export type SkillCandidateInstallRecordPort = {
 
 export function createSkillCandidateInstallRecordPort(params: {
   db: MemoryMiddlewareDb;
-  mode:
-    | "disabled"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-    | "candidate-only";
+  enabled: boolean;
 }): SkillCandidateInstallRecordPort {
-  const mode = params.mode;
-
-  if (
-    mode !== "candidate-only" &&
-    mode !==
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-  ) {
+  if (!params.enabled) {
     return {
       async create() {
         return {

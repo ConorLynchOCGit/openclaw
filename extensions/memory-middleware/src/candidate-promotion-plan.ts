@@ -10,21 +10,9 @@ export type CandidatePromotionPlanPort = {
 
 export function createCandidatePromotionPlanPort(params: {
   db: MemoryMiddlewareDb;
-  mode:
-    | "disabled"
-    | "submit-review-promote-memory"
-    | "submit-review-promote-memory-procedure"
-    | "submit-review-promote-memory-procedure-validate"
-    | "submit-review-promote-memory-procedure-validate-skill"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-    | "candidate-only";
+  enabled: boolean;
 }): CandidatePromotionPlanPort {
-  const mode = params.mode;
-
-  if (mode === "disabled") {
+  if (!params.enabled) {
     return {
       async plan() {
         return {

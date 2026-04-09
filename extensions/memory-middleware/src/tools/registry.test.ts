@@ -15,14 +15,29 @@ function createApi() {
 function createRuntime(params?: {
   mode?: "disabled" | "inline-only";
   rolloutTarget?: "off-production" | "production-canary";
+  candidateIngressMode?: "disabled" | "submit-review-only" | "candidate-only";
+  selfImprovingMode?: "disabled" | "candidate-only";
+  selfImprovingRolloutTarget?: "off-production" | "production-canary";
 }) {
   return {
     config: {
+      candidateIngress: {
+        mode: params?.candidateIngressMode ?? "disabled",
+      },
+      selfImprovingCapture: params?.selfImprovingMode
+        ? {
+            mode: params.selfImprovingMode,
+            ...(params.selfImprovingRolloutTarget
+              ? { rolloutTarget: params.selfImprovingRolloutTarget }
+              : {}),
+            allowedCaptureClasses: ["workflow_generalized_guidance"],
+          }
+        : undefined,
       learnedGuidanceAdvisoryPlanning: params?.mode
         ? {
             mode: params.mode,
             ...(params.rolloutTarget ? { rolloutTarget: params.rolloutTarget } : {}),
-            allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+            allowedCaptureClasses: ["workflow_generalized_guidance"],
             defaultMaxSuggestions: 3,
           }
         : undefined,
@@ -51,5 +66,32 @@ describe("memory middleware tool registry", () => {
 
     const names = api.registerTool.mock.calls.map(([, opts]) => opts?.name);
     expect(names).toContain("memory_learned_guidance_plan");
+  });
+
+  it("hides self-improving and review-only tools when the current runtime posture does not enable them", () => {
+    const api = createApi();
+    registerMemoryMiddlewareTools(api, createRuntime());
+
+    const names = api.registerTool.mock.calls.map(([, opts]) => opts?.name);
+    expect(names).not.toContain("memory_self_improving_capture_candidate");
+    expect(names).not.toContain("memory_candidate_review");
+    expect(names).not.toContain("memory_candidate_review_prompt");
+  });
+
+  it("registers conversational review and self-improving tools when the runtime posture enables them", () => {
+    const api = createApi();
+    registerMemoryMiddlewareTools(
+      api,
+      createRuntime({
+        candidateIngressMode: "submit-review-only",
+        selfImprovingMode: "candidate-only",
+        selfImprovingRolloutTarget: "off-production",
+      }),
+    );
+
+    const names = api.registerTool.mock.calls.map(([, opts]) => opts?.name);
+    expect(names).toContain("memory_self_improving_capture_candidate");
+    expect(names).toContain("memory_candidate_review");
+    expect(names).toContain("memory_candidate_review_prompt");
   });
 });

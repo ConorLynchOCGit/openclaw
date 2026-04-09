@@ -78,20 +78,20 @@
 
 ### Slice 1
 
-- self-improving capture now has explicit allowed lesson-family rollout scope
+- self-improving capture now has explicit allowed capture-class rollout scope
 - accepted candidate metadata now records rollout scope and review-burden
   context
 - structured rollout evaluation now distinguishes created, blocked,
   replay-blocked, disabled, and failed outcomes
 - blocked outcomes now preserve explicit reasons such as:
-  - lesson-family outside rollout scope
+  - capture-class outside rollout scope
   - approved memory already exists
   - pending candidate already exists
   - expired or rejected replay blocked
 
 ### Slice 2
 
-- learned-guidance advisory planning now has explicit allowed lesson-family
+- learned-guidance advisory planning now has explicit allowed capture-class
   rollout scope
 - learned-guidance advisory planning now has bounded default suggestion-budget
   control
@@ -146,7 +146,7 @@
 ### Slice 2
 
 - `pnpm test -- extensions/memory-middleware/src/config.test.ts extensions/memory-middleware/src/learned-guidance-advisory-planning.test.ts extensions/memory-middleware/src/tools/memory-learned-guidance-plan.test.ts -t "learned-guidance|advisory|rollout|bounded"`
-- `OPENCLAW_TEST_PROFILE=serial OPENCLAW_TEST_SERIAL_GATEWAY=1 pnpm test -- extensions/memory-middleware/src/tools/candidate-submit.integration.test.ts -t "returns advisory learned guidance from approved workflow memory without writing any rows|suppresses conflicting approved learned guidance instead of guessing|keeps advisory rollout scoped to configured workflow lesson families|returns disabled for learned-guidance planning before touching the database when mode is off"`
+- `OPENCLAW_TEST_PROFILE=serial OPENCLAW_TEST_SERIAL_GATEWAY=1 pnpm test -- extensions/memory-middleware/src/tools/candidate-submit.integration.test.ts -t "returns advisory learned guidance from approved workflow memory without writing any rows|suppresses conflicting approved learned guidance instead of guessing|keeps advisory rollout scoped to configured workflow capture classes|returns disabled for learned-guidance planning before touching the database when mode is off"`
 - `pnpm check:types`
 
 ### Slice 3

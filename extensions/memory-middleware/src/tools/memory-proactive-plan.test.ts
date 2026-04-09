@@ -19,11 +19,11 @@ function createPlanResult(): MemoryProactivePlanResult {
         actionType: "follow_up_candidate_review",
         priority: "high",
         actionClass: "candidate_review_follow_up",
-        requiredApprovalClass: "manual_review",
+        requiredApprovalClass: "conversational_review",
         affectedIds: ["candidate-1", "candidate-2"],
         rationale: [
           "candidate-state memory objects remain unreviewed",
-          "manual review is required before any later promotion planning or writes",
+          "a conversational review step is required before any later promotion planning or writes",
         ],
         advisoryOnly: true,
         advisoryNote: "Advisory only. No proactive actions were executed.",

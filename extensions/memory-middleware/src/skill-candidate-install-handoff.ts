@@ -10,18 +10,9 @@ export type SkillCandidateInstallHandoffPort = {
 
 export function createSkillCandidateInstallHandoffPort(params: {
   db: MemoryMiddlewareDb;
-  mode:
-    | "disabled"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-    | "candidate-only";
+  enabled: boolean;
 }): SkillCandidateInstallHandoffPort {
-  const mode = params.mode;
-
-  if (
-    mode !== "candidate-only" &&
-    mode !==
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-  ) {
+  if (!params.enabled) {
     return {
       async plan() {
         return {

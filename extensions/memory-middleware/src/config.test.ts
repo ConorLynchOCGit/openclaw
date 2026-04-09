@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveMemoryMiddlewareConfig } from "./config.js";
+import {
+  BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES,
+  resolveMemoryMiddlewareCandidateIngressCapabilities,
+  resolveMemoryMiddlewareConfig,
+} from "./config.js";
 
 describe("resolveMemoryMiddlewareConfig", () => {
   it("defaults memory-object query mode to disabled when candidate ingress is disabled", () => {
@@ -16,11 +20,11 @@ describe("resolveMemoryMiddlewareConfig", () => {
       },
       selfImprovingCapture: {
         mode: "disabled",
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedCaptureClasses: [...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES],
       },
       learnedGuidanceAdvisoryPlanning: {
         mode: "disabled",
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedCaptureClasses: [...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES],
         defaultMaxSuggestions: 3,
       },
       backgroundJobs: {
@@ -43,7 +47,7 @@ describe("resolveMemoryMiddlewareConfig", () => {
       selfImprovingCapture: { mode: "disabled" },
       learnedGuidanceAdvisoryPlanning: {
         mode: "disabled",
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedCaptureClasses: [...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES],
         defaultMaxSuggestions: 3,
       },
       backgroundJobs: {
@@ -119,7 +123,7 @@ describe("resolveMemoryMiddlewareConfig", () => {
       candidateIngress: { mode: "candidate-only" },
       selfImprovingCapture: {
         mode: "candidate-only",
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedCaptureClasses: [...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES],
       },
     });
   });
@@ -134,7 +138,7 @@ describe("resolveMemoryMiddlewareConfig", () => {
       candidateIngress: { mode: "candidate-only" },
       learnedGuidanceAdvisoryPlanning: {
         mode: "inline-only",
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedCaptureClasses: [...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES],
         defaultMaxSuggestions: 3,
       },
     });
@@ -146,15 +150,19 @@ describe("resolveMemoryMiddlewareConfig", () => {
         selfImprovingCapture: {
           mode: "candidate-only",
           rolloutTarget: "off-production",
-          allowedLessonFamilies: [" supported_lesson ", "supported_lesson", "ignored"],
+          allowedCaptureClasses: [
+            " unsupported_capture_class ",
+            "unsupported_capture_class",
+            "ignored",
+          ],
         },
         learnedGuidanceAdvisoryPlanning: {
           mode: "inline-only",
           rolloutTarget: "production-canary",
-          allowedLessonFamilies: [
-            "generalized_workflow_lesson",
-            "supported_lesson",
-            "generalized_workflow_lesson",
+          allowedCaptureClasses: [
+            "workflow_generalized_guidance",
+            "unsupported_capture_class",
+            "workflow_generalized_guidance",
           ],
           defaultMaxSuggestions: 12,
         },
@@ -163,14 +171,55 @@ describe("resolveMemoryMiddlewareConfig", () => {
       selfImprovingCapture: {
         mode: "candidate-only",
         rolloutTarget: "off-production",
-        allowedLessonFamilies: ["supported_lesson"],
+        allowedCaptureClasses: [...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES],
       },
       learnedGuidanceAdvisoryPlanning: {
         mode: "inline-only",
         rolloutTarget: "production-canary",
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedCaptureClasses: ["workflow_generalized_guidance"],
         defaultMaxSuggestions: 10,
       },
+    });
+  });
+
+  it("derives candidate-ingress automation capabilities from the historical ladder", () => {
+    expect(resolveMemoryMiddlewareCandidateIngressCapabilities("submit-only")).toMatchObject({
+      submit: true,
+      review: false,
+      memoryPromotion: false,
+      procedureDraftPromotion: false,
+      procedureValidation: false,
+      fullCandidateSandbox: false,
+    });
+    expect(
+      resolveMemoryMiddlewareCandidateIngressCapabilities(
+        "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install",
+      ),
+    ).toMatchObject({
+      submit: true,
+      review: true,
+      memoryPromotion: true,
+      procedureDraftPromotion: true,
+      procedureValidation: true,
+      skillCandidate: true,
+      skillProcurement: true,
+      skillVetting: true,
+      skillApproval: true,
+      skillInstall: true,
+      fullCandidateSandbox: false,
+    });
+    expect(resolveMemoryMiddlewareCandidateIngressCapabilities("candidate-only")).toMatchObject({
+      submit: true,
+      review: true,
+      memoryPromotion: true,
+      procedureDraftPromotion: true,
+      procedureValidation: true,
+      skillCandidate: true,
+      skillProcurement: true,
+      skillVetting: true,
+      skillApproval: true,
+      skillInstall: true,
+      fullCandidateSandbox: true,
     });
   });
 

@@ -1511,9 +1511,8 @@ export const MEMORY_PROACTIVE_PLAN_ACTION_CLASSES = [
 export type MemoryProactivePlanActionClass = (typeof MEMORY_PROACTIVE_PLAN_ACTION_CLASSES)[number];
 
 export const MEMORY_PROACTIVE_PLAN_APPROVAL_CLASSES = [
+  "conversational_review",
   "manual_review",
-  "manual_validation_review",
-  "manual_governance_review",
   "explicit_write_invocation",
   "none",
 ] as const;

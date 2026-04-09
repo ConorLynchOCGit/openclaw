@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
+import type { BoundedWorkflowGuidanceCaptureClass } from "./config.js";
 import type { CandidateSubmissionResult, RankedRetrievedMemoryRecord } from "./db/runtime.js";
 import type { LearnedGuidanceAdvisoryPlanningAcceptedResult } from "./learned-guidance-advisory-planning.js";
 import type { MemoryMiddlewareRuntime } from "./runtime.js";
@@ -43,7 +44,7 @@ export type AutomatedRolloutEvalGuidanceSignal = {
   suppressedConflictCount: number;
   estimatedPromptTokens: number;
   provenances: Array<"native_capture" | "self_improving_capture">;
-  lessonFamilies: Array<"generalized_workflow_lesson">;
+  captureClasses: Array<BoundedWorkflowGuidanceCaptureClass>;
   guidancePatterns: string[];
   recommendedActions: string[];
   avoidActions: string[];
@@ -181,7 +182,7 @@ function buildGuidanceSignal(
     suppressedConflictCount: result.suppressedConflicts.length,
     estimatedPromptTokens: result.observability.estimatedPromptTokens,
     provenances: result.suggestions.map((suggestion) => suggestion.provenance),
-    lessonFamilies: result.suggestions.map((suggestion) => suggestion.lessonFamily),
+    captureClasses: result.suggestions.map((suggestion) => suggestion.captureClass),
     guidancePatterns: result.suggestions
       .map((suggestion) => suggestion.guidancePattern)
       .filter((value): value is string => typeof value === "string" && value.length > 0),
@@ -747,9 +748,7 @@ export async function runAutomatedRolloutEval(params: {
     learnedGuidance.nativeWorkflow.outcome === "guidance_available" &&
     learnedGuidance.nativeWorkflow.advisoryOnly &&
     learnedGuidance.nativeWorkflow.provenances.includes("native_capture") &&
-    learnedGuidance.nativeWorkflow.lessonFamilies.includes(
-      REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedLessonFamily,
-    ) &&
+    learnedGuidance.nativeWorkflow.captureClasses.includes("workflow_generalized_guidance") &&
     learnedGuidance.nativeWorkflow.guidancePatterns.includes(
       REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedGuidancePattern,
     ) &&
@@ -763,8 +762,8 @@ export async function runAutomatedRolloutEval(params: {
     learnedGuidance.selfImprovingWorkflow.outcome === "guidance_available" &&
     learnedGuidance.selfImprovingWorkflow.advisoryOnly &&
     learnedGuidance.selfImprovingWorkflow.provenances.includes("self_improving_capture") &&
-    learnedGuidance.selfImprovingWorkflow.lessonFamilies.includes(
-      REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedLessonFamily,
+    learnedGuidance.selfImprovingWorkflow.captureClasses.includes(
+      "workflow_generalized_guidance",
     ) &&
     learnedGuidance.selfImprovingWorkflow.guidancePatterns.includes(
       REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedGuidancePattern,

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   DriftCheckExecuteAcceptedResult,
   MemoryProactiveExecuteResult,
+  ProcedureValidationPlanResult,
+  SkillCandidateProcurementPlanResult,
 } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
@@ -35,6 +37,67 @@ function createDriftCheckResult(): DriftCheckExecuteAcceptedResult {
 
 function createRuntime() {
   return {
+    candidateQuery: {
+      get: vi.fn(async ({ candidateId }: { candidateId: string }) => ({
+        accepted: true as const,
+        status: "ok" as const,
+        candidate: {
+          id: candidateId,
+          kind: "learning",
+          memoryKind: "memory_object",
+          reviewState: "candidate",
+          content: "Candidate awaiting review",
+          candidateMetadata: {
+            canonicalIngestionCandidate: {
+              record: {
+                kind: "feedback",
+                subject: "repo tests",
+                statement: "use pnpm test -- <path-or-filter>",
+                compatibility: {
+                  captureCategory: "workflow_improvement",
+                },
+              },
+              compatibility: {
+                captureClass: "workflow_generalized_guidance",
+              },
+            },
+          },
+        },
+      })),
+    },
+    proactivePlanning: {
+      plan: vi.fn(),
+    },
+    procedureValidationPlan: {
+      plan: vi.fn(
+        async ({ procedureId }: { procedureId: string }) =>
+          ({
+            accepted: true,
+            status: "ok",
+            procedureId,
+            procedureStatus: "draft",
+            eligible: true,
+            possibleTargets: ["propose_validated_procedure"],
+            rationale: ["draft procedure appears validation-ready"],
+            requiredGates: ["confirm the bounded validation step in chat"],
+          }) satisfies ProcedureValidationPlanResult,
+      ),
+    },
+    skillCandidateProcurementPlan: {
+      plan: vi.fn(
+        async ({ skillCandidateId }: { skillCandidateId: string }) =>
+          ({
+            accepted: true,
+            status: "ok",
+            skillCandidateId,
+            skillCandidateStatus: "candidate",
+            eligible: true,
+            possibleTargets: ["propose_procurement_handoff"],
+            rationale: ["skill candidate appears ready for bounded procurement follow-up"],
+            requiredGates: ["confirm the bounded procurement follow-up in chat"],
+          }) satisfies SkillCandidateProcurementPlanResult,
+      ),
+    },
     proactiveExecution: {
       execute: vi.fn(
         async () =>
@@ -97,22 +160,8 @@ describe("memory proactive-execute tool", () => {
     });
   });
 
-  it("surfaces blocked non-drift proactive actions without mutation", async () => {
+  it("turns candidate-review follow-up into conversational review prompts", async () => {
     const runtime = createRuntime();
-    runtime.proactiveExecution.execute = vi.fn(
-      async () =>
-        ({
-          accepted: true,
-          status: "blocked",
-          actionType: "follow_up_candidate_review",
-          executionSource: "explicit_selection",
-          affectedIds: ["candidate-1"],
-          rationale: [
-            "proactive execution for follow_up_candidate_review is out of scope in this slice",
-            "only the bounded run_drift_check action class may execute proactively",
-          ],
-        }) satisfies MemoryProactiveExecuteResult,
-    );
     const tool = createMemoryProactiveExecuteTool({ runtime });
 
     const result = await tool.execute("call-2", {
@@ -120,15 +169,116 @@ describe("memory proactive-execute tool", () => {
       affectedIds: ["candidate-1"],
     });
 
-    expect(result.details).toEqual({
+    expect(runtime.proactiveExecution.execute).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({
       accepted: true,
-      status: "blocked",
+      status: "executed",
       actionType: "follow_up_candidate_review",
       executionSource: "explicit_selection",
       affectedIds: ["candidate-1"],
       rationale: [
-        "proactive execution for follow_up_candidate_review is out of scope in this slice",
-        "only the bounded run_drift_check action class may execute proactively",
+        "bounded proactive execution prepared conversational candidate review prompts for the explicit selection",
+      ],
+    });
+    expect(result.details).toMatchObject({
+      candidateReviewPrompts: [
+        expect.objectContaining({
+          accepted: true,
+          candidateId: "candidate-1",
+          conversationalReview: expect.objectContaining({
+            reviewToolName: "memory_candidate_review",
+          }),
+        }),
+      ],
+    });
+  });
+
+  it("turns procedure-validation follow-up into conversational prompts", async () => {
+    const runtime = createRuntime();
+    const tool = createMemoryProactiveExecuteTool({ runtime });
+
+    const result = await tool.execute("call-3", {
+      actionType: "follow_up_procedure_validation",
+      affectedIds: ["procedure-1"],
+    });
+
+    expect(runtime.proactiveExecution.execute).not.toHaveBeenCalled();
+    expect(runtime.procedureValidationPlan.plan).toHaveBeenCalledWith({
+      procedureId: "procedure-1",
+    });
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "executed",
+      actionType: "follow_up_procedure_validation",
+      executionSource: "explicit_selection",
+      affectedIds: ["procedure-1"],
+      conversationalPrompts: [
+        expect.objectContaining({
+          actionType: "follow_up_procedure_validation",
+          targetId: "procedure-1",
+          recommendedToolName: "memory_procedure_validate_plan",
+        }),
+      ],
+    });
+  });
+
+  it("derives conversational skill-governance prompts from the planner", async () => {
+    const runtime = createRuntime();
+    runtime.proactivePlanning.plan = vi.fn(
+      async () =>
+        ({
+          accepted: true,
+          status: "ok",
+          outcome: "actions_available",
+          advisoryOnly: true,
+          advisoryNote: "Advisory only. No proactive actions were executed.",
+          actions: [
+            {
+              actionType: "follow_up_skill_candidate_governance",
+              priority: "medium",
+              actionClass: "skill_candidate_governance_follow_up",
+              requiredApprovalClass: "conversational_review",
+              affectedIds: ["skill-1"],
+              rationale: ["skill governance should be surfaced conversationally"],
+              advisoryOnly: true,
+              advisoryNote: "Advisory only. No proactive actions were executed.",
+            },
+          ],
+          inspectedState: {
+            pendingCandidateReviewCount: 0,
+            eligibleProcedureValidationCount: 0,
+            candidateSkillGovernanceCount: 1,
+            staleMemoryCount: 0,
+            driftCheckCount: 0,
+            consolidationReviewCount: 0,
+          },
+          rationale: [
+            "bounded middleware state contains advisory-only proactive follow-up opportunities",
+          ],
+        }) satisfies import("../db/runtime.js").MemoryProactivePlanResult,
+    );
+    const tool = createMemoryProactiveExecuteTool({ runtime });
+
+    const result = await tool.execute("call-4", {
+      actionType: "follow_up_skill_candidate_governance",
+    });
+
+    expect(runtime.proactiveExecution.execute).not.toHaveBeenCalled();
+    expect(runtime.skillCandidateProcurementPlan.plan).toHaveBeenCalledWith({
+      skillCandidateId: "skill-1",
+    });
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "executed",
+      actionType: "follow_up_skill_candidate_governance",
+      executionSource: "derived_plan",
+      affectedIds: ["skill-1"],
+      conversationalPrompts: [
+        expect.objectContaining({
+          actionType: "follow_up_skill_candidate_governance",
+          targetId: "skill-1",
+          recommendedToolName: "memory_skill_candidate_procurement_plan",
+        }),
       ],
     });
   });

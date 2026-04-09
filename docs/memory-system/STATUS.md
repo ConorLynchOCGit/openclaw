@@ -92,9 +92,13 @@ Live substrate properties:
   explicit docs/file packet shapes
 - explicit production-canary rollout-target gating for self-improving capture
   and learned-guidance advisory planning
+- a central candidate-ingress capability resolver now owns the old
+  submit/review/promotion ladder so advanced runtime ports no longer fan the
+  long historical mode string back out independently
 - approved-over-candidate cluster preference for bounded retrieval of stronger
   explicit docs/file packet shapes
 - rollout-aligned registration for `memory_learned_guidance_plan`
+- rollout-aligned registration for `memory_candidate_review_prompt`
 - prompt/profile routing that distinguishes workflow-preflight advisory asks
   from direct workflow lookup asks
 - Main-only OpenAI/Codex tool-choice steering for strong workflow-preflight
@@ -179,6 +183,21 @@ Live substrate properties:
   multi-operation scaffold
 - hybrid read family classification no longer infers project-family identity
   from `factFamily` or `fieldKey`
+- candidate follow-up now has a bounded conversational review path: the agent
+  can inspect a pending candidate, ask the user to approve/reject/revise it in
+  chat, and then route the answer through the existing review tool
+- proactive candidate-review follow-up now prepares those conversational review
+  prompts directly instead of returning a blocked execution result
+- proactive procedure-validation follow-up now prepares conversational
+  validation prompts instead of pointing at hidden manual validation review
+- proactive skill-governance follow-up now prepares conversational governance
+  prompts instead of pointing at hidden manual governance review
+- learned-guidance advisory now treats approved workflow guidance as the
+  authority while allowing candidate workflow guidance as provisional inline
+  advice when no better approved record exists
+- advanced candidate/promotion/procedure/skill-governance tools are now only
+  registered when the active runtime posture actually enables them, instead of
+  always appearing and then failing as disabled no-ops
 
 ## What is live but still bounded
 
@@ -193,16 +212,32 @@ Current live bounds:
 - self-improving capture is candidate-only
 - self-improving capture has no direct approval authority
 - self-improving capture now has an explicit generalized workflow-guidance
-  rollout scope
+  rollout scope defined by bounded workflow-guidance capture classes
 - self-improving capture now also requires an explicit `off-production` or
   `production-canary` rollout target before it activates
-- learned-guidance planning reads approved retrieval only
+- learned-guidance planning stays workflow-guidance-only
+- learned-guidance planning prefers approved workflow guidance
+- learned-guidance planning may now surface candidate workflow guidance as
+  provisional inline advice
 - learned-guidance planning is inline-only and advisory-only
 - learned-guidance planning suppresses conflicting guidance instead of guessing
 - learned-guidance planning now has an explicit generalized workflow-guidance
   scope and a bounded default suggestion budget
 - learned-guidance planning now also requires an explicit `off-production` or
   `production-canary` rollout target before it activates
+- candidate follow-up no longer assumes hidden operator review; the bounded
+  path is now conversational review in chat
+- reduced-profile self-improving capture is still candidate-only, but it no
+  longer depends on hidden operator review to be practically useful because
+  candidate guidance can surface provisionally and proactive follow-up can ask
+  the user in chat
+- procedure validation and skill governance remain bounded follow-up/governance
+  surfaces rather than autonomous product behavior, but they no longer depend
+  on hidden operator-only review because the system can ask the user about the
+  next follow-up step in chat
+- procurement, vetting, approval, and install remain bounded governance
+  surfaces because they preserve external-skill review checkpoints and do not
+  yet have a safe autonomous execution story
 - historical rollout reports and retired migration notes now live under
   `docs/memory-system/archive/`
 

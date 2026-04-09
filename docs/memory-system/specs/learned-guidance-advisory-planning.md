@@ -30,7 +30,7 @@ Live today:
 - the first live tranche is approved-only, workflow-guidance-only, and
   advisory-only
 - it now has explicit rollout family-scope control through
-  `learnedGuidanceAdvisoryPlanning.allowedLessonFamilies`
+  `learnedGuidanceAdvisoryPlanning.allowedCaptureClasses`
 - it now has an explicit bounded default suggestion budget through
   `learnedGuidanceAdvisoryPlanning.defaultMaxSuggestions`
 - conflicting workflow guidance is suppressed instead of silently collapsed

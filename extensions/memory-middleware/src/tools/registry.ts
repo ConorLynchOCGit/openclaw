@@ -1,10 +1,12 @@
 import type { OpenClawPluginApi, OpenClawPluginToolFactory } from "../../api.js";
+import { resolveMemoryMiddlewareCandidateIngressCapabilities } from "../config.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import { createCandidateGetTool } from "./candidate-get.js";
 import { createCandidateListTool } from "./candidate-list.js";
 import { createCandidatePromoteMemoryTool } from "./candidate-promote-memory.js";
 import { createCandidatePromotePlanTool } from "./candidate-promote-plan.js";
 import { createCandidatePromoteProcedureTool } from "./candidate-promote-procedure.js";
+import { createCandidateReviewPromptTool } from "./candidate-review-prompt.js";
 import { createCandidateReviewTool } from "./candidate-review.js";
 import { createCandidateSubmitTool } from "./candidate-submit.js";
 import { createMemoryBackgroundJobEnqueueTool } from "./memory-background-job-enqueue.js";
@@ -55,10 +57,25 @@ function isLearnedGuidanceAdvisoryToolEnabled(
   );
 }
 
+function isSelfImprovingCaptureToolEnabled(
+  runtime: Pick<MemoryMiddlewareRuntime, "config">,
+): boolean {
+  const config = runtime.config.selfImprovingCapture;
+  return (
+    config?.mode === "candidate-only" &&
+    (config.rolloutTarget === "off-production" || config.rolloutTarget === "production-canary")
+  );
+}
+
 export function registerMemoryMiddlewareTools(
   api: OpenClawPluginApi,
   runtime: MemoryMiddlewareRuntime,
 ): void {
+  const automation = resolveMemoryMiddlewareCandidateIngressCapabilities(
+    runtime.config.candidateIngress.mode,
+  );
+  const reviewToolsEnabled = automation.review || automation.fullCandidateSandbox;
+
   api.registerTool(
     ((ctx) =>
       createCandidateSubmitTool({
@@ -67,14 +84,16 @@ export function registerMemoryMiddlewareTools(
       })) as OpenClawPluginToolFactory,
     { name: "memory_candidate_submit" },
   );
-  api.registerTool(
-    ((ctx) =>
-      createMemorySelfImprovingCaptureCandidateTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_self_improving_capture_candidate" },
-  );
+  if (isSelfImprovingCaptureToolEnabled(runtime)) {
+    api.registerTool(
+      ((ctx) =>
+        createMemorySelfImprovingCaptureCandidateTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_self_improving_capture_candidate" },
+    );
+  }
   if (isLearnedGuidanceAdvisoryToolEnabled(runtime)) {
     api.registerTool(
       ((ctx) =>
@@ -85,22 +104,32 @@ export function registerMemoryMiddlewareTools(
       { name: "memory_learned_guidance_plan" },
     );
   }
-  api.registerTool(
-    ((ctx) =>
-      createCandidateListTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_candidate_list" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createCandidateGetTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_candidate_get" },
-  );
+  if (reviewToolsEnabled) {
+    api.registerTool(
+      ((ctx) =>
+        createCandidateListTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_candidate_list" },
+    );
+    api.registerTool(
+      ((ctx) =>
+        createCandidateGetTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_candidate_get" },
+    );
+    api.registerTool(
+      ((ctx) =>
+        createCandidateReviewPromptTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_candidate_review_prompt" },
+    );
+  }
   api.registerTool(
     ((ctx) =>
       createMemoryObjectListTool({
@@ -285,132 +314,150 @@ export function registerMemoryMiddlewareTools(
       })) as OpenClawPluginToolFactory,
     { name: "memory_background_job_run_next" },
   );
-  api.registerTool(
-    ((ctx) =>
-      createCandidateReviewTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_candidate_review" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createCandidatePromotePlanTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_candidate_promote_plan" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createCandidatePromoteMemoryTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_candidate_promote_memory" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createCandidatePromoteProcedureTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_candidate_promote_procedure" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createProcedureValidatePlanTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_procedure_validate_plan" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createProcedureValidateTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_procedure_validate" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createSkillCandidateApprovalPlanTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_skill_candidate_approval_plan" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createSkillCandidateApproveTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_skill_candidate_approve" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createSkillCandidateInstallHandoffTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_skill_candidate_install_handoff" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createSkillCandidateInstallRecordCreateTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_skill_candidate_install_record_create" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createSkillCandidatePlanTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_skill_candidate_plan" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createSkillCandidateCreateTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_skill_candidate_create" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createSkillCandidateProcurementPlanTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_skill_candidate_procurement_plan" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createSkillCandidateProcurementRecordCreateTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_skill_candidate_procurement_record_create" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createSkillCandidateSkillVetterHandoffTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_skill_candidate_skill_vetter_handoff" },
-  );
-  api.registerTool(
-    ((ctx) =>
-      createSkillCandidateVettingResultRecordTool({
-        runtime,
-        context: ctx,
-      })) as OpenClawPluginToolFactory,
-    { name: "memory_skill_candidate_vetting_result_record" },
-  );
+  if (reviewToolsEnabled) {
+    api.registerTool(
+      ((ctx) =>
+        createCandidateReviewTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_candidate_review" },
+    );
+  }
+  if (automation.memoryPromotion) {
+    api.registerTool(
+      ((ctx) =>
+        createCandidatePromotePlanTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_candidate_promote_plan" },
+    );
+    api.registerTool(
+      ((ctx) =>
+        createCandidatePromoteMemoryTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_candidate_promote_memory" },
+    );
+  }
+  if (automation.procedureDraftPromotion) {
+    api.registerTool(
+      ((ctx) =>
+        createCandidatePromoteProcedureTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_candidate_promote_procedure" },
+    );
+  }
+  if (automation.procedureValidation || automation.fullCandidateSandbox) {
+    api.registerTool(
+      ((ctx) =>
+        createProcedureValidatePlanTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_procedure_validate_plan" },
+    );
+    api.registerTool(
+      ((ctx) =>
+        createProcedureValidateTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_procedure_validate" },
+    );
+  }
+  if (automation.skillApproval) {
+    api.registerTool(
+      ((ctx) =>
+        createSkillCandidateApprovalPlanTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_skill_candidate_approval_plan" },
+    );
+    api.registerTool(
+      ((ctx) =>
+        createSkillCandidateApproveTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_skill_candidate_approve" },
+    );
+  }
+  if (automation.skillInstall) {
+    api.registerTool(
+      ((ctx) =>
+        createSkillCandidateInstallHandoffTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_skill_candidate_install_handoff" },
+    );
+    api.registerTool(
+      ((ctx) =>
+        createSkillCandidateInstallRecordCreateTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_skill_candidate_install_record_create" },
+    );
+  }
+  if (automation.skillCandidate) {
+    api.registerTool(
+      ((ctx) =>
+        createSkillCandidatePlanTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_skill_candidate_plan" },
+    );
+    api.registerTool(
+      ((ctx) =>
+        createSkillCandidateCreateTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_skill_candidate_create" },
+    );
+  }
+  if (automation.skillProcurement) {
+    api.registerTool(
+      ((ctx) =>
+        createSkillCandidateProcurementPlanTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_skill_candidate_procurement_plan" },
+    );
+    api.registerTool(
+      ((ctx) =>
+        createSkillCandidateProcurementRecordCreateTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_skill_candidate_procurement_record_create" },
+    );
+  }
+  if (automation.skillVetting) {
+    api.registerTool(
+      ((ctx) =>
+        createSkillCandidateSkillVetterHandoffTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_skill_candidate_skill_vetter_handoff" },
+    );
+    api.registerTool(
+      ((ctx) =>
+        createSkillCandidateVettingResultRecordTool({
+          runtime,
+          context: ctx,
+        })) as OpenClawPluginToolFactory,
+      { name: "memory_skill_candidate_vetting_result_record" },
+    );
+  }
 }

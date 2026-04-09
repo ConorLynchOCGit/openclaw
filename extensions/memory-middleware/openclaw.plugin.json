@@ -1,7 +1,7 @@
 {
   "id": "memory-middleware",
   "name": "Memory Middleware",
-  "description": "Native base scaffold for future candidate-only memory middleware work.",
+  "description": "Canonical-first memory substrate with generic capture and retrieval plus bounded self-improving, advisory, and governance follow-up automation.",
   "skills": ["./skills"],
   "configSchema": {
     "type": "object",
@@ -100,11 +100,16 @@
             "type": "string",
             "enum": ["off-production", "production-canary"]
           },
-          "allowedLessonFamilies": {
+          "allowedCaptureClasses": {
             "type": "array",
             "items": {
               "type": "string",
-              "enum": ["generalized_workflow_lesson"]
+              "enum": [
+                "workflow_api_workaround",
+                "workflow_environment_constraint",
+                "workflow_generalized_guidance",
+                "workflow_tool_gotcha"
+              ]
             }
           }
         }
@@ -121,11 +126,16 @@
             "type": "string",
             "enum": ["off-production", "production-canary"]
           },
-          "allowedLessonFamilies": {
+          "allowedCaptureClasses": {
             "type": "array",
             "items": {
               "type": "string",
-              "enum": ["generalized_workflow_lesson"]
+              "enum": [
+                "workflow_api_workaround",
+                "workflow_environment_constraint",
+                "workflow_generalized_guidance",
+                "workflow_tool_gotcha"
+              ]
             }
           },
           "defaultMaxSuggestions": {

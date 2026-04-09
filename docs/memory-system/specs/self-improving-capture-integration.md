@@ -33,7 +33,7 @@ Live today:
 - it is now integrated into the shared candidate pipeline
 - it is gated by `selfImprovingCapture.mode = candidate-only`
 - it now has explicit rollout family-scope control through
-  `selfImprovingCapture.allowedLessonFamilies`
+  `selfImprovingCapture.allowedCaptureClasses`
 - provenance distinguishes self-improving origin explicitly
 - blocked replay and duplicate handling now run on the shared workflow
   improvement substrate
@@ -202,7 +202,7 @@ lesson, except for audit provenance.
 The first rollout must be:
 
 - off-production first
-- narrow to one lesson family
+- narrow to one bounded workflow-guidance capture class set
 - candidate-only
 - reversible
 - metrics-backed
@@ -210,7 +210,7 @@ The first rollout must be:
 Production enablement should start with:
 
 - one reduced-profile source
-- one explicitly configured allowed lesson family set
+- one explicitly configured allowed capture-class set
 - explicit disablement switch
 - proof that duplicate and conflict handling work
 - review-facing outcome and burden signals

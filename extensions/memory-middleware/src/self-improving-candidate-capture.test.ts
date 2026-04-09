@@ -35,7 +35,7 @@ function createConfig(): MemoryMiddlewareConfig {
     selfImprovingCapture: {
       mode: "candidate-only",
       rolloutTarget: "off-production",
-      allowedLessonFamilies: ["generalized_workflow_lesson"],
+      allowedCaptureClasses: ["workflow_generalized_guidance"],
     },
   };
 }

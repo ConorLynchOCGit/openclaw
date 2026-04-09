@@ -39,6 +39,7 @@ import {
 } from "../../runtime-api.js";
 import { runAutomatedRolloutEval } from "../automated-rollout-eval.js";
 import { createCandidateIngressPort } from "../candidate-ingress.js";
+import { resolveMemoryMiddlewareCandidateIngressCapabilities } from "../config.js";
 import { closeMemoryMiddlewarePgPools } from "../db/pg-pool.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import { findApprovedWorkflowPhrasePatternMatch } from "../workflow-phrase-induction.js";
@@ -492,10 +493,10 @@ function createRuntime(params: {
   autoPromotionProfile?: "disabled" | "explicit-user-preference-v1";
   selfImprovingMode?: "disabled" | "candidate-only";
   selfImprovingRolloutTarget?: "off-production" | "production-canary" | null;
-  selfImprovingAllowedLessonFamilies?: Array<"generalized_workflow_lesson">;
+  selfImprovingAllowedCaptureClasses?: Array<"workflow_generalized_guidance">;
   learnedGuidanceMode?: "disabled" | "inline-only";
   learnedGuidanceRolloutTarget?: "off-production" | "production-canary" | null;
-  learnedGuidanceAllowedLessonFamilies?: Array<"generalized_workflow_lesson">;
+  learnedGuidanceAllowedCaptureClasses?: Array<"workflow_generalized_guidance">;
   learnedGuidanceDefaultMaxSuggestions?: number;
   queryMode?: "disabled" | "read-only" | "candidate-only";
   backgroundJobInspectionMode?: "disabled" | "enabled";
@@ -509,6 +510,7 @@ function createRuntime(params: {
 }): MemoryMiddlewareRuntime {
   const queryMode =
     params.queryMode ?? (params.mode === "candidate-only" ? "candidate-only" : "disabled");
+  const automation = resolveMemoryMiddlewareCandidateIngressCapabilities(params.mode);
   const db = createMemoryMiddlewareDb({
     config: {
       driver: "postgres",
@@ -519,7 +521,7 @@ function createRuntime(params: {
   });
   const candidateIngress = createCandidateIngressPort({
     db,
-    mode: params.mode,
+    enabled: automation.submit,
   });
   const fullCandidateMode = params.mode === "candidate-only" ? "candidate-only" : "disabled";
   const selfImprovingMode = params.selfImprovingMode ?? "disabled";
@@ -528,8 +530,8 @@ function createRuntime(params: {
       ? undefined
       : (params.selfImprovingRolloutTarget ??
         (selfImprovingMode === "candidate-only" ? "off-production" : undefined));
-  const selfImprovingAllowedLessonFamilies = params.selfImprovingAllowedLessonFamilies ?? [
-    "generalized_workflow_lesson",
+  const selfImprovingAllowedCaptureClasses = params.selfImprovingAllowedCaptureClasses ?? [
+    "workflow_generalized_guidance",
   ];
   const learnedGuidanceMode = params.learnedGuidanceMode ?? "disabled";
   const learnedGuidanceRolloutTarget =
@@ -537,8 +539,8 @@ function createRuntime(params: {
       ? undefined
       : (params.learnedGuidanceRolloutTarget ??
         (learnedGuidanceMode === "inline-only" ? "off-production" : undefined));
-  const learnedGuidanceAllowedLessonFamilies = params.learnedGuidanceAllowedLessonFamilies ?? [
-    "generalized_workflow_lesson",
+  const learnedGuidanceAllowedCaptureClasses = params.learnedGuidanceAllowedCaptureClasses ?? [
+    "workflow_generalized_guidance",
   ];
   const learnedGuidanceDefaultMaxSuggestions = params.learnedGuidanceDefaultMaxSuggestions ?? 3;
   const backgroundJobInspectionMode = params.backgroundJobInspectionMode ?? "disabled";
@@ -560,91 +562,6 @@ function createRuntime(params: {
     fullCandidateMode === "candidate-only" ||
     backgroundJobAdvisorySchedulingMode === "candidate-only"
       ? "candidate-only"
-      : "disabled";
-  const candidateReviewMode =
-    params.mode === "submit-review-only" ||
-    params.mode === "submit-review-promote-memory" ||
-    params.mode === "submit-review-promote-memory-procedure" ||
-    params.mode === "submit-review-promote-memory-procedure-validate" ||
-    params.mode === "submit-review-promote-memory-procedure-validate-skill" ||
-    params.mode === "submit-review-promote-memory-procedure-validate-skill-procurement" ||
-    params.mode === "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    params.mode === "candidate-only"
-      ? params.mode
-      : "disabled";
-  const candidatePromotionMode =
-    params.mode === "submit-review-promote-memory" ||
-    params.mode === "submit-review-promote-memory-procedure" ||
-    params.mode === "submit-review-promote-memory-procedure-validate" ||
-    params.mode === "submit-review-promote-memory-procedure-validate-skill" ||
-    params.mode === "submit-review-promote-memory-procedure-validate-skill-procurement" ||
-    params.mode === "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    params.mode === "candidate-only"
-      ? params.mode
-      : "disabled";
-  const procedureValidationMode =
-    params.mode === "submit-review-promote-memory-procedure-validate" ||
-    params.mode === "submit-review-promote-memory-procedure-validate-skill" ||
-    params.mode === "submit-review-promote-memory-procedure-validate-skill-procurement" ||
-    params.mode === "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    params.mode === "candidate-only"
-      ? params.mode
-      : "disabled";
-  const skillCandidateMode =
-    params.mode === "submit-review-promote-memory-procedure-validate-skill" ||
-    params.mode === "submit-review-promote-memory-procedure-validate-skill-procurement" ||
-    params.mode === "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    params.mode === "candidate-only"
-      ? params.mode
-      : "disabled";
-  const procurementMode =
-    params.mode === "submit-review-promote-memory-procedure-validate-skill-procurement" ||
-    params.mode === "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    params.mode === "candidate-only"
-      ? params.mode
-      : "disabled";
-  const vettingMode =
-    params.mode === "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    params.mode === "candidate-only"
-      ? params.mode
-      : "disabled";
-  const approvalMode =
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    params.mode === "candidate-only"
-      ? params.mode
-      : "disabled";
-  const installMode =
-    params.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    params.mode === "candidate-only"
-      ? params.mode
       : "disabled";
   const proactivePlanning = createProactivePlanningPort({
     db,
@@ -686,7 +603,7 @@ function createRuntime(params: {
   });
   const candidateReview = createCandidateReviewPort({
     db,
-    mode: candidateReviewMode,
+    enabled: automation.review,
   });
   const memoryObjectQuery = createMemoryObjectQueryPort({
     db,
@@ -710,12 +627,12 @@ function createRuntime(params: {
       selfImprovingCapture: {
         mode: selfImprovingMode,
         ...(selfImprovingRolloutTarget ? { rolloutTarget: selfImprovingRolloutTarget } : {}),
-        allowedLessonFamilies: selfImprovingAllowedLessonFamilies,
+        allowedCaptureClasses: selfImprovingAllowedCaptureClasses,
       },
       learnedGuidanceAdvisoryPlanning: {
         mode: learnedGuidanceMode,
         ...(learnedGuidanceRolloutTarget ? { rolloutTarget: learnedGuidanceRolloutTarget } : {}),
-        allowedLessonFamilies: learnedGuidanceAllowedLessonFamilies,
+        allowedCaptureClasses: learnedGuidanceAllowedCaptureClasses,
         defaultMaxSuggestions: learnedGuidanceDefaultMaxSuggestions,
       },
       memoryObjectQuery: {
@@ -753,12 +670,12 @@ function createRuntime(params: {
         selfImprovingCapture: {
           mode: selfImprovingMode,
           ...(selfImprovingRolloutTarget ? { rolloutTarget: selfImprovingRolloutTarget } : {}),
-          allowedLessonFamilies: selfImprovingAllowedLessonFamilies,
+          allowedCaptureClasses: selfImprovingAllowedCaptureClasses,
         },
         learnedGuidanceAdvisoryPlanning: {
           mode: learnedGuidanceMode,
           ...(learnedGuidanceRolloutTarget ? { rolloutTarget: learnedGuidanceRolloutTarget } : {}),
-          allowedLessonFamilies: learnedGuidanceAllowedLessonFamilies,
+          allowedCaptureClasses: learnedGuidanceAllowedCaptureClasses,
           defaultMaxSuggestions: learnedGuidanceDefaultMaxSuggestions,
         },
         memoryObjectQuery: {
@@ -790,7 +707,7 @@ function createRuntime(params: {
       memoryObjectQuery,
       mode: learnedGuidanceMode,
       rolloutTarget: learnedGuidanceRolloutTarget,
-      allowedLessonFamilies: learnedGuidanceAllowedLessonFamilies,
+      allowedCaptureClasses: learnedGuidanceAllowedCaptureClasses,
       defaultMaxSuggestions: learnedGuidanceDefaultMaxSuggestions,
     }),
     toolResultStore: createToolResultStorePort({
@@ -834,59 +751,60 @@ function createRuntime(params: {
     candidateReview,
     candidatePromotionPlan: createCandidatePromotionPlanPort({
       db,
-      mode: candidatePromotionMode,
+      enabled: automation.memoryPromotion,
     }),
     candidatePromotion: createCandidatePromotionPort({
       db,
-      mode: candidatePromotionMode,
+      memoryPromotionEnabled: automation.memoryPromotion,
+      procedureDraftPromotionEnabled: automation.procedureDraftPromotion,
     }),
     procedureValidationPlan: createProcedureValidationPlanPort({
       db,
-      mode: fullCandidateMode,
+      enabled: automation.fullCandidateSandbox,
     }),
     procedureValidation: createProcedureValidationPort({
       db,
-      mode: procedureValidationMode,
+      enabled: automation.procedureValidation,
     }),
     skillCandidateApprovalPlan: createSkillCandidateApprovalPlanPort({
       db,
-      mode: approvalMode,
+      enabled: automation.skillApproval,
     }),
     skillCandidateApproval: createSkillCandidateApprovalPort({
       db,
-      mode: approvalMode,
+      enabled: automation.skillApproval,
     }),
     skillCandidateInstallHandoff: createSkillCandidateInstallHandoffPort({
       db,
-      mode: installMode,
+      enabled: automation.skillInstall,
     }),
     skillCandidateInstallRecord: createSkillCandidateInstallRecordPort({
       db,
-      mode: installMode,
+      enabled: automation.skillInstall,
     }),
     skillCandidatePlan: createSkillCandidatePlanPort({
       db,
-      mode: skillCandidateMode,
+      enabled: automation.skillCandidate,
     }),
     skillCandidate: createSkillCandidatePort({
       db,
-      mode: skillCandidateMode,
+      enabled: automation.skillCandidate,
     }),
     skillCandidateProcurementPlan: createSkillCandidateProcurementPlanPort({
       db,
-      mode: procurementMode,
+      enabled: automation.skillProcurement,
     }),
     skillCandidateProcurementRecord: createSkillCandidateProcurementRecordPort({
       db,
-      mode: procurementMode,
+      enabled: automation.skillProcurement,
     }),
     skillCandidateSkillVetterHandoff: createSkillCandidateSkillVetterHandoffPort({
       db,
-      mode: vettingMode,
+      enabled: automation.skillVetting,
     }),
     skillCandidateVettingResult: createSkillCandidateVettingResultPort({
       db,
-      mode: vettingMode,
+      enabled: automation.skillVetting,
     }),
   };
 }
@@ -1351,7 +1269,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       storage: "database",
       reviewState: "candidate",
       rolloutScope: {
-        allowedLessonFamilies: ["generalized_workflow_lesson"],
+        allowedCaptureClasses: ["workflow_generalized_guidance"],
       },
       evaluation: {
         outcomeCode: "candidate_created",
@@ -1473,7 +1391,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
           },
           selfImprovingRollout: {
             rolloutPhase: "bounded_rollout_proof_v1",
-            allowedLessonFamilies: ["generalized_workflow_lesson"],
+            allowedCaptureClasses: ["workflow_generalized_guidance"],
             duplicateOutcome: "new_candidate_cluster",
             reviewBurden: "new_candidate_review_required",
             replayBlocked: false,
@@ -1513,7 +1431,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
           },
           selfImprovingRollout: {
             rolloutPhase: "bounded_rollout_proof_v1",
-            allowedLessonFamilies: ["generalized_workflow_lesson"],
+            allowedCaptureClasses: ["workflow_generalized_guidance"],
             duplicateOutcome: "new_candidate_cluster",
             reviewBurden: "new_candidate_review_required",
             replayBlocked: false,
@@ -1656,7 +1574,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson"],
+        allowedCaptureClasses: ["workflow_generalized_guidance"],
         retrievalAuthority: "approved_only",
       },
       evaluation: {
@@ -1716,7 +1634,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson"],
+        allowedCaptureClasses: ["workflow_generalized_guidance"],
         retrievalAuthority: "approved_only",
       },
       evaluation: {
@@ -1782,7 +1700,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson"],
+        allowedCaptureClasses: ["workflow_generalized_guidance"],
         retrievalAuthority: "approved_only",
       },
       evaluation: {
@@ -1861,13 +1779,13 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     expect((result.details as { reason: string }).reason).toContain("database is unavailable");
   });
 
-  it("keeps self-improving rollout family scope narrow when configured", async () => {
+  it("keeps self-improving rollout capture-class scope narrow when configured", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
       mode: "candidate-only",
       selfImprovingMode: "candidate-only",
-      selfImprovingAllowedLessonFamilies: [],
+      selfImprovingAllowedCaptureClasses: [],
     });
     const tool = createMemorySelfImprovingCaptureCandidateTool({ runtime });
 
@@ -1882,10 +1800,10 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       accepted: false,
       status: "blocked",
       rolloutScope: {
-        allowedLessonFamilies: [],
+        allowedCaptureClasses: [],
       },
       evaluation: {
-        outcomeCode: "lesson_family_outside_rollout_scope",
+        outcomeCode: "capture_class_outside_rollout_scope",
         duplicateOutcome: "none",
       },
     });
@@ -14219,7 +14137,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     );
   });
 
-  it("blocks non-drift proactive actions without any side effects", async () => {
+  it("turns candidate-review proactive follow-up into conversational prompts without any writes", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
@@ -14250,15 +14168,168 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
     const countsAfter = await readTableCounts(dbEnvironment.connectionString);
 
-    expect(result.details).toEqual({
+    expect(result.details).toMatchObject({
       accepted: true,
-      status: "blocked",
+      status: "executed",
       actionType: "follow_up_candidate_review",
       executionSource: "explicit_selection",
       affectedIds: [candidateId],
       rationale: [
-        "proactive execution for follow_up_candidate_review is out of scope in this slice",
-        "only the bounded run_drift_check action class may execute proactively",
+        "bounded proactive execution prepared conversational candidate review prompts for the explicit selection",
+      ],
+    });
+    expect(result.details).toMatchObject({
+      candidateReviewPrompts: [
+        expect.objectContaining({
+          accepted: true,
+          candidateId,
+          conversationalReview: expect.objectContaining({
+            reviewToolName: "memory_candidate_review",
+          }),
+        }),
+      ],
+    });
+    expect(countsAfter).toEqual(countsBefore);
+  });
+
+  it("turns procedure-validation proactive follow-up into conversational prompts without any writes", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({ runtime });
+    const promoteProcedureTool = createCandidatePromoteProcedureTool({ runtime });
+    const proactiveExecuteTool = createMemoryProactiveExecuteTool({ runtime });
+
+    const procedureCandidateResult = await submitTool.execute("call-17080cn-proc-1", {
+      kind: "procedure",
+      content: "Document the deployment rollback checklist",
+      projectId: seeded.projectId,
+    });
+    const procedureCandidateId = (
+      procedureCandidateResult.details as { accepted: true; memoryObjectId: string }
+    ).memoryObjectId;
+    await reviewTool.execute("call-17080cn-proc-2", {
+      candidateId: procedureCandidateId,
+      outcome: "accepted",
+      rationale: "Looks reusable",
+    });
+    const promoteProcedureResult = await promoteProcedureTool.execute("call-17080cn-proc-3", {
+      candidateId: procedureCandidateId,
+      title: "Deployment rollback checklist",
+      rationale: "Promote to draft",
+    });
+    const procedureId = (promoteProcedureResult.details as { procedureId: string }).procedureId;
+
+    const countsBefore = await readTableCounts(dbEnvironment.connectionString);
+    const result = await proactiveExecuteTool.execute("call-17080cn-proc-4", {
+      actionType: "follow_up_procedure_validation",
+      affectedIds: [procedureId],
+      projectId: seeded.projectId,
+    });
+    const countsAfter = await readTableCounts(dbEnvironment.connectionString);
+
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "executed",
+      actionType: "follow_up_procedure_validation",
+      executionSource: "explicit_selection",
+      affectedIds: [procedureId],
+      rationale: [
+        "bounded proactive execution prepared conversational procedure-validation prompts for the explicit selection",
+      ],
+      conversationalPrompts: [
+        expect.objectContaining({
+          actionType: "follow_up_procedure_validation",
+          targetId: procedureId,
+          recommendedToolName: "memory_procedure_validate_plan",
+        }),
+      ],
+    });
+    expect(countsAfter).toEqual(countsBefore);
+  });
+
+  it("turns skill-governance proactive follow-up into conversational prompts without any writes", async () => {
+    const seeded = await seedContext(dbEnvironment.connectionString);
+    const runtime = createRuntime({
+      connectionString: dbEnvironment.connectionString,
+      mode: "candidate-only",
+    });
+    const submitTool = createCandidateSubmitTool({
+      runtime,
+      context: {
+        sessionId: seeded.sessionId,
+        agentId: seeded.agentId,
+      },
+    });
+    const reviewTool = createCandidateReviewTool({ runtime });
+    const promoteProcedureTool = createCandidatePromoteProcedureTool({ runtime });
+    const validateProcedureTool = createProcedureValidateTool({ runtime });
+    const createSkillCandidateTool = createSkillCandidateCreateTool({ runtime });
+    const proactiveExecuteTool = createMemoryProactiveExecuteTool({ runtime });
+
+    const procedureCandidateResult = await submitTool.execute("call-17080cn-skill-1", {
+      kind: "procedure",
+      content: "Document the release smoke checklist",
+      projectId: seeded.projectId,
+    });
+    const procedureCandidateId = (
+      procedureCandidateResult.details as { accepted: true; memoryObjectId: string }
+    ).memoryObjectId;
+    await reviewTool.execute("call-17080cn-skill-2", {
+      candidateId: procedureCandidateId,
+      outcome: "accepted",
+      rationale: "Looks reusable for governance follow-up",
+    });
+    const promoteProcedureResult = await promoteProcedureTool.execute("call-17080cn-skill-3", {
+      candidateId: procedureCandidateId,
+      title: "Release smoke checklist",
+      rationale: "Promote to draft for governance follow-up",
+    });
+    const procedureId = (promoteProcedureResult.details as { procedureId: string }).procedureId;
+    await validateProcedureTool.execute("call-17080cn-skill-4", {
+      procedureId,
+      rationale: "Validated through bounded review",
+    });
+    const skillCandidateResult = await createSkillCandidateTool.execute("call-17080cn-skill-5", {
+      procedureId,
+      name: "release-smoke-skill",
+      summary: "Skill candidate for release smoke follow-up",
+    });
+    const skillCandidateId = (skillCandidateResult.details as { skillCandidateId: string })
+      .skillCandidateId;
+
+    const countsBefore = await readTableCounts(dbEnvironment.connectionString);
+    const result = await proactiveExecuteTool.execute("call-17080cn-skill-6", {
+      actionType: "follow_up_skill_candidate_governance",
+      affectedIds: [skillCandidateId],
+      projectId: seeded.projectId,
+    });
+    const countsAfter = await readTableCounts(dbEnvironment.connectionString);
+
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "executed",
+      actionType: "follow_up_skill_candidate_governance",
+      executionSource: "explicit_selection",
+      affectedIds: [skillCandidateId],
+      rationale: [
+        "bounded proactive execution prepared conversational skill-governance prompts for the explicit selection",
+      ],
+      conversationalPrompts: [
+        expect.objectContaining({
+          actionType: "follow_up_skill_candidate_governance",
+          targetId: skillCandidateId,
+          recommendedToolName: "memory_skill_candidate_procurement_plan",
+        }),
       ],
     });
     expect(countsAfter).toEqual(countsBefore);
@@ -21118,13 +21189,13 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       advisoryOnly: true,
       applicationMode: "guidance_only",
       rolloutScope: {
-        allowedLessonFamilies: ["generalized_workflow_lesson"],
+        allowedCaptureClasses: ["workflow_generalized_guidance"],
         defaultMaxSuggestions: 2,
       },
       suggestions: [
         expect.objectContaining({
           memoryObjectId: approvedMemoryObjectId,
-          lessonFamily: "generalized_workflow_lesson",
+          captureClass: "workflow_generalized_guidance",
           guidancePattern: "use_instead_of",
           recommendedAction: "pnpm test -- <path-or-filter> [vitest args...]",
           avoidAction: "raw vitest",
@@ -21134,7 +21205,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       observability: {
         outcomeCode: "guidance_available",
         suggestionCount: 1,
-        eligibleWorkflowGuidanceCount: 1,
+        eligibleWorkflowGuidanceCount: 2,
         filteredOutByScopeCount: 0,
       },
     });
@@ -21867,13 +21938,13 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
   });
 
-  it("keeps advisory rollout scoped to configured workflow lesson families", async () => {
+  it("keeps advisory rollout scoped to configured workflow capture classes", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
       mode: "candidate-only",
       learnedGuidanceMode: "inline-only",
-      learnedGuidanceAllowedLessonFamilies: [],
+      learnedGuidanceAllowedCaptureClasses: [],
     });
     const learnedGuidanceTool = createMemoryLearnedGuidancePlanTool({ runtime });
 
@@ -21931,7 +22002,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       status: "ok",
       outcome: "no_guidance",
       rolloutScope: {
-        allowedLessonFamilies: [],
+        allowedCaptureClasses: [],
       },
       observability: {
         outcomeCode: "no_guidance",
@@ -21965,11 +22036,13 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         rolloutPhase: "bounded_rollout_proof_v1",
         enablementTarget: "default-off",
         mode: "inline-only",
-        source: "approved_workflow_guidance",
-        approvedOnly: true,
+        source: "approved_preferred_workflow_guidance",
+        approvedOnly: false,
+        approvedPreferred: true,
+        candidateAdvisoryIncluded: true,
         advisoryOnly: true,
         inlineOnly: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson"],
+        allowedCaptureClasses: ["workflow_generalized_guidance"],
         defaultMaxSuggestions: 3,
       },
       observability: {
@@ -22012,11 +22085,13 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         rolloutPhase: "bounded_rollout_proof_v1",
         enablementTarget: "default-off",
         mode: "inline-only",
-        source: "approved_workflow_guidance",
-        approvedOnly: true,
+        source: "approved_preferred_workflow_guidance",
+        approvedOnly: false,
+        approvedPreferred: true,
+        candidateAdvisoryIncluded: true,
         advisoryOnly: true,
         inlineOnly: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson"],
+        allowedCaptureClasses: ["workflow_generalized_guidance"],
         defaultMaxSuggestions: 3,
       },
       observability: {

@@ -10,11 +10,9 @@ export type ProcedureValidationPlanPort = {
 
 export function createProcedureValidationPlanPort(params: {
   db: MemoryMiddlewareDb;
-  mode: "disabled" | "candidate-only";
+  enabled: boolean;
 }): ProcedureValidationPlanPort {
-  const mode = params.mode;
-
-  if (mode !== "candidate-only") {
+  if (!params.enabled) {
     return {
       async plan() {
         return {

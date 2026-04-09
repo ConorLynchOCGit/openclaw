@@ -250,8 +250,15 @@ The bounded proactive execution surface:
 - `memory_proactive_execute`
 
 does not execute any procurement, vetting, approval, or install follow-up.
-In this slice it may execute only the low-risk `run_drift_check` class by
-delegating to the existing bounded drift-check executor.
+In this slice it may:
+
+- execute the low-risk `run_drift_check` class by delegating to the existing
+  bounded drift-check executor
+- turn skill-governance follow-up into conversational prompts that ask the
+  user whether the next bounded governance-planning step should be inspected
+
+It still does not invoke Skill Vetter, create procurement records, mutate
+approval state, or install anything.
 
 The bounded background-job scheduling surfaces:
 
@@ -275,15 +282,20 @@ it up.
 
 That bounded procurement-record path has now also been proven in the current
 real non-production rollout posture alongside submit, review, promotion,
-procedure validation, and skill-candidate creation, while manual Skill
-Vetter handoff, vetting-result recording, approval, install, scheduler,
-proactive execution, and self-improving capture remained disabled.
+procedure validation, and skill-candidate creation, while actual Skill
+Vetter invocation, vetting-result recording, approval-state mutation,
+installation, and self-improving capture remained disabled. Proactive
+execution may now surface conversational governance prompts, but it still does
+not perform those external or manual-governance steps.
 
 Bounded manual Skill Vetter handoff preparation and bounded manual
 vetting-result recording have now also been proven in the current real
 non-production rollout posture. These surfaces remain manual and internal
 only: they do not invoke Skill Vetter automatically, they do not advance
-approval state, and they do not prepare or trigger installation.
+approval state, and they do not prepare or trigger installation. The new
+conversational governance prompts are only a user-facing follow-up bridge into
+the existing bounded planning surfaces, not an automation bypass around those
+external checkpoints.
 
 Bounded internal skill candidates with procurement records may now also be
 prepared for manual Skill Vetter review using:

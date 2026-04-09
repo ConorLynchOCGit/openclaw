@@ -7,19 +7,39 @@ export type MemoryMiddlewareDbConfig = {
 };
 
 export type MemoryMiddlewareCandidateIngressConfig = {
-  mode:
-    | "disabled"
-    | "submit-only"
-    | "submit-review-only"
-    | "submit-review-promote-memory"
-    | "submit-review-promote-memory-procedure"
-    | "submit-review-promote-memory-procedure-validate"
-    | "submit-review-promote-memory-procedure-validate-skill"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-    | "candidate-only";
+  mode: MemoryMiddlewareCandidateIngressMode;
+};
+
+export const MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES = [
+  "disabled",
+  "submit-only",
+  "submit-review-only",
+  "submit-review-promote-memory",
+  "submit-review-promote-memory-procedure",
+  "submit-review-promote-memory-procedure-validate",
+  "submit-review-promote-memory-procedure-validate-skill",
+  "submit-review-promote-memory-procedure-validate-skill-procurement",
+  "submit-review-promote-memory-procedure-validate-skill-procurement-vetting",
+  "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval",
+  "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install",
+  "candidate-only",
+] as const;
+
+export type MemoryMiddlewareCandidateIngressMode =
+  (typeof MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES)[number];
+
+export type MemoryMiddlewareCandidateIngressCapabilities = {
+  submit: boolean;
+  review: boolean;
+  memoryPromotion: boolean;
+  procedureDraftPromotion: boolean;
+  procedureValidation: boolean;
+  skillCandidate: boolean;
+  skillProcurement: boolean;
+  skillVetting: boolean;
+  skillApproval: boolean;
+  skillInstall: boolean;
+  fullCandidateSandbox: boolean;
 };
 
 export type MemoryMiddlewareMemoryObjectQueryConfig = {
@@ -47,16 +67,26 @@ export type MemoryMiddlewareAutoPromotionConfig = {
 
 export type MemoryMiddlewareRolloutTarget = "off-production" | "production-canary";
 
+export const BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES = [
+  "workflow_api_workaround",
+  "workflow_environment_constraint",
+  "workflow_generalized_guidance",
+  "workflow_tool_gotcha",
+] as const;
+
+export type BoundedWorkflowGuidanceCaptureClass =
+  (typeof BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES)[number];
+
 export type MemoryMiddlewareSelfImprovingCaptureConfig = {
   mode: "disabled" | "candidate-only";
   rolloutTarget?: MemoryMiddlewareRolloutTarget;
-  allowedLessonFamilies: Array<"generalized_workflow_lesson">;
+  allowedCaptureClasses: Array<BoundedWorkflowGuidanceCaptureClass>;
 };
 
 export type MemoryMiddlewareLearnedGuidanceAdvisoryPlanningConfig = {
   mode: "disabled" | "inline-only";
   rolloutTarget?: MemoryMiddlewareRolloutTarget;
-  allowedLessonFamilies: Array<"generalized_workflow_lesson">;
+  allowedCaptureClasses: Array<BoundedWorkflowGuidanceCaptureClass>;
   defaultMaxSuggestions: number;
 };
 
@@ -82,26 +112,39 @@ export const DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG: MemoryMiddlewareAu
     allowedAgents: ["chief", "main"],
   };
 
-const DEFAULT_BOUNDED_WORKFLOW_LESSON_FAMILIES = [
-  "generalized_workflow_lesson",
-] as const satisfies Array<"generalized_workflow_lesson">;
+const CANDIDATE_INGRESS_MODE_ORDER: Record<MemoryMiddlewareCandidateIngressMode, number> = {
+  disabled: 0,
+  "submit-only": 1,
+  "submit-review-only": 2,
+  "submit-review-promote-memory": 3,
+  "submit-review-promote-memory-procedure": 4,
+  "submit-review-promote-memory-procedure-validate": 5,
+  "submit-review-promote-memory-procedure-validate-skill": 6,
+  "submit-review-promote-memory-procedure-validate-skill-procurement": 7,
+  "submit-review-promote-memory-procedure-validate-skill-procurement-vetting": 8,
+  "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval": 9,
+  "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install": 10,
+  "candidate-only": 11,
+};
 
-function normalizeBoundedWorkflowLessonFamilies(
+function normalizeBoundedWorkflowGuidanceCaptureClasses(
   value: unknown,
-): Array<"generalized_workflow_lesson"> {
+): Array<BoundedWorkflowGuidanceCaptureClass> {
   if (!Array.isArray(value)) {
-    return [...DEFAULT_BOUNDED_WORKFLOW_LESSON_FAMILIES];
+    return [...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES];
   }
 
   const normalized = [
     ...new Set(
-      value.filter(
-        (entry): entry is "generalized_workflow_lesson" => entry === "generalized_workflow_lesson",
+      value.filter((entry): entry is BoundedWorkflowGuidanceCaptureClass =>
+        BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES.includes(
+          entry as BoundedWorkflowGuidanceCaptureClass,
+        ),
       ),
     ),
   ].sort((left, right) => left.localeCompare(right));
 
-  return normalized.length > 0 ? normalized : [...DEFAULT_BOUNDED_WORKFLOW_LESSON_FAMILIES];
+  return normalized.length > 0 ? normalized : [...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES];
 }
 
 export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
@@ -124,20 +167,7 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
         properties: {
           mode: {
             type: "string",
-            enum: [
-              "disabled",
-              "submit-only",
-              "submit-review-only",
-              "submit-review-promote-memory",
-              "submit-review-promote-memory-procedure",
-              "submit-review-promote-memory-procedure-validate",
-              "submit-review-promote-memory-procedure-validate-skill",
-              "submit-review-promote-memory-procedure-validate-skill-procurement",
-              "submit-review-promote-memory-procedure-validate-skill-procurement-vetting",
-              "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval",
-              "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install",
-              "candidate-only",
-            ],
+            enum: [...MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES],
           },
         },
       },
@@ -206,11 +236,11 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
             type: "string",
             enum: ["off-production", "production-canary"],
           },
-          allowedLessonFamilies: {
+          allowedCaptureClasses: {
             type: "array",
             items: {
               type: "string",
-              enum: ["generalized_workflow_lesson"],
+              enum: [...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES],
             },
           },
         },
@@ -224,11 +254,11 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
             type: "string",
             enum: ["off-production", "production-canary"],
           },
-          allowedLessonFamilies: {
+          allowedCaptureClasses: {
             type: "array",
             items: {
               type: "string",
-              enum: ["generalized_workflow_lesson"],
+              enum: [...BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES],
             },
           },
           defaultMaxSuggestions: {
@@ -250,6 +280,45 @@ function normalizeRolloutTarget(value: unknown): MemoryMiddlewareRolloutTarget |
   return value === "off-production" || value === "production-canary" ? value : undefined;
 }
 
+export function resolveMemoryMiddlewareCandidateIngressCapabilities(
+  mode: MemoryMiddlewareCandidateIngressMode,
+): MemoryMiddlewareCandidateIngressCapabilities {
+  const order = CANDIDATE_INGRESS_MODE_ORDER[mode];
+  return {
+    submit: order >= CANDIDATE_INGRESS_MODE_ORDER["submit-only"],
+    review: order >= CANDIDATE_INGRESS_MODE_ORDER["submit-review-only"],
+    memoryPromotion: order >= CANDIDATE_INGRESS_MODE_ORDER["submit-review-promote-memory"],
+    procedureDraftPromotion:
+      order >= CANDIDATE_INGRESS_MODE_ORDER["submit-review-promote-memory-procedure"],
+    procedureValidation:
+      order >= CANDIDATE_INGRESS_MODE_ORDER["submit-review-promote-memory-procedure-validate"],
+    skillCandidate:
+      order >=
+      CANDIDATE_INGRESS_MODE_ORDER["submit-review-promote-memory-procedure-validate-skill"],
+    skillProcurement:
+      order >=
+      CANDIDATE_INGRESS_MODE_ORDER[
+        "submit-review-promote-memory-procedure-validate-skill-procurement"
+      ],
+    skillVetting:
+      order >=
+      CANDIDATE_INGRESS_MODE_ORDER[
+        "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
+      ],
+    skillApproval:
+      order >=
+      CANDIDATE_INGRESS_MODE_ORDER[
+        "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
+      ],
+    skillInstall:
+      order >=
+      CANDIDATE_INGRESS_MODE_ORDER[
+        "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
+      ],
+    fullCandidateSandbox: mode === "candidate-only",
+  };
+}
+
 export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareConfig {
   const root = asRecord(input);
   const database = asRecord(root.database);
@@ -269,33 +338,12 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
       ? database.schema.trim()
       : "memory_middleware";
   const candidateIngressMode =
-    candidateIngress.mode === "candidate-only"
-      ? "candidate-only"
-      : candidateIngress.mode ===
-          "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-        ? "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-        : candidateIngress.mode ===
-            "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-          ? "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-          : candidateIngress.mode ===
-              "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-            ? "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-            : candidateIngress.mode ===
-                "submit-review-promote-memory-procedure-validate-skill-procurement"
-              ? "submit-review-promote-memory-procedure-validate-skill-procurement"
-              : candidateIngress.mode === "submit-review-promote-memory-procedure-validate-skill"
-                ? "submit-review-promote-memory-procedure-validate-skill"
-                : candidateIngress.mode === "submit-review-promote-memory-procedure-validate"
-                  ? "submit-review-promote-memory-procedure-validate"
-                  : candidateIngress.mode === "submit-review-promote-memory-procedure"
-                    ? "submit-review-promote-memory-procedure"
-                    : candidateIngress.mode === "submit-review-promote-memory"
-                      ? "submit-review-promote-memory"
-                      : candidateIngress.mode === "submit-review-only"
-                        ? "submit-review-only"
-                        : candidateIngress.mode === "submit-only"
-                          ? "submit-only"
-                          : "disabled";
+    typeof candidateIngress.mode === "string" &&
+    MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES.includes(
+      candidateIngress.mode as MemoryMiddlewareCandidateIngressMode,
+    )
+      ? (candidateIngress.mode as MemoryMiddlewareCandidateIngressMode)
+      : "disabled";
   const memoryObjectQueryMode =
     memoryObjectQuery.mode === "read-only"
       ? "read-only"
@@ -375,16 +423,17 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
   const selfImprovingCaptureRolloutTarget = normalizeRolloutTarget(
     selfImprovingCapture.rolloutTarget,
   );
-  const selfImprovingAllowedLessonFamilies = normalizeBoundedWorkflowLessonFamilies(
-    selfImprovingCapture.allowedLessonFamilies,
+  const selfImprovingAllowedCaptureClasses = normalizeBoundedWorkflowGuidanceCaptureClasses(
+    selfImprovingCapture.allowedCaptureClasses ?? selfImprovingCapture["allowedLessonFamilies"],
   );
   const learnedGuidanceAdvisoryPlanningMode =
     learnedGuidanceAdvisoryPlanning.mode === "inline-only" ? "inline-only" : "disabled";
   const learnedGuidanceAdvisoryPlanningRolloutTarget = normalizeRolloutTarget(
     learnedGuidanceAdvisoryPlanning.rolloutTarget,
   );
-  const learnedGuidanceAllowedLessonFamilies = normalizeBoundedWorkflowLessonFamilies(
-    learnedGuidanceAdvisoryPlanning.allowedLessonFamilies,
+  const learnedGuidanceAllowedCaptureClasses = normalizeBoundedWorkflowGuidanceCaptureClasses(
+    learnedGuidanceAdvisoryPlanning.allowedCaptureClasses ??
+      learnedGuidanceAdvisoryPlanning["allowedLessonFamilies"],
   );
   const learnedGuidanceDefaultMaxSuggestions =
     typeof learnedGuidanceAdvisoryPlanning.defaultMaxSuggestions === "number" &&
@@ -431,14 +480,14 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
       ...(selfImprovingCaptureRolloutTarget
         ? { rolloutTarget: selfImprovingCaptureRolloutTarget }
         : {}),
-      allowedLessonFamilies: selfImprovingAllowedLessonFamilies,
+      allowedCaptureClasses: selfImprovingAllowedCaptureClasses,
     },
     learnedGuidanceAdvisoryPlanning: {
       mode: learnedGuidanceAdvisoryPlanningMode,
       ...(learnedGuidanceAdvisoryPlanningRolloutTarget
         ? { rolloutTarget: learnedGuidanceAdvisoryPlanningRolloutTarget }
         : {}),
-      allowedLessonFamilies: learnedGuidanceAllowedLessonFamilies,
+      allowedCaptureClasses: learnedGuidanceAllowedCaptureClasses,
       defaultMaxSuggestions: learnedGuidanceDefaultMaxSuggestions,
     },
   };

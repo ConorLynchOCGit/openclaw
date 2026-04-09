@@ -222,8 +222,8 @@ Still intentionally disabled:
 
 Live rollout controls now include:
 
-- explicit allowed lesson-family scope for self-improving capture
-- explicit allowed lesson-family scope for learned-guidance advisory planning
+- explicit allowed capture-class scope for self-improving capture
+- explicit allowed capture-class scope for learned-guidance advisory planning
 - explicit default suggestion-budget control for inline advisory planning
 - explicit `off-production` rollout-target gating for self-improving capture
 - explicit `production-canary` rollout-target gating for self-improving

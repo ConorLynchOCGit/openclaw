@@ -18,7 +18,11 @@ import {
   createCompactionPlanningPort,
   type CompactionPlanningPort,
 } from "./compaction-planning.js";
-import { resolveMemoryMiddlewareConfig, type MemoryMiddlewareConfig } from "./config.js";
+import {
+  resolveMemoryMiddlewareCandidateIngressCapabilities,
+  resolveMemoryMiddlewareConfig,
+  type MemoryMiddlewareConfig,
+} from "./config.js";
 import {
   createConsolidationExecutionPort,
   type ConsolidationExecutionPort,
@@ -138,230 +142,20 @@ export type MemoryMiddlewareRuntime = {
   skillCandidateVettingResult: SkillCandidateVettingResultPort;
 };
 
-function isFullCandidateMode(config: MemoryMiddlewareConfig): boolean {
-  return config.candidateIngress.mode === "candidate-only";
-}
-
-function candidateIngressMode(
-  config: MemoryMiddlewareConfig,
-):
-  | "disabled"
-  | "submit-only"
-  | "submit-review-only"
-  | "submit-review-promote-memory"
-  | "submit-review-promote-memory-procedure"
-  | "submit-review-promote-memory-procedure-validate"
-  | "submit-review-promote-memory-procedure-validate-skill"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-  | "candidate-only" {
-  return config.candidateIngress.mode;
-}
-
-function candidateReviewMode(
-  config: MemoryMiddlewareConfig,
-):
-  | "disabled"
-  | "submit-review-only"
-  | "submit-review-promote-memory"
-  | "submit-review-promote-memory-procedure"
-  | "submit-review-promote-memory-procedure-validate"
-  | "submit-review-promote-memory-procedure-validate-skill"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-  | "candidate-only" {
-  return config.candidateIngress.mode === "submit-review-only" ||
-    config.candidateIngress.mode === "submit-review-promote-memory" ||
-    config.candidateIngress.mode === "submit-review-promote-memory-procedure" ||
-    config.candidateIngress.mode === "submit-review-promote-memory-procedure-validate" ||
-    config.candidateIngress.mode === "submit-review-promote-memory-procedure-validate-skill" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    config.candidateIngress.mode === "candidate-only"
-    ? config.candidateIngress.mode
-    : "disabled";
-}
-
-function candidatePromotionMode(
-  config: MemoryMiddlewareConfig,
-):
-  | "disabled"
-  | "submit-review-promote-memory"
-  | "submit-review-promote-memory-procedure"
-  | "submit-review-promote-memory-procedure-validate"
-  | "submit-review-promote-memory-procedure-validate-skill"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-  | "candidate-only" {
-  return config.candidateIngress.mode === "submit-review-promote-memory" ||
-    config.candidateIngress.mode === "submit-review-promote-memory-procedure" ||
-    config.candidateIngress.mode === "submit-review-promote-memory-procedure-validate" ||
-    config.candidateIngress.mode === "submit-review-promote-memory-procedure-validate-skill" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    config.candidateIngress.mode === "candidate-only"
-    ? config.candidateIngress.mode
-    : "disabled";
-}
-
-function procedureValidationMode(
-  config: MemoryMiddlewareConfig,
-):
-  | "disabled"
-  | "submit-review-promote-memory-procedure-validate"
-  | "submit-review-promote-memory-procedure-validate-skill"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-  | "candidate-only" {
-  return config.candidateIngress.mode === "submit-review-promote-memory-procedure-validate" ||
-    config.candidateIngress.mode === "submit-review-promote-memory-procedure-validate-skill" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    config.candidateIngress.mode === "candidate-only"
-    ? config.candidateIngress.mode
-    : "disabled";
-}
-
-function skillCandidateMode(
-  config: MemoryMiddlewareConfig,
-):
-  | "disabled"
-  | "submit-review-promote-memory-procedure-validate-skill"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-  | "candidate-only" {
-  return config.candidateIngress.mode === "submit-review-promote-memory-procedure-validate-skill" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    config.candidateIngress.mode === "candidate-only"
-    ? config.candidateIngress.mode
-    : "disabled";
-}
-
-function skillCandidateProcurementMode(
-  config: MemoryMiddlewareConfig,
-):
-  | "disabled"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-  | "candidate-only" {
-  return config.candidateIngress.mode ===
-    "submit-review-promote-memory-procedure-validate-skill-procurement" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    config.candidateIngress.mode === "candidate-only"
-    ? config.candidateIngress.mode
-    : "disabled";
-}
-
-function skillCandidateVettingMode(
-  config: MemoryMiddlewareConfig,
-):
-  | "disabled"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-  | "candidate-only" {
-  return config.candidateIngress.mode ===
-    "submit-review-promote-memory-procedure-validate-skill-procurement-vetting" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    config.candidateIngress.mode === "candidate-only"
-    ? config.candidateIngress.mode
-    : "disabled";
-}
-
-function skillCandidateApprovalMode(
-  config: MemoryMiddlewareConfig,
-):
-  | "disabled"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-  | "candidate-only" {
-  return config.candidateIngress.mode ===
-    "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval" ||
-    config.candidateIngress.mode ===
-      "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    config.candidateIngress.mode === "candidate-only"
-    ? config.candidateIngress.mode
-    : "disabled";
-}
-
-function skillCandidateInstallMode(
-  config: MemoryMiddlewareConfig,
-):
-  | "disabled"
-  | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-  | "candidate-only" {
-  return config.candidateIngress.mode ===
-    "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install" ||
-    config.candidateIngress.mode === "candidate-only"
-    ? config.candidateIngress.mode
-    : "disabled";
-}
-
 export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMiddlewareRuntime {
   const config = resolveMemoryMiddlewareConfig(api.pluginConfig);
-  const fullCandidateMode = isFullCandidateMode(config) ? "candidate-only" : "disabled";
+  const automation = resolveMemoryMiddlewareCandidateIngressCapabilities(
+    config.candidateIngress.mode,
+  );
+  const fullCandidateMode = automation.fullCandidateSandbox ? "candidate-only" : "disabled";
   const selfImprovingCaptureMode =
     config.selfImprovingCapture?.mode === "candidate-only" ? "candidate-only" : "disabled";
   const learnedGuidanceAdvisoryPlanningMode =
     config.learnedGuidanceAdvisoryPlanning?.mode === "inline-only" ? "inline-only" : "disabled";
-  const submitMode = candidateIngressMode(config);
-  const reviewMode = candidateReviewMode(config);
-  const promotionMode = candidatePromotionMode(config);
-  const validationMode = procedureValidationMode(config);
-  const skillMode = skillCandidateMode(config);
-  const procurementMode = skillCandidateProcurementMode(config);
-  const vettingMode = skillCandidateVettingMode(config);
-  const approvalMode = skillCandidateApprovalMode(config);
-  const installMode = skillCandidateInstallMode(config);
   const backgroundJobInspectionMode =
     config.backgroundJobs.inspectionMode === "enabled" ? "enabled" : "disabled";
   const proactivePlanningMode =
-    isFullCandidateMode(config) || config.backgroundJobs.advisorySchedulingMode === "enabled"
+    automation.fullCandidateSandbox || config.backgroundJobs.advisorySchedulingMode === "enabled"
       ? "candidate-only"
       : "disabled";
   const backgroundJobAdvisorySchedulingMode =
@@ -374,11 +168,11 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
   });
   const candidateIngress = createCandidateIngressPort({
     db,
-    mode: submitMode,
+    enabled: automation.submit,
   });
   const candidateReview = createCandidateReviewPort({
     db,
-    mode: reviewMode,
+    enabled: automation.review,
   });
   const driftCheckExecution = createDriftCheckExecutionPort({
     db,
@@ -437,7 +231,7 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
       memoryObjectQuery,
       mode: learnedGuidanceAdvisoryPlanningMode,
       rolloutTarget: config.learnedGuidanceAdvisoryPlanning?.rolloutTarget,
-      allowedLessonFamilies: config.learnedGuidanceAdvisoryPlanning?.allowedLessonFamilies,
+      allowedCaptureClasses: config.learnedGuidanceAdvisoryPlanning?.allowedCaptureClasses,
       defaultMaxSuggestions: config.learnedGuidanceAdvisoryPlanning?.defaultMaxSuggestions,
     }),
     candidateQuery: createCandidateQueryPort({
@@ -486,59 +280,60 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
     candidateReview,
     candidatePromotionPlan: createCandidatePromotionPlanPort({
       db,
-      mode: promotionMode,
+      enabled: automation.memoryPromotion,
     }),
     candidatePromotion: createCandidatePromotionPort({
       db,
-      mode: promotionMode,
+      memoryPromotionEnabled: automation.memoryPromotion,
+      procedureDraftPromotionEnabled: automation.procedureDraftPromotion,
     }),
     procedureValidationPlan: createProcedureValidationPlanPort({
       db,
-      mode: fullCandidateMode,
+      enabled: automation.fullCandidateSandbox,
     }),
     procedureValidation: createProcedureValidationPort({
       db,
-      mode: validationMode,
+      enabled: automation.procedureValidation,
     }),
     skillCandidateApprovalPlan: createSkillCandidateApprovalPlanPort({
       db,
-      mode: approvalMode,
+      enabled: automation.skillApproval,
     }),
     skillCandidateApproval: createSkillCandidateApprovalPort({
       db,
-      mode: approvalMode,
+      enabled: automation.skillApproval,
     }),
     skillCandidateInstallHandoff: createSkillCandidateInstallHandoffPort({
       db,
-      mode: installMode,
+      enabled: automation.skillInstall,
     }),
     skillCandidateInstallRecord: createSkillCandidateInstallRecordPort({
       db,
-      mode: installMode,
+      enabled: automation.skillInstall,
     }),
     skillCandidatePlan: createSkillCandidatePlanPort({
       db,
-      mode: skillMode,
+      enabled: automation.skillCandidate,
     }),
     skillCandidate: createSkillCandidatePort({
       db,
-      mode: skillMode,
+      enabled: automation.skillCandidate,
     }),
     skillCandidateProcurementPlan: createSkillCandidateProcurementPlanPort({
       db,
-      mode: procurementMode,
+      enabled: automation.skillProcurement,
     }),
     skillCandidateProcurementRecord: createSkillCandidateProcurementRecordPort({
       db,
-      mode: procurementMode,
+      enabled: automation.skillProcurement,
     }),
     skillCandidateSkillVetterHandoff: createSkillCandidateSkillVetterHandoffPort({
       db,
-      mode: vettingMode,
+      enabled: automation.skillVetting,
     }),
     skillCandidateVettingResult: createSkillCandidateVettingResultPort({
       db,
-      mode: vettingMode,
+      enabled: automation.skillVetting,
     }),
   };
 }

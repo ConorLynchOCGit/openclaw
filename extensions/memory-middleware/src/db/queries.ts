@@ -7690,11 +7690,11 @@ async function planProactivityInConfiguredDatabase(params: {
           actionType: "follow_up_candidate_review",
           priority: "high",
           actionClass: "candidate_review_follow_up",
-          requiredApprovalClass: "manual_review",
+          requiredApprovalClass: "conversational_review",
           affectedIds: state.pendingCandidateRows.map((row) => row.id),
           rationale: [
             `${String(state.pendingCandidateRows.length)} candidate-state memory object${state.pendingCandidateRows.length === 1 ? "" : "s"} remain unreviewed`,
-            "manual candidate review is required before any later promotion planning or bounded write path",
+            "a conversational candidate review step is required before any later promotion planning or bounded write path",
           ],
         }),
       );
@@ -7706,11 +7706,11 @@ async function planProactivityInConfiguredDatabase(params: {
           actionType: "follow_up_procedure_validation",
           priority: "medium",
           actionClass: "procedure_validation_follow_up",
-          requiredApprovalClass: "manual_validation_review",
+          requiredApprovalClass: "conversational_review",
           affectedIds: state.eligibleProcedureValidationIds,
           rationale: [
             `${String(state.eligibleProcedureValidationIds.length)} draft procedure${state.eligibleProcedureValidationIds.length === 1 ? "" : "s"} already meet bounded validation-planning eligibility`,
-            "validated-procedure creation still requires explicit manual follow-up through the bounded validation surface",
+            "the next step should be surfaced as a conversational validation follow-up instead of hidden operator-only review",
           ],
         }),
       );
@@ -7722,11 +7722,11 @@ async function planProactivityInConfiguredDatabase(params: {
           actionType: "follow_up_skill_candidate_governance",
           priority: "medium",
           actionClass: "skill_candidate_governance_follow_up",
-          requiredApprovalClass: "manual_governance_review",
+          requiredApprovalClass: "conversational_review",
           affectedIds: state.candidateSkillRows.map((row) => row.id),
           rationale: [
             `${String(state.candidateSkillRows.length)} bounded skill candidate${state.candidateSkillRows.length === 1 ? "" : "s"} remain in internal candidate governance state`,
-            "procurement, vetting, approval, and install follow-up remain manual and explicitly separated from this advisory planner",
+            "the next governance step should be surfaced conversationally instead of depending on hidden operator-only review",
           ],
         }),
       );

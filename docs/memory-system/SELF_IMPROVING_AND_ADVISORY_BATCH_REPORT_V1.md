@@ -93,12 +93,33 @@
 
 - learned-guidance advisory planning now exists as an explicit runtime seam and
   tool
-- it reads approved workflow guidance through the normal approved retrieval path
+- it now prefers approved workflow guidance while allowing candidate workflow
+  guidance as provisional inline advice
 - it stays advisory-only and inline-only
 - it suppresses conflicting guidance instead of collapsing it into one wrong
   answer
 - pool teardown is now explicit in the integration lane so the new DB-backed
   proof does not leave an unhandled fatal behind
+
+### Later follow-through
+
+- the historical candidate-ingress ladder is now centralized behind a
+  capability resolver so advanced ports do not each re-fan the long mode
+  string back out
+- candidate follow-up now has a bounded conversational review prompt in chat
+  rather than assuming hidden operator review
+- proactive candidate follow-up is now labeled as conversational review, not
+  operator/manual review
+- `memory_proactive_execute` can now turn candidate-review follow-up into the
+  actual conversational review prompt package instead of stopping at a blocked
+  execution result
+- `memory_proactive_execute` can now also turn procedure-validation and
+  skill-governance follow-up into conversational prompt packages instead of
+  pointing at hidden operator-only review
+- advanced review/promotion/procedure/skill-governance tools are now only
+  registered when the active runtime posture enables them
+- self-improving and learned-guidance rollout controls now scope by bounded
+  workflow-guidance capture classes instead of older lesson-family labels
 
 ## Behavior preserved per executed slice
 
@@ -119,7 +140,8 @@
 - advisory planning does not write memory
 - advisory planning does not enqueue work
 - advisory planning does not execute actions
-- advisory planning does not bypass approved retrieval
+- advisory planning does not bypass approved guidance authority even when
+  candidate guidance is surfaced provisionally
 - family-policy differences remain unchanged
 
 ## Tests and validation run at the end of each executed slice

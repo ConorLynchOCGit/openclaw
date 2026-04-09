@@ -26,7 +26,13 @@ Most importantly, the repo now has live landings for:
 - prompt/token-efficiency hardening
 - write-path action-stage hardening
 - reduced-profile self-improving capture on the shared candidate substrate
-- inline learned-guidance advisory planning on approved retrieval
+- inline learned-guidance advisory planning on approved-preferred retrieval
+- conversational candidate review preparation for pending candidate-state
+  memory objects
+- proactive execution that can turn candidate-review follow-up into those
+  conversational prompts
+- mode-aligned advanced-tool registration so disabled promotion/governance
+  scaffolding does not stay visible as fake live capability
 
 ## Current bounded live posture
 
@@ -43,13 +49,20 @@ Current tranche boundaries:
   rollout scope
 - self-improving capture now also requires an explicit `off-production` or
   `production-canary` rollout target before activation
-- learned-guidance planning is approved-only
+- learned-guidance planning is approved-preferred and may surface candidate
+  guidance as provisional inline advice
 - learned-guidance planning is inline-only
 - learned-guidance planning is advisory-only
 - learned-guidance planning now has an explicit generalized workflow-guidance
   scope and a bounded default suggestion budget
 - learned-guidance planning now also requires an explicit `off-production` or
   `production-canary` rollout target before activation
+- candidate follow-up now has a conversational review path in chat instead of
+  assuming hidden operator review
+- proactive candidate-review follow-up now returns those chat review prompts
+  directly instead of a blocked execution result
+- proactive procedure-validation and skill-governance follow-up now return
+  bounded conversational prompts instead of operator-only follow-up labels
 
 Current reevaluation judgment:
 
@@ -148,6 +161,8 @@ Why:
 - learned-guidance background scheduling or proactive execution
 - new family implementation before canonicalization
 - broad artifact/read-model redesign before rollout pressure says it is needed
+- autonomous skill procurement / vetting / install without a separate
+  governance decision
 
 ## Exit criteria before moving on
 

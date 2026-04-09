@@ -29,27 +29,13 @@ export type CandidateIngressPort = {
 
 export function createCandidateIngressPort(params: {
   db: MemoryMiddlewareDb;
-  mode:
-    | "disabled"
-    | "submit-only"
-    | "submit-review-only"
-    | "submit-review-promote-memory"
-    | "submit-review-promote-memory-procedure"
-    | "submit-review-promote-memory-procedure-validate"
-    | "submit-review-promote-memory-procedure-validate-skill"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-    | "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-    | "candidate-only";
+  enabled: boolean;
 }): CandidateIngressPort {
-  const mode = params.mode;
-
   async function submit(
     kind: CandidateSubmissionKind,
     input: CandidateLearningInput,
   ): Promise<CandidateSubmissionResult> {
-    if (mode === "disabled") {
+    if (!params.enabled) {
       return {
         accepted: false,
         status: "disabled",
