@@ -1,4 +1,3 @@
-import type { MemoryFamilyId } from "openclaw/plugin-sdk/memory-family-policy";
 import type { CandidateSubmissionInput, CandidateSubmissionResult } from "./db/runtime.js";
 import { readCanonicalMemoryIngestionCandidateFromMetadata } from "./memory-canonical-compat.js";
 import type { MemoryMiddlewareRuntime } from "./runtime.js";
@@ -21,7 +20,7 @@ export type WriteResultStage<TContext, TResult> = {
 export type CandidateWriteStageCondition = {
   submissionKinds?: readonly CandidateSubmissionInput["kind"][];
   lanes?: readonly CandidateWriteLane[];
-  familyIds?: readonly MemoryFamilyId[];
+  familyIds?: readonly CandidateWriteCompatFamilyId[];
   canonicalKinds?: readonly string[];
   captureCategories?: readonly string[];
   captureClasses?: readonly string[];
@@ -83,7 +82,17 @@ export async function runWriteResultStages<TContext, TResult>(params: {
   return result;
 }
 
-function resolveCandidateWriteFamilyId(input: CandidateSubmissionInput): MemoryFamilyId | null {
+export type CandidateWriteCompatFamilyId =
+  | "response_style"
+  | "project_fact"
+  | "recurring_procedure"
+  | "workflow_improvement"
+  | "project_rule"
+  | "unmet_need";
+
+function resolveCandidateWriteFamilyId(
+  input: CandidateSubmissionInput,
+): CandidateWriteCompatFamilyId | null {
   const canonicalCandidate = readCanonicalMemoryIngestionCandidateFromMetadata(input.metadata);
   const captureCategory =
     typeof canonicalCandidate?.record.compatibility.captureCategory === "string"
@@ -105,7 +114,7 @@ function resolveCandidateWriteFamilyId(input: CandidateSubmissionInput): MemoryF
         ? "response_style"
         : captureClass === "explicit_project_fact" || captureClass === "project_fact_correction"
           ? "project_fact"
-          : captureClass === "recurring_procedure" ||
+          : captureClass === "explicit_recurring_procedure" ||
               captureClass === "recurring_procedure_correction"
             ? "recurring_procedure"
             : captureClass === "workflow_tool_gotcha" ||
@@ -135,7 +144,7 @@ function resolveCandidateWriteFamilyId(input: CandidateSubmissionInput): MemoryF
 
 export type CandidateWriteClassification = {
   lanes: readonly CandidateWriteLane[];
-  familyId: MemoryFamilyId | null;
+  familyId: CandidateWriteCompatFamilyId | null;
   canonicalKind?: string;
   captureCategory?: string;
   captureClass?: string;
@@ -163,7 +172,7 @@ export type CandidateWritePlan = {
 };
 
 function resolveCandidateWriteLanes(params: {
-  familyId: MemoryFamilyId | null;
+  familyId: CandidateWriteCompatFamilyId | null;
   captureCategory?: string;
   derivedViews: readonly string[];
 }): readonly CandidateWriteLane[] {

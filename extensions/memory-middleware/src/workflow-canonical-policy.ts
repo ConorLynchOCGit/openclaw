@@ -1,7 +1,4 @@
-import {
-  getCaptureMetadataByCaptureClass,
-  type MemoryFamilyId,
-} from "openclaw/plugin-sdk/memory-family-policy";
+import { getCanonicalCaptureMetadataByCaptureClass } from "./capture-class-metadata.js";
 import type {
   WorkflowImprovementCaptureClass,
   WorkflowImprovementLessonFamily,
@@ -15,7 +12,7 @@ export type CanonicalWorkflowCaptureCategory =
 
 export type CanonicalWorkflowAutoReviewProfile = {
   captureCategory: CanonicalWorkflowCaptureCategory;
-  familyId: Extract<MemoryFamilyId, "workflow_improvement" | "project_rule" | "unmet_need">;
+  compatibilityCategory: CanonicalWorkflowCaptureCategory;
   lessonFamily: Extract<
     WorkflowImprovementLessonFamily,
     "generalized_workflow_lesson" | "generalized_project_rule" | "generalized_unmet_need"
@@ -51,7 +48,7 @@ export type CanonicalWorkflowAutoReviewProfile = {
 const WORKFLOW_AUTO_REVIEW_PROFILES = {
   workflow_improvement: {
     captureCategory: "workflow_improvement",
-    familyId: "workflow_improvement",
+    compatibilityCategory: "workflow_improvement",
     lessonFamily: "generalized_workflow_lesson",
     template: "workflow_generalized_guidance",
     semanticDetectionSource: "workflow_improvement_semantic_v2",
@@ -64,7 +61,7 @@ const WORKFLOW_AUTO_REVIEW_PROFILES = {
   },
   project_rule: {
     captureCategory: "project_rule",
-    familyId: "project_rule",
+    compatibilityCategory: "project_rule",
     lessonFamily: "generalized_project_rule",
     template: "project_rule_guidance",
     semanticDetectionSource: "project_rule_semantic_v1",
@@ -77,7 +74,7 @@ const WORKFLOW_AUTO_REVIEW_PROFILES = {
   },
   unmet_need: {
     captureCategory: "unmet_need",
-    familyId: "unmet_need",
+    compatibilityCategory: "unmet_need",
     lessonFamily: "generalized_unmet_need",
     template: "unmet_need_recommendation",
     semanticDetectionSource: "unmet_need_semantic_v1",
@@ -104,7 +101,7 @@ function resolveCanonicalWorkflowCaptureCategory(params: {
     return params.captureCategory;
   }
   const captureClassCategory = params.captureClass
-    ? getCaptureMetadataByCaptureClass(params.captureClass)?.category
+    ? getCanonicalCaptureMetadataByCaptureClass(params.captureClass)?.category
     : undefined;
   if (
     captureClassCategory === "workflow_improvement" ||

@@ -91,7 +91,9 @@ type ProactiveConversationalPrompt = {
   actionType:
     | "follow_up_candidate_review"
     | "follow_up_procedure_validation"
-    | "follow_up_skill_candidate_governance";
+    | "follow_up_skill_candidate_governance"
+    | "revisit_stale_memory"
+    | "review_consolidation_findings";
   targetId: string;
   promptTitle: string;
   promptText: string;
@@ -124,7 +126,9 @@ function findDerivedAction(
   actionType:
     | "follow_up_candidate_review"
     | "follow_up_procedure_validation"
-    | "follow_up_skill_candidate_governance",
+    | "follow_up_skill_candidate_governance"
+    | "revisit_stale_memory"
+    | "review_consolidation_findings",
 ) {
   return plan.actions.find((action) => action.actionType === actionType);
 }
@@ -171,7 +175,9 @@ function normalizeProactiveFollowUpFailure(
   actionType:
     | "follow_up_candidate_review"
     | "follow_up_procedure_validation"
-    | "follow_up_skill_candidate_governance",
+    | "follow_up_skill_candidate_governance"
+    | "revisit_stale_memory"
+    | "review_consolidation_findings",
   status: "disabled" | "not_configured" | "failed" | "not_found",
   reason: string,
 ): Extract<MemoryProactiveExecuteResult, { accepted: false }> {
@@ -180,6 +186,39 @@ function normalizeProactiveFollowUpFailure(
     status: status === "not_found" ? "failed" : status,
     actionType,
     reason,
+  };
+}
+
+function buildMemoryHygienePrompt(params: {
+  actionType: "revisit_stale_memory" | "review_consolidation_findings";
+  affectedIds: string[];
+  projectId?: string;
+}): ProactiveConversationalPrompt {
+  const noun =
+    params.actionType === "revisit_stale_memory"
+      ? "stale or superseded memory"
+      : "duplicate or contradiction findings";
+  const intentText =
+    params.actionType === "revisit_stale_memory"
+      ? "review whether the stale records should be consolidated, superseded, or left alone"
+      : "review the current duplicate or contradiction findings before any later cleanup action";
+  return {
+    actionType: params.actionType,
+    targetId: params.affectedIds.join(","),
+    promptTitle:
+      params.actionType === "revisit_stale_memory"
+        ? "Memory hygiene follow-up"
+        : "Consolidation review follow-up",
+    promptText: `I found ${noun} affecting ${params.affectedIds.length} record${params.affectedIds.length === 1 ? "" : "s"}. Do you want me to inspect the latest consolidation plan and ${intentText}?`,
+    recommendedToolName: "memory_consolidation_plan",
+    recommendedToolInput: {
+      ...(params.projectId ? { projectId: params.projectId } : {}),
+      maxFindings: Math.max(params.affectedIds.length, 1),
+    },
+    rationale: [
+      "the proactive planner found advisory-only memory hygiene follow-up",
+      "the next step should stay conversational until a later explicit cleanup action is chosen",
+    ],
   };
 }
 
@@ -521,6 +560,77 @@ export async function executeMemoryProactiveFromTool(params: {
     };
   }
 
+  if (
+    params.input.actionType === "revisit_stale_memory" ||
+    params.input.actionType === "review_consolidation_findings"
+  ) {
+    const explicitAffectedIds = params.input.affectedIds;
+    if (explicitAffectedIds && explicitAffectedIds.length > 0) {
+      return {
+        accepted: true,
+        status: "executed",
+        actionType: params.input.actionType,
+        executionSource: "explicit_selection",
+        affectedIds: explicitAffectedIds,
+        rationale: [
+          `bounded proactive execution prepared a conversational ${params.input.actionType} follow-up for the explicit selection`,
+        ],
+        conversationalPrompts: [
+          buildMemoryHygienePrompt({
+            actionType: params.input.actionType,
+            affectedIds: explicitAffectedIds,
+            ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+          }),
+        ],
+      };
+    }
+
+    const plan = await params.runtime.proactivePlanning.plan({
+      ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+      ...(params.input.maxActions !== undefined ? { maxActions: params.input.maxActions } : {}),
+    });
+    if (!plan.accepted) {
+      return {
+        accepted: false,
+        status: plan.status,
+        actionType: params.input.actionType,
+        reason: plan.reason,
+      };
+    }
+
+    const derivedAction = findDerivedAction(plan, params.input.actionType);
+    if (!derivedAction || derivedAction.affectedIds.length === 0) {
+      return {
+        accepted: true,
+        status: "no_op",
+        actionType: params.input.actionType,
+        executionSource: "derived_plan",
+        affectedIds: [],
+        rationale: [
+          `no conversational ${params.input.actionType} follow-up is currently available from the proactive planner`,
+        ],
+      };
+    }
+
+    return {
+      accepted: true,
+      status: "executed",
+      actionType: params.input.actionType,
+      executionSource: "derived_plan",
+      affectedIds: derivedAction.affectedIds,
+      rationale: [
+        `bounded proactive execution derived a conversational ${params.input.actionType} follow-up from the current advisory planner result`,
+      ],
+      conversationalPrompts: [
+        buildMemoryHygienePrompt({
+          actionType: params.input.actionType,
+          affectedIds: derivedAction.affectedIds,
+          ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+        }),
+      ],
+    };
+  }
+
   return params.runtime.proactiveExecution.execute(params.input);
 }
 
@@ -532,7 +642,7 @@ export function createMemoryProactiveExecuteTool(params: {
     name: "memory_proactive_execute",
     label: "Memory Proactive Execute",
     description:
-      "Execute bounded proactive actions by routing run_drift_check through the drift-check seam and turning candidate-review, procedure-validation, and skill-governance follow-up into conversational prompts.",
+      "Execute bounded proactive actions by routing run_drift_check through the drift-check seam and turning candidate-review, procedure-validation, skill-governance, and memory-hygiene follow-up into conversational prompts.",
     parameters: MemoryProactiveExecuteToolSchema,
     async execute(_toolCallId: string, rawParams: MemoryProactiveExecuteRawParams) {
       const input = normalizeMemoryProactiveExecuteInput({

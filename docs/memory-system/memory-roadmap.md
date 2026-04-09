@@ -25,8 +25,8 @@ Practical parity does not mean:
 - reduced-profile self-improving capture and learned-guidance planning are
   ready to widen automatically
 - the old candidate-ingress ladder is an honest long-term control model
-- hidden operator review is acceptable as the only way to make advanced
-  candidate flows useful
+- hidden operator review is gone as a product dependency and must stay
+  replaced by explicit conversational or policy-driven follow-up
 
 That remains the central roadmap fact.
 
@@ -304,8 +304,9 @@ self-improving capture can land on honest shared substrate.
    of the correction/supersession execution path
 2. project-fact semantic detection now runs through a profile-registered
    detector registry
-3. narrow runtime-policy views now live in `memory-family-policy.ts` instead
-   of being reconstructed from broad family definitions inside middleware
+3. narrow runtime-policy views now live inside the middleware runtime instead
+   of being reconstructed from broad family definitions or read live from the
+   plugin-SDK compatibility bridge
 4. write-stage routing now understands canonical write lanes like
    `workflow_guidance`, `project_fact`, and `user_preference`
 5. the last hybrid read `lessonFamily` fallback was removed from the active
@@ -427,8 +428,8 @@ This phase is now partially landed.
 
 ### Landed in canonical write/promotion follow-through batch v1
 
-1. workflow family resolution now derives from capture-class canonical
-   metadata instead of `lessonFamily` fallback
+1. workflow auto-review resolution now derives from capture-class canonical
+   metadata instead of `lessonFamily` fallback or direct family-policy reads
 2. write-stage routing no longer infers family from unstamped legacy category
    or capture-class metadata
 3. response-style correction normalization now stamps canonical ingestion

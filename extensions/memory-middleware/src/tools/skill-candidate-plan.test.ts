@@ -21,7 +21,7 @@ function createPlanResult(): SkillCandidatePlanResult {
       "validated procedure preserves bounded candidate provenance and a passed validation run",
     ],
     requiredGates: [
-      "manual skill-candidate confirmation is still required",
+      "conversational confirmation is still required",
       "skill-candidate creation requires an explicit write tool invocation",
       "procurement, review, and policy checks must pass before any future skill-candidate write",
     ],

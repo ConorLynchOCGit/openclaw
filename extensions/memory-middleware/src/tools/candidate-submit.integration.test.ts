@@ -2605,7 +2605,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         "this candidate kind can be considered for a future memory-promotion path",
       ],
       requiredGates: [
-        "manual promotion confirmation is still required",
+        "conversational confirmation is still required",
         "bounded memory promotion requires an explicit write tool invocation",
         "policy and review checks must pass before any future promotion write",
       ],
@@ -2664,7 +2664,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         "procedure candidates can be considered for a future procedure-draft path",
       ],
       requiredGates: [
-        "manual promotion confirmation is still required",
+        "conversational confirmation is still required",
         "bounded procedure-draft promotion requires an explicit write tool invocation",
         "policy and review checks must pass before any future promotion write",
       ],
@@ -7591,7 +7591,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         "draft provenance includes both accepted-review and source-event linkage",
       ],
       requiredGates: [
-        "manual validation confirmation is still required",
+        "conversational confirmation is still required",
         "validated-procedure writes require an explicit write tool invocation",
         "procedure-run evidence, policy checks, and review gates must pass before any future validation write",
       ],
@@ -8061,7 +8061,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         "validated procedure preserves bounded candidate provenance and a passed validation run",
       ],
       requiredGates: [
-        "manual skill-candidate confirmation is still required",
+        "conversational confirmation is still required",
         "skill-candidate creation requires an explicit write tool invocation",
         "procurement, review, and policy checks must pass before any future skill-candidate write",
       ],
@@ -8523,7 +8523,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         "bounded lineage preserves validated procedure, candidate, review, event, and validation evidence",
       ],
       requiredGates: [
-        "manual procurement handoff confirmation is still required",
+        "conversational confirmation is still required",
         "Skill Vetter must be invoked explicitly outside this advisory slice",
         "minimum vetting outputs must be recorded before lifecycle advancement",
         "installation remains blocked until procurement and policy gates pass",
@@ -8842,7 +8842,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
           "bounded lineage preserves validated procedure, candidate, review, event, and validation evidence",
         ],
         requiredGates: [
-          "manual procurement handoff confirmation is still required",
+          "conversational confirmation is still required",
           "Skill Vetter must be invoked explicitly outside this advisory slice",
           "minimum vetting outputs must be recorded before lifecycle advancement",
           "installation remains blocked until procurement and policy gates pass",
@@ -9071,7 +9071,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       ],
       requiredGates: [
         "manual Skill Vetter invocation is still required",
-        "manual procurement handoff confirmation is still required",
+        "conversational confirmation is still required",
         "Skill Vetter must be invoked explicitly outside this advisory slice",
         "minimum vetting outputs must be recorded before lifecycle advancement",
         "installation remains blocked until procurement and policy gates pass",
@@ -9765,11 +9765,11 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       eligible: true,
       possibleTargets: ["propose_approved_for_limited_use", "remain_internal_only"],
       rationale: [
-        "manual vetting result supports bounded limited approval planning",
+        "bounded vetting result supports bounded limited approval planning",
         "installation remains separate and guarded even when limited approval is proposed",
       ],
       requiredGates: [
-        "manual approval-state mutation requires an explicit later write slice",
+        "approval-state mutation requires an explicit later write slice",
         "installation still requires a separate explicit action and policy confirmation",
       ],
       installGuardrails: [
@@ -9873,11 +9873,11 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       eligible: true,
       possibleTargets: ["propose_approved_for_normal_use", "remain_internal_only"],
       rationale: [
-        "manual vetting result supports bounded normal-use approval planning",
+        "bounded vetting result supports bounded normal-use approval planning",
         "installation remains a separate guarded action even when normal-use approval is proposed",
       ],
       requiredGates: [
-        "manual approval-state mutation requires an explicit later write slice",
+        "approval-state mutation requires an explicit later write slice",
         "installation still requires a separate explicit action and policy confirmation",
       ],
       installGuardrails: [
@@ -9957,16 +9957,16 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       eligible: false,
       possibleTargets: ["remain_blocked"],
       rationale: [
-        "skill candidate is missing a manual vetting result",
-        "approval planning requires a recorded manual vetting result before any later approval consideration",
+        "skill candidate is missing a bounded vetting result",
+        "approval planning requires a recorded bounded vetting result before any later approval consideration",
       ],
-      requiredGates: ["record a bounded manual vetting result before approval planning"],
+      requiredGates: ["record a bounded vetting result before approval planning"],
       installGuardrails: [
         "do not install any skill from this planning result alone",
         "keep any later installation as a separate explicit action",
         "do not let the skill candidate replace the canonical memory substrate",
       ],
-      remainingBlockers: ["manual vetting result is missing"],
+      remainingBlockers: ["bounded vetting result is missing"],
     });
     expect(countsAfter).toEqual(countsBefore);
   });
@@ -10137,12 +10137,12 @@ integrationDescribe("memory candidate submit postgres integration", () => {
           "do not let the skill candidate replace the canonical memory substrate",
         ],
         requiredGates: [
-          "manual approval-state mutation requires an explicit later write slice",
+          "approval-state mutation requires an explicit later write slice",
           "installation still requires a separate explicit action and policy confirmation",
         ],
         remainingBlockers: [],
         rationale: [
-          "manual vetting result supports bounded limited approval planning",
+          "bounded vetting result supports bounded limited approval planning",
           "installation remains separate and guarded even when limited approval is proposed",
         ],
       },
@@ -10387,7 +10387,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
 
     const submitResult = await submitTool.execute("call-17036", {
       kind: "procedure",
-      content: "Validated procedure candidate without manual vetting result",
+      content: "Validated procedure candidate without bounded vetting result",
       projectId: seeded.projectId,
     });
     const candidateId = (submitResult.details as { memoryObjectId: string }).memoryObjectId;
@@ -10418,7 +10418,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       accepted: false,
       status: "ineligible",
       reason:
-        "skill candidate is missing a manual vetting result approval planning requires a recorded manual vetting result before any later approval consideration",
+        "skill candidate is missing a bounded vetting result approval planning requires a recorded bounded vetting result before any later approval consideration",
     });
     expect(countsAfter).toEqual(countsBefore);
   });
@@ -10530,7 +10530,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       eligible: true,
       possibleTargets: ["propose_manual_install_handoff", "remain_approved_internal_only"],
       rationale: [
-        "manual vetting result supports bounded limited approval planning",
+        "bounded vetting result supports bounded limited approval planning",
         "installation remains separate and guarded even when limited approval is proposed",
         "installation remains a separate explicit manual step even after bounded approval is recorded",
       ],
@@ -10560,7 +10560,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
           validationRunId: expect.any(String),
         },
         rationale: [
-          "manual vetting result supports bounded limited approval planning",
+          "bounded vetting result supports bounded limited approval planning",
           "installation remains separate and guarded even when limited approval is proposed",
         ],
         remainingBlockers: [],
@@ -10818,7 +10818,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         ],
         remainingBlockers: [],
         rationale: [
-          "manual vetting result supports bounded limited approval planning",
+          "bounded vetting result supports bounded limited approval planning",
           "installation remains separate and guarded even when limited approval is proposed",
           "installation remains a separate explicit manual step even after bounded approval is recorded",
         ],
@@ -17799,7 +17799,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         "this candidate kind can be considered for a future memory-promotion path",
       ],
       requiredGates: [
-        "manual promotion confirmation is still required",
+        "conversational confirmation is still required",
         "bounded memory promotion requires an explicit write tool invocation",
         "policy and review checks must pass before any future promotion write",
       ],
@@ -18113,7 +18113,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         "this candidate kind can be considered for a future memory-promotion path",
       ],
       requiredGates: [
-        "manual promotion confirmation is still required",
+        "conversational confirmation is still required",
         "bounded memory promotion requires an explicit write tool invocation",
         "policy and review checks must pass before any future promotion write",
       ],
@@ -18132,7 +18132,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         "procedure candidates can be considered for a future procedure-draft path",
       ],
       requiredGates: [
-        "manual promotion confirmation is still required",
+        "conversational confirmation is still required",
         "bounded procedure-draft promotion requires an explicit write tool invocation",
         "policy and review checks must pass before any future promotion write",
       ],
@@ -18815,7 +18815,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         "validated procedure preserves bounded candidate provenance and a passed validation run",
       ],
       requiredGates: [
-        "manual skill-candidate confirmation is still required",
+        "conversational confirmation is still required",
         "skill-candidate creation requires an explicit write tool invocation",
         "procurement, review, and policy checks must pass before any future skill-candidate write",
       ],
@@ -19197,7 +19197,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
         "bounded lineage preserves validated procedure, candidate, review, event, and validation evidence",
       ],
       requiredGates: [
-        "manual procurement handoff confirmation is still required",
+        "conversational confirmation is still required",
         "Skill Vetter must be invoked explicitly outside this advisory slice",
         "minimum vetting outputs must be recorded before lifecycle advancement",
         "installation remains blocked until procurement and policy gates pass",
@@ -21699,7 +21699,6 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       outcome: "no_guidance",
       advisoryOnly: true,
       provenances: [],
-      lessonFamilies: [],
       guidancePatterns: [],
       recommendedActions: [],
       avoidActions: [],
@@ -21708,9 +21707,6 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       outcome: "guidance_available",
       advisoryOnly: true,
       provenances: expect.arrayContaining(["self_improving_capture"]),
-      lessonFamilies: expect.arrayContaining([
-        REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedLessonFamily,
-      ]),
       guidancePatterns: expect.arrayContaining([
         REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedGuidancePattern,
       ]),
@@ -21812,7 +21808,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       suggestions: [
         expect.objectContaining({
           memoryObjectId: nativeWorkflow.approvedMemoryObjectId,
-          lessonFamily: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedLessonFamily,
+          captureClass: "workflow_generalized_guidance",
           guidancePattern: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedGuidancePattern,
           recommendedAction: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedRecommendedAction,
           avoidAction: REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedAvoidAction,
@@ -21833,7 +21829,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       suggestions: [
         expect.objectContaining({
           memoryObjectId: selfImprovingWorkflow.approvedMemoryObjectId,
-          lessonFamily: REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedLessonFamily,
+          captureClass: "workflow_generalized_guidance",
           guidancePattern: REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedGuidancePattern,
           recommendedAction:
             REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedRecommendedAction,

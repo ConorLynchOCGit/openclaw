@@ -2297,12 +2297,12 @@ function buildCandidatePromotionPlan(params: {
   const requiredGates =
     params.kind === "procedure"
       ? [
-          "manual promotion confirmation is still required",
+          "conversational confirmation is still required",
           "bounded procedure-draft promotion requires an explicit write tool invocation",
           "policy and review checks must pass before any future promotion write",
         ]
       : [
-          "manual promotion confirmation is still required",
+          "conversational confirmation is still required",
           "bounded memory promotion requires an explicit write tool invocation",
           "policy and review checks must pass before any future promotion write",
         ];
@@ -2450,7 +2450,7 @@ function buildProcedureValidationPlan(params: {
       "draft provenance includes both accepted-review and source-event linkage",
     ],
     requiredGates: [
-      "manual validation confirmation is still required",
+      "conversational confirmation is still required",
       "validated-procedure writes require an explicit write tool invocation",
       "procedure-run evidence, policy checks, and review gates must pass before any future validation write",
     ],
@@ -2543,7 +2543,7 @@ function buildSkillCandidatePlan(params: {
       "validated procedure preserves bounded candidate provenance and a passed validation run",
     ],
     requiredGates: [
-      "manual skill-candidate confirmation is still required",
+      "conversational confirmation is still required",
       "skill-candidate creation requires an explicit write tool invocation",
       "procurement, review, and policy checks must pass before any future skill-candidate write",
     ],
@@ -2657,7 +2657,7 @@ function buildSkillCandidateProcurementPlan(params: {
       "bounded lineage preserves validated procedure, candidate, review, event, and validation evidence",
     ],
     requiredGates: [
-      "manual procurement handoff confirmation is still required",
+      "conversational confirmation is still required",
       "Skill Vetter must be invoked explicitly outside this advisory slice",
       "minimum vetting outputs must be recorded before lifecycle advancement",
       "installation remains blocked until procurement and policy gates pass",
@@ -4637,11 +4637,11 @@ function buildSkillCandidateApprovalPlan(params: {
     return remain(
       ["remain_blocked"],
       [
-        "skill candidate is missing a manual vetting result",
-        "approval planning requires a recorded manual vetting result before any later approval consideration",
+        "skill candidate is missing a bounded vetting result",
+        "approval planning requires a recorded bounded vetting result before any later approval consideration",
       ],
-      ["record a bounded manual vetting result before approval planning"],
-      ["manual vetting result is missing"],
+      ["record a bounded vetting result before approval planning"],
+      ["bounded vetting result is missing"],
     );
   }
 
@@ -4656,11 +4656,11 @@ function buildSkillCandidateApprovalPlan(params: {
     return remain(
       ["remain_blocked"],
       [
-        "manual vetting result is missing the structured approval recommendation",
+        "bounded vetting result is missing the structured approval recommendation",
         "approval planning requires a complete bounded vetting result payload",
       ],
-      ["recreate the bounded manual vetting result before approval planning"],
-      ["manual vetting result payload is incomplete"],
+      ["recreate the bounded vetting result before approval planning"],
+      ["bounded vetting result payload is incomplete"],
     );
   }
 
@@ -4682,11 +4682,11 @@ function buildSkillCandidateApprovalPlan(params: {
     return remain(
       ["remain_internal_only"],
       [
-        "manual vetting result deferred further action",
-        "skill candidate should remain internal-only until a later manual review updates the recommendation",
+        "bounded vetting result deferred further action",
+        "skill candidate should remain internal-only until a later conversational review updates the recommendation",
       ],
-      ["perform another explicit manual review before any approval-state mutation slice"],
-      remainingBlockers.length > 0 ? remainingBlockers : ["manual review remains deferred"],
+      ["perform another explicit conversational review before any approval-state mutation slice"],
+      remainingBlockers.length > 0 ? remainingBlockers : ["conversational review remains deferred"],
       { latestVettingDecision: "defer" },
     );
   }
@@ -4695,13 +4695,13 @@ function buildSkillCandidateApprovalPlan(params: {
     return remain(
       ["remain_blocked"],
       [
-        "manual vetting result rejected this skill candidate for approval planning",
+        "bounded vetting result rejected this skill candidate for approval planning",
         "approval or installation planning cannot proceed while the rejection stands",
       ],
       ["do not advance approval or installation while the rejection remains in force"],
       remainingBlockers.length > 0
         ? remainingBlockers
-        : ["manual vetting result rejected this skill candidate"],
+        : ["bounded vetting result rejected this skill candidate"],
       { latestVettingDecision: "reject" },
     );
   }
@@ -4710,7 +4710,7 @@ function buildSkillCandidateApprovalPlan(params: {
     return remain(
       ["remain_blocked"],
       [
-        "manual vetting result still carries unresolved blockers",
+        "bounded vetting result still carries unresolved blockers",
         "approval planning remains blocked until the recorded blockers are cleared",
       ],
       ["clear the remaining blockers before any approval-state mutation slice"],
@@ -4737,11 +4737,11 @@ function buildSkillCandidateApprovalPlan(params: {
       eligible: true,
       possibleTargets: ["propose_approved_for_limited_use", "remain_internal_only"],
       rationale: [
-        "manual vetting result supports bounded limited approval planning",
+        "bounded vetting result supports bounded limited approval planning",
         "installation remains separate and guarded even when limited approval is proposed",
       ],
       requiredGates: [
-        "manual approval-state mutation requires an explicit later write slice",
+        "approval-state mutation requires an explicit later write slice",
         "installation still requires a separate explicit action and policy confirmation",
       ],
       installGuardrails: baseInstallGuardrails,
@@ -4768,11 +4768,11 @@ function buildSkillCandidateApprovalPlan(params: {
       eligible: true,
       possibleTargets: ["propose_approved_for_normal_use", "remain_internal_only"],
       rationale: [
-        "manual vetting result supports bounded normal-use approval planning",
+        "bounded vetting result supports bounded normal-use approval planning",
         "installation remains a separate guarded action even when normal-use approval is proposed",
       ],
       requiredGates: [
-        "manual approval-state mutation requires an explicit later write slice",
+        "approval-state mutation requires an explicit later write slice",
         "installation still requires a separate explicit action and policy confirmation",
       ],
       installGuardrails: baseInstallGuardrails,
@@ -4783,7 +4783,7 @@ function buildSkillCandidateApprovalPlan(params: {
   return remain(
     ["remain_blocked"],
     [
-      "manual vetting result does not support a bounded approval target yet",
+      "bounded vetting result does not support a bounded approval target yet",
       "approval planning remains blocked until the recorded recommendation matches a supported bounded target",
     ],
     [
@@ -7754,11 +7754,11 @@ async function planProactivityInConfiguredDatabase(params: {
           actionType: "revisit_stale_memory",
           priority: "low",
           actionClass: "memory_hygiene_follow_up",
-          requiredApprovalClass: "manual_review",
+          requiredApprovalClass: "conversational_review",
           affectedIds: state.staleMemoryIds,
           rationale: [
             "approved durable memory metadata marks bounded records as stale or superseded",
-            "human review is still required before any separate consolidation or cleanup step",
+            "the next cleanup choice should be surfaced conversationally before any separate consolidation or cleanup step",
           ],
         }),
       );
@@ -7770,11 +7770,11 @@ async function planProactivityInConfiguredDatabase(params: {
           actionType: "review_consolidation_findings",
           priority: "medium",
           actionClass: "consolidation_review_follow_up",
-          requiredApprovalClass: "manual_review",
+          requiredApprovalClass: "conversational_review",
           affectedIds: [...new Set(consolidationReviewIds)].slice(0, maxActions),
           rationale: [
             "bounded consolidation planning found duplicate or contradiction review findings",
-            "those findings remain advisory until a later explicit review or execution action is chosen",
+            "those findings should be surfaced conversationally before any later explicit review or execution action is chosen",
           ],
         }),
       );

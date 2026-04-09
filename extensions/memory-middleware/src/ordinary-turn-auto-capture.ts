@@ -3,9 +3,9 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { type CanonicalMemoryIngestionCandidate } from "openclaw/plugin-sdk/memory-canonical-ingestion";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/memory-core";
-import { getCaptureMetadataByCaptureClass } from "openclaw/plugin-sdk/memory-family-policy";
 import type { PluginLogger } from "../api.js";
 import type { CandidateIngressPort } from "./candidate-ingress.js";
+import { getCanonicalCaptureMetadataByCaptureClass } from "./capture-class-metadata.js";
 import {
   DEFAULT_MEMORY_MIDDLEWARE_AUTO_CAPTURE_CONFIG,
   DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG,
@@ -2122,7 +2122,7 @@ function buildSubscriberCaptureMetadata(params: {
       : {}),
   };
 
-  const familyCaptureMetadata = getCaptureMetadataByCaptureClass(match.captureClass);
+  const familyCaptureMetadata = getCanonicalCaptureMetadataByCaptureClass(match.captureClass);
   if (familyCaptureMetadata) {
     metadata.category = familyCaptureMetadata.category;
     metadata.source = familyCaptureMetadata.source;
@@ -5061,7 +5061,7 @@ export function createOrdinaryTurnAutoCaptureController(params: {
 function resolveWorkflowCaptureFamilyId(
   captureClass: string,
 ): "workflow_improvement" | "project_rule" | "unmet_need" {
-  const captureCategory = getCaptureMetadataByCaptureClass(captureClass)?.category;
+  const captureCategory = getCanonicalCaptureMetadataByCaptureClass(captureClass)?.category;
   if (captureCategory === "project_rule") {
     return "project_rule";
   }

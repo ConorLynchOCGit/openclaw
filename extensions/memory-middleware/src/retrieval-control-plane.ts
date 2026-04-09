@@ -1,5 +1,4 @@
 import type { CanonicalMemoryRetrievalPlan } from "openclaw/plugin-sdk/memory-canonical-retrieval";
-import type { MemoryFamilyId } from "openclaw/plugin-sdk/memory-family-policy";
 import type { OpenClawPluginToolContext } from "../api.js";
 import type {
   MemoryObjectSearchHybridInput,
@@ -35,6 +34,13 @@ import {
   type SemanticFallbackFamily,
   type SemanticFallbackSharedState,
 } from "./semantic-retrieval-routing.js";
+
+type ProjectRecordFamily =
+  | "project_fact"
+  | "project_rule"
+  | "unmet_need"
+  | "workflow_guidance"
+  | "other";
 
 export type MemoryObjectRetrievalControlDecision = {
   scope: MemoryObjectSearchScope;
@@ -214,9 +220,7 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
 export function shapeRankedRetrievedRecordsForControlPlane(params: {
   decision: MemoryObjectRetrievalControlDecision;
   records: RankedRetrievedMemoryRecord[];
-  classifyProjectFamily: (
-    record: RankedRetrievedMemoryRecord,
-  ) => MemoryFamilyId | "workflow_guidance" | "other";
+  classifyProjectFamily: (record: RankedRetrievedMemoryRecord) => ProjectRecordFamily;
 }): RankedRetrievedMemoryRecord[] {
   const records = scopeIncludesCandidates(params.decision.scope)
     ? preferApprovedRecordsWithinSubjectClusters(params.records)

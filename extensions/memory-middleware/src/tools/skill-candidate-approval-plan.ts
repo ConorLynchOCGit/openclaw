@@ -43,7 +43,7 @@ export function createSkillCandidateApprovalPlanTool(params: {
     name: "memory_skill_candidate_approval_plan",
     label: "Memory Skill Candidate Approval Plan",
     description:
-      "Return advisory-only approval and install planning guidance for a bounded skill candidate with manual vetting results, without mutating approval state or installing skills.",
+      "Return advisory-only approval and install planning guidance for a bounded skill candidate with recorded vetting results, without mutating approval state or installing skills.",
     parameters: SkillCandidateApprovalPlanToolSchema,
     async execute(_toolCallId: string, rawParams: SkillCandidateApprovalPlanRawParams) {
       const input = normalizeSkillCandidateApprovalPlanInput(rawParams);

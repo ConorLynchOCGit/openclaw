@@ -1,9 +1,11 @@
-import type { MemoryFamilyId } from "openclaw/plugin-sdk/memory-family-policy";
 import { Client } from "pg";
 import type { PluginLogger } from "../api.js";
 import type { MemoryMiddlewareAutoPromotionConfig } from "./config.js";
 import { executeApprovedMemoryObjectSupersede } from "./memory-object-supersede.js";
-import { getMemoryCorrectionRuntimePolicy } from "./memory-runtime-policy-views.js";
+import {
+  getMemoryCorrectionRuntimePolicy,
+  type MemoryRuntimePolicyKey,
+} from "./memory-runtime-policy-views.js";
 
 export type MemoryCorrectionTrigger = "explicit_correction" | "cluster_auto_review";
 export type MemoryCorrectionPromotionPolicy =
@@ -49,7 +51,7 @@ export type MemoryCorrectionPlan =
   | ExecutableValidatedProcedureCorrectionPlan;
 
 export function resolveMemoryCorrectionPlan(params: {
-  familyId: MemoryFamilyId;
+  familyId: MemoryRuntimePolicyKey;
   trigger: MemoryCorrectionTrigger;
   promotionPolicy?: MemoryCorrectionPromotionPolicy;
   activeSubjectTargetIds?: readonly string[];
@@ -151,7 +153,7 @@ export type ApprovedMemoryObjectCorrectionPromotionAttempt =
     });
 
 export async function attemptApprovedMemoryObjectCorrectionPromotion(params: {
-  familyId: MemoryFamilyId;
+  familyId: MemoryRuntimePolicyKey;
   trigger: MemoryCorrectionTrigger;
   promotionPolicy?: MemoryCorrectionPromotionPolicy;
   activeSubjectTargetIds?: readonly string[];
@@ -238,7 +240,7 @@ export async function attemptApprovedMemoryObjectCorrectionPromotion(params: {
 }
 
 export async function executeMemoryObjectCorrectionPlan(params: {
-  familyId: MemoryFamilyId;
+  familyId: MemoryRuntimePolicyKey;
   plan: ExecutableMemoryObjectCorrectionPlan;
   candidateId: string;
   schema: string;

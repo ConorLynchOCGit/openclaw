@@ -101,10 +101,10 @@ Current implementation note:
   - prepares a manual Skill Vetter handoff package for eligible bounded skill
     candidates with procurement records without invoking Skill Vetter,
     changing approval state, or installing skills
-  - persists one internal manual vetting-result event for eligible bounded
+  - persists one internal bounded vetting-result event for eligible bounded
     skill candidates without invoking Skill Vetter, changing approval state,
     or installing skills
-  - inspects bounded skill candidates, procurement records, and manual
+  - inspects bounded skill candidates, procurement records, and bounded
     vetting-result records to return advisory-only approval and install
     planning outcomes without mutating approval state or installing skills
   - records bounded internal approval state for eligible skill candidates by
@@ -239,6 +239,22 @@ Current implementation note:
   - procedure and skill-candidate writes remain disabled
   - scheduler and proactive execution remain disabled
   - self-improving candidate capture remains disabled
+- the current config surface now also accepts smaller canonical ingress stage
+  names for the same rollout ladder:
+  - `submit-only`
+  - `conversational-review`
+  - `promote-memory`
+  - `promote-procedure-draft`
+  - `validate-procedure`
+  - `skill-candidate`
+  - `skill-procurement`
+  - `skill-vetting`
+  - `skill-approval`
+  - `skill-install`
+  - `candidate-only`
+- the older long-form `submit-review-promote-*` values remain accepted as
+  backward-compatible aliases, but they are no longer the preferred product
+  framing
 - the next real rollout now also confirms the plugin can expose
   `memory_candidate_review` in a bounded `submit-review-only` ingress posture
   while:
@@ -267,6 +283,13 @@ Current implementation note:
   - procedure validation and skill-candidate writes remain disabled
   - scheduler and proactive execution remain disabled
   - self-improving candidate capture remains disabled
+- the smaller ingress-stage model now also means:
+  - `memory_candidate_promote_plan` remains available once
+    `promote-procedure-draft` is enabled because that plan can propose either
+    memory promotion or procedure-draft promotion
+  - `memory_procedure_validate_plan` becomes available once
+    `validate-procedure` is enabled instead of waiting for the larger
+    `candidate-only` sandbox posture
 - the next real rollout now also confirms the plugin can expose
   `memory_procedure_validate` in a bounded
   `submit-review-promote-memory-procedure-validate` ingress posture while:
@@ -306,6 +329,10 @@ Current implementation note:
     remain disabled
   - scheduler and proactive execution remain disabled
   - self-improving candidate capture remains disabled
+- proactive execution now also treats stale-memory and consolidation-review
+  planner actions as conversational follow-up prompts that recommend
+  `memory_consolidation_plan` instead of exposing an operator-only manual
+  review approval class
 - the next real rollout now also confirms the plugin can expose
   `memory_skill_candidate_skill_vetter_handoff` and
   `memory_skill_candidate_vetting_result_record` in a bounded

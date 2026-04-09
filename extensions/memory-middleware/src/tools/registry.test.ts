@@ -15,7 +15,13 @@ function createApi() {
 function createRuntime(params?: {
   mode?: "disabled" | "inline-only";
   rolloutTarget?: "off-production" | "production-canary";
-  candidateIngressMode?: "disabled" | "submit-review-only" | "candidate-only";
+  candidateIngressMode?:
+    | "disabled"
+    | "conversational-review"
+    | "promote-procedure-draft"
+    | "validate-procedure"
+    | "candidate-only"
+    | "submit-review-only";
   selfImprovingMode?: "disabled" | "candidate-only";
   selfImprovingRolloutTarget?: "off-production" | "production-canary";
 }) {
@@ -83,7 +89,7 @@ describe("memory middleware tool registry", () => {
     registerMemoryMiddlewareTools(
       api,
       createRuntime({
-        candidateIngressMode: "submit-review-only",
+        candidateIngressMode: "conversational-review",
         selfImprovingMode: "candidate-only",
         selfImprovingRolloutTarget: "off-production",
       }),
@@ -93,5 +99,33 @@ describe("memory middleware tool registry", () => {
     expect(names).toContain("memory_self_improving_capture_candidate");
     expect(names).toContain("memory_candidate_review");
     expect(names).toContain("memory_candidate_review_prompt");
+  });
+
+  it("registers candidate promotion planning once procedure-draft promotion is enabled", () => {
+    const api = createApi();
+    registerMemoryMiddlewareTools(
+      api,
+      createRuntime({
+        candidateIngressMode: "promote-procedure-draft",
+      }),
+    );
+
+    const names = api.registerTool.mock.calls.map(([, opts]) => opts?.name);
+    expect(names).toContain("memory_candidate_promote_plan");
+    expect(names).toContain("memory_candidate_promote_procedure");
+  });
+
+  it("registers procedure-validation planning once the validate-procedure stage is enabled", () => {
+    const api = createApi();
+    registerMemoryMiddlewareTools(
+      api,
+      createRuntime({
+        candidateIngressMode: "validate-procedure",
+      }),
+    );
+
+    const names = api.registerTool.mock.calls.map(([, opts]) => opts?.name);
+    expect(names).toContain("memory_procedure_validate_plan");
+    expect(names).toContain("memory_procedure_validate");
   });
 });

@@ -81,7 +81,7 @@ Retired local rollout target:
 
 Current live posture:
 
-- `candidateIngress.mode = submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install`
+- `candidateIngress.mode = skill-install`
 - `memoryObjectQuery.mode = read-only`
 - `backgroundJobs.inspectionMode = enabled`
 - `backgroundJobs.advisorySchedulingMode = enabled`
@@ -109,6 +109,14 @@ Enabled maintenance classes:
 - execute-class:
   - `proactive_execute_run_drift_check`
   - bounded safe `consolidation_execute`
+
+Current conversation-first follow-up note:
+
+- proactive candidate review, procedure validation, skill-governance,
+  stale-memory hygiene, and consolidation-review follow-up now surface as
+  conversational prompts in chat
+- only `run_drift_check` remains a bounded directly executable proactive
+  action class
 
 ## Current disabled posture
 
@@ -1027,10 +1035,10 @@ Single-class disablement examples:
   `backgroundJobs.executeJobClasses`
 - narrow `backgroundJobs.advisoryJobClasses` back to
   `[proactive_plan]` if `consolidation_plan` must stop
-- set `candidateIngress.mode = submit-review-promote-memory-procedure-validate`
+- set `candidateIngress.mode = validate-procedure`
   if skill-candidate and procurement governance must stop immediately while
   preserving validated-procedure governance
-- set `candidateIngress.mode = submit-review-promote-memory` if procedure
+- set `candidateIngress.mode = promote-memory` if procedure
   promotion and validation must stop immediately
 
 ## Rollback posture
@@ -1042,10 +1050,10 @@ Current rollback order:
 1. stop manual `run_next` invocation
 2. disable execute-class scheduling if execute work is the concern
 3. disable advisory scheduling if advisory work is also the concern
-4. narrow `candidateIngress.mode = submit-review-promote-memory-procedure-validate`
+4. narrow `candidateIngress.mode = validate-procedure`
    if the issue is isolated to skill-candidate planning / creation or
    procurement planning / internal procurement-record creation
-5. narrow `candidateIngress.mode = submit-review-promote-memory` if the issue
+5. narrow `candidateIngress.mode = promote-memory` if the issue
    is isolated to validated-procedure retrieval / procedure promotion /
    procedure validation
 6. disable the plugin only if the issue is broader than maintenance or

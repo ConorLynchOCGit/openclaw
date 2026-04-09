@@ -1,4 +1,4 @@
-import { getCaptureMetadataByCaptureClass } from "openclaw/plugin-sdk/memory-family-policy";
+import { getCanonicalCaptureMetadataByCaptureClass } from "./capture-class-metadata.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
 import {
   type OrdinaryTurnAutoCaptureMatch,
@@ -847,7 +847,7 @@ export type ResolvedCanonicalizableIngestion =
 function resolveWorkflowFamilyId(match: {
   captureClass: WorkflowImprovementCaptureClass;
 }): "workflow_improvement" | "project_rule" | "unmet_need" {
-  const captureCategory = getCaptureMetadataByCaptureClass(match.captureClass)?.category;
+  const captureCategory = getCanonicalCaptureMetadataByCaptureClass(match.captureClass)?.category;
   if (captureCategory === "project_rule") {
     return "project_rule";
   }
@@ -863,7 +863,7 @@ function resolveWorkflowFamilyId(match: {
 function resolveWorkflowReviewMode(
   captureClass: WorkflowImprovementCaptureClass,
 ): "pending_confirmation" | "hold_for_more_evidence" {
-  const captureCategory = getCaptureMetadataByCaptureClass(captureClass)?.category;
+  const captureCategory = getCanonicalCaptureMetadataByCaptureClass(captureClass)?.category;
   if (captureCategory === "project_rule" || captureCategory === "unmet_need") {
     return "hold_for_more_evidence";
   }
@@ -887,7 +887,7 @@ function resolveWorkflowSemanticDecision(text: string): {
       if (decision.action !== "capture") {
         return null;
       }
-      const captureCategory = getCaptureMetadataByCaptureClass(decision.match.captureClass)
+      const captureCategory = getCanonicalCaptureMetadataByCaptureClass(decision.match.captureClass)
         ?.category as WorkflowCaptureCategory | undefined;
       if (!captureCategory) {
         return null;

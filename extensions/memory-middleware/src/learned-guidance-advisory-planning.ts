@@ -1,5 +1,4 @@
 import type { CanonicalMemoryRetrievalPlan } from "openclaw/plugin-sdk/memory-canonical-retrieval";
-import type { MemoryFamilyApplicationMode } from "openclaw/plugin-sdk/memory-family-policy";
 import {
   BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES,
   type BoundedWorkflowGuidanceCaptureClass,
@@ -80,7 +79,7 @@ export type LearnedGuidanceAdvisoryPlanningAcceptedResult = {
   advisoryNote: string;
   query: string;
   projectId?: string;
-  applicationMode: MemoryFamilyApplicationMode;
+  applicationMode: LearnedGuidanceApplicationMode;
   suggestions: LearnedGuidanceAdvisoryPlanningSuggestion[];
   suppressedConflicts: LearnedGuidanceAdvisoryConflict[];
   rationale: string[];
@@ -115,6 +114,13 @@ type WorkflowGuidanceMetadata = {
   rationale?: string;
   provenance: "native_capture" | "self_improving_capture";
 };
+
+type LearnedGuidanceApplicationMode =
+  | "shape_reply"
+  | "guidance_only"
+  | "recommendation_only"
+  | "suggestion_first"
+  | "direct_answer";
 
 type WorkflowGuidanceRecord = Extract<RankedRetrievedMemoryRecord, { objectType: "memory_object" }>;
 
@@ -444,7 +450,7 @@ export function createLearnedGuidanceAdvisoryPlanningPort(params: {
   allowedCaptureClasses?: ReadonlyArray<BoundedWorkflowGuidanceCaptureClass>;
   defaultMaxSuggestions?: number;
 }): LearnedGuidanceAdvisoryPlanningPort {
-  const applicationMode: MemoryFamilyApplicationMode = "guidance_only";
+  const applicationMode: LearnedGuidanceApplicationMode = "guidance_only";
   const rolloutScope = buildRolloutScope({
     enablementTarget:
       params.rolloutTarget === "off-production" || params.rolloutTarget === "production-canary"

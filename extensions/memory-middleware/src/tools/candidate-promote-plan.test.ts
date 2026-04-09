@@ -21,7 +21,7 @@ function createEligibleResult(): CandidatePromotionPlanResult {
       "this candidate kind can be considered for a future memory-promotion path",
     ],
     requiredGates: [
-      "manual promotion confirmation is still required",
+      "conversational confirmation is still required",
       "bounded memory promotion requires an explicit write tool invocation",
       "policy and review checks must pass before any future promotion write",
     ],

@@ -1,7 +1,7 @@
-import { getCaptureMetadataByCaptureClass } from "openclaw/plugin-sdk/memory-family-policy";
 import { Client } from "pg";
 import type { CandidateIngressPort } from "./candidate-ingress.js";
 import type { CandidateReviewPort } from "./candidate-review.js";
+import { getCanonicalCaptureMetadataByCaptureClass } from "./capture-class-metadata.js";
 import {
   BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES,
   type BoundedWorkflowGuidanceCaptureClass,
@@ -270,7 +270,7 @@ function buildCandidateMetadata(params: {
   resolution: NonNullable<ResolvedSelfImprovingWorkflowImprovement>;
   rolloutScope: SelfImprovingCandidateCaptureRolloutScope;
 }): Record<string, unknown> {
-  const workflowCaptureMetadata = getCaptureMetadataByCaptureClass(
+  const workflowCaptureMetadata = getCanonicalCaptureMetadataByCaptureClass(
     params.resolution.parsed.captureClass,
   );
 

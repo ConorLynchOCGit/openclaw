@@ -356,3 +356,96 @@ One later bounded retrieval cleanup also landed in flattening batch v6:
 
 - approved-vs-reviewable-candidate `get` / `list` / `basic` memory-object SQL
   scaffolding reduction
+
+## 2026-04 — the next roadmap tranche prioritizes depth and canonical completion
+
+Current accepted framing:
+
+- the next roadmap tranche should prioritize depth, reliability, and
+  canonical completion rather than breadth
+- no new family/domain expansion should outrun the remaining canonicalization
+  and automation cleanup work
+- hidden operator review is now rejected as a product dependency
+- future review must be either:
+  - automated under explicit policy, or
+  - surfaced to the user through a conversational in-chat flow
+
+## 2026-04 — the old durable family model should now be retired aggressively
+
+Current accepted framing:
+
+- the repo should now move aggressively toward the canonical durable model and
+  retire the older family-heavy durable model completely
+- the target durable storage model remains:
+  - `User`
+  - `Feedback`
+  - `Project`
+  - `Reference`
+- remaining family-era structure should survive only as migration adapters,
+  compatibility bridges, or derived views during the cutover
+- the next roadmap tranche should treat complete durable-model replacement as
+  an explicit goal, not a soft direction
+
+## 2026-04 — procedures remain separate for now, but as a thinner product lane
+
+Current accepted framing:
+
+- procedures should remain a separate lane for now
+- that separation is still justified because procedures are intended to grow
+  into a larger product for managing complex workflows between orchestrator
+  agents and action agents
+- procedure-specific lifecycle behavior may remain distinct where needed
+- the procedure lane should still get thinner architecturally and should not
+  remain a broad parallel substrate without justification
+
+## 2026-04 — self-improving capture stays candidate-only for now
+
+Current accepted framing:
+
+- self-improving capture remains candidate-only for now
+- widening beyond the current bounded posture is not the next step
+- the next work should improve confidence, observability, and integration on
+  the canonical substrate rather than granting broader authority
+
+## 2026-04 — learned guidance remains advisory for now
+
+Current accepted framing:
+
+- learned guidance remains advisory for now
+- advisory planning may inform user-visible suggestions and later planning
+  layers, but it should not yet become broad autonomous execution authority
+
+## 2026-04 — proactive execution stays narrow, but should trigger conversation
+
+Current accepted framing:
+
+- direct proactive execution should stay narrow for now
+- conversational dynamics are now a required part of the product posture:
+  proactive planning/execution should be able to start a conversation with the
+  user that can lead to action
+- widening should happen first through bounded conversational follow-up rather
+  than silent autonomous execution
+
+## 2026-04 — the long historical promotion ladder should be simplified
+
+Current accepted framing:
+
+- the long historical review/promotion/procedure/skill ladder should not be
+  treated as the final control model
+- the next roadmap tranche should simplify it toward a smaller set of honest
+  product stages
+- retained stages must map to real product behavior, not historical internal
+  scaffolding
+
+## 2026-04 — skill expansion is now desired, but with real governance
+
+Current accepted framing:
+
+- the repo should plan for meaningful skill expansion rather than treating
+  skills as an edge surface
+- third-party and internal skills are expected to become more important in
+  OpenClaw deployments
+- that expansion must still preserve explicit governance, vetting, and
+  approval boundaries where risk justifies them
+- the next roadmap tranche should treat stronger skill capability as a real
+  direction, not as dead scaffolding

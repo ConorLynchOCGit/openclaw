@@ -13,6 +13,19 @@ export type MemoryMiddlewareCandidateIngressConfig = {
 export const MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES = [
   "disabled",
   "submit-only",
+  "conversational-review",
+  "promote-memory",
+  "promote-procedure-draft",
+  "validate-procedure",
+  "skill-candidate",
+  "skill-procurement",
+  "skill-vetting",
+  "skill-approval",
+  "skill-install",
+  "candidate-only",
+] as const;
+
+export const LEGACY_MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES = [
   "submit-review-only",
   "submit-review-promote-memory",
   "submit-review-promote-memory-procedure",
@@ -22,11 +35,17 @@ export const MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES = [
   "submit-review-promote-memory-procedure-validate-skill-procurement-vetting",
   "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval",
   "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install",
-  "candidate-only",
 ] as const;
 
-export type MemoryMiddlewareCandidateIngressMode =
+export type LegacyMemoryMiddlewareCandidateIngressMode =
+  (typeof LEGACY_MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES)[number];
+
+export type NormalizedMemoryMiddlewareCandidateIngressMode =
   (typeof MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES)[number];
+
+export type MemoryMiddlewareCandidateIngressMode =
+  | NormalizedMemoryMiddlewareCandidateIngressMode
+  | LegacyMemoryMiddlewareCandidateIngressMode;
 
 export type MemoryMiddlewareCandidateIngressCapabilities = {
   submit: boolean;
@@ -112,20 +131,60 @@ export const DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG: MemoryMiddlewareAu
     allowedAgents: ["chief", "main"],
   };
 
-const CANDIDATE_INGRESS_MODE_ORDER: Record<MemoryMiddlewareCandidateIngressMode, number> = {
-  disabled: 0,
-  "submit-only": 1,
-  "submit-review-only": 2,
-  "submit-review-promote-memory": 3,
-  "submit-review-promote-memory-procedure": 4,
-  "submit-review-promote-memory-procedure-validate": 5,
-  "submit-review-promote-memory-procedure-validate-skill": 6,
-  "submit-review-promote-memory-procedure-validate-skill-procurement": 7,
-  "submit-review-promote-memory-procedure-validate-skill-procurement-vetting": 8,
-  "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval": 9,
-  "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install": 10,
-  "candidate-only": 11,
+const LEGACY_CANDIDATE_INGRESS_MODE_ALIAS: Record<
+  LegacyMemoryMiddlewareCandidateIngressMode,
+  NormalizedMemoryMiddlewareCandidateIngressMode
+> = {
+  "submit-review-only": "conversational-review",
+  "submit-review-promote-memory": "promote-memory",
+  "submit-review-promote-memory-procedure": "promote-procedure-draft",
+  "submit-review-promote-memory-procedure-validate": "validate-procedure",
+  "submit-review-promote-memory-procedure-validate-skill": "skill-candidate",
+  "submit-review-promote-memory-procedure-validate-skill-procurement": "skill-procurement",
+  "submit-review-promote-memory-procedure-validate-skill-procurement-vetting": "skill-vetting",
+  "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval":
+    "skill-approval",
+  "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install":
+    "skill-install",
 };
+
+const CANDIDATE_INGRESS_MODE_ORDER: Record<NormalizedMemoryMiddlewareCandidateIngressMode, number> =
+  {
+    disabled: 0,
+    "submit-only": 1,
+    "conversational-review": 2,
+    "promote-memory": 3,
+    "promote-procedure-draft": 4,
+    "validate-procedure": 5,
+    "skill-candidate": 6,
+    "skill-procurement": 7,
+    "skill-vetting": 8,
+    "skill-approval": 9,
+    "skill-install": 10,
+    "candidate-only": 11,
+  };
+
+function normalizeCandidateIngressMode(
+  value: unknown,
+): NormalizedMemoryMiddlewareCandidateIngressMode | undefined {
+  if (
+    typeof value === "string" &&
+    MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES.includes(
+      value as NormalizedMemoryMiddlewareCandidateIngressMode,
+    )
+  ) {
+    return value as NormalizedMemoryMiddlewareCandidateIngressMode;
+  }
+  if (
+    typeof value === "string" &&
+    LEGACY_MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES.includes(
+      value as LegacyMemoryMiddlewareCandidateIngressMode,
+    )
+  ) {
+    return LEGACY_CANDIDATE_INGRESS_MODE_ALIAS[value as LegacyMemoryMiddlewareCandidateIngressMode];
+  }
+  return undefined;
+}
 
 function normalizeBoundedWorkflowGuidanceCaptureClasses(
   value: unknown,
@@ -167,7 +226,10 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
         properties: {
           mode: {
             type: "string",
-            enum: [...MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES],
+            enum: [
+              ...MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES,
+              ...LEGACY_MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES,
+            ],
           },
         },
       },
@@ -281,41 +343,22 @@ function normalizeRolloutTarget(value: unknown): MemoryMiddlewareRolloutTarget |
 }
 
 export function resolveMemoryMiddlewareCandidateIngressCapabilities(
-  mode: MemoryMiddlewareCandidateIngressMode,
+  mode: MemoryMiddlewareCandidateIngressMode | LegacyMemoryMiddlewareCandidateIngressMode,
 ): MemoryMiddlewareCandidateIngressCapabilities {
-  const order = CANDIDATE_INGRESS_MODE_ORDER[mode];
+  const normalizedMode = normalizeCandidateIngressMode(mode) ?? "disabled";
+  const order = CANDIDATE_INGRESS_MODE_ORDER[normalizedMode];
   return {
     submit: order >= CANDIDATE_INGRESS_MODE_ORDER["submit-only"],
-    review: order >= CANDIDATE_INGRESS_MODE_ORDER["submit-review-only"],
-    memoryPromotion: order >= CANDIDATE_INGRESS_MODE_ORDER["submit-review-promote-memory"],
-    procedureDraftPromotion:
-      order >= CANDIDATE_INGRESS_MODE_ORDER["submit-review-promote-memory-procedure"],
-    procedureValidation:
-      order >= CANDIDATE_INGRESS_MODE_ORDER["submit-review-promote-memory-procedure-validate"],
-    skillCandidate:
-      order >=
-      CANDIDATE_INGRESS_MODE_ORDER["submit-review-promote-memory-procedure-validate-skill"],
-    skillProcurement:
-      order >=
-      CANDIDATE_INGRESS_MODE_ORDER[
-        "submit-review-promote-memory-procedure-validate-skill-procurement"
-      ],
-    skillVetting:
-      order >=
-      CANDIDATE_INGRESS_MODE_ORDER[
-        "submit-review-promote-memory-procedure-validate-skill-procurement-vetting"
-      ],
-    skillApproval:
-      order >=
-      CANDIDATE_INGRESS_MODE_ORDER[
-        "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval"
-      ],
-    skillInstall:
-      order >=
-      CANDIDATE_INGRESS_MODE_ORDER[
-        "submit-review-promote-memory-procedure-validate-skill-procurement-vetting-approval-install"
-      ],
-    fullCandidateSandbox: mode === "candidate-only",
+    review: order >= CANDIDATE_INGRESS_MODE_ORDER["conversational-review"],
+    memoryPromotion: order >= CANDIDATE_INGRESS_MODE_ORDER["promote-memory"],
+    procedureDraftPromotion: order >= CANDIDATE_INGRESS_MODE_ORDER["promote-procedure-draft"],
+    procedureValidation: order >= CANDIDATE_INGRESS_MODE_ORDER["validate-procedure"],
+    skillCandidate: order >= CANDIDATE_INGRESS_MODE_ORDER["skill-candidate"],
+    skillProcurement: order >= CANDIDATE_INGRESS_MODE_ORDER["skill-procurement"],
+    skillVetting: order >= CANDIDATE_INGRESS_MODE_ORDER["skill-vetting"],
+    skillApproval: order >= CANDIDATE_INGRESS_MODE_ORDER["skill-approval"],
+    skillInstall: order >= CANDIDATE_INGRESS_MODE_ORDER["skill-install"],
+    fullCandidateSandbox: normalizedMode === "candidate-only",
   };
 }
 
@@ -337,13 +380,7 @@ export function resolveMemoryMiddlewareConfig(input: unknown): MemoryMiddlewareC
     typeof database.schema === "string" && database.schema.trim()
       ? database.schema.trim()
       : "memory_middleware";
-  const candidateIngressMode =
-    typeof candidateIngress.mode === "string" &&
-    MEMORY_MIDDLEWARE_CANDIDATE_INGRESS_MODES.includes(
-      candidateIngress.mode as MemoryMiddlewareCandidateIngressMode,
-    )
-      ? (candidateIngress.mode as MemoryMiddlewareCandidateIngressMode)
-      : "disabled";
+  const candidateIngressMode = normalizeCandidateIngressMode(candidateIngress.mode) ?? "disabled";
   const memoryObjectQueryMode =
     memoryObjectQuery.mode === "read-only"
       ? "read-only"

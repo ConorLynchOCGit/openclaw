@@ -512,7 +512,7 @@ describe("write action stages", () => {
             },
           },
           compatibility: {
-            captureClass: "recurring_procedure",
+            captureClass: "explicit_recurring_procedure",
           },
         },
       },

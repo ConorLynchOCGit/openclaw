@@ -1,11 +1,8 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@sinclair/typebox";
-import {
-  getCaptureMetadataByCaptureClass,
-  type MemoryFamilyId,
-} from "openclaw/plugin-sdk/memory-family-policy";
 import type { AnyAgentTool, OpenClawPluginToolContext } from "../../api.js";
+import { getCanonicalCaptureMetadataByCaptureClass } from "../capture-class-metadata.js";
 import { DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG } from "../config.js";
 import { withMemoryMiddlewarePgClient } from "../db/pg-pool.js";
 import {
@@ -237,7 +234,14 @@ function readAutoCaptureString(
 
 function readCanonicalSubmissionFamilyId(
   metadata: Record<string, unknown> | undefined,
-): MemoryFamilyId | null {
+):
+  | "response_style"
+  | "project_fact"
+  | "recurring_procedure"
+  | "workflow_improvement"
+  | "project_rule"
+  | "unmet_need"
+  | null {
   const familyId = readAutoCaptureString(metadata, "family");
   return familyId === "response_style" ||
     familyId === "project_fact" ||
@@ -1216,7 +1220,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     workflowAutoReviewProfile?.approvedLabel ?? "approved workflow-improvement memory";
   const workflowCorrectionFamilyId =
     readCanonicalSubmissionFamilyId(params.input.metadata) ??
-    workflowAutoReviewProfile?.familyId ??
+    workflowAutoReviewProfile?.compatibilityCategory ??
     "workflow_improvement";
   if (
     (!isSupportedTemplate && !workflowAutoReviewProfile) ||
@@ -2897,7 +2901,7 @@ async function normalizeManagedToolCandidateInput(params: {
     if (!workflowImprovementResolution) {
       return input;
     }
-    const workflowCaptureMetadata = getCaptureMetadataByCaptureClass(
+    const workflowCaptureMetadata = getCanonicalCaptureMetadataByCaptureClass(
       workflowImprovementResolution.parsed.captureClass,
     );
     return mergeCanonicalResolvedIngestionMetadata({

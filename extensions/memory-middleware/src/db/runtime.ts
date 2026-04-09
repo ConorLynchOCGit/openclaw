@@ -1512,7 +1512,6 @@ export type MemoryProactivePlanActionClass = (typeof MEMORY_PROACTIVE_PLAN_ACTIO
 
 export const MEMORY_PROACTIVE_PLAN_APPROVAL_CLASSES = [
   "conversational_review",
-  "manual_review",
   "explicit_write_invocation",
   "none",
 ] as const;
@@ -1582,6 +1581,8 @@ export type MemoryProactiveExecuteAcceptedResult = {
   affectedIds: string[];
   rationale: string[];
   driftCheckExecution?: Extract<DriftCheckExecuteResult, { accepted: true }>;
+  candidateReviewPrompts?: Array<Record<string, unknown>>;
+  conversationalPrompts?: Array<Record<string, unknown>>;
 };
 
 export type MemoryProactiveExecuteRejectedResult = {

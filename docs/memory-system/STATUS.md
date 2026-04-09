@@ -95,6 +95,10 @@ Live substrate properties:
 - a central candidate-ingress capability resolver now owns the old
   submit/review/promotion ladder so advanced runtime ports no longer fan the
   long historical mode string back out independently
+- candidate-ingress config now normalizes that historical ladder into smaller
+  stage names such as `conversational-review`, `promote-memory`,
+  `validate-procedure`, and `skill-governance`-adjacent stages while still
+  accepting the older long-form aliases for backward-compatible config parsing
 - approved-over-candidate cluster preference for bounded retrieval of stronger
   explicit docs/file packet shapes
 - rollout-aligned registration for `memory_learned_guidance_plan`
@@ -140,6 +144,9 @@ Live substrate properties:
   from canonical submission metadata instead of lesson-family mapping
 - family-policy capture-metadata helpers now read narrow compatibility maps
   instead of broad family definitions
+- the active capture path now also uses one internal canonical capture-class
+  metadata table for workflow/project/procedure capture routing instead of
+  consulting the broader family-policy registry at runtime
 - workflow auto-review supersession now uses the shared canonical correction
   engine instead of a separate workflow-owned promotion sequence
 - approved workflow-guidance retrieval/planning is now canonical-only instead
@@ -160,8 +167,9 @@ Live substrate properties:
   instead of a separate compatibility catalog
 - project-fact semantic detection now uses a profile-registered detector
   registry instead of open-coded paired semantic detectors
-- middleware runtime seams now consume narrow policy views exported directly
-  from `memory-family-policy.ts`
+- middleware runtime seams now consume an internal runtime-policy table
+  that preserves the active lifecycle/correction/retrieval/routing posture
+  without reading live policy from `memory-family-policy.ts`
 - write-stage routing now supports canonical lanes so submit-path stages can
   target semantic write lanes directly
 - hybrid read scaffolding no longer falls back through `lessonFamily` to
@@ -192,6 +200,9 @@ Live substrate properties:
   validation prompts instead of pointing at hidden manual validation review
 - proactive skill-governance follow-up now prepares conversational governance
   prompts instead of pointing at hidden manual governance review
+- proactive stale-memory and consolidation-review follow-up now also prepare
+  conversational hygiene prompts instead of surfacing `manual_review` planner
+  approvals
 - learned-guidance advisory now treats approved workflow guidance as the
   authority while allowing candidate workflow guidance as provisional inline
   advice when no better approved record exists

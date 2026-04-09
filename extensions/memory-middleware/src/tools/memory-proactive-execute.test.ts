@@ -283,6 +283,96 @@ describe("memory proactive-execute tool", () => {
     });
   });
 
+  it("turns stale-memory follow-up into a conversational consolidation prompt", async () => {
+    const runtime = createRuntime();
+    const tool = createMemoryProactiveExecuteTool({ runtime });
+
+    const result = await tool.execute("call-5", {
+      actionType: "revisit_stale_memory",
+      affectedIds: ["memory-9"],
+      projectId: "project-1",
+    });
+
+    expect(runtime.proactiveExecution.execute).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "executed",
+      actionType: "revisit_stale_memory",
+      executionSource: "explicit_selection",
+      affectedIds: ["memory-9"],
+      conversationalPrompts: [
+        expect.objectContaining({
+          actionType: "revisit_stale_memory",
+          recommendedToolName: "memory_consolidation_plan",
+          recommendedToolInput: {
+            projectId: "project-1",
+            maxFindings: 1,
+          },
+        }),
+      ],
+    });
+  });
+
+  it("derives conversational consolidation-review prompts from the planner", async () => {
+    const runtime = createRuntime();
+    runtime.proactivePlanning.plan = vi.fn(
+      async () =>
+        ({
+          accepted: true,
+          status: "ok",
+          outcome: "actions_available",
+          advisoryOnly: true,
+          advisoryNote: "Advisory only. No proactive actions were executed.",
+          actions: [
+            {
+              actionType: "review_consolidation_findings",
+              priority: "medium",
+              actionClass: "consolidation_review_follow_up",
+              requiredApprovalClass: "conversational_review",
+              affectedIds: ["memory-2", "memory-3"],
+              rationale: ["consolidation findings should be surfaced conversationally"],
+              advisoryOnly: true,
+              advisoryNote: "Advisory only. No proactive actions were executed.",
+            },
+          ],
+          inspectedState: {
+            pendingCandidateReviewCount: 0,
+            eligibleProcedureValidationCount: 0,
+            candidateSkillGovernanceCount: 0,
+            staleMemoryCount: 0,
+            driftCheckCount: 0,
+            consolidationReviewCount: 2,
+          },
+          rationale: [
+            "bounded middleware state contains advisory-only proactive follow-up opportunities",
+          ],
+        }) satisfies import("../db/runtime.js").MemoryProactivePlanResult,
+    );
+    const tool = createMemoryProactiveExecuteTool({ runtime });
+
+    const result = await tool.execute("call-6", {
+      actionType: "review_consolidation_findings",
+    });
+
+    expect(runtime.proactiveExecution.execute).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({
+      accepted: true,
+      status: "executed",
+      actionType: "review_consolidation_findings",
+      executionSource: "derived_plan",
+      affectedIds: ["memory-2", "memory-3"],
+      conversationalPrompts: [
+        expect.objectContaining({
+          actionType: "review_consolidation_findings",
+          recommendedToolName: "memory_consolidation_plan",
+          recommendedToolInput: {
+            maxFindings: 2,
+          },
+        }),
+      ],
+    });
+  });
+
   it("rejects unknown proactive action types", () => {
     expect(() =>
       normalizeMemoryProactiveExecuteInput({

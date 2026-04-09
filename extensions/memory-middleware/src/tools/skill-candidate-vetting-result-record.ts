@@ -19,7 +19,7 @@ type SkillCandidateVettingResultRecordRawParams = ToolRawParams;
 const SkillCandidateVettingResultRecordToolSchema = Type.Object(
   {
     skillCandidateId: Type.String({
-      description: "Bounded skill-candidate id to attach a manual vetting result to.",
+      description: "Bounded skill-candidate id to attach a bounded vetting result to.",
       minLength: 1,
     }),
     decision: Type.Union([
@@ -30,7 +30,7 @@ const SkillCandidateVettingResultRecordToolSchema = Type.Object(
     ]),
     summary: Type.Optional(
       Type.String({
-        description: "Optional bounded summary of the manual vetting result.",
+        description: "Optional bounded summary of the vetting result.",
         minLength: 1,
       }),
     ),

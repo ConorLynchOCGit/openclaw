@@ -21,7 +21,7 @@ function createPlanResult(): ProcedureValidationPlanResult {
       "draft provenance includes both accepted-review and source-event linkage",
     ],
     requiredGates: [
-      "manual validation confirmation is still required",
+      "conversational confirmation is still required",
       "validated-procedure writes require an explicit write tool invocation",
       "procedure-run evidence, policy checks, and review gates must pass before any future validation write",
     ],

@@ -1,11 +1,9 @@
-import type {
-  MemoryFamilyId,
-  MemoryFamilyRetrievalFeature,
-} from "openclaw/plugin-sdk/memory-family-policy";
 import {
   getMemoryRetrievalRuntimePolicy,
   listApprovedMemoryRetrievalRuntimePolicies,
   type ApprovedMemoryRetrievalRuntimeDefinition,
+  type MemoryRetrievalRuntimeFeature,
+  type MemoryRuntimePolicyKey,
 } from "./memory-runtime-policy-views.js";
 
 type RetrievalSqlExpressions = {
@@ -43,7 +41,7 @@ type ValidatedProcedureParamRefs = {
 };
 
 function buildApprovedMemoryFeatureFamilyGuard(
-  familyId: MemoryFamilyId,
+  familyId: MemoryRuntimePolicyKey,
   expressions: RetrievalSqlExpressions,
 ): string | null {
   switch (familyId) {
@@ -59,7 +57,7 @@ function buildApprovedMemoryFeatureFamilyGuard(
 }
 
 function buildApprovedMemoryIntentFamilyGuard(
-  familyId: MemoryFamilyId,
+  familyId: MemoryRuntimePolicyKey,
   expressions: RetrievalSqlExpressions,
 ): string | null {
   switch (familyId) {
@@ -73,8 +71,8 @@ function buildApprovedMemoryIntentFamilyGuard(
 }
 
 function buildApprovedMemoryFeatureValueExpression(
-  familyId: MemoryFamilyId,
-  feature: MemoryFamilyRetrievalFeature,
+  familyId: MemoryRuntimePolicyKey,
+  feature: MemoryRetrievalRuntimeFeature,
   expressions: RetrievalSqlExpressions,
 ): string | null {
   switch (feature) {
@@ -101,7 +99,7 @@ function buildApprovedMemoryFeatureValueExpression(
 
 function buildMatchedFieldLabel(
   definition: ApprovedMemoryRetrievalRuntimeDefinition,
-  feature: MemoryFamilyRetrievalFeature,
+  feature: MemoryRetrievalRuntimeFeature,
 ): string {
   const prefix =
     definition.retrievalPolicy.matchedFieldPrefix ?? definition.derivedViews[0] ?? definition.id;
@@ -129,7 +127,7 @@ function buildMatchedFieldLabel(
 
 function buildApprovedMemoryFeatureClause(params: {
   definition: ApprovedMemoryRetrievalRuntimeDefinition;
-  feature: MemoryFamilyRetrievalFeature;
+  feature: MemoryRetrievalRuntimeFeature;
   weight: number;
   expressions: RetrievalSqlExpressions;
   paramRefs: RetrievalParamRefs;
@@ -194,7 +192,7 @@ export function buildApprovedMemoryRetrievalFeatureSql(params: {
       }
       const clause = buildApprovedMemoryFeatureClause({
         definition,
-        feature: feature as MemoryFamilyRetrievalFeature,
+        feature: feature as MemoryRetrievalRuntimeFeature,
         weight,
         expressions: params.expressions,
         paramRefs: params.paramRefs,

@@ -22,7 +22,7 @@ function createProcurementPlanResult(): SkillCandidateProcurementPlanResult {
       "bounded lineage preserves validated procedure, candidate, review, event, and validation evidence",
     ],
     requiredGates: [
-      "manual procurement handoff confirmation is still required",
+      "conversational confirmation is still required",
       "Skill Vetter must be invoked explicitly outside this advisory slice",
       "minimum vetting outputs must be recorded before lifecycle advancement",
       "installation remains blocked until procurement and policy gates pass",

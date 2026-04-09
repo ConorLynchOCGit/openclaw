@@ -280,7 +280,7 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
     candidateReview,
     candidatePromotionPlan: createCandidatePromotionPlanPort({
       db,
-      enabled: automation.memoryPromotion,
+      enabled: automation.memoryPromotion || automation.procedureDraftPromotion,
     }),
     candidatePromotion: createCandidatePromotionPort({
       db,
@@ -289,7 +289,7 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
     }),
     procedureValidationPlan: createProcedureValidationPlanPort({
       db,
-      enabled: automation.fullCandidateSandbox,
+      enabled: automation.procedureValidation,
     }),
     procedureValidation: createProcedureValidationPort({
       db,

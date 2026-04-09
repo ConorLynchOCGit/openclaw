@@ -74,7 +74,9 @@ export function registerMemoryMiddlewareTools(
   const automation = resolveMemoryMiddlewareCandidateIngressCapabilities(
     runtime.config.candidateIngress.mode,
   );
-  const reviewToolsEnabled = automation.review || automation.fullCandidateSandbox;
+  const reviewToolsEnabled = automation.review;
+  const promotionPlanningToolsEnabled =
+    automation.memoryPromotion || automation.procedureDraftPromotion;
 
   api.registerTool(
     ((ctx) =>
@@ -324,7 +326,7 @@ export function registerMemoryMiddlewareTools(
       { name: "memory_candidate_review" },
     );
   }
-  if (automation.memoryPromotion) {
+  if (promotionPlanningToolsEnabled) {
     api.registerTool(
       ((ctx) =>
         createCandidatePromotePlanTool({
@@ -352,7 +354,7 @@ export function registerMemoryMiddlewareTools(
       { name: "memory_candidate_promote_procedure" },
     );
   }
-  if (automation.procedureValidation || automation.fullCandidateSandbox) {
+  if (automation.procedureValidation) {
     api.registerTool(
       ((ctx) =>
         createProcedureValidatePlanTool({

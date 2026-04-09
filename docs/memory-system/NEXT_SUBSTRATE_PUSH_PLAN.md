@@ -209,12 +209,14 @@ That follow-through slice is now also landed locally:
   helper for more of its correction/supersession flow
 - project-fact semantic detection now runs through a profile-registered
   detector registry
-- middleware runtime seams now consume narrow family-policy views exported by
-  `memory-family-policy.ts`
+- middleware runtime seams now consume internal runtime-policy views instead
+  of live `memory-family-policy.ts` reads
 - write-stage routing now matches canonical write lanes instead of repeating
   mixed family/category conditions
 - the last hybrid read `lessonFamily` fallback is gone from the active
   project-family read scaffolding
+- workflow auto-review policy now resolves from canonical capture metadata
+  instead of importing the family-policy compatibility seam
 - three repo/process workflow lessons now flow through generalized workflow
   guidance instead of staying named compat entries
 
