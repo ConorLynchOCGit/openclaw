@@ -88,12 +88,13 @@ Current reevaluation judgment:
 
 The next implementation slices should now be:
 
-- deeper hybrid retrieval execution rebased onto canonical retrieval plans,
-  not just canonical control decisions
-- planner/tool-selection seams rebased onto canonical records and canonical
-  retrieval plans rather than family/lesson-heavy switches
-- staged retirement of the remaining family-native capture/retrieval
-  compatibility branches once the canonical runtime path is proven
+- write-stage canonicalization so `extensions/memory-middleware/src/write-action-stages.ts`
+  stops being the dominant family/stage dispatcher
+- phrase-induction convergence across workflow and response-style so those
+  two parallel engines stop surviving for historical reasons
+- staged reduction of remaining family-heavy promotion and ingestion logic in
+  `extensions/memory-middleware/src/tools/candidate-submit.ts` and
+  `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
 
 The canonical-core tranche is now already landed:
 
@@ -103,7 +104,7 @@ The canonical-core tranche is now already landed:
 - canonical ingestion candidate contract
 - canonical retrieval/ranking contract
 
-The next follow-through tranche is also now landed:
+The next follow-through tranche is now landed:
 
 - hybrid retrieval control decisions derive operative hints/fallbacks from
   canonical retrieval plans first
@@ -111,6 +112,12 @@ The next follow-through tranche is also now landed:
   canonical retrieval plans first
 - critical tool-submission and self-improving capture seams now submit
   canonical ingestion candidates first
+- hybrid retrieval execution now reads canonical metadata first under the
+  canonical control surface
+- retrieval control and candidate submission now share one canonical-first
+  metadata reader
+- Main routing now uses a dedicated canonical-memory planner surface instead
+  of a bounded OpenAI-wrapper classifier
 
 Why:
 
@@ -143,6 +150,6 @@ Before new families:
 
 ## Next implementation slice
 
-- canonical runtime retirement work, starting with deeper hybrid retrieval
-  execution and planner/tool-selection cutover so compatibility adapters stop
-  being the primary runtime substrate
+- canonical runtime retirement work, starting with write-stage
+  canonicalization, phrase-induction convergence, and staged deletion of the
+  remaining family-heavy promotion/ingestion branches

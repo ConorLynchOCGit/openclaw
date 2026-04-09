@@ -352,6 +352,103 @@ export type SessionSkillSnapshot = {
   version?: number;
 };
 
+export type SessionToolChoiceSnapshot =
+  | string
+  | {
+      type?: string;
+      name?: string;
+    }
+  | null;
+
+export type SessionMainMemoryRoutingPromptClass =
+  | "workflow_preflight"
+  | "direct_lookup"
+  | "boundary"
+  | "none";
+
+export type SessionMainMemoryRoutingCanonicalKind = "user" | "feedback" | "project" | "reference";
+
+export type SessionMainMemoryRoutingDerivedView =
+  | "workflow_guidance"
+  | "project_fact"
+  | "project_rule"
+  | "unmet_need"
+  | "response_style"
+  | "procedure"
+  | "reference_lookup";
+
+export type SessionMainMemoryRoutingIntentSignal =
+  | "preflight_check"
+  | "before_action"
+  | "watch_for"
+  | "repo_follow_through"
+  | "command_lookup"
+  | "artifact_lookup"
+  | "terminology_lookup"
+  | "boundary_lookup";
+
+export type SessionMainMemoryRoutingCanonicalFacetFilter = {
+  key: string;
+  value: string | boolean;
+};
+
+export type SessionMainMemoryRoutingSelectedTarget =
+  | "memory_learned_guidance_plan"
+  | "memory_object_search_hybrid"
+  | "memory_search"
+  | "none";
+
+export type SessionMainMemoryRoutingReasonCode =
+  | "selected_learned_guidance"
+  | "selected_hybrid"
+  | "selected_search_fallback"
+  | "learned_guidance_unavailable"
+  | "hybrid_unavailable"
+  | "search_unavailable"
+  | "classifier_no_match"
+  | "missing_user_message"
+  | "tool_loop_started"
+  | "unsupported_api"
+  | "non_main_agent";
+
+export type SessionMainMemoryRoutingApplicationReasonCode =
+  | "pinned_selected_target"
+  | "existing_tool_choice_preserved"
+  | "no_selected_target";
+
+export type SessionMainMemoryRoutingReport = {
+  version?: string;
+  commit?: string | null;
+  provider?: string;
+  api?: string;
+  agentId?: string;
+  availableTools: {
+    memoryLearnedGuidancePlan: boolean;
+    memoryObjectSearchHybrid: boolean;
+    memorySearch: boolean;
+  };
+  promptClass: SessionMainMemoryRoutingPromptClass;
+  canonicalPlan: {
+    requestedKinds: SessionMainMemoryRoutingCanonicalKind[];
+    derivedViews: SessionMainMemoryRoutingDerivedView[];
+    facetFilters: SessionMainMemoryRoutingCanonicalFacetFilter[];
+    matchedSignals: SessionMainMemoryRoutingIntentSignal[];
+  };
+  selectedTarget: SessionMainMemoryRoutingSelectedTarget;
+  reasonCode: SessionMainMemoryRoutingReasonCode;
+  skillSuppressionRequested: boolean;
+  applicationReasonCode?: SessionMainMemoryRoutingApplicationReasonCode;
+  toolChoiceBeforePatch?: SessionToolChoiceSnapshot;
+  toolChoiceAfterPatch?: SessionToolChoiceSnapshot;
+  finalToolChoice?: SessionToolChoiceSnapshot;
+  finalToolChoiceChanged?: boolean;
+};
+
+export type SessionRuntimeBuildReport = {
+  version?: string;
+  commit?: string | null;
+};
+
 export type SessionSystemPromptReport = {
   source: "run" | "estimate";
   generatedAt: number;
@@ -375,6 +472,8 @@ export type SessionSystemPromptReport = {
     mode?: string;
     sandboxed?: boolean;
   };
+  runtimeBuild?: SessionRuntimeBuildReport;
+  mainMemoryRouting?: SessionMainMemoryRoutingReport;
   systemPrompt: {
     chars: number;
     projectContextChars: number;

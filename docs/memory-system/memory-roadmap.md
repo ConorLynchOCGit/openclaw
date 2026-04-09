@@ -457,9 +457,19 @@ Current tranche status:
     and canonical retrieval plans first
   - critical tool-submission and self-improving capture seams now emit
     canonical candidates first
-- Step 6 is now the next required slice:
-  - retire the remaining family-heavy runtime branches behind the new
-    canonical ingestion/retrieval/planner seams
+- Step 6 is now in progress:
+  - hybrid retrieval execution now reads canonical metadata first under the
+    canonical control surface
+  - retrieval control and candidate submission now share one canonical-first
+    metadata reader
+  - ordinary-turn fallback capture now uses the shared canonical adapter seam
+  - Main routing now uses a dedicated canonical-memory planner surface rather
+    than hiding planner logic in the OpenAI wrapper layer
+- The next required retirement work after that is:
+  - write-stage canonicalization
+  - phrase-induction convergence
+  - deeper family-aware ingestion-resolver shrinkage
+  - staged reduction of remaining family-heavy promotion logic
 
 Success for this phase should mean:
 

@@ -94,6 +94,8 @@ export function buildSystemPromptReport(params: {
   injectedFiles: EmbeddedContextFile[];
   skillsPrompt: string;
   tools: AgentTool[];
+  runtimeBuild?: SessionSystemPromptReport["runtimeBuild"];
+  mainMemoryRouting?: SessionSystemPromptReport["mainMemoryRouting"];
 }): SessionSystemPromptReport {
   const systemPrompt = params.systemPrompt.trim();
   const projectContext = extractBetween(
@@ -120,6 +122,8 @@ export function buildSystemPromptReport(params: {
     bootstrapTotalMaxChars: params.bootstrapTotalMaxChars,
     ...(params.bootstrapTruncation ? { bootstrapTruncation: params.bootstrapTruncation } : {}),
     sandbox: params.sandbox,
+    ...(params.runtimeBuild ? { runtimeBuild: params.runtimeBuild } : {}),
+    ...(params.mainMemoryRouting ? { mainMemoryRouting: params.mainMemoryRouting } : {}),
     systemPrompt: {
       chars: systemPrompt.length,
       projectContextChars,

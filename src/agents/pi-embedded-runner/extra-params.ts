@@ -4,6 +4,7 @@ import { streamSimple } from "@mariozechner/pi-ai";
 import type { SettingsManager } from "@mariozechner/pi-coding-agent";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import type { OpenClawConfig } from "../../config/config.js";
+import type { SessionSystemPromptReport } from "../../config/sessions/types.js";
 import {
   prepareProviderExtraParams as prepareProviderExtraParamsRuntime,
   wrapProviderStreamFn as wrapProviderStreamFnRuntime,
@@ -34,6 +35,7 @@ import {
   createOpenAIAttributionHeadersWrapper,
   createOpenAIDefaultTransportWrapper,
   createOpenAIFastModeWrapper,
+  createMainMemoryRoutingDiagnosticsWrapper,
   createMainMemoryToolChoiceWrapper,
   createOpenAIResponsesContextManagementWrapper,
   createOpenAIServiceTierWrapper,
@@ -307,6 +309,7 @@ type ApplyExtraParamsContext = {
   effectiveExtraParams: Record<string, unknown>;
   resolvedExtraParams?: Record<string, unknown>;
   override?: Record<string, unknown>;
+  systemPromptReport?: SessionSystemPromptReport;
 };
 
 function applyPrePluginStreamWrappers(ctx: ApplyExtraParamsContext): void {
@@ -454,6 +457,10 @@ function applyPostPluginStreamWrappers(
 
     ctx.agent.streamFn = createMainMemoryToolChoiceWrapper(ctx.agent.streamFn, {
       agentId: ctx.agentId,
+      provider: ctx.provider,
+      version: ctx.systemPromptReport?.runtimeBuild?.version,
+      commit: ctx.systemPromptReport?.runtimeBuild?.commit,
+      diagnostics: ctx.systemPromptReport?.mainMemoryRouting,
     });
   }
 
@@ -470,20 +477,19 @@ function applyPostPluginStreamWrappers(
     "parallel_tool_calls",
     "parallelToolCalls",
   );
-  if (rawParallelToolCalls === undefined) {
-    return;
-  }
   if (typeof rawParallelToolCalls === "boolean") {
     ctx.agent.streamFn = createParallelToolCallsWrapper(ctx.agent.streamFn, rawParallelToolCalls);
-    return;
-  }
-  if (rawParallelToolCalls === null) {
+  } else if (rawParallelToolCalls === null) {
     log.debug("parallel_tool_calls suppressed by null override, skipping injection");
-    return;
+  } else if (rawParallelToolCalls !== undefined) {
+    const summary =
+      typeof rawParallelToolCalls === "string" ? rawParallelToolCalls : typeof rawParallelToolCalls;
+    log.warn(`ignoring invalid parallel_tool_calls param: ${summary}`);
   }
-  const summary =
-    typeof rawParallelToolCalls === "string" ? rawParallelToolCalls : typeof rawParallelToolCalls;
-  log.warn(`ignoring invalid parallel_tool_calls param: ${summary}`);
+
+  ctx.agent.streamFn = createMainMemoryRoutingDiagnosticsWrapper(ctx.agent.streamFn, {
+    diagnostics: ctx.systemPromptReport?.mainMemoryRouting,
+  });
 }
 
 /**
@@ -502,6 +508,7 @@ export function applyExtraParamsToAgent(
   agentId?: string,
   workspaceDir?: string,
   model?: ProviderRuntimeModel,
+  systemPromptReport?: SessionSystemPromptReport,
 ): { effectiveExtraParams: Record<string, unknown> } {
   const resolvedExtraParams = resolveExtraParams({
     cfg,
@@ -537,6 +544,7 @@ export function applyExtraParamsToAgent(
     effectiveExtraParams,
     resolvedExtraParams,
     override,
+    systemPromptReport,
   };
 
   applyPrePluginStreamWrappers(wrapperContext);

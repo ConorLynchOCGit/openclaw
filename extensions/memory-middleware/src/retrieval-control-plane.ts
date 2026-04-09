@@ -6,6 +6,7 @@ import type {
   MemoryObjectSearchScope,
   RankedRetrievedMemoryRecord,
 } from "./db/runtime.js";
+import { readCanonicalFirstMetadataString } from "./memory-canonical-compat.js";
 import { getMemoryFamilyDefinition, type MemoryFamilyId } from "./memory-family-registry.js";
 import {
   buildCanonicalMemoryRetrievalPlan,
@@ -80,14 +81,11 @@ function scopeIncludesValidatedProcedures(scope: MemoryObjectSearchScope): boole
 }
 
 function readRecordMetadataString(value: unknown, path: readonly string[]): string | null {
-  let current = value;
-  for (const segment of path) {
-    if (!current || typeof current !== "object" || Array.isArray(current)) {
-      return null;
-    }
-    current = (current as Record<string, unknown>)[segment];
-  }
-  return typeof current === "string" && current.trim().length > 0 ? current.trim() : null;
+  const resolved =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? readCanonicalFirstMetadataString(value as Record<string, unknown>, path)
+      : undefined;
+  return resolved ?? null;
 }
 
 function readSubjectKey(record: RankedRetrievedMemoryRecord): string | null {

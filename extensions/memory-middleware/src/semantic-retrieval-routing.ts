@@ -15,6 +15,7 @@ import type {
   RankedRetrievedMemoryRecord,
   SemanticRetrievedMemoryRecord,
 } from "./db/runtime.js";
+import { readCanonicalMemoryRecordFromMetadata } from "./memory-canonical-compat.js";
 import type { MemoryMiddlewareRuntime } from "./runtime.js";
 
 type ValidatedProcedureSemanticSource = {
@@ -144,31 +145,14 @@ function readNestedMetadataString(
   return typeof cursor === "string" && cursor.trim().length > 0 ? cursor.trim() : undefined;
 }
 
-function readCanonicalMetadataString(
-  metadata: Record<string, unknown> | undefined,
-  path: string[],
-): string | undefined {
-  return (
-    readNestedMetadataString(metadata, ["canonicalIngestionCandidate", ...path]) ??
-    readNestedMetadataString(metadata, [
-      "candidateMetadata",
-      "canonicalIngestionCandidate",
-      ...path,
-    ]) ??
-    readNestedMetadataString(metadata, [
-      "promotionMetadata",
-      "canonicalIngestionCandidate",
-      ...path,
-    ]) ??
-    readNestedMetadataString(metadata, ["autoPromotion", "canonicalIngestionCandidate", ...path])
-  );
-}
-
 function extractWorkflowImprovementLessonKey(
   metadata: Record<string, unknown> | undefined,
 ): string | undefined {
+  const canonicalRecord = readCanonicalMemoryRecordFromMetadata(metadata);
   return (
-    readCanonicalMetadataString(metadata, ["record", "facets", "lessonKey"]) ??
+    (typeof canonicalRecord?.facets.lessonKey === "string"
+      ? canonicalRecord.facets.lessonKey
+      : undefined) ??
     readNestedMetadataString(metadata, ["autoCapture", "lessonKey"]) ??
     readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "lessonKey"]) ??
     readNestedMetadataString(metadata, ["promotionMetadata", "autoPromotion", "lessonKey"]) ??
@@ -179,9 +163,12 @@ function extractWorkflowImprovementLessonKey(
 function extractWorkflowImprovementSubject(
   metadata: Record<string, unknown> | undefined,
 ): string | undefined {
+  const canonicalRecord = readCanonicalMemoryRecordFromMetadata(metadata);
   return (
-    readCanonicalMetadataString(metadata, ["record", "subject"]) ??
-    readCanonicalMetadataString(metadata, ["record", "facets", "projectScope"]) ??
+    canonicalRecord?.subject ??
+    (typeof canonicalRecord?.facets.projectScope === "string"
+      ? canonicalRecord.facets.projectScope
+      : undefined) ??
     readNestedMetadataString(metadata, ["autoCapture", "subject"]) ??
     readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "subject"]) ??
     readNestedMetadataString(metadata, ["promotionMetadata", "autoPromotion", "subject"]) ??
@@ -192,10 +179,15 @@ function extractWorkflowImprovementSubject(
 function extractWorkflowImprovementValue(
   metadata: Record<string, unknown> | undefined,
 ): string | undefined {
+  const canonicalRecord = readCanonicalMemoryRecordFromMetadata(metadata);
   return (
-    readCanonicalMetadataString(metadata, ["record", "statement"]) ??
-    readCanonicalMetadataString(metadata, ["record", "facets", "recommendedAction"]) ??
-    readCanonicalMetadataString(metadata, ["record", "facets", "neededCapability"]) ??
+    canonicalRecord?.statement ??
+    (typeof canonicalRecord?.facets.recommendedAction === "string"
+      ? canonicalRecord.facets.recommendedAction
+      : undefined) ??
+    (typeof canonicalRecord?.facets.neededCapability === "string"
+      ? canonicalRecord.facets.neededCapability
+      : undefined) ??
     readNestedMetadataString(metadata, ["autoCapture", "value"]) ??
     readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "value"]) ??
     readNestedMetadataString(metadata, ["promotionMetadata", "autoPromotion", "value"]) ??
@@ -823,64 +815,7 @@ async function searchApprovedProjectSemanticFallback(params: {
   return params.shared.approvedProjectSemanticSearchPromise;
 }
 
-function normalizeSemanticProcedureFallbackRecord(params: {
-  record: SemanticRetrievedMemoryRecord;
-  existing?: RankedRetrievedMemoryRecord;
-  scoreBase: number;
-  index: number;
-}): RankedRetrievedMemoryRecord {
-  const matchedFields = new Set<string>([
-    ...(params.existing?.matchedFields ?? []),
-    ...params.record.matchedFields,
-    "semantic_fallback",
-  ]);
-
-  return {
-    ...(params.record as RankedRetrievedMemoryRecord),
-    score: params.scoreBase - params.index + params.record.score,
-    matchedFields: [...matchedFields],
-  };
-}
-
-function normalizeSemanticEnvironmentConstraintFallbackRecord(params: {
-  record: SemanticRetrievedMemoryRecord;
-  existing?: RankedRetrievedMemoryRecord;
-  scoreBase: number;
-  index: number;
-}): RankedRetrievedMemoryRecord {
-  const matchedFields = new Set<string>([
-    ...(params.existing?.matchedFields ?? []),
-    ...params.record.matchedFields,
-    "semantic_fallback",
-  ]);
-
-  return {
-    ...(params.record as RankedRetrievedMemoryRecord),
-    score: params.scoreBase - params.index + params.record.score,
-    matchedFields: [...matchedFields],
-  };
-}
-
-function normalizeSemanticWorkflowToolGotchaFallbackRecord(params: {
-  record: SemanticRetrievedMemoryRecord;
-  existing?: RankedRetrievedMemoryRecord;
-  scoreBase: number;
-  index: number;
-}): RankedRetrievedMemoryRecord {
-  const matchedFields = new Set<string>([
-    ...(params.existing?.matchedFields ?? []),
-    ...params.record.matchedFields,
-    "semantic_fallback",
-  ]);
-
-  return {
-    ...(params.record as RankedRetrievedMemoryRecord),
-    score: params.scoreBase - params.index + params.record.score,
-    matchedFields: [...matchedFields],
-  };
-}
-
-function normalizeSemanticApiWorkaroundFallbackRecord(params: {
+function normalizeSemanticFallbackRecord(params: {
   record: SemanticRetrievedMemoryRecord;
   existing?: RankedRetrievedMemoryRecord;
   scoreBase: number;
@@ -1211,7 +1146,7 @@ export async function maybeApplyProcedureSemanticFallback(params: {
 
   semanticResult.records.forEach((record, index) => {
     records.push(
-      normalizeSemanticProcedureFallbackRecord({
+      normalizeSemanticFallbackRecord({
         record,
         existing: existingById.get(record.id),
         scoreBase,
@@ -1296,7 +1231,7 @@ export async function maybeApplyEnvironmentConstraintSemanticFallback(params: {
 
   semanticEnvironmentRecords.forEach((record, index) => {
     records.push(
-      normalizeSemanticEnvironmentConstraintFallbackRecord({
+      normalizeSemanticFallbackRecord({
         record,
         existing: existingById.get(record.id),
         scoreBase,
@@ -1381,7 +1316,7 @@ export async function maybeApplyWorkflowToolGotchaSemanticFallback(params: {
 
   semanticToolGotchaRecords.forEach((record, index) => {
     records.push(
-      normalizeSemanticWorkflowToolGotchaFallbackRecord({
+      normalizeSemanticFallbackRecord({
         record,
         existing: existingById.get(record.id),
         scoreBase,
@@ -1466,7 +1401,7 @@ export async function maybeApplyApiWorkaroundSemanticFallback(params: {
 
   semanticApiWorkaroundRecords.forEach((record, index) => {
     records.push(
-      normalizeSemanticApiWorkaroundFallbackRecord({
+      normalizeSemanticFallbackRecord({
         record,
         existing: existingById.get(record.id),
         scoreBase,

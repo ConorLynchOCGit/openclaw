@@ -112,4 +112,67 @@ describe("buildSystemPromptReport", () => {
 
     expect(report.injectedWorkspaceFiles[0]?.injectedChars).toBe("trimmed".length);
   });
+
+  it("includes runtime build and main memory routing diagnostics when provided", () => {
+    const file = makeBootstrapFile({ path: "/tmp/workspace/policies/AGENTS.md" });
+    const report = buildSystemPromptReport({
+      source: "run",
+      generatedAt: 0,
+      bootstrapMaxChars: 20_000,
+      systemPrompt: "system",
+      bootstrapFiles: [file],
+      injectedFiles: [{ path: "/tmp/workspace/policies/AGENTS.md", content: "trimmed" }],
+      skillsPrompt: "",
+      tools: [],
+      runtimeBuild: {
+        version: "2026.4.8-test",
+        commit: "abc1234",
+      },
+      mainMemoryRouting: {
+        version: "2026.4.8-test",
+        commit: "abc1234",
+        provider: "openai-codex",
+        api: "openai-codex-responses",
+        agentId: "main",
+        availableTools: {
+          memoryLearnedGuidancePlan: false,
+          memoryObjectSearchHybrid: true,
+          memorySearch: true,
+        },
+        promptClass: "workflow_preflight",
+        canonicalPlan: {
+          requestedKinds: ["feedback", "project"],
+          derivedViews: ["workflow_guidance", "project_rule"],
+          facetFilters: [{ key: "workflow_guidance", value: true }],
+          matchedSignals: ["preflight_check"],
+        },
+        selectedTarget: "memory_object_search_hybrid",
+        reasonCode: "learned_guidance_unavailable",
+        skillSuppressionRequested: true,
+        applicationReasonCode: "pinned_selected_target",
+        toolChoiceBeforePatch: "auto",
+        toolChoiceAfterPatch: {
+          type: "function",
+          name: "memory_object_search_hybrid",
+        },
+        finalToolChoice: {
+          type: "function",
+          name: "memory_object_search_hybrid",
+        },
+        finalToolChoiceChanged: false,
+      },
+    });
+
+    expect(report.runtimeBuild).toEqual({
+      version: "2026.4.8-test",
+      commit: "abc1234",
+    });
+    expect(report.mainMemoryRouting?.selectedTarget).toBe("memory_object_search_hybrid");
+    expect(report.mainMemoryRouting?.reasonCode).toBe("learned_guidance_unavailable");
+    expect(report.mainMemoryRouting?.canonicalPlan.requestedKinds).toEqual(["feedback", "project"]);
+    expect(report.mainMemoryRouting?.finalToolChoice).toEqual({
+      type: "function",
+      name: "memory_object_search_hybrid",
+    });
+  });
 });

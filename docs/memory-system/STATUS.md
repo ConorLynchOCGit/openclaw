@@ -35,6 +35,8 @@ is now also landed.
 
 The canonical-core tranche of rigid-surface replacement is now also landed.
 
+The critical refactor-review and canonicalization batch is now also landed.
+
 ## What is live now
 
 Live families:
@@ -84,6 +86,14 @@ Live substrate properties:
 - canonical facet/metadata contracts for the 4-kind target model
 - transitional family-policy builders that emit canonical-core-compatible
   records without replacing the active family runtime yet
+- canonical-first hybrid retrieval execution under the canonical control
+  surface
+- a shared canonical-first metadata reader used by retrieval control and
+  candidate submission instead of legacy `autoCapture` reads
+- a dedicated Main canonical-memory planner surface in
+  `src/agents/main-memory-routing.ts`
+- thinner OpenAI wrapper routing that applies the planner decision instead of
+  owning the planner logic
 
 ## What is live but still bounded
 
@@ -119,6 +129,7 @@ Still not live by default:
 - new cross-domain memory families
 - the canonical 4-kind storage model migration
 - generic flexible replacement of the current rigid family-first seams
+- full retirement of the remaining family-heavy compatibility branches
 
 ## What the multi-memory and architecture-spec batch changed
 
@@ -168,8 +179,35 @@ It concluded:
   retrieval, guidance, and critical submission seams now have forward adapter
   paths into the canonical substrate
 - the next honest migration slice is the deeper runtime retirement work:
-  canonical retrieval execution, canonical planner/tool-selection, and staged
-  deletion of remaining family-heavy compatibility branches
+  write-stage canonicalization, phrase-induction convergence, staged
+  candidate-submit reduction, and continued shrinkage of family-heavy
+  compatibility branches
+
+## What the critical refactor-review and canonicalization batch changed
+
+This batch landed five real outcomes:
+
+1. a critical review that confirmed the repo still had a hidden two-systems
+   problem between the memory substrate and Main routing
+2. deeper hybrid retrieval execution now reading canonical metadata first
+3. ordinary-turn fallback capture now using the shared canonical adapter seam
+4. retrieval control and candidate submission now sharing one
+   canonical-first metadata reader
+5. Main routing moved onto a dedicated canonical-memory planner surface
+
+It concluded:
+
+- the repo is materially flatter than before this batch
+- the OpenAI wrapper layer is no longer the real Main memory router
+- compatibility metadata is now more clearly fallback rather than primary
+  architecture
+- the biggest remaining retirement targets are:
+  - `extensions/memory-middleware/src/write-action-stages.ts`
+  - `extensions/memory-middleware/src/workflow-phrase-induction.ts`
+  - `extensions/memory-middleware/src/response-style-phrase-induction.ts`
+  - `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
+  - `extensions/memory-middleware/src/tools/candidate-submit.ts`
+  - `src/plugin-sdk/memory-family-policy.ts`
 
 ## What the functional batch changed
 

@@ -1,10 +1,7 @@
 import type { CanonicalMemoryRetrievalPlan } from "openclaw/plugin-sdk/memory-canonical-retrieval";
 import type { MemoryObjectSearchHybridResult, RankedRetrievedMemoryRecord } from "./db/runtime.js";
-import {
-  getMemoryFamilyPolicy,
-  memoryFamilyProjectsToDerivedView,
-  type MemoryFamilyApplicationMode,
-} from "./memory-family-registry.js";
+import { readCanonicalMemoryRecordFromMetadata } from "./memory-canonical-compat.js";
+import type { MemoryFamilyApplicationMode } from "./memory-family-registry.js";
 import type { MemoryObjectQueryPort } from "./memory-object-query.js";
 import { buildCanonicalMemoryRetrievalPlan } from "./retrieval-intent.js";
 
@@ -114,14 +111,6 @@ type WorkflowGuidanceMetadata = {
 };
 
 type WorkflowGuidanceRecord = Extract<RankedRetrievedMemoryRecord, { objectType: "memory_object" }>;
-type CanonicalWorkflowGuidanceRecord = {
-  kind?: string;
-  subject?: string;
-  statement?: string;
-  tags: string[];
-  facets: Record<string, unknown>;
-  compatibility: Record<string, unknown>;
-};
 
 const DEFAULT_LEARNED_GUIDANCE_ALLOWED_LESSON_FAMILIES = [
   "generalized_workflow_lesson",
@@ -157,47 +146,15 @@ function readOptionalString(record: Record<string, unknown>, key: string): strin
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
-function readOptionalStringArray(
-  record: Record<string, unknown>,
-  key: string,
-): string[] | undefined {
-  const value = record[key];
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string")
-    ? value.map((entry) => entry.trim()).filter((entry) => entry.length > 0)
-    : undefined;
-}
-
-function readCanonicalWorkflowGuidanceRecord(
-  record: RankedRetrievedMemoryRecord,
-): CanonicalWorkflowGuidanceRecord | null {
-  if (record.objectType !== "memory_object") {
-    return null;
-  }
-  const metadata = asRecord(record.metadata);
-  const canonicalCandidate = asRecord(
-    metadata.canonicalIngestionCandidate ??
-      asRecord(metadata.candidateMetadata).canonicalIngestionCandidate,
-  );
-  const canonicalRecord = asRecord(canonicalCandidate.record);
-  if (Object.keys(canonicalRecord).length === 0) {
-    return null;
-  }
-  return {
-    kind: readOptionalString(canonicalRecord, "kind"),
-    subject: readOptionalString(canonicalRecord, "subject"),
-    statement: readOptionalString(canonicalRecord, "statement"),
-    tags: readOptionalStringArray(canonicalRecord, "tags") ?? [],
-    facets: asRecord(canonicalRecord.facets),
-    compatibility: asRecord(canonicalRecord.compatibility),
-  };
-}
-
 function extractCanonicalWorkflowGuidanceMetadata(
   record: RankedRetrievedMemoryRecord,
   allowedLessonFamilies: ReadonlySet<"supported_lesson" | "generalized_workflow_lesson">,
   canonicalPlan: CanonicalMemoryRetrievalPlan,
 ): WorkflowGuidanceMetadata | null {
-  const canonicalRecord = readCanonicalWorkflowGuidanceRecord(record);
+  const canonicalRecord =
+    record.objectType === "memory_object"
+      ? readCanonicalMemoryRecordFromMetadata(asRecord(record.metadata))
+      : null;
   if (
     !canonicalRecord ||
     record.objectType !== "memory_object" ||
@@ -208,18 +165,13 @@ function extractCanonicalWorkflowGuidanceMetadata(
   if (
     canonicalRecord.kind !== "feedback" ||
     !canonicalPlan.query.requestedKinds.includes("feedback") ||
-    !memoryFamilyProjectsToDerivedView("workflow_improvement", "learned_guidance")
+    !canonicalRecord.tags.includes("workflow_guidance")
   ) {
     return null;
   }
-  const transitionalFamilyId = readOptionalString(
-    canonicalRecord.compatibility,
-    "transitionalFamilyId",
-  );
   const workflowGuidanceFacet = canonicalRecord.facets.workflow_guidance;
   const lessonFamily = readOptionalString(canonicalRecord.facets, "lessonFamily");
   if (
-    transitionalFamilyId !== "workflow_improvement" ||
     workflowGuidanceFacet !== true ||
     (lessonFamily !== "supported_lesson" && lessonFamily !== "generalized_workflow_lesson") ||
     !allowedLessonFamilies.has(lessonFamily)
@@ -511,7 +463,7 @@ export function createLearnedGuidanceAdvisoryPlanningPort(params: {
   allowedLessonFamilies?: ReadonlyArray<"supported_lesson" | "generalized_workflow_lesson">;
   defaultMaxSuggestions?: number;
 }): LearnedGuidanceAdvisoryPlanningPort {
-  const applicationMode = getMemoryFamilyPolicy("workflow_improvement").applicationPolicy.mode;
+  const applicationMode: MemoryFamilyApplicationMode = "guidance_only";
   const rolloutScope = buildRolloutScope({
     enablementTarget:
       params.rolloutTarget === "off-production" || params.rolloutTarget === "production-canary"

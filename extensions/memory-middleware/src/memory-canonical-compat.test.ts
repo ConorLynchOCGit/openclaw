@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch,
   buildCanonicalMemoryIngestionCandidateFromResolvedIngestion,
   buildCanonicalMemoryRecordFromResolvedIngestion,
   isCanonicalizableResolvedResponseStyleIngestion,
+  readCanonicalFirstMetadataString,
+  readCanonicalMemoryIngestionCandidateFromMetadata,
+  readCanonicalMemoryRecordFromMetadata,
 } from "./memory-canonical-compat.js";
 import type {
   ResolvedProjectFactIngestion,
@@ -200,6 +204,209 @@ describe("memory-canonical-compat", () => {
       compatibility: {
         transitionalFamilyId: "workflow_improvement",
         candidateKind: "improvement",
+        captureClass: "project_rule_guidance",
+      },
+    });
+  });
+
+  it("wraps ordinary-turn matches as canonical ingestion candidates", () => {
+    const candidate = buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch({
+      familyId: "workflow_improvement",
+      match: {
+        profile: "user-preference-v2",
+        captureClass: "project_rule_guidance",
+        candidateKind: "improvement",
+        reasonCode: "project_rule_guidance_statement",
+        template: "project_rule_guidance",
+        lessonFamily: "generalized_project_rule",
+        lessonKey: "docs_only_check_fast",
+        toolKey: "validation_tier",
+        guidancePattern: "use_instead_of",
+        subject: "docs localization changes",
+        value: "update English docs first and rerun docs i18n",
+        normalizedSubject: "docs localization changes",
+        normalizedValue: "update english docs first and rerun docs i18n",
+        content:
+          "Update English docs first and rerun docs i18n instead of editing docs/zh-CN directly.",
+        subjectKey: "docs-localization-changes",
+        key: "ordinary-turn-workflow-1",
+        projectScope: "OpenClaw",
+        normalizedProjectScope: "openclaw",
+        recommendedAction: "update English docs first and rerun docs i18n",
+        normalizedRecommendedAction: "update english docs first and rerun docs i18n",
+        avoidAction: "edit docs/zh-CN directly",
+        normalizedAvoidAction: "edit docs/zh-cn directly",
+      },
+      reviewMode: "hold_for_more_evidence",
+      detectionSource: "semantic",
+      evidence: ["workflow_guidance_match"],
+      observedText:
+        "Update English docs first and rerun docs i18n instead of editing docs/zh-CN directly.",
+      projectId: "openclaw",
+      captureSeam: "ordinary_turn_auto_capture",
+      captureProfile: "user-preference-v2",
+    });
+
+    expect(candidate).toMatchObject({
+      record: {
+        kind: "feedback",
+        facets: {
+          lessonFamily: "generalized_project_rule",
+          lessonKey: "docs_only_check_fast",
+          toolKey: "validation_tier",
+          guidancePattern: "use_instead_of",
+          recommendedAction: "update English docs first and rerun docs i18n",
+          avoidAction: "edit docs/zh-CN directly",
+        },
+      },
+      identity: {
+        dedupeKey: "ordinary-turn-workflow-1",
+        clusterKey: "ordinary-turn-workflow-1",
+        subjectKey: "docs-localization-changes",
+      },
+      capture: {
+        mode: "ordinary_turn",
+        source: "transcript",
+        evidence: ["workflow_guidance_match"],
+      },
+      compatibility: {
+        transitionalFamilyId: "workflow_improvement",
+        candidateKind: "improvement",
+        captureClass: "project_rule_guidance",
+      },
+    });
+  });
+
+  it("reads canonical records from root, candidate, and promotion metadata seams", () => {
+    expect(
+      readCanonicalMemoryRecordFromMetadata({
+        candidateMetadata: {
+          canonicalIngestionCandidate: {
+            record: {
+              kind: "feedback",
+              subject: "docs localization changes",
+              statement: "update English docs first",
+              tags: ["workflow_guidance", "feedback"],
+              facets: {
+                lessonKey: "docs_only_check_fast",
+              },
+              compatibility: {
+                transitionalFamilyId: "workflow_improvement",
+              },
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      kind: "feedback",
+      subject: "docs localization changes",
+      statement: "update English docs first",
+      tags: ["workflow_guidance", "feedback"],
+      facets: {
+        lessonKey: "docs_only_check_fast",
+      },
+      compatibility: {
+        transitionalFamilyId: "workflow_improvement",
+      },
+    });
+  });
+
+  it("reads canonical candidate aliases before legacy auto-capture metadata", () => {
+    const metadata = {
+      candidateMetadata: {
+        canonicalIngestionCandidate: {
+          record: {
+            kind: "feedback",
+            subject: "docs localization changes",
+            statement: "update English docs first",
+            facets: {
+              lessonKey: "docs_only_check_fast",
+              toolKey: "validation_tier",
+            },
+            compatibility: {
+              transitionalFamilyId: "workflow_improvement",
+            },
+          },
+          identity: {
+            dedupeKey: "workflow-candidate-1",
+            subjectKey: "docs-localization-changes",
+          },
+          compatibility: {
+            transitionalFamilyId: "workflow_improvement",
+            candidateKind: "improvement",
+            captureClass: "project_rule_guidance",
+            reasonCode: "project_rule_guidance_statement",
+            template: "project_rule_guidance",
+          },
+        },
+        autoCapture: {
+          lessonKey: "legacy_should_not_win",
+        },
+      },
+    } satisfies Record<string, unknown>;
+
+    expect(
+      readCanonicalFirstMetadataString(metadata, ["candidateMetadata", "autoCapture", "lessonKey"]),
+    ).toBe("docs_only_check_fast");
+    expect(
+      readCanonicalFirstMetadataString(metadata, ["candidateMetadata", "autoCapture", "key"]),
+    ).toBe("workflow-candidate-1");
+    expect(
+      readCanonicalFirstMetadataString(metadata, [
+        "candidateMetadata",
+        "autoCapture",
+        "subjectKey",
+      ]),
+    ).toBe("docs-localization-changes");
+  });
+
+  it("reads canonical ingestion candidate envelopes from metadata seams", () => {
+    const candidate = readCanonicalMemoryIngestionCandidateFromMetadata({
+      canonicalIngestionCandidate: {
+        record: {
+          kind: "reference",
+          subject: "docs updating",
+          statement: "use docs i18n after English changes",
+          tags: ["reference"],
+          facets: {
+            toolKey: "validation_tier",
+          },
+          compatibility: {
+            transitionalFamilyId: "workflow_improvement",
+          },
+        },
+        identity: {
+          dedupeKey: "reference-1",
+          subjectKey: "docs-updating",
+        },
+        capture: {
+          mode: "candidate_improvement",
+          source: "tool",
+          reviewMode: "hold_for_more_evidence",
+        },
+        compatibility: {
+          transitionalFamilyId: "workflow_improvement",
+          candidateKind: "improvement",
+          captureClass: "project_rule_guidance",
+          template: "project_rule_guidance",
+          metadata: {
+            lessonFamily: "generalized_project_rule",
+          },
+        },
+      },
+    });
+
+    expect(candidate).toMatchObject({
+      record: {
+        kind: "reference",
+        subject: "docs updating",
+      },
+      identity: {
+        dedupeKey: "reference-1",
+        subjectKey: "docs-updating",
+      },
+      compatibility: {
+        transitionalFamilyId: "workflow_improvement",
         captureClass: "project_rule_guidance",
       },
     });

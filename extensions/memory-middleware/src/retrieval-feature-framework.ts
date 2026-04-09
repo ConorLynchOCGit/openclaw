@@ -7,6 +7,7 @@ import {
 } from "./memory-family-registry.js";
 
 type RetrievalSqlExpressions = {
+  compatibilityFamilyIdExpression: string;
   autoCaptureTemplateExpression: string;
   autoCaptureFactFamilyExpression: string;
   autoCaptureLessonFamilyExpression: string;
@@ -55,15 +56,11 @@ function buildApprovedMemoryFeatureFamilyGuard(
 ): string | null {
   switch (familyId) {
     case "response_style":
-      return `${expressions.autoCaptureTemplateExpression} = 'response_style_generalized_guidance'`;
     case "project_fact":
-      return `${expressions.autoCaptureFactFamilyExpression} = 'generalized_reference'`;
     case "workflow_improvement":
-      return `${expressions.autoCaptureLessonFamilyExpression} = 'generalized_workflow_lesson'`;
     case "project_rule":
-      return `${expressions.autoCaptureLessonFamilyExpression} = 'generalized_project_rule'`;
     case "unmet_need":
-      return `${expressions.autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'`;
+      return `${expressions.compatibilityFamilyIdExpression} = '${familyId}'`;
     case "recurring_procedure":
       return null;
   }
@@ -75,11 +72,9 @@ function buildApprovedMemoryIntentFamilyGuard(
 ): string | null {
   switch (familyId) {
     case "project_fact":
-      return `${expressions.autoCaptureFactFamilyExpression} in ('supported_field', 'generalized_reference')`;
     case "project_rule":
-      return `${expressions.autoCaptureLessonFamilyExpression} = 'generalized_project_rule'`;
     case "unmet_need":
-      return `${expressions.autoCaptureLessonFamilyExpression} = 'generalized_unmet_need'`;
+      return `${expressions.compatibilityFamilyIdExpression} = '${familyId}'`;
     default:
       return null;
   }

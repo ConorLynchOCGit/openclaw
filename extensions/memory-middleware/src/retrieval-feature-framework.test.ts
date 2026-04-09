@@ -9,6 +9,7 @@ describe("retrieval-feature-framework", () => {
   it("builds shared approved-memory retrieval clauses for direct-answer and guidance families", () => {
     const sql = buildApprovedMemoryRetrievalFeatureSql({
       expressions: {
+        compatibilityFamilyIdExpression: "family_expr",
         autoCaptureTemplateExpression: "template_expr",
         autoCaptureFactFamilyExpression: "fact_family_expr",
         autoCaptureLessonFamilyExpression: "lesson_family_expr",
@@ -31,11 +32,11 @@ describe("retrieval-feature-framework", () => {
 
     expect(sql.scoreClauses).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("response_style_generalized_guidance"),
+        expect.stringContaining("family_expr = 'response_style'"),
         expect.stringContaining("subject_expr = $4::text"),
-        expect.stringContaining("fact_family_expr in ('supported_field', 'generalized_reference')"),
-        expect.stringContaining("lesson_family_expr = 'generalized_project_rule'"),
-        expect.stringContaining("lesson_family_expr = 'generalized_unmet_need'"),
+        expect.stringContaining("family_expr = 'project_fact'"),
+        expect.stringContaining("family_expr = 'project_rule'"),
+        expect.stringContaining("family_expr = 'unmet_need'"),
       ]),
     );
     expect(sql.matchedFieldClauses).toEqual(
@@ -52,6 +53,7 @@ describe("retrieval-feature-framework", () => {
   it("reuses the same shared retrieval feature composer for reviewable candidates", () => {
     const approvedSql = buildApprovedMemoryRetrievalFeatureSql({
       expressions: {
+        compatibilityFamilyIdExpression: "family_expr",
         autoCaptureTemplateExpression: "template_expr",
         autoCaptureFactFamilyExpression: "fact_family_expr",
         autoCaptureLessonFamilyExpression: "lesson_family_expr",
@@ -73,6 +75,7 @@ describe("retrieval-feature-framework", () => {
     });
     const candidateSql = buildReviewableCandidateRetrievalFeatureSql({
       expressions: {
+        compatibilityFamilyIdExpression: "family_expr",
         autoCaptureTemplateExpression: "template_expr",
         autoCaptureFactFamilyExpression: "fact_family_expr",
         autoCaptureLessonFamilyExpression: "lesson_family_expr",

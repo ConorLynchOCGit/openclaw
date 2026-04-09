@@ -19,7 +19,14 @@ import { buildTaskExecutionDisciplineSection } from "./task-execution-discipline
 export type PromptMode = "full" | "minimal" | "none";
 type OwnerIdDisplay = "raw" | "hash";
 
-function buildSkillsSection(params: { skillsPrompt?: string; readToolName: string }) {
+function buildSkillsSection(params: {
+  skillsPrompt?: string;
+  readToolName: string;
+  suppressSkillsSection?: boolean;
+}) {
+  if (params.suppressSkillsSection) {
+    return [];
+  }
   const trimmed = params.skillsPrompt?.trim();
   if (!trimmed) {
     return [];
@@ -256,6 +263,7 @@ export function buildAgentSystemPrompt(params: {
   userTimeFormat?: ResolvedTimeFormat;
   contextFiles?: EmbeddedContextFile[];
   skillsPrompt?: string;
+  suppressSkillsSection?: boolean;
   heartbeatPrompt?: string;
   docsPath?: string;
   workspaceNotes?: string[];
@@ -455,6 +463,7 @@ export function buildAgentSystemPrompt(params: {
   const skillsSection = buildSkillsSection({
     skillsPrompt,
     readToolName,
+    suppressSkillsSection: params.suppressSkillsSection,
   });
   const memorySection = buildMemorySection({
     isMinimal,

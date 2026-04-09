@@ -1,15 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import {
-  createCanonicalMemoryIngestionCandidate,
-  type CanonicalMemoryIngestionCandidate,
-} from "openclaw/plugin-sdk/memory-canonical-ingestion";
+import { type CanonicalMemoryIngestionCandidate } from "openclaw/plugin-sdk/memory-canonical-ingestion";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/memory-core";
-import {
-  buildCanonicalMemoryRecordForFamily,
-  type MemoryFamilyId,
-} from "openclaw/plugin-sdk/memory-family-policy";
 import type { PluginLogger } from "../api.js";
 import type { CandidateIngressPort } from "./candidate-ingress.js";
 import {
@@ -18,7 +11,10 @@ import {
   type MemoryMiddlewareConfig,
 } from "./config.js";
 import { withMemoryMiddlewarePgClient } from "./db/pg-pool.js";
-import { buildCanonicalMemoryIngestionCandidateFromResolvedIngestion } from "./memory-canonical-compat.js";
+import {
+  buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch,
+  buildCanonicalMemoryIngestionCandidateFromResolvedIngestion,
+} from "./memory-canonical-compat.js";
 import {
   executeMemoryObjectCorrectionPlan,
   isExecutableMemoryObjectCorrectionPlan,
@@ -986,89 +982,6 @@ function hasReachedMultiCaptureTurnLimit(turnState: OrdinaryTurnAutoCaptureTurnS
 
 function markTurnAcceptedCapture(turnState: OrdinaryTurnAutoCaptureTurnState, key: string): void {
   turnState.acceptedKeys.add(key);
-}
-
-function mapReviewModeToCanonicalValidationStatus(
-  reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence",
-): "approved" | "pending_confirmation" | "hold_for_more_evidence" {
-  if (reviewMode === "direct") {
-    return "approved";
-  }
-  return reviewMode;
-}
-
-function buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch(params: {
-  familyId: MemoryFamilyId;
-  match: OrdinaryTurnAutoCaptureMatch;
-  reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
-  detectionSource: "deterministic" | "semantic";
-  evidence: readonly string[];
-  observedText: string;
-  projectId?: string;
-  captureProfile: "user-preference-v1" | "user-preference-v2";
-}): CanonicalMemoryIngestionCandidate {
-  const projectId = params.familyId === "response_style" ? undefined : params.projectId;
-  const record = buildCanonicalMemoryRecordForFamily({
-    familyId: params.familyId,
-    subject: params.match.subject,
-    statement: params.match.value,
-    projectId,
-    confidence: {
-      level: params.detectionSource === "deterministic" ? "high" : "medium",
-    },
-    validationStatus: mapReviewModeToCanonicalValidationStatus(params.reviewMode),
-    provenance: {
-      captureSeam: AUTO_CAPTURE_SOURCE,
-      captureProfile: params.captureProfile,
-      reviewState: params.reviewMode,
-    },
-    facets: {
-      subjectKey: params.match.subjectKey,
-      captureClass: params.match.captureClass,
-      reasonCode: params.match.reasonCode,
-      template: params.match.template,
-      ...(params.match.projectScope ? { projectScope: params.match.projectScope } : {}),
-      ...(params.match.responseStyleFamily
-        ? { responseStyleFamily: params.match.responseStyleFamily }
-        : {}),
-      ...(params.match.factFamily ? { factFamily: params.match.factFamily } : {}),
-      ...(params.match.fieldKey ? { fieldKey: params.match.fieldKey } : {}),
-      ...(params.match.procedureFamily ? { procedureFamily: params.match.procedureFamily } : {}),
-      ...(params.match.procedureKey ? { procedureKey: params.match.procedureKey } : {}),
-      ...(params.match.lessonFamily ? { lessonFamily: params.match.lessonFamily } : {}),
-      ...(params.match.lessonKey ? { lessonKey: params.match.lessonKey } : {}),
-      ...(params.match.toolKey ? { toolKey: params.match.toolKey } : {}),
-      ...(params.match.guidancePattern ? { guidancePattern: params.match.guidancePattern } : {}),
-    },
-    tags: [
-      params.familyId,
-      params.detectionSource === "semantic" ? "semantic_ingestion" : "deterministic_ingestion",
-    ],
-  });
-
-  return createCanonicalMemoryIngestionCandidate({
-    record,
-    identity: {
-      dedupeKey: params.match.key,
-      clusterKey: params.match.key,
-      subjectKey: params.match.subjectKey,
-    },
-    capture: {
-      mode: "ordinary_turn",
-      source: "transcript",
-      observedText: params.observedText,
-      evidence: params.evidence,
-      detectionSource: params.detectionSource,
-      reviewMode: params.reviewMode,
-    },
-    compatibility: {
-      transitionalFamilyId: params.familyId,
-      candidateKind: params.match.candidateKind,
-      captureClass: params.match.captureClass,
-      reasonCode: params.match.reasonCode,
-      template: params.match.template,
-    },
-  });
 }
 
 async function readLatestTranscriptUserMessage(
@@ -4261,6 +4174,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             evidence: ["approved_phrase_pattern_match"],
             observedText: decisionParams.text,
             projectId: attribution.projectId,
+            captureSeam: AUTO_CAPTURE_SOURCE,
             captureProfile: match.profile,
           }),
           confidence: "high",
@@ -4834,6 +4748,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
                     detectionSource: "deterministic",
                     evidence: ["approved_phrase_pattern_match"],
                     observedText: segmentContext.text,
+                    captureSeam: AUTO_CAPTURE_SOURCE,
                     captureProfile: autoCaptureProfile,
                   }),
                   confidence: "high",

@@ -9,6 +9,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { resolveHeartbeatPrompt } from "../../../auto-reply/heartbeat.js";
 import { resolveChannelCapabilities } from "../../../config/channel-capabilities.js";
+import { resolveCommitHash } from "../../../infra/git-commit.js";
 import { getMachineDisplayName } from "../../../infra/machine-name.js";
 import {
   ensureGlobalUndiciEnvProxyDispatcher,
@@ -28,6 +29,7 @@ import { buildTtsSystemPromptHint } from "../../../tts/tts.js";
 import { resolveUserPath } from "../../../utils.js";
 import { normalizeMessageChannel } from "../../../utils/message-channel.js";
 import { isReasoningTagProvider } from "../../../utils/provider-utils.js";
+import { VERSION } from "../../../version.js";
 import { resolveOpenClawAgentDir } from "../../agent-paths.js";
 import { resolveSessionAgentIds } from "../../agent-scope.js";
 import { createAnthropicPayloadLogger } from "../../anthropic-payload-log.js";
@@ -51,6 +53,7 @@ import { DEFAULT_CONTEXT_TOKENS } from "../../defaults.js";
 import { resolveOpenClawDocsPath } from "../../docs-path.js";
 import { isTimeoutError } from "../../failover-error.js";
 import { resolveImageSanitizationLimits } from "../../image-sanitization.js";
+import { resolveMainMemoryRoutingDecision } from "../../main-memory-routing.js";
 import { buildModelAliasLines } from "../../model-alias-lines.js";
 import { resolveModelAuthMode } from "../../model-auth.js";
 import { resolveDefaultModelForAgent } from "../../model-selection.js";
@@ -625,6 +628,22 @@ export async function runEmbeddedAttempt(
     })
       ? resolveHeartbeatPrompt(params.config?.agents?.defaults?.heartbeat?.prompt)
       : undefined;
+    const runtimeBuild = {
+      version: VERSION,
+      commit: resolveCommitHash({ moduleUrl: import.meta.url }),
+    };
+    const mainMemoryRouting = resolveMainMemoryRoutingDecision({
+      agentId: sessionAgentId,
+      provider: params.provider,
+      model: params.model,
+      context: {
+        messages: [{ role: "user", content: params.prompt }],
+        tools: effectiveTools,
+      },
+      version: runtimeBuild.version,
+      commit: runtimeBuild.commit,
+    });
+    const effectiveSkillsPrompt = mainMemoryRouting.skillSuppressionRequested ? "" : skillsPrompt;
 
     const appendPrompt = buildEmbeddedSystemPrompt({
       workspaceDir: effectiveWorkspace,
@@ -636,7 +655,8 @@ export async function runEmbeddedAttempt(
       ownerDisplaySecret: ownerDisplay.ownerDisplaySecret,
       reasoningTagHint,
       heartbeatPrompt,
-      skillsPrompt,
+      skillsPrompt: effectiveSkillsPrompt,
+      suppressSkillsSection: mainMemoryRouting.skillSuppressionRequested,
       docsPath: docsPath ?? undefined,
       ttsHint,
       workspaceNotes,
@@ -679,8 +699,10 @@ export async function runEmbeddedAttempt(
       systemPrompt: appendPrompt,
       bootstrapFiles: hookAdjustedBootstrapFiles,
       injectedFiles: contextFiles,
-      skillsPrompt,
+      skillsPrompt: effectiveSkillsPrompt,
       tools: effectiveTools,
+      runtimeBuild,
+      mainMemoryRouting,
     });
     const systemPromptOverride = createSystemPromptOverride(appendPrompt);
     let systemPromptText = systemPromptOverride();
@@ -918,6 +940,7 @@ export async function runEmbeddedAttempt(
         sessionAgentId,
         effectiveWorkspace,
         params.model,
+        systemPromptReport,
       );
       const agentTransportOverride = resolveAgentTransportOverride({
         settingsManager,

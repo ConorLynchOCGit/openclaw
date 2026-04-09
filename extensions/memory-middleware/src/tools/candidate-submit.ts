@@ -13,6 +13,7 @@ import {
 import {
   buildCanonicalMemoryIngestionCandidateFromResolvedIngestion,
   isCanonicalizableResolvedResponseStyleIngestion,
+  readCanonicalFirstMetadataString,
 } from "../memory-canonical-compat.js";
 import {
   executeMemoryObjectCorrectionPlan,
@@ -222,14 +223,7 @@ function readNestedMetadataString(
   metadata: Record<string, unknown> | undefined,
   path: string[],
 ): string | undefined {
-  let cursor: unknown = metadata;
-  for (const segment of path) {
-    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) {
-      return undefined;
-    }
-    cursor = (cursor as Record<string, unknown>)[segment];
-  }
-  return typeof cursor === "string" && cursor.trim().length > 0 ? cursor.trim() : undefined;
+  return readCanonicalFirstMetadataString(metadata, path);
 }
 
 function isEnvironmentConstraintLessonKey(

@@ -69,6 +69,7 @@ import {
   resolvePreparedExtraParams,
 } from "./pi-embedded-runner.js";
 import { log } from "./pi-embedded-runner/logger.js";
+import { resolveMainMemoryRoutingDecision } from "./pi-embedded-runner/openai-stream-wrappers.js";
 
 beforeEach(() => {
   extraParamsTesting.setProviderRuntimeDepsForTest({
@@ -3187,11 +3188,59 @@ describe("applyExtraParamsToAgent", () => {
 
     expect(payload.tool_choice).toEqual({
       type: "function",
-      function: { name: "memory_learned_guidance_plan" },
+      name: "memory_learned_guidance_plan",
     });
   });
 
-  it("pins hybrid retrieval for Main direct workflow lookup prompts", () => {
+  it("builds deterministic Main routing diagnostics for workflow-preflight prompts", () => {
+    const diagnostics = resolveMainMemoryRoutingDecision({
+      agentId: "main",
+      provider: "openai-codex",
+      model: {
+        api: "openai-codex-responses",
+      },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "I added a new bundled plugin package. Before I land this, give me the short repo-specific preflight.",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_object_search_hybrid" }],
+      },
+      version: "2026.4.8-test",
+      commit: "abc1234",
+    });
+
+    expect(diagnostics).toMatchObject({
+      version: "2026.4.8-test",
+      commit: "abc1234",
+      provider: "openai-codex",
+      api: "openai-codex-responses",
+      agentId: "main",
+      promptClass: "workflow_preflight",
+      canonicalPlan: {
+        requestedKinds: expect.arrayContaining(["feedback", "project"]),
+        derivedViews: expect.arrayContaining(["workflow_guidance", "project_rule", "unmet_need"]),
+        matchedSignals: expect.arrayContaining(["preflight_check", "before_action"]),
+      },
+      selectedTarget: "memory_object_search_hybrid",
+      reasonCode: "learned_guidance_unavailable",
+      skillSuppressionRequested: true,
+      availableTools: {
+        memoryLearnedGuidancePlan: false,
+        memoryObjectSearchHybrid: true,
+        memorySearch: false,
+      },
+    });
+  });
+
+  it("falls back to hybrid retrieval for Main workflow-preflight prompts when learned guidance is unavailable", () => {
     const payload = runResponsesPayloadMutationCase({
       applyProvider: "openai-codex",
       applyModelId: "gpt-5.4",
@@ -3210,7 +3259,7 @@ describe("applyExtraParamsToAgent", () => {
             content: [
               {
                 type: "text",
-                text: "If config schema or config help changes here, what artifact should I update too?",
+                text: "I added a new bundled plugin package. Before I land this, give me the short repo-specific preflight.",
               },
             ],
           },
@@ -3221,7 +3270,567 @@ describe("applyExtraParamsToAgent", () => {
 
     expect(payload.tool_choice).toEqual({
       type: "function",
-      function: { name: "memory_object_search_hybrid" },
+      name: "memory_object_search_hybrid",
+    });
+  });
+
+  it("pins learned-guidance for exact live prompt 2 workflow-preflight text", () => {
+    const payload = runResponsesPayloadMutationCase({
+      applyProvider: "openai-codex",
+      applyModelId: "gpt-5.4",
+      agentId: "main",
+      model: {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4",
+        baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+      } as Model<"openai-codex-responses">,
+      payload: { tool_choice: "auto" },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "I changed a plugin-only dependency and a lazy-loading boundary. Before I land this, what’s the smallest honest preflight?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_learned_guidance_plan" }, { name: "memory_object_search_hybrid" }],
+      } as Context,
+    });
+
+    expect(payload.tool_choice).toEqual({
+      type: "function",
+      name: "memory_learned_guidance_plan",
+    });
+  });
+
+  it("pins hybrid retrieval for live Control UI wrapped workflow-preflight prompts when learned guidance is unavailable", () => {
+    const payload = runResponsesPayloadMutationCase({
+      applyProvider: "openai-codex",
+      applyModelId: "gpt-5.4",
+      agentId: "main",
+      model: {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4",
+        baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+      } as Model<"openai-codex-responses">,
+      payload: { tool_choice: "auto" },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "You\n2:17 PM\n\nI changed an English docs title and a generated config-help surface. Before I wrap up, what repo-specific follow-through should I not forget?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_object_search_hybrid" }],
+      } as Context,
+    });
+
+    expect(payload.tool_choice).toEqual({
+      type: "function",
+      name: "memory_object_search_hybrid",
+    });
+  });
+
+  it("classifies exact live prompt 3 as workflow-preflight when advisory intent dominates lookup cues", () => {
+    const diagnostics = resolveMainMemoryRoutingDecision({
+      agentId: "main",
+      provider: "openai-codex",
+      model: {
+        api: "openai-codex-responses",
+      },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "I changed an English docs title and a generated config-help surface. Before I wrap up, what repo-specific follow-through should I not forget?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_learned_guidance_plan" }, { name: "memory_object_search_hybrid" }],
+      },
+    });
+
+    expect(diagnostics.promptClass).toBe("workflow_preflight");
+    expect(diagnostics.selectedTarget).toBe("memory_learned_guidance_plan");
+    expect(diagnostics.reasonCode).toBe("selected_learned_guidance");
+    expect(diagnostics.skillSuppressionRequested).toBe(true);
+  });
+
+  it("pins learned-guidance for exact live prompt 3 when learned guidance is available", () => {
+    const payload = runResponsesPayloadMutationCase({
+      applyProvider: "openai-codex",
+      applyModelId: "gpt-5.4",
+      agentId: "main",
+      model: {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4",
+        baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+      } as Model<"openai-codex-responses">,
+      payload: { tool_choice: "auto" },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "I changed an English docs title and a generated config-help surface. Before I wrap up, what repo-specific follow-through should I not forget?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_learned_guidance_plan" }, { name: "memory_object_search_hybrid" }],
+      } as Context,
+    });
+
+    expect(payload.tool_choice).toEqual({
+      type: "function",
+      name: "memory_learned_guidance_plan",
+    });
+  });
+
+  it("pins hybrid retrieval for Main direct lookup prompts asking where repo-local dependencies belong", () => {
+    const payload = runResponsesPayloadMutationCase({
+      applyProvider: "openai-codex",
+      applyModelId: "gpt-5.4",
+      agentId: "main",
+      model: {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4",
+        baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+      } as Model<"openai-codex-responses">,
+      payload: { tool_choice: "auto" },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Where should plugin-only runtime dependencies live here?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_object_search_hybrid" }],
+      } as Context,
+    });
+
+    expect(payload.tool_choice).toEqual({
+      type: "function",
+      name: "memory_object_search_hybrid",
+    });
+  });
+
+  it("pins hybrid retrieval for Main direct lookup prompts asking which command to run", () => {
+    const payload = runResponsesPayloadMutationCase({
+      applyProvider: "openai-codex",
+      applyModelId: "gpt-5.4",
+      agentId: "main",
+      model: {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4",
+        baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+      } as Model<"openai-codex-responses">,
+      payload: { tool_choice: "auto" },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "What command should I run before docs i18n after changing an English docs title or short internal label?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_object_search_hybrid" }],
+      } as Context,
+    });
+
+    expect(payload.tool_choice).toEqual({
+      type: "function",
+      name: "memory_object_search_hybrid",
+    });
+  });
+
+  it("pins hybrid retrieval for Main direct lookup prompts asking whether core should use a public seam", () => {
+    const payload = runResponsesPayloadMutationCase({
+      applyProvider: "openai-codex",
+      applyModelId: "gpt-5.4",
+      agentId: "main",
+      model: {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4",
+        baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+      } as Model<"openai-codex-responses">,
+      payload: { tool_choice: "auto" },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "If core needs bundled-plugin behavior, should it deep-import the plugin's src/** or use a public seam?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_object_search_hybrid" }],
+      } as Context,
+    });
+
+    expect(payload.tool_choice).toEqual({
+      type: "function",
+      name: "memory_object_search_hybrid",
+    });
+  });
+
+  it("pins hybrid retrieval for live Control UI wrapped direct lookup prompts", () => {
+    const payload = runResponsesPayloadMutationCase({
+      applyProvider: "openai-codex",
+      applyModelId: "gpt-5.4",
+      agentId: "main",
+      model: {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4",
+        baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+      } as Model<"openai-codex-responses">,
+      payload: { tool_choice: "auto" },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "You\n2:17 PM\n\nWhat command should I run before docs i18n after changing an English docs title or short internal label?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_object_search_hybrid" }],
+      } as Context,
+    });
+
+    expect(payload.tool_choice).toEqual({
+      type: "function",
+      name: "memory_object_search_hybrid",
+    });
+  });
+
+  it("classifies overlapping preflight-plus-lookup prompts as boundary and routes them to hybrid", () => {
+    const diagnostics = resolveMainMemoryRoutingDecision({
+      agentId: "main",
+      provider: "openai-codex",
+      model: {
+        api: "openai-codex-responses",
+      },
+      context: {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Before I push, should I use a helper from another plugin's src/** directly or expose a public seam first?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_object_search_hybrid" }, { name: "memory_search" }],
+      },
+    });
+
+    expect(diagnostics.promptClass).toBe("boundary");
+    expect(diagnostics.selectedTarget).toBe("memory_object_search_hybrid");
+    expect(diagnostics.reasonCode).toBe("selected_hybrid");
+    expect(diagnostics.skillSuppressionRequested).toBe(true);
+  });
+
+  it("preserves pinned Main memory tool choice through final wrapper composition", () => {
+    const payloads: Record<string, unknown>[] = [];
+    const systemPromptReport = {
+      runtimeBuild: {
+        version: "2026.4.8-test",
+        commit: "abc1234",
+      },
+      mainMemoryRouting: {
+        version: "2026.4.8-test",
+        commit: "abc1234",
+        availableTools: {
+          memoryLearnedGuidancePlan: false,
+          memoryObjectSearchHybrid: false,
+          memorySearch: false,
+        },
+        promptClass: "none",
+        canonicalPlan: {
+          requestedKinds: [],
+          derivedViews: [],
+          facetFilters: [],
+          matchedSignals: [],
+        },
+        selectedTarget: "none",
+        reasonCode: "classifier_no_match",
+        skillSuppressionRequested: false,
+      },
+    };
+    const baseStreamFn: StreamFn = (_model, _context, options) => {
+      const payload: Record<string, unknown> = { tool_choice: "auto", store: false };
+      options?.onPayload?.(payload, _model);
+      payloads.push(payload);
+      return {} as ReturnType<StreamFn>;
+    };
+    const agent = { streamFn: baseStreamFn };
+
+    applyExtraParamsToAgent(
+      agent,
+      {
+        agents: {
+          defaults: {
+            models: {
+              "openai-codex/gpt-5.4": {
+                params: {
+                  parallel_tool_calls: true,
+                },
+              },
+            },
+          },
+        },
+      },
+      "openai-codex",
+      "gpt-5.4",
+      undefined,
+      undefined,
+      "main",
+      undefined,
+      undefined,
+      systemPromptReport as unknown as Parameters<typeof applyExtraParamsToAgent>[9],
+    );
+
+    void agent.streamFn?.(
+      {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4",
+        baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+      } as Model<"openai-codex-responses">,
+      {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Where should plugin-only runtime dependencies live here?",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_object_search_hybrid" }],
+      } as Context,
+      {},
+    );
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]?.tool_choice).toEqual({
+      type: "function",
+      name: "memory_object_search_hybrid",
+    });
+    expect(payloads[0]?.store).toBe(false);
+    expect(systemPromptReport.mainMemoryRouting).toMatchObject({
+      provider: "openai-codex",
+      api: "openai-codex-responses",
+      promptClass: "direct_lookup",
+      canonicalPlan: {
+        requestedKinds: expect.arrayContaining(["project", "reference", "feedback"]),
+        derivedViews: expect.arrayContaining(["project_fact", "project_rule", "reference_lookup"]),
+      },
+      selectedTarget: "memory_object_search_hybrid",
+      reasonCode: "selected_hybrid",
+      applicationReasonCode: "pinned_selected_target",
+      toolChoiceBeforePatch: "auto",
+      toolChoiceAfterPatch: {
+        type: "function",
+        name: "memory_object_search_hybrid",
+      },
+      finalToolChoice: {
+        type: "function",
+        name: "memory_object_search_hybrid",
+      },
+      finalToolChoiceChanged: false,
+    });
+  });
+
+  it("keeps first-pass Main routing diagnostics when a later tool-loop follow-up request runs", () => {
+    const payloads: Record<string, unknown>[] = [];
+    const systemPromptReport = {
+      runtimeBuild: {
+        version: "2026.4.8-test",
+        commit: "abc1234",
+      },
+      mainMemoryRouting: {
+        version: "2026.4.8-test",
+        commit: "abc1234",
+        availableTools: {
+          memoryLearnedGuidancePlan: false,
+          memoryObjectSearchHybrid: false,
+          memorySearch: false,
+        },
+        promptClass: "none",
+        canonicalPlan: {
+          requestedKinds: [],
+          derivedViews: [],
+          facetFilters: [],
+          matchedSignals: [],
+        },
+        selectedTarget: "none",
+        reasonCode: "classifier_no_match",
+        skillSuppressionRequested: false,
+      },
+    };
+    const baseStreamFn: StreamFn = (model, _context, options) => {
+      const payload: Record<string, unknown> = { tool_choice: "auto", store: false };
+      options?.onPayload?.(payload, model);
+      payloads.push({ ...payload });
+      return {} as ReturnType<StreamFn>;
+    };
+    const agent = { streamFn: baseStreamFn };
+
+    applyExtraParamsToAgent(
+      agent,
+      {
+        agents: {
+          defaults: {
+            models: {
+              "openai-codex/gpt-5.4": {
+                params: {
+                  parallel_tool_calls: true,
+                },
+              },
+            },
+          },
+        },
+      },
+      "openai-codex",
+      "gpt-5.4",
+      undefined,
+      undefined,
+      "main",
+      undefined,
+      undefined,
+      systemPromptReport as unknown as Parameters<typeof applyExtraParamsToAgent>[9],
+    );
+
+    const model = {
+      api: "openai-codex-responses",
+      provider: "openai-codex",
+      id: "gpt-5.4",
+      baseUrl: "https://chatgpt.com/backend-api/codex/responses",
+    } as Model<"openai-codex-responses">;
+
+    void agent.streamFn?.(
+      model,
+      {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "I added a new bundled plugin package. Before I land this, give me the short repo-specific preflight.",
+              },
+            ],
+          },
+        ],
+        tools: [{ name: "memory_object_search_hybrid" }],
+      } as Context,
+      {},
+    );
+
+    void agent.streamFn?.(
+      model,
+      {
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "I added a new bundled plugin package. Before I land this, give me the short repo-specific preflight.",
+              },
+            ],
+          },
+          {
+            role: "assistant",
+            content: [{ type: "toolCall", name: "memory_object_search_hybrid" }],
+          },
+          {
+            role: "toolResult",
+            content: [{ type: "text", text: '{"status":"ok"}' }],
+          },
+        ],
+        tools: [{ name: "memory_object_search_hybrid" }],
+      } as Context,
+      {},
+    );
+
+    expect(payloads).toEqual([
+      {
+        tool_choice: {
+          type: "function",
+          name: "memory_object_search_hybrid",
+        },
+        store: false,
+      },
+      {
+        tool_choice: "auto",
+        store: false,
+      },
+    ]);
+    expect(systemPromptReport.mainMemoryRouting).toMatchObject({
+      provider: "openai-codex",
+      api: "openai-codex-responses",
+      promptClass: "workflow_preflight",
+      canonicalPlan: {
+        requestedKinds: expect.arrayContaining(["feedback", "project"]),
+        derivedViews: expect.arrayContaining(["workflow_guidance", "project_rule", "unmet_need"]),
+      },
+      selectedTarget: "memory_object_search_hybrid",
+      reasonCode: "learned_guidance_unavailable",
+      applicationReasonCode: "pinned_selected_target",
+      toolChoiceBeforePatch: "auto",
+      toolChoiceAfterPatch: {
+        type: "function",
+        name: "memory_object_search_hybrid",
+      },
+      finalToolChoice: {
+        type: "function",
+        name: "memory_object_search_hybrid",
+      },
+      finalToolChoiceChanged: false,
     });
   });
 

@@ -9998,6 +9998,7 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
     params.surfaceKind === "approved"
       ? buildApprovedMemoryRetrievalFeatureSql({
           expressions: {
+            compatibilityFamilyIdExpression: surfaceScaffolding.compatibilityFamilyIdExpression,
             autoCaptureTemplateExpression: surfaceScaffolding.autoCaptureTemplateExpression,
             autoCaptureFactFamilyExpression: surfaceScaffolding.autoCaptureFactFamilyExpression,
             autoCaptureLessonFamilyExpression: surfaceScaffolding.autoCaptureLessonFamilyExpression,
@@ -10027,6 +10028,7 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
         })
       : buildReviewableCandidateRetrievalFeatureSql({
           expressions: {
+            compatibilityFamilyIdExpression: surfaceScaffolding.compatibilityFamilyIdExpression,
             autoCaptureTemplateExpression: surfaceScaffolding.autoCaptureTemplateExpression,
             autoCaptureFactFamilyExpression: surfaceScaffolding.autoCaptureFactFamilyExpression,
             autoCaptureLessonFamilyExpression: surfaceScaffolding.autoCaptureLessonFamilyExpression,

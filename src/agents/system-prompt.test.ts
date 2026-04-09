@@ -149,6 +149,18 @@ describe("buildAgentSystemPrompt", () => {
     );
   });
 
+  it("suppresses the skills section for explicitly memory-routed turns", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      skillsPrompt:
+        "<available_skills>\n  <skill>\n    <name>healthcheck</name>\n  </skill>\n</available_skills>",
+      suppressSkillsSection: true,
+    });
+
+    expect(prompt).not.toContain("## Skills (mandatory)");
+    expect(prompt).not.toContain("<available_skills>");
+  });
+
   it("includes deterministic long-file reading guidance when read tools are available", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",
