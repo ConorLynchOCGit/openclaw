@@ -203,6 +203,33 @@ This phase is now partially landed.
 - continued shrinkage of family-policy authority toward pure compatibility and
   derived-view ownership
 
+### Landed in canonical write/promotion unification tranche v1
+
+1. detector-profile routing replaced more open-coded family branching in the
+   ingestion resolver
+2. the remaining response-style tool fallback now emits canonical ingestion
+   candidates
+3. duplicate detection now keys off canonical candidate identity first
+4. write-stage routing dropped template-only legacy family inference
+5. `typedFastPaths` was removed from the public family-policy definition
+   surface
+6. semantic retrieval and learned-guidance reduced their old-record fallback
+   ladders to one explicit mixed-era bridge
+
+### What this changed
+
+- the active write/promotion path is closer to one canonical pipeline
+- old metadata copies created during promotion are no longer treated as the
+  planner/retrieval default substrate
+- family policy carries less dead old-world fast-path shape
+
+### What still remains in this phase
+
+- canonical promotion/correction still lives behind family-specific helpers in
+  `candidate-submit.ts`
+- mixed-era approved-record fallback still exists in a bounded form
+- the resolver still has some family-aware semantic detector internals
+
 ## Phase E — post-flattening hardening before reduced-profile self-improving capture
 
 This phase is now landed.

@@ -146,6 +146,30 @@ function readOptionalString(record: Record<string, unknown>, key: string): strin
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function readLegacyWorkflowGuidanceMetadata(metadata: Record<string, unknown>): {
+  autoCapture: Record<string, unknown>;
+  selfImprovingAdaptation: Record<string, unknown>;
+} | null {
+  const candidateMetadata = asRecord(metadata.candidateMetadata);
+  const autoCapture = asRecord(candidateMetadata.autoCapture);
+  if (Object.keys(autoCapture).length > 0) {
+    return {
+      autoCapture,
+      selfImprovingAdaptation: asRecord(candidateMetadata.selfImprovingAdaptation),
+    };
+  }
+
+  const legacyAutoCapture = asRecord(metadata.autoCapture);
+  if (Object.keys(legacyAutoCapture).length === 0) {
+    return null;
+  }
+
+  return {
+    autoCapture: legacyAutoCapture,
+    selfImprovingAdaptation: asRecord(metadata.selfImprovingAdaptation),
+  };
+}
+
 function extractCanonicalWorkflowGuidanceMetadata(
   record: RankedRetrievedMemoryRecord,
   allowedLessonFamilies: ReadonlySet<"supported_lesson" | "generalized_workflow_lesson">,
@@ -215,21 +239,17 @@ function extractWorkflowGuidanceMetadata(
   }
 
   const metadata = asRecord(record.metadata);
-  const candidateMetadata = asRecord(metadata.candidateMetadata);
-  const autoCapture = asRecord(candidateMetadata.autoCapture);
-  const lifecycle = asRecord(candidateMetadata.candidateLifecycle);
-  const adaptation = asRecord(candidateMetadata.selfImprovingAdaptation);
+  const legacyMetadata = readLegacyWorkflowGuidanceMetadata(metadata);
+  if (!legacyMetadata) {
+    return null;
+  }
+  const { autoCapture, selfImprovingAdaptation } = legacyMetadata;
   const lessonFamily = readOptionalString(autoCapture, "lessonFamily");
 
   if (
     (lessonFamily !== "supported_lesson" && lessonFamily !== "generalized_workflow_lesson") ||
     !allowedLessonFamilies.has(lessonFamily)
   ) {
-    return null;
-  }
-
-  const family = readOptionalString(lifecycle, "family");
-  if (family && family !== "workflow_improvement") {
     return null;
   }
 
@@ -243,7 +263,7 @@ function extractWorkflowGuidanceMetadata(
     avoidAction: readOptionalString(autoCapture, "avoidAction"),
     rationale: readOptionalString(autoCapture, "rationale"),
     provenance:
-      readOptionalString(adaptation, "origin") === "self_improving_capture"
+      readOptionalString(selfImprovingAdaptation, "origin") === "self_improving_capture"
         ? "self_improving_capture"
         : "native_capture",
   };

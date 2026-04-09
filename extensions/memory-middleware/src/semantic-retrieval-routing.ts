@@ -192,6 +192,16 @@ function readNestedMetadataString(
   return typeof cursor === "string" && cursor.trim().length > 0 ? cursor.trim() : undefined;
 }
 
+function readLegacyWorkflowGuidanceString(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  return (
+    readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", key]) ??
+    readNestedMetadataString(metadata, ["autoCapture", key])
+  );
+}
+
 function extractWorkflowImprovementLessonKey(
   metadata: Record<string, unknown> | undefined,
 ): string | undefined {
@@ -199,11 +209,7 @@ function extractWorkflowImprovementLessonKey(
   return (
     (typeof canonicalRecord?.facets.lessonKey === "string"
       ? canonicalRecord.facets.lessonKey
-      : undefined) ??
-    readNestedMetadataString(metadata, ["autoCapture", "lessonKey"]) ??
-    readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "lessonKey"]) ??
-    readNestedMetadataString(metadata, ["promotionMetadata", "autoPromotion", "lessonKey"]) ??
-    readNestedMetadataString(metadata, ["autoPromotion", "lessonKey"])
+      : undefined) ?? readLegacyWorkflowGuidanceString(metadata, "lessonKey")
   );
 }
 
@@ -216,10 +222,7 @@ function extractWorkflowImprovementSubject(
     (typeof canonicalRecord?.facets.projectScope === "string"
       ? canonicalRecord.facets.projectScope
       : undefined) ??
-    readNestedMetadataString(metadata, ["autoCapture", "subject"]) ??
-    readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "subject"]) ??
-    readNestedMetadataString(metadata, ["promotionMetadata", "autoPromotion", "subject"]) ??
-    readNestedMetadataString(metadata, ["autoPromotion", "subject"])
+    readLegacyWorkflowGuidanceString(metadata, "subject")
   );
 }
 
@@ -235,10 +238,7 @@ function extractWorkflowImprovementValue(
     (typeof canonicalRecord?.facets.neededCapability === "string"
       ? canonicalRecord.facets.neededCapability
       : undefined) ??
-    readNestedMetadataString(metadata, ["autoCapture", "value"]) ??
-    readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "value"]) ??
-    readNestedMetadataString(metadata, ["promotionMetadata", "autoPromotion", "value"]) ??
-    readNestedMetadataString(metadata, ["autoPromotion", "value"])
+    readLegacyWorkflowGuidanceString(metadata, "value")
   );
 }
 
@@ -570,10 +570,10 @@ async function loadApprovedWorkflowGuidanceSourcesMissingEmbedding<
         where v.memory_kind::text = 'project'
           and me.memory_object_id is null
           and coalesce(
-            v.metadata->'autoCapture'->>'lessonKey',
             v.metadata->'candidateMetadata'->'autoCapture'->>'lessonKey',
-            v.metadata->'promotionMetadata'->'autoPromotion'->>'lessonKey',
-            v.metadata->'autoPromotion'->>'lessonKey',
+            v.metadata->'candidateMetadata'->'canonicalIngestionCandidate'->'record'->'facets'->>'lessonKey',
+            v.metadata->'canonicalIngestionCandidate'->'record'->'facets'->>'lessonKey',
+            v.metadata->'autoCapture'->>'lessonKey',
             ''
           ) = any($3::text[])
           and ($4::uuid is null or v.project_id = $4::uuid)

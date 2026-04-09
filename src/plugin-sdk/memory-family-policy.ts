@@ -167,7 +167,6 @@ export type MemoryFamilyDefinition = {
   storageKinds: readonly MemoryFamilyStorageKind[];
   scopeModel: MemoryFamilyScopeModel;
   canonicalFields: readonly MemoryFamilyCanonicalField[];
-  typedFastPaths: readonly string[];
   lifecyclePolicy: {
     mode: MemoryFamilyLifecycleMode;
     clusterKeyFields: readonly MemoryFamilyCanonicalField[];
@@ -232,13 +231,6 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     storageKinds: ["memory_object", "phrase_pattern"],
     scopeModel: { kind: "global" },
     canonicalFields: ["subject", "value"],
-    typedFastPaths: [
-      "responses_concise",
-      "responses_bullets",
-      "responses_plain_english",
-      "responses_no_tables",
-      "responses_numbered_steps",
-    ],
     lifecyclePolicy: {
       mode: "clustered_hold_auto_review",
       clusterKeyFields: ["subject", "value"],
@@ -303,7 +295,6 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     storageKinds: ["memory_object"],
     scopeModel: { kind: "project", projectRequired: true },
     canonicalFields: ["scope", "subject", "value"],
-    typedFastPaths: ["project_fact_named_scope", "project_fact_generalized_named_scope"],
     lifecyclePolicy: {
       mode: "clustered_hold_auto_review",
       clusterKeyFields: ["scope", "subject", "value"],
@@ -371,7 +362,6 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     storageKinds: ["procedure_candidate", "validated_procedure"],
     scopeModel: { kind: "mixed_project", projectPreferred: true },
     canonicalFields: ["subject", "value", "procedure_title", "procedure_steps"],
-    typedFastPaths: ["supported_key"],
     lifecyclePolicy: {
       mode: "procedure_validation",
       clusterKeyFields: ["subject", "value"],
@@ -442,12 +432,6 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
       "recommended_action",
       "avoid_action",
       "rationale",
-    ],
-    typedFastPaths: [
-      "workflow_tool_gotcha",
-      "workflow_environment_constraint",
-      "workflow_api_workaround",
-      "workflow_generalized_guidance",
     ],
     lifecyclePolicy: {
       mode: "clustered_hold_auto_review",
@@ -532,7 +516,6 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     storageKinds: ["memory_object"],
     scopeModel: { kind: "project", projectRequired: true },
     canonicalFields: ["scope", "subject", "guidance_pattern", "recommended_action", "avoid_action"],
-    typedFastPaths: ["project_rule_guidance"],
     lifecyclePolicy: {
       mode: "clustered_hold_auto_review",
       clusterKeyFields: [
@@ -609,7 +592,6 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
     storageKinds: ["memory_object"],
     scopeModel: { kind: "project", projectRequired: true },
     canonicalFields: ["scope", "subject", "needed_capability"],
-    typedFastPaths: ["unmet_need_recommendation"],
     lifecyclePolicy: {
       mode: "clustered_hold_auto_review",
       clusterKeyFields: ["scope", "subject", "needed_capability"],

@@ -214,7 +214,6 @@ function buildToolResponseStyleAutoPromotionMetadata(params: {
   autoPromotionProfile: string;
   confirmationState?: "confirmed";
 }): Record<string, unknown> {
-  const autoCapture = params.input.metadata?.autoCapture;
   const semanticDetection = params.input.metadata?.semanticDetection;
   return {
     autoPromotion: {
@@ -222,46 +221,28 @@ function buildToolResponseStyleAutoPromotionMetadata(params: {
       captureSeam: "model_tool_primary",
       profile: params.autoPromotionProfile,
       captureProfile: "tool-submitted",
-      captureClass:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { captureClass?: unknown }).captureClass
-          : undefined,
-      reasonCode:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { reasonCode?: unknown }).reasonCode
-          : undefined,
-      template:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { template?: unknown }).template
-          : undefined,
-      key:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { key?: unknown }).key
-          : undefined,
-      subjectKey:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { subjectKey?: unknown }).subjectKey
-          : undefined,
-      subject:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { subject?: unknown }).subject
-          : undefined,
-      normalizedSubject:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedSubject?: unknown }).normalizedSubject
-          : undefined,
-      value:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { value?: unknown }).value
-          : undefined,
-      normalizedValue:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedValue?: unknown }).normalizedValue
-          : undefined,
-      responseStyleFamily:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { responseStyleFamily?: unknown }).responseStyleFamily
-          : undefined,
+      captureClass: readNestedMetadataString(params.input.metadata, [
+        "autoCapture",
+        "captureClass",
+      ]),
+      reasonCode: readNestedMetadataString(params.input.metadata, ["autoCapture", "reasonCode"]),
+      template: readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]),
+      key: readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]),
+      subjectKey: readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]),
+      subject: readNestedMetadataString(params.input.metadata, ["autoCapture", "subject"]),
+      normalizedSubject: readNestedMetadataString(params.input.metadata, [
+        "autoCapture",
+        "normalizedSubject",
+      ]),
+      value: readNestedMetadataString(params.input.metadata, ["autoCapture", "value"]),
+      normalizedValue: readNestedMetadataString(params.input.metadata, [
+        "autoCapture",
+        "normalizedValue",
+      ]),
+      responseStyleFamily: readNestedMetadataString(params.input.metadata, [
+        "autoCapture",
+        "responseStyleFamily",
+      ]),
       toolName: "memory_candidate_submit",
     },
     ...(semanticDetection &&
@@ -1951,12 +1932,7 @@ function normalizeCorrectionPreferenceKey(raw: unknown): string | null {
 }
 
 function extractAutoCaptureKey(metadata: Record<string, unknown> | undefined): string | null {
-  const autoCapture = metadata?.autoCapture;
-  if (!autoCapture || typeof autoCapture !== "object" || Array.isArray(autoCapture)) {
-    return null;
-  }
-  const key = (autoCapture as { key?: unknown }).key;
-  return typeof key === "string" ? key : null;
+  return readNestedMetadataString(metadata, ["autoCapture", "key"]) ?? null;
 }
 
 function stripTranscriptTimestampPrefix(value: string): string {
@@ -1986,6 +1962,36 @@ function buildResponseStyleSemanticMetadata(params: {
       confidence: params.confidence,
       evidence: params.evidence,
     },
+  };
+}
+
+function buildFallbackResponseStyleResolution(params: {
+  parsed: OrdinaryTurnAutoCaptureMatch;
+  source: "content" | "raw";
+}): ManagedResponseStyleResolution | null {
+  if (
+    params.parsed.captureClass !== "explicit_preference" &&
+    params.parsed.captureClass !== "explicit_requirement"
+  ) {
+    return null;
+  }
+  return {
+    action: "capture",
+    familyId: "response_style",
+    parsed: params.parsed,
+    responseStyleFamily:
+      params.parsed.template === "response_style_generalized_guidance"
+        ? "generalized_guidance"
+        : "supported_template",
+    reviewMode:
+      params.parsed.template === "response_style_generalized_guidance"
+        ? "hold_for_more_evidence"
+        : "direct",
+    source: params.source,
+    detectionSource: "deterministic",
+    confidence: "high",
+    evidence: ["managed_content_pattern_match"],
+    observedText: params.source === "content" ? params.parsed.content : params.parsed.content,
   };
 }
 
@@ -2809,15 +2815,16 @@ async function normalizeManagedToolCandidateInput(params: {
       });
     }
 
-    const parsed =
-      resolveAutoPromotableFeedbackSubmission(input) ??
-      (typeof input.metadata?.raw === "string"
+    const parsedFromContent = resolveAutoPromotableFeedbackSubmission(input);
+    const parsedFromRaw =
+      !parsedFromContent && typeof input.metadata?.raw === "string"
         ? parseOrdinaryTurnAutoCapturePreference(input.metadata.raw, "user-preference-v2")
-        : null);
+        : null;
+    const parsed = parsedFromContent ?? parsedFromRaw;
     if (!parsed) {
       return input;
     }
-    return mergeCandidateMetadata(input, {
+    const fallbackPatch = {
       category:
         parsed.captureClass === "explicit_requirement"
           ? "user_requirement"
@@ -2845,7 +2852,18 @@ async function normalizeManagedToolCandidateInput(params: {
         ...(parsed.projectScope ? { projectScope: parsed.projectScope } : {}),
         toolName: "memory_candidate_submit",
       },
+    };
+    const fallbackResponseStyleResolution = buildFallbackResponseStyleResolution({
+      parsed,
+      source: parsedFromContent ? "content" : "raw",
     });
+    return fallbackResponseStyleResolution
+      ? mergeCanonicalResolvedIngestionMetadata({
+          input,
+          resolution: fallbackResponseStyleResolution,
+          patch: fallbackPatch,
+        })
+      : mergeCandidateMetadata(input, fallbackPatch);
   }
 
   if (input.kind === "procedure") {
@@ -3207,6 +3225,10 @@ async function maybeAutoPromoteToolSubmittedPreference(params: {
   ) {
     return params.result;
   }
+  const familyId = readNestedMetadataString(params.input.metadata, ["autoCapture", "family"]);
+  if (familyId && familyId !== "response_style") {
+    return params.result;
+  }
   const parsedGeneral = resolveAutoPromotableFeedbackSubmission(params.input);
   const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
   const captureClass = readNestedMetadataString(params.input.metadata, [
@@ -3288,6 +3310,10 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
     !params.result.memoryObjectId ||
     params.input.kind !== "correction"
   ) {
+    return params.result;
+  }
+  const familyId = readNestedMetadataString(params.input.metadata, ["autoCapture", "family"]);
+  if (familyId && familyId !== "project_fact") {
     return params.result;
   }
 
@@ -3385,6 +3411,10 @@ async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {
     !params.result.memoryObjectId ||
     params.input.kind !== "procedure"
   ) {
+    return params.result;
+  }
+  const familyId = readNestedMetadataString(params.input.metadata, ["autoCapture", "family"]);
+  if (familyId && familyId !== "recurring_procedure") {
     return params.result;
   }
 
@@ -3568,6 +3598,14 @@ async function findExistingAutoCaptureManagedDuplicate(params: {
         select id::text as id, review_state::text as review_state
         from "${schema}"."memory_objects"
         where (
+          coalesce(
+            metadata->'canonicalIngestionCandidate'->'identity'->>'dedupeKey',
+            metadata->'candidateMetadata'->'canonicalIngestionCandidate'->'identity'->>'dedupeKey',
+            metadata->'promotionMetadata'->'canonicalIngestionCandidate'->'identity'->>'dedupeKey',
+            metadata->'autoPromotion'->'canonicalIngestionCandidate'->'identity'->>'dedupeKey',
+            ''
+          ) = $1
+          or
           metadata->'candidateMetadata'->'autoCapture'->>'key' = $1
           or metadata->'autoCapture'->>'key' = $1
         )

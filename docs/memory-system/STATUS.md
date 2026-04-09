@@ -39,6 +39,8 @@ The critical refactor-review and canonicalization batch is now also landed.
 
 The retirement tranche proper batch v1 is now also landed.
 
+The canonical write/promotion unification tranche v1 is now also landed.
+
 ## What is live now
 
 Live families:
@@ -102,6 +104,15 @@ Live substrate properties:
 - flatter project-fact and workflow-ingestion resolver internals
 - one generic project-workflow semantic-embedding promotion helper instead of
   three lesson-key-specific branches
+- ingestion resolver mode/detector selection driven by explicit canonical
+  profiles rather than more open-coded family branching
+- canonical candidate stamping on the remaining response-style tool-submission
+  fallback path
+- canonical dedupe identity reads in the managed duplicate guard
+- narrower write-stage family inference with template-only legacy routing
+  removed
+- semantic retrieval and learned-guidance now keep one mixed-era metadata
+  bridge instead of a broader old-record fallback ladder
 
 ## What is live but still bounded
 
@@ -138,6 +149,7 @@ Still not live by default:
 - the canonical 4-kind storage model migration
 - generic flexible replacement of the current rigid family-first seams
 - full retirement of the remaining family-heavy compatibility branches
+- full removal of the last mixed-era approved-record fallback bridges
 
 ## What the multi-memory and architecture-spec batch changed
 
@@ -215,6 +227,30 @@ It concluded:
 - canonical compatibility records no longer inherit obsolete `typedFastPaths`
 - the next honest retirement work is deeper candidate-submit cleanup,
   write-pipeline generalization, and continued mixed-era fallback deletion
+
+## What the canonical write/promotion unification tranche v1 changed
+
+This tranche landed six real outcomes:
+
+1. detector-profile routing is more canonical-first in the ingestion resolver
+2. the remaining response-style tool fallback now stamps canonical ingestion
+   metadata
+3. duplicate detection now reads canonical dedupe identity
+4. write-stage routing no longer infers family from template-only legacy
+   metadata
+5. `typedFastPaths` was removed from the public family-policy definition
+   surface
+6. semantic retrieval and learned-guidance now keep only one explicit
+   mixed-era metadata bridge
+
+It concluded:
+
+- the write/promotion path is now more honestly one canonical pipeline with
+  shrinking adapters behind it
+- mixed-era promotion-time metadata ladders are no longer treated as default
+  retrieval/planner substrate
+- the next honest work is to collapse the remaining family-specific correction
+  and promotion helpers behind one canonical write/promotion engine
 
 ## What the critical refactor-review and canonicalization batch changed
 

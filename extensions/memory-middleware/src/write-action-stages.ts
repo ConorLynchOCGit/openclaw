@@ -96,15 +96,12 @@ function resolveCandidateWriteFamilyId(input: CandidateSubmissionInput): MemoryF
       ? (metadata.autoCapture as Record<string, unknown>)
       : null;
   const category = typeof metadata?.category === "string" ? metadata.category : null;
-  const template = typeof autoCapture?.template === "string" ? autoCapture.template : null;
   const captureClass =
     typeof autoCapture?.captureClass === "string" ? autoCapture.captureClass : null;
 
   if (
     category === "user_preference" ||
     category === "user_requirement" ||
-    (template !== null &&
-      (template.startsWith("responses_") || template === "response_style_generalized_guidance")) ||
     captureClass === "explicit_preference" ||
     captureClass === "explicit_requirement" ||
     captureClass === "preference_correction" ||
@@ -115,8 +112,8 @@ function resolveCandidateWriteFamilyId(input: CandidateSubmissionInput): MemoryF
   if (
     category === "project_fact" ||
     category === "project_fact_correction" ||
-    template === "project_fact_named_scope" ||
-    template === "project_fact_generalized_named_scope"
+    captureClass === "explicit_project_fact" ||
+    captureClass === "project_fact_correction"
   ) {
     return "project_fact";
   }

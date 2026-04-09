@@ -99,15 +99,17 @@ The first retirement tranche is now landed:
 
 The next implementation slices should now be:
 
+- collapse the remaining family-specific correction/promotion helpers inside
+  `extensions/memory-middleware/src/tools/candidate-submit.ts` behind one
+  canonical promotion engine
+- continue internal detector-profile cleanup inside
+  `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
+- delete the last bounded mixed-era fallback bridges in
+  `extensions/memory-middleware/src/semantic-retrieval-routing.ts` and
+  `extensions/memory-middleware/src/learned-guidance-advisory-planning.ts`
 - push `extensions/memory-middleware/src/write-action-stages.ts` from
   canonical-family-aware routing to a fuller canonical multi-candidate write
-  pipeline
-- continue staged deletion inside
-  `extensions/memory-middleware/src/tools/candidate-submit.ts`
-- continue internal canonicalization inside
-  `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
-- keep deleting mixed-era semantic fallback and promotion branches once the
-  canonical-era data path is enough on its own
+  pipeline with less compatibility inference
 
 The canonical-core tranche is now already landed:
 
@@ -163,6 +165,6 @@ Before new families:
 
 ## Next implementation slice
 
-- retirement tranche follow-through, starting with deeper write-pipeline
-  generalization and the next staged deletion pass inside candidate submit and
-  mixed-era fallback routing
+- canonical write/promotion follow-through, starting with one canonical
+  correction/promotion engine and the final staged deletion pass for remaining
+  mixed-era fallback bridges

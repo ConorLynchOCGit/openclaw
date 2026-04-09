@@ -1229,6 +1229,17 @@ describe("memory candidate submit tool", () => {
     expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({
+          canonicalIngestionCandidate: expect.objectContaining({
+            record: expect.objectContaining({
+              kind: "user",
+              compatibility: expect.objectContaining({
+                transitionalFamilyId: "response_style",
+              }),
+            }),
+            compatibility: expect.objectContaining({
+              candidateKind: "learning",
+            }),
+          }),
           category: "user_requirement",
           source: "explicit_user_requirement",
           autoCapture: expect.objectContaining({
@@ -1279,6 +1290,14 @@ describe("memory candidate submit tool", () => {
     expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({
+          canonicalIngestionCandidate: expect.objectContaining({
+            record: expect.objectContaining({
+              kind: "user",
+              compatibility: expect.objectContaining({
+                transitionalFamilyId: "response_style",
+              }),
+            }),
+          }),
           category: "user_requirement",
           source: "explicit_user_requirement",
           autoCapture: expect.objectContaining({

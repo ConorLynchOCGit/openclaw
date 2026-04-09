@@ -138,6 +138,34 @@ describe("write action stages", () => {
     expect(result).toEqual(["start", "procedure"]);
   });
 
+  it("does not infer a family from template-only legacy metadata when canonical stamping is absent", async () => {
+    const responseStyle = vi.fn(async () => ({ ok: "response_style" }));
+
+    const result = await runCandidateWriteResolutionStages({
+      context: {
+        input: {
+          kind: "learning" as const,
+          content: "keep this",
+          metadata: {
+            autoCapture: {
+              template: "responses_concise",
+            },
+          },
+        },
+      },
+      stages: [
+        {
+          id: "response_style",
+          match: { familyIds: ["response_style"] },
+          resolve: responseStyle,
+        },
+      ],
+    });
+
+    expect(result).toBeNull();
+    expect(responseStyle).not.toHaveBeenCalled();
+  });
+
   it("submits by candidate kind through the matching ingress port", async () => {
     const runtime = {
       candidateIngress: {

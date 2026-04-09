@@ -1,5 +1,8 @@
 import type { MemoryMiddlewareConfig } from "./config.js";
-import { getMemoryFamilyDefinitionByWorkflowLessonFamily } from "./memory-family-registry.js";
+import {
+  getCaptureMetadataByCaptureClass,
+  getMemoryFamilyIdByWorkflowLessonFamily,
+} from "./memory-family-registry.js";
 import {
   type OrdinaryTurnAutoCaptureMatch,
   toOrdinaryTurnProjectFactMatch,
@@ -63,6 +66,10 @@ export type ProjectFactIngestionMode =
   | "candidate_learning"
   | "candidate_correction";
 
+type ResponseStyleSemanticCaptureClass = "explicit_requirement" | "requirement_correction";
+
+type ProjectFactSemanticCaptureClass = "explicit_project_fact" | "project_fact_correction";
+
 export type ResolvedResponseStyleIngestion =
   | {
       action: "capture";
@@ -114,9 +121,125 @@ export type ResolvedRecurringProcedureIngestion = {
   observedText: string;
 };
 
-type ProjectFactDeterministicPredicate = (
-  parsed: OrdinaryTurnAutoCaptureMatch,
-) => { factFamily: ProjectFactFamily; fieldKey?: ProjectFactFieldKey } | null;
+type ResponseStyleIngestionModeProfile = {
+  mode: ResponseStyleIngestionMode;
+  parseDirect: (text: string) => OrdinaryTurnAutoCaptureMatch | null;
+  parseRawFallback?: (text: string) => OrdinaryTurnAutoCaptureMatch | null;
+  allowForget: boolean;
+  acceptedSemanticCaptureClasses: readonly ResponseStyleSemanticCaptureClass[];
+};
+
+type ProjectFactIngestionModeProfile = {
+  mode: ProjectFactIngestionMode;
+  parseDirect: (text: string) => OrdinaryTurnAutoCaptureMatch | null;
+  parseRawFallback?: (text: string) => OrdinaryTurnAutoCaptureMatch | null;
+  expectedCaptureClass: ProjectFactSemanticCaptureClass;
+};
+
+const RESPONSE_STYLE_INGESTION_MODE_PROFILES = {
+  ordinary_turn: {
+    mode: "ordinary_turn",
+    parseDirect: (text: string) =>
+      parseOrdinaryTurnAutoCapturePreference(text, "user-preference-v2"),
+    allowForget: true,
+    acceptedSemanticCaptureClasses: ["explicit_requirement"],
+  },
+  candidate_learning: {
+    mode: "candidate_learning",
+    parseDirect: (text: string) => parseAutoCaptureManagedCandidateContent(text),
+    parseRawFallback: (text: string) =>
+      parseOrdinaryTurnAutoCapturePreference(text, "user-preference-v2"),
+    allowForget: false,
+    acceptedSemanticCaptureClasses: ["explicit_requirement"],
+  },
+  candidate_correction: {
+    mode: "candidate_correction",
+    parseDirect: (text: string) => parseManagedCorrectionCandidateContent(text),
+    parseRawFallback: (text: string) =>
+      parseOrdinaryTurnAutoCapturePreference(text, "user-preference-v2"),
+    allowForget: false,
+    acceptedSemanticCaptureClasses: ["requirement_correction"],
+  },
+} as const satisfies Record<ResponseStyleIngestionMode, ResponseStyleIngestionModeProfile>;
+
+const PROJECT_FACT_INGESTION_MODE_PROFILES = {
+  ordinary_turn: {
+    mode: "ordinary_turn",
+    parseDirect: (text: string) =>
+      parseOrdinaryTurnAutoCapturePreference(text, "user-preference-v2"),
+    expectedCaptureClass: "explicit_project_fact",
+  },
+  candidate_learning: {
+    mode: "candidate_learning",
+    parseDirect: (text: string) => parseAutoCaptureManagedCandidateContent(text),
+    parseRawFallback: (text: string) =>
+      parseOrdinaryTurnAutoCapturePreference(text, "user-preference-v2"),
+    expectedCaptureClass: "explicit_project_fact",
+  },
+  candidate_correction: {
+    mode: "candidate_correction",
+    parseDirect: (text: string) => parseManagedCorrectionCandidateContent(text),
+    parseRawFallback: (text: string) =>
+      parseOrdinaryTurnAutoCapturePreference(text, "user-preference-v2"),
+    expectedCaptureClass: "project_fact_correction",
+  },
+} as const satisfies Record<ProjectFactIngestionMode, ProjectFactIngestionModeProfile>;
+
+type WorkflowSemanticDetectorProfile = {
+  detect:
+    | typeof detectProjectRuleSemanticDecision
+    | typeof detectUnmetNeedSemanticDecision
+    | typeof detectWorkflowImprovementSemanticDecision;
+  reviewMode:
+    | "hold_for_more_evidence"
+    | ((match: {
+        lessonFamily: WorkflowImprovementLessonFamily;
+      }) => "pending_confirmation" | "hold_for_more_evidence");
+};
+
+const WORKFLOW_SEMANTIC_DETECTOR_PROFILES = [
+  {
+    detect: detectProjectRuleSemanticDecision,
+    reviewMode: "hold_for_more_evidence",
+  },
+  {
+    detect: detectUnmetNeedSemanticDecision,
+    reviewMode: "hold_for_more_evidence",
+  },
+  {
+    detect: detectWorkflowImprovementSemanticDecision,
+    reviewMode: (match: { lessonFamily: WorkflowImprovementLessonFamily }) =>
+      match.lessonFamily === "supported_lesson" ? "pending_confirmation" : "hold_for_more_evidence",
+  },
+] as const satisfies readonly WorkflowSemanticDetectorProfile[];
+
+function resolveResponseStyleIngestionModeProfile(
+  mode: ResponseStyleIngestionMode,
+): ResponseStyleIngestionModeProfile {
+  return RESPONSE_STYLE_INGESTION_MODE_PROFILES[mode];
+}
+
+function resolveProjectFactIngestionModeProfile(
+  mode: ProjectFactIngestionMode,
+): ProjectFactIngestionModeProfile {
+  return PROJECT_FACT_INGESTION_MODE_PROFILES[mode];
+}
+
+function resolveResponseStyleSemanticCaptureAllowed(params: {
+  profile: ResponseStyleIngestionModeProfile;
+  captureClass: string;
+}): boolean {
+  return params.profile.acceptedSemanticCaptureClasses.includes(
+    params.captureClass as ResponseStyleSemanticCaptureClass,
+  );
+}
+
+function readProjectFactDeterministicEvidence(
+  source: IngestionTextSource,
+  primarySource: IngestionTextSource,
+): string[] {
+  return [source === primarySource ? "managed_content_pattern_match" : "raw_turn_pattern_match"];
+}
 
 function inferProjectFactFieldKeyFromSubject(subject: string): ProjectFactFieldKey | null {
   const fieldLabel = subject.split("/").pop()?.trim().toLowerCase() ?? "";
@@ -222,59 +345,84 @@ function resolveResponseStyleDeterministicMatch(params: {
   text: string;
   mode: ResponseStyleIngestionMode;
 }): { parsed: OrdinaryTurnAutoCaptureMatch; responseStyleFamily: ResponseStyleFamily } | null {
-  if (params.mode === "ordinary_turn") {
-    const parsed = parseOrdinaryTurnAutoCapturePreference(params.text, "user-preference-v2");
-    if (parsed && isSupportedResponseStyleTemplate(parsed.template)) {
+  const profile = resolveResponseStyleIngestionModeProfile(params.mode);
+  const directParsed = profile.parseDirect(params.text);
+  if (directParsed) {
+    const directMatch =
+      params.mode === "candidate_correction"
+        ? isResponseStyleCorrectionMatch(directParsed)
+        : isResponseStyleLearningMatch(directParsed) ||
+          (params.mode === "ordinary_turn" &&
+            isSupportedResponseStyleTemplate(directParsed.template));
+    if (directMatch) {
       return {
-        parsed,
-        responseStyleFamily: "supported_template",
-      };
-    }
-    return null;
-  }
-
-  if (params.mode === "candidate_learning") {
-    const managedContent = parseAutoCaptureManagedCandidateContent(params.text);
-    if (managedContent && isResponseStyleLearningMatch(managedContent)) {
-      return {
-        parsed: managedContent,
+        parsed: directParsed,
         responseStyleFamily:
-          managedContent.template === "response_style_generalized_guidance"
+          directParsed.template === "response_style_generalized_guidance"
             ? "generalized_guidance"
             : "supported_template",
       };
     }
-    const rawTurn = parseOrdinaryTurnAutoCapturePreference(params.text, "user-preference-v2");
-    if (rawTurn && isResponseStyleLearningMatch(rawTurn)) {
-      return {
-        parsed: rawTurn,
-        responseStyleFamily:
-          rawTurn.template === "response_style_generalized_guidance"
-            ? "generalized_guidance"
-            : "supported_template",
-      };
-    }
-    return null;
   }
 
-  const managedCorrection = parseManagedCorrectionCandidateContent(params.text);
-  if (managedCorrection && isResponseStyleCorrectionMatch(managedCorrection)) {
+  const fallbackParsed = profile.parseRawFallback?.(params.text) ?? null;
+  if (!fallbackParsed) {
+    return null;
+  }
+  const fallbackMatch =
+    params.mode === "candidate_correction"
+      ? isResponseStyleCorrectionMatch(fallbackParsed)
+      : isResponseStyleLearningMatch(fallbackParsed);
+  if (!fallbackMatch) {
+    return null;
+  }
+  return {
+    parsed: fallbackParsed,
+    responseStyleFamily:
+      fallbackParsed.template === "response_style_generalized_guidance"
+        ? "generalized_guidance"
+        : "supported_template",
+  };
+}
+
+function resolveProjectFactDeterministicProfile(params: {
+  text: string;
+  profile: ProjectFactIngestionModeProfile;
+}): {
+  parsed: OrdinaryTurnAutoCaptureMatch;
+  factFamily: ProjectFactFamily;
+  fieldKey?: ProjectFactFieldKey;
+  evidence: string[];
+} | null {
+  const directParsed = params.profile.parseDirect(params.text);
+  const directDeterministic = directParsed
+    ? resolveProjectFactDeterministicMatch({
+        parsed: directParsed,
+        expectedCaptureClass: params.profile.expectedCaptureClass,
+      })
+    : null;
+  if (directParsed && directDeterministic) {
     return {
-      parsed: managedCorrection,
-      responseStyleFamily:
-        managedCorrection.template === "response_style_generalized_guidance"
-          ? "generalized_guidance"
-          : "supported_template",
+      parsed: directParsed,
+      factFamily: directDeterministic.factFamily,
+      ...(directDeterministic.fieldKey ? { fieldKey: directDeterministic.fieldKey } : {}),
+      evidence: ["managed_content_pattern_match"],
     };
   }
-  const rawCorrection = parseOrdinaryTurnAutoCapturePreference(params.text, "user-preference-v2");
-  if (rawCorrection && isResponseStyleCorrectionMatch(rawCorrection)) {
+
+  const fallbackParsed = params.profile.parseRawFallback?.(params.text) ?? null;
+  const fallbackDeterministic = fallbackParsed
+    ? resolveProjectFactDeterministicMatch({
+        parsed: fallbackParsed,
+        expectedCaptureClass: params.profile.expectedCaptureClass,
+      })
+    : null;
+  if (fallbackParsed && fallbackDeterministic) {
     return {
-      parsed: rawCorrection,
-      responseStyleFamily:
-        rawCorrection.template === "response_style_generalized_guidance"
-          ? "generalized_guidance"
-          : "supported_template",
+      parsed: fallbackParsed,
+      factFamily: fallbackDeterministic.factFamily,
+      ...(fallbackDeterministic.fieldKey ? { fieldKey: fallbackDeterministic.fieldKey } : {}),
+      evidence: ["raw_turn_pattern_match"],
     };
   }
   return null;
@@ -288,6 +436,7 @@ export async function resolveResponseStyleIngestion(params: {
   mode: ResponseStyleIngestionMode;
   allowPhrasePatternMatch: boolean;
 }): Promise<ResolvedResponseStyleIngestion | null> {
+  const profile = resolveResponseStyleIngestionModeProfile(params.mode);
   const resolution = (await resolveAcrossSources({
     content: params.content,
     primarySource: params.primarySource,
@@ -337,7 +486,7 @@ export async function resolveResponseStyleIngestion(params: {
 
       const semanticDecision = detectResponseStyleSemanticDecision(text);
       if (semanticDecision.action === "forget") {
-        if (params.mode !== "ordinary_turn") {
+        if (!profile.allowForget) {
           return null;
         }
         return {
@@ -353,16 +502,11 @@ export async function resolveResponseStyleIngestion(params: {
       if (semanticDecision.action !== "capture") {
         return null;
       }
-
       if (
-        params.mode === "candidate_learning" &&
-        semanticDecision.match.captureClass !== "explicit_requirement"
-      ) {
-        return null;
-      }
-      if (
-        params.mode === "candidate_correction" &&
-        semanticDecision.match.captureClass !== "requirement_correction"
+        !resolveResponseStyleSemanticCaptureAllowed({
+          profile,
+          captureClass: semanticDecision.match.captureClass,
+        })
       ) {
         return null;
       }
@@ -396,86 +540,40 @@ export function resolveProjectFactIngestion(params: {
   rawCandidates?: string[];
   mode: ProjectFactIngestionMode;
 }): Promise<ResolvedProjectFactIngestion | null> {
-  const contentDeterministicResolver: ProjectFactDeterministicPredicate =
-    params.mode === "candidate_correction"
-      ? (parsed) =>
-          resolveProjectFactDeterministicMatch({
-            parsed,
-            expectedCaptureClass: "project_fact_correction",
-          })
-      : (parsed) =>
-          resolveProjectFactDeterministicMatch({
-            parsed,
-            expectedCaptureClass: "explicit_project_fact",
-          });
-
-  const resolveParsed = (text: string): OrdinaryTurnAutoCaptureMatch | null => {
-    if (params.mode === "ordinary_turn") {
-      return parseOrdinaryTurnAutoCapturePreference(text, "user-preference-v2");
-    }
-    if (params.mode === "candidate_learning") {
-      return parseAutoCaptureManagedCandidateContent(text);
-    }
-    return parseManagedCorrectionCandidateContent(text);
-  };
+  const profile = resolveProjectFactIngestionModeProfile(params.mode);
 
   return resolveAcrossSources({
     content: params.content,
     primarySource: params.primarySource,
     rawCandidates: params.rawCandidates,
     tryResolve: async (text, source) => {
-      const directParsed = resolveParsed(text);
-      const directDeterministic = directParsed ? contentDeterministicResolver(directParsed) : null;
-      if (directParsed && directDeterministic) {
+      const deterministic = resolveProjectFactDeterministicProfile({
+        text,
+        profile,
+      });
+      if (deterministic) {
         return {
           familyId: "project_fact" as const,
-          parsed: directParsed,
-          factFamily: directDeterministic.factFamily,
-          ...(directDeterministic.fieldKey ? { fieldKey: directDeterministic.fieldKey } : {}),
+          parsed: deterministic.parsed,
+          factFamily: deterministic.factFamily,
+          ...(deterministic.fieldKey ? { fieldKey: deterministic.fieldKey } : {}),
           reviewMode:
-            directDeterministic.factFamily === "generalized_reference"
+            deterministic.factFamily === "generalized_reference"
               ? "hold_for_more_evidence"
               : "pending_confirmation",
           detectionSource: "deterministic" as const,
           confidence: "high" as const,
-          evidence: [
+          evidence:
             source === params.primarySource
-              ? "managed_content_pattern_match"
-              : "raw_turn_pattern_match",
-          ],
-        };
-      }
-
-      const rawTurnParsed =
-        params.mode === "ordinary_turn"
-          ? null
-          : parseOrdinaryTurnAutoCapturePreference(text, "user-preference-v2");
-      const rawTurnDeterministic = rawTurnParsed
-        ? contentDeterministicResolver(rawTurnParsed)
-        : null;
-      if (rawTurnParsed && rawTurnDeterministic) {
-        return {
-          familyId: "project_fact" as const,
-          parsed: rawTurnParsed,
-          factFamily: rawTurnDeterministic.factFamily,
-          ...(rawTurnDeterministic.fieldKey ? { fieldKey: rawTurnDeterministic.fieldKey } : {}),
-          reviewMode:
-            rawTurnDeterministic.factFamily === "generalized_reference"
-              ? "hold_for_more_evidence"
-              : "pending_confirmation",
-          detectionSource: "deterministic" as const,
-          confidence: "high" as const,
-          evidence: ["raw_turn_pattern_match"],
+              ? readProjectFactDeterministicEvidence(source, params.primarySource)
+              : deterministic.evidence,
         };
       }
 
       const semanticDecision = detectProjectFactSemanticDecision(text);
       if (
         semanticDecision.action === "capture" &&
-        ((params.mode === "candidate_correction" &&
-          semanticDecision.match.captureClass === "project_fact_correction") ||
-          (params.mode !== "candidate_correction" &&
-            semanticDecision.match.captureClass === "explicit_project_fact"))
+        semanticDecision.match.captureClass === profile.expectedCaptureClass
       ) {
         return {
           familyId: "project_fact" as const,
@@ -492,10 +590,7 @@ export function resolveProjectFactIngestion(params: {
       const genericDecision = detectGenericProjectFactSemanticDecision(text);
       if (
         genericDecision.action === "capture" &&
-        ((params.mode === "candidate_correction" &&
-          genericDecision.match.captureClass === "project_fact_correction") ||
-          (params.mode !== "candidate_correction" &&
-            genericDecision.match.captureClass === "explicit_project_fact"))
+        genericDecision.match.captureClass === profile.expectedCaptureClass
       ) {
         return {
           familyId: "project_fact" as const,
@@ -567,16 +662,27 @@ export type ResolvedCanonicalizableIngestion =
   | ResolvedWorkflowIngestion
   | Extract<ResolvedResponseStyleIngestion, { action: "capture" }>;
 
-function resolveWorkflowFamilyId(
-  lessonFamily: WorkflowImprovementLessonFamily,
-): "workflow_improvement" | "project_rule" | "unmet_need" {
-  const definition = getMemoryFamilyDefinitionByWorkflowLessonFamily(lessonFamily);
+function resolveWorkflowFamilyId(match: {
+  captureClass: WorkflowImprovementCaptureClass;
+  lessonFamily: WorkflowImprovementLessonFamily;
+}): "workflow_improvement" | "project_rule" | "unmet_need" {
+  const captureCategory = getCaptureMetadataByCaptureClass(match.captureClass)?.category;
+  if (captureCategory === "project_rule") {
+    return "project_rule";
+  }
+  if (captureCategory === "unmet_need") {
+    return "unmet_need";
+  }
+  if (captureCategory === "workflow_improvement") {
+    return "workflow_improvement";
+  }
+  const lessonFamilyFamilyId = getMemoryFamilyIdByWorkflowLessonFamily(match.lessonFamily);
   if (
-    definition?.id === "workflow_improvement" ||
-    definition?.id === "project_rule" ||
-    definition?.id === "unmet_need"
+    lessonFamilyFamilyId === "workflow_improvement" ||
+    lessonFamilyFamilyId === "project_rule" ||
+    lessonFamilyFamilyId === "unmet_need"
   ) {
-    return definition.id;
+    return lessonFamilyFamilyId;
   }
   return "workflow_improvement";
 }
@@ -620,7 +726,10 @@ function buildResolvedWorkflowIngestion(params: {
   const parsed = toOrdinaryTurnWorkflowImprovementMatch(params.match);
   const lessonFamily = parsed.lessonFamily ?? params.match.lessonFamily;
   return {
-    familyId: resolveWorkflowFamilyId(lessonFamily),
+    familyId: resolveWorkflowFamilyId({
+      captureClass: params.match.captureClass,
+      lessonFamily,
+    }),
     parsed,
     lessonFamily,
     reviewMode: params.reviewMode,
@@ -666,32 +775,14 @@ async function resolveWorkflowImprovementText(params: {
     }
   }
 
-  const semanticDetectors = [
-    {
-      detect: detectProjectRuleSemanticDecision,
-      reviewMode: "hold_for_more_evidence" as const,
-    },
-    {
-      detect: detectUnmetNeedSemanticDecision,
-      reviewMode: "hold_for_more_evidence" as const,
-    },
-    {
-      detect: detectWorkflowImprovementSemanticDecision,
-      reviewModeFromMatch: (match: { lessonFamily: WorkflowImprovementLessonFamily }) =>
-        match.lessonFamily === "supported_lesson"
-          ? ("pending_confirmation" as const)
-          : ("hold_for_more_evidence" as const),
-    },
-  ] as const;
-
-  for (const detector of semanticDetectors) {
+  for (const detector of WORKFLOW_SEMANTIC_DETECTOR_PROFILES) {
     const decision = detector.detect(params.text);
     if (decision.action !== "capture") {
       continue;
     }
     const reviewMode =
-      "reviewModeFromMatch" in detector
-        ? detector.reviewModeFromMatch(decision.match)
+      typeof detector.reviewMode === "function"
+        ? detector.reviewMode(decision.match)
         : detector.reviewMode;
     const {
       source: _source,
