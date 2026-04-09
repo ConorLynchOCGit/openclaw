@@ -6,6 +6,7 @@ import {
   getMemoryFamilyIdByWorkflowLessonFamily,
   getMemoryProofDefinition,
   getPhrasePatternProofFamilyId,
+  memoryFamilyProjectsToDerivedView,
 } from "./memory-family-policy.js";
 
 describe("memory-family-policy", () => {
@@ -50,6 +51,9 @@ describe("memory-family-policy", () => {
         project_scope: true,
       },
     });
+    expect(memoryFamilyProjectsToDerivedView("workflow_improvement", "learned_guidance")).toBe(
+      true,
+    );
   });
 
   it("builds canonical records for current family-owned surfaces through the compatibility seam", () => {

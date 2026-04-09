@@ -7,6 +7,7 @@ import type {
   CandidateSubmissionKind,
   CandidateSubmissionRejectedResult,
 } from "./db/runtime.js";
+import { buildCanonicalMemoryIngestionCandidateFromResolvedIngestion } from "./memory-canonical-compat.js";
 import {
   getCaptureMetadataByWorkflowLessonFamily,
   getMemoryFamilyDefinition,
@@ -395,6 +396,15 @@ function buildCandidateMetadata(params: {
       duplicateOutcome: "new_candidate_cluster",
       replayBlocked: false,
     },
+    canonicalIngestionCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion({
+      ingestion: params.resolution,
+      mode: "candidate_improvement",
+      ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+      captureSeam: "self_improving_reduced_profile",
+      captureProfile: "reduced_profile_candidate_only",
+      ...(params.input.agentId ? { sourceAgent: params.input.agentId } : {}),
+      ...(params.input.sessionId ? { sourceSession: params.input.sessionId } : {}),
+    }),
   };
 }
 

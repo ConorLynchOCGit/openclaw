@@ -11,6 +11,10 @@ import {
   type CandidateSubmissionResult,
 } from "../db/runtime.js";
 import {
+  buildCanonicalMemoryIngestionCandidateFromResolvedIngestion,
+  isCanonicalizableResolvedResponseStyleIngestion,
+} from "../memory-canonical-compat.js";
+import {
   executeMemoryObjectCorrectionPlan,
   isExecutableMemoryObjectCorrectionPlan,
   resolveMemoryCorrectionPromotionPolicy,
@@ -22,6 +26,7 @@ import {
 } from "../memory-family-registry.js";
 import {
   resolveProjectFactIngestion,
+  type ResolvedCanonicalizableIngestion,
   resolveRecurringProcedureIngestion,
   resolveResponseStyleIngestion,
   resolveWorkflowImprovementIngestion,
@@ -1938,6 +1943,40 @@ function mergeCandidateMetadata(
   };
 }
 
+function resolveCanonicalIngestionModeForSubmissionKind(
+  kind: CandidateSubmissionInput["kind"],
+): "candidate_learning" | "candidate_correction" | "candidate_procedure" | "candidate_improvement" {
+  switch (kind) {
+    case "learning":
+      return "candidate_learning";
+    case "correction":
+      return "candidate_correction";
+    case "procedure":
+      return "candidate_procedure";
+    case "improvement":
+      return "candidate_improvement";
+  }
+}
+
+function mergeCanonicalResolvedIngestionMetadata(params: {
+  input: CandidateSubmissionInput;
+  resolution: ResolvedCanonicalizableIngestion;
+  patch: Record<string, unknown>;
+}): CandidateSubmissionInput {
+  return mergeCandidateMetadata(params.input, {
+    ...params.patch,
+    canonicalIngestionCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion({
+      ingestion: params.resolution,
+      mode: resolveCanonicalIngestionModeForSubmissionKind(params.input.kind),
+      ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+      captureSeam: "model_tool_primary",
+      captureProfile: "tool-submitted",
+      ...(params.input.agentId ? { sourceAgent: params.input.agentId } : {}),
+      ...(params.input.sessionId ? { sourceSession: params.input.sessionId } : {}),
+    }),
+  });
+}
+
 function normalizeCorrectionPreferenceKey(raw: unknown): string | null {
   if (typeof raw !== "string") {
     return null;
@@ -2193,6 +2232,8 @@ type SessionStoreEntry = {
 };
 
 type ManagedResponseStyleResolution = {
+  action: "capture";
+  familyId: "response_style";
   parsed: OrdinaryTurnAutoCaptureMatch;
   responseStyleFamily: ResponseStyleFamily;
   reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
@@ -2200,19 +2241,24 @@ type ManagedResponseStyleResolution = {
   detectionSource: "deterministic" | "semantic";
   confidence: "high" | ResponseStyleSemanticConfidence;
   evidence: string[];
+  observedText: string;
 };
 
 type ManagedProjectFactResolution = {
+  familyId: "project_fact";
   parsed: OrdinaryTurnAutoCaptureMatch;
   factFamily: ProjectFactFamily;
   fieldKey?: ProjectFactFieldKey;
+  reviewMode: "pending_confirmation" | "hold_for_more_evidence";
   source: "content" | "raw";
   detectionSource: "deterministic" | "semantic";
   confidence: "high" | ProjectFactSemanticConfidence;
   evidence: string[];
+  observedText: string;
 };
 
 type ManagedRecurringProcedureResolution = {
+  familyId: "recurring_procedure";
   parsed: OrdinaryTurnAutoCaptureMatch;
   procedureFamily: RecurringProcedureFamily;
   procedureKey?: RecurringProcedureKey;
@@ -2221,9 +2267,11 @@ type ManagedRecurringProcedureResolution = {
   detectionSource: "semantic";
   confidence: "high" | RecurringProcedureSemanticConfidence;
   evidence: string[];
+  observedText: string;
 };
 
 type ManagedWorkflowImprovementResolution = {
+  familyId: "workflow_improvement" | "project_rule" | "unmet_need";
   parsed: OrdinaryTurnAutoCaptureMatch;
   lessonFamily: WorkflowImprovementLessonFamily;
   reviewMode: "pending_confirmation" | "hold_for_more_evidence";
@@ -2561,6 +2609,7 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
   }
 
   return {
+    familyId: resolution.familyId,
     parsed: resolution.parsed,
     lessonFamily: resolution.lessonFamily,
     reviewMode: resolution.reviewMode,
@@ -2719,7 +2768,7 @@ async function normalizeManagedToolCandidateInput(params: {
       input,
     });
     if (responseStyleResolution) {
-      return mergeCandidateMetadata(input, {
+      const patch = {
         category: "user_requirement",
         source: "explicit_user_requirement",
         autoCapture: {
@@ -2751,62 +2800,73 @@ async function normalizeManagedToolCandidateInput(params: {
               state: responseStyleResolution.reviewMode,
             })
           : {}),
-      });
+      };
+      return isCanonicalizableResolvedResponseStyleIngestion(responseStyleResolution)
+        ? mergeCanonicalResolvedIngestionMetadata({
+            input,
+            resolution: responseStyleResolution,
+            patch,
+          })
+        : mergeCandidateMetadata(input, patch);
     }
 
     const projectFactResolution = await resolveManagedProjectFactLearning(input);
     if (projectFactResolution) {
-      return mergeCandidateMetadata(input, {
-        category: "project_fact",
-        source: "explicit_project_fact",
-        subject_key: projectFactResolution.parsed.subjectKey,
-        autoCapture: {
-          source: "model_tool_candidate_submit",
-          captureSeam: "model_tool_primary",
-          profile: projectFactResolution.parsed.profile,
-          captureClass: projectFactResolution.parsed.captureClass,
-          reasonCode: projectFactResolution.parsed.reasonCode,
-          template: projectFactResolution.parsed.template,
-          factFamily: projectFactResolution.factFamily,
-          ...(projectFactResolution.fieldKey ? { fieldKey: projectFactResolution.fieldKey } : {}),
-          key: projectFactResolution.parsed.key,
-          subjectKey: projectFactResolution.parsed.subjectKey,
-          subject: projectFactResolution.parsed.subject,
-          normalizedSubject: projectFactResolution.parsed.normalizedSubject,
-          value: projectFactResolution.parsed.value,
-          normalizedValue: projectFactResolution.parsed.normalizedValue,
-          ...(projectFactResolution.parsed.projectScope
-            ? { projectScope: projectFactResolution.parsed.projectScope }
+      return mergeCanonicalResolvedIngestionMetadata({
+        input,
+        resolution: projectFactResolution,
+        patch: {
+          category: "project_fact",
+          source: "explicit_project_fact",
+          subject_key: projectFactResolution.parsed.subjectKey,
+          autoCapture: {
+            source: "model_tool_candidate_submit",
+            captureSeam: "model_tool_primary",
+            profile: projectFactResolution.parsed.profile,
+            captureClass: projectFactResolution.parsed.captureClass,
+            reasonCode: projectFactResolution.parsed.reasonCode,
+            template: projectFactResolution.parsed.template,
+            factFamily: projectFactResolution.factFamily,
+            ...(projectFactResolution.fieldKey ? { fieldKey: projectFactResolution.fieldKey } : {}),
+            key: projectFactResolution.parsed.key,
+            subjectKey: projectFactResolution.parsed.subjectKey,
+            subject: projectFactResolution.parsed.subject,
+            normalizedSubject: projectFactResolution.parsed.normalizedSubject,
+            value: projectFactResolution.parsed.value,
+            normalizedValue: projectFactResolution.parsed.normalizedValue,
+            ...(projectFactResolution.parsed.projectScope
+              ? { projectScope: projectFactResolution.parsed.projectScope }
+              : {}),
+            ...(projectFactResolution.parsed.normalizedProjectScope
+              ? { normalizedProjectScope: projectFactResolution.parsed.normalizedProjectScope }
+              : {}),
+            toolName: "memory_candidate_submit",
+          },
+          ...(projectFactResolution.detectionSource === "semantic"
+            ? buildProjectFactSemanticMetadata({
+                detectionSource: projectFactResolution.detectionSource,
+                confidence: projectFactResolution.confidence,
+                evidence: projectFactResolution.evidence,
+                factFamily: projectFactResolution.factFamily,
+                ...(projectFactResolution.fieldKey
+                  ? { fieldKey: projectFactResolution.fieldKey }
+                  : {}),
+              })
             : {}),
-          ...(projectFactResolution.parsed.normalizedProjectScope
-            ? { normalizedProjectScope: projectFactResolution.parsed.normalizedProjectScope }
-            : {}),
-          toolName: "memory_candidate_submit",
+          ...buildProjectFactPendingConfirmationMetadata({
+            confidence: projectFactResolution.confidence,
+            evidence: projectFactResolution.evidence,
+            factFamily: projectFactResolution.factFamily,
+            state:
+              projectFactResolution.factFamily === "generalized_reference"
+                ? "hold_for_more_evidence"
+                : "pending_confirmation",
+            ...(projectFactResolution.fieldKey ? { fieldKey: projectFactResolution.fieldKey } : {}),
+            ...(projectFactResolution.factFamily === "generalized_reference"
+              ? { clusterKey: projectFactResolution.parsed.key }
+              : {}),
+          }),
         },
-        ...(projectFactResolution.detectionSource === "semantic"
-          ? buildProjectFactSemanticMetadata({
-              detectionSource: projectFactResolution.detectionSource,
-              confidence: projectFactResolution.confidence,
-              evidence: projectFactResolution.evidence,
-              factFamily: projectFactResolution.factFamily,
-              ...(projectFactResolution.fieldKey
-                ? { fieldKey: projectFactResolution.fieldKey }
-                : {}),
-            })
-          : {}),
-        ...buildProjectFactPendingConfirmationMetadata({
-          confidence: projectFactResolution.confidence,
-          evidence: projectFactResolution.evidence,
-          factFamily: projectFactResolution.factFamily,
-          state:
-            projectFactResolution.factFamily === "generalized_reference"
-              ? "hold_for_more_evidence"
-              : "pending_confirmation",
-          ...(projectFactResolution.fieldKey ? { fieldKey: projectFactResolution.fieldKey } : {}),
-          ...(projectFactResolution.factFamily === "generalized_reference"
-            ? { clusterKey: projectFactResolution.parsed.key }
-            : {}),
-        }),
       });
     }
 
@@ -2857,12 +2917,13 @@ async function normalizeManagedToolCandidateInput(params: {
     if (!procedureResolution) {
       return input;
     }
-    return mergeCandidateMetadata(
-      {
+    return mergeCanonicalResolvedIngestionMetadata({
+      input: {
         ...input,
         content: procedureResolution.parsed.content,
       },
-      {
+      resolution: procedureResolution,
+      patch: {
         category:
           procedureResolution.parsed.captureClass === "recurring_procedure_correction"
             ? "recurring_procedure_correction"
@@ -2916,7 +2977,7 @@ async function normalizeManagedToolCandidateInput(params: {
             })
           : {}),
       },
-    );
+    });
   }
 
   if (input.kind === "improvement") {
@@ -2931,12 +2992,13 @@ async function normalizeManagedToolCandidateInput(params: {
     const workflowCaptureMetadata = getCaptureMetadataByWorkflowLessonFamily(
       workflowImprovementResolution.lessonFamily,
     );
-    return mergeCandidateMetadata(
-      {
+    return mergeCanonicalResolvedIngestionMetadata({
+      input: {
         ...input,
         content: workflowImprovementResolution.parsed.content,
       },
-      {
+      resolution: workflowImprovementResolution,
+      patch: {
         ...(workflowCaptureMetadata
           ? {
               category: workflowCaptureMetadata.category,
@@ -3055,7 +3117,7 @@ async function normalizeManagedToolCandidateInput(params: {
             : {}),
         }),
       },
-    );
+    });
   }
 
   if (input.kind === "correction") {
@@ -3064,44 +3126,48 @@ async function normalizeManagedToolCandidateInput(params: {
       context,
     });
     if (projectFactCorrection) {
-      return mergeCandidateMetadata(input, {
-        category: "project_fact_correction",
-        source: "conversational_project_fact_correction",
-        subject_key: projectFactCorrection.parsed.subjectKey,
-        autoCapture: {
-          source: "model_tool_candidate_submit",
-          captureSeam: "model_tool_primary",
-          profile: projectFactCorrection.parsed.profile,
-          captureClass: projectFactCorrection.parsed.captureClass,
-          reasonCode: projectFactCorrection.parsed.reasonCode,
-          template: projectFactCorrection.parsed.template,
-          factFamily: projectFactCorrection.factFamily,
-          ...(projectFactCorrection.fieldKey ? { fieldKey: projectFactCorrection.fieldKey } : {}),
-          key: projectFactCorrection.parsed.key,
-          subjectKey: projectFactCorrection.parsed.subjectKey,
-          subject: projectFactCorrection.parsed.subject,
-          normalizedSubject: projectFactCorrection.parsed.normalizedSubject,
-          value: projectFactCorrection.parsed.value,
-          normalizedValue: projectFactCorrection.parsed.normalizedValue,
-          ...(projectFactCorrection.parsed.projectScope
-            ? { projectScope: projectFactCorrection.parsed.projectScope }
+      return mergeCanonicalResolvedIngestionMetadata({
+        input,
+        resolution: projectFactCorrection,
+        patch: {
+          category: "project_fact_correction",
+          source: "conversational_project_fact_correction",
+          subject_key: projectFactCorrection.parsed.subjectKey,
+          autoCapture: {
+            source: "model_tool_candidate_submit",
+            captureSeam: "model_tool_primary",
+            profile: projectFactCorrection.parsed.profile,
+            captureClass: projectFactCorrection.parsed.captureClass,
+            reasonCode: projectFactCorrection.parsed.reasonCode,
+            template: projectFactCorrection.parsed.template,
+            factFamily: projectFactCorrection.factFamily,
+            ...(projectFactCorrection.fieldKey ? { fieldKey: projectFactCorrection.fieldKey } : {}),
+            key: projectFactCorrection.parsed.key,
+            subjectKey: projectFactCorrection.parsed.subjectKey,
+            subject: projectFactCorrection.parsed.subject,
+            normalizedSubject: projectFactCorrection.parsed.normalizedSubject,
+            value: projectFactCorrection.parsed.value,
+            normalizedValue: projectFactCorrection.parsed.normalizedValue,
+            ...(projectFactCorrection.parsed.projectScope
+              ? { projectScope: projectFactCorrection.parsed.projectScope }
+              : {}),
+            ...(projectFactCorrection.parsed.normalizedProjectScope
+              ? { normalizedProjectScope: projectFactCorrection.parsed.normalizedProjectScope }
+              : {}),
+            toolName: "memory_candidate_submit",
+          },
+          ...(projectFactCorrection.detectionSource === "semantic"
+            ? buildProjectFactSemanticMetadata({
+                detectionSource: projectFactCorrection.detectionSource,
+                confidence: projectFactCorrection.confidence,
+                evidence: projectFactCorrection.evidence,
+                factFamily: projectFactCorrection.factFamily,
+                ...(projectFactCorrection.fieldKey
+                  ? { fieldKey: projectFactCorrection.fieldKey }
+                  : {}),
+              })
             : {}),
-          ...(projectFactCorrection.parsed.normalizedProjectScope
-            ? { normalizedProjectScope: projectFactCorrection.parsed.normalizedProjectScope }
-            : {}),
-          toolName: "memory_candidate_submit",
         },
-        ...(projectFactCorrection.detectionSource === "semantic"
-          ? buildProjectFactSemanticMetadata({
-              detectionSource: projectFactCorrection.detectionSource,
-              confidence: projectFactCorrection.confidence,
-              evidence: projectFactCorrection.evidence,
-              factFamily: projectFactCorrection.factFamily,
-              ...(projectFactCorrection.fieldKey
-                ? { fieldKey: projectFactCorrection.fieldKey }
-                : {}),
-            })
-          : {}),
       });
     }
 

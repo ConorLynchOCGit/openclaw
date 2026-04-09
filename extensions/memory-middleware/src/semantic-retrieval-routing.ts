@@ -144,10 +144,31 @@ function readNestedMetadataString(
   return typeof cursor === "string" && cursor.trim().length > 0 ? cursor.trim() : undefined;
 }
 
+function readCanonicalMetadataString(
+  metadata: Record<string, unknown> | undefined,
+  path: string[],
+): string | undefined {
+  return (
+    readNestedMetadataString(metadata, ["canonicalIngestionCandidate", ...path]) ??
+    readNestedMetadataString(metadata, [
+      "candidateMetadata",
+      "canonicalIngestionCandidate",
+      ...path,
+    ]) ??
+    readNestedMetadataString(metadata, [
+      "promotionMetadata",
+      "canonicalIngestionCandidate",
+      ...path,
+    ]) ??
+    readNestedMetadataString(metadata, ["autoPromotion", "canonicalIngestionCandidate", ...path])
+  );
+}
+
 function extractWorkflowImprovementLessonKey(
   metadata: Record<string, unknown> | undefined,
 ): string | undefined {
   return (
+    readCanonicalMetadataString(metadata, ["record", "facets", "lessonKey"]) ??
     readNestedMetadataString(metadata, ["autoCapture", "lessonKey"]) ??
     readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "lessonKey"]) ??
     readNestedMetadataString(metadata, ["promotionMetadata", "autoPromotion", "lessonKey"]) ??
@@ -159,6 +180,8 @@ function extractWorkflowImprovementSubject(
   metadata: Record<string, unknown> | undefined,
 ): string | undefined {
   return (
+    readCanonicalMetadataString(metadata, ["record", "subject"]) ??
+    readCanonicalMetadataString(metadata, ["record", "facets", "projectScope"]) ??
     readNestedMetadataString(metadata, ["autoCapture", "subject"]) ??
     readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "subject"]) ??
     readNestedMetadataString(metadata, ["promotionMetadata", "autoPromotion", "subject"]) ??
@@ -170,6 +193,9 @@ function extractWorkflowImprovementValue(
   metadata: Record<string, unknown> | undefined,
 ): string | undefined {
   return (
+    readCanonicalMetadataString(metadata, ["record", "statement"]) ??
+    readCanonicalMetadataString(metadata, ["record", "facets", "recommendedAction"]) ??
+    readCanonicalMetadataString(metadata, ["record", "facets", "neededCapability"]) ??
     readNestedMetadataString(metadata, ["autoCapture", "value"]) ??
     readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", "value"]) ??
     readNestedMetadataString(metadata, ["promotionMetadata", "autoPromotion", "value"]) ??

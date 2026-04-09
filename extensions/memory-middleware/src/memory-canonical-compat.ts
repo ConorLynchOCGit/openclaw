@@ -12,17 +12,12 @@ import {
   type BuildCanonicalMemoryRecordForFamilyParams,
 } from "openclaw/plugin-sdk/memory-family-policy";
 import type {
+  ResolvedCanonicalizableIngestion,
   ResolvedProjectFactIngestion,
   ResolvedRecurringProcedureIngestion,
   ResolvedResponseStyleIngestion,
   ResolvedWorkflowIngestion,
 } from "./memory-ingestion-resolver.js";
-
-type ResolvedCanonicalizableIngestion =
-  | ResolvedProjectFactIngestion
-  | ResolvedRecurringProcedureIngestion
-  | ResolvedWorkflowIngestion
-  | Extract<ResolvedResponseStyleIngestion, { action: "capture" }>;
 
 export type BuildCanonicalMemoryRecordFromIngestionParams = {
   ingestion: ResolvedCanonicalizableIngestion;

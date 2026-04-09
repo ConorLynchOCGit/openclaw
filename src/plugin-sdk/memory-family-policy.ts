@@ -709,6 +709,13 @@ export function getMemoryFamilyCanonicalProjection(
   return getMemoryFamilyDefinition(familyId).canonicalProjection;
 }
 
+export function memoryFamilyProjectsToDerivedView(
+  familyId: MemoryFamilyId,
+  derivedView: string,
+): boolean {
+  return getMemoryFamilyCanonicalProjection(familyId).derivedViews.includes(derivedView);
+}
+
 export function getMemoryFamilyDefinitionByCaptureClass(
   captureClass: string,
 ): MemoryFamilyDefinition | null {

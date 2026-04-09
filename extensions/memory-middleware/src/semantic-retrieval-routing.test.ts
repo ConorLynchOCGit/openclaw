@@ -279,6 +279,53 @@ describe("semantic retrieval routing", () => {
       resolveProjectSemanticFallbackEligibility({
         family: "workflow_tool_gotcha",
         input: {
+          query: "how should I keep staging narrow here",
+          kind: "project",
+          scope: "approved_only",
+        },
+        hybridResult: {
+          accepted: true,
+          status: "ok",
+          scope: "approved_only",
+          query: "how should I keep staging narrow here",
+          records: [
+            {
+              objectType: "memory_object",
+              readSurface: "approved_memory_view",
+              id: "tool-gotcha-canonical",
+              memoryKind: "project",
+              reviewState: "approved",
+              content:
+                'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+              metadata: {
+                candidateMetadata: {
+                  canonicalIngestionCandidate: {
+                    record: {
+                      subject: "scoped commit workflow",
+                      statement:
+                        'use scripts/committer "<msg>" <file...> instead of manual git add / git commit',
+                      facets: {
+                        lessonKey: "scripts_committer_required",
+                      },
+                    },
+                  },
+                },
+              },
+              createdAt: "2026-04-01T00:00:00.000Z",
+              updatedAt: "2026-04-01T00:00:00.000Z",
+              score: 90,
+              matchedFields: ["auto_capture_lesson_match"],
+            },
+          ],
+        },
+        cfg: { plugins: {} } as never,
+      }),
+    ).toEqual({ eligible: false, reason: "strong_hybrid_match" });
+
+    expect(
+      resolveProjectSemanticFallbackEligibility({
+        family: "workflow_tool_gotcha",
+        input: {
           query: "how should I land this carefully",
           kind: "project",
           scope: "approved_only",

@@ -64,6 +64,20 @@ export type GeneralizedWorkflowGuidancePatternHint =
 
 export type ProjectMemoryIntentFamily = "" | "project_fact" | "project_rule" | "unmet_need";
 
+function readCanonicalStringFacetFilter(
+  plan: CanonicalMemoryRetrievalPlan,
+  key: string,
+): string | undefined {
+  const filter = plan.query.facetFilters.find((candidate) => candidate.key === key);
+  return typeof filter?.value === "string" && filter.value.trim().length > 0
+    ? filter.value.trim()
+    : undefined;
+}
+
+function hasCanonicalDerivedView(plan: CanonicalMemoryRetrievalPlan, view: string): boolean {
+  return plan.query.derivedViews.includes(view);
+}
+
 export function normalizeRetrievalQuery(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -713,4 +727,121 @@ export function buildCanonicalMemoryRetrievalPlan(params: {
       }),
     },
   });
+}
+
+export function resolveResponseStyleQueryHintFromCanonicalPlan(
+  plan: CanonicalMemoryRetrievalPlan,
+): ResponseStyleQueryHint | null {
+  const template = readCanonicalStringFacetFilter(plan, "responseStyleTemplate");
+  if (
+    template !== "responses_concise" &&
+    template !== "responses_bullets" &&
+    template !== "responses_plain_english" &&
+    template !== "responses_no_tables" &&
+    template !== "responses_numbered_steps" &&
+    template !== "response_style_generalized_guidance"
+  ) {
+    return null;
+  }
+
+  const normalizedSubject = readCanonicalStringFacetFilter(plan, "normalizedSubject");
+  return {
+    template,
+    ...(normalizedSubject === "file references" ? { normalizedSubject } : {}),
+  };
+}
+
+export function resolveProjectFactQueryHintFromCanonicalPlan(
+  plan: CanonicalMemoryRetrievalPlan,
+): ProjectFactQueryHint | null {
+  const fieldKey = readCanonicalStringFacetFilter(plan, "fieldKey");
+  if (
+    fieldKey !== "default_branch" &&
+    fieldKey !== "staging_branch" &&
+    fieldKey !== "repository_url" &&
+    fieldKey !== "deployment_url" &&
+    fieldKey !== "documentation_url" &&
+    fieldKey !== "runbook_url" &&
+    fieldKey !== "primary_package_manager" &&
+    fieldKey !== "primary_environment_name"
+  ) {
+    return null;
+  }
+  return { fieldKey };
+}
+
+export function resolveWorkflowImprovementQueryHintFromCanonicalPlan(
+  plan: CanonicalMemoryRetrievalPlan,
+): WorkflowImprovementQueryHint | null {
+  const lessonKey = readCanonicalStringFacetFilter(plan, "lessonKey");
+  if (
+    lessonKey !== "vitest_wrapper_required" &&
+    lessonKey !== "scripts_committer_required" &&
+    lessonKey !== "git_stash_unsafe" &&
+    lessonKey !== "docs_only_check_fast" &&
+    lessonKey !== "memory_proof_runner_required" &&
+    lessonKey !== "readyz_for_readiness" &&
+    lessonKey !== "python_command_unavailable" &&
+    lessonKey !== "gateway_tools_invoke_forbidden" &&
+    lessonKey !== "openai_embeddings_api_key_required" &&
+    lessonKey !== "anthropic_context1m_eligible_credential_required"
+  ) {
+    return null;
+  }
+  return { lessonKey };
+}
+
+export function resolveProjectMemoryIntentFamilyFromCanonicalPlan(
+  plan: CanonicalMemoryRetrievalPlan,
+): ProjectMemoryIntentFamily {
+  const projectIntentFamily = readCanonicalStringFacetFilter(plan, "projectIntentFamily");
+  if (
+    projectIntentFamily === "project_fact" ||
+    projectIntentFamily === "project_rule" ||
+    projectIntentFamily === "unmet_need"
+  ) {
+    return projectIntentFamily;
+  }
+  if (hasCanonicalDerivedView(plan, "project_fact")) {
+    return "project_fact";
+  }
+  if (hasCanonicalDerivedView(plan, "project_rule")) {
+    return "project_rule";
+  }
+  if (hasCanonicalDerivedView(plan, "unmet_need")) {
+    return "unmet_need";
+  }
+  return "";
+}
+
+export function resolveGeneralizedWorkflowGuidancePatternHintFromCanonicalPlan(
+  plan: CanonicalMemoryRetrievalPlan,
+): GeneralizedWorkflowGuidancePatternHint {
+  const guidancePattern = readCanonicalStringFacetFilter(plan, "guidancePattern");
+  return guidancePattern === "use_instead_of" ||
+    guidancePattern === "trust_for_scope" ||
+    guidancePattern === "avoid_only"
+    ? guidancePattern
+    : "";
+}
+
+export function resolveRecurringProcedureQueryHintFromCanonicalPlan(
+  plan: CanonicalMemoryRetrievalPlan,
+): RecurringProcedureQueryHint | null {
+  const rawProcedureKey = readCanonicalStringFacetFilter(plan, "procedureKey");
+  const normalizedSubject = readCanonicalStringFacetFilter(plan, "normalizedSubject");
+  const procedureKey =
+    rawProcedureKey === "deploy_checklist" ||
+    rawProcedureKey === "release_checklist" ||
+    rawProcedureKey === "triage_checklist" ||
+    rawProcedureKey === "investigation_checklist"
+      ? rawProcedureKey
+      : undefined;
+  if (!procedureKey && !normalizedSubject) {
+    return null;
+  }
+  return {
+    ...(procedureKey ? { procedureKey } : {}),
+    ...(normalizedSubject ? { normalizedSubject } : {}),
+  };
 }

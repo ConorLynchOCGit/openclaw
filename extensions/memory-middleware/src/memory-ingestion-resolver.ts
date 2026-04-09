@@ -610,6 +610,12 @@ export type ResolvedWorkflowIngestion = {
   observedText: string;
 };
 
+export type ResolvedCanonicalizableIngestion =
+  | ResolvedProjectFactIngestion
+  | ResolvedRecurringProcedureIngestion
+  | ResolvedWorkflowIngestion
+  | Extract<ResolvedResponseStyleIngestion, { action: "capture" }>;
+
 function resolveWorkflowFamilyId(
   lessonFamily: WorkflowImprovementLessonFamily,
 ): "workflow_improvement" | "project_rule" | "unmet_need" {

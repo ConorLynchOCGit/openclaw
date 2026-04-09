@@ -153,15 +153,23 @@ This tranche and the immediate follow-through slices have now landed:
 5. resolver-backed ordinary-turn capture emission of canonical candidates
 6. generic canonical retrieval/ranking plan contracts with compatibility-driven
    population from the current retrieval hint/control layer
+7. hybrid retrieval control decisions now derive their operative routing and
+   semantic-fallback inputs from canonical retrieval plans first
+8. learned-guidance planning now prefers canonical workflow-guidance records
+   and canonical retrieval plans before legacy metadata fallbacks
+9. the remaining critical tool/self-improving submission seams now stamp
+   canonical ingestion candidates first, with family-native metadata preserved
+   as compatibility state
 
 It concluded:
 
 - the canonical 4-kind target is now a real code seam, not just a doc plan
-- the current family-heavy runtime remains active, but real ingestion and
-  retrieval seams now have forward adapter paths into the canonical substrate
-- the next honest migration slice is learned-guidance/hybrid/runtime cutover
-  onto canonical retrieval plans and canonical candidates, plus migration of
-  the remaining family-native capture/retrieval paths
+- the current family-heavy runtime remains active, but real ingestion,
+  retrieval, guidance, and critical submission seams now have forward adapter
+  paths into the canonical substrate
+- the next honest migration slice is the deeper runtime retirement work:
+  canonical retrieval execution, canonical planner/tool-selection, and staged
+  deletion of remaining family-heavy compatibility branches
 
 ## What the functional batch changed
 

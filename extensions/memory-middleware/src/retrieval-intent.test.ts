@@ -7,6 +7,9 @@ import {
   inferResponseStyleQueryHint,
   inferWorkflowImprovementQueryHint,
   normalizeRetrievalQuery,
+  resolveProjectMemoryIntentFamilyFromCanonicalPlan,
+  resolveRecurringProcedureQueryHintFromCanonicalPlan,
+  resolveWorkflowImprovementQueryHintFromCanonicalPlan,
 } from "./retrieval-intent.js";
 
 describe("retrieval intent helpers", () => {
@@ -93,5 +96,38 @@ describe("retrieval intent helpers", () => {
         preferValidationStatuses: ["validated", "approved"],
       },
     });
+  });
+
+  it("derives operative retrieval hints back from canonical plans", () => {
+    const workflowPlan = buildCanonicalMemoryRetrievalPlan({
+      input: {
+        query: "should I use scripts/committer instead of git add here",
+        kind: "project",
+        scope: "approved_only",
+      },
+    });
+    expect(resolveWorkflowImprovementQueryHintFromCanonicalPlan(workflowPlan)).toEqual({
+      lessonKey: "scripts_committer_required",
+    });
+
+    const procedurePlan = buildCanonicalMemoryRetrievalPlan({
+      input: {
+        query: "deploy checklist",
+        kind: "procedure",
+        scope: "include_validated_procedures",
+      },
+    });
+    expect(resolveRecurringProcedureQueryHintFromCanonicalPlan(procedurePlan)).toEqual({
+      procedureKey: "deploy_checklist",
+    });
+
+    const projectPlan = buildCanonicalMemoryRetrievalPlan({
+      input: {
+        query: "where are the OpenClaw docs hosted?",
+        kind: "project",
+        scope: "approved_only",
+      },
+    });
+    expect(resolveProjectMemoryIntentFamilyFromCanonicalPlan(projectPlan)).toBe("project_fact");
   });
 });

@@ -9,13 +9,13 @@ import type {
 import { getMemoryFamilyDefinition, type MemoryFamilyId } from "./memory-family-registry.js";
 import {
   buildCanonicalMemoryRetrievalPlan,
-  inferGeneralizedWorkflowGuidancePatternHint,
-  inferProjectFactQueryHint,
-  inferProjectMemoryIntentFamily,
-  inferRecurringProcedureQueryHint,
-  inferResponseStyleQueryHint,
-  inferWorkflowImprovementQueryHint,
   normalizeRetrievalQuery,
+  resolveGeneralizedWorkflowGuidancePatternHintFromCanonicalPlan,
+  resolveProjectFactQueryHintFromCanonicalPlan,
+  resolveProjectMemoryIntentFamilyFromCanonicalPlan,
+  resolveRecurringProcedureQueryHintFromCanonicalPlan,
+  resolveResponseStyleQueryHintFromCanonicalPlan,
+  resolveWorkflowImprovementQueryHintFromCanonicalPlan,
   type GeneralizedWorkflowGuidancePatternHint,
   type ProjectFactQueryHint,
   type ProjectMemoryIntentFamily,
@@ -164,21 +164,15 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
   });
   const recurringProcedureDefinition = getMemoryFamilyDefinition("recurring_procedure");
   const workflowImprovementDefinition = getMemoryFamilyDefinition("workflow_improvement");
-  const responseStyleHint =
-    params.input.kind === "project" || params.input.kind === "procedure"
-      ? null
-      : inferResponseStyleQueryHint(params.input.query);
-  const projectFactHint =
-    params.input.kind === "project" ? inferProjectFactQueryHint(params.input.query) : null;
+  const responseStyleHint = resolveResponseStyleQueryHintFromCanonicalPlan(canonicalPlan);
+  const projectFactHint = resolveProjectFactQueryHintFromCanonicalPlan(canonicalPlan);
   const workflowImprovementHint =
-    params.input.kind === "project" ? inferWorkflowImprovementQueryHint(params.input.query) : null;
+    resolveWorkflowImprovementQueryHintFromCanonicalPlan(canonicalPlan);
   const projectMemoryIntentFamily =
-    params.input.kind === "project" ? inferProjectMemoryIntentFamily(params.input.query) : "";
+    resolveProjectMemoryIntentFamilyFromCanonicalPlan(canonicalPlan);
   const generalizedWorkflowPatternHint =
-    params.input.kind === "project"
-      ? inferGeneralizedWorkflowGuidancePatternHint(params.input.query)
-      : "";
-  const procedureHint = inferRecurringProcedureQueryHint(params.input.query);
+    resolveGeneralizedWorkflowGuidancePatternHintFromCanonicalPlan(canonicalPlan);
+  const procedureHint = resolveRecurringProcedureQueryHintFromCanonicalPlan(canonicalPlan);
 
   const preferredStrategies = canonicalPlan.ranking
     .semanticFallbackStrategies as readonly SemanticFallbackFamily[];

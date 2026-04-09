@@ -9,6 +9,7 @@ export {
   getMemoryFamilyDefinitionByCaptureClass,
   getMemoryFamilyDefinitionByWorkflowLessonFamily,
   getMemoryFamilyIdByWorkflowLessonFamily,
+  memoryFamilyProjectsToDerivedView,
   getMemoryProofDefinition,
   getPhrasePatternProofFamilyId,
   isMemoryProofFamily,

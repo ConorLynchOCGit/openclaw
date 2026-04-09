@@ -1,9 +1,12 @@
+import type { CanonicalMemoryRetrievalPlan } from "openclaw/plugin-sdk/memory-canonical-retrieval";
 import type { MemoryObjectSearchHybridResult, RankedRetrievedMemoryRecord } from "./db/runtime.js";
 import {
   getMemoryFamilyPolicy,
+  memoryFamilyProjectsToDerivedView,
   type MemoryFamilyApplicationMode,
 } from "./memory-family-registry.js";
 import type { MemoryObjectQueryPort } from "./memory-object-query.js";
+import { buildCanonicalMemoryRetrievalPlan } from "./retrieval-intent.js";
 
 export type LearnedGuidanceAdvisoryPlanningInput = {
   query: string;
@@ -111,6 +114,14 @@ type WorkflowGuidanceMetadata = {
 };
 
 type WorkflowGuidanceRecord = Extract<RankedRetrievedMemoryRecord, { objectType: "memory_object" }>;
+type CanonicalWorkflowGuidanceRecord = {
+  kind?: string;
+  subject?: string;
+  statement?: string;
+  tags: string[];
+  facets: Record<string, unknown>;
+  compatibility: Record<string, unknown>;
+};
 
 const DEFAULT_LEARNED_GUIDANCE_ALLOWED_LESSON_FAMILIES = [
   "generalized_workflow_lesson",
@@ -146,10 +157,107 @@ function readOptionalString(record: Record<string, unknown>, key: string): strin
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function readOptionalStringArray(
+  record: Record<string, unknown>,
+  key: string,
+): string[] | undefined {
+  const value = record[key];
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string")
+    ? value.map((entry) => entry.trim()).filter((entry) => entry.length > 0)
+    : undefined;
+}
+
+function readCanonicalWorkflowGuidanceRecord(
+  record: RankedRetrievedMemoryRecord,
+): CanonicalWorkflowGuidanceRecord | null {
+  if (record.objectType !== "memory_object") {
+    return null;
+  }
+  const metadata = asRecord(record.metadata);
+  const canonicalCandidate = asRecord(
+    metadata.canonicalIngestionCandidate ??
+      asRecord(metadata.candidateMetadata).canonicalIngestionCandidate,
+  );
+  const canonicalRecord = asRecord(canonicalCandidate.record);
+  if (Object.keys(canonicalRecord).length === 0) {
+    return null;
+  }
+  return {
+    kind: readOptionalString(canonicalRecord, "kind"),
+    subject: readOptionalString(canonicalRecord, "subject"),
+    statement: readOptionalString(canonicalRecord, "statement"),
+    tags: readOptionalStringArray(canonicalRecord, "tags") ?? [],
+    facets: asRecord(canonicalRecord.facets),
+    compatibility: asRecord(canonicalRecord.compatibility),
+  };
+}
+
+function extractCanonicalWorkflowGuidanceMetadata(
+  record: RankedRetrievedMemoryRecord,
+  allowedLessonFamilies: ReadonlySet<"supported_lesson" | "generalized_workflow_lesson">,
+  canonicalPlan: CanonicalMemoryRetrievalPlan,
+): WorkflowGuidanceMetadata | null {
+  const canonicalRecord = readCanonicalWorkflowGuidanceRecord(record);
+  if (
+    !canonicalRecord ||
+    record.objectType !== "memory_object" ||
+    record.reviewState !== "approved"
+  ) {
+    return null;
+  }
+  if (
+    canonicalRecord.kind !== "feedback" ||
+    !canonicalPlan.query.requestedKinds.includes("feedback") ||
+    !memoryFamilyProjectsToDerivedView("workflow_improvement", "learned_guidance")
+  ) {
+    return null;
+  }
+  const transitionalFamilyId = readOptionalString(
+    canonicalRecord.compatibility,
+    "transitionalFamilyId",
+  );
+  const workflowGuidanceFacet = canonicalRecord.facets.workflow_guidance;
+  const lessonFamily = readOptionalString(canonicalRecord.facets, "lessonFamily");
+  if (
+    transitionalFamilyId !== "workflow_improvement" ||
+    workflowGuidanceFacet !== true ||
+    (lessonFamily !== "supported_lesson" && lessonFamily !== "generalized_workflow_lesson") ||
+    !allowedLessonFamilies.has(lessonFamily)
+  ) {
+    return null;
+  }
+
+  return {
+    lessonFamily,
+    subjectKey: readOptionalString(canonicalRecord.facets, "subjectKey"),
+    lessonKey: readOptionalString(canonicalRecord.facets, "lessonKey"),
+    toolKey: readOptionalString(canonicalRecord.facets, "toolKey"),
+    guidancePattern: readOptionalString(canonicalRecord.facets, "guidancePattern"),
+    recommendedAction:
+      readOptionalString(canonicalRecord.facets, "recommendedAction") ?? canonicalRecord.statement,
+    avoidAction: readOptionalString(canonicalRecord.facets, "avoidAction"),
+    rationale: readOptionalString(canonicalRecord.facets, "rationale"),
+    provenance:
+      readOptionalString(canonicalRecord.facets, "captureClass") === "self_improving_capture" ||
+      readOptionalString(canonicalRecord.facets, "provenanceOrigin") === "self_improving_capture"
+        ? "self_improving_capture"
+        : "native_capture",
+  };
+}
+
 function extractWorkflowGuidanceMetadata(
   record: RankedRetrievedMemoryRecord,
   allowedLessonFamilies: ReadonlySet<"supported_lesson" | "generalized_workflow_lesson">,
+  canonicalPlan: CanonicalMemoryRetrievalPlan,
 ): WorkflowGuidanceMetadata | null {
+  const canonicalMetadata = extractCanonicalWorkflowGuidanceMetadata(
+    record,
+    allowedLessonFamilies,
+    canonicalPlan,
+  );
+  if (canonicalMetadata) {
+    return canonicalMetadata;
+  }
   if (record.objectType !== "memory_object" || record.reviewState !== "approved") {
     return null;
   }
@@ -192,11 +300,16 @@ function extractWorkflowGuidanceMetadata(
 function extractWorkflowGuidanceEntry(params: {
   record: RankedRetrievedMemoryRecord;
   allowedLessonFamilies: ReadonlySet<"supported_lesson" | "generalized_workflow_lesson">;
+  canonicalPlan: CanonicalMemoryRetrievalPlan;
 }): {
   record: WorkflowGuidanceRecord;
   metadata: WorkflowGuidanceMetadata;
 } | null {
-  const metadata = extractWorkflowGuidanceMetadata(params.record, params.allowedLessonFamilies);
+  const metadata = extractWorkflowGuidanceMetadata(
+    params.record,
+    params.allowedLessonFamilies,
+    params.canonicalPlan,
+  );
   if (!metadata || params.record.objectType !== "memory_object") {
     return null;
   }
@@ -244,6 +357,7 @@ function resolveGuidanceSuggestions(params: {
   records: RankedRetrievedMemoryRecord[];
   maxSuggestions: number;
   allowedLessonFamilies: ReadonlySet<"supported_lesson" | "generalized_workflow_lesson">;
+  canonicalPlan: CanonicalMemoryRetrievalPlan;
 }): {
   suggestions: LearnedGuidanceAdvisoryPlanningSuggestion[];
   suppressedConflicts: LearnedGuidanceAdvisoryConflict[];
@@ -261,10 +375,12 @@ function resolveGuidanceSuggestions(params: {
     const anyBoundedMetadata = extractWorkflowGuidanceMetadata(
       record,
       new Set(DEFAULT_LEARNED_GUIDANCE_ALLOWED_LESSON_FAMILIES),
+      params.canonicalPlan,
     );
     const entry = extractWorkflowGuidanceEntry({
       record,
       allowedLessonFamilies: params.allowedLessonFamilies,
+      canonicalPlan: params.canonicalPlan,
     });
     if (!entry) {
       if (
@@ -470,6 +586,13 @@ export function createLearnedGuidanceAdvisoryPlanningPort(params: {
         records: searchResult.records,
         maxSuggestions,
         allowedLessonFamilies,
+        canonicalPlan: buildCanonicalMemoryRetrievalPlan({
+          input: {
+            query: input.query,
+            kind: "project",
+            scope: "approved_only",
+          },
+        }),
       });
       const nativeSuggestionCount = suggestions.filter(
         (suggestion) => suggestion.provenance === "native_capture",

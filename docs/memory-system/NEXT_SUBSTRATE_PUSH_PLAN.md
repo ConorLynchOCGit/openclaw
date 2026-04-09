@@ -88,12 +88,12 @@ Current reevaluation judgment:
 
 The next implementation slices should now be:
 
-- learned-guidance and hybrid retrieval rebased onto canonical records instead
-  of family-specific switches
-- remaining family-native capture paths rebased to canonical candidate
-  emission
-- retrieval SQL/control-plane cleanup so canonical plans become the primary
-  substrate rather than a compatibility layer
+- deeper hybrid retrieval execution rebased onto canonical retrieval plans,
+  not just canonical control decisions
+- planner/tool-selection seams rebased onto canonical records and canonical
+  retrieval plans rather than family/lesson-heavy switches
+- staged retirement of the remaining family-native capture/retrieval
+  compatibility branches once the canonical runtime path is proven
 
 The canonical-core tranche is now already landed:
 
@@ -102,6 +102,15 @@ The canonical-core tranche is now already landed:
 - family-policy compatibility builders
 - canonical ingestion candidate contract
 - canonical retrieval/ranking contract
+
+The next follow-through tranche is also now landed:
+
+- hybrid retrieval control decisions derive operative hints/fallbacks from
+  canonical retrieval plans first
+- learned-guidance planning prefers canonical workflow-guidance records and
+  canonical retrieval plans first
+- critical tool-submission and self-improving capture seams now submit
+  canonical ingestion candidates first
 
 Why:
 
@@ -134,6 +143,6 @@ Before new families:
 
 ## Next implementation slice
 
-- canonical 4-kind replacement architecture work, starting with the generic
-  ingestion and retrieval substrate that can adapt the current family-heavy
-  system instead of extending it
+- canonical runtime retirement work, starting with deeper hybrid retrieval
+  execution and planner/tool-selection cutover so compatibility adapters stop
+  being the primary runtime substrate

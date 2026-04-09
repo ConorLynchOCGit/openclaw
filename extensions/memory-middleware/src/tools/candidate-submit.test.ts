@@ -379,6 +379,17 @@ describe("memory candidate submit tool", () => {
       content:
         'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
       metadata: expect.objectContaining({
+        canonicalIngestionCandidate: expect.objectContaining({
+          record: expect.objectContaining({
+            kind: "feedback",
+            compatibility: expect.objectContaining({
+              transitionalFamilyId: "workflow_improvement",
+            }),
+          }),
+          compatibility: expect.objectContaining({
+            candidateKind: "improvement",
+          }),
+        }),
         category: "workflow_improvement",
         source: "explicit_workflow_improvement",
         autoCapture: expect.objectContaining({
@@ -1422,6 +1433,14 @@ describe("memory candidate submit tool", () => {
     expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({
+          canonicalIngestionCandidate: expect.objectContaining({
+            record: expect.objectContaining({
+              kind: "project",
+              compatibility: expect.objectContaining({
+                transitionalFamilyId: "project_fact",
+              }),
+            }),
+          }),
           category: "project_fact",
           source: "explicit_project_fact",
           autoCapture: expect.objectContaining({
@@ -1973,6 +1992,14 @@ describe("memory candidate submit tool", () => {
       expect.objectContaining({
         content: ["1. Open the canary lane", "2. Verify health"].join("\n"),
         metadata: expect.objectContaining({
+          canonicalIngestionCandidate: expect.objectContaining({
+            record: expect.objectContaining({
+              kind: "feedback",
+              compatibility: expect.objectContaining({
+                transitionalFamilyId: "recurring_procedure",
+              }),
+            }),
+          }),
           category: "recurring_procedure",
           autoCapture: expect.objectContaining({
             captureClass: "explicit_recurring_procedure",

@@ -49,6 +49,55 @@ function createApprovedWorkflowRecord(params?: {
   };
 }
 
+function createApprovedCanonicalWorkflowRecord(params?: {
+  id?: string;
+  content?: string;
+  score?: number;
+  lessonFamily?: "supported_lesson" | "generalized_workflow_lesson";
+  subjectKey?: string;
+}) {
+  return {
+    objectType: "memory_object" as const,
+    readSurface: "approved_memory_view" as const,
+    id: params?.id ?? "canonical-memory-1",
+    memoryKind: "project" as const,
+    reviewState: "approved" as const,
+    content:
+      params?.content ??
+      'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+    projectId: "project-1",
+    metadata: {
+      candidateMetadata: {
+        canonicalIngestionCandidate: {
+          record: {
+            kind: "feedback",
+            subject: "scoped commit workflow",
+            statement: 'scripts/committer "<msg>" <file...>',
+            tags: ["workflow_improvement", "workflow_guidance", "feedback"],
+            facets: {
+              workflow_guidance: true,
+              lessonFamily: params?.lessonFamily ?? "supported_lesson",
+              subjectKey: params?.subjectKey ?? "canonical-subject-1",
+              lessonKey: "scripts_committer_required",
+              toolKey: "scripts_committer",
+              guidancePattern: "use_instead_of",
+              recommendedAction: 'scripts/committer "<msg>" <file...>',
+              avoidAction: "manual git add / git commit",
+            },
+            compatibility: {
+              transitionalFamilyId: "workflow_improvement",
+            },
+          },
+        },
+      },
+    },
+    createdAt: "2026-04-01T00:00:00.000Z",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+    score: params?.score ?? 0.93,
+    matchedFields: ["generalized_recommended_action_match"],
+  };
+}
+
 describe("learned-guidance advisory planning", () => {
   it("returns disabled when the inline advisory mode is off", async () => {
     const port = createLearnedGuidanceAdvisoryPlanningPort({
@@ -166,6 +215,40 @@ describe("learned-guidance advisory planning", () => {
         suggestionCount: 1,
         selfImprovingSuggestionCount: 1,
       },
+    });
+  });
+
+  it("prefers canonical workflow guidance metadata when available", async () => {
+    const port = createLearnedGuidanceAdvisoryPlanningPort({
+      memoryObjectQuery: {
+        searchHybrid: vi.fn(async () => ({
+          accepted: true as const,
+          status: "ok" as const,
+          scope: "approved_only" as const,
+          query: "how should I commit scoped repo changes?",
+          records: [createApprovedCanonicalWorkflowRecord()],
+        })),
+      } as never,
+      mode: "inline-only",
+      rolloutTarget: "off-production",
+    });
+
+    await expect(
+      port.plan({
+        query: "how should I commit scoped repo changes?",
+        projectId: "project-1",
+      }),
+    ).resolves.toMatchObject({
+      accepted: true,
+      outcome: "guidance_available",
+      suggestions: [
+        {
+          memoryObjectId: "canonical-memory-1",
+          lessonFamily: "supported_lesson",
+          toolKey: "scripts_committer",
+          guidancePattern: "use_instead_of",
+        },
+      ],
     });
   });
 

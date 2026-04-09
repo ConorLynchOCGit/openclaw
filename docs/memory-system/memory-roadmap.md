@@ -443,7 +443,7 @@ Phase O should be sequenced as:
 
 Current tranche status:
 
-- Steps 1-3 are now landed:
+- Steps 1-5 are now materially landed:
   - canonical record/envelope contracts exist in code
   - canonical facet/metadata scaffolding exists in code
   - family-policy compatibility builders can emit canonical-core-compatible
@@ -451,9 +451,15 @@ Current tranche status:
   - generic ingestion contracts now exist in code
   - resolver-backed ordinary-turn capture now emits canonical candidates
   - generic retrieval/ranking contracts now exist in code
-- Step 4 is now the next required slice:
-  - learned-guidance and hybrid retrieval re-based onto canonical memories and
-    canonical retrieval plans
+  - hybrid retrieval control decisions now consume canonical retrieval plans
+    first
+  - learned-guidance planning now prefers canonical workflow-guidance records
+    and canonical retrieval plans first
+  - critical tool-submission and self-improving capture seams now emit
+    canonical candidates first
+- Step 6 is now the next required slice:
+  - retire the remaining family-heavy runtime branches behind the new
+    canonical ingestion/retrieval/planner seams
 
 Success for this phase should mean:
 
