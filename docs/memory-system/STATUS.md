@@ -529,6 +529,42 @@ It concluded:
   now documented as a family-era bridge rather than a preferred runtime policy
   center
 
+## What the final memory-path completion and gate-discipline batch changed
+
+This batch landed five closing outcomes:
+
+1. extension-side canonical compat record building now uses the local
+   `memory-compatibility-family.ts` seam instead of importing
+   `src/plugin-sdk/memory-family-policy.ts`
+2. memory-core durable prompt guidance now reads local durable memory guidance
+   families instead of the SDK family-definition registry
+3. `candidate-submit.ts` removed the last meaningful raw family-id routing
+   fallback and now only uses canonical metadata plus narrow compatibility
+   hints for legacy unstamped workflow records
+4. `queries.ts` shed the remaining skill-candidate, procurement, and vetting
+   selector/transaction cluster into dedicated DB modules, while keeping
+   `queries.ts` focused on the broader query-layer domains that still honestly
+   belong there
+5. repo-owned gate discipline now lives in `scripts/run-gate.mjs`, the root
+   package scripts, `AGENTS.md`, and the workflow/testing docs so future
+   sessions inherit the same lock, reuse, and timestamp behavior
+
+It concluded:
+
+- extension runtime code now has zero imports of
+  `src/plugin-sdk/memory-family-policy.ts`
+- `memory-family-policy.ts` remains only as a public backward-compatible SDK
+  surface plus its own tests
+- `memory-canonical-compat.ts` remains the explicit old-record translation
+  seam, but it is now a small reader/adapter layer instead of a mixed
+  architecture center
+- `candidate-submit.ts` is now honestly canonical-first in active routing
+- `queries.ts` is still large, but the remaining size is split across
+  different domains rather than one leftover skill-governance planner island
+- the memory-path compatibility-retirement roadmap line is complete; what
+  remains after this batch is intentional compatibility surface, not active
+  family-era architecture
+
 ## What the functional batch changed
 
 The functional batch landed three real slices:

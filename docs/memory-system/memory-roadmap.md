@@ -483,6 +483,35 @@ This means:
 - the remaining work is now mostly true bridge retirement and deeper
   correction-engine flattening, not the old mixed planner tangle
 
+### Final compatibility-retirement completion
+
+The closing tranche for this roadmap line landed five final shifts:
+
+1. canonical compat record building moved fully onto the local
+   `memory-compatibility-family.ts` seam, so extension runtime code no longer
+   imports `memory-family-policy.ts`
+2. memory-core durable guidance now reads a local durable-guidance family map
+   instead of the SDK family-definition registry
+3. `candidate-submit.ts` removed the last meaningful raw family fallback from
+   its active routing path and now relies on canonical metadata plus one
+   narrow legacy compatibility hint path for unstamped workflow records
+4. `queries.ts` shed the remaining skill-candidate, procurement, and vetting
+   selector/transaction cluster into dedicated DB modules
+5. repo-owned gate discipline landed through `scripts/run-gate.mjs`, package
+   scripts, and workflow docs so future sessions reuse green `check:fast`
+   results, avoid overlapping heavy gates, and get timestamped build phases
+
+This means:
+
+- the runtime memory path is no longer architecturally centered on broad
+  family-policy helpers
+- `memory-canonical-compat.ts` and `memory-family-policy.ts` now survive only
+  as intentional compatibility boundaries
+- `queries.ts` still spans multiple domains, but no obvious memory-governance
+  extraction island remains for this roadmap line
+- the remaining follow-up after this phase is future product work, not more
+  compatibility-retirement debt on the active memory path
+
 ## Phase E — post-flattening hardening before reduced-profile self-improving capture
 
 This phase is now landed.

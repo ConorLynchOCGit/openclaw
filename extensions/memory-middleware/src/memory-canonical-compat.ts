@@ -1,4 +1,3 @@
-import type { MemoryFamilyId } from "openclaw/plugin-sdk/memory-family-policy";
 export type {
   BuildCanonicalMemoryIngestionCandidateFromAutoCaptureMatchParams,
   BuildCanonicalMemoryIngestionCandidateFromResolvedIngestionParams,
@@ -10,6 +9,7 @@ export {
   buildCanonicalMemoryRecordFromResolvedIngestion,
   isCanonicalizableResolvedResponseStyleIngestion,
 } from "./memory-canonical-compat-builders.js";
+import type { CompatibilityMemoryFamilyId } from "./memory-compatibility-family.js";
 
 export type CanonicalMemoryRecordMetadataView = {
   kind?: string;
@@ -197,7 +197,7 @@ function readCanonicalAliasString(
 
 function resolveCanonicalRecordFamilyId(
   candidate: CanonicalMemoryIngestionCandidateMetadataView,
-): MemoryFamilyId | undefined {
+): CompatibilityMemoryFamilyId | undefined {
   const captureCategory = candidate.record.compatibility.captureCategory;
   if (
     captureCategory === "project_fact" ||

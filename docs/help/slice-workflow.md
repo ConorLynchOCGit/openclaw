@@ -62,6 +62,8 @@ Run this once the code is stable enough for real proof.
     typed-code changes
 - Run `pnpm build` only if the touched surface can affect build output,
   packaging, lazy-loading or module boundaries, or a published runtime.
+- Treat `pnpm check:fast`, `pnpm check:types`, `pnpm check`, and `pnpm build`
+  as serialized expensive gates on one checkout.
 
 If no code changes happen after this gate, do not rerun these same expensive
 checks later just for ceremony.
@@ -214,13 +216,17 @@ After the code is stable enough for proof:
 
 - nearby targeted tests can run in parallel with docs drafting
 - `pnpm check:fast` and docs drafting can run in parallel
-- `pnpm check:types` and `pnpm build` can run in parallel when the machine has
-  the headroom and the two commands do not depend on each other
 - proof-environment health checks can run in parallel with rollback-reference
   capture
 
 Do not parallelize steps that hide causal order, such as proofing production
 before the pre-proof gate is done.
+Do not overlap expensive repo gates on the same checkout; the repo gate wrapper
+now guards `pnpm check:fast`, `pnpm check:types`, `pnpm check`, and
+`pnpm build` with a shared lock.
+If you want to inspect running processes before a heavy gate, do that as a
+separate step instead of combining process inspection and gate launch in one
+parallel action.
 
 ## Capture evidence once
 
@@ -288,8 +294,12 @@ For Docker-backed proof or rollout:
   - required for real runtime or typed-code changes
 - `pnpm check`
   - full repo check
-  - currently runs `pnpm check:fast && pnpm check:types`
+  - reuses a green `pnpm check:fast` result on the same unchanged tree, then
+    runs `pnpm check:types`
   - normal full landing bar for real code changes
+- `pnpm build`
+  - serialized by the repo gate wrapper
+  - prints timestamped phases, including `build:plugin-sdk:dts`
 
 Current VPS caveat:
 

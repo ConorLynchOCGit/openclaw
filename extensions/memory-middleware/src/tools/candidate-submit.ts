@@ -18,6 +18,11 @@ import {
   readCanonicalFirstMetadataString,
 } from "../memory-canonical-compat.js";
 import {
+  getCompatibilityMemoryFamilyIdByCaptureClass,
+  getCompatibilityMemoryFamilyIdByWorkflowLessonFamily,
+  type CompatibilityMemoryFamilyId,
+} from "../memory-compatibility-family.js";
+import {
   attemptApprovedMemoryObjectCorrectionPromotion,
   resolveMemoryCorrectionPromotionPolicy,
   resolveMemoryCorrectionPlan,
@@ -232,49 +237,79 @@ function readAutoCaptureString(
   return readNestedMetadataString(metadata, ["autoCapture", key]);
 }
 
-type SubmissionCompatibilityFamilyId =
-  | "response_style"
-  | "project_fact"
-  | "recurring_procedure"
-  | "workflow_improvement"
-  | "project_rule"
-  | "unmet_need";
+type SubmissionCompatibilityFamilyId = CompatibilityMemoryFamilyId;
 
-function readLegacySubmissionCompatibilityFamilyIdFallback(
+function isLegacyResponseStyleRoutingHint(metadata: Record<string, unknown> | undefined): boolean {
+  const captureClass = readAutoCaptureString(metadata, "captureClass");
+  if (
+    captureClass === "explicit_preference" ||
+    captureClass === "preference_correction" ||
+    captureClass === "explicit_requirement" ||
+    captureClass === "requirement_correction"
+  ) {
+    return true;
+  }
+
+  const template = readAutoCaptureString(metadata, "template");
+  return (
+    template === "responses_concise" ||
+    template === "responses_bullets" ||
+    template === "responses_plain_english" ||
+    template === "responses_no_tables" ||
+    template === "responses_numbered_steps" ||
+    template === "response_style_generalized_guidance"
+  );
+}
+
+function readLegacySubmissionCompatibilityFamilyHint(
   metadata: Record<string, unknown> | undefined,
 ): SubmissionCompatibilityFamilyId | null {
-  const legacyAutoCapture = readLegacyAutoCaptureRecord(metadata);
-  const legacyFamilyId =
-    typeof legacyAutoCapture?.family === "string" && legacyAutoCapture.family.trim().length > 0
-      ? legacyAutoCapture.family.trim()
-      : null;
-  return legacyFamilyId === "response_style" ||
-    legacyFamilyId === "project_fact" ||
-    legacyFamilyId === "recurring_procedure" ||
-    legacyFamilyId === "workflow_improvement" ||
-    legacyFamilyId === "project_rule" ||
-    legacyFamilyId === "unmet_need"
-    ? legacyFamilyId
-    : null;
+  if (isLegacyResponseStyleRoutingHint(metadata)) {
+    return "response_style";
+  }
+
+  const captureClass = readAutoCaptureString(metadata, "captureClass");
+  if (captureClass) {
+    const compatibilityFamilyId = getCompatibilityMemoryFamilyIdByCaptureClass(captureClass);
+    if (compatibilityFamilyId) {
+      return compatibilityFamilyId;
+    }
+  }
+
+  const lessonFamily = readAutoCaptureString(metadata, "lessonFamily");
+  if (lessonFamily) {
+    const compatibilityFamilyId =
+      getCompatibilityMemoryFamilyIdByWorkflowLessonFamily(lessonFamily);
+    if (compatibilityFamilyId) {
+      return compatibilityFamilyId;
+    }
+  }
+
+  if (readAutoCaptureString(metadata, "fieldKey")) {
+    return "project_fact";
+  }
+  if (readAutoCaptureString(metadata, "procedureKey") || readAutoCaptureString(metadata, "title")) {
+    return "recurring_procedure";
+  }
+  return null;
 }
 
 function readSubmissionCompatibilityFamilyId(
   metadata: Record<string, unknown> | undefined,
 ): SubmissionCompatibilityFamilyId | null {
-  if (matchesCanonicalSubmissionRoutingTarget(metadata, "response_style")) {
-    return "response_style";
+  for (const target of [
+    "response_style",
+    "project_fact",
+    "recurring_procedure",
+    "workflow_improvement",
+    "project_rule",
+    "unmet_need",
+  ] as const) {
+    if (matchesCanonicalSubmissionRoutingTarget(metadata, target)) {
+      return target;
+    }
   }
-  const captureCategory = readCanonicalSubmissionCaptureCategory(metadata);
-  if (
-    captureCategory === "project_fact" ||
-    captureCategory === "recurring_procedure" ||
-    captureCategory === "workflow_improvement" ||
-    captureCategory === "project_rule" ||
-    captureCategory === "unmet_need"
-  ) {
-    return captureCategory;
-  }
-  return readLegacySubmissionCompatibilityFamilyIdFallback(metadata);
+  return null;
 }
 
 function readCanonicalSubmissionCaptureCategory(
@@ -309,7 +344,8 @@ function matchesCanonicalSubmissionRoutingTarget(
 ): boolean {
   const canonicalCandidate = readCanonicalMemoryIngestionCandidateFromMetadata(metadata);
   if (!canonicalCandidate) {
-    return false;
+    const legacyCompatibilityFamilyId = readLegacySubmissionCompatibilityFamilyHint(metadata);
+    return legacyCompatibilityFamilyId === target;
   }
   const captureCategory = readCanonicalSubmissionCaptureCategory(metadata);
   const captureClass = canonicalCandidate.compatibility.captureClass;

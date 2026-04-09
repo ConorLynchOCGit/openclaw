@@ -125,6 +125,10 @@
 - Fast repo checks: `pnpm check:fast`
 - TypeScript checks: `pnpm check:types` (currently `pnpm tsgo`)
 - Full repo check: `pnpm check`
+- Repo gate wrapper: `pnpm check:fast`, `pnpm check:types`, `pnpm check`, and `pnpm build` now use a shared repo-local lock. Do not start those commands in parallel on the same checkout.
+- If you want to inspect running processes before a heavy gate, do that as a separate step; do not combine process inspection and gate launch in the same parallel action.
+- `pnpm check` reuses a green `pnpm check:fast` result on the same unchanged tree instead of rerunning the fast tier.
+- `pnpm build` now prints timestamped phases for quieter steps such as `build:plugin-sdk:dts`.
 - Format check: `pnpm format` (oxfmt --check)
 - Format fix: `pnpm format:fix` (oxfmt --write)
 - Terminology:

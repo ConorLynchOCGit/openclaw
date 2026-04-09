@@ -260,20 +260,27 @@ That compat/governance follow-through is now also landed locally:
 - `memory-family-policy.ts` now documents its broad family-era helpers as
   compatibility-only public API
 
-The next slice should now:
+The final completion tranche for this roadmap line is now also landed:
 
-- finish extracting the remaining family-specific correction/supersession
-  wrappers in `extensions/memory-middleware/src/tools/candidate-submit.ts`
-- decide whether `extensions/memory-middleware/src/memory-canonical-compat.ts`
-  can eventually collapse into narrower read-only metadata helpers plus one
-  explicit legacy record-builder seam
-- keep reducing `extensions/memory-middleware/src/db/queries.ts`, focusing on
-  transaction-heavy clusters that still duplicate result shaping
-- continue demoting `src/plugin-sdk/memory-family-policy.ts` until only
-  backwards-compatible external consumers truly need the broad family
-  definition surface
-  - `openai_embeddings_api_key_required`
-  - `anthropic_context1m_eligible_credential_required`
+- extension runtime code no longer imports `src/plugin-sdk/memory-family-policy.ts`
+- canonical compat record building now lives on a local compatibility-family
+  seam
+- memory-core durable guidance now uses a local durable-guidance family map
+- `candidate-submit.ts` removed the last meaningful raw family fallback from
+  active routing
+- `queries.ts` shed the remaining skill-candidate, procurement, and vetting
+  selector/transaction cluster into dedicated DB modules
+- repo-owned gate discipline now persists across sessions through
+  `scripts/run-gate.mjs`, package scripts, and workflow docs
+
+This roadmap line is now complete.
+
+Intentional compatibility boundaries that still remain:
+
+- `extensions/memory-middleware/src/memory-canonical-compat.ts` as the
+  explicit old-record translation seam
+- `src/plugin-sdk/memory-family-policy.ts` as the public backward-compatible
+  SDK surface
 
 That runtime-target consolidation slice is now also landed locally:
 

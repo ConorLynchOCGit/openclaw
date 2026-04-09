@@ -35,7 +35,18 @@ Validation tiers:
 
 - `pnpm check:fast`: cheap repo hygiene + lint checks
 - `pnpm check:types`: explicit TypeScript type-check tier (`pnpm tsgo`)
-- `pnpm check`: full repo check (`check:fast` + `check:types`)
+- `pnpm check`: full repo check; reuses a green `check:fast` result on the
+  same unchanged tree instead of rerunning it
+
+Gate wrapper notes:
+
+- `pnpm check:fast`, `pnpm check:types`, `pnpm check`, and `pnpm build` now
+  use a repo-local gate wrapper with a shared lock.
+- Do not start those commands in parallel on the same checkout.
+- `pnpm build` now prints phase timestamps for quieter stages, including
+  `build:plugin-sdk:dts`.
+- If you want to inspect running processes first, do that as a separate step
+  before starting the next expensive gate.
 
 When you touch tests or want extra confidence:
 

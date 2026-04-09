@@ -1,10 +1,9 @@
 import {
-  getMemoryFamilyDefinition,
-  MEMORY_FAMILY_IDS,
-  type MemoryFamilyApplicationMode,
-  type MemoryFamilyDefinition,
-  type MemoryFamilyId,
-} from "openclaw/plugin-sdk/memory-family-policy";
+  DURABLE_MEMORY_GUIDANCE_FAMILY_IDS,
+  getDurableMemoryGuidanceFamilyDefinition,
+  type DurableMemoryGuidanceFamilyDefinition,
+  type DurableMemoryGuidanceFamilyId,
+} from "./durable-memory-guidance-families.js";
 
 type DurableMemoryToolFlags = {
   hasCandidateSubmit: boolean;
@@ -18,11 +17,11 @@ type DurableMemoryToolFlags = {
 };
 
 export type MemoryBehaviorFamilyProfile = {
-  familyId: MemoryFamilyId;
-  applicationMode: MemoryFamilyApplicationMode;
+  familyId: DurableMemoryGuidanceFamilyId;
+  applicationMode: DurableMemoryGuidanceFamilyDefinition["applicationMode"];
   directUseOnlyOnClearAsk: boolean;
-  retrievalMode: MemoryFamilyDefinition["retrievalPolicy"]["mode"];
-  promptSection: MemoryFamilyDefinition["applicationPolicy"]["promptSection"];
+  retrievalMode: DurableMemoryGuidanceFamilyDefinition["retrievalMode"];
+  promptSection: DurableMemoryGuidanceFamilyDefinition["promptSection"];
   searchGuidance: string[];
   applicationGuidance: string[];
   captureGuidance: string[];
@@ -38,9 +37,9 @@ export type DurableMemoryGuidancePlan = {
   hasCandidateSurface: boolean;
   hasLearnedGuidanceSurface: boolean;
   hasSessionSurface: boolean;
-  searchFamilies: MemoryFamilyId[];
-  applicationFamilies: MemoryFamilyId[];
-  captureFamilies: MemoryFamilyId[];
+  searchFamilies: DurableMemoryGuidanceFamilyId[];
+  applicationFamilies: DurableMemoryGuidanceFamilyId[];
+  captureFamilies: DurableMemoryGuidanceFamilyId[];
 };
 
 export type DurableMemoryApplicationGuidanceKind = "search" | "application" | "capture";
@@ -54,11 +53,11 @@ export type DurableMemoryApplicationQueryIntent = {
 };
 
 export type DurableMemorySelectedApplicationItem = {
-  familyId: MemoryFamilyId;
-  applicationMode: MemoryFamilyApplicationMode;
+  familyId: DurableMemoryGuidanceFamilyId;
+  applicationMode: DurableMemoryGuidanceFamilyDefinition["applicationMode"];
   directUseOnlyOnClearAsk: boolean;
-  retrievalMode: MemoryFamilyDefinition["retrievalPolicy"]["mode"];
-  promptSection: MemoryFamilyDefinition["applicationPolicy"]["promptSection"];
+  retrievalMode: DurableMemoryGuidanceFamilyDefinition["retrievalMode"];
+  promptSection: DurableMemoryGuidanceFamilyDefinition["promptSection"];
   selectedGuidanceKinds: DurableMemoryApplicationGuidanceKind[];
   selectionReasonCodes: string[];
   searchGuidance: string[];
@@ -67,8 +66,8 @@ export type DurableMemorySelectedApplicationItem = {
 };
 
 export type DurableMemorySuppressedApplicationItem = {
-  familyId: MemoryFamilyId;
-  applicationMode: MemoryFamilyApplicationMode;
+  familyId: DurableMemoryGuidanceFamilyId;
+  applicationMode: DurableMemoryGuidanceFamilyDefinition["applicationMode"];
   suppressedGuidanceKinds: DurableMemoryApplicationGuidanceKind[];
   suppressionReasonCodes: string[];
 };
@@ -111,7 +110,7 @@ export function buildDurableMemoryBehaviorProfile(params: {
 
   return {
     flags,
-    families: MEMORY_FAMILY_IDS.map((familyId) => buildFamilyProfile(familyId)),
+    families: DURABLE_MEMORY_GUIDANCE_FAMILY_IDS.map((familyId) => buildFamilyProfile(familyId)),
   };
 }
 
@@ -140,7 +139,7 @@ export function resolveDurableMemoryGuidancePlan(
         ]
       : [],
     applicationFamilies: hasObjectSurface ? ["recurring_procedure", "workflow_improvement"] : [],
-    captureFamilies: flags.hasCandidateSubmit ? [...MEMORY_FAMILY_IDS] : [],
+    captureFamilies: flags.hasCandidateSubmit ? [...DURABLE_MEMORY_GUIDANCE_FAMILY_IDS] : [],
   };
 }
 
@@ -258,7 +257,7 @@ export function renderDurableMemoryApplicationSelection(
   );
 
   const hasSelectedGuidance = (
-    familyId: MemoryFamilyId,
+    familyId: DurableMemoryGuidanceFamilyId,
     kind: DurableMemoryApplicationGuidanceKind,
   ): boolean => selectedGuidance.has(`${familyId}:${kind}`);
 
@@ -323,21 +322,21 @@ export function renderDurableMemoryApplicationSelection(
   return lines;
 }
 
-function buildFamilyProfile(familyId: MemoryFamilyId): MemoryBehaviorFamilyProfile {
-  const definition = getMemoryFamilyDefinition(familyId);
+function buildFamilyProfile(familyId: DurableMemoryGuidanceFamilyId): MemoryBehaviorFamilyProfile {
+  const definition = getDurableMemoryGuidanceFamilyDefinition(familyId);
   return {
     familyId,
-    applicationMode: definition.applicationPolicy.mode,
-    directUseOnlyOnClearAsk: definition.applicationPolicy.directUseOnlyOnClearAsk,
-    retrievalMode: definition.retrievalPolicy.mode,
-    promptSection: definition.applicationPolicy.promptSection,
+    applicationMode: definition.applicationMode,
+    directUseOnlyOnClearAsk: definition.directUseOnlyOnClearAsk,
+    retrievalMode: definition.retrievalMode,
+    promptSection: definition.promptSection,
     searchGuidance: buildFamilySearchGuidance(familyId),
     applicationGuidance: buildFamilyApplicationGuidance(familyId),
     captureGuidance: buildFamilyCaptureGuidance(familyId),
   };
 }
 
-function buildFamilySearchGuidance(familyId: MemoryFamilyId): string[] {
+function buildFamilySearchGuidance(familyId: DurableMemoryGuidanceFamilyId): string[] {
   switch (familyId) {
     case "response_style":
       return [
@@ -369,7 +368,7 @@ function buildFamilySearchGuidance(familyId: MemoryFamilyId): string[] {
   }
 }
 
-function buildFamilyApplicationGuidance(familyId: MemoryFamilyId): string[] {
+function buildFamilyApplicationGuidance(familyId: DurableMemoryGuidanceFamilyId): string[] {
   switch (familyId) {
     case "recurring_procedure":
       return [
@@ -385,7 +384,7 @@ function buildFamilyApplicationGuidance(familyId: MemoryFamilyId): string[] {
   }
 }
 
-function buildFamilyCaptureGuidance(familyId: MemoryFamilyId): string[] {
+function buildFamilyCaptureGuidance(familyId: DurableMemoryGuidanceFamilyId): string[] {
   switch (familyId) {
     case "response_style":
       return [

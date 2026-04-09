@@ -23,6 +23,10 @@ import {
  * narrowly scoped compatibility adapters.
  */
 
+/**
+ * @deprecated Compatibility-only family ids. Active runtime code should prefer
+ * canonical kinds, capture categories, and runtime policy views.
+ */
 export const MEMORY_FAMILY_IDS = [
   "response_style",
   "project_fact",
@@ -773,6 +777,10 @@ for (const [lessonFamily, compatibility] of Object.entries(WORKFLOW_LESSON_FAMIL
   }
 }
 
+/**
+ * @deprecated Compatibility-only family listing. Prefer targeted runtime policy
+ * views or canonical metadata in active code.
+ */
 export function listMemoryFamilyDefinitions(): MemoryFamilyDefinition[] {
   return MEMORY_FAMILY_IDS.map((id) => FAMILY_DEFINITIONS[id]);
 }
