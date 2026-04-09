@@ -132,6 +132,8 @@ const GENERIC_PROJECT_FACT_SUBJECT_DENYLIST = new Set([
 ]);
 const GENERIC_PROJECT_FACT_SUBJECT_BLOCKLIST_PATTERN =
   /\b(?:need|missing|prefer|use|avoid|trust|should|must|please|remember|save|workflow|rule|plan|procedure|process)\b/i;
+const HEDGED_PROJECT_FACT_PATTERN =
+  /\b(?:kind of|sort of|it depends|depends|can depend|probably|maybe|sometimes|context-dependent|context dependent)\b/i;
 
 function normalizeText(value: string): string {
   return value.trim().replace(/\s+/g, " ");
@@ -219,6 +221,10 @@ function normalizeProjectFactSubjectLabel(value: string): string {
   return normalizeProjectFactValue(value)
     .replace(/^(?:the\s+)?/i, "")
     .replace(/\s+/g, " ");
+}
+
+export function containsHedgedProjectFactLanguage(value: string): boolean {
+  return HEDGED_PROJECT_FACT_PATTERN.test(normalizeProjectFactValue(value));
 }
 
 export function isReferenceLikeProjectFactValue(value: string): boolean {
@@ -483,6 +489,14 @@ export function detectProjectFactSemanticDecision(
     };
   }
 
+  if (containsHedgedProjectFactLanguage(scoped.remainder)) {
+    return {
+      action: "ignore",
+      reason: "hedged_or_contextualized_statement",
+      evidence: [],
+    };
+  }
+
   const fieldMatch = extractFieldMatch(scoped.remainder);
   if (!fieldMatch) {
     return {
@@ -527,6 +541,14 @@ export function detectGenericProjectFactSemanticDecision(
     return {
       action: "ignore",
       reason: "missing_explicit_project_scope",
+      evidence: [],
+    };
+  }
+
+  if (containsHedgedProjectFactLanguage(scoped.remainder)) {
+    return {
+      action: "ignore",
+      reason: "hedged_or_contextualized_statement",
       evidence: [],
     };
   }

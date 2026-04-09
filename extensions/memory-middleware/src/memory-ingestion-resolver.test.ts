@@ -120,6 +120,16 @@ describe("resolveWorkflowImprovementIngestion", () => {
     });
   });
 
+  it("ignores hedged project facts instead of turning them into durable project memory", async () => {
+    await expect(
+      resolveProjectFactIngestion({
+        content: "For project Cinder Harbor, the staging branch is maybe cinder-staging-842.",
+        primarySource: "transcript",
+        mode: "ordinary_turn",
+      }),
+    ).resolves.toBeNull();
+  });
+
   it("resolves recurring procedures from raw fallback through the shared control plane", async () => {
     await expect(
       resolveRecurringProcedureIngestion({
@@ -245,6 +255,17 @@ describe("resolveWorkflowImprovementIngestion", () => {
         neededCapability: "a release evidence template",
       },
     });
+  });
+
+  it("ignores vague project caution statements that lack stable rule structure", async () => {
+    await expect(
+      resolveWorkflowImprovementIngestion({
+        config: createConfig(),
+        content: "There are a bunch of docs and branch things around Cinder Harbor but it depends.",
+        primarySource: "transcript",
+        allowPhrasePatternMatch: false,
+      }),
+    ).resolves.toBeNull();
   });
 
   it("uses approved phrase matches only when phrase-pattern resolution is enabled", async () => {

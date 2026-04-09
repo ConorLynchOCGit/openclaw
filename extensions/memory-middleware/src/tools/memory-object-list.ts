@@ -15,6 +15,7 @@ import {
   readOptionalString,
   type ToolRawParams,
 } from "./common.js";
+import { shapeMemoryObjectListToolResult } from "./memory-object-tool-result-shaping.js";
 
 type MemoryObjectListRawParams = ToolRawParams;
 
@@ -110,7 +111,7 @@ export function createMemoryObjectListTool(params: {
         runtime: params.runtime,
         input,
       });
-      return asJsonToolResult(result);
+      return asJsonToolResult(shapeMemoryObjectListToolResult(result));
     },
   };
 }

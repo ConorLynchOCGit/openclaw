@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import type { MemoryObjectSearchBasicResult } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   createMemoryObjectSearchBasicTool,
   normalizeMemoryObjectSearchBasicInput,
 } from "./memory-object-search-basic.js";
 
-function createAcceptedSearchResult(): MemoryObjectSearchBasicResult {
+function createAcceptedSearchResult() {
   return {
     accepted: true,
     status: "ok",
@@ -18,6 +17,7 @@ function createAcceptedSearchResult(): MemoryObjectSearchBasicResult {
         readSurface: "approved_memory_view",
         id: "memory-1",
         memoryKind: "project",
+        memoryState: "approved",
         reviewState: "approved",
         content: "Approved bounded memory.",
         createdAt: "2026-04-01T00:00:00.000Z",

@@ -16,6 +16,7 @@ import {
   readRequiredString,
   type ToolRawParams,
 } from "./common.js";
+import { shapeMemoryObjectSearchSemanticToolResult } from "./memory-object-tool-result-shaping.js";
 
 type MemoryObjectSearchSemanticRawParams = ToolRawParams;
 
@@ -133,7 +134,7 @@ export function createMemoryObjectSearchSemanticTool(params: {
         runtime: params.runtime,
         input,
       });
-      return asJsonToolResult(result);
+      return asJsonToolResult(shapeMemoryObjectSearchSemanticToolResult(result));
     },
   };
 }

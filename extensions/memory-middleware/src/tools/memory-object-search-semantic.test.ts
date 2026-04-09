@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import type { MemoryObjectSearchSemanticResult } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   createMemoryObjectSearchSemanticTool,
   normalizeMemoryObjectSearchSemanticInput,
 } from "./memory-object-search-semantic.js";
 
-function createAcceptedSearchResult(): MemoryObjectSearchSemanticResult {
+function createAcceptedSearchResult() {
   return {
     accepted: true,
     status: "ok",
@@ -18,6 +17,7 @@ function createAcceptedSearchResult(): MemoryObjectSearchSemanticResult {
         objectType: "procedure",
         readSurface: "validated_procedure_read_model",
         id: "procedure-1",
+        memoryState: "validated",
         status: "validated",
         title: "Deploy agent update",
         body: "Deploy the agent update in a bounded way.",

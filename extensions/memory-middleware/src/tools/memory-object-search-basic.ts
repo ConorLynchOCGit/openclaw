@@ -16,6 +16,7 @@ import {
   readRequiredString,
   type ToolRawParams,
 } from "./common.js";
+import { shapeMemoryObjectSearchBasicToolResult } from "./memory-object-tool-result-shaping.js";
 
 type MemoryObjectSearchBasicRawParams = ToolRawParams;
 
@@ -107,7 +108,7 @@ export function createMemoryObjectSearchBasicTool(params: {
         runtime: params.runtime,
         input,
       });
-      return asJsonToolResult(result);
+      return asJsonToolResult(shapeMemoryObjectSearchBasicToolResult(result));
     },
   };
 }

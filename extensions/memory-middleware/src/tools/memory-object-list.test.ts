@@ -1,12 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import type { MemoryObjectListResult } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   createMemoryObjectListTool,
   normalizeMemoryObjectListInput,
 } from "./memory-object-list.js";
 
-function createAcceptedListResult(): MemoryObjectListResult {
+function createAcceptedListResult() {
   return {
     accepted: true,
     status: "ok",
@@ -17,6 +16,7 @@ function createAcceptedListResult(): MemoryObjectListResult {
         readSurface: "approved_memory_view",
         id: "memory-1",
         memoryKind: "project",
+        memoryState: "approved",
         reviewState: "approved",
         content: "Approved bounded memory.",
         createdAt: "2026-04-01T00:00:00.000Z",

@@ -411,6 +411,15 @@ describe("parseOrdinaryTurnAutoCapturePreference", () => {
     ).toBeNull();
   });
 
+  it("ignores hedged project facts in deterministic parsing", () => {
+    expect(
+      parseOrdinaryTurnAutoCapturePreference(
+        "For project cinder harbor, the staging branch is maybe cinder-staging-842.",
+        "user-preference-v2",
+      ),
+    ).toBeNull();
+  });
+
   it("matches a natural project fact correction in the broader profile", () => {
     expect(
       parseOrdinaryTurnAutoCapturePreference(
@@ -2251,6 +2260,51 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(reviewCandidate).toHaveBeenCalledTimes(1);
     expect(promoteToMemory).toHaveBeenCalledTimes(1);
   });
+
+  it("does not persist vague project caution statements from ordinary turns", async () => {
+    const submitLearning = vi.fn();
+    const submitCorrectionSuggestion = vi.fn();
+    const submitImprovementNote = vi.fn();
+    const submitProcedureSuggestion = vi.fn();
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-vague",
+          sessionId: "session-uuid-vague",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion,
+        submitImprovementNote,
+        submitProcedureSuggestion,
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/vague-project.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: [
+          "Cinder Harbor is kind of tricky lately.",
+          "There are a bunch of docs and branch things around Cinder Harbor but it depends.",
+        ].join("\n"),
+        timestamp: Date.parse("2026-04-09T11:35:00Z"),
+      },
+    });
+
+    expect(submitLearning).not.toHaveBeenCalled();
+    expect(submitCorrectionSuggestion).not.toHaveBeenCalled();
+    expect(submitImprovementNote).not.toHaveBeenCalled();
+    expect(submitProcedureSuggestion).not.toHaveBeenCalled();
+  });
+
   it("auto-promotes a bounded recurring checklist through draft and validation", async () => {
     storeValidatedProcedureSemanticEmbedding.mockClear();
     const submitProcedureSuggestion = vi.fn(async () => ({

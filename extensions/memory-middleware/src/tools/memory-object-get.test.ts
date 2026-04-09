@@ -1,9 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { MemoryObjectGetResult } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import { createMemoryObjectGetTool, normalizeMemoryObjectGetInput } from "./memory-object-get.js";
 
-function createAcceptedGetResult(): MemoryObjectGetResult {
+function createAcceptedGetResult() {
   return {
     accepted: true,
     status: "ok",
@@ -12,6 +11,7 @@ function createAcceptedGetResult(): MemoryObjectGetResult {
       readSurface: "approved_memory_view",
       id: "memory-1",
       memoryKind: "project",
+      memoryState: "approved",
       reviewState: "approved",
       content: "Bounded approved memory.",
       createdAt: "2026-04-01T00:00:00.000Z",

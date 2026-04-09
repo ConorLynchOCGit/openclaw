@@ -41,6 +41,7 @@ import {
   isExpiredPendingProjectFactCandidate,
 } from "./project-fact-lifecycle.js";
 import {
+  containsHedgedProjectFactLanguage,
   detectGenericProjectFactSemanticDecision,
   detectProjectFactSemanticDecision,
   isBoundedGenericProjectFactReference,
@@ -1218,6 +1219,9 @@ function buildProjectFactMatch(params: {
     normalizedSubject.split(" ").length > 5 ||
     normalizedValue.split(" ").length > 6
   ) {
+    return null;
+  }
+  if (containsHedgedProjectFactLanguage(value)) {
     return null;
   }
   if (

@@ -13,6 +13,7 @@ import {
   readRequiredString,
   type ToolRawParams,
 } from "./common.js";
+import { shapeMemoryObjectGetToolResult } from "./memory-object-tool-result-shaping.js";
 
 type MemoryObjectGetRawParams = ToolRawParams;
 
@@ -70,7 +71,7 @@ export function createMemoryObjectGetTool(params: {
         runtime: params.runtime,
         input,
       });
-      return asJsonToolResult(result);
+      return asJsonToolResult(shapeMemoryObjectGetToolResult(result));
     },
   };
 }

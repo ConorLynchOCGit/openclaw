@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MemoryObjectSearchHybridResult } from "../db/runtime.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   createMemoryObjectSearchHybridTool,
@@ -28,7 +27,7 @@ vi.mock("../semantic-retrieval-routing.js", () => ({
   maybeApplyWorkflowToolGotchaSemanticFallback,
 }));
 
-function createAcceptedSearchResult(): MemoryObjectSearchHybridResult {
+function createAcceptedSearchResult() {
   return {
     accepted: true,
     status: "ok",
@@ -39,6 +38,7 @@ function createAcceptedSearchResult(): MemoryObjectSearchHybridResult {
         objectType: "procedure",
         readSurface: "validated_procedure_read_model",
         id: "procedure-1",
+        memoryState: "validated",
         status: "validated",
         title: "Deploy agent update",
         body: "Deploy the agent update in a bounded way.",
