@@ -71,7 +71,7 @@ describe("memory-canonical-compat", () => {
   it("maps workflow guidance into canonical feedback records", () => {
     const record = buildCanonicalMemoryRecordFromResolvedIngestion({
       ingestion: {
-        familyId: "workflow_improvement",
+        captureCategory: "workflow_improvement",
         parsed: {
           profile: "user-preference-v2",
           captureClass: "workflow_generalized_guidance",
@@ -138,7 +138,7 @@ describe("memory-canonical-compat", () => {
   it("wraps resolved workflow ingestions as canonical ingestion candidates", () => {
     const candidate = buildCanonicalMemoryIngestionCandidateFromResolvedIngestion({
       ingestion: {
-        familyId: "workflow_improvement",
+        captureCategory: "workflow_improvement",
         parsed: {
           profile: "user-preference-v2",
           captureClass: "project_rule_guidance",

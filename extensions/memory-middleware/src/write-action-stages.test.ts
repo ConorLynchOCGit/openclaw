@@ -65,7 +65,7 @@ describe("write action stages", () => {
     expect(result).toBe(4);
   });
 
-  it("routes candidate resolution stages through canonical family metadata", async () => {
+  it("routes candidate resolution stages through canonical routing metadata", async () => {
     const responseStyle = vi.fn(async () => ({ ok: "response_style" }));
     const projectFact = vi.fn(async () => ({ ok: "project_fact" }));
 
@@ -91,12 +91,12 @@ describe("write action stages", () => {
       stages: [
         {
           id: "response_style",
-          match: { familyIds: ["response_style"] },
+          match: { lanes: ["user_preference"] },
           resolve: responseStyle,
         },
         {
           id: "project_fact",
-          match: { familyIds: ["project_fact"] },
+          match: { captureCategories: ["project_fact"] },
           resolve: projectFact,
         },
       ],
@@ -107,7 +107,7 @@ describe("write action stages", () => {
     expect(projectFact).toHaveBeenCalledTimes(1);
   });
 
-  it("routes candidate result stages through submission kind and canonical family metadata", async () => {
+  it("routes candidate result stages through submission kind and canonical routing metadata", async () => {
     const result = await runCandidateWriteResultStages({
       context: {
         input: {
@@ -133,7 +133,7 @@ describe("write action stages", () => {
           id: "skip_response_style",
           match: {
             submissionKinds: ["learning"],
-            familyIds: ["response_style"],
+            lanes: ["user_preference"],
           },
           apply: async ({ result }) => [...result, "wrong"],
         },
@@ -141,7 +141,7 @@ describe("write action stages", () => {
           id: "apply_procedure",
           match: {
             submissionKinds: ["procedure"],
-            familyIds: ["recurring_procedure"],
+            captureCategories: ["recurring_procedure"],
           },
           apply: async ({ result }) => [...result, "procedure"],
         },
@@ -342,7 +342,7 @@ describe("write action stages", () => {
             submissionKinds: ["learning", "correction", "improvement"],
             anyOf: [
               {
-                familyIds: ["response_style"],
+                lanes: ["user_preference"],
               },
               {
                 captureCategories: ["workflow_improvement", "project_rule", "unmet_need"],
@@ -420,7 +420,7 @@ describe("write action stages", () => {
       stages: [
         {
           id: "response_style",
-          match: { familyIds: ["response_style"] },
+          match: { lanes: ["user_preference"] },
           resolve: responseStyle,
         },
       ],
@@ -449,7 +449,7 @@ describe("write action stages", () => {
       stages: [
         {
           id: "workflow_improvement",
-          match: { familyIds: ["workflow_improvement"] },
+          match: { captureCategories: ["workflow_improvement"] },
           resolve: workflow,
         },
       ],
@@ -525,7 +525,6 @@ describe("write action stages", () => {
         content: "deploy checklist",
       },
       classification: {
-        familyId: "recurring_procedure",
         lanes: ["recurring_procedure"],
       },
     });
@@ -559,7 +558,6 @@ describe("write action stages", () => {
           id: "primary",
           input: { kind: "improvement", content: "primary" },
           classification: {
-            familyId: "workflow_improvement",
             lanes: ["workflow_guidance"],
             derivedViews: ["workflow_guidance"],
           },

@@ -165,7 +165,7 @@ describe("resolveWorkflowImprovementIngestion", () => {
         allowPhrasePatternMatch: false,
       }),
     ).resolves.toMatchObject({
-      familyId: "project_rule",
+      captureCategory: "project_rule",
       lessonFamily: "generalized_project_rule",
       source: "transcript",
       detectionSource: "semantic",
@@ -191,7 +191,7 @@ describe("resolveWorkflowImprovementIngestion", () => {
         allowPhrasePatternMatch: false,
       }),
     ).resolves.toMatchObject({
-      familyId: "project_rule",
+      captureCategory: "project_rule",
       lessonFamily: "generalized_project_rule",
       source: "transcript",
       detectionSource: "semantic",
@@ -243,7 +243,7 @@ describe("resolveWorkflowImprovementIngestion", () => {
         allowPhrasePatternMatch: false,
       }),
     ).resolves.toMatchObject({
-      familyId: "unmet_need",
+      captureCategory: "unmet_need",
       lessonFamily: "generalized_unmet_need",
       source: "raw",
       detectionSource: "semantic",
@@ -307,7 +307,7 @@ describe("resolveWorkflowImprovementIngestion", () => {
         allowPhrasePatternMatch: true,
       }),
     ).resolves.toMatchObject({
-      familyId: "workflow_improvement",
+      captureCategory: "workflow_improvement",
       detectionSource: "deterministic",
       source: "content",
       evidence: ["approved_phrase_pattern_match"],

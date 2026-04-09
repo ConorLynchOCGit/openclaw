@@ -1,9 +1,9 @@
-import {
-  supportsMemoryFamilyReviewedPhrasePatterns,
-  type MemoryFamilyId,
-} from "openclaw/plugin-sdk/memory-family-policy";
 import type { PluginLogger } from "../api.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
+import {
+  supportsMemoryFamilyReviewedPhrasePatterns,
+  type MemoryProofInspectableFamilyId,
+} from "./memory-proof-policy.js";
 import {
   buildReviewedPhrasePatternProposal,
   findApprovedReviewedPhrasePatternRows,
@@ -62,7 +62,7 @@ export type ReviewedPhraseInductionResult =
       approvedObjectId: string;
     };
 
-export function supportsReviewedPhraseInduction(familyId: MemoryFamilyId): boolean {
+export function supportsReviewedPhraseInduction(familyId: MemoryProofInspectableFamilyId): boolean {
   return supportsMemoryFamilyReviewedPhrasePatterns(familyId);
 }
 
@@ -94,7 +94,7 @@ export function buildReviewedPhrasePatternProposalForTarget<TTarget>(params: {
 }
 
 export async function inspectReviewedPhrasePatternLifecycleForFamily(params: {
-  familyId: MemoryFamilyId;
+  familyId: MemoryProofInspectableFamilyId;
   config: MemoryMiddlewareConfig;
   artifactFamily: string;
   patternKey: string;
@@ -123,7 +123,7 @@ export async function findApprovedReviewedPhrasePatternMatchForFamily<
   Row extends ApprovedPhrasePatternRowBase,
   TMatch,
 >(params: {
-  familyId: MemoryFamilyId;
+  familyId: MemoryProofInspectableFamilyId;
   config: MemoryMiddlewareConfig;
   artifactFamily: string;
   text: string;
@@ -159,7 +159,7 @@ export async function findApprovedReviewedPhrasePatternMatchForFamily<
 }
 
 export async function maybeInduceReviewedPhrasePatternForFamily<TTarget>(params: {
-  familyId: MemoryFamilyId;
+  familyId: MemoryProofInspectableFamilyId;
   config: MemoryMiddlewareConfig;
   artifactFamily: string;
   candidateIngress: CandidateIngressLike;

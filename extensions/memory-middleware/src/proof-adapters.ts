@@ -1,9 +1,9 @@
+import type { PluginLogger } from "../api.js";
+import type { MemoryMiddlewareConfig } from "./config.js";
 import type {
   MemoryFamilyProofInspectionMode,
   MemoryProofArtifactMode,
-} from "openclaw/plugin-sdk/memory-family-policy";
-import type { PluginLogger } from "../api.js";
-import type { MemoryMiddlewareConfig } from "./config.js";
+} from "./memory-proof-policy.js";
 import {
   inspectProjectFactLifecycle,
   type ProjectFactLifecycleInspection,

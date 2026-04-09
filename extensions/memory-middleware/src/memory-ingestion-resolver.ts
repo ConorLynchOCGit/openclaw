@@ -160,7 +160,7 @@ type WorkflowSemanticDetectorProfile = {
   acceptedCaptureCategories: readonly ("workflow_improvement" | "project_rule" | "unmet_need")[];
 };
 
-type WorkflowCaptureCategory = "workflow_improvement" | "project_rule" | "unmet_need";
+export type WorkflowCaptureCategory = "workflow_improvement" | "project_rule" | "unmet_need";
 
 type ProjectFactSemanticCaptureDecision = Extract<
   | ReturnType<typeof detectProjectFactSemanticDecision>
@@ -826,7 +826,7 @@ export function resolveRecurringProcedureIngestion(params: {
 }
 
 export type ResolvedWorkflowIngestion = {
-  familyId: "workflow_improvement" | "project_rule" | "unmet_need";
+  captureCategory: WorkflowCaptureCategory;
   parsed: OrdinaryTurnAutoCaptureMatch;
   lessonFamily: WorkflowImprovementLessonFamily;
   reviewMode: "pending_confirmation" | "hold_for_more_evidence";
@@ -844,9 +844,9 @@ export type ResolvedCanonicalizableIngestion =
   | ResolvedWorkflowIngestion
   | Extract<ResolvedResponseStyleIngestion, { action: "capture" }>;
 
-function resolveWorkflowFamilyId(match: {
+function resolveWorkflowCaptureCategory(match: {
   captureClass: WorkflowImprovementCaptureClass;
-}): "workflow_improvement" | "project_rule" | "unmet_need" {
+}): WorkflowCaptureCategory {
   const captureCategory = getCanonicalCaptureMetadataByCaptureClass(match.captureClass)?.category;
   if (captureCategory === "project_rule") {
     return "project_rule";
@@ -938,7 +938,7 @@ function buildResolvedWorkflowIngestion(params: {
   const parsed = toOrdinaryTurnWorkflowImprovementMatch(params.match);
   const lessonFamily = parsed.lessonFamily ?? params.match.lessonFamily;
   return {
-    familyId: resolveWorkflowFamilyId({
+    captureCategory: resolveWorkflowCaptureCategory({
       captureClass: params.match.captureClass,
     }),
     parsed,

@@ -14,6 +14,15 @@ import {
   type CanonicalMemoryValidationStatus,
 } from "./memory-canonical-core.js";
 
+/**
+ * Compatibility-only family-era projection helpers.
+ *
+ * Active extension runtime paths should prefer canonical capture metadata,
+ * canonical runtime policy views, and direct canonical record builders. This
+ * module remains as a public SDK bridge for older family-oriented consumers and
+ * narrowly scoped compatibility adapters.
+ */
+
 export const MEMORY_FAMILY_IDS = [
   "response_style",
   "project_fact",
@@ -768,10 +777,18 @@ export function listMemoryFamilyDefinitions(): MemoryFamilyDefinition[] {
   return MEMORY_FAMILY_IDS.map((id) => FAMILY_DEFINITIONS[id]);
 }
 
+/**
+ * @deprecated Compatibility-only family lookup. Prefer canonical capture
+ * metadata or canonical runtime policy views in active runtime code.
+ */
 export function getMemoryFamilyDefinition(familyId: MemoryFamilyId): MemoryFamilyDefinition {
   return FAMILY_DEFINITIONS[familyId];
 }
 
+/**
+ * @deprecated Compatibility-only family projection lookup. Prefer canonical
+ * record metadata in active runtime code.
+ */
 export function getMemoryFamilyCanonicalProjection(
   familyId: MemoryFamilyId,
 ): MemoryFamilyCanonicalProjection {
@@ -809,6 +826,10 @@ export function memoryFamilyProjectsToDerivedView(
   return getMemoryFamilyCanonicalProjection(familyId).derivedViews.includes(derivedView);
 }
 
+/**
+ * @deprecated Compatibility-only capture-class lookup. Prefer canonical capture
+ * metadata in active runtime code.
+ */
 export function getMemoryFamilyDefinitionByCaptureClass(
   captureClass: string,
 ): MemoryFamilyDefinition | null {
@@ -816,6 +837,10 @@ export function getMemoryFamilyDefinitionByCaptureClass(
   return familyId ? getMemoryFamilyDefinition(familyId) : null;
 }
 
+/**
+ * @deprecated Compatibility-only workflow-lesson lookup. Prefer canonical
+ * workflow capture category resolution in active runtime code.
+ */
 export function getMemoryFamilyIdByWorkflowLessonFamily(
   lessonFamily: string,
 ): MemoryFamilyId | null {
@@ -939,6 +964,10 @@ export type BuildCanonicalMemoryRecordForFamilyParams = {
   compatibility?: Partial<CanonicalMemoryCompatibility>;
 };
 
+/**
+ * @deprecated Compatibility-only family projection builder. Prefer
+ * `createCanonicalMemoryRecord` plus canonical capture metadata in new code.
+ */
 export function buildCanonicalMemoryRecordForFamily(
   params: BuildCanonicalMemoryRecordForFamilyParams,
 ): CanonicalMemoryRecord {

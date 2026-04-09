@@ -90,7 +90,6 @@ const WORKFLOW_AUTO_REVIEW_PROFILES = {
 function resolveCanonicalWorkflowCaptureCategory(params: {
   captureCategory?: string;
   captureClass?: string;
-  familyId?: string | null;
   lessonFamily?: WorkflowImprovementLessonFamily;
 }): CanonicalWorkflowCaptureCategory | null {
   if (
@@ -110,13 +109,6 @@ function resolveCanonicalWorkflowCaptureCategory(params: {
   ) {
     return captureClassCategory;
   }
-  if (
-    params.familyId === "workflow_improvement" ||
-    params.familyId === "project_rule" ||
-    params.familyId === "unmet_need"
-  ) {
-    return params.familyId;
-  }
   if (params.lessonFamily === "generalized_project_rule") {
     return "project_rule";
   }
@@ -132,7 +124,6 @@ function resolveCanonicalWorkflowCaptureCategory(params: {
 export function resolveCanonicalWorkflowAutoReviewProfile(params: {
   captureCategory?: string;
   captureClass?: WorkflowImprovementCaptureClass | string;
-  familyId?: string | null;
   lessonFamily?: WorkflowImprovementLessonFamily;
   template?: string;
 }): CanonicalWorkflowAutoReviewProfile | null {

@@ -444,6 +444,12 @@ This phase is now partially landed.
 - old-record workflow-guidance support is smaller and more centralized
 - candidate-submit is less dependent on lesson-family lookups from family
   policy
+- extension-side proof and phrase policy is now local to the memory middleware
+  package instead of importing the broad family-policy surface
+- workflow ingestion now carries canonical capture category through the active
+  path and only maps back to family ids inside the explicit compat bridge
+- the pure candidate/procedure/skill planning builders are no longer welded to
+  `queries.ts`
 
 ### What still remains in this phase
 
@@ -453,6 +459,29 @@ This phase is now partially landed.
   old approved records no longer require it
 - deeper cleanup of remaining family-aware semantic detector internals in the
   resolver
+- further `queries.ts` reduction beyond the now-extracted approval/install and
+  vetter planning cluster that used to live beside SQL execution
+
+### Focused follow-through cleanup
+
+The latest follow-through slice did four concrete things:
+
+1. split canonical compat builder logic out of `memory-canonical-compat.ts`
+   so the compat bridge is more obviously a reader/adapter seam
+2. isolated the last raw `autoCapture.family` fallback in
+   `candidate-submit.ts` behind one explicit legacy helper
+3. extracted the remaining pure approval/install/Skill Vetter planning logic
+   from `queries.ts` into `db/governance-plan-builders.ts`
+4. marked the broad family-era helpers in `memory-family-policy.ts` as
+   compatibility-only API, not preferred runtime architecture
+
+This means:
+
+- the extension runtime is closer to zero direct family-policy dependence
+- `queries.ts` is still large, but less of its skill-governance planning is
+  entangled with SQL execution
+- the remaining work is now mostly true bridge retirement and deeper
+  correction-engine flattening, not the old mixed planner tangle
 
 ## Phase E — post-flattening hardening before reduced-profile self-improving capture
 

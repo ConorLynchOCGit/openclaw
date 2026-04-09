@@ -232,24 +232,125 @@ function readAutoCaptureString(
   return readNestedMetadataString(metadata, ["autoCapture", key]);
 }
 
-function readCanonicalSubmissionFamilyId(
+type SubmissionCompatibilityFamilyId =
+  | "response_style"
+  | "project_fact"
+  | "recurring_procedure"
+  | "workflow_improvement"
+  | "project_rule"
+  | "unmet_need";
+
+function readLegacySubmissionCompatibilityFamilyIdFallback(
+  metadata: Record<string, unknown> | undefined,
+): SubmissionCompatibilityFamilyId | null {
+  const legacyAutoCapture = readLegacyAutoCaptureRecord(metadata);
+  const legacyFamilyId =
+    typeof legacyAutoCapture?.family === "string" && legacyAutoCapture.family.trim().length > 0
+      ? legacyAutoCapture.family.trim()
+      : null;
+  return legacyFamilyId === "response_style" ||
+    legacyFamilyId === "project_fact" ||
+    legacyFamilyId === "recurring_procedure" ||
+    legacyFamilyId === "workflow_improvement" ||
+    legacyFamilyId === "project_rule" ||
+    legacyFamilyId === "unmet_need"
+    ? legacyFamilyId
+    : null;
+}
+
+function readSubmissionCompatibilityFamilyId(
+  metadata: Record<string, unknown> | undefined,
+): SubmissionCompatibilityFamilyId | null {
+  if (matchesCanonicalSubmissionRoutingTarget(metadata, "response_style")) {
+    return "response_style";
+  }
+  const captureCategory = readCanonicalSubmissionCaptureCategory(metadata);
+  if (
+    captureCategory === "project_fact" ||
+    captureCategory === "recurring_procedure" ||
+    captureCategory === "workflow_improvement" ||
+    captureCategory === "project_rule" ||
+    captureCategory === "unmet_need"
+  ) {
+    return captureCategory;
+  }
+  return readLegacySubmissionCompatibilityFamilyIdFallback(metadata);
+}
+
+function readCanonicalSubmissionCaptureCategory(
   metadata: Record<string, unknown> | undefined,
 ):
-  | "response_style"
   | "project_fact"
   | "recurring_procedure"
   | "workflow_improvement"
   | "project_rule"
   | "unmet_need"
   | null {
-  const familyId = readAutoCaptureString(metadata, "family");
-  return familyId === "response_style" ||
-    familyId === "project_fact" ||
-    familyId === "recurring_procedure" ||
-    familyId === "workflow_improvement" ||
-    familyId === "project_rule" ||
-    familyId === "unmet_need"
-    ? familyId
+  const canonicalCandidate = readCanonicalMemoryIngestionCandidateFromMetadata(metadata);
+  const captureCategory = canonicalCandidate?.record.compatibility.captureCategory;
+  return captureCategory === "project_fact" ||
+    captureCategory === "recurring_procedure" ||
+    captureCategory === "workflow_improvement" ||
+    captureCategory === "project_rule" ||
+    captureCategory === "unmet_need"
+    ? captureCategory
+    : null;
+}
+
+function matchesCanonicalSubmissionRoutingTarget(
+  metadata: Record<string, unknown> | undefined,
+  target:
+    | "response_style"
+    | "project_fact"
+    | "recurring_procedure"
+    | "workflow_improvement"
+    | "project_rule"
+    | "unmet_need",
+): boolean {
+  const canonicalCandidate = readCanonicalMemoryIngestionCandidateFromMetadata(metadata);
+  if (!canonicalCandidate) {
+    return false;
+  }
+  const captureCategory = readCanonicalSubmissionCaptureCategory(metadata);
+  const captureClass = canonicalCandidate.compatibility.captureClass;
+  const tags = new Set(canonicalCandidate.record.tags);
+  switch (target) {
+    case "response_style":
+      return (
+        tags.has("response_style") ||
+        canonicalCandidate.record.kind === "user" ||
+        captureClass === "explicit_preference" ||
+        captureClass === "preference_correction" ||
+        captureClass === "explicit_requirement" ||
+        captureClass === "requirement_correction"
+      );
+    case "project_fact":
+      return (
+        captureCategory === "project_fact" ||
+        captureClass === "explicit_project_fact" ||
+        captureClass === "project_fact_correction"
+      );
+    case "recurring_procedure":
+      return (
+        captureCategory === "recurring_procedure" ||
+        captureClass === "explicit_recurring_procedure" ||
+        captureClass === "recurring_procedure_correction"
+      );
+    case "workflow_improvement":
+    case "project_rule":
+    case "unmet_need":
+      return captureCategory === target;
+  }
+}
+
+function readCanonicalSubmissionWorkflowCaptureCategory(
+  metadata: Record<string, unknown> | undefined,
+): "workflow_improvement" | "project_rule" | "unmet_need" | null {
+  const captureCategory = readCanonicalSubmissionCaptureCategory(metadata);
+  return captureCategory === "workflow_improvement" ||
+    captureCategory === "project_rule" ||
+    captureCategory === "unmet_need"
+    ? captureCategory
     : null;
 }
 
@@ -650,9 +751,12 @@ function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
 }): Record<string, unknown> {
   const semanticDetection = params.input.metadata?.semanticDetection;
   const lessonFamily = readAutoCaptureString(params.input.metadata, "lessonFamily");
+  const workflowCaptureCategory = readCanonicalSubmissionWorkflowCaptureCategory(
+    params.input.metadata,
+  );
   const canonicalAutoReviewProfile = resolveCanonicalWorkflowAutoReviewProfile({
     captureClass: readAutoCaptureString(params.input.metadata, "captureClass"),
-    familyId: readCanonicalSubmissionFamilyId(params.input.metadata),
+    ...(workflowCaptureCategory ? { captureCategory: workflowCaptureCategory } : {}),
     ...(lessonFamily ? { lessonFamily: asWorkflowImprovementLessonFamily(lessonFamily) } : {}),
     template: readAutoCaptureString(params.input.metadata, "template"),
   });
@@ -1201,9 +1305,12 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     template === "workflow_tool_gotcha" ||
     template === "workflow_environment_constraint" ||
     template === "workflow_api_workaround";
+  const workflowCaptureCategory = readCanonicalSubmissionWorkflowCaptureCategory(
+    params.input.metadata,
+  );
   const workflowAutoReviewProfile = resolveCanonicalWorkflowAutoReviewProfile({
     ...(captureClass ? { captureClass } : {}),
-    familyId: readCanonicalSubmissionFamilyId(params.input.metadata),
+    ...(workflowCaptureCategory ? { captureCategory: workflowCaptureCategory } : {}),
     ...(lessonFamily ? { lessonFamily } : {}),
     template,
   });
@@ -1219,7 +1326,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
   const approvedWorkflowLabel =
     workflowAutoReviewProfile?.approvedLabel ?? "approved workflow-improvement memory";
   const workflowCorrectionFamilyId =
-    readCanonicalSubmissionFamilyId(params.input.metadata) ??
+    readSubmissionCompatibilityFamilyId(params.input.metadata) ??
     workflowAutoReviewProfile?.compatibilityCategory ??
     "workflow_improvement";
   if (
@@ -2145,7 +2252,7 @@ type ManagedRecurringProcedureResolution = {
 };
 
 type ManagedWorkflowImprovementResolution = {
-  familyId: "workflow_improvement" | "project_rule" | "unmet_need";
+  captureCategory: "workflow_improvement" | "project_rule" | "unmet_need";
   parsed: OrdinaryTurnAutoCaptureMatch;
   lessonFamily: WorkflowImprovementLessonFamily;
   reviewMode: "pending_confirmation" | "hold_for_more_evidence";
@@ -2511,7 +2618,7 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
   }
 
   return {
-    familyId: resolution.familyId,
+    captureCategory: resolution.captureCategory,
     parsed: resolution.parsed,
     lessonFamily: resolution.lessonFamily,
     reviewMode: resolution.reviewMode,
@@ -2988,7 +3095,7 @@ async function normalizeManagedToolCandidateInput(params: {
             captureClass: workflowImprovementResolution.parsed.captureClass,
             lessonFamily: workflowImprovementResolution.lessonFamily,
             template: workflowImprovementResolution.parsed.template,
-            familyId: workflowImprovementResolution.familyId,
+            captureCategory: workflowImprovementResolution.captureCategory,
           })?.modeMetadata ?? { guidanceMode: "guidance_only" }),
           toolName: "memory_candidate_submit",
         },
@@ -3231,8 +3338,10 @@ async function maybeAutoPromoteToolSubmittedPreference(params: {
   ) {
     return params.result;
   }
-  const familyId = readAutoCaptureString(params.input.metadata, "family");
-  if (familyId && familyId !== "response_style") {
+  if (
+    readCanonicalMemoryIngestionCandidateFromMetadata(params.input.metadata) &&
+    !matchesCanonicalSubmissionRoutingTarget(params.input.metadata, "response_style")
+  ) {
     return params.result;
   }
   const parsedGeneral = resolveAutoPromotableFeedbackSubmission(params.input);
@@ -3375,8 +3484,10 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
   ) {
     return params.result;
   }
-  const familyId = readAutoCaptureString(params.input.metadata, "family");
-  if (familyId && familyId !== "project_fact") {
+  if (
+    readCanonicalMemoryIngestionCandidateFromMetadata(params.input.metadata) &&
+    !matchesCanonicalSubmissionRoutingTarget(params.input.metadata, "project_fact")
+  ) {
     return params.result;
   }
 
@@ -3470,8 +3581,10 @@ async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {
   ) {
     return params.result;
   }
-  const familyId = readAutoCaptureString(params.input.metadata, "family");
-  if (familyId && familyId !== "recurring_procedure") {
+  if (
+    readCanonicalMemoryIngestionCandidateFromMetadata(params.input.metadata) &&
+    !matchesCanonicalSubmissionRoutingTarget(params.input.metadata, "recurring_procedure")
+  ) {
     return params.result;
   }
 

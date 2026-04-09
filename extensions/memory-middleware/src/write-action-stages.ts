@@ -20,7 +20,6 @@ export type WriteResultStage<TContext, TResult> = {
 export type CandidateWriteStageCondition = {
   submissionKinds?: readonly CandidateSubmissionInput["kind"][];
   lanes?: readonly CandidateWriteLane[];
-  familyIds?: readonly CandidateWriteCompatFamilyId[];
   canonicalKinds?: readonly string[];
   captureCategories?: readonly string[];
   captureClasses?: readonly string[];
@@ -82,69 +81,8 @@ export async function runWriteResultStages<TContext, TResult>(params: {
   return result;
 }
 
-export type CandidateWriteCompatFamilyId =
-  | "response_style"
-  | "project_fact"
-  | "recurring_procedure"
-  | "workflow_improvement"
-  | "project_rule"
-  | "unmet_need";
-
-function resolveCandidateWriteFamilyId(
-  input: CandidateSubmissionInput,
-): CandidateWriteCompatFamilyId | null {
-  const canonicalCandidate = readCanonicalMemoryIngestionCandidateFromMetadata(input.metadata);
-  const captureCategory =
-    typeof canonicalCandidate?.record.compatibility.captureCategory === "string"
-      ? canonicalCandidate.record.compatibility.captureCategory
-      : undefined;
-  const tags = canonicalCandidate?.record.tags ?? [];
-  const captureClass = canonicalCandidate?.compatibility.captureClass;
-  const canonicalFamilyId =
-    captureCategory === "project_fact" ||
-    captureCategory === "recurring_procedure" ||
-    captureCategory === "workflow_improvement" ||
-    captureCategory === "project_rule" ||
-    captureCategory === "unmet_need"
-      ? captureCategory
-      : captureClass === "explicit_preference" ||
-          captureClass === "preference_correction" ||
-          captureClass === "explicit_requirement" ||
-          captureClass === "requirement_correction"
-        ? "response_style"
-        : captureClass === "explicit_project_fact" || captureClass === "project_fact_correction"
-          ? "project_fact"
-          : captureClass === "explicit_recurring_procedure" ||
-              captureClass === "recurring_procedure_correction"
-            ? "recurring_procedure"
-            : captureClass === "workflow_tool_gotcha" ||
-                captureClass === "workflow_environment_constraint" ||
-                captureClass === "workflow_api_workaround" ||
-                captureClass === "workflow_generalized_guidance"
-              ? "workflow_improvement"
-              : captureClass === "project_rule_guidance"
-                ? "project_rule"
-                : captureClass === "unmet_need_recommendation"
-                  ? "unmet_need"
-                  : tags.includes("response_style")
-                    ? "response_style"
-                    : null;
-  if (
-    canonicalFamilyId === "response_style" ||
-    canonicalFamilyId === "project_fact" ||
-    canonicalFamilyId === "recurring_procedure" ||
-    canonicalFamilyId === "workflow_improvement" ||
-    canonicalFamilyId === "project_rule" ||
-    canonicalFamilyId === "unmet_need"
-  ) {
-    return canonicalFamilyId;
-  }
-  return null;
-}
-
 export type CandidateWriteClassification = {
   lanes: readonly CandidateWriteLane[];
-  familyId: CandidateWriteCompatFamilyId | null;
   canonicalKind?: string;
   captureCategory?: string;
   captureClass?: string;
@@ -172,34 +110,38 @@ export type CandidateWritePlan = {
 };
 
 function resolveCandidateWriteLanes(params: {
-  familyId: CandidateWriteCompatFamilyId | null;
+  canonicalKind?: string;
   captureCategory?: string;
+  captureClass?: string;
   derivedViews: readonly string[];
 }): readonly CandidateWriteLane[] {
   const lanes = new Set<CandidateWriteLane>();
-  if (params.familyId === "response_style" || params.derivedViews.includes("response_style")) {
+  if (
+    params.derivedViews.includes("response_style") ||
+    params.canonicalKind === "user" ||
+    params.captureClass === "explicit_preference" ||
+    params.captureClass === "preference_correction" ||
+    params.captureClass === "explicit_requirement" ||
+    params.captureClass === "requirement_correction"
+  ) {
     lanes.add("user_preference");
   }
-  if (params.captureCategory === "project_fact" || params.familyId === "project_fact") {
+  if (params.captureCategory === "project_fact") {
     lanes.add("project_fact");
   }
-  if (
-    params.captureCategory === "recurring_procedure" ||
-    params.familyId === "recurring_procedure"
-  ) {
+  if (params.captureCategory === "recurring_procedure") {
     lanes.add("recurring_procedure");
   }
   if (
     params.captureCategory === "workflow_improvement" ||
-    params.familyId === "workflow_improvement" ||
     params.derivedViews.includes("workflow_guidance")
   ) {
     lanes.add("workflow_guidance");
   }
-  if (params.captureCategory === "project_rule" || params.familyId === "project_rule") {
+  if (params.captureCategory === "project_rule") {
     lanes.add("project_rule");
   }
-  if (params.captureCategory === "unmet_need" || params.familyId === "unmet_need") {
+  if (params.captureCategory === "unmet_need") {
     lanes.add("unmet_need");
   }
   return [...lanes];
@@ -209,26 +151,34 @@ export function resolveCandidateWriteClassification(
   input: CandidateSubmissionInput,
 ): CandidateWriteClassification {
   const canonicalCandidate = readCanonicalMemoryIngestionCandidateFromMetadata(input.metadata);
-  const familyId = resolveCandidateWriteFamilyId(input);
-  const derivedViews =
-    Array.isArray(canonicalCandidate?.record.tags) &&
-    canonicalCandidate.record.tags.some((tag) => tag === "workflow_guidance")
-      ? ["workflow_guidance"]
-      : [];
+  const derivedViews = Array.isArray(canonicalCandidate?.record.tags)
+    ? canonicalCandidate.record.tags.filter(
+        (tag) =>
+          tag === "response_style" ||
+          tag === "project_fact" ||
+          tag === "procedure" ||
+          tag === "workflow_guidance" ||
+          tag === "learned_guidance" ||
+          tag === "project_rule" ||
+          tag === "unmet_need",
+      )
+    : [];
   const captureCategory =
     typeof canonicalCandidate?.record.compatibility.captureCategory === "string"
       ? canonicalCandidate.record.compatibility.captureCategory
       : undefined;
+  const captureClass = canonicalCandidate?.compatibility.captureClass;
+  const canonicalKind = canonicalCandidate?.record.kind;
   return {
     lanes: resolveCandidateWriteLanes({
-      familyId,
+      canonicalKind,
       captureCategory,
+      captureClass,
       derivedViews,
     }),
-    familyId,
-    canonicalKind: canonicalCandidate?.record.kind,
+    canonicalKind,
     captureCategory,
-    captureClass: canonicalCandidate?.compatibility.captureClass,
+    captureClass,
     derivedViews,
     dedupeKey:
       typeof canonicalCandidate?.identity.dedupeKey === "string"
@@ -302,11 +252,6 @@ function matchesCandidateWriteStageCondition(
   }
   if (match.lanes && !match.lanes.some((lane) => classification.lanes.includes(lane))) {
     return false;
-  }
-  if (match.familyIds) {
-    if (!classification.familyId || !match.familyIds.includes(classification.familyId)) {
-      return false;
-    }
   }
   if (
     match.canonicalKinds &&

@@ -1,6 +1,6 @@
-import { getPhrasePatternProofFamilyId } from "openclaw/plugin-sdk/memory-family-policy";
 import type { PluginLogger } from "../api.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
+import { getPhrasePatternProofFamilyId } from "./memory-proof-policy.js";
 import {
   type ApprovedPhrasePatternRowBase,
   type PhrasePatternLifecycleInspection,

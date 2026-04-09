@@ -467,12 +467,67 @@ It concluded:
 - compatibility metadata is now more clearly fallback rather than primary
   architecture
 - the biggest remaining retirement targets are:
-  - `extensions/memory-middleware/src/write-action-stages.ts`
-  - `extensions/memory-middleware/src/workflow-phrase-induction.ts`
-  - `extensions/memory-middleware/src/response-style-phrase-induction.ts`
+  - `extensions/memory-middleware/src/memory-canonical-compat.ts`
   - `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
   - `extensions/memory-middleware/src/tools/candidate-submit.ts`
+  - `extensions/memory-middleware/src/db/queries.ts`
   - `src/plugin-sdk/memory-family-policy.ts`
+
+## What the compatibility-retirement and 4-kind follow-through batch changed
+
+This batch landed four real outcomes:
+
+1. extension-side proof and phrase policy no longer imports
+   `memory-family-policy.ts`; that policy now lives in a local
+   `memory-proof-policy.ts` seam
+2. `write-action-stages.ts` no longer routes on compatibility family ids and
+   instead matches canonical kind, capture category, capture class, lanes, and
+   derived views only
+3. workflow ingestion and candidate-submit follow-through now use canonical
+   workflow capture categories as the active routing signal, while
+   `memory-canonical-compat.ts` remains the explicit family-compat bridge
+4. `queries.ts` shed the reusable candidate/procedure/skill planning builders
+   into `db/governance-plan-builders.ts`
+
+It concluded:
+
+- the only remaining extension import of `memory-family-policy.ts` is now the
+  explicit canonical compatibility bridge
+- the active write path is more honestly canonical-first and less mixed-era
+- workflow durable-record construction now centers capture category first and
+  only maps back to family ids at the compatibility bridge
+- `queries.ts` is still large, but the pure governance planning cluster is no
+  longer welded to the SQL layer
+- the biggest remaining retirement targets are now:
+  - correction/supersession cleanup in `candidate-submit.ts`
+  - the broad compatibility-definition surface in
+    `src/plugin-sdk/memory-family-policy.ts`
+  - the approval/install planner cluster still living in
+    `extensions/memory-middleware/src/db/queries.ts`
+
+## What the focused compat-bridge and governance-planner cleanup changed
+
+This batch landed four follow-through outcomes:
+
+1. `memory-canonical-compat.ts` is now narrower because canonical
+   record/candidate builder logic moved into a dedicated compat-builder module
+2. `candidate-submit.ts` now isolates the last raw `autoCapture.family`
+   fallback behind one explicit legacy compatibility helper
+3. `queries.ts` shed the remaining pure skill-governance planning cluster for
+   Skill Vetter handoff, approval planning, and install handoff into
+   `db/governance-plan-builders.ts`
+4. `src/plugin-sdk/memory-family-policy.ts` now explicitly marks its broad
+   family-definition and family-projection helpers as compatibility-only
+
+It concluded:
+
+- the compat bridge is smaller and more obviously transitional
+- candidate-submit is more clearly canonical-first, with the last family-era
+  fallback isolated instead of blended into the main routing path
+- approval/install planning is less welded to the SQL layer in `queries.ts`
+- `memory-family-policy.ts` remains public for compatibility, but its role is
+  now documented as a family-era bridge rather than a preferred runtime policy
+  center
 
 ## What the functional batch changed
 

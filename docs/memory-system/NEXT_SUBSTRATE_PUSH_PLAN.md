@@ -118,9 +118,23 @@ The next implementation slices should now be:
   canonical promotion engine
 - continue internal detector-profile cleanup inside
   `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
-- push `extensions/memory-middleware/src/write-action-stages.ts` from
-  canonical-family-aware routing to a fuller canonical multi-candidate write
-  pipeline with less compatibility inference
+- keep `extensions/memory-middleware/src/write-action-stages.ts` on canonical
+  metadata-only routing and avoid reintroducing compatibility inference
+- keep shrinking `extensions/memory-middleware/src/db/queries.ts`, starting
+  with the approval/install planning cluster that still sits beside SQL
+  execution
+
+The next compatibility-retirement follow-through is now partially landed:
+
+- extension-side proof and phrase policy now stays inside the memory middleware
+  package
+- `write-action-stages.ts` now routes on canonical metadata and derived views
+  instead of compatibility family-id matching
+- workflow ingestion now carries canonical capture category through the active
+  write path and only maps back to family ids inside
+  `memory-canonical-compat.ts`
+- `queries.ts` now pushes reusable governance planning into
+  `db/governance-plan-builders.ts`
 
 The canonical-core tranche is now already landed:
 
@@ -234,6 +248,30 @@ The next slice should now:
   permanent compatibility data or can be generalized/deleted later:
   - `python_command_unavailable`
   - `gateway_tools_invoke_forbidden`
+
+That compat/governance follow-through is now also landed locally:
+
+- `memory-canonical-compat.ts` now delegates canonical compat record/candidate
+  builders to a smaller dedicated compat-builder module
+- `candidate-submit.ts` isolates the last raw `autoCapture.family` fallback
+  behind one explicit legacy compatibility helper
+- `queries.ts` no longer keeps the pure Skill Vetter handoff, approval
+  planning, and install handoff planners inline with SQL execution
+- `memory-family-policy.ts` now documents its broad family-era helpers as
+  compatibility-only public API
+
+The next slice should now:
+
+- finish extracting the remaining family-specific correction/supersession
+  wrappers in `extensions/memory-middleware/src/tools/candidate-submit.ts`
+- decide whether `extensions/memory-middleware/src/memory-canonical-compat.ts`
+  can eventually collapse into narrower read-only metadata helpers plus one
+  explicit legacy record-builder seam
+- keep reducing `extensions/memory-middleware/src/db/queries.ts`, focusing on
+  transaction-heavy clusters that still duplicate result shaping
+- continue demoting `src/plugin-sdk/memory-family-policy.ts` until only
+  backwards-compatible external consumers truly need the broad family
+  definition surface
   - `openai_embeddings_api_key_required`
   - `anthropic_context1m_eligible_credential_required`
 
