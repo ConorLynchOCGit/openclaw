@@ -26,6 +26,9 @@ The actual available staging-like environment in this repo/runtime context was:
 This was a staging-like rehearsal lane, not a shared managed staging
 environment.
 
+This remains an acceptable disposable rehearsal lane because it is ephemeral.
+It is not a second runtime database posture.
+
 ## Exact config posture used
 
 - plugin posture:

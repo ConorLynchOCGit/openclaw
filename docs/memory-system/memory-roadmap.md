@@ -144,6 +144,173 @@ self-improving capture can land on honest shared substrate.
 
 ### What this changed
 
+- workflow cluster auto-review supersession now uses the shared correction
+  engine instead of a separate workflow-owned sequence
+- approved workflow-guidance retrieval and learned-guidance planning are now
+  canonical-only on their hot paths
+- runtime capture seams now rely less on workflow-lesson-family lookup helpers
+- ordinary-turn response-style semantic correction capture is explicitly
+  supported in the ordinary-turn profile
+
+### Landed in canonical correction/supersession retirement batch v1
+
+1. a shared supersede-executor hook in the canonical correction engine
+2. workflow auto-review supersession moved onto that shared engine
+3. deletion of the last workflow-guidance mixed-era record bridge from
+   `memory-canonical-compat.ts`
+4. canonical-only workflow-guidance reads in semantic retrieval and
+   learned-guidance
+5. further runtime removal of workflow-lesson-family family/capture lookup
+   usage
+
+### What this changed
+
+- workflow correction and supersession now look more like one canonical
+  promotion substrate
+- mixed-era workflow-guidance approved-row rebuilding is no longer a default
+  runtime behavior
+- `memory-family-policy.ts` is smaller and more obviously compatibility-owned
+
+### What still remains in this phase
+
+- family-specific correction/supersession wrappers still remain in
+  `candidate-submit.ts`
+- lower-level detector internals still need more canonical-profile cleanup
+- family policy still owns compatibility and derived-view mapping for the
+  transitional six-family runtime
+
+### Landed in canonical de-archaicization tranche v1
+
+1. more workflow auto-review orchestration now keys off canonical capture
+   category instead of repeated lesson-family branching
+2. learned-guidance planning now reads self-improving provenance from
+   canonical record provenance
+3. workflow-guidance proof/eval inserts now seed canonical approved records
+4. workflow lesson compatibility data is isolated in a dedicated compatibility
+   catalog
+5. `memory-family-policy.ts` shed another historical public field
+
+### What this changed
+
+- canonical approved workflow-guidance records are now the default proof
+  substrate for advisory planning tests and eval
+- the last provider/incident-specific supported lesson list is more honestly
+  treated as compatibility data than as runtime control-plane logic
+- `memory-family-policy.ts` is closer to compatibility and derived-view
+  ownership only
+
+### Landed in canonical retirement follow-through tranche v1
+
+1. more workflow auto-review orchestration moved behind shared canonical
+   workflow policy helpers
+2. workflow detector routing moved further toward profile registration
+3. middleware runtime seams now consume narrower family-policy-derived views
+4. write-stage routing now reuses cached canonical classification data
+5. hybrid read scaffolding now prefers canonical compatibility and
+   `captureClass` ahead of lesson-era compatibility fields
+6. three named workflow lessons were retired into generalized workflow
+   semantics instead of remaining explicit compat entries
+
+### What this changed
+
+- `candidate-submit.ts` is less family-owned in workflow correction and
+  supersession flow
+- the resolver is flatter and more profile-driven
+- `write-action-stages.ts` is closer to a canonical multi-candidate write
+  substrate
+
+### Landed in runtime-target consolidation batch v1
+
+1. the persistent local rollout Postgres target was retired from normal
+   operational posture
+2. memory-system docs now treat Supabase-backed Postgres as the single real
+   runtime database target
+3. disposable Docker Postgres is now documented as test or bounded-rehearsal
+   infrastructure only
+
+### What this changed
+
+- the repo no longer presents a second persistent runtime database lane as a
+  co-equal operating model
+- runtime posture is clearer: one shared/runtime DB target, ephemeral test DBs
+  only
+- rollout history remains documented, but it is now explicitly historical
+
+### Landed in runtime-target consolidation and final flattening batch v1
+
+1. project-fact, recurring-procedure, and workflow ingestion moved onto one
+   shared detector-registry helper
+2. runtime policy-view and proof/type consumers moved further off the
+   middleware family-registry bridge and onto public plugin-SDK policy seams
+3. the write substrate gained an explicit candidate write plan and plan
+   executor
+4. hybrid read project-family classification stopped inferring family identity
+   from `factFamily` or `fieldKey`
+
+### What this changed
+
+- the touched resolver area is now more honestly registry-driven
+- `memory-family-policy.ts` is closer to being a pure public compatibility
+  bridge rather than something middleware has to re-wrap broadly
+- the write substrate is more honestly multi-candidate-shaped even though the
+  live plan still emits one primary operation
+- the active read path is less dependent on low-level mixed-era metadata
+- the supported workflow compatibility catalog is smaller and more clearly
+  bounded
+- read/ranking classification lines up better with canonical capture-class
+  semantics
+
+### What still remains in this phase
+
+- some correction/supersession wrappers still remain in `candidate-submit.ts`
+- detector registration is not yet fully canonical-profile-only
+- `memory-family-policy.ts` still exposes broad family definitions as a
+  compatibility bridge
+- the write substrate is not fully canonical multi-candidate end to end
+- the remaining explicit workflow compatibility lessons still need a later
+  delete-vs-generalize decision
+
+### Landed in canonical profile-registry and write-lane batch v1
+
+1. a narrower shared approved-memory correction-promotion helper now owns more
+   of the correction/supersession execution path
+2. project-fact semantic detection now runs through a profile-registered
+   detector registry
+3. narrow runtime-policy views now live in `memory-family-policy.ts` instead
+   of being reconstructed from broad family definitions inside middleware
+4. write-stage routing now understands canonical write lanes like
+   `workflow_guidance`, `project_fact`, and `user_preference`
+5. the last hybrid read `lessonFamily` fallback was removed from the active
+   project-family read scaffolding
+6. three repo/process workflow lessons were retired into generalized workflow
+   guidance:
+   - `vitest_wrapper_required`
+   - `scripts_committer_required`
+   - `git_stash_unsafe`
+
+### What this changed
+
+- `candidate-submit.ts` is less family-owned in correction/supersession flow
+- the resolver is more honestly registry-driven in the touched semantic paths
+- family policy is more clearly a compatibility/derived-view bridge instead of
+  a broad runtime policy source
+- write-stage routing now uses one honest canonical write operation instead of
+  a fake multi-operation scaffold
+- repo/process workflow guidance is less keyword-bound and less nostalgia-kept
+
+### What still remains in this phase
+
+- some correction/supersession wrappers still remain in `candidate-submit.ts`
+- the detector story is still not one fully shared registry across every
+  remaining family seam
+- `memory-family-policy.ts` still exports the broad family-definition bridge
+- four explicit compatibility lessons still remain because they are still
+  bounded environment/provider cases:
+  - `python_command_unavailable`
+  - `gateway_tools_invoke_forbidden`
+  - `openai_embeddings_api_key_required`
+  - `anthropic_context1m_eligible_credential_required`
+
 - procedures now behave like a staged family instead of a quasi-separate
   product
 - correction policy is now declarative enough for the current family set
@@ -229,6 +396,34 @@ This phase is now partially landed.
   `candidate-submit.ts`
 - mixed-era approved-record fallback still exists in a bounded form
 - the resolver still has some family-aware semantic detector internals
+
+### Landed in canonical write/promotion follow-through batch v1
+
+1. workflow family resolution now derives from capture-class canonical
+   metadata instead of `lessonFamily` fallback
+2. write-stage routing no longer infers family from unstamped legacy category
+   or capture-class metadata
+3. response-style correction normalization now stamps canonical ingestion
+   candidates before write-stage routing
+4. workflow-guidance mixed-era reads now go through one shared
+   canonical-shaped compatibility reader
+5. family-policy capture-metadata helpers now use narrow compatibility maps
+
+### What this changed
+
+- the write path now depends more heavily on canonical stamping being present
+- old-record workflow-guidance support is smaller and more centralized
+- candidate-submit is less dependent on lesson-family lookups from family
+  policy
+
+### What still remains in this phase
+
+- extraction of one canonical correction/supersession engine from the
+  remaining family-specific candidate-submit helpers
+- deletion of the final mixed-era workflow-guidance compatibility bridge once
+  old approved records no longer require it
+- deeper cleanup of remaining family-aware semantic detector internals in the
+  resolver
 
 ## Phase E — post-flattening hardening before reduced-profile self-improving capture
 
@@ -523,11 +718,19 @@ Current tranche status:
   - ordinary-turn fallback capture now uses the shared canonical adapter seam
   - Main routing now uses a dedicated canonical-memory planner surface rather
     than hiding planner logic in the OpenAI wrapper layer
+  - workflow retrieval hinting and hybrid ranking now speak in generic capture
+    classes rather than relying on lesson-key routing
+  - correction promotion in tool submission is now more fully delegated to the
+    shared correction engine
+  - canonical write-stage routing now supports honest multi-lane matching
 - The next required retirement work after that is:
-  - write-stage canonicalization
-  - phrase-induction convergence
-  - deeper family-aware ingestion-resolver shrinkage
-  - staged reduction of remaining family-heavy promotion logic
+  - finish the remaining family-specific correction and supersession wrappers
+    in `candidate-submit.ts`
+  - continue collapsing detector families in
+    `memory-ingestion-resolver.ts`
+  - contain or generalize the hard-coded supported workflow lesson catalog in
+    `workflow-improvement-semantic.ts`
+  - keep shrinking `memory-family-policy.ts` until it is compatibility-only
 
 Success for this phase should mean:
 

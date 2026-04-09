@@ -18,8 +18,10 @@ const maybeApplyEnvironmentConstraintSemanticFallback = vi.hoisted(() =>
 const maybeApplyWorkflowToolGotchaSemanticFallback = vi.hoisted(() =>
   vi.fn(async ({ hybridResult }) => hybridResult),
 );
+const createSemanticFallbackSharedState = vi.hoisted(() => vi.fn(() => ({})));
 
 vi.mock("../semantic-retrieval-routing.js", () => ({
+  createSemanticFallbackSharedState,
   maybeApplyApiWorkaroundSemanticFallback,
   maybeApplyProcedureSemanticFallback,
   maybeApplyEnvironmentConstraintSemanticFallback,
@@ -346,7 +348,9 @@ describe("memory object hybrid search tool", () => {
                   'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
                 metadata: {
                   autoCapture: {
-                    lessonKey: "scripts_committer_required",
+                    lessonFamily: "generalized_workflow_lesson",
+                    captureClass: "workflow_generalized_guidance",
+                    guidancePattern: "use_instead_of",
                   },
                 },
                 createdAt: "2026-04-01T00:00:00.000Z",
@@ -408,7 +412,9 @@ describe("memory object hybrid search tool", () => {
                   "Workflow improvement: do not use git stash during multi-agent repo work because it can disturb concurrent work.",
                 metadata: {
                   autoCapture: {
-                    lessonKey: "git_stash_unsafe",
+                    lessonFamily: "generalized_workflow_lesson",
+                    captureClass: "workflow_generalized_guidance",
+                    guidancePattern: "avoid_only",
                   },
                 },
                 createdAt: "2026-04-01T00:00:00.000Z",

@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
+import { MEMORY_PHRASE_PATTERN_PROOF_FAMILY_IDS } from "openclaw/plugin-sdk/memory-family-policy";
 import { Client, type ClientConfig } from "pg";
 import type { PluginLogger } from "../../api.js";
 import type { MemoryMiddlewareDbConfig } from "../config.js";
-import { MEMORY_PHRASE_PATTERN_PROOF_FAMILY_IDS } from "../memory-family-registry.js";
 import {
   executeApprovedMemoryObjectSupersede,
   resolveCorrectionSupersedeSubjectKey,
@@ -1684,59 +1684,66 @@ function classifyProjectRetrievedFamily(
   if (record.objectType !== "memory_object" || record.memoryKind !== "project") {
     return "other";
   }
-  const lessonFamily =
-    readNestedMetadataString(record.metadata, ["autoCapture", "lessonFamily"]) ??
+  const captureCategory =
+    readNestedMetadataString(record.metadata, [
+      "canonicalIngestionCandidate",
+      "record",
+      "compatibility",
+      "captureCategory",
+    ]) ??
     readNestedMetadataString(record.metadata, [
       "candidateMetadata",
-      "autoCapture",
-      "lessonFamily",
+      "canonicalIngestionCandidate",
+      "record",
+      "compatibility",
+      "captureCategory",
     ]) ??
     readNestedMetadataString(record.metadata, [
       "promotionMetadata",
-      "autoPromotion",
-      "lessonFamily",
+      "canonicalIngestionCandidate",
+      "record",
+      "compatibility",
+      "captureCategory",
     ]) ??
-    readNestedMetadataString(record.metadata, ["autoPromotion", "lessonFamily"]);
-  if (lessonFamily === "generalized_project_rule") {
+    readNestedMetadataString(record.metadata, [
+      "autoPromotion",
+      "canonicalIngestionCandidate",
+      "record",
+      "compatibility",
+      "captureCategory",
+    ]);
+  if (captureCategory === "project_rule") {
     return "project_rule";
   }
-  if (lessonFamily === "generalized_unmet_need") {
+  if (captureCategory === "unmet_need") {
     return "unmet_need";
   }
-  if (lessonFamily === "generalized_workflow_lesson") {
+  if (captureCategory === "workflow_improvement") {
     return "workflow_guidance";
   }
-  const factFamily =
-    readNestedMetadataString(record.metadata, ["autoCapture", "factFamily"]) ??
-    readNestedMetadataString(record.metadata, ["candidateMetadata", "autoCapture", "factFamily"]) ??
-    readNestedMetadataString(record.metadata, [
-      "promotionMetadata",
-      "autoPromotion",
-      "factFamily",
-    ]) ??
-    readNestedMetadataString(record.metadata, ["autoPromotion", "factFamily"]);
-  if (factFamily === "generalized_reference" || factFamily === "supported_field") {
+  if (captureCategory === "project_fact") {
     return "project_fact";
   }
-  const fieldKey =
-    readNestedMetadataString(record.metadata, ["autoCapture", "fieldKey"]) ??
-    readNestedMetadataString(record.metadata, ["candidateMetadata", "autoCapture", "fieldKey"]) ??
-    readNestedMetadataString(record.metadata, ["promotionMetadata", "autoPromotion", "fieldKey"]) ??
-    readNestedMetadataString(record.metadata, ["autoPromotion", "fieldKey"]);
-  if (fieldKey) {
+
+  const legacyFamilyId =
+    readNestedMetadataString(record.metadata, ["autoCapture", "family"]) ??
+    readNestedMetadataString(record.metadata, ["candidateMetadata", "autoCapture", "family"]) ??
+    readNestedMetadataString(record.metadata, ["promotionMetadata", "autoPromotion", "family"]) ??
+    readNestedMetadataString(record.metadata, ["autoPromotion", "family"]);
+  if (legacyFamilyId === "project_fact") {
     return "project_fact";
   }
-  const lessonKey =
-    readNestedMetadataString(record.metadata, ["autoCapture", "lessonKey"]) ??
-    readNestedMetadataString(record.metadata, ["candidateMetadata", "autoCapture", "lessonKey"]) ??
-    readNestedMetadataString(record.metadata, [
-      "promotionMetadata",
-      "autoPromotion",
-      "lessonKey",
-    ]) ??
-    readNestedMetadataString(record.metadata, ["autoPromotion", "lessonKey"]);
-  if (lessonKey) {
+  if (legacyFamilyId === "project_rule") {
+    return "project_rule";
+  }
+  if (legacyFamilyId === "unmet_need") {
+    return "unmet_need";
+  }
+  if (legacyFamilyId === "workflow_improvement") {
     return "workflow_guidance";
+  }
+  if (legacyFamilyId === "response_style") {
+    return "other";
   }
   return "other";
 }
@@ -9978,7 +9985,7 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
     retrievalDecision.responseStyleHint?.template ?? "",
     retrievalDecision.responseStyleHint?.normalizedSubject ?? "",
     retrievalDecision.projectFactHint?.fieldKey ?? "",
-    retrievalDecision.workflowImprovementHint?.lessonKey ?? "",
+    retrievalDecision.workflowImprovementHint?.captureClass ?? "",
     retrievalDecision.normalizedQuery,
     retrievalDecision.projectMemoryIntentFamily,
     retrievalDecision.generalizedWorkflowPatternHint,
@@ -10001,7 +10008,6 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
             compatibilityFamilyIdExpression: surfaceScaffolding.compatibilityFamilyIdExpression,
             autoCaptureTemplateExpression: surfaceScaffolding.autoCaptureTemplateExpression,
             autoCaptureFactFamilyExpression: surfaceScaffolding.autoCaptureFactFamilyExpression,
-            autoCaptureLessonFamilyExpression: surfaceScaffolding.autoCaptureLessonFamilyExpression,
             autoCaptureGuidancePatternExpression:
               surfaceScaffolding.autoCaptureGuidancePatternExpression,
             autoCaptureNormalizedSubjectExpression:
@@ -10031,7 +10037,6 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
             compatibilityFamilyIdExpression: surfaceScaffolding.compatibilityFamilyIdExpression,
             autoCaptureTemplateExpression: surfaceScaffolding.autoCaptureTemplateExpression,
             autoCaptureFactFamilyExpression: surfaceScaffolding.autoCaptureFactFamilyExpression,
-            autoCaptureLessonFamilyExpression: surfaceScaffolding.autoCaptureLessonFamilyExpression,
             autoCaptureGuidancePatternExpression:
               surfaceScaffolding.autoCaptureGuidancePatternExpression,
             autoCaptureNormalizedSubjectExpression:
@@ -10080,7 +10085,7 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
           + case when ${combinedTextExpression} like lower($2::text) then 90 else 0 end
           + case when $3::text <> '' and ${surfaceScaffolding.autoCaptureTemplateExpression} = $3::text then 135 else 0 end
           + case when $5::text <> '' and ${surfaceScaffolding.autoCaptureFieldKeyExpression} = $5::text then 220 else 0 end
-          + case when $6::text <> '' and ${surfaceScaffolding.autoCaptureLessonKeyExpression} = $6::text then 185 else 0 end
+          + case when $6::text <> '' and ${surfaceScaffolding.autoCaptureCaptureClassExpression} = $6::text then 185 else 0 end
           ${retrievalFeatureSql.scoreClauses.map((clause) => `+ ${clause}`).join("\n          ")}
           + (ts_rank_cd(mo.search_document, websearch_to_tsquery('english', $1::text)) * 100.0)
           + (similarity(${combinedTextExpression}, lower($1::text)) * 40.0)
@@ -10097,8 +10102,8 @@ async function searchMemoryObjectSurfaceRowsHybrid(params: {
             case when $5::text <> '' and ${surfaceScaffolding.autoCaptureFieldKeyExpression} = $5::text
               then 'auto_capture_field_match'
             end,
-            case when $6::text <> '' and ${surfaceScaffolding.autoCaptureLessonKeyExpression} = $6::text
-              then 'auto_capture_lesson_match'
+            case when $6::text <> '' and ${surfaceScaffolding.autoCaptureCaptureClassExpression} = $6::text
+              then 'auto_capture_capture_class_match'
             end,
             ${retrievalFeatureSql.matchedFieldClauses.join(",\n            ")},
             case when mo.search_document @@ websearch_to_tsquery('english', $1::text)

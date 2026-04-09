@@ -66,7 +66,7 @@ describe("retrieval intent helpers", () => {
     expect(
       inferWorkflowImprovementQueryHint("Should I use scripts/committer instead of git add?"),
     ).toEqual({
-      lessonKey: "scripts_committer_required",
+      captureClass: "workflow_tool_gotcha",
     });
   });
 
@@ -107,7 +107,7 @@ describe("retrieval intent helpers", () => {
       },
     });
     expect(resolveWorkflowImprovementQueryHintFromCanonicalPlan(workflowPlan)).toEqual({
-      lessonKey: "scripts_committer_required",
+      captureClass: "workflow_tool_gotcha",
     });
 
     const procedurePlan = buildCanonicalMemoryRetrievalPlan({

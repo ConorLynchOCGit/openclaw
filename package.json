@@ -633,9 +633,17 @@
       "types": "./dist/plugin-sdk/memory-canonical-core.d.ts",
       "default": "./dist/plugin-sdk/memory-canonical-core.js"
     },
+    "./plugin-sdk/memory-canonical-core-v1": {
+      "types": "./dist/plugin-sdk/memory-canonical-core-v1.d.ts",
+      "default": "./dist/plugin-sdk/memory-canonical-core-v1.js"
+    },
     "./plugin-sdk/memory-canonical-ingestion": {
       "types": "./dist/plugin-sdk/memory-canonical-ingestion.d.ts",
       "default": "./dist/plugin-sdk/memory-canonical-ingestion.js"
+    },
+    "./plugin-sdk/memory-canonical-ingestion-v1": {
+      "types": "./dist/plugin-sdk/memory-canonical-ingestion-v1.d.ts",
+      "default": "./dist/plugin-sdk/memory-canonical-ingestion-v1.js"
     },
     "./plugin-sdk/memory-canonical-retrieval": {
       "types": "./dist/plugin-sdk/memory-canonical-retrieval.d.ts",

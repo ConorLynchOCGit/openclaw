@@ -45,8 +45,6 @@ export const CANONICAL_MEMORY_RECOMMENDED_FACET_KEYS = [
   "correctionMode",
   "procedureShape",
   "guidancePattern",
-  "toolKey",
-  "lessonKey",
   "subjectKey",
   "clusterKey",
   "rankingHints",
@@ -86,15 +84,11 @@ export type CanonicalMemoryApplicability = {
   promptSections?: readonly string[];
   directIntentClasses?: readonly string[];
   queryClasses?: readonly string[];
-  toolKeys?: readonly string[];
   surfaces?: readonly string[];
 };
 
 export type CanonicalMemoryCompatibility = {
-  transitionalFamilyId?: string;
   storageKinds?: readonly string[];
-  typedFastPaths?: readonly string[];
-  workflowLessonFamilies?: readonly string[];
   captureClasses?: readonly string[];
   captureCategory?: string;
   captureSource?: string;

@@ -13,6 +13,9 @@ The goal is to prevent loss of architectural context across:
 
 These docs are the source of truth for the memory-system build unless explicitly superseded in writing here.
 
+Historical rollout reports and retired migration notes now live under
+`archive/` and should not be treated as active roadmap or runtime guidance.
+
 ## Reading order
 
 Read these files in order:
@@ -48,7 +51,7 @@ Then consult as needed:
 - `specs/messy-language-eval.md`
 - `specs/governance-surface-productionization.md`
 - `specs/implementation-sequencing.md`
-- `specs/canonical-four-kind-memory-migration.md`
+- `archive/specs/canonical-four-kind-memory-migration.md`
 - `specs/premortem.md`
 - `specs/architecture-fit-review.md`
 - `PRODUCTION_ADOPTION_PLAN.md`
@@ -77,6 +80,7 @@ Then consult as needed:
 - `REAL_ENV_PROACTIVE_EXECUTE_DRIFT_CHECK_ROLLOUT_REPORT.md`
 - `REAL_ENV_CONSOLIDATION_PLAN_SCHEDULER_ROLLOUT_REPORT.md`
 - `REAL_ENV_CONSOLIDATION_EXECUTE_SCHEDULER_ROLLOUT_REPORT.md`
+- `archive/README.md`
 
 ## Design summary
 

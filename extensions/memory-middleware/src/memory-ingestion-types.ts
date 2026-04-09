@@ -16,11 +16,10 @@ import type {
   WorkflowImprovementCaptureClass,
   WorkflowImprovementGuidancePattern,
   WorkflowImprovementLessonFamily,
-  WorkflowImprovementLessonKey,
   WorkflowImprovementNeedCategory,
   WorkflowImprovementReasonCode,
+  WorkflowImprovementSemanticProfileId,
   WorkflowImprovementTemplate,
-  WorkflowImprovementToolKey,
 } from "./workflow-improvement-semantic.js";
 
 export type OrdinaryTurnAutoCaptureMatch = {
@@ -92,8 +91,7 @@ export type OrdinaryTurnAutoCaptureMatch = {
   title?: string;
   steps?: string[];
   lessonFamily?: WorkflowImprovementLessonFamily;
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
+  semanticProfileId?: WorkflowImprovementSemanticProfileId;
   guidancePattern?: WorkflowImprovementGuidancePattern;
   needCategory?: WorkflowImprovementNeedCategory;
   neededCapability?: string;
@@ -180,8 +178,7 @@ export function toOrdinaryTurnWorkflowImprovementMatch(match: {
   lessonFamily: WorkflowImprovementLessonFamily;
   projectScope?: string;
   normalizedProjectScope?: string;
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
+  semanticProfileId?: WorkflowImprovementSemanticProfileId;
   guidancePattern?: WorkflowImprovementGuidancePattern;
   needCategory?: WorkflowImprovementNeedCategory;
   subject: string;
@@ -218,8 +215,7 @@ export function toOrdinaryTurnWorkflowImprovementMatch(match: {
     ...(match.normalizedProjectScope
       ? { normalizedProjectScope: match.normalizedProjectScope }
       : {}),
-    ...(match.lessonKey ? { lessonKey: match.lessonKey } : {}),
-    ...(match.toolKey ? { toolKey: match.toolKey } : {}),
+    ...(match.semanticProfileId ? { semanticProfileId: match.semanticProfileId } : {}),
     ...(match.guidancePattern ? { guidancePattern: match.guidancePattern } : {}),
     ...(match.needCategory ? { needCategory: match.needCategory } : {}),
     ...(match.neededCapability ? { neededCapability: match.neededCapability } : {}),

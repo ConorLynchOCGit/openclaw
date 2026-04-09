@@ -7,8 +7,7 @@ export type HybridMemoryObjectSurfaceScaffolding = {
   autoCaptureTemplateExpression: string;
   autoCaptureFieldKeyExpression: string;
   autoCaptureFactFamilyExpression: string;
-  autoCaptureLessonKeyExpression: string;
-  autoCaptureLessonFamilyExpression: string;
+  autoCaptureCaptureClassExpression: string;
   autoCaptureGuidancePatternExpression: string;
   autoCaptureNormalizedSubjectExpression: string;
   autoCaptureNormalizedProjectFactLabelExpression: string;
@@ -153,13 +152,22 @@ export function buildHybridMemoryObjectSurfaceScaffolding(params: {
     fallback: "''",
   });
 
+  const autoCaptureFieldKeyExpression = buildCanonicalFirstMetadataExpression({
+    alias: params.alias,
+    canonicalPath: ["record", "facets", "fieldKey"],
+    legacyKey: "fieldKey",
+    includePromotionMetadata,
+  });
+
+  const autoCaptureCaptureClassExpression = buildCanonicalFirstMetadataExpression({
+    alias: params.alias,
+    canonicalPath: ["record", "facets", "captureClass"],
+    legacyKey: "captureClass",
+    includePromotionMetadata,
+  });
+
   const compatibilityFamilyIdExpression = buildCoalescedMetadataExpression({
     expressions: [
-      buildCanonicalCandidateMetadataExpression({
-        alias: params.alias,
-        path: ["record", "compatibility", "transitionalFamilyId"],
-        includePromotionMetadata,
-      }),
       buildLegacyAutoCaptureMetadataExpression({
         alias: params.alias,
         key: "family",
@@ -168,51 +176,18 @@ export function buildHybridMemoryObjectSurfaceScaffolding(params: {
       [
         "case",
         "when",
-        buildLegacyAutoCaptureMetadataExpression({
-          alias: params.alias,
-          key: "template",
-          includePromotionMetadata,
-        }),
-        "= 'response_style_generalized_guidance' then 'response_style'",
+        autoCaptureCaptureClassExpression,
+        "in ('workflow_tool_gotcha', 'workflow_environment_constraint', 'workflow_api_workaround', 'workflow_generalized_guidance') then 'workflow_improvement'",
         "when",
-        buildLegacyAutoCaptureMetadataExpression({
-          alias: params.alias,
-          key: "factFamily",
-          includePromotionMetadata,
-        }),
-        "in ('supported_field', 'generalized_reference') then 'project_fact'",
+        autoCaptureCaptureClassExpression,
+        "= 'project_rule_guidance' then 'project_rule'",
         "when",
-        buildLegacyAutoCaptureMetadataExpression({
-          alias: params.alias,
-          key: "lessonFamily",
-          includePromotionMetadata,
-        }),
-        "= 'generalized_workflow_lesson' then 'workflow_improvement'",
-        "when",
-        buildLegacyAutoCaptureMetadataExpression({
-          alias: params.alias,
-          key: "lessonFamily",
-          includePromotionMetadata,
-        }),
-        "= 'generalized_project_rule' then 'project_rule'",
-        "when",
-        buildLegacyAutoCaptureMetadataExpression({
-          alias: params.alias,
-          key: "lessonFamily",
-          includePromotionMetadata,
-        }),
-        "= 'generalized_unmet_need' then 'unmet_need'",
+        autoCaptureCaptureClassExpression,
+        "= 'unmet_need_recommendation' then 'unmet_need'",
         "else '' end",
       ].join(" "),
     ],
     fallback: "''",
-  });
-
-  const autoCaptureFieldKeyExpression = buildCanonicalFirstMetadataExpression({
-    alias: params.alias,
-    canonicalPath: ["record", "facets", "fieldKey"],
-    legacyKey: "fieldKey",
-    includePromotionMetadata,
   });
 
   return {
@@ -244,18 +219,7 @@ export function buildHybridMemoryObjectSurfaceScaffolding(params: {
       ],
       fallback: "''",
     }),
-    autoCaptureLessonKeyExpression: buildCanonicalFirstMetadataExpression({
-      alias: params.alias,
-      canonicalPath: ["record", "facets", "lessonKey"],
-      legacyKey: "lessonKey",
-      includePromotionMetadata,
-    }),
-    autoCaptureLessonFamilyExpression: buildCanonicalFirstMetadataExpression({
-      alias: params.alias,
-      canonicalPath: ["record", "facets", "lessonFamily"],
-      legacyKey: "lessonFamily",
-      includePromotionMetadata,
-    }),
+    autoCaptureCaptureClassExpression,
     autoCaptureGuidancePatternExpression: buildCanonicalFirstMetadataExpression({
       alias: params.alias,
       canonicalPath: ["record", "facets", "guidancePattern"],

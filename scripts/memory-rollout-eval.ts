@@ -195,12 +195,12 @@ function createEvalRuntime(
       selfImprovingCapture: {
         mode: "candidate-only",
         rolloutTarget,
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedLessonFamilies: ["generalized_workflow_lesson"],
       },
       learnedGuidanceAdvisoryPlanning: {
         mode: "inline-only",
         rolloutTarget,
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedLessonFamilies: ["generalized_workflow_lesson"],
         defaultMaxSuggestions: 3,
       },
     },

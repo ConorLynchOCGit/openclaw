@@ -1,16 +1,17 @@
+import type {
+  MemoryFamilyId,
+  MemoryFamilyRetrievalFeature,
+} from "openclaw/plugin-sdk/memory-family-policy";
 import {
-  getMemoryFamilyDefinition,
-  listMemoryFamilyDefinitions,
-  type MemoryFamilyDefinition,
-  type MemoryFamilyId,
-  type MemoryFamilyRetrievalFeature,
-} from "./memory-family-registry.js";
+  getMemoryRetrievalRuntimePolicy,
+  listApprovedMemoryRetrievalRuntimePolicies,
+  type ApprovedMemoryRetrievalRuntimeDefinition,
+} from "./memory-runtime-policy-views.js";
 
 type RetrievalSqlExpressions = {
   compatibilityFamilyIdExpression: string;
   autoCaptureTemplateExpression: string;
   autoCaptureFactFamilyExpression: string;
-  autoCaptureLessonFamilyExpression: string;
   autoCaptureGuidancePatternExpression: string;
   autoCaptureNormalizedSubjectExpression: string;
   autoCaptureNormalizedProjectFactLabelExpression: string;
@@ -40,15 +41,6 @@ type ValidatedProcedureExpressions = {
 type ValidatedProcedureParamRefs = {
   normalizedSubjectRef: string;
 };
-
-function listApprovedMemoryFeatureFamilies(): MemoryFamilyDefinition[] {
-  return listMemoryFamilyDefinitions().filter(
-    (definition) =>
-      definition.storageKinds.includes("memory_object") &&
-      definition.id !== "recurring_procedure" &&
-      Object.keys(definition.retrievalPolicy.featureWeights).length > 0,
-  );
-}
 
 function buildApprovedMemoryFeatureFamilyGuard(
   familyId: MemoryFamilyId,
@@ -108,13 +100,11 @@ function buildApprovedMemoryFeatureValueExpression(
 }
 
 function buildMatchedFieldLabel(
-  definition: MemoryFamilyDefinition,
+  definition: ApprovedMemoryRetrievalRuntimeDefinition,
   feature: MemoryFamilyRetrievalFeature,
 ): string {
   const prefix =
-    definition.retrievalPolicy.matchedFieldPrefix ??
-    definition.canonicalProjection.derivedViews[0] ??
-    definition.id;
+    definition.retrievalPolicy.matchedFieldPrefix ?? definition.derivedViews[0] ?? definition.id;
   switch (feature) {
     case "family_intent_match":
       return `${prefix}_intent_match`;
@@ -138,7 +128,7 @@ function buildMatchedFieldLabel(
 }
 
 function buildApprovedMemoryFeatureClause(params: {
-  definition: MemoryFamilyDefinition;
+  definition: ApprovedMemoryRetrievalRuntimeDefinition;
   feature: MemoryFamilyRetrievalFeature;
   weight: number;
   expressions: RetrievalSqlExpressions;
@@ -197,7 +187,7 @@ export function buildApprovedMemoryRetrievalFeatureSql(params: {
   const scoreClauses: string[] = [];
   const matchedFieldClauses: string[] = [];
 
-  for (const definition of listApprovedMemoryFeatureFamilies()) {
+  for (const definition of listApprovedMemoryRetrievalRuntimePolicies()) {
     for (const [feature, weight] of Object.entries(definition.retrievalPolicy.featureWeights)) {
       if (!weight) {
         continue;
@@ -231,8 +221,8 @@ export function buildValidatedProcedureRetrievalFeatureSql(params: {
   expressions: ValidatedProcedureExpressions;
   paramRefs: ValidatedProcedureParamRefs;
 }): RetrievalFeatureSqlBundle {
-  const definition = getMemoryFamilyDefinition("recurring_procedure");
-  const subjectWeight = definition.retrievalPolicy.featureWeights.subject_match ?? 0;
+  const subjectWeight =
+    getMemoryRetrievalRuntimePolicy("recurring_procedure").featureWeights.subject_match ?? 0;
   if (!subjectWeight) {
     return { scoreClauses: [], matchedFieldClauses: [] };
   }

@@ -160,6 +160,34 @@ export type MemoryFamilyCanonicalProjection = {
   compatibilityStatus: "transitional_family_adapter";
 };
 
+export type MemoryLifecyclePolicyView = Pick<
+  MemoryFamilyDefinition["lifecyclePolicy"],
+  "pendingCandidateStates" | "staleWindowDays"
+>;
+
+export type MemoryCorrectionPolicyView = Pick<
+  MemoryFamilyDefinition["correctionPolicy"],
+  "mode" | "targetKind" | "requiresExistingTarget"
+>;
+
+export type MemoryRetrievalPolicyView = Pick<
+  MemoryFamilyDefinition["retrievalPolicy"],
+  "featureWeights" | "directIntentClass" | "matchedFieldPrefix"
+>;
+
+export type MemorySemanticRoutingPolicyView = Pick<
+  MemoryFamilyDefinition["semanticRoutingPolicy"],
+  "mode"
+>;
+
+export type ApprovedMemoryRetrievalPolicyView = Pick<
+  MemoryFamilyDefinition,
+  "id" | "storageKinds"
+> & {
+  derivedViews: readonly string[];
+  retrievalPolicy: MemoryRetrievalPolicyView;
+};
+
 export type MemoryFamilyDefinition = {
   id: MemoryFamilyId;
   displayName: string;
@@ -210,7 +238,6 @@ export type MemoryFamilyDefinition = {
     phrasePattern?: MemoryFamilyPhrasePatternProofPolicy;
   };
   captureMetadata?: MemoryFamilyCaptureMetadata;
-  workflowLessonFamilies?: readonly string[];
   captureClasses?: readonly string[];
 };
 
@@ -492,7 +519,6 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
       source: "explicit_workflow_improvement",
       subjectKeyMetadata: "subject_key",
     },
-    workflowLessonFamilies: ["supported_lesson", "generalized_workflow_lesson"],
     captureClasses: [
       "workflow_tool_gotcha",
       "workflow_environment_constraint",
@@ -573,7 +599,6 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
       source: "explicit_project_rule",
       subjectKeyMetadata: "subject_key",
     },
-    workflowLessonFamilies: ["generalized_project_rule"],
     captureClasses: ["project_rule_guidance"],
   },
   unmet_need: {
@@ -641,24 +666,75 @@ const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
       source: "explicit_unmet_need",
       subjectKeyMetadata: "subject_key",
     },
-    workflowLessonFamilies: ["generalized_unmet_need"],
     captureClasses: ["unmet_need_recommendation"],
+  },
+};
+
+const WORKFLOW_LESSON_FAMILY_COMPATIBILITY: Record<
+  string,
+  {
+    familyId: MemoryFamilyId;
+    captureMetadata?: MemoryFamilyCaptureMetadata;
+  }
+> = {
+  generalized_workflow_lesson: {
+    familyId: "workflow_improvement",
+    captureMetadata: FAMILY_DEFINITIONS.workflow_improvement.captureMetadata,
+  },
+  generalized_project_rule: {
+    familyId: "project_rule",
+    captureMetadata: FAMILY_DEFINITIONS.project_rule.captureMetadata,
+  },
+  generalized_unmet_need: {
+    familyId: "unmet_need",
+    captureMetadata: FAMILY_DEFINITIONS.unmet_need.captureMetadata,
   },
 };
 
 const CAPTURE_CLASS_TO_FAMILY_ID = new Map<string, MemoryFamilyId>();
 const WORKFLOW_LESSON_FAMILY_TO_FAMILY_ID = new Map<string, MemoryFamilyId>();
+const CAPTURE_CLASS_TO_CAPTURE_METADATA = new Map<string, MemoryFamilyCaptureMetadata>();
+const WORKFLOW_LESSON_FAMILY_TO_CAPTURE_METADATA = new Map<string, MemoryFamilyCaptureMetadata>();
 const PHRASE_PATTERN_PROOF_FAMILY_TO_DEFINITION = new Map<
   MemoryPhrasePatternProofFamilyId,
   MemoryProofDefinition
 >();
+const FAMILY_ID_TO_LIFECYCLE_POLICY_VIEW = new Map<MemoryFamilyId, MemoryLifecyclePolicyView>();
+const FAMILY_ID_TO_CORRECTION_POLICY_VIEW = new Map<MemoryFamilyId, MemoryCorrectionPolicyView>();
+const FAMILY_ID_TO_RETRIEVAL_POLICY_VIEW = new Map<MemoryFamilyId, MemoryRetrievalPolicyView>();
+const FAMILY_ID_TO_SEMANTIC_ROUTING_POLICY_VIEW = new Map<
+  MemoryFamilyId,
+  MemorySemanticRoutingPolicyView
+>();
+const APPROVED_MEMORY_RETRIEVAL_POLICY_VIEWS: ApprovedMemoryRetrievalPolicyView[] = [];
 
 for (const definition of Object.values(FAMILY_DEFINITIONS)) {
+  FAMILY_ID_TO_LIFECYCLE_POLICY_VIEW.set(definition.id, {
+    pendingCandidateStates: definition.lifecyclePolicy.pendingCandidateStates,
+    staleWindowDays: definition.lifecyclePolicy.staleWindowDays,
+  });
+  FAMILY_ID_TO_CORRECTION_POLICY_VIEW.set(definition.id, {
+    mode: definition.correctionPolicy.mode,
+    targetKind: definition.correctionPolicy.targetKind,
+    requiresExistingTarget: definition.correctionPolicy.requiresExistingTarget,
+  });
+  FAMILY_ID_TO_RETRIEVAL_POLICY_VIEW.set(definition.id, {
+    featureWeights: definition.retrievalPolicy.featureWeights,
+    ...(definition.retrievalPolicy.directIntentClass
+      ? { directIntentClass: definition.retrievalPolicy.directIntentClass }
+      : {}),
+    ...(definition.retrievalPolicy.matchedFieldPrefix
+      ? { matchedFieldPrefix: definition.retrievalPolicy.matchedFieldPrefix }
+      : {}),
+  });
+  FAMILY_ID_TO_SEMANTIC_ROUTING_POLICY_VIEW.set(definition.id, {
+    mode: definition.semanticRoutingPolicy.mode,
+  });
   for (const captureClass of definition.captureClasses ?? []) {
     CAPTURE_CLASS_TO_FAMILY_ID.set(captureClass, definition.id);
-  }
-  for (const lessonFamily of definition.workflowLessonFamilies ?? []) {
-    WORKFLOW_LESSON_FAMILY_TO_FAMILY_ID.set(lessonFamily, definition.id);
+    if (definition.captureMetadata) {
+      CAPTURE_CLASS_TO_CAPTURE_METADATA.set(captureClass, definition.captureMetadata);
+    }
   }
   if (definition.proofPolicy.phrasePattern) {
     PHRASE_PATTERN_PROOF_FAMILY_TO_DEFINITION.set(definition.proofPolicy.phrasePattern.familyId, {
@@ -667,28 +743,63 @@ for (const definition of Object.values(FAMILY_DEFINITIONS)) {
       artifactMode: "phrase_pattern",
     });
   }
+  if (
+    definition.storageKinds.includes("memory_object") &&
+    definition.id !== "recurring_procedure" &&
+    Object.keys(definition.retrievalPolicy.featureWeights).length > 0
+  ) {
+    APPROVED_MEMORY_RETRIEVAL_POLICY_VIEWS.push({
+      id: definition.id,
+      storageKinds: definition.storageKinds,
+      derivedViews: definition.canonicalProjection.derivedViews,
+      retrievalPolicy: FAMILY_ID_TO_RETRIEVAL_POLICY_VIEW.get(definition.id)!,
+    });
+  }
+}
+
+for (const [lessonFamily, compatibility] of Object.entries(WORKFLOW_LESSON_FAMILY_COMPATIBILITY)) {
+  WORKFLOW_LESSON_FAMILY_TO_FAMILY_ID.set(lessonFamily, compatibility.familyId);
+  if (compatibility.captureMetadata) {
+    WORKFLOW_LESSON_FAMILY_TO_CAPTURE_METADATA.set(lessonFamily, compatibility.captureMetadata);
+  }
 }
 
 export function listMemoryFamilyDefinitions(): MemoryFamilyDefinition[] {
   return MEMORY_FAMILY_IDS.map((id) => FAMILY_DEFINITIONS[id]);
 }
 
-export function listMemoryFamilyPolicies(): MemoryFamilyDefinition[] {
-  return listMemoryFamilyDefinitions();
-}
-
 export function getMemoryFamilyDefinition(familyId: MemoryFamilyId): MemoryFamilyDefinition {
   return FAMILY_DEFINITIONS[familyId];
-}
-
-export function getMemoryFamilyPolicy(familyId: MemoryFamilyId): MemoryFamilyDefinition {
-  return getMemoryFamilyDefinition(familyId);
 }
 
 export function getMemoryFamilyCanonicalProjection(
   familyId: MemoryFamilyId,
 ): MemoryFamilyCanonicalProjection {
   return getMemoryFamilyDefinition(familyId).canonicalProjection;
+}
+
+export function getMemoryLifecyclePolicyView(familyId: MemoryFamilyId): MemoryLifecyclePolicyView {
+  return FAMILY_ID_TO_LIFECYCLE_POLICY_VIEW.get(familyId)!;
+}
+
+export function getMemoryCorrectionPolicyView(
+  familyId: MemoryFamilyId,
+): MemoryCorrectionPolicyView {
+  return FAMILY_ID_TO_CORRECTION_POLICY_VIEW.get(familyId)!;
+}
+
+export function getMemoryRetrievalPolicyView(familyId: MemoryFamilyId): MemoryRetrievalPolicyView {
+  return FAMILY_ID_TO_RETRIEVAL_POLICY_VIEW.get(familyId)!;
+}
+
+export function getMemorySemanticRoutingPolicyView(
+  familyId: MemoryFamilyId,
+): MemorySemanticRoutingPolicyView {
+  return FAMILY_ID_TO_SEMANTIC_ROUTING_POLICY_VIEW.get(familyId)!;
+}
+
+export function listApprovedMemoryRetrievalPolicyViews(): ApprovedMemoryRetrievalPolicyView[] {
+  return APPROVED_MEMORY_RETRIEVAL_POLICY_VIEWS;
 }
 
 export function memoryFamilyProjectsToDerivedView(
@@ -702,13 +813,6 @@ export function getMemoryFamilyDefinitionByCaptureClass(
   captureClass: string,
 ): MemoryFamilyDefinition | null {
   const familyId = CAPTURE_CLASS_TO_FAMILY_ID.get(captureClass);
-  return familyId ? getMemoryFamilyDefinition(familyId) : null;
-}
-
-export function getMemoryFamilyDefinitionByWorkflowLessonFamily(
-  lessonFamily: string,
-): MemoryFamilyDefinition | null {
-  const familyId = WORKFLOW_LESSON_FAMILY_TO_FAMILY_ID.get(lessonFamily);
   return familyId ? getMemoryFamilyDefinition(familyId) : null;
 }
 
@@ -759,13 +863,13 @@ export function supportsMemoryFamilyReviewedPhrasePatterns(familyId: MemoryFamil
 export function getCaptureMetadataByCaptureClass(
   captureClass: string,
 ): MemoryFamilyCaptureMetadata | null {
-  return getMemoryFamilyDefinitionByCaptureClass(captureClass)?.captureMetadata ?? null;
+  return CAPTURE_CLASS_TO_CAPTURE_METADATA.get(captureClass) ?? null;
 }
 
 export function getCaptureMetadataByWorkflowLessonFamily(
   lessonFamily: string,
 ): MemoryFamilyCaptureMetadata | null {
-  return getMemoryFamilyDefinitionByWorkflowLessonFamily(lessonFamily)?.captureMetadata ?? null;
+  return WORKFLOW_LESSON_FAMILY_TO_CAPTURE_METADATA.get(lessonFamily) ?? null;
 }
 
 function resolveCanonicalScope(
@@ -794,9 +898,7 @@ function buildCanonicalCompatibility(
   overrides: Partial<CanonicalMemoryCompatibility> | undefined,
 ): CanonicalMemoryCompatibility {
   return {
-    transitionalFamilyId: definition.id,
     storageKinds: definition.storageKinds,
-    workflowLessonFamilies: definition.workflowLessonFamilies,
     captureClasses: definition.captureClasses,
     captureCategory: definition.captureMetadata?.category,
     captureSource: definition.captureMetadata?.source,

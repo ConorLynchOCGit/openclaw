@@ -5,7 +5,10 @@ export const REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET = {
     "Use pnpm test -- <path-or-filter> [vitest args...] instead of raw vitest so the repo test wrapper stays active.",
   retrievalQuery: "should I use pnpm test or raw vitest here?",
   advisoryQuery: "should I use pnpm test or raw vitest here?",
-  expectedToolKey: "vitest",
+  expectedLessonFamily: "generalized_workflow_lesson",
+  expectedGuidancePattern: "use_instead_of",
+  expectedRecommendedAction: "pnpm test -- <path-or-filter> [vitest args...]",
+  expectedAvoidAction: "raw vitest",
   expectedProvenance: "native_capture",
 } as const;
 
@@ -16,7 +19,10 @@ export const REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET = {
     'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
   retrievalQuery: "should I use scripts/committer instead of manual git add and git commit here?",
   advisoryQuery: "how should I make a scoped commit in this repo?",
-  expectedToolKey: "scripts_committer",
+  expectedLessonFamily: "generalized_workflow_lesson",
+  expectedGuidancePattern: "use_instead_of",
+  expectedRecommendedAction: 'scripts/committer "<msg>" <file...>',
+  expectedAvoidAction: "manual git add / git commit",
   expectedProvenance: "self_improving_capture",
 } as const;
 

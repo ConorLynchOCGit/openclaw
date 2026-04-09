@@ -28,7 +28,7 @@ The current roadmap state is:
 6. `/memory-system/feature-inventory`
 7. `/memory-system/FLATTENING_EXECUTION_PLAN`
 8. `/memory-system/specs/implementation-sequencing`
-9. `/memory-system/specs/canonical-four-kind-memory-migration`
+9. `/memory-system/archive/specs/canonical-four-kind-memory-migration`
 10. the specific substrate or family spec you are about to implement
 
 ## Spec index
@@ -65,7 +65,7 @@ These remain important, but several now describe partial bridges rather than
 
 - `/memory-system/specs/architecture-fit-review`
 - `/memory-system/specs/behavior-application`
-- `/memory-system/specs/canonical-four-kind-memory-migration`
+- `/memory-system/archive/specs/canonical-four-kind-memory-migration`
 - `/memory-system/specs/semantic-retrieval-routing`
 - `/memory-system/specs/implementation-sequencing`
 - `/memory-system/specs/cross-domain-memory-families`

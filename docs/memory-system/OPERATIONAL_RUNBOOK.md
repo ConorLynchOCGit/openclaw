@@ -3,8 +3,8 @@
 ## Purpose
 
 This runbook covers the currently enabled production `memory-middleware`
-posture on the live VPS Docker Compose runtime, along with the already-proven
-shared non-production lane it was rehearsed against.
+posture on the live VPS Docker Compose runtime, along with the shared
+Supabase-backed non-production lane it was rehearsed against.
 
 It is for operators who need to:
 
@@ -71,11 +71,13 @@ Previously proven shared target:
   - database `postgres`
   - schema `memory_middleware`
 
-Previously proven local target:
+Retired local rollout target:
 
-- persistent local non-production Docker Postgres
-- container `memory-middleware-readonly-rollout-pg`
-- database `memory_middleware_rollout`
+- the earlier persistent local Docker Postgres rollout lane
+  `memory-middleware-readonly-rollout-pg` is historical proof-only
+- it is no longer part of the normal runtime posture
+- disposable local `pgvector/pgvector:pg16` containers remain acceptable for
+  integration tests and bounded rehearsal only
 
 Current live posture:
 
@@ -640,7 +642,7 @@ Current approved boundary note:
 
 For the exact proof ids and production evidence for this slice, use:
 
-- `docs/memory-system/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V5_REPORT.md`
+- `docs/memory-system/archive/reports/PRODUCTION_SEMANTIC_RETRIEVAL_ROUTING_V5_REPORT.md`
 
 ## Workflow-improvement UX workflow
 

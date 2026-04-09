@@ -53,7 +53,7 @@ describe("retrieval control plane", () => {
         },
       },
       workflowImprovementHint: {
-        lessonKey: "python_command_unavailable",
+        captureClass: "workflow_environment_constraint",
       },
       semanticFallbackFamilies: ["environment_constraint"],
     });
@@ -76,7 +76,7 @@ describe("retrieval control plane", () => {
         },
       },
       workflowImprovementHint: {
-        lessonKey: "scripts_committer_required",
+        captureClass: "workflow_tool_gotcha",
       },
       semanticFallbackFamilies: ["workflow_tool_gotcha"],
     });

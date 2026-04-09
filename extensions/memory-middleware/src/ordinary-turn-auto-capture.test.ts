@@ -1380,14 +1380,14 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
       sessionKey: "agent:chief:main",
       message: {
         role: "user",
-        content: "Actually, include a brief summary first.",
+        content: "Actually, start with the direct answer first.",
         timestamp: Date.parse("2026-04-07T18:05:00Z"),
       },
     });
 
     expect(submitCorrectionSuggestion).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: "User correction: include a brief summary first.",
+        content: "User correction: start with the direct answer first.",
         metadata: expect.objectContaining({
           autoCapture: expect.objectContaining({
             template: "response_style_generalized_guidance",
@@ -1418,13 +1418,13 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(promoteToMemory).toHaveBeenCalledTimes(1);
     expect(maybeInduceResponseStylePhrasePattern).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: "Actually, include a brief summary first.",
+        text: "Actually, start with the direct answer first.",
         detectionSource: "semantic",
         targetMatch: expect.objectContaining({
           template: "response_style_generalized_guidance",
           family: "generalized_guidance",
           subject: "response opening",
-          value: "include a brief summary first",
+          value: "start with the direct answer first",
         }),
       }),
     );
@@ -2533,16 +2533,16 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
         agentId: "agent-uuid-4",
         sessionId: "session-uuid-4",
         content:
-          "Workflow improvement: use pnpm test -- <path-or-filter> [vitest args...] instead of raw vitest so the repo test wrapper stays active.",
+          "Workflow improvement: for repo tests, use pnpm test -- <path-or-filter> [vitest args...] instead of raw vitest because the repo test wrapper stays active.",
         metadata: expect.objectContaining({
           autoCapture: expect.objectContaining({
-            captureClass: "workflow_tool_gotcha",
-            lessonKey: "vitest_wrapper_required",
-            toolKey: "vitest",
+            captureClass: "workflow_generalized_guidance",
+            lessonFamily: "generalized_workflow_lesson",
+            guidancePattern: "use_instead_of",
           }),
           candidateLifecycle: expect.objectContaining({
             family: "workflow_improvement",
-            state: "pending_confirmation",
+            state: "hold_for_more_evidence",
           }),
         }),
       }),
@@ -2554,13 +2554,7 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
       }),
     );
     expect(storeApprovedEnvironmentConstraintSemanticEmbedding).not.toHaveBeenCalled();
-    expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).toHaveBeenCalledWith(
-      expect.objectContaining({
-        config: createConfig(),
-        cfg: undefined,
-        sessionKey: "agent:main:main",
-      }),
-    );
+    expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).not.toHaveBeenCalled();
   });
 
   it("captures a generalized workflow lesson as a held cluster and auto-promotes it after later compatible evidence", async () => {
@@ -3171,14 +3165,7 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
         candidateId: "memory-improvement-tool-1",
       }),
     );
-    expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).toHaveBeenCalledWith(
-      expect.objectContaining({
-        config: createConfig(),
-        cfg: undefined,
-        sessionKey: "agent:main:main",
-        memoryObjectId: "approved-tool-gotcha-1",
-      }),
-    );
+    expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).not.toHaveBeenCalled();
   });
 
   it("captures the docs-only validation lesson without enabling semantic fallback writes", async () => {
@@ -3271,22 +3258,18 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(submitImprovementNote).toHaveBeenCalledWith(
       expect.objectContaining({
         content:
-          "Workflow improvement: for docs or process-only work, use pnpm check:fast instead of full pnpm check, pnpm build, or full pnpm test.",
+          "Workflow improvement: for docs-only, use pnpm check:fast instead of full pnpm check or pnpm build.",
         metadata: expect.objectContaining({
           autoCapture: expect.objectContaining({
-            captureClass: "workflow_tool_gotcha",
-            lessonKey: "docs_only_check_fast",
-            toolKey: "validation_tier",
+            captureClass: "workflow_generalized_guidance",
+            lessonFamily: "generalized_workflow_lesson",
+            guidancePattern: "use_instead_of",
           }),
         }),
       }),
     );
-    expect(reviewCandidate).toHaveBeenCalledTimes(1);
-    expect(promoteToMemory).toHaveBeenCalledWith(
-      expect.objectContaining({
-        candidateId: "memory-improvement-docs-1",
-      }),
-    );
+    expect(reviewCandidate).not.toHaveBeenCalled();
+    expect(promoteToMemory).not.toHaveBeenCalled();
     expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).not.toHaveBeenCalled();
   });
 
@@ -3382,13 +3365,15 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(submitImprovementNote).toHaveBeenCalledWith(
       expect.objectContaining({
         content:
-          "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
+          "API workaround: OpenAI embeddings still need a configured OPENAI_API_KEY or another embeddings provider; codex OAuth alone does not help here.",
         metadata: expect.objectContaining({
           autoCapture: expect.objectContaining({
             captureClass: "workflow_api_workaround",
             template: "workflow_api_workaround",
-            lessonKey: "openai_embeddings_api_key_required",
-            toolKey: "openai_embeddings",
+            lessonFamily: "generalized_workflow_lesson",
+            subject: "OpenAI embeddings auth",
+            recommendedAction: "use a configured OPENAI_API_KEY or another embeddings provider",
+            avoidAction: "codex OAuth alone",
           }),
         }),
       }),
@@ -3478,12 +3463,11 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
         (call) =>
           (
             call[0].metadata?.canonicalIngestionCandidate as {
-              capture: { mode: string };
-              compatibility: { transitionalFamilyId: string };
+              compatibility: { captureClass?: string };
             }
-          ).compatibility.transitionalFamilyId,
+          ).compatibility.captureClass,
       ),
-    ).toEqual(expect.arrayContaining(["response_style", "project_fact"]));
+    ).toEqual(expect.arrayContaining(["explicit_requirement", "explicit_project_fact"]));
   });
 
   it("captures three distinct memories from one long turn when each segment is strong", async () => {
@@ -3558,19 +3542,26 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(submitImprovementNote).toHaveBeenCalledWith(
       expect.objectContaining({
         content:
-          "Workflow improvement: use pnpm test -- <path-or-filter> [vitest args...] instead of raw vitest so the repo test wrapper stays active.",
+          "Workflow improvement: for repo tests, use pnpm test -- <path-or-filter> [vitest args...] instead of raw vitest because the repo test wrapper stays active.",
         metadata: expect.objectContaining({
           canonicalIngestionCandidate: expect.objectContaining({
             record: expect.objectContaining({
               kind: "feedback",
+              compatibility: expect.objectContaining({
+                captureCategory: "workflow_improvement",
+              }),
             }),
             capture: expect.objectContaining({
               mode: "ordinary_turn",
               source: "transcript",
             }),
             compatibility: expect.objectContaining({
-              transitionalFamilyId: "workflow_improvement",
+              captureClass: "workflow_generalized_guidance",
             }),
+          }),
+          autoCapture: expect.objectContaining({
+            lessonFamily: "generalized_workflow_lesson",
+            guidancePattern: "use_instead_of",
           }),
         }),
       }),
@@ -3759,13 +3750,15 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
         agentId: "agent-uuid-5",
         sessionId: "session-uuid-5",
         content:
-          "Environment constraint: python command is not available in this environment; use node --input-type=module or tsx instead.",
+          "Environment constraint: python command is not available here; use node --input-type=module or tsx instead.",
         metadata: expect.objectContaining({
           autoCapture: expect.objectContaining({
             captureClass: "workflow_environment_constraint",
             template: "workflow_environment_constraint",
-            lessonKey: "python_command_unavailable",
-            toolKey: "python_runtime",
+            lessonFamily: "generalized_workflow_lesson",
+            subject: "python command availability",
+            recommendedAction: "node --input-type=module or tsx",
+            avoidAction: "python",
           }),
           candidateLifecycle: expect.objectContaining({
             family: "workflow_improvement",

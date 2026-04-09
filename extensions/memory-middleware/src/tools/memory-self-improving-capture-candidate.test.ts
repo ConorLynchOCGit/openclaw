@@ -27,7 +27,7 @@ function createAcceptedResult(kind: CandidateSubmissionInput["kind"]): Candidate
 function createRuntime(params?: {
   mode?: "disabled" | "candidate-only";
   rolloutTarget?: "off-production" | "production-canary" | null;
-  allowedLessonFamilies?: Array<"supported_lesson" | "generalized_workflow_lesson">;
+  allowedLessonFamilies?: Array<"generalized_workflow_lesson">;
   learningResult?: CandidateSubmissionResult;
   correctionResult?: CandidateSubmissionResult;
   procedureResult?: CandidateSubmissionResult;
@@ -81,14 +81,11 @@ function createRuntime(params?: {
       selfImprovingCapture: {
         mode,
         ...(rolloutTarget ? { rolloutTarget } : {}),
-        allowedLessonFamilies: params?.allowedLessonFamilies ?? [
-          "generalized_workflow_lesson",
-          "supported_lesson",
-        ],
+        allowedLessonFamilies: params?.allowedLessonFamilies ?? ["generalized_workflow_lesson"],
       },
       learnedGuidanceAdvisoryPlanning: {
         mode: "disabled",
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedLessonFamilies: ["generalized_workflow_lesson"],
         defaultMaxSuggestions: 3,
       },
     },
@@ -134,14 +131,11 @@ function createRuntime(params?: {
         selfImprovingCapture: {
           mode,
           ...(rolloutTarget ? { rolloutTarget } : {}),
-          allowedLessonFamilies: params?.allowedLessonFamilies ?? [
-            "generalized_workflow_lesson",
-            "supported_lesson",
-          ],
+          allowedLessonFamilies: params?.allowedLessonFamilies ?? ["generalized_workflow_lesson"],
         },
         learnedGuidanceAdvisoryPlanning: {
           mode: "disabled",
-          allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+          allowedLessonFamilies: ["generalized_workflow_lesson"],
           defaultMaxSuggestions: 3,
         },
       },
@@ -207,7 +201,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
 
     expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
       content:
-        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+        'Workflow improvement: for scoped commits, use scripts/committer "<msg>" <file...> instead of manual git add / git commit because staging stays scoped.',
       projectId: "11111111-1111-4111-8111-111111111111",
       metadata: expect.objectContaining({
         category: "workflow_improvement",
@@ -220,10 +214,9 @@ describe("memory_self_improving_capture_candidate tool", () => {
         autoCapture: expect.objectContaining({
           source: "memory_self_improving_capture_candidate",
           captureSeam: "self_improving_reduced_profile",
-          captureClass: "workflow_tool_gotcha",
-          lessonFamily: "supported_lesson",
-          lessonKey: "scripts_committer_required",
-          toolKey: "scripts_committer",
+          captureClass: "workflow_generalized_guidance",
+          lessonFamily: "generalized_workflow_lesson",
+          guidancePattern: "use_instead_of",
           key: expect.any(String),
           subjectKey: expect.any(String),
           toolName: "memory_self_improving_capture_candidate",
@@ -232,17 +225,14 @@ describe("memory_self_improving_capture_candidate tool", () => {
           source: "workflow_improvement_semantic_v2",
           detectionSource: "semantic",
           confidence: "high",
-          lessonFamily: "supported_lesson",
-          lessonKey: "scripts_committer_required",
-          toolKey: "scripts_committer",
+          lessonFamily: "generalized_workflow_lesson",
+          guidancePattern: "use_instead_of",
           evidence: ["tool_scripts_committer", "commit_guidance", "replacement_phrase"],
         },
         candidateLifecycle: expect.objectContaining({
           family: "workflow_improvement",
-          state: "pending_confirmation",
-          lessonFamily: "supported_lesson",
-          lessonKey: "scripts_committer_required",
-          toolKey: "scripts_committer",
+          state: "hold_for_more_evidence",
+          lessonFamily: "generalized_workflow_lesson",
         }),
         selfImprovingAdaptation: {
           source: "memory_self_improving_capture_candidate",
@@ -251,12 +241,12 @@ describe("memory_self_improving_capture_candidate tool", () => {
           origin: "self_improving_capture",
           allowedOutputKind: "improvement",
           allowedFamilyId: "workflow_improvement",
-          allowedLessonFamily: "supported_lesson",
+          allowedLessonFamily: "generalized_workflow_lesson",
           outputPosture: "candidate_only",
         },
         selfImprovingRollout: expect.objectContaining({
           rolloutPhase: "bounded_rollout_proof_v1",
-          allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+          allowedLessonFamilies: ["generalized_workflow_lesson"],
           duplicateOutcome: "new_candidate_cluster",
           reviewBurden: "new_candidate_review_required",
         }),
@@ -277,7 +267,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedLessonFamilies: ["generalized_workflow_lesson"],
         retrievalAuthority: "approved_only",
       },
       evaluation: {
@@ -315,7 +305,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedLessonFamilies: ["generalized_workflow_lesson"],
         retrievalAuthority: "approved_only",
       },
       evaluation: {
@@ -353,7 +343,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedLessonFamilies: ["generalized_workflow_lesson"],
         retrievalAuthority: "approved_only",
       },
       evaluation: {
@@ -392,7 +382,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedLessonFamilies: ["generalized_workflow_lesson"],
         retrievalAuthority: "approved_only",
       },
       evaluation: {
@@ -433,7 +423,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedLessonFamilies: ["generalized_workflow_lesson"],
         retrievalAuthority: "approved_only",
       },
       evaluation: {
@@ -504,7 +494,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
         sourceProfile: "reduced_profile_candidate_only",
         target: "candidate_only",
         requiresProjectId: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedLessonFamilies: ["generalized_workflow_lesson"],
         retrievalAuthority: "approved_only",
       },
       evaluation: {
@@ -520,7 +510,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
 
   it("blocks lesson families outside the configured rollout scope", async () => {
     const runtime = createRuntime({
-      allowedLessonFamilies: ["supported_lesson"],
+      allowedLessonFamilies: [],
     });
     const tool = createMemorySelfImprovingCaptureCandidateTool({ runtime });
 
@@ -538,7 +528,7 @@ describe("memory_self_improving_capture_candidate tool", () => {
       reason:
         "reduced-profile self-improving first tranche supports workflow-guidance lessons only",
       rolloutScope: {
-        allowedLessonFamilies: ["supported_lesson"],
+        allowedLessonFamilies: [],
       },
       evaluation: {
         outcomeCode: "lesson_family_outside_rollout_scope",

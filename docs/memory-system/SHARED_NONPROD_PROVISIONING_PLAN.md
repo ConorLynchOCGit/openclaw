@@ -20,7 +20,8 @@ It does not:
 The smallest viable shared non-production setup is:
 
 1. one dedicated shared OpenClaw runtime
-2. one dedicated shared Postgres database for `memory-middleware`
+2. one shared Supabase-backed Postgres target using schema
+   `memory_middleware`
 3. one named shared scheduler runner owner
 4. one named disablement owner
 5. one named backup or restore owner
@@ -59,6 +60,14 @@ Provisioned target:
 This first shared target reuses the existing Supabase installation because it
 already satisfies the middleware requirements and avoids provisioning a second
 database surface.
+
+Retired local-rollout note:
+
+- the earlier persistent local Docker Postgres target
+  `memory-middleware-readonly-rollout-pg` is no longer part of the intended
+  runtime posture
+- local Docker Postgres should now be treated as disposable integration-test
+  or bounded rehearsal infrastructure only
 
 ## Topology
 
@@ -229,7 +238,7 @@ checkpoint, as documented above.
 Before the rehearsal is considered ready:
 
 - the shared Docker runtime exists and is reachable
-- the shared Postgres target exists
+- the shared Supabase-backed Postgres target exists
 - `pgcrypto`, `pg_trgm`, and `vector` are present
 - `MEMORY_MIDDLEWARE_DATABASE_URL` is placed as a secret
 - the plugin is enabled

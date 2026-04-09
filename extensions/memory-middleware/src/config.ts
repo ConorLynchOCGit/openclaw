@@ -50,13 +50,13 @@ export type MemoryMiddlewareRolloutTarget = "off-production" | "production-canar
 export type MemoryMiddlewareSelfImprovingCaptureConfig = {
   mode: "disabled" | "candidate-only";
   rolloutTarget?: MemoryMiddlewareRolloutTarget;
-  allowedLessonFamilies: Array<"supported_lesson" | "generalized_workflow_lesson">;
+  allowedLessonFamilies: Array<"generalized_workflow_lesson">;
 };
 
 export type MemoryMiddlewareLearnedGuidanceAdvisoryPlanningConfig = {
   mode: "disabled" | "inline-only";
   rolloutTarget?: MemoryMiddlewareRolloutTarget;
-  allowedLessonFamilies: Array<"supported_lesson" | "generalized_workflow_lesson">;
+  allowedLessonFamilies: Array<"generalized_workflow_lesson">;
   defaultMaxSuggestions: number;
 };
 
@@ -84,12 +84,11 @@ export const DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG: MemoryMiddlewareAu
 
 const DEFAULT_BOUNDED_WORKFLOW_LESSON_FAMILIES = [
   "generalized_workflow_lesson",
-  "supported_lesson",
-] as const satisfies Array<"supported_lesson" | "generalized_workflow_lesson">;
+] as const satisfies Array<"generalized_workflow_lesson">;
 
 function normalizeBoundedWorkflowLessonFamilies(
   value: unknown,
-): Array<"supported_lesson" | "generalized_workflow_lesson"> {
+): Array<"generalized_workflow_lesson"> {
   if (!Array.isArray(value)) {
     return [...DEFAULT_BOUNDED_WORKFLOW_LESSON_FAMILIES];
   }
@@ -97,8 +96,7 @@ function normalizeBoundedWorkflowLessonFamilies(
   const normalized = [
     ...new Set(
       value.filter(
-        (entry): entry is "supported_lesson" | "generalized_workflow_lesson" =>
-          entry === "supported_lesson" || entry === "generalized_workflow_lesson",
+        (entry): entry is "generalized_workflow_lesson" => entry === "generalized_workflow_lesson",
       ),
     ),
   ].sort((left, right) => left.localeCompare(right));
@@ -212,7 +210,7 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
             type: "array",
             items: {
               type: "string",
-              enum: ["supported_lesson", "generalized_workflow_lesson"],
+              enum: ["generalized_workflow_lesson"],
             },
           },
         },
@@ -230,7 +228,7 @@ export const memoryMiddlewareConfigSchema: OpenClawPluginConfigSchema = {
             type: "array",
             items: {
               type: "string",
-              enum: ["supported_lesson", "generalized_workflow_lesson"],
+              enum: ["generalized_workflow_lesson"],
             },
           },
           defaultMaxSuggestions: {

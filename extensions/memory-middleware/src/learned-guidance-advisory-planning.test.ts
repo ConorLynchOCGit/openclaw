@@ -6,7 +6,7 @@ function createApprovedWorkflowRecord(params?: {
   content?: string;
   score?: number;
   matchedFields?: string[];
-  lessonFamily?: "supported_lesson" | "generalized_workflow_lesson";
+  lessonFamily?: "generalized_workflow_lesson";
   subjectKey?: string;
   recommendedAction?: string;
   avoidAction?: string;
@@ -24,22 +24,26 @@ function createApprovedWorkflowRecord(params?: {
     projectId: "project-1",
     metadata: {
       candidateMetadata: {
-        autoCapture: {
-          lessonFamily: params?.lessonFamily ?? "supported_lesson",
-          subjectKey: params?.subjectKey ?? "subject-1",
-          toolKey: "scripts_committer",
-          lessonKey: "scripts_committer_required",
-          guidancePattern: "use_instead_of",
-          recommendedAction: params?.recommendedAction ?? 'scripts/committer "<msg>" <file...>',
-          avoidAction: params?.avoidAction ?? "manual git add / git commit",
+        canonicalIngestionCandidate: {
+          record: {
+            kind: "feedback",
+            subject: "scoped commit workflow",
+            statement: params?.recommendedAction ?? 'scripts/committer "<msg>" <file...>',
+            tags: ["workflow_improvement", "workflow_guidance", "feedback"],
+            facets: {
+              workflow_guidance: true,
+              lessonFamily: params?.lessonFamily ?? "generalized_workflow_lesson",
+              subjectKey: params?.subjectKey ?? "subject-1",
+              guidancePattern: "use_instead_of",
+              recommendedAction: params?.recommendedAction ?? 'scripts/committer "<msg>" <file...>',
+              avoidAction: params?.avoidAction ?? "manual git add / git commit",
+              ...(params?.provenance ? { provenanceOrigin: params.provenance } : {}),
+            },
+            compatibility: {
+              transitionalFamilyId: "workflow_improvement",
+            },
+          },
         },
-        candidateLifecycle: {
-          family: "workflow_improvement",
-        },
-        selfImprovingAdaptation:
-          params?.provenance === "self_improving_capture"
-            ? { origin: "self_improving_capture" }
-            : undefined,
       },
     },
     createdAt: "2026-04-01T00:00:00.000Z",
@@ -53,7 +57,7 @@ function createApprovedCanonicalWorkflowRecord(params?: {
   id?: string;
   content?: string;
   score?: number;
-  lessonFamily?: "supported_lesson" | "generalized_workflow_lesson";
+  lessonFamily?: "generalized_workflow_lesson";
   subjectKey?: string;
 }) {
   return {
@@ -76,10 +80,8 @@ function createApprovedCanonicalWorkflowRecord(params?: {
             tags: ["workflow_improvement", "workflow_guidance", "feedback"],
             facets: {
               workflow_guidance: true,
-              lessonFamily: params?.lessonFamily ?? "supported_lesson",
+              lessonFamily: params?.lessonFamily ?? "generalized_workflow_lesson",
               subjectKey: params?.subjectKey ?? "canonical-subject-1",
-              lessonKey: "scripts_committer_required",
-              toolKey: "scripts_committer",
               guidancePattern: "use_instead_of",
               recommendedAction: 'scripts/committer "<msg>" <file...>',
               avoidAction: "manual git add / git commit",
@@ -119,7 +121,7 @@ describe("learned-guidance advisory planning", () => {
         approvedOnly: true,
         advisoryOnly: true,
         inlineOnly: true,
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedLessonFamilies: ["generalized_workflow_lesson"],
         defaultMaxSuggestions: 3,
       },
       observability: {
@@ -196,14 +198,14 @@ describe("learned-guidance advisory planning", () => {
       advisoryOnly: true,
       applicationMode: "guidance_only",
       rolloutScope: {
-        allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+        allowedLessonFamilies: ["generalized_workflow_lesson"],
         defaultMaxSuggestions: 3,
       },
       suggestions: [
         {
           memoryObjectId: "memory-1",
           provenance: "self_improving_capture",
-          toolKey: "scripts_committer",
+          subject: "scoped commit workflow",
           guidancePattern: "use_instead_of",
         },
       ],
@@ -244,8 +246,8 @@ describe("learned-guidance advisory planning", () => {
       suggestions: [
         {
           memoryObjectId: "canonical-memory-1",
-          lessonFamily: "supported_lesson",
-          toolKey: "scripts_committer",
+          lessonFamily: "generalized_workflow_lesson",
+          subject: "scoped commit workflow",
           guidancePattern: "use_instead_of",
         },
       ],
@@ -361,7 +363,7 @@ describe("learned-guidance advisory planning", () => {
       } as never,
       mode: "inline-only",
       rolloutTarget: "off-production",
-      allowedLessonFamilies: ["supported_lesson"],
+      allowedLessonFamilies: [],
     });
 
     const result = await port.plan({
@@ -374,7 +376,7 @@ describe("learned-guidance advisory planning", () => {
       outcome: "no_guidance",
       suggestions: [],
       rolloutScope: {
-        allowedLessonFamilies: ["supported_lesson"],
+        allowedLessonFamilies: [],
       },
       observability: {
         outcomeCode: "no_guidance",

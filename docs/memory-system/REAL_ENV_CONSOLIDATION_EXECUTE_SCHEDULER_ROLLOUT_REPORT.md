@@ -5,6 +5,16 @@
 This report records the first live execute-class scheduler rollout for
 `consolidation_execute` in the existing real non-production environment.
 
+Historical note:
+
+- this report records a retired local rollout lane
+- `memory-middleware-readonly-rollout-pg` is no longer part of the normal
+  runtime posture
+- the intended runtime database target is now the shared Supabase-backed
+  Postgres schema `memory_middleware`
+- local Docker Postgres remains acceptable only as disposable test or bounded
+  rehearsal infrastructure
+
 This slice enabled only the already-bounded low-risk consolidation actions:
 
 - `duplicate_merge_review`

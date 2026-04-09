@@ -9,7 +9,7 @@ import {
   type ClusteredMemoryPendingCandidate,
 } from "./clustered-memory-lifecycle.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
-import { getMemoryFamilyDefinition } from "./memory-family-registry.js";
+import { getMemoryLifecycleRuntimePolicy } from "./memory-runtime-policy-views.js";
 
 type ResponseStyleLifecycleRow = ClusteredMemoryLifecycleRowBase;
 
@@ -69,8 +69,7 @@ export async function inspectResponseStyleLifecycle(params: {
         metadata->>'preference_key'
       )
     `,
-    pendingStates:
-      getMemoryFamilyDefinition("response_style").lifecyclePolicy.pendingCandidateStates,
+    pendingStates: getMemoryLifecycleRuntimePolicy("response_style").pendingCandidateStates,
   });
   if (!inspection) {
     return null;

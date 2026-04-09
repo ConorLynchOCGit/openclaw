@@ -1,7 +1,9 @@
+import {
+  supportsMemoryFamilyReviewedPhrasePatterns,
+  type MemoryFamilyId,
+} from "openclaw/plugin-sdk/memory-family-policy";
 import type { PluginLogger } from "../api.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
-import type { MemoryFamilyId } from "./memory-family-registry.js";
-import { supportsMemoryFamilyReviewedPhrasePatterns } from "./memory-family-registry.js";
 import {
   buildReviewedPhrasePatternProposal,
   findApprovedReviewedPhrasePatternRows,

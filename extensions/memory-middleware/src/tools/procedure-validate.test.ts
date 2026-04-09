@@ -7,8 +7,10 @@ import {
 } from "./procedure-validate.js";
 
 const storeValidatedProcedureSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
+const createSemanticFallbackSharedState = vi.hoisted(() => vi.fn(() => ({})));
 
 vi.mock("../semantic-retrieval-routing.js", () => ({
+  createSemanticFallbackSharedState,
   storeValidatedProcedureSemanticEmbedding,
 }));
 

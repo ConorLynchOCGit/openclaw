@@ -1,8 +1,5 @@
+import { getCaptureMetadataByCaptureClass } from "openclaw/plugin-sdk/memory-family-policy";
 import type { MemoryMiddlewareConfig } from "./config.js";
-import {
-  getCaptureMetadataByCaptureClass,
-  getMemoryFamilyIdByWorkflowLessonFamily,
-} from "./memory-family-registry.js";
 import {
   type OrdinaryTurnAutoCaptureMatch,
   toOrdinaryTurnProjectFactMatch,
@@ -45,12 +42,10 @@ import {
   type WorkflowImprovementCaptureClass,
   type WorkflowImprovementGuidancePattern,
   type WorkflowImprovementLessonFamily,
-  type WorkflowImprovementLessonKey,
   type WorkflowImprovementNeedCategory,
   type WorkflowImprovementReasonCode,
   type WorkflowImprovementSemanticConfidence,
   type WorkflowImprovementTemplate,
-  type WorkflowImprovementToolKey,
 } from "./workflow-improvement-semantic.js";
 import { findApprovedWorkflowPhrasePatternMatch } from "./workflow-phrase-induction.js";
 
@@ -136,13 +131,74 @@ type ProjectFactIngestionModeProfile = {
   expectedCaptureClass: ProjectFactSemanticCaptureClass;
 };
 
+type ProjectFactSemanticDetectorProfile = {
+  id: "supported_field" | "generalized_reference";
+  detect:
+    | typeof detectProjectFactSemanticDecision
+    | typeof detectGenericProjectFactSemanticDecision;
+  acceptedFactFamilies: readonly ProjectFactFamily[];
+};
+
+type RecurringProcedureSemanticDetectorProfile = {
+  id: "recurring_procedure";
+  detect: typeof detectRecurringProcedureSemanticDecision;
+  acceptedProcedureFamilies: readonly RecurringProcedureFamily[];
+};
+
+type ResponseStyleSemanticDetectorProfile = {
+  id: "response_style";
+  detect: typeof detectResponseStyleSemanticDecision;
+  acceptedCaptureClasses: readonly ResponseStyleSemanticCaptureClass[];
+};
+
+type WorkflowSemanticDetectorProfile = {
+  id: "workflow_improvement" | "project_rule" | "unmet_need";
+  detect:
+    | typeof detectProjectRuleSemanticDecision
+    | typeof detectUnmetNeedSemanticDecision
+    | typeof detectWorkflowImprovementSemanticDecision;
+  acceptedCaptureCategories: readonly ("workflow_improvement" | "project_rule" | "unmet_need")[];
+};
+
+type WorkflowCaptureCategory = "workflow_improvement" | "project_rule" | "unmet_need";
+
+type ProjectFactSemanticCaptureDecision = Extract<
+  | ReturnType<typeof detectProjectFactSemanticDecision>
+  | ReturnType<typeof detectGenericProjectFactSemanticDecision>,
+  { action: "capture" }
+>;
+
+type WorkflowSemanticCaptureDecision = Extract<
+  | ReturnType<typeof detectProjectRuleSemanticDecision>
+  | ReturnType<typeof detectUnmetNeedSemanticDecision>
+  | ReturnType<typeof detectWorkflowImprovementSemanticDecision>,
+  { action: "capture" }
+>;
+
+type RecurringProcedureSemanticCaptureDecision = Extract<
+  ReturnType<typeof detectRecurringProcedureSemanticDecision>,
+  { action: "capture" }
+>;
+
+type ResponseStyleSemanticDecision = ReturnType<typeof detectResponseStyleSemanticDecision>;
+
+type ResolvedResponseStyleSemanticDecision =
+  | {
+      action: "capture";
+      decision: Extract<ResponseStyleSemanticDecision, { action: "capture" }>;
+    }
+  | {
+      action: "forget";
+      decision: Extract<ResponseStyleSemanticDecision, { action: "forget" }>;
+    };
+
 const RESPONSE_STYLE_INGESTION_MODE_PROFILES = {
   ordinary_turn: {
     mode: "ordinary_turn",
     parseDirect: (text: string) =>
       parseOrdinaryTurnAutoCapturePreference(text, "user-preference-v2"),
     allowForget: true,
-    acceptedSemanticCaptureClasses: ["explicit_requirement"],
+    acceptedSemanticCaptureClasses: ["explicit_requirement", "requirement_correction"],
   },
   candidate_learning: {
     mode: "candidate_learning",
@@ -185,33 +241,85 @@ const PROJECT_FACT_INGESTION_MODE_PROFILES = {
   },
 } as const satisfies Record<ProjectFactIngestionMode, ProjectFactIngestionModeProfile>;
 
-type WorkflowSemanticDetectorProfile = {
-  detect:
-    | typeof detectProjectRuleSemanticDecision
-    | typeof detectUnmetNeedSemanticDecision
-    | typeof detectWorkflowImprovementSemanticDecision;
-  reviewMode:
-    | "hold_for_more_evidence"
-    | ((match: {
-        lessonFamily: WorkflowImprovementLessonFamily;
-      }) => "pending_confirmation" | "hold_for_more_evidence");
-};
+const PROJECT_FACT_SEMANTIC_DETECTOR_PROFILES = [
+  {
+    id: "supported_field",
+    detect: detectProjectFactSemanticDecision,
+    acceptedFactFamilies: ["supported_field"],
+  },
+  {
+    id: "generalized_reference",
+    detect: detectGenericProjectFactSemanticDecision,
+    acceptedFactFamilies: ["generalized_reference"],
+  },
+] as const satisfies readonly ProjectFactSemanticDetectorProfile[];
 
 const WORKFLOW_SEMANTIC_DETECTOR_PROFILES = [
   {
+    id: "project_rule",
     detect: detectProjectRuleSemanticDecision,
-    reviewMode: "hold_for_more_evidence",
+    acceptedCaptureCategories: ["project_rule"],
   },
   {
+    id: "unmet_need",
     detect: detectUnmetNeedSemanticDecision,
-    reviewMode: "hold_for_more_evidence",
+    acceptedCaptureCategories: ["unmet_need"],
   },
   {
+    id: "workflow_improvement",
     detect: detectWorkflowImprovementSemanticDecision,
-    reviewMode: (match: { lessonFamily: WorkflowImprovementLessonFamily }) =>
-      match.lessonFamily === "supported_lesson" ? "pending_confirmation" : "hold_for_more_evidence",
+    acceptedCaptureCategories: ["workflow_improvement"],
   },
 ] as const satisfies readonly WorkflowSemanticDetectorProfile[];
+
+const RECURRING_PROCEDURE_SEMANTIC_DETECTOR_PROFILES = [
+  {
+    id: "recurring_procedure",
+    detect: detectRecurringProcedureSemanticDecision,
+    acceptedProcedureFamilies: ["supported_key", "generalized_named_checklist"],
+  },
+] as const satisfies readonly RecurringProcedureSemanticDetectorProfile[];
+
+const RESPONSE_STYLE_SEMANTIC_DETECTOR_PROFILES = [
+  {
+    id: "response_style",
+    detect: detectResponseStyleSemanticDecision,
+    acceptedCaptureClasses: ["explicit_requirement", "requirement_correction"],
+  },
+] as const satisfies readonly ResponseStyleSemanticDetectorProfile[];
+
+const SEMANTIC_DETECTOR_REGISTRY = {
+  project_fact: PROJECT_FACT_SEMANTIC_DETECTOR_PROFILES,
+  recurring_procedure: RECURRING_PROCEDURE_SEMANTIC_DETECTOR_PROFILES,
+  response_style: RESPONSE_STYLE_SEMANTIC_DETECTOR_PROFILES,
+  workflow: WORKFLOW_SEMANTIC_DETECTOR_PROFILES,
+} as const;
+
+function resolveSemanticDetectorDecision<
+  TDecision extends { action: string },
+  TProfile extends {
+    id: string;
+    detect: (text: string) => TDecision;
+  },
+  TCapture,
+>(params: {
+  text: string;
+  profiles: readonly TProfile[];
+  selectCapture: (decision: TDecision, profile: TProfile) => TCapture | null;
+}): { profileId: TProfile["id"]; decision: TCapture } | null {
+  for (const profile of params.profiles) {
+    const decision = profile.detect(params.text);
+    const capture = params.selectCapture(decision, profile);
+    if (!capture) {
+      continue;
+    }
+    return {
+      profileId: profile.id,
+      decision: capture,
+    };
+  }
+  return null;
+}
 
 function resolveResponseStyleIngestionModeProfile(
   mode: ResponseStyleIngestionMode,
@@ -428,6 +536,102 @@ function resolveProjectFactDeterministicProfile(params: {
   return null;
 }
 
+function resolveProjectFactSemanticDecision(params: {
+  text: string;
+  expectedCaptureClass: ProjectFactSemanticCaptureClass;
+}): {
+  profileId: ProjectFactSemanticDetectorProfile["id"];
+  decision: ProjectFactSemanticCaptureDecision;
+} | null {
+  return resolveSemanticDetectorDecision<
+    ReturnType<ProjectFactSemanticDetectorProfile["detect"]>,
+    ProjectFactSemanticDetectorProfile,
+    ProjectFactSemanticCaptureDecision
+  >({
+    text: params.text,
+    profiles: SEMANTIC_DETECTOR_REGISTRY.project_fact,
+    selectCapture: (decision, profile) => {
+      if (decision.action !== "capture") {
+        return null;
+      }
+      if (decision.match.captureClass !== params.expectedCaptureClass) {
+        return null;
+      }
+      return (profile.acceptedFactFamilies as readonly ProjectFactFamily[]).includes(
+        decision.match.factFamily,
+      )
+        ? decision
+        : null;
+    },
+  });
+}
+
+function resolveRecurringProcedureSemanticDecision(text: string): {
+  profileId: RecurringProcedureSemanticDetectorProfile["id"];
+  decision: RecurringProcedureSemanticCaptureDecision;
+} | null {
+  return resolveSemanticDetectorDecision<
+    ReturnType<RecurringProcedureSemanticDetectorProfile["detect"]>,
+    RecurringProcedureSemanticDetectorProfile,
+    RecurringProcedureSemanticCaptureDecision
+  >({
+    text,
+    profiles: SEMANTIC_DETECTOR_REGISTRY.recurring_procedure,
+    selectCapture: (decision, profile) => {
+      if (decision.action !== "capture") {
+        return null;
+      }
+      return (profile.acceptedProcedureFamilies as readonly RecurringProcedureFamily[]).includes(
+        decision.match.procedureFamily,
+      )
+        ? decision
+        : null;
+    },
+  });
+}
+
+function resolveResponseStyleSemanticDecision(params: {
+  text: string;
+  profile: ResponseStyleIngestionModeProfile;
+}): {
+  profileId: ResponseStyleSemanticDetectorProfile["id"];
+  decision: ResolvedResponseStyleSemanticDecision;
+} | null {
+  return resolveSemanticDetectorDecision<
+    ReturnType<ResponseStyleSemanticDetectorProfile["detect"]>,
+    ResponseStyleSemanticDetectorProfile,
+    ResolvedResponseStyleSemanticDecision
+  >({
+    text: params.text,
+    profiles: SEMANTIC_DETECTOR_REGISTRY.response_style,
+    selectCapture: (decision, profile) => {
+      if (decision.action === "forget") {
+        return params.profile.allowForget
+          ? {
+              action: "forget",
+              decision,
+            }
+          : null;
+      }
+      if (decision.action !== "capture") {
+        return null;
+      }
+      return (
+        profile.acceptedCaptureClasses as readonly ResponseStyleSemanticCaptureClass[]
+      ).includes(decision.match.captureClass) &&
+        resolveResponseStyleSemanticCaptureAllowed({
+          profile: params.profile,
+          captureClass: decision.match.captureClass,
+        })
+        ? {
+            action: "capture",
+            decision,
+          }
+        : null;
+    },
+  });
+}
+
 export async function resolveResponseStyleIngestion(params: {
   config: MemoryMiddlewareConfig;
   content: string;
@@ -484,11 +688,15 @@ export async function resolveResponseStyleIngestion(params: {
         }
       }
 
-      const semanticDecision = detectResponseStyleSemanticDecision(text);
-      if (semanticDecision.action === "forget") {
-        if (!profile.allowForget) {
-          return null;
-        }
+      const semanticResolution = resolveResponseStyleSemanticDecision({
+        text,
+        profile,
+      });
+      if (!semanticResolution) {
+        return null;
+      }
+      if (semanticResolution.decision.action === "forget") {
+        const semanticDecision = semanticResolution.decision.decision;
         return {
           action: "forget" as const,
           familyId: "response_style" as const,
@@ -499,17 +707,7 @@ export async function resolveResponseStyleIngestion(params: {
           subjectKey: semanticDecision.subjectKey,
         };
       }
-      if (semanticDecision.action !== "capture") {
-        return null;
-      }
-      if (
-        !resolveResponseStyleSemanticCaptureAllowed({
-          profile,
-          captureClass: semanticDecision.match.captureClass,
-        })
-      ) {
-        return null;
-      }
+      const semanticDecision = semanticResolution.decision.decision;
 
       return {
         action: "capture" as const,
@@ -570,11 +768,12 @@ export function resolveProjectFactIngestion(params: {
         };
       }
 
-      const semanticDecision = detectProjectFactSemanticDecision(text);
-      if (
-        semanticDecision.action === "capture" &&
-        semanticDecision.match.captureClass === profile.expectedCaptureClass
-      ) {
+      const semanticResolution = resolveProjectFactSemanticDecision({
+        text,
+        expectedCaptureClass: profile.expectedCaptureClass,
+      });
+      if (semanticResolution) {
+        const { decision: semanticDecision } = semanticResolution;
         return {
           familyId: "project_fact" as const,
           parsed: toOrdinaryTurnProjectFactMatch(semanticDecision.match),
@@ -584,22 +783,6 @@ export function resolveProjectFactIngestion(params: {
           detectionSource: "semantic" as const,
           confidence: semanticDecision.confidence,
           evidence: semanticDecision.evidence,
-        };
-      }
-
-      const genericDecision = detectGenericProjectFactSemanticDecision(text);
-      if (
-        genericDecision.action === "capture" &&
-        genericDecision.match.captureClass === profile.expectedCaptureClass
-      ) {
-        return {
-          familyId: "project_fact" as const,
-          parsed: toOrdinaryTurnProjectFactMatch(genericDecision.match),
-          factFamily: genericDecision.match.factFamily,
-          reviewMode: "hold_for_more_evidence" as const,
-          detectionSource: "semantic" as const,
-          confidence: genericDecision.confidence,
-          evidence: genericDecision.evidence,
         };
       }
 
@@ -618,10 +801,11 @@ export function resolveRecurringProcedureIngestion(params: {
     primarySource: params.primarySource,
     rawCandidates: params.rawCandidates,
     tryResolve: async (text) => {
-      const semanticDecision = detectRecurringProcedureSemanticDecision(text);
-      if (semanticDecision.action !== "capture") {
+      const semanticResolution = resolveRecurringProcedureSemanticDecision(text);
+      if (!semanticResolution) {
         return null;
       }
+      const { decision: semanticDecision } = semanticResolution;
       return {
         familyId: "recurring_procedure" as const,
         parsed: toOrdinaryTurnRecurringProcedureMatch(semanticDecision.match),
@@ -646,8 +830,6 @@ export type ResolvedWorkflowIngestion = {
   parsed: OrdinaryTurnAutoCaptureMatch;
   lessonFamily: WorkflowImprovementLessonFamily;
   reviewMode: "pending_confirmation" | "hold_for_more_evidence";
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
   source: IngestionTextSource;
   detectionSource: "semantic" | "deterministic";
@@ -664,7 +846,6 @@ export type ResolvedCanonicalizableIngestion =
 
 function resolveWorkflowFamilyId(match: {
   captureClass: WorkflowImprovementCaptureClass;
-  lessonFamily: WorkflowImprovementLessonFamily;
 }): "workflow_improvement" | "project_rule" | "unmet_need" {
   const captureCategory = getCaptureMetadataByCaptureClass(match.captureClass)?.category;
   if (captureCategory === "project_rule") {
@@ -676,15 +857,48 @@ function resolveWorkflowFamilyId(match: {
   if (captureCategory === "workflow_improvement") {
     return "workflow_improvement";
   }
-  const lessonFamilyFamilyId = getMemoryFamilyIdByWorkflowLessonFamily(match.lessonFamily);
-  if (
-    lessonFamilyFamilyId === "workflow_improvement" ||
-    lessonFamilyFamilyId === "project_rule" ||
-    lessonFamilyFamilyId === "unmet_need"
-  ) {
-    return lessonFamilyFamilyId;
-  }
   return "workflow_improvement";
+}
+
+function resolveWorkflowReviewMode(
+  captureClass: WorkflowImprovementCaptureClass,
+): "pending_confirmation" | "hold_for_more_evidence" {
+  const captureCategory = getCaptureMetadataByCaptureClass(captureClass)?.category;
+  if (captureCategory === "project_rule" || captureCategory === "unmet_need") {
+    return "hold_for_more_evidence";
+  }
+  return captureClass === "workflow_generalized_guidance"
+    ? "hold_for_more_evidence"
+    : "pending_confirmation";
+}
+
+function resolveWorkflowSemanticDecision(text: string): {
+  profileId: WorkflowSemanticDetectorProfile["id"];
+  decision: WorkflowSemanticCaptureDecision;
+} | null {
+  return resolveSemanticDetectorDecision<
+    ReturnType<WorkflowSemanticDetectorProfile["detect"]>,
+    WorkflowSemanticDetectorProfile,
+    WorkflowSemanticCaptureDecision
+  >({
+    text,
+    profiles: SEMANTIC_DETECTOR_REGISTRY.workflow,
+    selectCapture: (decision, profile) => {
+      if (decision.action !== "capture") {
+        return null;
+      }
+      const captureCategory = getCaptureMetadataByCaptureClass(decision.match.captureClass)
+        ?.category as WorkflowCaptureCategory | undefined;
+      if (!captureCategory) {
+        return null;
+      }
+      return (profile.acceptedCaptureCategories as readonly WorkflowCaptureCategory[]).includes(
+        captureCategory,
+      )
+        ? decision
+        : null;
+    },
+  });
 }
 
 function buildResolvedWorkflowIngestion(params: {
@@ -696,8 +910,6 @@ function buildResolvedWorkflowIngestion(params: {
     lessonFamily: WorkflowImprovementLessonFamily;
     projectScope?: string;
     normalizedProjectScope?: string;
-    lessonKey?: WorkflowImprovementLessonKey;
-    toolKey?: WorkflowImprovementToolKey;
     guidancePattern?: WorkflowImprovementGuidancePattern;
     needCategory?: WorkflowImprovementNeedCategory;
     subject: string;
@@ -728,13 +940,10 @@ function buildResolvedWorkflowIngestion(params: {
   return {
     familyId: resolveWorkflowFamilyId({
       captureClass: params.match.captureClass,
-      lessonFamily,
     }),
     parsed,
     lessonFamily,
     reviewMode: params.reviewMode,
-    ...(parsed.lessonKey ? { lessonKey: parsed.lessonKey } : {}),
-    ...(parsed.toolKey ? { toolKey: parsed.toolKey } : {}),
     ...(parsed.guidancePattern ? { guidancePattern: parsed.guidancePattern } : {}),
     source: params.source,
     detectionSource: params.detectionSource,
@@ -775,15 +984,9 @@ async function resolveWorkflowImprovementText(params: {
     }
   }
 
-  for (const detector of WORKFLOW_SEMANTIC_DETECTOR_PROFILES) {
-    const decision = detector.detect(params.text);
-    if (decision.action !== "capture") {
-      continue;
-    }
-    const reviewMode =
-      typeof detector.reviewMode === "function"
-        ? detector.reviewMode(decision.match)
-        : detector.reviewMode;
+  const semanticResolution = resolveWorkflowSemanticDecision(params.text);
+  if (semanticResolution) {
+    const { decision } = semanticResolution;
     const {
       source: _source,
       observedText: _observedText,
@@ -794,7 +997,7 @@ async function resolveWorkflowImprovementText(params: {
       detectionSource: "semantic",
       confidence: decision.confidence,
       evidence: decision.evidence,
-      reviewMode,
+      reviewMode: resolveWorkflowReviewMode(decision.match.captureClass),
       observedText: params.text,
     });
     return resolved;

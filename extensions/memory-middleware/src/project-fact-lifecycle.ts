@@ -9,7 +9,7 @@ import {
   type ClusteredMemoryPendingCandidate,
 } from "./clustered-memory-lifecycle.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
-import { getMemoryFamilyDefinition } from "./memory-family-registry.js";
+import { getMemoryLifecycleRuntimePolicy } from "./memory-runtime-policy-views.js";
 
 type ProjectFactLifecycleRow = ClusteredMemoryLifecycleRowBase & {
   resolved_template: string | null;
@@ -175,7 +175,7 @@ export async function inspectProjectFactLifecycle(params: {
         metadata->'autoPromotion'->>'normalizedValue'
       ) as resolved_normalized_value`,
     ],
-    pendingStates: getMemoryFamilyDefinition("project_fact").lifecyclePolicy.pendingCandidateStates,
+    pendingStates: getMemoryLifecycleRuntimePolicy("project_fact").pendingCandidateStates,
     toSubjectEntry: toProjectFactSubjectEntry,
   });
   if (!inspection) {

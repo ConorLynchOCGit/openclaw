@@ -89,6 +89,52 @@ function createRuntimeMock() {
   } as unknown as MemoryMiddlewareRuntime;
 }
 
+function createCanonicalWorkflowGuidanceMetadata(params: {
+  lessonKey:
+    | "python_command_unavailable"
+    | "scripts_committer_required"
+    | "openai_embeddings_api_key_required"
+    | "git_stash_unsafe";
+  subject?: string;
+  value?: string;
+}) {
+  const captureClass =
+    params.lessonKey === "python_command_unavailable"
+      ? "workflow_environment_constraint"
+      : params.lessonKey === "openai_embeddings_api_key_required"
+        ? "workflow_api_workaround"
+        : "workflow_tool_gotcha";
+  const semanticProfileId =
+    captureClass === "workflow_environment_constraint"
+      ? "environment_constraint"
+      : captureClass === "workflow_api_workaround"
+        ? "api_workaround"
+        : "workflow_tool_gotcha";
+  return {
+    candidateMetadata: {
+      canonicalIngestionCandidate: {
+        record: {
+          kind: "feedback",
+          subject: params.subject,
+          statement: params.value,
+          tags: ["workflow_improvement", "workflow_guidance", "feedback"],
+          facets: {
+            workflow_guidance: true,
+            lessonFamily: "supported_lesson",
+            lessonKey: params.lessonKey,
+            captureClass,
+            semanticProfileId,
+            ...(params.subject ? { subjectKey: params.subject } : {}),
+          },
+          compatibility: {
+            transitionalFamilyId: "workflow_improvement",
+          },
+        },
+      },
+    },
+  };
+}
+
 function createWeakEnvironmentConstraintHybridResult(): MemoryObjectSearchHybridResult {
   return {
     accepted: true,
@@ -104,13 +150,11 @@ function createWeakEnvironmentConstraintHybridResult(): MemoryObjectSearchHybrid
         reviewState: "approved",
         content:
           "Environment constraint: python command is not available in this environment; use node --input-type=module or tsx instead.",
-        metadata: {
-          autoCapture: {
-            lessonKey: "python_command_unavailable",
-            subject: "python command availability",
-            value: "use node --input-type=module or tsx instead",
-          },
-        },
+        metadata: createCanonicalWorkflowGuidanceMetadata({
+          lessonKey: "python_command_unavailable",
+          subject: "python command availability",
+          value: "use node --input-type=module or tsx instead",
+        }),
         createdAt: "2026-04-01T00:00:00.000Z",
         updatedAt: "2026-04-01T00:00:00.000Z",
         score: 35,
@@ -135,13 +179,11 @@ function createWeakWorkflowToolGotchaHybridResult(): MemoryObjectSearchHybridRes
         reviewState: "approved",
         content:
           'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
-        metadata: {
-          autoCapture: {
-            lessonKey: "scripts_committer_required",
-            subject: "scoped commit workflow",
-            value: 'use scripts/committer "<msg>" <file...> instead of manual git add / git commit',
-          },
-        },
+        metadata: createCanonicalWorkflowGuidanceMetadata({
+          lessonKey: "scripts_committer_required",
+          subject: "scoped commit workflow",
+          value: 'use scripts/committer "<msg>" <file...> instead of manual git add / git commit',
+        }),
         createdAt: "2026-04-01T00:00:00.000Z",
         updatedAt: "2026-04-01T00:00:00.000Z",
         score: 30,
@@ -166,14 +208,12 @@ function createWeakApiWorkaroundHybridResult(): MemoryObjectSearchHybridResult {
         reviewState: "approved",
         content:
           "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
-        metadata: {
-          autoCapture: {
-            lessonKey: "openai_embeddings_api_key_required",
-            subject: "OpenAI embeddings auth",
-            value:
-              "OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings",
-          },
-        },
+        metadata: createCanonicalWorkflowGuidanceMetadata({
+          lessonKey: "openai_embeddings_api_key_required",
+          subject: "OpenAI embeddings auth",
+          value:
+            "OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings",
+        }),
         createdAt: "2026-04-01T00:00:00.000Z",
         updatedAt: "2026-04-01T00:00:00.000Z",
         score: 28,
@@ -256,18 +296,16 @@ describe("semantic retrieval routing", () => {
               reviewState: "approved",
               content:
                 'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
-              metadata: {
-                autoCapture: {
-                  lessonKey: "scripts_committer_required",
-                  subject: "scoped commit workflow",
-                  value:
-                    'use scripts/committer "<msg>" <file...> instead of manual git add / git commit',
-                },
-              },
+              metadata: createCanonicalWorkflowGuidanceMetadata({
+                lessonKey: "scripts_committer_required",
+                subject: "scoped commit workflow",
+                value:
+                  'use scripts/committer "<msg>" <file...> instead of manual git add / git commit',
+              }),
               createdAt: "2026-04-01T00:00:00.000Z",
               updatedAt: "2026-04-01T00:00:00.000Z",
               score: 90,
-              matchedFields: ["auto_capture_lesson_match"],
+              matchedFields: ["auto_capture_capture_class_match"],
             },
           ],
         },
@@ -298,23 +336,17 @@ describe("semantic retrieval routing", () => {
               content:
                 'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
               metadata: {
-                candidateMetadata: {
-                  canonicalIngestionCandidate: {
-                    record: {
-                      subject: "scoped commit workflow",
-                      statement:
-                        'use scripts/committer "<msg>" <file...> instead of manual git add / git commit',
-                      facets: {
-                        lessonKey: "scripts_committer_required",
-                      },
-                    },
-                  },
-                },
+                ...createCanonicalWorkflowGuidanceMetadata({
+                  lessonKey: "scripts_committer_required",
+                  subject: "scoped commit workflow",
+                  value:
+                    'use scripts/committer "<msg>" <file...> instead of manual git add / git commit',
+                }),
               },
               createdAt: "2026-04-01T00:00:00.000Z",
               updatedAt: "2026-04-01T00:00:00.000Z",
               score: 90,
-              matchedFields: ["auto_capture_lesson_match"],
+              matchedFields: ["auto_capture_capture_class_match"],
             },
           ],
         },
@@ -476,15 +508,13 @@ describe("semantic retrieval routing", () => {
           reviewState: "approved",
           content:
             "Environment constraint: python command is not available in this environment; use node --input-type=module or tsx instead.",
-          metadata: {
-            autoCapture: {
-              lessonKey: "python_command_unavailable",
-            },
-          },
+          metadata: createCanonicalWorkflowGuidanceMetadata({
+            lessonKey: "python_command_unavailable",
+          }),
           createdAt: "2026-04-01T00:00:00.000Z",
           updatedAt: "2026-04-01T00:00:00.000Z",
           score: 220,
-          matchedFields: ["auto_capture_lesson_match"],
+          matchedFields: ["auto_capture_capture_class_match"],
         },
       ],
     };
@@ -532,11 +562,9 @@ describe("semantic retrieval routing", () => {
               reviewState: "approved" as const,
               content:
                 "Environment constraint: python command is not available in this environment; use node --input-type=module or tsx instead.",
-              metadata: {
-                autoCapture: {
-                  lessonKey: "python_command_unavailable",
-                },
-              },
+              metadata: createCanonicalWorkflowGuidanceMetadata({
+                lessonKey: "python_command_unavailable",
+              }),
               createdAt: "2026-04-02T00:00:00.000Z",
               updatedAt: "2026-04-02T00:00:00.000Z",
               score: 0.93,
@@ -614,11 +642,9 @@ describe("semantic retrieval routing", () => {
               reviewState: "approved" as const,
               content:
                 "Environment constraint: python command is not available in this environment; use node --input-type=module or tsx instead.",
-              metadata: {
-                autoCapture: {
-                  lessonKey: "python_command_unavailable",
-                },
-              },
+              metadata: createCanonicalWorkflowGuidanceMetadata({
+                lessonKey: "python_command_unavailable",
+              }),
               createdAt: "2026-04-02T00:00:00.000Z",
               updatedAt: "2026-04-02T00:00:00.000Z",
               score: 0.93,
@@ -636,11 +662,9 @@ describe("semantic retrieval routing", () => {
               reviewState: "approved" as const,
               content:
                 'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
-              metadata: {
-                autoCapture: {
-                  lessonKey: "scripts_committer_required",
-                },
-              },
+              metadata: createCanonicalWorkflowGuidanceMetadata({
+                lessonKey: "scripts_committer_required",
+              }),
               createdAt: "2026-04-02T00:00:00.000Z",
               updatedAt: "2026-04-02T00:00:00.000Z",
               score: 0.91,
@@ -793,15 +817,13 @@ describe("semantic retrieval routing", () => {
           reviewState: "approved",
           content:
             'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
-          metadata: {
-            autoCapture: {
-              lessonKey: "scripts_committer_required",
-            },
-          },
+          metadata: createCanonicalWorkflowGuidanceMetadata({
+            lessonKey: "scripts_committer_required",
+          }),
           createdAt: "2026-04-01T00:00:00.000Z",
           updatedAt: "2026-04-01T00:00:00.000Z",
           score: 200,
-          matchedFields: ["auto_capture_lesson_match"],
+          matchedFields: ["auto_capture_capture_class_match"],
         },
       ],
     };
@@ -849,11 +871,9 @@ describe("semantic retrieval routing", () => {
               reviewState: "approved" as const,
               content:
                 'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
-              metadata: {
-                autoCapture: {
-                  lessonKey: "scripts_committer_required",
-                },
-              },
+              metadata: createCanonicalWorkflowGuidanceMetadata({
+                lessonKey: "scripts_committer_required",
+              }),
               createdAt: "2026-04-02T00:00:00.000Z",
               updatedAt: "2026-04-02T00:00:00.000Z",
               score: 0.91,
@@ -931,11 +951,9 @@ describe("semantic retrieval routing", () => {
               reviewState: "approved" as const,
               content:
                 "Environment constraint: python command is not available in this environment; use node --input-type=module or tsx instead.",
-              metadata: {
-                autoCapture: {
-                  lessonKey: "python_command_unavailable",
-                },
-              },
+              metadata: createCanonicalWorkflowGuidanceMetadata({
+                lessonKey: "python_command_unavailable",
+              }),
               createdAt: "2026-04-02T00:00:00.000Z",
               updatedAt: "2026-04-02T00:00:00.000Z",
               score: 0.91,
@@ -992,11 +1010,9 @@ describe("semantic retrieval routing", () => {
               reviewState: "approved" as const,
               content:
                 "Workflow improvement: do not use git stash during multi-agent repo work because it can disturb concurrent work.",
-              metadata: {
-                autoCapture: {
-                  lessonKey: "git_stash_unsafe",
-                },
-              },
+              metadata: createCanonicalWorkflowGuidanceMetadata({
+                lessonKey: "git_stash_unsafe",
+              }),
               createdAt: "2026-04-02T00:00:00.000Z",
               updatedAt: "2026-04-02T00:00:00.000Z",
               score: 0.94,
@@ -1024,11 +1040,9 @@ describe("semantic retrieval routing", () => {
           memoryKind: "project",
           reviewState: "approved",
           content: "Workflow improvement: use scripts/committer for scoped commits in this repo.",
-          metadata: {
-            autoCapture: {
-              lessonKey: "scripts_committer_required",
-            },
-          },
+          metadata: createCanonicalWorkflowGuidanceMetadata({
+            lessonKey: "scripts_committer_required",
+          }),
           createdAt: "2026-04-01T00:00:00.000Z",
           updatedAt: "2026-04-01T00:00:00.000Z",
           score: 21,
@@ -1128,15 +1142,13 @@ describe("semantic retrieval routing", () => {
           reviewState: "approved",
           content:
             "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
-          metadata: {
-            autoCapture: {
-              lessonKey: "openai_embeddings_api_key_required",
-            },
-          },
+          metadata: createCanonicalWorkflowGuidanceMetadata({
+            lessonKey: "openai_embeddings_api_key_required",
+          }),
           createdAt: "2026-04-01T00:00:00.000Z",
           updatedAt: "2026-04-01T00:00:00.000Z",
           score: 210,
-          matchedFields: ["auto_capture_lesson_match"],
+          matchedFields: ["auto_capture_capture_class_match"],
         },
       ],
     };
@@ -1184,11 +1196,9 @@ describe("semantic retrieval routing", () => {
               reviewState: "approved" as const,
               content:
                 "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
-              metadata: {
-                autoCapture: {
-                  lessonKey: "openai_embeddings_api_key_required",
-                },
-              },
+              metadata: createCanonicalWorkflowGuidanceMetadata({
+                lessonKey: "openai_embeddings_api_key_required",
+              }),
               createdAt: "2026-04-02T00:00:00.000Z",
               updatedAt: "2026-04-02T00:00:00.000Z",
               score: 0.9,
@@ -1266,11 +1276,9 @@ describe("semantic retrieval routing", () => {
               reviewState: "approved" as const,
               content:
                 'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
-              metadata: {
-                autoCapture: {
-                  lessonKey: "scripts_committer_required",
-                },
-              },
+              metadata: createCanonicalWorkflowGuidanceMetadata({
+                lessonKey: "scripts_committer_required",
+              }),
               createdAt: "2026-04-02T00:00:00.000Z",
               updatedAt: "2026-04-02T00:00:00.000Z",
               score: 0.92,

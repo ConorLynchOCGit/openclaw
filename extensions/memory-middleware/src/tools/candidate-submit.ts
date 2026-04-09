@@ -1,6 +1,10 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@sinclair/typebox";
+import {
+  getCaptureMetadataByCaptureClass,
+  type MemoryFamilyId,
+} from "openclaw/plugin-sdk/memory-family-policy";
 import type { AnyAgentTool, OpenClawPluginToolContext } from "../../api.js";
 import { DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG } from "../config.js";
 import { withMemoryMiddlewarePgClient } from "../db/pg-pool.js";
@@ -13,18 +17,14 @@ import {
 import {
   buildCanonicalMemoryIngestionCandidateFromResolvedIngestion,
   isCanonicalizableResolvedResponseStyleIngestion,
+  readCanonicalMemoryIngestionCandidateFromMetadata,
   readCanonicalFirstMetadataString,
 } from "../memory-canonical-compat.js";
 import {
-  executeMemoryObjectCorrectionPlan,
-  isExecutableMemoryObjectCorrectionPlan,
+  attemptApprovedMemoryObjectCorrectionPromotion,
   resolveMemoryCorrectionPromotionPolicy,
   resolveMemoryCorrectionPlan,
 } from "../memory-correction-engine.js";
-import {
-  getCaptureMetadataByWorkflowLessonFamily,
-  getMemoryFamilyIdByWorkflowLessonFamily,
-} from "../memory-family-registry.js";
 import {
   resolveProjectFactIngestion,
   type ResolvedCanonicalizableIngestion,
@@ -93,26 +93,29 @@ import {
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import { storeApprovedProjectWorkflowSemanticEmbedding } from "../semantic-retrieval-routing.js";
 import {
+  resolveCanonicalWorkflowAutoReviewProfile,
+  resolveWorkflowSemanticDetectionSource,
+} from "../workflow-canonical-policy.js";
+import {
   inspectWorkflowImprovementLifecycle,
   isExpiredPendingWorkflowImprovementCandidate,
   supersedeApprovedWorkflowImprovementSubjectEntries,
 } from "../workflow-improvement-lifecycle.js";
 import {
   type WorkflowImprovementCanonicalMatch,
+  type WorkflowImprovementCaptureClass,
   type WorkflowImprovementGuidancePattern,
   type WorkflowImprovementLessonFamily,
-  isSupportedWorkflowImprovementLessonKey,
-  type WorkflowImprovementLessonKey,
   type WorkflowImprovementNeedCategory,
   type WorkflowImprovementSemanticConfidence,
-  type WorkflowImprovementToolKey,
 } from "../workflow-improvement-semantic.js";
 import { maybeInduceWorkflowPhrasePattern } from "../workflow-phrase-induction.js";
 import {
+  buildCandidateWriteExecutionContext,
   runCandidateWriteResolutionStages,
   runCandidateWriteResultStages,
   runWriteResolutionStages,
-  submitCandidateByKind,
+  submitCandidateWritePlan,
 } from "../write-action-stages.js";
 import {
   asJsonToolResult as asJsonToolResultBase,
@@ -207,6 +210,43 @@ function readNestedMetadataString(
   path: string[],
 ): string | undefined {
   return readCanonicalFirstMetadataString(metadata, path);
+}
+
+function readLegacyAutoCaptureRecord(
+  metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> | null {
+  const autoCapture = metadata?.autoCapture;
+  return autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+    ? (autoCapture as Record<string, unknown>)
+    : null;
+}
+
+function readAutoCaptureString(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  if (key === "title") {
+    const canonicalCandidate = readCanonicalMemoryIngestionCandidateFromMetadata(metadata);
+    const procedureTitle = canonicalCandidate?.record.facets.procedureTitle;
+    if (typeof procedureTitle === "string" && procedureTitle.trim().length > 0) {
+      return procedureTitle.trim();
+    }
+  }
+  return readNestedMetadataString(metadata, ["autoCapture", key]);
+}
+
+function readCanonicalSubmissionFamilyId(
+  metadata: Record<string, unknown> | undefined,
+): MemoryFamilyId | null {
+  const familyId = readAutoCaptureString(metadata, "family");
+  return familyId === "response_style" ||
+    familyId === "project_fact" ||
+    familyId === "recurring_procedure" ||
+    familyId === "workflow_improvement" ||
+    familyId === "project_rule" ||
+    familyId === "unmet_need"
+    ? familyId
+    : null;
 }
 
 function buildToolResponseStyleAutoPromotionMetadata(params: {
@@ -501,65 +541,29 @@ function buildToolProjectFactAutoPromotionMetadata(params: {
   confirmationState?: "confirmed";
   confirmationMethod?: "repeat_subject_signal" | "generalized_cluster_auto_review";
 }): Record<string, unknown> {
-  const autoCapture = params.input.metadata?.autoCapture;
   const semanticDetection = params.input.metadata?.semanticDetection;
+  const clusterKey = readAutoCaptureString(params.input.metadata, "key");
   return {
     autoPromotion: {
       source: "candidate_submit_auto_promotion",
       captureSeam: "model_tool_primary",
       profile: params.autoPromotionProfile,
-      captureProfile:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { profile?: unknown }).profile
-          : undefined,
-      captureClass:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { captureClass?: unknown }).captureClass
-          : undefined,
-      reasonCode:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { reasonCode?: unknown }).reasonCode
-          : undefined,
-      factFamily:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { factFamily?: unknown }).factFamily
-          : undefined,
-      fieldKey:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { fieldKey?: unknown }).fieldKey
-          : undefined,
-      key:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { key?: unknown }).key
-          : undefined,
-      subjectKey:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { subjectKey?: unknown }).subjectKey
-          : undefined,
-      projectScope:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { projectScope?: unknown }).projectScope
-          : undefined,
-      normalizedProjectScope:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedProjectScope?: unknown }).normalizedProjectScope
-          : undefined,
-      subject:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { subject?: unknown }).subject
-          : undefined,
-      normalizedSubject:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedSubject?: unknown }).normalizedSubject
-          : undefined,
-      value:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { value?: unknown }).value
-          : undefined,
-      normalizedValue:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedValue?: unknown }).normalizedValue
-          : undefined,
+      captureProfile: readAutoCaptureString(params.input.metadata, "profile"),
+      captureClass: readAutoCaptureString(params.input.metadata, "captureClass"),
+      reasonCode: readAutoCaptureString(params.input.metadata, "reasonCode"),
+      factFamily: readAutoCaptureString(params.input.metadata, "factFamily"),
+      fieldKey: readAutoCaptureString(params.input.metadata, "fieldKey"),
+      key: clusterKey,
+      subjectKey: readAutoCaptureString(params.input.metadata, "subjectKey"),
+      projectScope: readAutoCaptureString(params.input.metadata, "projectScope"),
+      normalizedProjectScope: readAutoCaptureString(
+        params.input.metadata,
+        "normalizedProjectScope",
+      ),
+      subject: readAutoCaptureString(params.input.metadata, "subject"),
+      normalizedSubject: readAutoCaptureString(params.input.metadata, "normalizedSubject"),
+      value: readAutoCaptureString(params.input.metadata, "value"),
+      normalizedValue: readAutoCaptureString(params.input.metadata, "normalizedValue"),
       toolName: "memory_candidate_submit",
     },
     ...(semanticDetection &&
@@ -574,12 +578,7 @@ function buildToolProjectFactAutoPromotionMetadata(params: {
             method: params.confirmationMethod ?? "repeat_subject_signal",
             confirmationEvidenceCount: 2,
             ...(params.confirmationMethod === "generalized_cluster_auto_review"
-              ? {
-                  clusterKey:
-                    autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-                      ? (autoCapture as { key?: unknown }).key
-                      : undefined,
-                }
+              ? { clusterKey }
               : {}),
           },
         }
@@ -592,62 +591,29 @@ function buildToolRecurringProcedureAutoPromotionMetadata(params: {
   autoPromotionProfile: string;
   confirmationState?: "confirmed";
 }): Record<string, unknown> {
-  const autoCapture = params.input.metadata?.autoCapture;
   const semanticDetection = params.input.metadata?.semanticDetection;
+  const legacyAutoCapture = readLegacyAutoCaptureRecord(params.input.metadata);
   return {
     autoPromotion: {
       source: "candidate_submit_auto_promotion",
       captureSeam: "model_tool_primary",
       profile: params.autoPromotionProfile,
       captureProfile: "tool-submitted",
-      captureClass:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { captureClass?: unknown }).captureClass
-          : undefined,
-      reasonCode:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { reasonCode?: unknown }).reasonCode
-          : undefined,
-      procedureFamily:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { procedureFamily?: unknown }).procedureFamily
-          : undefined,
-      procedureKey:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { procedureKey?: unknown }).procedureKey
-          : undefined,
-      key:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { key?: unknown }).key
-          : undefined,
-      subjectKey:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { subjectKey?: unknown }).subjectKey
-          : undefined,
-      subject:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { subject?: unknown }).subject
-          : undefined,
-      normalizedSubject:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedSubject?: unknown }).normalizedSubject
-          : undefined,
-      title:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { title?: unknown }).title
-          : undefined,
+      captureClass: readAutoCaptureString(params.input.metadata, "captureClass"),
+      reasonCode: readAutoCaptureString(params.input.metadata, "reasonCode"),
+      procedureFamily: readAutoCaptureString(params.input.metadata, "procedureFamily"),
+      procedureKey: readAutoCaptureString(params.input.metadata, "procedureKey"),
+      key: readAutoCaptureString(params.input.metadata, "key"),
+      subjectKey: readAutoCaptureString(params.input.metadata, "subjectKey"),
+      subject: readAutoCaptureString(params.input.metadata, "subject"),
+      normalizedSubject: readAutoCaptureString(params.input.metadata, "normalizedSubject"),
+      title: readAutoCaptureString(params.input.metadata, "title"),
       steps:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { steps?: unknown }).steps
+        legacyAutoCapture && Array.isArray(legacyAutoCapture.steps)
+          ? legacyAutoCapture.steps
           : undefined,
-      value:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { value?: unknown }).value
-          : undefined,
-      normalizedValue:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedValue?: unknown }).normalizedValue
-          : undefined,
+      value: readAutoCaptureString(params.input.metadata, "value"),
+      normalizedValue: readAutoCaptureString(params.input.metadata, "normalizedValue"),
       toolName: "memory_candidate_submit",
     },
     ...(semanticDetection &&
@@ -678,116 +644,52 @@ function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
     rejectedCandidateIds: string[];
   };
 }): Record<string, unknown> {
-  const autoCapture = params.input.metadata?.autoCapture;
   const semanticDetection = params.input.metadata?.semanticDetection;
-  const clusterKey =
-    autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-      ? (autoCapture as { key?: unknown }).key
-      : undefined;
+  const lessonFamily = readAutoCaptureString(params.input.metadata, "lessonFamily");
+  const canonicalAutoReviewProfile = resolveCanonicalWorkflowAutoReviewProfile({
+    captureClass: readAutoCaptureString(params.input.metadata, "captureClass"),
+    familyId: readCanonicalSubmissionFamilyId(params.input.metadata),
+    ...(lessonFamily ? { lessonFamily: asWorkflowImprovementLessonFamily(lessonFamily) } : {}),
+    template: readAutoCaptureString(params.input.metadata, "template"),
+  });
+  const clusterKey = readAutoCaptureString(params.input.metadata, "key");
   return {
     autoPromotion: {
       source: "candidate_submit_auto_promotion",
       captureSeam: "model_tool_primary",
       profile: params.autoPromotionProfile,
       captureProfile: "tool-submitted",
-      captureClass:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { captureClass?: unknown }).captureClass
-          : undefined,
-      reasonCode:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { reasonCode?: unknown }).reasonCode
-          : undefined,
-      lessonFamily:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { lessonFamily?: unknown }).lessonFamily
-          : undefined,
-      lessonKey:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { lessonKey?: unknown }).lessonKey
-          : undefined,
-      toolKey:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { toolKey?: unknown }).toolKey
-          : undefined,
-      key:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { key?: unknown }).key
-          : undefined,
-      subjectKey:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { subjectKey?: unknown }).subjectKey
-          : undefined,
-      subject:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { subject?: unknown }).subject
-          : undefined,
-      projectScope:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { projectScope?: unknown }).projectScope
-          : undefined,
-      normalizedProjectScope:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedProjectScope?: unknown }).normalizedProjectScope
-          : undefined,
-      normalizedSubject:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedSubject?: unknown }).normalizedSubject
-          : undefined,
-      value:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { value?: unknown }).value
-          : undefined,
-      normalizedValue:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedValue?: unknown }).normalizedValue
-          : undefined,
-      guidancePattern:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { guidancePattern?: unknown }).guidancePattern
-          : undefined,
-      needCategory:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { needCategory?: unknown }).needCategory
-          : undefined,
-      neededCapability:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { neededCapability?: unknown }).neededCapability
-          : undefined,
-      normalizedNeededCapability:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedNeededCapability?: unknown }).normalizedNeededCapability
-          : undefined,
-      recommendedAction:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { recommendedAction?: unknown }).recommendedAction
-          : undefined,
-      normalizedRecommendedAction:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedRecommendedAction?: unknown }).normalizedRecommendedAction
-          : undefined,
-      avoidAction:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { avoidAction?: unknown }).avoidAction
-          : undefined,
-      normalizedAvoidAction:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedAvoidAction?: unknown }).normalizedAvoidAction
-          : undefined,
-      rationale:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { rationale?: unknown }).rationale
-          : undefined,
-      normalizedRationale:
-        autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
-          ? (autoCapture as { normalizedRationale?: unknown }).normalizedRationale
-          : undefined,
-      ...(autoCapture &&
-      typeof autoCapture === "object" &&
-      !Array.isArray(autoCapture) &&
-      (autoCapture as { lessonFamily?: unknown }).lessonFamily === "generalized_unmet_need"
-        ? { recommendationMode: "recommendation_only" }
-        : { guidanceMode: "guidance_only" }),
+      captureClass: readAutoCaptureString(params.input.metadata, "captureClass"),
+      reasonCode: readAutoCaptureString(params.input.metadata, "reasonCode"),
+      lessonFamily,
+      key: clusterKey,
+      subjectKey: readAutoCaptureString(params.input.metadata, "subjectKey"),
+      subject: readAutoCaptureString(params.input.metadata, "subject"),
+      projectScope: readAutoCaptureString(params.input.metadata, "projectScope"),
+      normalizedProjectScope: readAutoCaptureString(
+        params.input.metadata,
+        "normalizedProjectScope",
+      ),
+      normalizedSubject: readAutoCaptureString(params.input.metadata, "normalizedSubject"),
+      value: readAutoCaptureString(params.input.metadata, "value"),
+      normalizedValue: readAutoCaptureString(params.input.metadata, "normalizedValue"),
+      guidancePattern: readAutoCaptureString(params.input.metadata, "guidancePattern"),
+      needCategory: readAutoCaptureString(params.input.metadata, "needCategory"),
+      neededCapability: readAutoCaptureString(params.input.metadata, "neededCapability"),
+      normalizedNeededCapability: readAutoCaptureString(
+        params.input.metadata,
+        "normalizedNeededCapability",
+      ),
+      recommendedAction: readAutoCaptureString(params.input.metadata, "recommendedAction"),
+      normalizedRecommendedAction: readAutoCaptureString(
+        params.input.metadata,
+        "normalizedRecommendedAction",
+      ),
+      avoidAction: readAutoCaptureString(params.input.metadata, "avoidAction"),
+      normalizedAvoidAction: readAutoCaptureString(params.input.metadata, "normalizedAvoidAction"),
+      rationale: readAutoCaptureString(params.input.metadata, "rationale"),
+      normalizedRationale: readAutoCaptureString(params.input.metadata, "normalizedRationale"),
+      ...(canonicalAutoReviewProfile?.modeMetadata ?? { guidanceMode: "guidance_only" }),
       toolName: "memory_candidate_submit",
     },
     ...(semanticDetection &&
@@ -1232,17 +1134,19 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
   }
 
   const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
+  const captureClass = readNestedMetadataString(params.input.metadata, [
+    "autoCapture",
+    "captureClass",
+  ]);
   const key = readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]);
   const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
-  const lessonFamily = readNestedMetadataString(params.input.metadata, [
-    "autoCapture",
-    "lessonFamily",
-  ]);
+  const lessonFamily = asWorkflowImprovementLessonFamily(
+    readNestedMetadataString(params.input.metadata, ["autoCapture", "lessonFamily"]),
+  );
   const guidancePattern = readNestedMetadataString(params.input.metadata, [
     "autoCapture",
     "guidancePattern",
   ]);
-  const lessonKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "lessonKey"]);
   const subject = readNestedMetadataString(params.input.metadata, ["autoCapture", "subject"]);
   const value = readNestedMetadataString(params.input.metadata, ["autoCapture", "value"]);
   const normalizedSubject = readNestedMetadataString(params.input.metadata, [
@@ -1293,23 +1197,31 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     template === "workflow_tool_gotcha" ||
     template === "workflow_environment_constraint" ||
     template === "workflow_api_workaround";
-  const isGenericTemplate = template === "workflow_generalized_guidance";
-  const isProjectRuleTemplate = template === "project_rule_guidance";
-  const isUnmetNeedTemplate = template === "unmet_need_recommendation";
-  const isAutoReviewedFamily =
-    (isGenericTemplate && lessonFamily === "generalized_workflow_lesson") ||
-    (isProjectRuleTemplate && lessonFamily === "generalized_project_rule") ||
-    (isUnmetNeedTemplate && lessonFamily === "generalized_unmet_need");
-  const supportsPhraseInduction =
-    isGenericTemplate && lessonFamily === "generalized_workflow_lesson";
+  const workflowAutoReviewProfile = resolveCanonicalWorkflowAutoReviewProfile({
+    ...(captureClass ? { captureClass } : {}),
+    familyId: readCanonicalSubmissionFamilyId(params.input.metadata),
+    ...(lessonFamily ? { lessonFamily } : {}),
+    template,
+  });
+  const isAutoReviewedFamily = Boolean(workflowAutoReviewProfile);
+  const supportsPhraseInduction = workflowAutoReviewProfile?.supportsPhraseInduction ?? false;
+  const workflowAutoReviewSource =
+    workflowAutoReviewProfile?.autoReviewSource ??
+    "candidate_submit_workflow_improvement_generic_auto_review";
+  const workflowAutoReviewProfileId =
+    workflowAutoReviewProfile?.autoReviewProfile ?? "workflow_generalized_auto_review_v1";
+  const workflowClusterLabel =
+    workflowAutoReviewProfile?.clusterLabel ?? "generalized workflow lesson cluster";
+  const approvedWorkflowLabel =
+    workflowAutoReviewProfile?.approvedLabel ?? "approved workflow-improvement memory";
+  const workflowCorrectionFamilyId =
+    readCanonicalSubmissionFamilyId(params.input.metadata) ??
+    workflowAutoReviewProfile?.familyId ??
+    "workflow_improvement";
   if (
-    (!isSupportedTemplate &&
-      !isGenericTemplate &&
-      !isProjectRuleTemplate &&
-      !isUnmetNeedTemplate) ||
+    (!isSupportedTemplate && !workflowAutoReviewProfile) ||
     !key ||
     !subjectKey ||
-    (isSupportedTemplate && (!lessonKey || !isSupportedWorkflowImprovementLessonKey(lessonKey))) ||
     !lessonFamily
   ) {
     return null;
@@ -1369,26 +1281,17 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
       candidateId: inspection.pendingCandidate.id,
       outcome: "rejected",
       rationale: isAutoReviewedFamily
-        ? lessonFamily === "generalized_project_rule"
-          ? "project-rule cluster expired without enough compatible evidence"
-          : lessonFamily === "generalized_unmet_need"
-            ? "unmet-need cluster expired without enough compatible evidence"
-            : "generalized workflow lesson cluster expired without enough compatible evidence"
+        ? `${workflowClusterLabel} expired without enough compatible evidence`
         : "workflow-improvement candidate confirmation window expired without later confirming evidence",
       metadata: {
         source: isAutoReviewedFamily
-          ? lessonFamily === "generalized_project_rule"
-            ? "candidate_submit_project_rule_auto_review"
-            : lessonFamily === "generalized_unmet_need"
-              ? "candidate_submit_unmet_need_auto_review"
-              : "candidate_submit_workflow_improvement_generic_auto_review"
+          ? workflowAutoReviewSource
           : "candidate_submit_workflow_improvement_confirmation",
         candidateLifecycle: {
           family: "workflow_improvement",
           state: "rejected",
           subjectKey,
           ...(lessonFamily ? { lessonFamily } : {}),
-          ...(lessonKey ? { lessonKey } : {}),
           ...(guidancePattern ? { guidancePattern } : {}),
         },
       },
@@ -1418,19 +1321,9 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
       await params.runtime.candidateReview.review({
         candidateId: pendingEntry.id,
         outcome: "rejected",
-        rationale:
-          lessonFamily === "generalized_project_rule"
-            ? "older project-rule cluster expired without enough compatible evidence"
-            : lessonFamily === "generalized_unmet_need"
-              ? "older unmet-need cluster expired without enough compatible evidence"
-              : "older generalized workflow lesson cluster expired without enough compatible evidence",
+        rationale: `older ${workflowClusterLabel} expired without enough compatible evidence`,
         metadata: {
-          source:
-            lessonFamily === "generalized_project_rule"
-              ? "candidate_submit_project_rule_auto_review"
-              : lessonFamily === "generalized_unmet_need"
-                ? "candidate_submit_unmet_need_auto_review"
-                : "candidate_submit_workflow_improvement_generic_auto_review",
+          source: workflowAutoReviewSource,
           candidateLifecycle: {
             family: "workflow_improvement",
             state: "rejected",
@@ -1468,12 +1361,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
       accepted: false,
       status: "failed",
       kind: params.input.kind,
-      reason:
-        lessonFamily === "generalized_project_rule"
-          ? `approved project rule already exists for key ${key}`
-          : lessonFamily === "generalized_unmet_need"
-            ? `approved unmet-need recommendation already exists for key ${key}`
-            : `approved workflow-improvement memory already exists for key ${key}`,
+      reason: `${approvedWorkflowLabel} already exists for key ${key}`,
     };
   }
 
@@ -1481,17 +1369,15 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     inspection.pendingCandidate &&
     !isExpiredPendingWorkflowImprovementCandidate(inspection.pendingCandidate)
   ) {
+    const pendingCandidateId = inspection.pendingCandidate.id;
+    const pendingCandidateSourceEventId = inspection.pendingCandidate.sourceEventId;
     if (shouldSkipImmediateWorkflowImprovementConfirmation(inspection.pendingCandidate.createdAt)) {
       return {
         accepted: false,
         status: "failed",
         kind: params.input.kind,
         reason: isAutoReviewedFamily
-          ? lessonFamily === "generalized_project_rule"
-            ? `project-rule cluster ${inspection.pendingCandidate.id} is still gathering evidence`
-            : lessonFamily === "generalized_unmet_need"
-              ? `unmet-need cluster ${inspection.pendingCandidate.id} is still gathering evidence`
-              : `generalized workflow lesson cluster ${inspection.pendingCandidate.id} is still gathering evidence`
+          ? `${workflowClusterLabel} ${inspection.pendingCandidate.id} is still gathering evidence`
           : `workflow-improvement confirmation candidate ${inspection.pendingCandidate.id} already exists`,
       };
     }
@@ -1503,11 +1389,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         status: "failed",
         kind: params.input.kind,
         reason: isAutoReviewedFamily
-          ? lessonFamily === "generalized_project_rule"
-            ? `project-rule cluster ${inspection.pendingCandidate.id} is waiting for later evidence`
-            : lessonFamily === "generalized_unmet_need"
-              ? `unmet-need cluster ${inspection.pendingCandidate.id} is waiting for later evidence`
-              : `generalized workflow lesson cluster ${inspection.pendingCandidate.id} is waiting for later evidence`
+          ? `${workflowClusterLabel} ${inspection.pendingCandidate.id} is waiting for later evidence`
           : `workflow-improvement confirmation candidate ${inspection.pendingCandidate.id} is waiting for later evidence`,
       };
     }
@@ -1519,19 +1401,9 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         await params.runtime.candidateReview.review({
           candidateId,
           outcome: "rejected",
-          rationale:
-            lessonFamily === "generalized_project_rule"
-              ? "older project-rule cluster was replaced by stronger newer conflicting evidence for the same scoped subject"
-              : lessonFamily === "generalized_unmet_need"
-                ? "older unmet-need cluster was replaced by stronger newer conflicting evidence for the same scoped subject"
-                : "older generalized workflow lesson cluster was replaced by stronger newer conflicting evidence for the same scoped subject",
+          rationale: `older ${workflowClusterLabel} was replaced by stronger newer conflicting evidence for the same scoped subject`,
           metadata: {
-            source:
-              lessonFamily === "generalized_project_rule"
-                ? "candidate_submit_project_rule_auto_review"
-                : lessonFamily === "generalized_unmet_need"
-                  ? "candidate_submit_unmet_need_auto_review"
-                  : "candidate_submit_workflow_improvement_generic_auto_review",
+            source: workflowAutoReviewSource,
             candidateLifecycle: {
               family: "workflow_improvement",
               state: "rejected",
@@ -1542,13 +1414,14 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         });
       }
     }
+    const conflictingApprovedObjectIds = conflictingApprovedGeneralizedEntries.map(
+      (entry) => entry.id,
+    );
     const workflowCorrectionPlan = isAutoReviewedFamily
       ? resolveMemoryCorrectionPlan({
-          familyId: getMemoryFamilyIdByWorkflowLessonFamily(lessonFamily) ?? "workflow_improvement",
+          familyId: workflowCorrectionFamilyId,
           trigger: "cluster_auto_review",
-          conflictingApprovedObjectIds: conflictingApprovedGeneralizedEntries.map(
-            (entry) => entry.id,
-          ),
+          conflictingApprovedObjectIds,
         })
       : null;
     const supersedeTargetIds =
@@ -1556,11 +1429,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     const promotionMetadata = buildToolWorkflowImprovementAutoPromotionMetadata({
       input: params.input,
       autoPromotionProfile: isAutoReviewedFamily
-        ? lessonFamily === "generalized_project_rule"
-          ? "project_rule_auto_review_v1"
-          : lessonFamily === "generalized_unmet_need"
-            ? "unmet_need_auto_review_v1"
-            : "workflow_generalized_auto_review_v1"
+        ? workflowAutoReviewProfileId
         : "workflow_improvement_confirmation_v1",
       confirmationState: "confirmed",
       ...(isAutoReviewedFamily
@@ -1575,72 +1444,128 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
           }
         : {}),
     });
-    const reviewResult = await params.runtime.candidateReview.review({
-      candidateId: inspection.pendingCandidate.id,
-      outcome: "accepted",
-      metadata: promotionMetadata,
-    });
-    if (!reviewResult.accepted) {
-      return {
-        accepted: false,
-        status: "failed",
-        kind: params.input.kind,
-        reason: reviewResult.reason,
-      };
-    }
-    const promotionResult = await params.runtime.candidatePromotion.promoteToMemory({
-      candidateId: inspection.pendingCandidate.id,
-      metadata: promotionMetadata,
-    });
+    const promotionResult:
+      | { accepted: false; reason?: string }
+      | { accepted: true; promotedMemoryObjectId?: string | null; sourceEventId?: string } =
+      isAutoReviewedFamily
+        ? await (async () => {
+            const correctionAttempt = await attemptApprovedMemoryObjectCorrectionPromotion({
+              familyId: workflowCorrectionFamilyId,
+              trigger: "cluster_auto_review",
+              conflictingApprovedObjectIds,
+              candidateId: pendingCandidateId,
+              reviewCandidate: params.runtime.candidateReview.review,
+              promoteToMemory: params.runtime.candidatePromotion.promoteToMemory,
+              promotionMetadata,
+              reviewerAgentId: params.input.agentId ?? params.context?.agentId,
+              config: params.runtime.config,
+              schema: params.runtime.config.database?.schema ?? "memory_middleware",
+              logContext: {
+                key,
+                subjectKey,
+                lessonFamily,
+                correctionPromotion: true,
+              },
+              logLabel: "workflow-improvement auto-review",
+              supersedeRationale:
+                "older approved workflow guidance was superseded by reviewed clustered evidence for the same scoped subject",
+              supersedeSource: "workflow-improvement-cluster-auto-review",
+              supersedeReason: "candidate_cluster_auto_review",
+              supersedeMetadata: {
+                clusterKey: key,
+                subjectKey,
+                ...(guidancePattern ? { guidancePattern } : {}),
+                evidenceCount: 2,
+              },
+              supersedeTargets: async ({ promotedMemoryObjectId, supersedeTargetIds }) =>
+                supersedeApprovedWorkflowImprovementSubjectEntries({
+                  config: params.runtime.config,
+                  targetObjectIds: [...supersedeTargetIds],
+                  supersededByObjectId: promotedMemoryObjectId,
+                  reviewerAgentId: params.context?.agentId,
+                  metadata: {
+                    clusterKey: key,
+                    subjectKey,
+                    ...(guidancePattern ? { guidancePattern } : {}),
+                    evidenceCount: 2,
+                  },
+                }),
+            });
+            if (correctionAttempt.kind === "executed") {
+              return correctionAttempt;
+            }
+            const reviewResult = await params.runtime.candidateReview.review({
+              candidateId: pendingCandidateId,
+              outcome: "accepted",
+              metadata: promotionMetadata,
+            });
+            if (!reviewResult.accepted) {
+              return {
+                accepted: false as const,
+                reason: reviewResult.reason ?? "workflow improvement review rejected",
+              };
+            }
+            const promotionResult = await params.runtime.candidatePromotion.promoteToMemory({
+              candidateId: pendingCandidateId,
+              metadata: promotionMetadata,
+            });
+            return {
+              ...promotionResult,
+              sourceEventId: pendingCandidateSourceEventId,
+            };
+          })()
+        : await (async () => {
+            const reviewResult = await params.runtime.candidateReview.review({
+              candidateId: pendingCandidateId,
+              outcome: "accepted",
+              metadata: promotionMetadata,
+            });
+            if (!reviewResult.accepted) {
+              return {
+                accepted: false as const,
+                reason: reviewResult.reason ?? "workflow improvement review rejected",
+              };
+            }
+            const promotionResult = await params.runtime.candidatePromotion.promoteToMemory({
+              candidateId: pendingCandidateId,
+              metadata: promotionMetadata,
+            });
+            return {
+              ...promotionResult,
+              sourceEventId: pendingCandidateSourceEventId,
+            };
+          })();
     if (!promotionResult.accepted) {
       return {
         accepted: false,
         status: "failed",
         kind: params.input.kind,
-        reason: promotionResult.reason,
+        reason: promotionResult.reason ?? "workflow improvement promotion failed",
       };
     }
-    if (lessonKey && promotionResult.promotedMemoryObjectId) {
+    if (!promotionResult.promotedMemoryObjectId) {
+      return {
+        accepted: false,
+        status: "failed",
+        kind: params.input.kind,
+        reason: "workflow improvement promotion did not return a memory object id",
+      };
+    }
+    const promotedMemoryObjectId = promotionResult.promotedMemoryObjectId;
+    if (
+      captureClass === "workflow_environment_constraint" ||
+      captureClass === "workflow_tool_gotcha" ||
+      captureClass === "workflow_api_workaround"
+    ) {
       await storeApprovedProjectWorkflowSemanticEmbedding({
         config: params.runtime.config,
         cfg: params.context?.runtimeConfig ?? params.context?.config,
         agentId: params.context?.agentId,
         sessionKey: params.context?.sessionKey,
-        memoryObjectId: promotionResult.promotedMemoryObjectId,
+        memoryObjectId: promotedMemoryObjectId,
       });
     }
-    if (
-      isAutoReviewedFamily &&
-      promotionResult.promotedMemoryObjectId &&
-      supersedeTargetIds.length > 0
-    ) {
-      const supersedeResult = await supersedeApprovedWorkflowImprovementSubjectEntries({
-        config: params.runtime.config,
-        targetObjectIds: supersedeTargetIds,
-        supersededByObjectId: promotionResult.promotedMemoryObjectId,
-        reviewerAgentId: params.context?.agentId,
-        metadata: {
-          clusterKey: key,
-          subjectKey,
-          guidancePattern,
-          evidenceCount: 2,
-        },
-      });
-      if (!supersedeResult.accepted) {
-        return {
-          accepted: false,
-          status: "failed",
-          kind: params.input.kind,
-          reason: supersedeResult.reason ?? "workflow improvement supersede failed",
-        };
-      }
-    }
-    if (
-      params.input.projectId &&
-      supportsPhraseInduction &&
-      promotionResult.promotedMemoryObjectId &&
-      canonicalMatchForPhraseInduction
-    ) {
+    if (params.input.projectId && supportsPhraseInduction && canonicalMatchForPhraseInduction) {
       await maybeInduceWorkflowPhrasePattern({
         config: params.runtime.config,
         candidateIngress: params.runtime.candidateIngress,
@@ -1667,8 +1592,8 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
       kind: params.input.kind,
       storage: "database",
       reviewState: "approved",
-      eventId: promotionResult.sourceEventId ?? inspection.pendingCandidate.sourceEventId,
-      memoryObjectId: promotionResult.promotedMemoryObjectId,
+      eventId: promotionResult.sourceEventId ?? pendingCandidateSourceEventId ?? pendingCandidateId,
+      memoryObjectId: promotedMemoryObjectId,
     };
   }
 
@@ -1685,18 +1610,18 @@ export async function submitCandidateFromTool(params: {
     input: params.input,
     context: params.context,
   });
-  const executionContext = {
+  const executionContext = buildCandidateWriteExecutionContext({
     runtime: params.runtime,
     input: normalizedInput,
     ...(params.context ? { context: params.context } : {}),
-  };
+  });
   const resolvedExisting = await runCandidateWriteResolutionStages({
     context: executionContext,
     stages: [
       {
         id: "resolve_response_style",
         match: {
-          familyIds: ["response_style"],
+          lanes: ["user_preference"],
           submissionKinds: ["learning", "correction"],
         },
         resolve: ({ runtime, input, context }) =>
@@ -1709,7 +1634,7 @@ export async function submitCandidateFromTool(params: {
       {
         id: "resolve_project_fact",
         match: {
-          familyIds: ["project_fact"],
+          lanes: ["project_fact"],
           submissionKinds: ["learning", "correction"],
         },
         resolve: ({ runtime, input }) =>
@@ -1721,7 +1646,7 @@ export async function submitCandidateFromTool(params: {
       {
         id: "resolve_recurring_procedure",
         match: {
-          familyIds: ["recurring_procedure"],
+          lanes: ["recurring_procedure"],
           submissionKinds: ["procedure"],
         },
         resolve: ({ runtime, input }) =>
@@ -1733,7 +1658,7 @@ export async function submitCandidateFromTool(params: {
       {
         id: "resolve_workflow_improvement",
         match: {
-          familyIds: ["workflow_improvement", "project_rule", "unmet_need"],
+          lanes: ["workflow_guidance", "project_rule", "unmet_need"],
           submissionKinds: ["improvement"],
         },
         resolve: ({ runtime, input, context }) =>
@@ -1755,10 +1680,10 @@ export async function submitCandidateFromTool(params: {
         id: "reject_auto_capture_duplicate",
         match: {
           submissionKinds: ["learning", "correction", "improvement"],
-          familyIds: [
-            "response_style",
+          lanes: [
+            "user_preference",
             "project_fact",
-            "workflow_improvement",
+            "workflow_guidance",
             "project_rule",
             "unmet_need",
           ],
@@ -1785,9 +1710,9 @@ export async function submitCandidateFromTool(params: {
   if (duplicateGuard) {
     return duplicateGuard;
   }
-  const submitted = await submitCandidateByKind({
+  const submitted = await submitCandidateWritePlan({
     runtime: params.runtime,
-    input: normalizedInput,
+    plan: executionContext.candidateWritePlan,
   });
   return runCandidateWriteResultStages({
     context: executionContext,
@@ -1796,7 +1721,7 @@ export async function submitCandidateFromTool(params: {
       {
         id: "auto_promote_preference",
         match: {
-          familyIds: ["response_style"],
+          lanes: ["user_preference"],
           submissionKinds: ["learning", "correction"],
         },
         apply: ({ context, result }) =>
@@ -1809,7 +1734,7 @@ export async function submitCandidateFromTool(params: {
       {
         id: "auto_promote_project_fact",
         match: {
-          familyIds: ["project_fact"],
+          lanes: ["project_fact"],
           submissionKinds: ["learning", "correction"],
         },
         apply: ({ context, result }) =>
@@ -1822,7 +1747,7 @@ export async function submitCandidateFromTool(params: {
       {
         id: "auto_promote_recurring_procedure",
         match: {
-          familyIds: ["recurring_procedure"],
+          lanes: ["recurring_procedure"],
           submissionKinds: ["procedure"],
         },
         apply: ({ context, result }) =>
@@ -2037,30 +1962,34 @@ function buildWorkflowImprovementSemanticMetadata(params: {
   detectionSource: "semantic" | "deterministic";
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
+  captureClass?: WorkflowImprovementCaptureClass;
   lessonFamily: WorkflowImprovementLessonFamily;
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
 }): Record<string, unknown> {
   return {
     semanticDetection: {
-      source:
-        params.detectionSource === "deterministic"
-          ? "workflow_phrase_induction_v1"
-          : params.lessonFamily === "generalized_project_rule"
-            ? "project_rule_semantic_v1"
-            : params.lessonFamily === "generalized_unmet_need"
-              ? "unmet_need_semantic_v1"
-              : "workflow_improvement_semantic_v2",
+      source: resolveWorkflowSemanticDetectionSource({
+        detectionSource: params.detectionSource,
+        ...(params.captureClass ? { captureClass: params.captureClass } : {}),
+        lessonFamily: params.lessonFamily,
+      }),
       detectionSource: params.detectionSource,
       confidence: params.confidence,
       lessonFamily: params.lessonFamily,
-      ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
-      ...(params.toolKey ? { toolKey: params.toolKey } : {}),
       ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
       evidence: params.evidence,
     },
   };
+}
+
+function asWorkflowImprovementLessonFamily(
+  value: string | null | undefined,
+): WorkflowImprovementLessonFamily | undefined {
+  return value === "generalized_workflow_lesson" ||
+    value === "generalized_project_rule" ||
+    value === "generalized_unmet_need"
+    ? value
+    : undefined;
 }
 
 function buildPendingConfirmationMetadata(params: {
@@ -2138,8 +2067,6 @@ function buildWorkflowImprovementPendingConfirmationMetadata(params: {
   evidence: string[];
   lessonFamily: WorkflowImprovementLessonFamily;
   state?: "pending_confirmation" | "hold_for_more_evidence";
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
   clusterKey?: string;
   contradictionCount?: number;
@@ -2154,8 +2081,6 @@ function buildWorkflowImprovementPendingConfirmationMetadata(params: {
       observedAt,
       expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
       lessonFamily: params.lessonFamily,
-      ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
-      ...(params.toolKey ? { toolKey: params.toolKey } : {}),
       ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
       ...(params.clusterKey ? { clusterKey: params.clusterKey } : {}),
       ...(typeof params.contradictionCount === "number"
@@ -2220,8 +2145,6 @@ type ManagedWorkflowImprovementResolution = {
   parsed: OrdinaryTurnAutoCaptureMatch;
   lessonFamily: WorkflowImprovementLessonFamily;
   reviewMode: "pending_confirmation" | "hold_for_more_evidence";
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
   source: "content" | "raw";
   detectionSource: "semantic" | "deterministic";
@@ -2450,6 +2373,36 @@ async function resolveManagedResponseStyleLearning(params: {
     : null;
 }
 
+async function resolveManagedResponseStyleCorrection(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: CandidateSubmissionInput;
+  context?: OpenClawPluginToolContext;
+}): Promise<ManagedResponseStyleResolution | null> {
+  const { input, context } = params;
+  const rawCandidates: string[] = [];
+  if (typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0) {
+    rawCandidates.push(input.metadata.raw);
+  }
+  const rawFromContext = await resolveLatestUserTurnFromContext(context);
+  if (rawFromContext && !rawCandidates.includes(rawFromContext)) {
+    rawCandidates.push(rawFromContext);
+  }
+  const resolution = await resolveResponseStyleIngestion({
+    config: params.runtime.config,
+    content: input.content,
+    primarySource: "content",
+    rawCandidates,
+    mode: "candidate_correction",
+    allowPhrasePatternMatch: false,
+  });
+  return resolution?.action === "capture"
+    ? {
+        ...resolution,
+        source: resolution.source === "transcript" ? "content" : resolution.source,
+      }
+    : null;
+}
+
 async function resolveManagedProjectFactLearning(
   input: CandidateSubmissionInput,
 ): Promise<ManagedProjectFactResolution | null> {
@@ -2558,8 +2511,6 @@ async function resolveManagedWorkflowImprovementSubmission(params: {
     parsed: resolution.parsed,
     lessonFamily: resolution.lessonFamily,
     reviewMode: resolution.reviewMode,
-    ...(resolution.lessonKey ? { lessonKey: resolution.lessonKey } : {}),
-    ...(resolution.toolKey ? { toolKey: resolution.toolKey } : {}),
     ...(resolution.guidancePattern ? { guidancePattern: resolution.guidancePattern } : {}),
     source: resolution.source === "transcript" ? "content" : resolution.source,
     detectionSource: resolution.detectionSource,
@@ -2946,8 +2897,8 @@ async function normalizeManagedToolCandidateInput(params: {
     if (!workflowImprovementResolution) {
       return input;
     }
-    const workflowCaptureMetadata = getCaptureMetadataByWorkflowLessonFamily(
-      workflowImprovementResolution.lessonFamily,
+    const workflowCaptureMetadata = getCaptureMetadataByCaptureClass(
+      workflowImprovementResolution.parsed.captureClass,
     );
     return mergeCanonicalResolvedIngestionMetadata({
       input: {
@@ -2977,12 +2928,6 @@ async function normalizeManagedToolCandidateInput(params: {
           reasonCode: workflowImprovementResolution.parsed.reasonCode,
           template: workflowImprovementResolution.parsed.template,
           lessonFamily: workflowImprovementResolution.lessonFamily,
-          ...(workflowImprovementResolution.lessonKey
-            ? { lessonKey: workflowImprovementResolution.lessonKey }
-            : {}),
-          ...(workflowImprovementResolution.toolKey
-            ? { toolKey: workflowImprovementResolution.toolKey }
-            : {}),
           ...(workflowImprovementResolution.guidancePattern
             ? { guidancePattern: workflowImprovementResolution.guidancePattern }
             : {}),
@@ -3035,22 +2980,21 @@ async function normalizeManagedToolCandidateInput(params: {
           ...(workflowImprovementResolution.parsed.normalizedRationale
             ? { normalizedRationale: workflowImprovementResolution.parsed.normalizedRationale }
             : {}),
-          ...(workflowImprovementResolution.lessonFamily === "generalized_unmet_need"
-            ? { recommendationMode: "recommendation_only" }
-            : { guidanceMode: "guidance_only" }),
+          ...(resolveCanonicalWorkflowAutoReviewProfile({
+            captureClass: workflowImprovementResolution.parsed.captureClass,
+            lessonFamily: workflowImprovementResolution.lessonFamily,
+            template: workflowImprovementResolution.parsed.template,
+            familyId: workflowImprovementResolution.familyId,
+          })?.modeMetadata ?? { guidanceMode: "guidance_only" }),
           toolName: "memory_candidate_submit",
         },
         ...buildWorkflowImprovementSemanticMetadata({
           detectionSource: workflowImprovementResolution.detectionSource,
           confidence: workflowImprovementResolution.confidence,
           evidence: workflowImprovementResolution.evidence,
+          captureClass: workflowImprovementResolution.parsed
+            .captureClass as WorkflowImprovementCaptureClass,
           lessonFamily: workflowImprovementResolution.lessonFamily,
-          ...(workflowImprovementResolution.lessonKey
-            ? { lessonKey: workflowImprovementResolution.lessonKey }
-            : {}),
-          ...(workflowImprovementResolution.toolKey
-            ? { toolKey: workflowImprovementResolution.toolKey }
-            : {}),
           ...(workflowImprovementResolution.guidancePattern
             ? { guidancePattern: workflowImprovementResolution.guidancePattern }
             : {}),
@@ -3060,24 +3004,82 @@ async function normalizeManagedToolCandidateInput(params: {
           evidence: workflowImprovementResolution.evidence,
           lessonFamily: workflowImprovementResolution.lessonFamily,
           state: workflowImprovementResolution.reviewMode,
-          ...(workflowImprovementResolution.lessonKey
-            ? { lessonKey: workflowImprovementResolution.lessonKey }
-            : {}),
-          ...(workflowImprovementResolution.toolKey
-            ? { toolKey: workflowImprovementResolution.toolKey }
-            : {}),
           ...(workflowImprovementResolution.guidancePattern
             ? { guidancePattern: workflowImprovementResolution.guidancePattern }
             : {}),
-          ...(workflowImprovementResolution.lessonFamily !== "supported_lesson"
-            ? { clusterKey: workflowImprovementResolution.parsed.key }
-            : {}),
+          clusterKey: workflowImprovementResolution.parsed.key,
         }),
       },
     });
   }
 
   if (input.kind === "correction") {
+    const responseStyleCorrection = await resolveManagedResponseStyleCorrection({
+      runtime: params.runtime,
+      input,
+      context,
+    });
+    if (responseStyleCorrection) {
+      return mergeCanonicalResolvedIngestionMetadata({
+        input,
+        resolution: responseStyleCorrection,
+        patch: {
+          category:
+            responseStyleCorrection.parsed.captureClass === "requirement_correction"
+              ? "user_requirement_correction"
+              : "user_preference_correction",
+          source:
+            responseStyleCorrection.parsed.captureClass === "requirement_correction"
+              ? "conversational_user_requirement_correction"
+              : "conversational_user_correction",
+          subject_key: responseStyleCorrection.parsed.subjectKey,
+          ...(responseStyleCorrection.parsed.captureClass === "preference_correction"
+            ? { preference_key: responseStyleCorrection.parsed.subjectKey }
+            : {}),
+          autoCapture: {
+            source: "model_tool_candidate_submit",
+            captureSeam: "model_tool_primary",
+            profile: responseStyleCorrection.parsed.profile,
+            captureClass: responseStyleCorrection.parsed.captureClass,
+            reasonCode: responseStyleCorrection.parsed.reasonCode,
+            template: responseStyleCorrection.parsed.template,
+            key: responseStyleCorrection.parsed.key,
+            subjectKey: responseStyleCorrection.parsed.subjectKey,
+            subject: responseStyleCorrection.parsed.subject,
+            ...(typeof responseStyleCorrection.parsed.normalizedSubject === "string"
+              ? { normalizedSubject: responseStyleCorrection.parsed.normalizedSubject }
+              : {}),
+            value: responseStyleCorrection.parsed.value,
+            ...(typeof responseStyleCorrection.parsed.normalizedValue === "string"
+              ? { normalizedValue: responseStyleCorrection.parsed.normalizedValue }
+              : {}),
+            ...(responseStyleCorrection.responseStyleFamily
+              ? { responseStyleFamily: responseStyleCorrection.responseStyleFamily }
+              : {}),
+            ...(responseStyleCorrection.parsed.projectScope
+              ? { projectScope: responseStyleCorrection.parsed.projectScope }
+              : {}),
+            toolName: "memory_candidate_submit",
+          },
+          ...(responseStyleCorrection.detectionSource === "semantic"
+            ? buildResponseStyleSemanticMetadata({
+                detectionSource: responseStyleCorrection.detectionSource,
+                confidence: responseStyleCorrection.confidence,
+                evidence: responseStyleCorrection.evidence,
+              })
+            : {}),
+          ...(responseStyleCorrection.reviewMode !== "direct"
+            ? buildPendingConfirmationMetadata({
+                confidence: responseStyleCorrection.confidence,
+                evidence: responseStyleCorrection.evidence,
+                responseStyleFamily: responseStyleCorrection.responseStyleFamily,
+                state: responseStyleCorrection.reviewMode,
+              })
+            : {}),
+        },
+      });
+    }
+
     const projectFactCorrection = await resolveManagedProjectFactCorrection({
       input,
       context,
@@ -3225,16 +3227,20 @@ async function maybeAutoPromoteToolSubmittedPreference(params: {
   ) {
     return params.result;
   }
-  const familyId = readNestedMetadataString(params.input.metadata, ["autoCapture", "family"]);
+  const familyId = readAutoCaptureString(params.input.metadata, "family");
   if (familyId && familyId !== "response_style") {
     return params.result;
   }
   const parsedGeneral = resolveAutoPromotableFeedbackSubmission(params.input);
-  const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
-  const captureClass = readNestedMetadataString(params.input.metadata, [
-    "autoCapture",
-    "captureClass",
-  ]);
+  const template = readAutoCaptureString(params.input.metadata, "template");
+  const key = readAutoCaptureString(params.input.metadata, "key");
+  const subjectKey = readAutoCaptureString(params.input.metadata, "subjectKey");
+  const captureClass = readAutoCaptureString(params.input.metadata, "captureClass");
+  const responseStyleFamily =
+    (readAutoCaptureString(
+      params.input.metadata,
+      "responseStyleFamily",
+    ) as ResponseStyleFamily | null) ?? null;
   const pendingConfirmationState = readNestedMetadataString(params.input.metadata, [
     "candidateLifecycle",
     "state",
@@ -3254,6 +3260,59 @@ async function maybeAutoPromoteToolSubmittedPreference(params: {
         (captureClass !== "explicit_requirement" && captureClass !== "requirement_correction")))
   ) {
     return params.result;
+  }
+  if (captureClass === "requirement_correction" && responseStyleFamily === "generalized_guidance") {
+    if (!key || !subjectKey) {
+      return params.result;
+    }
+    const inspection = await inspectResponseStyleLifecycle({
+      config: params.runtime.config,
+      key,
+      subjectKey,
+    });
+    if (!inspection) {
+      return params.result;
+    }
+    const correctionAttempt = await attemptApprovedMemoryObjectCorrectionPromotion({
+      familyId: "response_style",
+      trigger: "explicit_correction",
+      promotionPolicy: resolveMemoryCorrectionPromotionPolicy(autoPromotion.profile),
+      activeApprovedSubjectObjectIds: inspection.activeApprovedSubjectObjectIds,
+      candidateId: params.result.memoryObjectId,
+      reviewCandidate: params.runtime.candidateReview.review,
+      promoteToMemory: params.runtime.candidatePromotion.promoteToMemory,
+      promotionMetadata: buildToolResponseStyleAutoPromotionMetadata({
+        input: params.input,
+        autoPromotionProfile: "response_style_generalized_correction_v1",
+      }),
+      reviewerAgentId: params.input.agentId,
+      config: params.runtime.config,
+      schema: params.runtime.config.database?.schema ?? "memory_middleware",
+      logContext: {
+        key,
+        subjectKey,
+        correctionPromotion: true,
+      },
+      logLabel: "response-style correction",
+      supersedeRationale:
+        "older approved memory was superseded by a reviewed correction promotion for the same bounded subject",
+      supersedeSource: "response-style-correction-promotion",
+      supersedeReason: "candidate_correction_promotion",
+      supersedeMetadata: {
+        subjectKey,
+      },
+    });
+    if (correctionAttempt.kind === "not_executable") {
+      return params.result;
+    }
+    if (!correctionAttempt.accepted || !correctionAttempt.promotedMemoryObjectId) {
+      return params.result;
+    }
+    return {
+      ...params.result,
+      memoryObjectId: correctionAttempt.promotedMemoryObjectId,
+      reviewState: "approved",
+    };
   }
   const autoPromotionMetadata = parsedGeneral
     ? {
@@ -3312,20 +3371,18 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
   ) {
     return params.result;
   }
-  const familyId = readNestedMetadataString(params.input.metadata, ["autoCapture", "family"]);
+  const familyId = readAutoCaptureString(params.input.metadata, "family");
   if (familyId && familyId !== "project_fact") {
     return params.result;
   }
 
-  const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
-  const key = readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]);
-  const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
+  const template = readAutoCaptureString(params.input.metadata, "template");
+  const key = readAutoCaptureString(params.input.metadata, "key");
+  const subjectKey = readAutoCaptureString(params.input.metadata, "subjectKey");
+  const fieldKey = readAutoCaptureString(params.input.metadata, "fieldKey");
   const factFamily =
-    readNestedMetadataString(params.input.metadata, ["autoCapture", "factFamily"]) ??
-    (readNestedMetadataString(params.input.metadata, ["autoCapture", "fieldKey"])
-      ? "supported_field"
-      : undefined);
-  const fieldKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "fieldKey"]);
+    readAutoCaptureString(params.input.metadata, "factFamily") ??
+    (fieldKey ? "supported_field" : undefined);
   if (
     (template !== "project_fact_named_scope" &&
       template !== "project_fact_generalized_named_scope") ||
@@ -3347,18 +3404,11 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
     return params.result;
   }
 
-  const correctionPlan = resolveMemoryCorrectionPlan({
+  const correctionAttempt = await attemptApprovedMemoryObjectCorrectionPromotion({
     familyId: "project_fact",
     trigger: "explicit_correction",
     promotionPolicy: resolveMemoryCorrectionPromotionPolicy(autoPromotion.profile),
     activeApprovedSubjectObjectIds: inspection.activeApprovedSubjectObjectIds,
-  });
-  if (!isExecutableMemoryObjectCorrectionPlan(correctionPlan)) {
-    return params.result;
-  }
-  const correctionResult = await executeMemoryObjectCorrectionPlan({
-    familyId: "project_fact",
-    plan: correctionPlan,
     candidateId: params.result.memoryObjectId,
     reviewCandidate: params.runtime.candidateReview.review,
     promoteToMemory: params.runtime.candidatePromotion.promoteToMemory,
@@ -3387,13 +3437,16 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
       subjectKey,
     },
   });
-  if (!correctionResult.accepted || !correctionResult.promotedMemoryObjectId) {
+  if (correctionAttempt.kind === "not_executable") {
+    return params.result;
+  }
+  if (!correctionAttempt.accepted || !correctionAttempt.promotedMemoryObjectId) {
     return params.result;
   }
 
   return {
     ...params.result,
-    memoryObjectId: correctionResult.promotedMemoryObjectId,
+    memoryObjectId: correctionAttempt.promotedMemoryObjectId,
     reviewState: "approved",
   };
 }
@@ -3413,23 +3466,19 @@ async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {
   ) {
     return params.result;
   }
-  const familyId = readNestedMetadataString(params.input.metadata, ["autoCapture", "family"]);
+  const familyId = readAutoCaptureString(params.input.metadata, "family");
   if (familyId && familyId !== "recurring_procedure") {
     return params.result;
   }
 
-  const template = readNestedMetadataString(params.input.metadata, ["autoCapture", "template"]);
-  const subjectKey = readNestedMetadataString(params.input.metadata, ["autoCapture", "subjectKey"]);
-  const procedureFamily = readNestedMetadataString(params.input.metadata, [
-    "autoCapture",
-    "procedureFamily",
-  ]) as RecurringProcedureFamily | undefined;
-  const procedureKey = readNestedMetadataString(params.input.metadata, [
-    "autoCapture",
-    "procedureKey",
-  ]);
+  const template = readAutoCaptureString(params.input.metadata, "template");
+  const subjectKey = readAutoCaptureString(params.input.metadata, "subjectKey");
+  const procedureFamily = readAutoCaptureString(params.input.metadata, "procedureFamily") as
+    | RecurringProcedureFamily
+    | undefined;
+  const procedureKey = readAutoCaptureString(params.input.metadata, "procedureKey");
   const title =
-    readNestedMetadataString(params.input.metadata, ["autoCapture", "title"]) ??
+    readAutoCaptureString(params.input.metadata, "title") ??
     (procedureKey && isSupportedRecurringProcedureKey(procedureKey)
       ? getRecurringProcedureTitle(procedureKey)
       : undefined);
@@ -3437,10 +3486,7 @@ async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {
     "candidateLifecycle",
     "state",
   ]);
-  const captureClass = readNestedMetadataString(params.input.metadata, [
-    "autoCapture",
-    "captureClass",
-  ]);
+  const captureClass = readAutoCaptureString(params.input.metadata, "captureClass");
   if (
     (template !== "named_recurring_checklist" && template !== "generalized_recurring_checklist") ||
     !subjectKey ||
@@ -3455,9 +3501,7 @@ async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {
 
   const inspection = await inspectStagedRecurringProcedureLifecycle({
     runtime: params.runtime,
-    key:
-      readNestedMetadataString(params.input.metadata, ["autoCapture", "key"]) ??
-      params.result.memoryObjectId,
+    key: readAutoCaptureString(params.input.metadata, "key") ?? params.result.memoryObjectId,
     subjectKey,
   });
   if (!inspection) {

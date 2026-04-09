@@ -43,17 +43,10 @@ export type RecurringProcedureQueryHint = {
 };
 
 export type WorkflowImprovementQueryHint = {
-  lessonKey:
-    | "vitest_wrapper_required"
-    | "scripts_committer_required"
-    | "git_stash_unsafe"
-    | "docs_only_check_fast"
-    | "memory_proof_runner_required"
-    | "readyz_for_readiness"
-    | "python_command_unavailable"
-    | "gateway_tools_invoke_forbidden"
-    | "openai_embeddings_api_key_required"
-    | "anthropic_context1m_eligible_credential_required";
+  captureClass:
+    | "workflow_tool_gotcha"
+    | "workflow_environment_constraint"
+    | "workflow_api_workaround";
 };
 
 export type GeneralizedWorkflowGuidancePatternHint =
@@ -152,9 +145,9 @@ function buildCanonicalFacetFilters(params: {
   }
   if (params.workflowImprovementHint) {
     filters.push({
-      key: "lessonKey",
+      key: "captureClass",
       operator: "equals",
-      value: params.workflowImprovementHint.lessonKey,
+      value: params.workflowImprovementHint.captureClass,
     });
   }
   if (params.generalizedWorkflowPatternHint) {
@@ -232,16 +225,12 @@ function buildCanonicalSemanticFallbackStrategies(params: {
   if (params.kind !== "project" || scopeIncludesCandidates(params.scope)) {
     return [];
   }
-  switch (params.workflowImprovementHint?.lessonKey) {
-    case "python_command_unavailable":
-    case "gateway_tools_invoke_forbidden":
+  switch (params.workflowImprovementHint?.captureClass) {
+    case "workflow_environment_constraint":
       return ["environment_constraint"];
-    case "vitest_wrapper_required":
-    case "scripts_committer_required":
-    case "git_stash_unsafe":
+    case "workflow_tool_gotcha":
       return ["workflow_tool_gotcha"];
-    case "openai_embeddings_api_key_required":
-    case "anthropic_context1m_eligible_credential_required":
+    case "workflow_api_workaround":
       return ["api_workaround"];
     default:
       return ["environment_constraint", "workflow_tool_gotcha", "api_workaround"];
@@ -565,7 +554,7 @@ export function inferWorkflowImprovementQueryHint(
     normalized.includes("test wrapper") ||
     normalized.includes("run tests")
   ) {
-    return { lessonKey: "vitest_wrapper_required" };
+    return { captureClass: "workflow_tool_gotcha" };
   }
   if (
     normalized.includes("scripts/committer") ||
@@ -573,10 +562,10 @@ export function inferWorkflowImprovementQueryHint(
     normalized.includes("git commit") ||
     normalized.includes("scoped commit")
   ) {
-    return { lessonKey: "scripts_committer_required" };
+    return { captureClass: "workflow_tool_gotcha" };
   }
   if (normalized.includes("git stash") || normalized.includes("stash")) {
-    return { lessonKey: "git_stash_unsafe" };
+    return { captureClass: "workflow_tool_gotcha" };
   }
   if (
     (normalized.includes("docs-only") ||
@@ -590,7 +579,7 @@ export function inferWorkflowImprovementQueryHint(
       normalized.includes("pnpm check") ||
       normalized.includes("pnpm build"))
   ) {
-    return { lessonKey: "docs_only_check_fast" };
+    return { captureClass: "workflow_tool_gotcha" };
   }
   if (
     normalized.includes("memory:proof") ||
@@ -599,14 +588,14 @@ export function inferWorkflowImprovementQueryHint(
         normalized.includes("isolated proof") ||
         normalized.includes("production proof")))
   ) {
-    return { lessonKey: "memory_proof_runner_required" };
+    return { captureClass: "workflow_tool_gotcha" };
   }
   if (
     normalized.includes("readyz") ||
     ((normalized.includes("healthz") || normalized.includes("liveness")) &&
       normalized.includes("readiness"))
   ) {
-    return { lessonKey: "readyz_for_readiness" };
+    return { captureClass: "workflow_tool_gotcha" };
   }
   if (
     (normalized.includes("python") &&
@@ -616,32 +605,36 @@ export function inferWorkflowImprovementQueryHint(
         normalized.includes("python command"))) ||
     normalized.includes("tsx")
   ) {
-    return { lessonKey: "python_command_unavailable" };
+    return { captureClass: "workflow_environment_constraint" };
   }
   if (
     normalized.includes("/tools/invoke") ||
     normalized.includes("tools invoke") ||
     (normalized.includes("gateway") && normalized.includes("runtime invocation"))
   ) {
-    return { lessonKey: "gateway_tools_invoke_forbidden" };
+    return { captureClass: "workflow_environment_constraint" };
   }
   if (
     (normalized.includes("embedding") || normalized.includes("semantic memory search")) &&
-    (normalized.includes("codex oauth") ||
-      normalized.includes("codex") ||
-      normalized.includes("chatgpt oauth")) &&
-    (normalized.includes("api key") || normalized.includes("openai_api_key"))
+    (normalized.includes("oauth") ||
+      normalized.includes("auth profile") ||
+      normalized.includes("provider profile") ||
+      normalized.includes("synthetic auth")) &&
+    (normalized.includes("api key") ||
+      normalized.includes("provider key") ||
+      normalized.includes("credential"))
   ) {
-    return { lessonKey: "openai_embeddings_api_key_required" };
+    return { captureClass: "workflow_api_workaround" };
   }
   if (
-    (normalized.includes("anthropic") || normalized.includes("claude")) &&
     (normalized.includes("long context") || normalized.includes("context1m")) &&
     (normalized.includes("extra usage") ||
       normalized.includes("429") ||
-      normalized.includes("fallback model"))
+      normalized.includes("fallback model") ||
+      normalized.includes("eligible credential") ||
+      normalized.includes("billed api key"))
   ) {
-    return { lessonKey: "anthropic_context1m_eligible_credential_required" };
+    return { captureClass: "workflow_api_workaround" };
   }
   return null;
 }
@@ -702,8 +695,8 @@ export function buildCanonicalMemoryRetrievalPlan(params: {
             ? { responseStyleNormalizedSubject: responseStyleHint.normalizedSubject }
             : {}),
           ...(projectFactHint?.fieldKey ? { projectFactFieldKey: projectFactHint.fieldKey } : {}),
-          ...(workflowImprovementHint?.lessonKey
-            ? { workflowLessonKey: workflowImprovementHint.lessonKey }
+          ...(workflowImprovementHint?.captureClass
+            ? { workflowCaptureClass: workflowImprovementHint.captureClass }
             : {}),
           ...(projectMemoryIntentFamily ? { projectMemoryIntentFamily } : {}),
           ...(generalizedWorkflowPatternHint ? { generalizedWorkflowPatternHint } : {}),
@@ -773,22 +766,15 @@ export function resolveProjectFactQueryHintFromCanonicalPlan(
 export function resolveWorkflowImprovementQueryHintFromCanonicalPlan(
   plan: CanonicalMemoryRetrievalPlan,
 ): WorkflowImprovementQueryHint | null {
-  const lessonKey = readCanonicalStringFacetFilter(plan, "lessonKey");
+  const captureClass = readCanonicalStringFacetFilter(plan, "captureClass");
   if (
-    lessonKey !== "vitest_wrapper_required" &&
-    lessonKey !== "scripts_committer_required" &&
-    lessonKey !== "git_stash_unsafe" &&
-    lessonKey !== "docs_only_check_fast" &&
-    lessonKey !== "memory_proof_runner_required" &&
-    lessonKey !== "readyz_for_readiness" &&
-    lessonKey !== "python_command_unavailable" &&
-    lessonKey !== "gateway_tools_invoke_forbidden" &&
-    lessonKey !== "openai_embeddings_api_key_required" &&
-    lessonKey !== "anthropic_context1m_eligible_credential_required"
+    captureClass !== "workflow_tool_gotcha" &&
+    captureClass !== "workflow_environment_constraint" &&
+    captureClass !== "workflow_api_workaround"
   ) {
     return null;
   }
-  return { lessonKey };
+  return { captureClass };
 }
 
 export function resolveProjectMemoryIntentFamilyFromCanonicalPlan(

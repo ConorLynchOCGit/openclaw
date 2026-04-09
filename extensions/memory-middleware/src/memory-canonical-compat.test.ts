@@ -57,7 +57,7 @@ describe("memory-canonical-compat", () => {
       scope: { kind: "project", projectId: "atlas-forge" },
       validationStatus: "pending_confirmation",
       compatibility: {
-        transitionalFamilyId: "project_fact",
+        captureCategory: "project_fact",
       },
       facets: {
         fact: true,
@@ -79,8 +79,6 @@ describe("memory-canonical-compat", () => {
           reasonCode: "workflow_generalized_guidance_statement",
           template: "workflow_generalized_guidance",
           lessonFamily: "generalized_workflow_lesson",
-          lessonKey: "docs_only_check_fast",
-          toolKey: "validation_tier",
           guidancePattern: "use_instead_of",
           subject: "lazy-loading boundary",
           value: "open the affected path once after the import change",
@@ -95,8 +93,6 @@ describe("memory-canonical-compat", () => {
           normalizedRecommendedAction: "use pnpm check:fast",
         },
         lessonFamily: "generalized_workflow_lesson",
-        lessonKey: "docs_only_check_fast",
-        toolKey: "validation_tier",
         guidancePattern: "use_instead_of",
         reviewMode: "hold_for_more_evidence",
         source: "content",
@@ -118,8 +114,6 @@ describe("memory-canonical-compat", () => {
         workflow_guidance: true,
         validated_approach: true,
         lessonFamily: "generalized_workflow_lesson",
-        lessonKey: "docs_only_check_fast",
-        toolKey: "validation_tier",
         guidancePattern: "use_instead_of",
       },
     });
@@ -202,7 +196,6 @@ describe("memory-canonical-compat", () => {
         reviewMode: "hold_for_more_evidence",
       },
       compatibility: {
-        transitionalFamilyId: "workflow_improvement",
         candidateKind: "improvement",
         captureClass: "project_rule_guidance",
       },
@@ -219,8 +212,6 @@ describe("memory-canonical-compat", () => {
         reasonCode: "project_rule_guidance_statement",
         template: "project_rule_guidance",
         lessonFamily: "generalized_project_rule",
-        lessonKey: "docs_only_check_fast",
-        toolKey: "validation_tier",
         guidancePattern: "use_instead_of",
         subject: "docs localization changes",
         value: "update English docs first and rerun docs i18n",
@@ -252,8 +243,6 @@ describe("memory-canonical-compat", () => {
         kind: "feedback",
         facets: {
           lessonFamily: "generalized_project_rule",
-          lessonKey: "docs_only_check_fast",
-          toolKey: "validation_tier",
           guidancePattern: "use_instead_of",
           recommendedAction: "update English docs first and rerun docs i18n",
           avoidAction: "edit docs/zh-CN directly",
@@ -270,7 +259,6 @@ describe("memory-canonical-compat", () => {
         evidence: ["workflow_guidance_match"],
       },
       compatibility: {
-        transitionalFamilyId: "workflow_improvement",
         candidateKind: "improvement",
         captureClass: "project_rule_guidance",
       },
@@ -288,10 +276,10 @@ describe("memory-canonical-compat", () => {
               statement: "update English docs first",
               tags: ["workflow_guidance", "feedback"],
               facets: {
-                lessonKey: "docs_only_check_fast",
+                guidancePattern: "use_instead_of",
               },
               compatibility: {
-                transitionalFamilyId: "workflow_improvement",
+                captureCategory: "workflow_improvement",
               },
             },
           },
@@ -303,10 +291,10 @@ describe("memory-canonical-compat", () => {
       statement: "update English docs first",
       tags: ["workflow_guidance", "feedback"],
       facets: {
-        lessonKey: "docs_only_check_fast",
+        guidancePattern: "use_instead_of",
       },
       compatibility: {
-        transitionalFamilyId: "workflow_improvement",
+        captureCategory: "workflow_improvement",
       },
     });
   });
@@ -320,11 +308,10 @@ describe("memory-canonical-compat", () => {
             subject: "docs localization changes",
             statement: "update English docs first",
             facets: {
-              lessonKey: "docs_only_check_fast",
-              toolKey: "validation_tier",
+              guidancePattern: "use_instead_of",
             },
             compatibility: {
-              transitionalFamilyId: "workflow_improvement",
+              captureCategory: "workflow_improvement",
             },
           },
           identity: {
@@ -332,7 +319,6 @@ describe("memory-canonical-compat", () => {
             subjectKey: "docs-localization-changes",
           },
           compatibility: {
-            transitionalFamilyId: "workflow_improvement",
             candidateKind: "improvement",
             captureClass: "project_rule_guidance",
             reasonCode: "project_rule_guidance_statement",
@@ -346,8 +332,12 @@ describe("memory-canonical-compat", () => {
     } satisfies Record<string, unknown>;
 
     expect(
-      readCanonicalFirstMetadataString(metadata, ["candidateMetadata", "autoCapture", "lessonKey"]),
-    ).toBe("docs_only_check_fast");
+      readCanonicalFirstMetadataString(metadata, [
+        "candidateMetadata",
+        "autoCapture",
+        "guidancePattern",
+      ]),
+    ).toBe("use_instead_of");
     expect(
       readCanonicalFirstMetadataString(metadata, ["candidateMetadata", "autoCapture", "key"]),
     ).toBe("workflow-candidate-1");
@@ -369,10 +359,10 @@ describe("memory-canonical-compat", () => {
           statement: "use docs i18n after English changes",
           tags: ["reference"],
           facets: {
-            toolKey: "validation_tier",
+            guidancePattern: "use_instead_of",
           },
           compatibility: {
-            transitionalFamilyId: "workflow_improvement",
+            captureCategory: "workflow_improvement",
           },
         },
         identity: {
@@ -385,7 +375,6 @@ describe("memory-canonical-compat", () => {
           reviewMode: "hold_for_more_evidence",
         },
         compatibility: {
-          transitionalFamilyId: "workflow_improvement",
           candidateKind: "improvement",
           captureClass: "project_rule_guidance",
           template: "project_rule_guidance",
@@ -406,7 +395,6 @@ describe("memory-canonical-compat", () => {
         subjectKey: "docs-updating",
       },
       compatibility: {
-        transitionalFamilyId: "workflow_improvement",
         captureClass: "project_rule_guidance",
       },
     });

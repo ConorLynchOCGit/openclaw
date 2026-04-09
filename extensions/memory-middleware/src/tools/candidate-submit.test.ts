@@ -24,8 +24,10 @@ const maybeInduceResponseStylePhrasePattern = vi.hoisted(() =>
   vi.fn(async () => ({ status: "existing" })),
 );
 const resolveWorkflowImprovementIngestion = vi.hoisted(() => vi.fn());
+const createSemanticFallbackSharedState = vi.hoisted(() => vi.fn(() => ({})));
 
 vi.mock("../semantic-retrieval-routing.js", () => ({
+  createSemanticFallbackSharedState,
   storeApprovedProjectWorkflowSemanticEmbedding,
 }));
 vi.mock("../workflow-phrase-induction.js", async () => {
@@ -371,30 +373,32 @@ describe("memory candidate submit tool", () => {
     expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
       kind: "improvement",
       content:
-        'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
+        'Workflow improvement: for scoped commits, use scripts/committer "<msg>" <file...> instead of manual git add / git commit because staging stays scoped.',
       metadata: expect.objectContaining({
         canonicalIngestionCandidate: expect.objectContaining({
           record: expect.objectContaining({
             kind: "feedback",
             compatibility: expect.objectContaining({
-              transitionalFamilyId: "workflow_improvement",
+              captureCategory: "workflow_improvement",
             }),
           }),
           compatibility: expect.objectContaining({
             candidateKind: "improvement",
+            captureClass: "workflow_generalized_guidance",
           }),
         }),
         category: "workflow_improvement",
         source: "explicit_workflow_improvement",
         autoCapture: expect.objectContaining({
-          captureClass: "workflow_tool_gotcha",
-          lessonKey: "scripts_committer_required",
-          toolKey: "scripts_committer",
+          captureClass: "workflow_generalized_guidance",
+          template: "workflow_generalized_guidance",
+          lessonFamily: "generalized_workflow_lesson",
+          guidancePattern: "use_instead_of",
           guidanceMode: "guidance_only",
         }),
         candidateLifecycle: expect.objectContaining({
           family: "workflow_improvement",
-          state: "pending_confirmation",
+          state: "hold_for_more_evidence",
         }),
       }),
     });
@@ -409,26 +413,30 @@ describe("memory candidate submit tool", () => {
       content: "python is not available here, so use node --input-type=module or tsx instead.",
     });
 
-    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
-      kind: "improvement",
-      content:
-        "Environment constraint: python command is not available in this environment; use node --input-type=module or tsx instead.",
-      metadata: expect.objectContaining({
-        category: "workflow_improvement",
-        source: "explicit_workflow_improvement",
-        autoCapture: expect.objectContaining({
-          captureClass: "workflow_environment_constraint",
-          template: "workflow_environment_constraint",
-          lessonKey: "python_command_unavailable",
-          toolKey: "python_runtime",
-          guidanceMode: "guidance_only",
-        }),
-        candidateLifecycle: expect.objectContaining({
-          family: "workflow_improvement",
-          state: "pending_confirmation",
+    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "improvement",
+        content:
+          "Environment constraint: python command is not available here; use node --input-type=module or tsx instead.",
+        metadata: expect.objectContaining({
+          category: "workflow_improvement",
+          source: "explicit_workflow_improvement",
+          autoCapture: expect.objectContaining({
+            captureClass: "workflow_environment_constraint",
+            template: "workflow_environment_constraint",
+            lessonFamily: "generalized_workflow_lesson",
+            subject: "python command availability",
+            recommendedAction: "node --input-type=module or tsx",
+            avoidAction: "python",
+            guidanceMode: "guidance_only",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "workflow_improvement",
+            state: "pending_confirmation",
+          }),
         }),
       }),
-    });
+    );
   });
 
   it("normalizes bounded workflow-simplification submissions into managed improvement metadata", async () => {
@@ -441,26 +449,28 @@ describe("memory candidate submit tool", () => {
         "Use pnpm memory:proof for bounded memory proof here instead of bespoke host-side setup.",
     });
 
-    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
-      kind: "improvement",
-      content:
-        "Workflow improvement: use pnpm memory:proof instead of bespoke host-side setup for bounded memory proof.",
-      metadata: expect.objectContaining({
-        category: "workflow_improvement",
-        source: "explicit_workflow_improvement",
-        autoCapture: expect.objectContaining({
-          captureClass: "workflow_tool_gotcha",
-          template: "workflow_tool_gotcha",
-          lessonKey: "memory_proof_runner_required",
-          toolKey: "memory_proof_runner",
-          guidanceMode: "guidance_only",
-        }),
-        candidateLifecycle: expect.objectContaining({
-          family: "workflow_improvement",
-          state: "pending_confirmation",
+    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "improvement",
+        content:
+          "Workflow improvement: for bounded memory proof, use pnpm memory:proof instead of bespoke host-side setup.",
+        metadata: expect.objectContaining({
+          category: "workflow_improvement",
+          source: "explicit_workflow_improvement",
+          autoCapture: expect.objectContaining({
+            captureClass: "workflow_generalized_guidance",
+            template: "workflow_generalized_guidance",
+            lessonFamily: "generalized_workflow_lesson",
+            guidancePattern: "use_instead_of",
+            guidanceMode: "guidance_only",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "workflow_improvement",
+            state: "hold_for_more_evidence",
+          }),
         }),
       }),
-    });
+    );
   });
 
   it("normalizes bounded API workaround submissions into managed improvement metadata", async () => {
@@ -473,26 +483,30 @@ describe("memory candidate submit tool", () => {
         "Codex OAuth does not help for OpenAI embeddings here; semantic memory search still needs a real OPENAI_API_KEY.",
     });
 
-    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
-      kind: "improvement",
-      content:
-        "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
-      metadata: expect.objectContaining({
-        category: "workflow_improvement",
-        source: "explicit_workflow_improvement",
-        autoCapture: expect.objectContaining({
-          captureClass: "workflow_api_workaround",
-          template: "workflow_api_workaround",
-          lessonKey: "openai_embeddings_api_key_required",
-          toolKey: "openai_embeddings",
-          guidanceMode: "guidance_only",
-        }),
-        candidateLifecycle: expect.objectContaining({
-          family: "workflow_improvement",
-          state: "pending_confirmation",
+    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "improvement",
+        content:
+          "API workaround: OpenAI embeddings still need a configured OPENAI_API_KEY or another embeddings provider; codex OAuth alone does not help here.",
+        metadata: expect.objectContaining({
+          category: "workflow_improvement",
+          source: "explicit_workflow_improvement",
+          autoCapture: expect.objectContaining({
+            captureClass: "workflow_api_workaround",
+            template: "workflow_api_workaround",
+            lessonFamily: "generalized_workflow_lesson",
+            subject: "OpenAI embeddings auth",
+            recommendedAction: "use a configured OPENAI_API_KEY or another embeddings provider",
+            avoidAction: "codex OAuth alone",
+            guidanceMode: "guidance_only",
+          }),
+          candidateLifecycle: expect.objectContaining({
+            family: "workflow_improvement",
+            state: "pending_confirmation",
+          }),
         }),
       }),
-    });
+    );
   });
 
   it("normalizes generalized workflow lessons into held-cluster managed improvement metadata", async () => {
@@ -802,15 +816,18 @@ describe("memory candidate submit tool", () => {
     inspectWorkflowImprovementLifecycle.mockImplementationOnce(async () => ({
       activeApprovedSubjectObjectIds: [],
       pendingSubjectCandidateIds: [],
+      activeApprovedSubjectEntries: [],
+      pendingSubjectCandidates: [],
       pendingCandidate: {
         id: "memory-1",
         key: "workflow-key-1",
         subjectKey: "workflow-subject-1",
-        lessonKey: "scripts_committer_required",
+        lessonFamily: "generalized_workflow_lesson",
+        guidancePattern: "use_instead_of",
         createdAt: new Date(Date.now() - 10_000).toISOString(),
         updatedAt: new Date(Date.now() - 10_000).toISOString(),
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        confirmationState: "pending_confirmation",
+        confirmationState: "hold_for_more_evidence",
         sourceEventId: "event-1",
       },
     }));
@@ -857,13 +874,7 @@ describe("memory candidate submit tool", () => {
         candidateId: "memory-1",
       }),
     );
-    expect(storeApprovedProjectWorkflowSemanticEmbedding).toHaveBeenCalledWith({
-      config: runtime.config,
-      cfg: { plugins: { memory: { provider: "openai" } } },
-      agentId: "main",
-      sessionKey: "agent:main:main",
-      memoryObjectId: "approved-tool-gotcha-1",
-    });
+    expect(storeApprovedProjectWorkflowSemanticEmbedding).not.toHaveBeenCalled();
     inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);
   });
 
@@ -873,15 +884,18 @@ describe("memory candidate submit tool", () => {
     inspectWorkflowImprovementLifecycle.mockImplementationOnce(async () => ({
       activeApprovedSubjectObjectIds: [],
       pendingSubjectCandidateIds: [],
+      activeApprovedSubjectEntries: [],
+      pendingSubjectCandidates: [],
       pendingCandidate: {
         id: "memory-stash-1",
         key: "workflow-stash-key-1",
         subjectKey: "workflow-stash-subject-1",
-        lessonKey: "git_stash_unsafe",
+        lessonFamily: "generalized_workflow_lesson",
+        guidancePattern: "avoid_only",
         createdAt: new Date(Date.now() - 10_000).toISOString(),
         updatedAt: new Date(Date.now() - 10_000).toISOString(),
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        confirmationState: "pending_confirmation",
+        confirmationState: "hold_for_more_evidence",
         sourceEventId: "event-stash-1",
       },
     }));
@@ -928,13 +942,7 @@ describe("memory candidate submit tool", () => {
         candidateId: "memory-stash-1",
       }),
     );
-    expect(storeApprovedProjectWorkflowSemanticEmbedding).toHaveBeenCalledWith({
-      config: runtime.config,
-      cfg: { plugins: { memory: { provider: "openai" } } },
-      agentId: "main",
-      sessionKey: "agent:main:main",
-      memoryObjectId: "approved-tool-gotcha-stash-1",
-    });
+    expect(storeApprovedProjectWorkflowSemanticEmbedding).not.toHaveBeenCalled();
     inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);
   });
 
@@ -948,7 +956,7 @@ describe("memory candidate submit tool", () => {
         id: "memory-1",
         key: "workflow-key-1",
         subjectKey: "workflow-subject-1",
-        lessonKey: "openai_embeddings_api_key_required",
+        lessonFamily: "generalized_workflow_lesson",
         createdAt: new Date(Date.now() - 10_000).toISOString(),
         updatedAt: new Date(Date.now() - 10_000).toISOString(),
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
@@ -1232,12 +1240,13 @@ describe("memory candidate submit tool", () => {
           canonicalIngestionCandidate: expect.objectContaining({
             record: expect.objectContaining({
               kind: "user",
-              compatibility: expect.objectContaining({
-                transitionalFamilyId: "response_style",
+              facets: expect.objectContaining({
+                response_style: true,
               }),
             }),
             compatibility: expect.objectContaining({
               candidateKind: "learning",
+              captureClass: "explicit_requirement",
             }),
           }),
           category: "user_requirement",
@@ -1293,9 +1302,12 @@ describe("memory candidate submit tool", () => {
           canonicalIngestionCandidate: expect.objectContaining({
             record: expect.objectContaining({
               kind: "user",
-              compatibility: expect.objectContaining({
-                transitionalFamilyId: "response_style",
+              facets: expect.objectContaining({
+                response_style: true,
               }),
+            }),
+            compatibility: expect.objectContaining({
+              captureClass: "explicit_requirement",
             }),
           }),
           category: "user_requirement",
@@ -1446,8 +1458,11 @@ describe("memory candidate submit tool", () => {
             record: expect.objectContaining({
               kind: "project",
               compatibility: expect.objectContaining({
-                transitionalFamilyId: "project_fact",
+                captureCategory: "project_fact",
               }),
+            }),
+            compatibility: expect.objectContaining({
+              captureClass: "explicit_project_fact",
             }),
           }),
           category: "project_fact",
@@ -2005,8 +2020,11 @@ describe("memory candidate submit tool", () => {
             record: expect.objectContaining({
               kind: "feedback",
               compatibility: expect.objectContaining({
-                transitionalFamilyId: "recurring_procedure",
+                captureCategory: "recurring_procedure",
               }),
+            }),
+            compatibility: expect.objectContaining({
+              captureClass: "explicit_recurring_procedure",
             }),
           }),
           category: "recurring_procedure",

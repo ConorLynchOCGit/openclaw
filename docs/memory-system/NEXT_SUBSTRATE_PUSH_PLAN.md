@@ -39,14 +39,15 @@ Current tranche boundaries:
 
 - self-improving capture is workflow-guidance-only
 - self-improving capture is candidate-only
-- self-improving capture now has explicit allowed lesson-family rollout scope
+- self-improving capture now has an explicit generalized workflow-guidance
+  rollout scope
 - self-improving capture now also requires an explicit `off-production` or
   `production-canary` rollout target before activation
 - learned-guidance planning is approved-only
 - learned-guidance planning is inline-only
 - learned-guidance planning is advisory-only
-- learned-guidance planning now has explicit allowed lesson-family scope and a
-  bounded default suggestion budget
+- learned-guidance planning now has an explicit generalized workflow-guidance
+  scope and a bounded default suggestion budget
 - learned-guidance planning now also requires an explicit `off-production` or
   `production-canary` rollout target before activation
 
@@ -104,9 +105,6 @@ The next implementation slices should now be:
   canonical promotion engine
 - continue internal detector-profile cleanup inside
   `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
-- delete the last bounded mixed-era fallback bridges in
-  `extensions/memory-middleware/src/semantic-retrieval-routing.ts` and
-  `extensions/memory-middleware/src/learned-guidance-advisory-planning.ts`
 - push `extensions/memory-middleware/src/write-action-stages.ts` from
   canonical-family-aware routing to a fuller canonical multi-candidate write
   pipeline with less compatibility inference
@@ -165,6 +163,105 @@ Before new families:
 
 ## Next implementation slice
 
-- canonical write/promotion follow-through, starting with one canonical
-  correction/promotion engine and the final staged deletion pass for remaining
-  mixed-era fallback bridges
+The last shared workflow-guidance mixed-era bridge is now retired from the
+hot retrieval/planning path, workflow auto-review supersession now uses the
+shared correction engine, and three previously named workflow lessons now
+flow through generalized workflow semantics instead of the compat catalog.
+
+The next slice should now:
+
+- extract the remaining family-specific correction/supersession wrappers in
+  `extensions/memory-middleware/src/tools/candidate-submit.ts` onto one
+  narrower canonical helper layer
+- move the remaining workflow detector entrypoints in
+  `extensions/memory-middleware/src/memory-ingestion-resolver.ts` onto one
+  fuller profile-registered registry
+- continue demoting `src/plugin-sdk/memory-family-policy.ts` so only
+  compatibility/derived-view helpers need the broad family definitions
+- finish the canonical multi-candidate write substrate in
+  `extensions/memory-middleware/src/write-action-stages.ts`
+- retire more mixed-era read scaffolding from
+  `extensions/memory-middleware/src/db/hybrid-memory-surface-scaffolding.ts`
+  once the remaining read paths are capture-class-first
+- decide lesson by lesson whether the remaining bounded explicit
+  environment/provider detectors in
+  `extensions/memory-middleware/src/workflow-improvement-semantic.ts`
+  should be generalized further or kept as compatibility-only logic
+
+That follow-through slice is now also landed locally:
+
+- `candidate-submit.ts` now uses a narrower shared approved-memory correction
+  helper for more of its correction/supersession flow
+- project-fact semantic detection now runs through a profile-registered
+  detector registry
+- middleware runtime seams now consume narrow family-policy views exported by
+  `memory-family-policy.ts`
+- write-stage routing now matches canonical write lanes instead of repeating
+  mixed family/category conditions
+- the last hybrid read `lessonFamily` fallback is gone from the active
+  project-family read scaffolding
+- three repo/process workflow lessons now flow through generalized workflow
+  guidance instead of staying named compat entries
+
+The next slice should now:
+
+- extract the remaining family-specific correction/supersession wrappers in
+  `extensions/memory-middleware/src/tools/candidate-submit.ts`
+- finish the remaining detector-registry cleanup in
+  `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
+- keep shrinking `src/plugin-sdk/memory-family-policy.ts` until broad family
+  definitions are only a compatibility bridge
+- keep pushing `extensions/memory-middleware/src/write-action-stages.ts`
+  toward a full canonical multi-candidate write substrate
+- decide whether the four remaining explicit compat-catalog entries are truly
+  permanent compatibility data or can be generalized/deleted later:
+  - `python_command_unavailable`
+  - `gateway_tools_invoke_forbidden`
+  - `openai_embeddings_api_key_required`
+  - `anthropic_context1m_eligible_credential_required`
+
+That runtime-target consolidation slice is now also landed locally:
+
+- the normal runtime database posture is now documented as one shared
+  Supabase-backed Postgres target using schema `memory_middleware`
+- the earlier persistent local rollout container
+  `memory-middleware-readonly-rollout-pg` is now retired from normal
+  operational posture
+- disposable `pgvector/pgvector:pg16` containers remain only as
+  integration-test or bounded-rehearsal infrastructure
+
+The next slice should now:
+
+- finish the remaining detector-registry unification in
+  `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
+- keep shrinking `src/plugin-sdk/memory-family-policy.ts` until broad family
+  definitions are a pure compatibility bridge
+- remove the remaining mixed-era compatibility-family inference from
+  `extensions/memory-middleware/src/db/hybrid-memory-surface-scaffolding.ts`
+  and adjacent query seams
+
+That cleanup slice is now also landed locally:
+
+- the persistent local rollout Postgres target is retired from normal
+  operational posture in the active docs
+- the intended runtime posture is now one shared Supabase-backed Postgres
+  target plus disposable local test DBs only
+- project-fact, recurring-procedure, and workflow ingestion now share one
+  detector-registry helper
+- middleware policy-view and proof/type consumers now lean further toward the
+  public plugin-SDK surface instead of the middleware registry bridge
+- the fake multi-operation candidate write plan is gone; the write substrate
+  now executes one explicit canonical write operation directly
+- hybrid read family classification no longer infers project-family identity
+  from `factFamily` or `fieldKey`
+
+The next slice should now:
+
+- finish extracting the remaining correction/supersession wrappers in
+  `extensions/memory-middleware/src/tools/candidate-submit.ts`
+- decide whether response-style should keep its current special semantic path
+  or move onto a shared `forget`-capable registry seam
+- decide entry by entry whether the four remaining bounded explicit
+  environment/provider workflow detectors in
+  `extensions/memory-middleware/src/workflow-improvement-semantic.ts`
+  are still justified

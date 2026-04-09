@@ -24,36 +24,27 @@ type ValidatedProcedureSemanticSource = {
   body: string;
 };
 
-type ApprovedWorkflowGuidanceSemanticSource<LessonKey extends string> = {
+type ApprovedWorkflowGuidanceSemanticSource = {
   memoryObjectId: string;
-  lessonKey: LessonKey;
+  captureClass: SupportedProjectWorkflowSemanticCaptureClass;
+  semanticProfileId: ProjectWorkflowSemanticProfileId;
   subject?: string;
   value?: string;
   title?: string;
   content: string;
 };
 
-type ApprovedEnvironmentConstraintSemanticSource =
-  ApprovedWorkflowGuidanceSemanticSource<SupportedEnvironmentConstraintLessonKey>;
+type ApprovedEnvironmentConstraintSemanticSource = ApprovedWorkflowGuidanceSemanticSource;
 
-type ApprovedWorkflowToolGotchaSemanticSource =
-  ApprovedWorkflowGuidanceSemanticSource<SupportedWorkflowToolGotchaLessonKey>;
+type ApprovedWorkflowToolGotchaSemanticSource = ApprovedWorkflowGuidanceSemanticSource;
 
-type ApprovedApiWorkaroundSemanticSource =
-  ApprovedWorkflowGuidanceSemanticSource<SupportedApiWorkaroundLessonKey>;
+type ApprovedApiWorkaroundSemanticSource = ApprovedWorkflowGuidanceSemanticSource;
 
-type SupportedEnvironmentConstraintLessonKey =
-  | "python_command_unavailable"
-  | "gateway_tools_invoke_forbidden";
+type SupportedEnvironmentConstraintCaptureClass = "workflow_environment_constraint";
 
-type SupportedWorkflowToolGotchaLessonKey =
-  | "vitest_wrapper_required"
-  | "scripts_committer_required"
-  | "git_stash_unsafe";
+type SupportedWorkflowToolGotchaCaptureClass = "workflow_tool_gotcha";
 
-type SupportedApiWorkaroundLessonKey =
-  | "openai_embeddings_api_key_required"
-  | "anthropic_context1m_eligible_credential_required";
+type SupportedApiWorkaroundCaptureClass = "workflow_api_workaround";
 
 export type SemanticFallbackFamily =
   | "procedure"
@@ -88,13 +79,12 @@ export type SemanticFallbackSharedState = {
   approvedProjectSemanticSearchPromise?: Promise<MemoryObjectSearchSemanticResult>;
 };
 
-type SupportedProjectWorkflowSemanticLessonKey =
-  | SupportedEnvironmentConstraintLessonKey
-  | SupportedWorkflowToolGotchaLessonKey
-  | SupportedApiWorkaroundLessonKey;
+type SupportedProjectWorkflowSemanticCaptureClass =
+  | SupportedEnvironmentConstraintCaptureClass
+  | SupportedWorkflowToolGotchaCaptureClass
+  | SupportedApiWorkaroundCaptureClass;
 
-type ApprovedProjectWorkflowSemanticSource =
-  ApprovedWorkflowGuidanceSemanticSource<SupportedProjectWorkflowSemanticLessonKey>;
+type ApprovedProjectWorkflowSemanticSource = ApprovedWorkflowGuidanceSemanticSource;
 
 type ProjectWorkflowSemanticProfileId =
   | "environment_constraint"
@@ -103,7 +93,7 @@ type ProjectWorkflowSemanticProfileId =
 
 type ProjectWorkflowSemanticProfile = {
   id: ProjectWorkflowSemanticProfileId;
-  lessonKeys: readonly SupportedProjectWorkflowSemanticLessonKey[];
+  captureClass: SupportedProjectWorkflowSemanticCaptureClass;
   familyLabel: "Environment constraint" | "Workflow improvement";
   metadataSource: string;
   metadataFamily: string;
@@ -113,10 +103,7 @@ type ProjectWorkflowSemanticProfile = {
 const PROJECT_WORKFLOW_SEMANTIC_PROFILES = [
   {
     id: "environment_constraint",
-    lessonKeys: [
-      "python_command_unavailable",
-      "gateway_tools_invoke_forbidden",
-    ] satisfies SupportedEnvironmentConstraintLessonKey[],
+    captureClass: "workflow_environment_constraint",
     familyLabel: "Environment constraint",
     metadataSource: "semantic_retrieval_routing_v2",
     metadataFamily: "workflow_environment_constraint",
@@ -124,11 +111,7 @@ const PROJECT_WORKFLOW_SEMANTIC_PROFILES = [
   },
   {
     id: "workflow_tool_gotcha",
-    lessonKeys: [
-      "vitest_wrapper_required",
-      "scripts_committer_required",
-      "git_stash_unsafe",
-    ] satisfies SupportedWorkflowToolGotchaLessonKey[],
+    captureClass: "workflow_tool_gotcha",
     familyLabel: "Workflow improvement",
     metadataSource: "semantic_retrieval_routing_v5",
     metadataFamily: "workflow_tool_gotcha",
@@ -136,10 +119,7 @@ const PROJECT_WORKFLOW_SEMANTIC_PROFILES = [
   },
   {
     id: "api_workaround",
-    lessonKeys: [
-      "openai_embeddings_api_key_required",
-      "anthropic_context1m_eligible_credential_required",
-    ] satisfies SupportedApiWorkaroundLessonKey[],
+    captureClass: "workflow_api_workaround",
     familyLabel: "Workflow improvement",
     metadataSource: "semantic_retrieval_routing_v4",
     metadataFamily: "workflow_api_workaround",
@@ -147,18 +127,21 @@ const PROJECT_WORKFLOW_SEMANTIC_PROFILES = [
   },
 ] as const satisfies readonly ProjectWorkflowSemanticProfile[];
 
-const SUPPORTED_ENVIRONMENT_CONSTRAINT_LESSON_KEYS =
-  new Set<SupportedEnvironmentConstraintLessonKey>(
-    PROJECT_WORKFLOW_SEMANTIC_PROFILES[0].lessonKeys,
-  );
+const SUPPORTED_ENVIRONMENT_CONSTRAINT_CAPTURE_CLASSES =
+  new Set<SupportedEnvironmentConstraintCaptureClass>([
+    PROJECT_WORKFLOW_SEMANTIC_PROFILES[0].captureClass,
+  ]);
 
-const SUPPORTED_WORKFLOW_TOOL_GOTCHA_LESSON_KEYS = new Set<SupportedWorkflowToolGotchaLessonKey>(
-  PROJECT_WORKFLOW_SEMANTIC_PROFILES[1].lessonKeys,
-);
+const SUPPORTED_WORKFLOW_TOOL_GOTCHA_CAPTURE_CLASSES =
+  new Set<SupportedWorkflowToolGotchaCaptureClass>([
+    PROJECT_WORKFLOW_SEMANTIC_PROFILES[1].captureClass,
+  ]);
 
-const SUPPORTED_API_WORKAROUND_LESSON_KEYS = new Set<SupportedApiWorkaroundLessonKey>(
-  PROJECT_WORKFLOW_SEMANTIC_PROFILES[2].lessonKeys,
-);
+const SUPPORTED_API_WORKAROUND_CAPTURE_CLASSES = new Set<SupportedApiWorkaroundCaptureClass>([
+  PROJECT_WORKFLOW_SEMANTIC_PROFILES[2].captureClass,
+]);
+
+const WORKFLOW_CAPTURE_CLASS_MATCH_FIELD = "auto_capture_capture_class_match";
 
 export function createSemanticFallbackSharedState(): SemanticFallbackSharedState {
   return {};
@@ -178,124 +161,124 @@ function hasStrongProcedureHybridMatch(record: RankedRetrievedMemoryRecord | und
   );
 }
 
-function readNestedMetadataString(
+function readCanonicalWorkflowGuidanceRecord(
   metadata: Record<string, unknown> | undefined,
-  path: string[],
-): string | undefined {
-  let cursor: unknown = metadata;
-  for (const segment of path) {
-    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) {
-      return undefined;
-    }
-    cursor = (cursor as Record<string, unknown>)[segment];
-  }
-  return typeof cursor === "string" && cursor.trim().length > 0 ? cursor.trim() : undefined;
-}
-
-function readLegacyWorkflowGuidanceString(
-  metadata: Record<string, unknown> | undefined,
-  key: string,
-): string | undefined {
-  return (
-    readNestedMetadataString(metadata, ["candidateMetadata", "autoCapture", key]) ??
-    readNestedMetadataString(metadata, ["autoCapture", key])
-  );
-}
-
-function extractWorkflowImprovementLessonKey(
-  metadata: Record<string, unknown> | undefined,
-): string | undefined {
+): ReturnType<typeof readCanonicalMemoryRecordFromMetadata> {
   const canonicalRecord = readCanonicalMemoryRecordFromMetadata(metadata);
-  return (
-    (typeof canonicalRecord?.facets.lessonKey === "string"
-      ? canonicalRecord.facets.lessonKey
-      : undefined) ?? readLegacyWorkflowGuidanceString(metadata, "lessonKey")
-  );
+  return canonicalRecord?.kind === "feedback" &&
+    canonicalRecord.tags.includes("workflow_guidance") &&
+    canonicalRecord.facets.workflow_guidance === true
+    ? canonicalRecord
+    : null;
+}
+
+function extractWorkflowImprovementCaptureClass(
+  metadata: Record<string, unknown> | undefined,
+): SupportedProjectWorkflowSemanticCaptureClass | undefined {
+  const workflowRecord = readCanonicalWorkflowGuidanceRecord(metadata);
+  const value =
+    typeof workflowRecord?.facets.captureClass === "string"
+      ? workflowRecord.facets.captureClass
+      : undefined;
+  return findProjectWorkflowSemanticProfile(value)?.captureClass;
 }
 
 function extractWorkflowImprovementSubject(
   metadata: Record<string, unknown> | undefined,
 ): string | undefined {
-  const canonicalRecord = readCanonicalMemoryRecordFromMetadata(metadata);
+  const workflowRecord = readCanonicalWorkflowGuidanceRecord(metadata);
   return (
-    canonicalRecord?.subject ??
-    (typeof canonicalRecord?.facets.projectScope === "string"
-      ? canonicalRecord.facets.projectScope
+    workflowRecord?.subject ??
+    (typeof workflowRecord?.facets.projectScope === "string"
+      ? workflowRecord.facets.projectScope
       : undefined) ??
-    readLegacyWorkflowGuidanceString(metadata, "subject")
+    undefined
   );
 }
 
 function extractWorkflowImprovementValue(
   metadata: Record<string, unknown> | undefined,
 ): string | undefined {
-  const canonicalRecord = readCanonicalMemoryRecordFromMetadata(metadata);
+  const workflowRecord = readCanonicalWorkflowGuidanceRecord(metadata);
   return (
-    canonicalRecord?.statement ??
-    (typeof canonicalRecord?.facets.recommendedAction === "string"
-      ? canonicalRecord.facets.recommendedAction
+    workflowRecord?.statement ??
+    (typeof workflowRecord?.facets.recommendedAction === "string"
+      ? workflowRecord.facets.recommendedAction
       : undefined) ??
-    (typeof canonicalRecord?.facets.neededCapability === "string"
-      ? canonicalRecord.facets.neededCapability
-      : undefined) ??
-    readLegacyWorkflowGuidanceString(metadata, "value")
+    (typeof workflowRecord?.facets.neededCapability === "string"
+      ? workflowRecord.facets.neededCapability
+      : undefined)
   );
 }
 
-function isEnvironmentConstraintLessonKey(
+function extractWorkflowSemanticProfileId(
+  metadata: Record<string, unknown> | undefined,
+): ProjectWorkflowSemanticProfileId | undefined {
+  const workflowRecord = readCanonicalWorkflowGuidanceRecord(metadata);
+  const value = workflowRecord?.facets.semanticProfileId;
+  return value === "environment_constraint" ||
+    value === "workflow_tool_gotcha" ||
+    value === "api_workaround"
+    ? value
+    : undefined;
+}
+
+function isEnvironmentConstraintCaptureClass(
   value: string | undefined,
-): value is SupportedEnvironmentConstraintLessonKey {
+): value is SupportedEnvironmentConstraintCaptureClass {
   return Boolean(
     value &&
-    SUPPORTED_ENVIRONMENT_CONSTRAINT_LESSON_KEYS.has(
-      value as SupportedEnvironmentConstraintLessonKey,
+    SUPPORTED_ENVIRONMENT_CONSTRAINT_CAPTURE_CLASSES.has(
+      value as SupportedEnvironmentConstraintCaptureClass,
     ),
   );
 }
 
-function isWorkflowToolGotchaLessonKey(
+function isWorkflowToolGotchaCaptureClass(
   value: string | undefined,
-): value is SupportedWorkflowToolGotchaLessonKey {
+): value is SupportedWorkflowToolGotchaCaptureClass {
   return Boolean(
     value &&
-    SUPPORTED_WORKFLOW_TOOL_GOTCHA_LESSON_KEYS.has(value as SupportedWorkflowToolGotchaLessonKey),
+    SUPPORTED_WORKFLOW_TOOL_GOTCHA_CAPTURE_CLASSES.has(
+      value as SupportedWorkflowToolGotchaCaptureClass,
+    ),
   );
 }
 
-function isApiWorkaroundLessonKey(
+function isApiWorkaroundCaptureClass(
   value: string | undefined,
-): value is SupportedApiWorkaroundLessonKey {
+): value is SupportedApiWorkaroundCaptureClass {
   return Boolean(
-    value && SUPPORTED_API_WORKAROUND_LESSON_KEYS.has(value as SupportedApiWorkaroundLessonKey),
+    value &&
+    SUPPORTED_API_WORKAROUND_CAPTURE_CLASSES.has(value as SupportedApiWorkaroundCaptureClass),
   );
 }
 
 function findProjectWorkflowSemanticProfile(
-  lessonKey: string | undefined,
+  captureClass: string | undefined,
 ): ProjectWorkflowSemanticProfile | null {
-  if (!lessonKey) {
+  if (!captureClass) {
     return null;
   }
   return (
-    PROJECT_WORKFLOW_SEMANTIC_PROFILES.find((profile) =>
-      (profile.lessonKeys as readonly string[]).includes(lessonKey),
-    ) ?? null
+    PROJECT_WORKFLOW_SEMANTIC_PROFILES.find((profile) => profile.captureClass === captureClass) ??
+    null
   );
 }
 
-function hasStrongWorkflowGuidanceHybridMatch<LessonKey extends string>(
+function hasStrongWorkflowGuidanceHybridMatch<CaptureClass extends string>(
   record: RankedRetrievedMemoryRecord | undefined,
-  isSupportedLessonKey: (value: string | undefined) => value is LessonKey,
+  isSupportedCaptureClass: (value: string | undefined) => value is CaptureClass,
 ): boolean {
   if (!record || record.objectType !== "memory_object" || record.memoryKind !== "project") {
     return false;
   }
-  if (!isSupportedLessonKey(extractWorkflowImprovementLessonKey(record.metadata))) {
+  if (!isSupportedCaptureClass(extractWorkflowImprovementCaptureClass(record.metadata))) {
     return false;
   }
   return record.matchedFields.some(
     (field) =>
-      field === "auto_capture_lesson_match" ||
+      field === WORKFLOW_CAPTURE_CLASS_MATCH_FIELD ||
       field === "title_exact" ||
       field === "content_exact" ||
       field === "title_prefix" ||
@@ -306,19 +289,19 @@ function hasStrongWorkflowGuidanceHybridMatch<LessonKey extends string>(
 function hasStrongEnvironmentConstraintHybridMatch(
   record: RankedRetrievedMemoryRecord | undefined,
 ): boolean {
-  return hasStrongWorkflowGuidanceHybridMatch(record, isEnvironmentConstraintLessonKey);
+  return hasStrongWorkflowGuidanceHybridMatch(record, isEnvironmentConstraintCaptureClass);
 }
 
 function hasStrongWorkflowToolGotchaHybridMatch(
   record: RankedRetrievedMemoryRecord | undefined,
 ): boolean {
-  return hasStrongWorkflowGuidanceHybridMatch(record, isWorkflowToolGotchaLessonKey);
+  return hasStrongWorkflowGuidanceHybridMatch(record, isWorkflowToolGotchaCaptureClass);
 }
 
 function hasStrongApiWorkaroundHybridMatch(
   record: RankedRetrievedMemoryRecord | undefined,
 ): boolean {
-  return hasStrongWorkflowGuidanceHybridMatch(record, isApiWorkaroundLessonKey);
+  return hasStrongWorkflowGuidanceHybridMatch(record, isApiWorkaroundCaptureClass);
 }
 
 function hasStrongTypedProjectHybridMatch(
@@ -330,7 +313,7 @@ function hasStrongTypedProjectHybridMatch(
   return record.matchedFields.some(
     (field) =>
       field === "auto_capture_field_match" ||
-      field === "auto_capture_lesson_match" ||
+      field === WORKFLOW_CAPTURE_CLASS_MATCH_FIELD ||
       field === "title_exact" ||
       field === "content_exact" ||
       field === "title_prefix" ||
@@ -412,7 +395,6 @@ function buildProcedureSemanticText(params: { title: string; body: string }): st
 
 function buildWorkflowGuidanceSemanticText(params: {
   familyLabel: "Environment constraint" | "Workflow improvement";
-  lessonKey: string;
   subject?: string;
   value?: string;
   title?: string;
@@ -424,7 +406,6 @@ function buildWorkflowGuidanceSemanticText(params: {
     params.subject?.trim(),
     params.value?.trim(),
     params.content.trim(),
-    `Lesson key: ${params.lessonKey}`,
   ];
   return parts.filter((value) => value && value.length > 0).join("\n\n");
 }
@@ -472,11 +453,13 @@ async function loadValidatedProcedureSemanticSource(params: {
   });
 }
 
-async function loadApprovedWorkflowGuidanceSemanticSourceById<LessonKey extends string>(params: {
+async function loadApprovedWorkflowGuidanceSemanticSourceById(params: {
   config: MemoryMiddlewareConfig;
   memoryObjectId: string;
-  isSupportedLessonKey: (value: string | undefined) => value is LessonKey;
-}): Promise<ApprovedWorkflowGuidanceSemanticSource<LessonKey> | null> {
+  isSupportedSemanticProfileId: (
+    value: string | undefined,
+  ) => value is ProjectWorkflowSemanticProfileId;
+}): Promise<ApprovedWorkflowGuidanceSemanticSource | null> {
   const connectionString = params.config.database.url;
   if (!connectionString) {
     return null;
@@ -509,13 +492,15 @@ async function loadApprovedWorkflowGuidanceSemanticSourceById<LessonKey extends 
       if (!row) {
         return null;
       }
-      const lessonKey = extractWorkflowImprovementLessonKey(row.metadata ?? undefined);
-      if (!params.isSupportedLessonKey(lessonKey)) {
+      const captureClass = extractWorkflowImprovementCaptureClass(row.metadata ?? undefined);
+      const semanticProfileId = extractWorkflowSemanticProfileId(row.metadata ?? undefined);
+      if (!captureClass || !params.isSupportedSemanticProfileId(semanticProfileId)) {
         return null;
       }
       return {
         memoryObjectId: row.id,
-        lessonKey,
+        captureClass,
+        semanticProfileId,
         ...(extractWorkflowImprovementSubject(row.metadata ?? undefined)
           ? { subject: extractWorkflowImprovementSubject(row.metadata ?? undefined) }
           : {}),
@@ -529,16 +514,16 @@ async function loadApprovedWorkflowGuidanceSemanticSourceById<LessonKey extends 
   });
 }
 
-async function loadApprovedWorkflowGuidanceSourcesMissingEmbedding<
-  LessonKey extends string,
->(params: {
+async function loadApprovedWorkflowGuidanceSourcesMissingEmbedding(params: {
   config: MemoryMiddlewareConfig;
   embeddingModel: string;
   embeddingVersion: string;
   projectId?: string;
-  supportedLessonKeys: LessonKey[];
-  isSupportedLessonKey: (value: string | undefined) => value is LessonKey;
-}): Promise<ApprovedWorkflowGuidanceSemanticSource<LessonKey>[]> {
+  supportedSemanticProfileIds: ProjectWorkflowSemanticProfileId[];
+  isSupportedSemanticProfileId: (
+    value: string | undefined,
+  ) => value is ProjectWorkflowSemanticProfileId;
+}): Promise<ApprovedWorkflowGuidanceSemanticSource[]> {
   const connectionString = params.config.database.url;
   if (!connectionString) {
     return [];
@@ -570,10 +555,8 @@ async function loadApprovedWorkflowGuidanceSourcesMissingEmbedding<
         where v.memory_kind::text = 'project'
           and me.memory_object_id is null
           and coalesce(
-            v.metadata->'candidateMetadata'->'autoCapture'->>'lessonKey',
-            v.metadata->'candidateMetadata'->'canonicalIngestionCandidate'->'record'->'facets'->>'lessonKey',
-            v.metadata->'canonicalIngestionCandidate'->'record'->'facets'->>'lessonKey',
-            v.metadata->'autoCapture'->>'lessonKey',
+            v.metadata->'candidateMetadata'->'canonicalIngestionCandidate'->'record'->'facets'->>'semanticProfileId',
+            v.metadata->'canonicalIngestionCandidate'->'record'->'facets'->>'semanticProfileId',
             ''
           ) = any($3::text[])
           and ($4::uuid is null or v.project_id = $4::uuid)
@@ -582,19 +565,21 @@ async function loadApprovedWorkflowGuidanceSourcesMissingEmbedding<
         [
           params.embeddingModel,
           params.embeddingVersion,
-          params.supportedLessonKeys,
+          params.supportedSemanticProfileIds,
           params.projectId ?? null,
         ],
       );
       return result.rows.flatMap((row) => {
-        const lessonKey = extractWorkflowImprovementLessonKey(row.metadata ?? undefined);
-        if (!params.isSupportedLessonKey(lessonKey)) {
+        const captureClass = extractWorkflowImprovementCaptureClass(row.metadata ?? undefined);
+        const semanticProfileId = extractWorkflowSemanticProfileId(row.metadata ?? undefined);
+        if (!captureClass || !params.isSupportedSemanticProfileId(semanticProfileId)) {
           return [];
         }
         return [
           {
             memoryObjectId: row.id,
-            lessonKey,
+            captureClass,
+            semanticProfileId,
             ...(extractWorkflowImprovementSubject(row.metadata ?? undefined)
               ? { subject: extractWorkflowImprovementSubject(row.metadata ?? undefined) }
               : {}),
@@ -665,16 +650,22 @@ async function upsertMemoryObjectSemanticEmbedding(params: {
 }
 
 function buildProjectWorkflowSemanticEmbeddingMetadata(params: {
-  lessonKey: SupportedProjectWorkflowSemanticLessonKey;
-}): { source: string; family: string; lessonKey: SupportedProjectWorkflowSemanticLessonKey } {
-  const profile = findProjectWorkflowSemanticProfile(params.lessonKey);
+  captureClass: SupportedProjectWorkflowSemanticCaptureClass;
+}): {
+  source: string;
+  family: string;
+  captureClass: SupportedProjectWorkflowSemanticCaptureClass;
+  semanticProfileId: ProjectWorkflowSemanticProfileId;
+} {
+  const profile = findProjectWorkflowSemanticProfile(params.captureClass);
   if (!profile) {
-    throw new Error(`unsupported workflow semantic lesson key ${params.lessonKey}`);
+    throw new Error(`unsupported workflow semantic capture class ${params.captureClass}`);
   }
   return {
     source: profile.metadataSource,
     family: profile.metadataFamily,
-    lessonKey: params.lessonKey,
+    captureClass: params.captureClass,
+    semanticProfileId: profile.id,
   };
 }
 
@@ -709,13 +700,23 @@ async function resolveSemanticFallbackQueryEmbedding(params: {
   return params.shared.queryEmbeddingPromise;
 }
 
-function isSupportedProjectWorkflowSemanticLessonKey(
+function isSupportedProjectWorkflowSemanticCaptureClass(
   value: string | undefined,
-): value is SupportedProjectWorkflowSemanticLessonKey {
+): value is SupportedProjectWorkflowSemanticCaptureClass {
   return (
-    isEnvironmentConstraintLessonKey(value) ||
-    isWorkflowToolGotchaLessonKey(value) ||
-    isApiWorkaroundLessonKey(value)
+    isEnvironmentConstraintCaptureClass(value) ||
+    isWorkflowToolGotchaCaptureClass(value) ||
+    isApiWorkaroundCaptureClass(value)
+  );
+}
+
+function isSupportedProjectWorkflowSemanticProfileId(
+  value: string | undefined,
+): value is ProjectWorkflowSemanticProfileId {
+  return (
+    value === "environment_constraint" ||
+    value === "workflow_tool_gotcha" ||
+    value === "api_workaround"
   );
 }
 
@@ -733,21 +734,20 @@ async function ensureApprovedProjectWorkflowSemanticEmbeddings(params: {
     config: params.config,
     embeddingModel: params.embeddingModel,
     embeddingVersion: params.embeddingVersion,
-    supportedLessonKeys: PROJECT_WORKFLOW_SEMANTIC_PROFILES.flatMap(
-      (profile) => profile.lessonKeys,
-    ),
-    isSupportedLessonKey: isSupportedProjectWorkflowSemanticLessonKey,
+    supportedSemanticProfileIds: PROJECT_WORKFLOW_SEMANTIC_PROFILES.map((profile) => profile.id),
+    isSupportedSemanticProfileId: isSupportedProjectWorkflowSemanticProfileId,
     ...(params.projectId ? { projectId: params.projectId } : {}),
   });
 
   for (const source of missingSources) {
-    const profile = findProjectWorkflowSemanticProfile(source.lessonKey);
+    const profile = PROJECT_WORKFLOW_SEMANTIC_PROFILES.find(
+      (candidate) => candidate.id === source.semanticProfileId,
+    );
     if (!profile) {
       continue;
     }
     const chunkText = buildWorkflowGuidanceSemanticText({
       familyLabel: profile.familyLabel,
-      lessonKey: source.lessonKey,
       ...(source.subject ? { subject: source.subject } : {}),
       ...(source.value ? { value: source.value } : {}),
       ...(source.title ? { title: source.title } : {}),
@@ -766,7 +766,7 @@ async function ensureApprovedProjectWorkflowSemanticEmbeddings(params: {
       return;
     }
     const metadata = buildProjectWorkflowSemanticEmbeddingMetadata({
-      lessonKey: source.lessonKey,
+      captureClass: source.captureClass,
     });
     await upsertMemoryObjectSemanticEmbedding({
       config: params.config,
@@ -784,7 +784,8 @@ async function ensureApprovedProjectWorkflowSemanticEmbeddings(params: {
       [
         "memory-middleware workflow semantic embedding backfilled",
         `memoryObjectId=${source.memoryObjectId}`,
-        `lessonKey=${source.lessonKey}`,
+        `semanticProfileId=${source.semanticProfileId}`,
+        `captureClass=${source.captureClass}`,
         `embeddingModel=${queryEmbedding.embeddingModel}`,
         `embeddingVersion=${queryEmbedding.embeddingVersion}`,
       ].join(" "),
@@ -971,18 +972,22 @@ export async function storeApprovedProjectWorkflowSemanticEmbedding(params: {
   const source = await loadApprovedWorkflowGuidanceSemanticSourceById({
     config: params.config,
     memoryObjectId: params.memoryObjectId,
-    isSupportedLessonKey: isSupportedProjectWorkflowSemanticLessonKey,
+    isSupportedSemanticProfileId: isSupportedProjectWorkflowSemanticProfileId,
   });
   if (!source) {
     return false;
   }
-  const profile = findProjectWorkflowSemanticProfile(source.lessonKey);
-  if (!profile || (params.requiredProfileId && profile.id !== params.requiredProfileId)) {
+  const profile = PROJECT_WORKFLOW_SEMANTIC_PROFILES.find(
+    (candidate) => candidate.id === source.semanticProfileId,
+  );
+  if (
+    !profile ||
+    (params.requiredProfileId && source.semanticProfileId !== params.requiredProfileId)
+  ) {
     return false;
   }
   const chunkText = buildWorkflowGuidanceSemanticText({
     familyLabel: profile.familyLabel,
-    lessonKey: source.lessonKey,
     ...(source.subject ? { subject: source.subject } : {}),
     ...(source.value ? { value: source.value } : {}),
     ...(source.title ? { title: source.title } : {}),
@@ -1010,7 +1015,7 @@ export async function storeApprovedProjectWorkflowSemanticEmbedding(params: {
     metadata: {
       source: profile.metadataSource,
       family: profile.metadataFamily,
-      lessonKey: source.lessonKey,
+      captureClass: source.captureClass,
       mode: "approved_memory_source_embedding",
     },
   });
@@ -1018,7 +1023,8 @@ export async function storeApprovedProjectWorkflowSemanticEmbedding(params: {
     [
       `memory-middleware ${profile.debugLabel} semantic embedding upserted`,
       `memoryObjectId=${source.memoryObjectId}`,
-      `lessonKey=${source.lessonKey}`,
+      `semanticProfileId=${source.semanticProfileId}`,
+      `captureClass=${source.captureClass}`,
       `embeddingModel=${queryEmbedding.embeddingModel}`,
       `embeddingVersion=${queryEmbedding.embeddingVersion}`,
     ].join(" "),
@@ -1175,7 +1181,7 @@ export async function maybeApplyEnvironmentConstraintSemanticFallback(params: {
     (record) =>
       record.objectType === "memory_object" &&
       record.memoryKind === "project" &&
-      isEnvironmentConstraintLessonKey(extractWorkflowImprovementLessonKey(record.metadata)),
+      extractWorkflowSemanticProfileId(record.metadata) === "environment_constraint",
   );
   if (semanticEnvironmentRecords.length === 0) {
     return params.hybridResult;
@@ -1260,7 +1266,7 @@ export async function maybeApplyWorkflowToolGotchaSemanticFallback(params: {
     (record) =>
       record.objectType === "memory_object" &&
       record.memoryKind === "project" &&
-      isWorkflowToolGotchaLessonKey(extractWorkflowImprovementLessonKey(record.metadata)),
+      extractWorkflowSemanticProfileId(record.metadata) === "workflow_tool_gotcha",
   );
   if (semanticToolGotchaRecords.length === 0) {
     return params.hybridResult;
@@ -1345,7 +1351,7 @@ export async function maybeApplyApiWorkaroundSemanticFallback(params: {
     (record) =>
       record.objectType === "memory_object" &&
       record.memoryKind === "project" &&
-      isApiWorkaroundLessonKey(extractWorkflowImprovementLessonKey(record.metadata)),
+      extractWorkflowSemanticProfileId(record.metadata) === "api_workaround",
   );
   if (semanticApiWorkaroundRecords.length === 0) {
     return params.hybridResult;

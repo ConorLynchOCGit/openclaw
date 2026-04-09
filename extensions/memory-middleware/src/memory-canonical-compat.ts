@@ -55,6 +55,7 @@ export type CanonicalMemoryRecordMetadataView = {
   statement?: string;
   tags: string[];
   facets: Record<string, unknown>;
+  provenance: Record<string, unknown>;
   compatibility: Record<string, unknown>;
 };
 
@@ -72,7 +73,6 @@ export type CanonicalMemoryIngestionCandidateMetadataView = {
     reviewMode?: string;
   };
   compatibility: {
-    transitionalFamilyId?: string;
     candidateKind?: string;
     captureClass?: string;
     reasonCode?: string;
@@ -109,6 +109,10 @@ function asRecord(value: unknown): Record<string, unknown> {
 function readOptionalString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readOptionalCompatString(value: unknown, key: string): string | undefined {
+  return readOptionalString(asRecord(value), key);
 }
 
 function readOptionalStringArray(
@@ -155,6 +159,7 @@ export function readCanonicalMemoryIngestionCandidateFromMetadata(
       statement: readOptionalString(canonicalRecord, "statement"),
       tags: readOptionalStringArray(canonicalRecord, "tags") ?? [],
       facets: asRecord(canonicalRecord.facets),
+      provenance: asRecord(canonicalRecord.provenance),
       compatibility: asRecord(canonicalRecord.compatibility),
     },
     identity: {
@@ -169,10 +174,6 @@ export function readCanonicalMemoryIngestionCandidateFromMetadata(
       reviewMode: readOptionalString(asRecord(canonicalCandidate.capture), "reviewMode"),
     },
     compatibility: {
-      transitionalFamilyId: readOptionalString(
-        asRecord(canonicalCandidate.compatibility),
-        "transitionalFamilyId",
-      ),
       candidateKind: readOptionalString(
         asRecord(canonicalCandidate.compatibility),
         "candidateKind",
@@ -229,7 +230,7 @@ function readCanonicalAliasString(
     case "value":
       return candidate.record.statement;
     case "family":
-      return candidate.compatibility.transitionalFamilyId;
+      return resolveCanonicalRecordFamilyId(candidate);
     case "candidateKind":
       return candidate.compatibility.candidateKind;
     case "captureClass":
@@ -249,6 +250,42 @@ function readCanonicalAliasString(
         : undefined;
     }
   }
+}
+
+function resolveCanonicalRecordFamilyId(
+  candidate: CanonicalMemoryIngestionCandidateMetadataView,
+): MemoryFamilyId | undefined {
+  const captureCategory = candidate.record.compatibility.captureCategory;
+  if (
+    captureCategory === "project_fact" ||
+    captureCategory === "recurring_procedure" ||
+    captureCategory === "workflow_improvement" ||
+    captureCategory === "project_rule" ||
+    captureCategory === "unmet_need"
+  ) {
+    return captureCategory;
+  }
+
+  const tags = new Set(candidate.record.tags);
+  if (tags.has("response_style")) {
+    return "response_style";
+  }
+  if (tags.has("workflow_improvement") || tags.has("workflow_guidance")) {
+    return "workflow_improvement";
+  }
+  if (tags.has("project_fact")) {
+    return "project_fact";
+  }
+  if (tags.has("recurring_procedure") || tags.has("procedure")) {
+    return "recurring_procedure";
+  }
+  if (tags.has("project_rule")) {
+    return "project_rule";
+  }
+  if (tags.has("unmet_need")) {
+    return "unmet_need";
+  }
+  return undefined;
 }
 
 export function readCanonicalFirstMetadataString(
@@ -322,10 +359,9 @@ export function buildCanonicalMemoryRecordFromResolvedIngestion(
           }
         : {}),
       ...("lessonFamily" in ingestion ? { lessonFamily: ingestion.lessonFamily } : {}),
-      ...("lessonKey" in ingestion && ingestion.lessonKey
-        ? { lessonKey: ingestion.lessonKey }
+      ...("semanticProfileId" in ingestion && typeof ingestion.semanticProfileId === "string"
+        ? { semanticProfileId: ingestion.semanticProfileId }
         : {}),
-      ...("toolKey" in ingestion && ingestion.toolKey ? { toolKey: ingestion.toolKey } : {}),
       ...("guidancePattern" in ingestion && ingestion.guidancePattern
         ? { guidancePattern: ingestion.guidancePattern }
         : {}),
@@ -378,7 +414,6 @@ export function buildCanonicalMemoryIngestionCandidateFromResolvedIngestion(
       reviewMode: ingestion.reviewMode,
     },
     compatibility: {
-      transitionalFamilyId: ingestion.familyId,
       candidateKind: ingestion.parsed.candidateKind,
       captureClass: ingestion.parsed.captureClass,
       reasonCode: ingestion.parsed.reasonCode,
@@ -400,10 +435,9 @@ export function buildCanonicalMemoryIngestionCandidateFromResolvedIngestion(
             }
           : {}),
         ...("lessonFamily" in ingestion ? { lessonFamily: ingestion.lessonFamily } : {}),
-        ...("lessonKey" in ingestion && ingestion.lessonKey
-          ? { lessonKey: ingestion.lessonKey }
+        ...("semanticProfileId" in ingestion && typeof ingestion.semanticProfileId === "string"
+          ? { semanticProfileId: ingestion.semanticProfileId }
           : {}),
-        ...("toolKey" in ingestion && ingestion.toolKey ? { toolKey: ingestion.toolKey } : {}),
       },
     },
   });
@@ -441,8 +475,9 @@ export function buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch(
       ...(params.match.procedureFamily ? { procedureFamily: params.match.procedureFamily } : {}),
       ...(params.match.procedureKey ? { procedureKey: params.match.procedureKey } : {}),
       ...(params.match.lessonFamily ? { lessonFamily: params.match.lessonFamily } : {}),
-      ...(params.match.lessonKey ? { lessonKey: params.match.lessonKey } : {}),
-      ...(params.match.toolKey ? { toolKey: params.match.toolKey } : {}),
+      ...(typeof params.match.semanticProfileId === "string"
+        ? { semanticProfileId: params.match.semanticProfileId }
+        : {}),
       ...(params.match.guidancePattern ? { guidancePattern: params.match.guidancePattern } : {}),
       ...(params.match.recommendedAction
         ? { recommendedAction: params.match.recommendedAction }
@@ -472,11 +507,17 @@ export function buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch(
       reviewMode: params.reviewMode,
     },
     compatibility: {
-      transitionalFamilyId: params.familyId,
       candidateKind: params.match.candidateKind,
       captureClass: params.match.captureClass,
       reasonCode: params.match.reasonCode,
       template: params.match.template,
+      ...(typeof params.match.semanticProfileId === "string"
+        ? {
+            metadata: {
+              semanticProfileId: params.match.semanticProfileId,
+            },
+          }
+        : {}),
     },
   });
 }

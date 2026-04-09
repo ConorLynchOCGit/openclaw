@@ -1,8 +1,9 @@
+import type { MemoryFamilyId } from "openclaw/plugin-sdk/memory-family-policy";
 import { Client } from "pg";
 import type { PluginLogger } from "../api.js";
 import type { MemoryMiddlewareAutoPromotionConfig } from "./config.js";
-import { getMemoryFamilyDefinition, type MemoryFamilyId } from "./memory-family-registry.js";
 import { executeApprovedMemoryObjectSupersede } from "./memory-object-supersede.js";
+import { getMemoryCorrectionRuntimePolicy } from "./memory-runtime-policy-views.js";
 
 export type MemoryCorrectionTrigger = "explicit_correction" | "cluster_auto_review";
 export type MemoryCorrectionPromotionPolicy =
@@ -56,9 +57,9 @@ export function resolveMemoryCorrectionPlan(params: {
   activeValidatedSubjectProcedureIds?: readonly string[];
   conflictingApprovedObjectIds?: readonly string[];
 }): MemoryCorrectionPlan {
-  const definition = getMemoryFamilyDefinition(params.familyId);
+  const correctionPolicy = getMemoryCorrectionRuntimePolicy(params.familyId);
   const explicitExecutionKind =
-    definition.correctionPolicy.targetKind === "validated_procedure"
+    correctionPolicy.targetKind === "validated_procedure"
       ? "validated_procedure_supersede"
       : "approved_memory_object_supersede";
   if (params.trigger === "cluster_auto_review") {
@@ -79,7 +80,7 @@ export function resolveMemoryCorrectionPlan(params: {
     };
   }
 
-  if (definition.correctionPolicy.mode === "held_correction") {
+  if (correctionPolicy.mode === "held_correction") {
     return {
       status: "hold",
       reason: "family correction policy remains held until a later slice activates it",
@@ -94,7 +95,7 @@ export function resolveMemoryCorrectionPlan(params: {
       params.activeApprovedSubjectObjectIds ??
       []),
   ];
-  if (definition.correctionPolicy.requiresExistingTarget && supersedeTargetIds.length === 0) {
+  if (correctionPolicy.requiresExistingTarget && supersedeTargetIds.length === 0) {
     return {
       status: "skip",
       reason: "no approved subject target exists to supersede",
@@ -136,6 +137,106 @@ export function resolveMemoryCorrectionPromotionPolicy(
     : "defer_immediate_bounded_correction";
 }
 
+export type ApprovedMemoryObjectCorrectionPromotionAttempt =
+  | {
+      kind: "not_executable";
+      plan: Exclude<MemoryCorrectionPlan, ExecutableMemoryObjectCorrectionPlan>;
+    }
+  | ({
+      kind: "executed";
+      plan: ExecutableMemoryObjectCorrectionPlan;
+    } & {
+      accepted: boolean;
+      promotedMemoryObjectId?: string;
+    });
+
+export async function attemptApprovedMemoryObjectCorrectionPromotion(params: {
+  familyId: MemoryFamilyId;
+  trigger: MemoryCorrectionTrigger;
+  promotionPolicy?: MemoryCorrectionPromotionPolicy;
+  activeSubjectTargetIds?: readonly string[];
+  activeApprovedSubjectObjectIds?: readonly string[];
+  conflictingApprovedObjectIds?: readonly string[];
+  candidateId: string;
+  schema: string;
+  reviewerAgentId?: string;
+  reviewCandidate: (input: {
+    candidateId: string;
+    outcome: "accepted";
+    reviewerAgentId?: string;
+    metadata?: Record<string, unknown>;
+  }) => Promise<{ accepted: boolean; reason?: string }>;
+  promoteToMemory: (input: {
+    candidateId: string;
+    promoterAgentId?: string;
+    metadata?: Record<string, unknown>;
+  }) => Promise<{ accepted: boolean; reason?: string; promotedMemoryObjectId?: string | null }>;
+  promotionMetadata: Record<string, unknown>;
+  config: {
+    database?: {
+      url?: string;
+      schema?: string;
+    };
+  };
+  logger?: PluginLogger;
+  logContext: Record<string, unknown>;
+  logLabel: string;
+  supersedeRationale: string;
+  supersedeSource: string;
+  supersedeReason: string;
+  supersedeMetadata?: Record<string, unknown>;
+  supersedeTargets?: (input: {
+    promotedMemoryObjectId: string;
+    supersedeTargetIds: readonly string[];
+  }) => Promise<{ accepted: boolean; reason?: string }>;
+}): Promise<ApprovedMemoryObjectCorrectionPromotionAttempt> {
+  const plan = resolveMemoryCorrectionPlan({
+    familyId: params.familyId,
+    trigger: params.trigger,
+    promotionPolicy: params.promotionPolicy,
+    ...(params.activeSubjectTargetIds
+      ? { activeSubjectTargetIds: params.activeSubjectTargetIds }
+      : {}),
+    ...(params.activeApprovedSubjectObjectIds
+      ? { activeApprovedSubjectObjectIds: params.activeApprovedSubjectObjectIds }
+      : {}),
+    ...(params.conflictingApprovedObjectIds
+      ? { conflictingApprovedObjectIds: params.conflictingApprovedObjectIds }
+      : {}),
+  });
+  if (!isExecutableMemoryObjectCorrectionPlan(plan)) {
+    return {
+      kind: "not_executable",
+      plan,
+    };
+  }
+
+  const result = await executeMemoryObjectCorrectionPlan({
+    familyId: params.familyId,
+    plan,
+    candidateId: params.candidateId,
+    schema: params.schema,
+    reviewerAgentId: params.reviewerAgentId,
+    reviewCandidate: params.reviewCandidate,
+    promoteToMemory: params.promoteToMemory,
+    promotionMetadata: params.promotionMetadata,
+    config: params.config,
+    logger: params.logger,
+    logContext: params.logContext,
+    logLabel: params.logLabel,
+    supersedeRationale: params.supersedeRationale,
+    supersedeSource: params.supersedeSource,
+    supersedeReason: params.supersedeReason,
+    ...(params.supersedeMetadata ? { supersedeMetadata: params.supersedeMetadata } : {}),
+    ...(params.supersedeTargets ? { supersedeTargets: params.supersedeTargets } : {}),
+  });
+  return {
+    kind: "executed",
+    plan,
+    ...result,
+  };
+}
+
 export async function executeMemoryObjectCorrectionPlan(params: {
   familyId: MemoryFamilyId;
   plan: ExecutableMemoryObjectCorrectionPlan;
@@ -167,6 +268,10 @@ export async function executeMemoryObjectCorrectionPlan(params: {
   supersedeSource: string;
   supersedeReason: string;
   supersedeMetadata?: Record<string, unknown>;
+  supersedeTargets?: (input: {
+    promotedMemoryObjectId: string;
+    supersedeTargetIds: readonly string[];
+  }) => Promise<{ accepted: boolean; reason?: string }>;
 }): Promise<{ accepted: boolean; promotedMemoryObjectId?: string }> {
   const reviewResult = await params.reviewCandidate({
     candidateId: params.candidateId,
@@ -205,34 +310,50 @@ export async function executeMemoryObjectCorrectionPlan(params: {
     return { accepted: false };
   }
 
-  if (params.plan.supersedeTargetIds.length > 0 && params.config.database?.url) {
-    const client = new Client({ connectionString: params.config.database?.url });
+  if (params.plan.supersedeTargetIds.length > 0) {
     try {
-      await client.connect();
-      await client.query("begin");
-      const supersedeResult = await executeApprovedMemoryObjectSupersede({
-        client,
-        schema: params.config.database?.schema ?? params.schema,
-        targetObjectIds: params.plan.supersedeTargetIds,
-        supersededByObjectId: promotionResult.promotedMemoryObjectId,
-        reviewerAgentId: params.reviewerAgentId,
-        rationale: params.supersedeRationale,
-        source: params.supersedeSource,
-        supersededReason: params.supersedeReason,
-        ...(params.supersedeMetadata ? { metadata: params.supersedeMetadata } : {}),
-        logger: params.logger,
-        logLabel: params.logLabel,
-      });
-      if (!supersedeResult.accepted) {
-        throw new Error(supersedeResult.reason ?? `${params.logLabel} supersede failed`);
+      if (params.supersedeTargets) {
+        const supersedeResult = await params.supersedeTargets({
+          promotedMemoryObjectId: promotionResult.promotedMemoryObjectId,
+          supersedeTargetIds: params.plan.supersedeTargetIds,
+        });
+        if (!supersedeResult.accepted) {
+          throw new Error(supersedeResult.reason ?? `${params.logLabel} supersede failed`);
+        }
+      } else if (params.config.database?.url) {
+        const client = new Client({ connectionString: params.config.database?.url });
+        try {
+          await client.connect();
+          await client.query("begin");
+          const supersedeResult = await executeApprovedMemoryObjectSupersede({
+            client,
+            schema: params.config.database?.schema ?? params.schema,
+            targetObjectIds: params.plan.supersedeTargetIds,
+            supersededByObjectId: promotionResult.promotedMemoryObjectId,
+            reviewerAgentId: params.reviewerAgentId,
+            rationale: params.supersedeRationale,
+            source: params.supersedeSource,
+            supersededReason: params.supersedeReason,
+            ...(params.supersedeMetadata ? { metadata: params.supersedeMetadata } : {}),
+            logger: params.logger,
+            logLabel: params.logLabel,
+          });
+          if (!supersedeResult.accepted) {
+            throw new Error(supersedeResult.reason ?? `${params.logLabel} supersede failed`);
+          }
+          await client.query("commit");
+        } catch (error) {
+          try {
+            await client.query("rollback");
+          } catch {
+            // Best effort only.
+          }
+          throw error;
+        } finally {
+          await client.end().catch(() => {});
+        }
       }
-      await client.query("commit");
     } catch (error) {
-      try {
-        await client.query("rollback");
-      } catch {
-        // Best effort only.
-      }
       if (params.logger?.warn) {
         params.logger.warn(
           `memory-middleware ${params.logLabel} supersede failed ${JSON.stringify({
@@ -244,8 +365,6 @@ export async function executeMemoryObjectCorrectionPlan(params: {
         );
       }
       return { accepted: false };
-    } finally {
-      await client.end().catch(() => {});
     }
   }
 

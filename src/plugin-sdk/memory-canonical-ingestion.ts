@@ -59,7 +59,6 @@ export type CanonicalMemoryIngestionCapture = {
 };
 
 export type CanonicalMemoryIngestionCompatibility = {
-  transitionalFamilyId?: string;
   candidateKind?: CanonicalMemoryCandidateKind;
   captureClass?: string;
   reasonCode?: string;

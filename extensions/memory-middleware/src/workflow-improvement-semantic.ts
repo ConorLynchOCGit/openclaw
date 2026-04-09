@@ -1,33 +1,5 @@
 import { createHash } from "node:crypto";
 
-export const WORKFLOW_IMPROVEMENT_LESSON_KEYS = [
-  "vitest_wrapper_required",
-  "scripts_committer_required",
-  "git_stash_unsafe",
-  "docs_only_check_fast",
-  "memory_proof_runner_required",
-  "readyz_for_readiness",
-  "python_command_unavailable",
-  "gateway_tools_invoke_forbidden",
-  "openai_embeddings_api_key_required",
-  "anthropic_context1m_eligible_credential_required",
-] as const;
-
-export const WORKFLOW_IMPROVEMENT_TOOL_KEYS = [
-  "vitest",
-  "scripts_committer",
-  "git_stash",
-  "validation_tier",
-  "memory_proof_runner",
-  "gateway_readiness",
-  "python_runtime",
-  "gateway_tools_invoke",
-  "openai_embeddings",
-  "anthropic_context1m",
-] as const;
-
-export type WorkflowImprovementLessonKey = (typeof WORKFLOW_IMPROVEMENT_LESSON_KEYS)[number];
-export type WorkflowImprovementToolKey = (typeof WORKFLOW_IMPROVEMENT_TOOL_KEYS)[number];
 export type WorkflowImprovementSemanticConfidence = "high" | "medium";
 export type WorkflowImprovementCaptureClass =
   | "workflow_tool_gotcha"
@@ -51,7 +23,6 @@ export type WorkflowImprovementTemplate =
   | "project_rule_guidance"
   | "unmet_need_recommendation";
 export type WorkflowImprovementLessonFamily =
-  | "supported_lesson"
   | "generalized_workflow_lesson"
   | "generalized_project_rule"
   | "generalized_unmet_need";
@@ -60,6 +31,10 @@ export type WorkflowImprovementGuidancePattern =
   | "trust_for_scope"
   | "avoid_only";
 export type WorkflowImprovementNeedCategory = "missing_workflow_support";
+export type WorkflowImprovementSemanticProfileId =
+  | "environment_constraint"
+  | "workflow_tool_gotcha"
+  | "api_workaround";
 
 export type WorkflowImprovementCanonicalMatch = {
   captureClass: WorkflowImprovementCaptureClass;
@@ -67,8 +42,7 @@ export type WorkflowImprovementCanonicalMatch = {
   reasonCode: WorkflowImprovementReasonCode;
   template: WorkflowImprovementTemplate;
   lessonFamily: WorkflowImprovementLessonFamily;
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
+  semanticProfileId?: WorkflowImprovementSemanticProfileId;
   guidancePattern?: WorkflowImprovementGuidancePattern;
   subject: string;
   value: string;
@@ -102,122 +76,6 @@ export type WorkflowImprovementSemanticCaptureDecision =
       reason: string;
       evidence: string[];
     };
-
-type WorkflowImprovementSpec = {
-  captureClass: WorkflowImprovementCaptureClass;
-  reasonCode: WorkflowImprovementReasonCode;
-  template: WorkflowImprovementTemplate;
-  toolKey: WorkflowImprovementToolKey;
-  subject: string;
-  value: string;
-  content: string;
-};
-
-const WORKFLOW_IMPROVEMENT_SPECS: Record<WorkflowImprovementLessonKey, WorkflowImprovementSpec> = {
-  vitest_wrapper_required: {
-    captureClass: "workflow_tool_gotcha",
-    reasonCode: "workflow_tool_gotcha_statement",
-    template: "workflow_tool_gotcha",
-    toolKey: "vitest",
-    subject: "test runner wrapper",
-    value: "use pnpm test -- <path-or-filter> [vitest args...] instead of raw vitest",
-    content:
-      "Workflow improvement: use pnpm test -- <path-or-filter> [vitest args...] instead of raw vitest so the repo test wrapper stays active.",
-  },
-  scripts_committer_required: {
-    captureClass: "workflow_tool_gotcha",
-    reasonCode: "workflow_tool_gotcha_statement",
-    template: "workflow_tool_gotcha",
-    toolKey: "scripts_committer",
-    subject: "scoped commit workflow",
-    value: 'use scripts/committer "<msg>" <file...> instead of manual git add / git commit',
-    content:
-      'Workflow improvement: use scripts/committer "<msg>" <file...> instead of manual git add / git commit so staging stays scoped.',
-  },
-  git_stash_unsafe: {
-    captureClass: "workflow_tool_gotcha",
-    reasonCode: "workflow_tool_gotcha_statement",
-    template: "workflow_tool_gotcha",
-    toolKey: "git_stash",
-    subject: "multi-agent git state safety",
-    value: "do not use git stash during multi-agent repo work",
-    content:
-      "Workflow improvement: do not use git stash during multi-agent repo work because it can disturb concurrent work.",
-  },
-  docs_only_check_fast: {
-    captureClass: "workflow_tool_gotcha",
-    reasonCode: "workflow_tool_gotcha_statement",
-    template: "workflow_tool_gotcha",
-    toolKey: "validation_tier",
-    subject: "docs-only validation tier",
-    value:
-      "for docs or process-only work, use pnpm check:fast instead of full pnpm check, pnpm build, or full pnpm test",
-    content:
-      "Workflow improvement: for docs or process-only work, use pnpm check:fast instead of full pnpm check, pnpm build, or full pnpm test.",
-  },
-  memory_proof_runner_required: {
-    captureClass: "workflow_tool_gotcha",
-    reasonCode: "workflow_tool_gotcha_statement",
-    template: "workflow_tool_gotcha",
-    toolKey: "memory_proof_runner",
-    subject: "memory proof workflow",
-    value: "use pnpm memory:proof instead of bespoke host-side setup for bounded memory proof",
-    content:
-      "Workflow improvement: use pnpm memory:proof instead of bespoke host-side setup for bounded memory proof.",
-  },
-  readyz_for_readiness: {
-    captureClass: "workflow_tool_gotcha",
-    reasonCode: "workflow_tool_gotcha_statement",
-    template: "workflow_tool_gotcha",
-    toolKey: "gateway_readiness",
-    subject: "gateway readiness checks",
-    value: "trust /readyz for readiness; /healthz is only a shallow liveness signal",
-    content:
-      "Workflow improvement: trust /readyz for readiness; /healthz is only a shallow liveness signal.",
-  },
-  python_command_unavailable: {
-    captureClass: "workflow_environment_constraint",
-    reasonCode: "workflow_environment_constraint_statement",
-    template: "workflow_environment_constraint",
-    toolKey: "python_runtime",
-    subject: "python runtime availability",
-    value: "python command is not available here; use node --input-type=module or tsx instead",
-    content:
-      "Environment constraint: python command is not available in this environment; use node --input-type=module or tsx instead.",
-  },
-  gateway_tools_invoke_forbidden: {
-    captureClass: "workflow_environment_constraint",
-    reasonCode: "workflow_environment_constraint_statement",
-    template: "workflow_environment_constraint",
-    toolKey: "gateway_tools_invoke",
-    subject: "gateway tool invocation path",
-    value: "gateway POST /tools/invoke is forbidden here; use direct runtime invocation instead",
-    content:
-      "Environment constraint: gateway POST /tools/invoke is forbidden in this environment; use direct runtime invocation instead.",
-  },
-  openai_embeddings_api_key_required: {
-    captureClass: "workflow_api_workaround",
-    reasonCode: "workflow_api_workaround_statement",
-    template: "workflow_api_workaround",
-    toolKey: "openai_embeddings",
-    subject: "OpenAI embeddings auth",
-    value:
-      "OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings",
-    content:
-      "API workaround: OpenAI embeddings require a configured OPENAI_API_KEY or another embeddings provider; OpenClaw does not use openai-codex OAuth profiles directly for embeddings.",
-  },
-  anthropic_context1m_eligible_credential_required: {
-    captureClass: "workflow_api_workaround",
-    reasonCode: "workflow_api_workaround_statement",
-    template: "workflow_api_workaround",
-    toolKey: "anthropic_context1m",
-    subject: "Anthropic long-context eligibility",
-    value:
-      "Anthropic Extra usage required for long context requests means the credential is not eligible for context1m; use an eligible billed API key or disable context1m and keep a fallback model configured",
-    content:
-      "API workaround: Anthropic Extra usage required for long context requests means the credential is not eligible for context1m; use an eligible billed API key or disable context1m and keep a fallback model configured.",
-  },
-};
 
 function normalizeText(value: string): string {
   return value.trim().replace(/\s+/g, " ");
@@ -326,9 +184,10 @@ function buildGeneralizedWorkflowImprovementSubjectKey(params: {
     .digest("hex");
 }
 
-function buildWorkflowImprovementKey(params: {
-  lessonKey: WorkflowImprovementLessonKey;
+function buildSpecificWorkflowImprovementKey(params: {
   captureClass: WorkflowImprovementCaptureClass;
+  semanticProfileId: WorkflowImprovementSemanticProfileId;
+  normalizedSubject: string;
   normalizedValue: string;
 }): string {
   return createHash("sha256")
@@ -336,58 +195,111 @@ function buildWorkflowImprovementKey(params: {
       [
         "memory-middleware",
         "ordinary-turn",
-        "workflow-improvement-v1",
+        "workflow-improvement-specific-v2",
         params.captureClass,
-        params.lessonKey,
+        params.semanticProfileId,
+        params.normalizedSubject,
         params.normalizedValue,
       ].join("|"),
     )
     .digest("hex");
 }
 
-function buildWorkflowImprovementSubjectKey(params: {
-  lessonKey: WorkflowImprovementLessonKey;
+function buildSpecificWorkflowImprovementSubjectKey(params: {
   captureClass: WorkflowImprovementCaptureClass;
+  semanticProfileId: WorkflowImprovementSemanticProfileId;
+  normalizedSubject: string;
 }): string {
   return createHash("sha256")
     .update(
       [
         "memory-middleware",
         "ordinary-turn",
-        "workflow-improvement-subject-v1",
+        "workflow-improvement-specific-subject-v2",
         params.captureClass,
-        params.lessonKey,
+        params.semanticProfileId,
+        params.normalizedSubject,
       ].join("|"),
     )
     .digest("hex");
 }
 
-function createMatch(lessonKey: WorkflowImprovementLessonKey): WorkflowImprovementCanonicalMatch {
-  const spec = WORKFLOW_IMPROVEMENT_SPECS[lessonKey];
-  const normalizedSubject = normalizeLower(spec.subject);
-  const normalizedValue = normalizeLower(spec.value);
+function createSpecificWorkflowImprovementMatch(params: {
+  captureClass: Extract<
+    WorkflowImprovementCaptureClass,
+    "workflow_environment_constraint" | "workflow_api_workaround"
+  >;
+  reasonCode: Extract<
+    WorkflowImprovementReasonCode,
+    "workflow_environment_constraint_statement" | "workflow_api_workaround_statement"
+  >;
+  template: Extract<
+    WorkflowImprovementTemplate,
+    "workflow_environment_constraint" | "workflow_api_workaround"
+  >;
+  semanticProfileId: Extract<
+    WorkflowImprovementSemanticProfileId,
+    "environment_constraint" | "api_workaround"
+  >;
+  subject: string;
+  value: string;
+  recommendedAction?: string;
+  avoidAction?: string;
+  rationale?: string;
+}): WorkflowImprovementCanonicalMatch {
+  const subject = normalizeWorkflowScope(params.subject);
+  const value = trimTerminalPunctuation(normalizeText(params.value));
+  const recommendedAction = params.recommendedAction
+    ? normalizeWorkflowSegment(params.recommendedAction)
+    : undefined;
+  const avoidAction = params.avoidAction ? normalizeWorkflowSegment(params.avoidAction) : undefined;
+  const rationale = params.rationale ? normalizeWorkflowSegment(params.rationale) : undefined;
+  const normalizedSubject = normalizeLower(subject);
+  const normalizedValue = normalizeLower(value);
   return {
-    captureClass: spec.captureClass,
+    captureClass: params.captureClass,
     candidateKind: "improvement",
-    reasonCode: spec.reasonCode,
-    template: spec.template,
-    lessonFamily: "supported_lesson",
-    lessonKey,
-    toolKey: spec.toolKey,
-    subject: spec.subject,
-    value: spec.value,
+    reasonCode: params.reasonCode,
+    template: params.template,
+    lessonFamily: "generalized_workflow_lesson",
+    semanticProfileId: params.semanticProfileId,
+    subject,
+    value,
     normalizedSubject,
     normalizedValue,
-    content: spec.content,
-    subjectKey: buildWorkflowImprovementSubjectKey({
-      lessonKey,
-      captureClass: spec.captureClass,
+    content:
+      params.captureClass === "workflow_environment_constraint"
+        ? `Environment constraint: ${value}.`
+        : `API workaround: ${value}.`,
+    subjectKey: buildSpecificWorkflowImprovementSubjectKey({
+      captureClass: params.captureClass,
+      semanticProfileId: params.semanticProfileId,
+      normalizedSubject,
     }),
-    key: buildWorkflowImprovementKey({
-      lessonKey,
-      captureClass: spec.captureClass,
+    key: buildSpecificWorkflowImprovementKey({
+      captureClass: params.captureClass,
+      semanticProfileId: params.semanticProfileId,
+      normalizedSubject,
       normalizedValue,
     }),
+    ...(recommendedAction
+      ? {
+          recommendedAction,
+          normalizedRecommendedAction: normalizeLower(recommendedAction),
+        }
+      : {}),
+    ...(avoidAction
+      ? {
+          avoidAction,
+          normalizedAvoidAction: normalizeLower(avoidAction),
+        }
+      : {}),
+    ...(rationale
+      ? {
+          rationale,
+          normalizedRationale: normalizeLower(rationale),
+        }
+      : {}),
   };
 }
 
@@ -461,9 +373,10 @@ export function createGeneralizedWorkflowImprovementMatch(params: {
   };
 }
 
-function detectVitestLesson(normalized: string): {
+function detectVitestWorkflowGuidance(normalized: string): {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
+  match: WorkflowImprovementCanonicalMatch;
 } | null {
   if (
     (/\buse pnpm test\b/.test(normalized) &&
@@ -476,6 +389,13 @@ function detectVitestLesson(normalized: string): {
     return {
       confidence: "high",
       evidence: ["tool_vitest", "wrapper_command", "replacement_phrase"],
+      match: createGeneralizedWorkflowImprovementMatch({
+        guidancePattern: "use_instead_of",
+        subject: "repo tests",
+        recommendedAction: "pnpm test -- <path-or-filter> [vitest args...]",
+        avoidAction: "raw vitest",
+        rationale: "the repo test wrapper stays active",
+      }),
     };
   }
 
@@ -489,15 +409,23 @@ function detectVitestLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["tool_vitest", "wrapper_reference", "pnpm_test_reference"],
+      match: createGeneralizedWorkflowImprovementMatch({
+        guidancePattern: "use_instead_of",
+        subject: "repo tests",
+        recommendedAction: "pnpm test -- <path-or-filter> [vitest args...]",
+        avoidAction: "raw vitest",
+        rationale: "the repo test wrapper stays active",
+      }),
     };
   }
 
   return null;
 }
 
-function detectScriptsCommitterLesson(normalized: string): {
+function detectScriptsCommitterWorkflowGuidance(normalized: string): {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
+  match: WorkflowImprovementCanonicalMatch;
 } | null {
   if (
     /\bscripts\/committer\b/.test(normalized) &&
@@ -509,6 +437,13 @@ function detectScriptsCommitterLesson(normalized: string): {
     return {
       confidence: "high",
       evidence: ["tool_scripts_committer", "commit_guidance", "replacement_phrase"],
+      match: createGeneralizedWorkflowImprovementMatch({
+        guidancePattern: "use_instead_of",
+        subject: "scoped commits",
+        recommendedAction: 'scripts/committer "<msg>" <file...>',
+        avoidAction: "manual git add / git commit",
+        rationale: "staging stays scoped",
+      }),
     };
   }
 
@@ -521,15 +456,23 @@ function detectScriptsCommitterLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["tool_scripts_committer", "commit_context"],
+      match: createGeneralizedWorkflowImprovementMatch({
+        guidancePattern: "use_instead_of",
+        subject: "scoped commits",
+        recommendedAction: 'scripts/committer "<msg>" <file...>',
+        avoidAction: "manual git add / git commit",
+        rationale: "staging stays scoped",
+      }),
     };
   }
 
   return null;
 }
 
-function detectGitStashLesson(normalized: string): {
+function detectGitStashWorkflowGuidance(normalized: string): {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
+  match: WorkflowImprovementCanonicalMatch;
 } | null {
   if (
     /\bgit stash\b/.test(normalized) &&
@@ -543,6 +486,12 @@ function detectGitStashLesson(normalized: string): {
     return {
       confidence: "high",
       evidence: ["tool_git_stash", "avoidance_phrase", "repo_context"],
+      match: createGeneralizedWorkflowImprovementMatch({
+        guidancePattern: "avoid_only",
+        subject: "concurrent repo work",
+        avoidAction: "git stash",
+        rationale: "it can disturb concurrent work",
+      }),
     };
   }
 
@@ -557,116 +506,12 @@ function detectGitStashLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["tool_git_stash", "risk_phrase"],
-    };
-  }
-
-  return null;
-}
-
-function detectDocsOnlyCheckFastLesson(normalized: string): {
-  confidence: WorkflowImprovementSemanticConfidence;
-  evidence: string[];
-} | null {
-  const hasDocsOnlyScope =
-    normalized.includes("docs-only") ||
-    normalized.includes("docs only") ||
-    normalized.includes("process-only") ||
-    normalized.includes("process only") ||
-    normalized.includes("docs/process-only") ||
-    normalized.includes("changelog-only") ||
-    normalized.includes("changelog only");
-  const hasCheckFast = normalized.includes("pnpm check fast") || normalized.includes("check fast");
-  const hasBroaderGate =
-    normalized.includes("pnpm check") ||
-    normalized.includes("pnpm build") ||
-    normalized.includes("pnpm test") ||
-    normalized.includes("full check") ||
-    normalized.includes("full suite");
-
-  if (
-    hasDocsOnlyScope &&
-    hasCheckFast &&
-    (hasBroaderGate ||
-      /\b(?:instead of|skip|no)\b/.test(normalized) ||
-      normalized.includes("dont build") ||
-      normalized.includes("do not build"))
-  ) {
-    return {
-      confidence: "high",
-      evidence: ["docs_only_scope", "check_fast", "broader_gate_reference"],
-    };
-  }
-
-  if (hasDocsOnlyScope && hasCheckFast) {
-    return {
-      confidence: "medium",
-      evidence: ["docs_only_scope", "check_fast"],
-    };
-  }
-
-  return null;
-}
-
-function detectMemoryProofRunnerLesson(normalized: string): {
-  confidence: WorkflowImprovementSemanticConfidence;
-  evidence: string[];
-} | null {
-  const hasProofCommand =
-    normalized.includes("pnpm memory proof") || normalized.includes("memory proof");
-  const hasProofContext =
-    normalized.includes("proof runner") ||
-    normalized.includes("bounded memory proof") ||
-    normalized.includes("isolated proof") ||
-    normalized.includes("production proof") ||
-    normalized.includes("memory slice");
-  const hasReplacement =
-    /\b(?:instead of|use)\b/.test(normalized) &&
-    (normalized.includes("bespoke") ||
-      normalized.includes("host side") ||
-      normalized.includes("manual") ||
-      normalized.includes("bootstrap") ||
-      normalized.includes("hand assembled"));
-
-  if (hasProofCommand && hasProofContext && (hasReplacement || /\buse\b/.test(normalized))) {
-    return {
-      confidence: "high",
-      evidence: ["memory_proof_command", "proof_context", "replacement_phrase"],
-    };
-  }
-
-  if (hasProofCommand && hasProofContext) {
-    return {
-      confidence: "medium",
-      evidence: ["memory_proof_command", "proof_context"],
-    };
-  }
-
-  return null;
-}
-
-function detectReadyzLesson(normalized: string): {
-  confidence: WorkflowImprovementSemanticConfidence;
-  evidence: string[];
-} | null {
-  const hasReadyz = normalized.includes("/readyz") || normalized.includes("readyz");
-  const hasHealthz = normalized.includes("/healthz") || normalized.includes("healthz");
-  const hasReadinessContext =
-    normalized.includes("readiness") ||
-    normalized.includes("rollout") ||
-    normalized.includes("proof");
-  const hasLiveness = normalized.includes("liveness") || normalized.includes("live only");
-
-  if (hasReadyz && hasReadinessContext && (hasHealthz || hasLiveness)) {
-    return {
-      confidence: "high",
-      evidence: ["readyz_probe", "readiness_context", "healthz_liveness_distinction"],
-    };
-  }
-
-  if (hasReadyz && hasReadinessContext) {
-    return {
-      confidence: "medium",
-      evidence: ["readyz_probe", "readiness_context"],
+      match: createGeneralizedWorkflowImprovementMatch({
+        guidancePattern: "avoid_only",
+        subject: "concurrent repo work",
+        avoidAction: "git stash",
+        rationale: "it can disturb concurrent work",
+      }),
     };
   }
 
@@ -676,6 +521,7 @@ function detectReadyzLesson(normalized: string): {
 function detectPythonUnavailableLesson(normalized: string): {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
+  match: WorkflowImprovementCanonicalMatch;
 } | null {
   const hasPython = /\bpython\b/.test(normalized);
   const hasUnavailable =
@@ -693,11 +539,34 @@ function detectPythonUnavailableLesson(normalized: string): {
       return {
         confidence: "high",
         evidence: ["system_python", "availability_constraint", "replacement_runtime"],
+        match: createSpecificWorkflowImprovementMatch({
+          captureClass: "workflow_environment_constraint",
+          reasonCode: "workflow_environment_constraint_statement",
+          template: "workflow_environment_constraint",
+          semanticProfileId: "environment_constraint",
+          subject: "python command availability",
+          value:
+            "python command is not available here; use node --input-type=module or tsx instead",
+          recommendedAction: "node --input-type=module or tsx",
+          avoidAction: "python",
+          rationale: "python command is not available here",
+        }),
       };
     }
     return {
       confidence: "medium",
       evidence: ["system_python", "availability_constraint", "runtime_reference"],
+      match: createSpecificWorkflowImprovementMatch({
+        captureClass: "workflow_environment_constraint",
+        reasonCode: "workflow_environment_constraint_statement",
+        template: "workflow_environment_constraint",
+        semanticProfileId: "environment_constraint",
+        subject: "python command availability",
+        value: "python command is not available here; use node --input-type=module or tsx instead",
+        recommendedAction: "node --input-type=module or tsx",
+        avoidAction: "python",
+        rationale: "python command is not available here",
+      }),
     };
   }
 
@@ -711,6 +580,17 @@ function detectPythonUnavailableLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["system_python", "availability_constraint", "environment_reference"],
+      match: createSpecificWorkflowImprovementMatch({
+        captureClass: "workflow_environment_constraint",
+        reasonCode: "workflow_environment_constraint_statement",
+        template: "workflow_environment_constraint",
+        semanticProfileId: "environment_constraint",
+        subject: "python command availability",
+        value: "python command is not available here; use node --input-type=module or tsx instead",
+        recommendedAction: "node --input-type=module or tsx",
+        avoidAction: "python",
+        rationale: "python command is not available here",
+      }),
     };
   }
 
@@ -720,6 +600,7 @@ function detectPythonUnavailableLesson(normalized: string): {
 function detectGatewayToolsInvokeLesson(normalized: string): {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
+  match: WorkflowImprovementCanonicalMatch;
 } | null {
   const hasInvokePath =
     /\/tools\/invoke\b/.test(normalized) ||
@@ -738,6 +619,17 @@ function detectGatewayToolsInvokeLesson(normalized: string): {
     return {
       confidence: "high",
       evidence: ["gateway_tools_invoke", "forbidden_phrase", "runtime_replacement"],
+      match: createSpecificWorkflowImprovementMatch({
+        captureClass: "workflow_environment_constraint",
+        reasonCode: "workflow_environment_constraint_statement",
+        template: "workflow_environment_constraint",
+        semanticProfileId: "environment_constraint",
+        subject: "gateway tool invocation path",
+        value: "gateway /tools/invoke is forbidden here; use direct runtime invocation instead",
+        recommendedAction: "direct runtime invocation",
+        avoidAction: "/tools/invoke",
+        rationale: "gateway /tools/invoke is forbidden here",
+      }),
     };
   }
 
@@ -745,6 +637,17 @@ function detectGatewayToolsInvokeLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["gateway_tools_invoke", "forbidden_phrase"],
+      match: createSpecificWorkflowImprovementMatch({
+        captureClass: "workflow_environment_constraint",
+        reasonCode: "workflow_environment_constraint_statement",
+        template: "workflow_environment_constraint",
+        semanticProfileId: "environment_constraint",
+        subject: "gateway tool invocation path",
+        value: "gateway /tools/invoke is forbidden here; use direct runtime invocation instead",
+        recommendedAction: "direct runtime invocation",
+        avoidAction: "/tools/invoke",
+        rationale: "gateway /tools/invoke is forbidden here",
+      }),
     };
   }
 
@@ -754,6 +657,7 @@ function detectGatewayToolsInvokeLesson(normalized: string): {
 function detectOpenAIEmbeddingsApiKeyLesson(normalized: string): {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
+  match: WorkflowImprovementCanonicalMatch;
 } | null {
   const hasEmbeddings =
     /\bembedding\b/.test(normalized) ||
@@ -774,6 +678,18 @@ function detectOpenAIEmbeddingsApiKeyLesson(normalized: string): {
     return {
       confidence: "high",
       evidence: ["openai_embeddings", "codex_oauth", "api_key_requirement"],
+      match: createSpecificWorkflowImprovementMatch({
+        captureClass: "workflow_api_workaround",
+        reasonCode: "workflow_api_workaround_statement",
+        template: "workflow_api_workaround",
+        semanticProfileId: "api_workaround",
+        subject: "OpenAI embeddings auth",
+        value:
+          "OpenAI embeddings still need a configured OPENAI_API_KEY or another embeddings provider; codex OAuth alone does not help here",
+        recommendedAction: "use a configured OPENAI_API_KEY or another embeddings provider",
+        avoidAction: "codex OAuth alone",
+        rationale: "semantic memory search still needs provider auth",
+      }),
     };
   }
 
@@ -781,6 +697,18 @@ function detectOpenAIEmbeddingsApiKeyLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["openai_embeddings", "codex_oauth", "api_key_reference"],
+      match: createSpecificWorkflowImprovementMatch({
+        captureClass: "workflow_api_workaround",
+        reasonCode: "workflow_api_workaround_statement",
+        template: "workflow_api_workaround",
+        semanticProfileId: "api_workaround",
+        subject: "OpenAI embeddings auth",
+        value:
+          "OpenAI embeddings still need a configured OPENAI_API_KEY or another embeddings provider; codex OAuth alone does not help here",
+        recommendedAction: "use a configured OPENAI_API_KEY or another embeddings provider",
+        avoidAction: "codex OAuth alone",
+        rationale: "semantic memory search still needs provider auth",
+      }),
     };
   }
 
@@ -790,6 +718,7 @@ function detectOpenAIEmbeddingsApiKeyLesson(normalized: string): {
 function detectAnthropicContext1mLesson(normalized: string): {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
+  match: WorkflowImprovementCanonicalMatch;
 } | null {
   const hasAnthropic = /\banthropic\b/.test(normalized);
   const hasLongContext =
@@ -810,6 +739,19 @@ function detectAnthropicContext1mLesson(normalized: string): {
     return {
       confidence: "high",
       evidence: ["anthropic_context1m", "specific_429_error", "workaround_reference"],
+      match: createSpecificWorkflowImprovementMatch({
+        captureClass: "workflow_api_workaround",
+        reasonCode: "workflow_api_workaround_statement",
+        template: "workflow_api_workaround",
+        semanticProfileId: "api_workaround",
+        subject: "Anthropic long-context eligibility",
+        value:
+          "Anthropic long-context requests need an eligible billed API key or a fallback model when the current credential is not eligible for context1m",
+        recommendedAction:
+          "use an eligible billed API key or disable context1m and keep a fallback model configured",
+        avoidAction: "assuming the current credential can use context1m",
+        rationale: "the current credential is not eligible for context1m",
+      }),
     };
   }
 
@@ -817,6 +759,19 @@ function detectAnthropicContext1mLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["anthropic_context1m", "specific_429_error"],
+      match: createSpecificWorkflowImprovementMatch({
+        captureClass: "workflow_api_workaround",
+        reasonCode: "workflow_api_workaround_statement",
+        template: "workflow_api_workaround",
+        semanticProfileId: "api_workaround",
+        subject: "Anthropic long-context eligibility",
+        value:
+          "Anthropic long-context requests need an eligible billed API key or a fallback model when the current credential is not eligible for context1m",
+        recommendedAction:
+          "use an eligible billed API key or disable context1m and keep a fallback model configured",
+        avoidAction: "assuming the current credential can use context1m",
+        rationale: "the current credential is not eligible for context1m",
+      }),
     };
   }
 
@@ -929,18 +884,6 @@ function detectGeneralizedWorkflowLesson(text: string): {
   return null;
 }
 
-export function isSupportedWorkflowImprovementLessonKey(
-  value: string,
-): value is WorkflowImprovementLessonKey {
-  return WORKFLOW_IMPROVEMENT_LESSON_KEYS.includes(value as WorkflowImprovementLessonKey);
-}
-
-export function getWorkflowImprovementSpec(
-  lessonKey: WorkflowImprovementLessonKey,
-): WorkflowImprovementSpec {
-  return WORKFLOW_IMPROVEMENT_SPECS[lessonKey];
-}
-
 export function detectWorkflowImprovementSemanticDecision(
   text: string,
 ): WorkflowImprovementSemanticCaptureDecision {
@@ -953,63 +896,33 @@ export function detectWorkflowImprovementSemanticDecision(
     };
   }
 
-  const vitest = detectVitestLesson(normalized);
+  const vitest = detectVitestWorkflowGuidance(normalized);
   if (vitest) {
     return {
       action: "capture",
       confidence: vitest.confidence,
       evidence: vitest.evidence,
-      match: createMatch("vitest_wrapper_required"),
+      match: vitest.match,
     };
   }
 
-  const scriptsCommitter = detectScriptsCommitterLesson(normalized);
+  const scriptsCommitter = detectScriptsCommitterWorkflowGuidance(normalized);
   if (scriptsCommitter) {
     return {
       action: "capture",
       confidence: scriptsCommitter.confidence,
       evidence: scriptsCommitter.evidence,
-      match: createMatch("scripts_committer_required"),
+      match: scriptsCommitter.match,
     };
   }
 
-  const gitStash = detectGitStashLesson(normalized);
+  const gitStash = detectGitStashWorkflowGuidance(normalized);
   if (gitStash) {
     return {
       action: "capture",
       confidence: gitStash.confidence,
       evidence: gitStash.evidence,
-      match: createMatch("git_stash_unsafe"),
-    };
-  }
-
-  const docsOnlyCheckFast = detectDocsOnlyCheckFastLesson(normalized);
-  if (docsOnlyCheckFast) {
-    return {
-      action: "capture",
-      confidence: docsOnlyCheckFast.confidence,
-      evidence: docsOnlyCheckFast.evidence,
-      match: createMatch("docs_only_check_fast"),
-    };
-  }
-
-  const memoryProofRunner = detectMemoryProofRunnerLesson(normalized);
-  if (memoryProofRunner) {
-    return {
-      action: "capture",
-      confidence: memoryProofRunner.confidence,
-      evidence: memoryProofRunner.evidence,
-      match: createMatch("memory_proof_runner_required"),
-    };
-  }
-
-  const readyz = detectReadyzLesson(normalized);
-  if (readyz) {
-    return {
-      action: "capture",
-      confidence: readyz.confidence,
-      evidence: readyz.evidence,
-      match: createMatch("readyz_for_readiness"),
+      match: gitStash.match,
     };
   }
 
@@ -1019,7 +932,7 @@ export function detectWorkflowImprovementSemanticDecision(
       action: "capture",
       confidence: pythonUnavailable.confidence,
       evidence: pythonUnavailable.evidence,
-      match: createMatch("python_command_unavailable"),
+      match: pythonUnavailable.match,
     };
   }
 
@@ -1029,7 +942,7 @@ export function detectWorkflowImprovementSemanticDecision(
       action: "capture",
       confidence: gatewayToolsInvoke.confidence,
       evidence: gatewayToolsInvoke.evidence,
-      match: createMatch("gateway_tools_invoke_forbidden"),
+      match: gatewayToolsInvoke.match,
     };
   }
 
@@ -1039,7 +952,7 @@ export function detectWorkflowImprovementSemanticDecision(
       action: "capture",
       confidence: openaiEmbeddings.confidence,
       evidence: openaiEmbeddings.evidence,
-      match: createMatch("openai_embeddings_api_key_required"),
+      match: openaiEmbeddings.match,
     };
   }
 
@@ -1049,7 +962,7 @@ export function detectWorkflowImprovementSemanticDecision(
       action: "capture",
       confidence: anthropicContext1m.confidence,
       evidence: anthropicContext1m.evidence,
-      match: createMatch("anthropic_context1m_eligible_credential_required"),
+      match: anthropicContext1m.match,
     };
   }
 

@@ -5,6 +5,16 @@
 This document records the first real non-disposable environment rollout that
 enabled exactly one middleware write path:
 
+Historical note:
+
+- this report records a retired local rollout lane
+- `memory-middleware-readonly-rollout-pg` is no longer part of the normal
+  runtime posture
+- the intended runtime database target is now the shared Supabase-backed
+  Postgres schema `memory_middleware`
+- local Docker Postgres remains acceptable only as disposable test or bounded
+  rehearsal infrastructure
+
 - `memory_candidate_submit`
 
 The rollout scope was intentionally limited to:

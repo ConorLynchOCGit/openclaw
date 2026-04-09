@@ -39,7 +39,16 @@ Provisioned shared target:
     - `vector`
 
 The earlier persistent local Docker rollout lane still exists, but it is no
-longer the only available non-production target.
+longer part of the intended normal runtime posture.
+
+Retirement note:
+
+- `memory-middleware-readonly-rollout-pg` remains historical proof history
+  only
+- the intended runtime database target is the shared Supabase-backed Postgres
+  schema `memory_middleware`
+- local Docker Postgres remains acceptable only for disposable tests or
+  bounded rehearsal
 
 ## Evidence collected
 

@@ -1,4 +1,5 @@
 import type { CanonicalMemoryRetrievalPlan } from "openclaw/plugin-sdk/memory-canonical-retrieval";
+import type { MemoryFamilyId } from "openclaw/plugin-sdk/memory-family-policy";
 import type { OpenClawPluginToolContext } from "../api.js";
 import type {
   MemoryObjectSearchHybridInput,
@@ -7,7 +8,7 @@ import type {
   RankedRetrievedMemoryRecord,
 } from "./db/runtime.js";
 import { readCanonicalFirstMetadataString } from "./memory-canonical-compat.js";
-import { getMemoryFamilyDefinition, type MemoryFamilyId } from "./memory-family-registry.js";
+import { getMemorySemanticRoutingRuntimePolicy } from "./memory-runtime-policy-views.js";
 import {
   buildCanonicalMemoryRetrievalPlan,
   normalizeRetrievalQuery,
@@ -133,16 +134,12 @@ function preferApprovedRecordsWithinSubjectClusters(
 function resolveWorkflowSemanticFallbackFamilies(
   hint: WorkflowImprovementQueryHint | null,
 ): SemanticFallbackFamily[] {
-  switch (hint?.lessonKey) {
-    case "python_command_unavailable":
-    case "gateway_tools_invoke_forbidden":
+  switch (hint?.captureClass) {
+    case "workflow_environment_constraint":
       return ["environment_constraint"];
-    case "vitest_wrapper_required":
-    case "scripts_committer_required":
-    case "git_stash_unsafe":
+    case "workflow_tool_gotcha":
       return ["workflow_tool_gotcha"];
-    case "openai_embeddings_api_key_required":
-    case "anthropic_context1m_eligible_credential_required":
+    case "workflow_api_workaround":
       return ["api_workaround"];
     default:
       return ["environment_constraint", "workflow_tool_gotcha", "api_workaround"];
@@ -160,8 +157,10 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
       scope,
     },
   });
-  const recurringProcedureDefinition = getMemoryFamilyDefinition("recurring_procedure");
-  const workflowImprovementDefinition = getMemoryFamilyDefinition("workflow_improvement");
+  const recurringProcedureSemanticRouting =
+    getMemorySemanticRoutingRuntimePolicy("recurring_procedure");
+  const workflowImprovementSemanticRouting =
+    getMemorySemanticRoutingRuntimePolicy("workflow_improvement");
   const responseStyleHint = resolveResponseStyleQueryHintFromCanonicalPlan(canonicalPlan);
   const projectFactHint = resolveProjectFactQueryHintFromCanonicalPlan(canonicalPlan);
   const workflowImprovementHint =
@@ -176,7 +175,7 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
     .semanticFallbackStrategies as readonly SemanticFallbackFamily[];
   const semanticFallbackFamilies: SemanticFallbackFamily[] = [];
   if (
-    recurringProcedureDefinition.semanticRoutingPolicy.mode === "validated_procedure_only" &&
+    recurringProcedureSemanticRouting.mode === "validated_procedure_only" &&
     params.input.kind === "procedure" &&
     scopeIncludesValidatedProcedures(scope) &&
     preferredStrategies.includes("procedure")
@@ -184,7 +183,7 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
     semanticFallbackFamilies.push("procedure");
   }
   if (
-    workflowImprovementDefinition.semanticRoutingPolicy.mode === "family_gated_approved_only" &&
+    workflowImprovementSemanticRouting.mode === "family_gated_approved_only" &&
     params.input.kind === "project" &&
     !scopeIncludesCandidates(scope) &&
     !scopeIncludesValidatedProcedures(scope)

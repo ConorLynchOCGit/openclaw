@@ -1,15 +1,15 @@
 import path from "node:path";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/memory-core";
-import { z } from "zod";
-import type { OpenClawPluginToolContext, PluginLogger } from "../api.js";
-import type { MemoryMiddlewareConfig } from "./config.js";
-import { MEMORY_OBJECT_SEARCH_SCOPES, type MemoryObjectSearchHybridInput } from "./db/runtime.js";
 import {
   getMemoryProofDefinition,
   isMemoryProofFamily,
   MEMORY_PROOF_FAMILY_IDS,
   type MemoryProofFamilyId,
-} from "./memory-family-registry.js";
+} from "openclaw/plugin-sdk/memory-family-policy";
+import { z } from "zod";
+import type { OpenClawPluginToolContext, PluginLogger } from "../api.js";
+import type { MemoryMiddlewareConfig } from "./config.js";
+import { MEMORY_OBJECT_SEARCH_SCOPES, type MemoryObjectSearchHybridInput } from "./db/runtime.js";
 import { createOrdinaryTurnAutoCaptureHandler } from "./ordinary-turn-auto-capture.js";
 import {
   buildProofLifecycleArtifacts as buildProofLifecycleArtifactsFromAdapters,

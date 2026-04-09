@@ -1,3 +1,4 @@
+import { getCaptureMetadataByCaptureClass } from "openclaw/plugin-sdk/memory-family-policy";
 import { Client } from "pg";
 import type { CandidateIngressPort } from "./candidate-ingress.js";
 import type { CandidateReviewPort } from "./candidate-review.js";
@@ -8,11 +9,8 @@ import type {
   CandidateSubmissionRejectedResult,
 } from "./db/runtime.js";
 import { buildCanonicalMemoryIngestionCandidateFromResolvedIngestion } from "./memory-canonical-compat.js";
-import {
-  getCaptureMetadataByWorkflowLessonFamily,
-  getMemoryFamilyDefinition,
-} from "./memory-family-registry.js";
 import { resolveWorkflowImprovementIngestion } from "./memory-ingestion-resolver.js";
+import { getMemoryLifecycleRuntimePolicy } from "./memory-runtime-policy-views.js";
 import {
   inspectWorkflowImprovementLifecycle,
   isExpiredPendingWorkflowImprovementCandidate,
@@ -20,9 +18,7 @@ import {
 import type {
   WorkflowImprovementGuidancePattern,
   WorkflowImprovementLessonFamily,
-  WorkflowImprovementLessonKey,
   WorkflowImprovementSemanticConfidence,
-  WorkflowImprovementToolKey,
 } from "./workflow-improvement-semantic.js";
 
 export type SelfImprovingCandidateCaptureInput = {
@@ -95,7 +91,7 @@ export type SelfImprovingCandidateCaptureRolloutScope = {
   sourceProfile: "reduced_profile_candidate_only";
   target: "candidate_only";
   requiresProjectId: true;
-  allowedLessonFamilies: Array<"supported_lesson" | "generalized_workflow_lesson">;
+  allowedLessonFamilies: Array<"generalized_workflow_lesson">;
   retrievalAuthority: "approved_only";
 };
 
@@ -113,15 +109,14 @@ const SELF_IMPROVING_CAPTURE_MODE_DISABLED_REASON =
   "self-improving candidate capture mode is not enabled";
 const DEFAULT_SELF_IMPROVING_ALLOWED_LESSON_FAMILIES = [
   "generalized_workflow_lesson",
-  "supported_lesson",
-] as const satisfies Array<"supported_lesson" | "generalized_workflow_lesson">;
+] as const satisfies Array<"generalized_workflow_lesson">;
 
 type ResolvedSelfImprovingWorkflowImprovement = Awaited<
   ReturnType<typeof resolveWorkflowImprovementIngestion>
 >;
 
 function buildRolloutScope(
-  allowedLessonFamilies: ReadonlyArray<"supported_lesson" | "generalized_workflow_lesson">,
+  allowedLessonFamilies: ReadonlyArray<"generalized_workflow_lesson">,
   enablementTarget: "default-off" | "off-production" | "production-canary",
 ): SelfImprovingCandidateCaptureRolloutScope {
   return {
@@ -214,8 +209,6 @@ function buildWorkflowImprovementSemanticMetadata(params: {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
   lessonFamily: WorkflowImprovementLessonFamily;
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
 }): Record<string, unknown> {
   return {
@@ -231,8 +224,6 @@ function buildWorkflowImprovementSemanticMetadata(params: {
       detectionSource: params.detectionSource,
       confidence: params.confidence,
       lessonFamily: params.lessonFamily,
-      ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
-      ...(params.toolKey ? { toolKey: params.toolKey } : {}),
       ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
       evidence: params.evidence,
     },
@@ -244,8 +235,6 @@ function buildWorkflowImprovementPendingConfirmationMetadata(params: {
   evidence: string[];
   lessonFamily: WorkflowImprovementLessonFamily;
   state?: "pending_confirmation" | "hold_for_more_evidence";
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
   clusterKey?: string;
 }): Record<string, unknown> {
@@ -259,8 +248,6 @@ function buildWorkflowImprovementPendingConfirmationMetadata(params: {
       observedAt,
       expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
       lessonFamily: params.lessonFamily,
-      ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
-      ...(params.toolKey ? { toolKey: params.toolKey } : {}),
       ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
       ...(params.clusterKey ? { clusterKey: params.clusterKey } : {}),
       evidence: params.evidence,
@@ -273,8 +260,8 @@ function buildCandidateMetadata(params: {
   resolution: NonNullable<ResolvedSelfImprovingWorkflowImprovement>;
   rolloutScope: SelfImprovingCandidateCaptureRolloutScope;
 }): Record<string, unknown> {
-  const workflowCaptureMetadata = getCaptureMetadataByWorkflowLessonFamily(
-    params.resolution.lessonFamily,
+  const workflowCaptureMetadata = getCaptureMetadataByCaptureClass(
+    params.resolution.parsed.captureClass,
   );
 
   return {
@@ -300,8 +287,6 @@ function buildCandidateMetadata(params: {
       reasonCode: params.resolution.parsed.reasonCode,
       template: params.resolution.parsed.template,
       lessonFamily: params.resolution.lessonFamily,
-      ...(params.resolution.lessonKey ? { lessonKey: params.resolution.lessonKey } : {}),
-      ...(params.resolution.toolKey ? { toolKey: params.resolution.toolKey } : {}),
       ...(params.resolution.guidancePattern
         ? { guidancePattern: params.resolution.guidancePattern }
         : {}),
@@ -356,8 +341,6 @@ function buildCandidateMetadata(params: {
       confidence: params.resolution.confidence,
       evidence: params.resolution.evidence,
       lessonFamily: params.resolution.lessonFamily,
-      ...(params.resolution.lessonKey ? { lessonKey: params.resolution.lessonKey } : {}),
-      ...(params.resolution.toolKey ? { toolKey: params.resolution.toolKey } : {}),
       ...(params.resolution.guidancePattern
         ? { guidancePattern: params.resolution.guidancePattern }
         : {}),
@@ -367,14 +350,10 @@ function buildCandidateMetadata(params: {
       evidence: params.resolution.evidence,
       lessonFamily: params.resolution.lessonFamily,
       state: params.resolution.reviewMode,
-      ...(params.resolution.lessonKey ? { lessonKey: params.resolution.lessonKey } : {}),
-      ...(params.resolution.toolKey ? { toolKey: params.resolution.toolKey } : {}),
       ...(params.resolution.guidancePattern
         ? { guidancePattern: params.resolution.guidancePattern }
         : {}),
-      ...(params.resolution.lessonFamily !== "supported_lesson"
-        ? { clusterKey: params.resolution.parsed.key }
-        : {}),
+      clusterKey: params.resolution.parsed.key,
     }),
     selfImprovingAdaptation: {
       source: SELF_IMPROVING_CAPTURE_SOURCE,
@@ -418,8 +397,7 @@ async function findRecentRejectedWorkflowImprovementCandidate(params: {
   }
 
   const schema = params.config.database.schema ?? "memory_middleware";
-  const staleWindowDays =
-    getMemoryFamilyDefinition("workflow_improvement").lifecyclePolicy.staleWindowDays;
+  const staleWindowDays = getMemoryLifecycleRuntimePolicy("workflow_improvement").staleWindowDays;
   const client = new Client({ connectionString: params.config.database.url });
 
   try {
@@ -460,7 +438,7 @@ async function submitWorkflowImprovementCandidate(params: {
   candidateReview: CandidateReviewPort;
   input: SelfImprovingCandidateCaptureInput;
   rolloutScope: SelfImprovingCandidateCaptureRolloutScope;
-  allowedLessonFamilies: ReadonlySet<"supported_lesson" | "generalized_workflow_lesson">;
+  allowedLessonFamilies: ReadonlySet<"generalized_workflow_lesson">;
 }): Promise<SelfImprovingCandidateCaptureResult> {
   if (!params.input.projectId) {
     return {
@@ -511,8 +489,7 @@ async function submitWorkflowImprovementCandidate(params: {
   }
 
   if (
-    (resolution.lessonFamily !== "supported_lesson" &&
-      resolution.lessonFamily !== "generalized_workflow_lesson") ||
+    resolution.lessonFamily !== "generalized_workflow_lesson" ||
     !params.allowedLessonFamilies.has(resolution.lessonFamily)
   ) {
     return {

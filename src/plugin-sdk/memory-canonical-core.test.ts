@@ -9,7 +9,7 @@ import {
 describe("memory-canonical-core", () => {
   it("defines the four canonical memory kinds", () => {
     expect(CANONICAL_MEMORY_KINDS).toEqual(["user", "feedback", "project", "reference"]);
-    expect(CANONICAL_MEMORY_RECOMMENDED_FACET_KEYS).toContain("lessonKey");
+    expect(CANONICAL_MEMORY_RECOMMENDED_FACET_KEYS).not.toContain("lessonKey");
   });
 
   it("creates bounded canonical records with normalized tags and defaults", () => {
@@ -21,7 +21,7 @@ describe("memory-canonical-core", () => {
       tags: ["workflow_guidance", "feedback", "workflow_guidance"],
       facets: {
         workflow_guidance: true,
-        lessonKey: "lazy_loading_boundary",
+        guidancePattern: "use_instead_of",
       },
     });
 
@@ -34,7 +34,7 @@ describe("memory-canonical-core", () => {
       tags: ["feedback", "workflow_guidance"],
       facets: {
         workflow_guidance: true,
-        lessonKey: "lazy_loading_boundary",
+        guidancePattern: "use_instead_of",
       },
     });
   });
@@ -44,16 +44,16 @@ describe("memory-canonical-core", () => {
       mergeCanonicalMemoryFacets(
         {
           workflow_guidance: true,
-          toolKey: "pnpm",
+          guidancePattern: "use_instead_of",
         },
         {
-          toolKey: "vitest",
+          guidancePattern: "avoid_only",
           rankingHints: ["semantic", "project_scoped"],
         },
       ),
     ).toEqual({
       workflow_guidance: true,
-      toolKey: "vitest",
+      guidancePattern: "avoid_only",
       rankingHints: ["semantic", "project_scoped"],
     });
   });

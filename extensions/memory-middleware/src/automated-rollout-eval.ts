@@ -43,7 +43,10 @@ export type AutomatedRolloutEvalGuidanceSignal = {
   suppressedConflictCount: number;
   estimatedPromptTokens: number;
   provenances: Array<"native_capture" | "self_improving_capture">;
-  toolKeys: string[];
+  lessonFamilies: Array<"generalized_workflow_lesson">;
+  guidancePatterns: string[];
+  recommendedActions: string[];
+  avoidActions: string[];
 };
 
 export type AutomatedRolloutEvalReport = {
@@ -100,6 +103,54 @@ function summarizeFailure(result: { status: string; reason?: string }): string {
   return result.reason ? `${result.status}: ${result.reason}` : result.status;
 }
 
+function buildApprovedCanonicalWorkflowGuidanceMetadata(params: {
+  lessonFamily: "generalized_workflow_lesson";
+  subject: string;
+  subjectKey: string;
+  recommendedAction: string;
+  avoidAction?: string;
+  guidancePattern: "use_instead_of" | "trust_for_scope" | "avoid_only";
+}): Record<string, unknown> {
+  const statement =
+    params.guidancePattern === "use_instead_of" && params.avoidAction
+      ? `for ${params.subject}, use ${params.recommendedAction} instead of ${params.avoidAction}`
+      : params.guidancePattern === "trust_for_scope" && params.avoidAction
+        ? `for ${params.subject}, trust ${params.recommendedAction}; ${params.avoidAction} is only a narrower signal`
+        : params.guidancePattern === "avoid_only" && params.avoidAction
+          ? `for ${params.subject}, avoid ${params.avoidAction}`
+          : `for ${params.subject}, use ${params.recommendedAction}`;
+  return {
+    candidateMetadata: {
+      canonicalIngestionCandidate: {
+        record: {
+          kind: "feedback",
+          subject: params.subject,
+          statement,
+          tags: ["feedback", "workflow_guidance", "workflow_improvement"],
+          facets: {
+            workflow_guidance: true,
+            lessonFamily: params.lessonFamily,
+            subjectKey: params.subjectKey,
+            captureClass: "workflow_generalized_guidance",
+            guidancePattern: params.guidancePattern,
+            recommendedAction: params.recommendedAction,
+            ...(params.avoidAction ? { avoidAction: params.avoidAction } : {}),
+          },
+          provenance: {
+            captureSeam: "tool-submitted",
+            captureProfile: "tool-submitted",
+            reviewState: "approved",
+          },
+          compatibility: {
+            captureCategory: "workflow_improvement",
+            captureSource: "explicit_workflow_improvement",
+          },
+        },
+      },
+    },
+  };
+}
+
 function requireAcceptedCandidateSubmission(
   result: CandidateSubmissionResult,
   label: string,
@@ -130,8 +181,15 @@ function buildGuidanceSignal(
     suppressedConflictCount: result.suppressedConflicts.length,
     estimatedPromptTokens: result.observability.estimatedPromptTokens,
     provenances: result.suggestions.map((suggestion) => suggestion.provenance),
-    toolKeys: result.suggestions
-      .map((suggestion) => suggestion.toolKey)
+    lessonFamilies: result.suggestions.map((suggestion) => suggestion.lessonFamily),
+    guidancePatterns: result.suggestions
+      .map((suggestion) => suggestion.guidancePattern)
+      .filter((value): value is string => typeof value === "string" && value.length > 0),
+    recommendedActions: result.suggestions
+      .map((suggestion) => suggestion.recommendedAction)
+      .filter((value): value is string => typeof value === "string" && value.length > 0),
+    avoidActions: result.suggestions
+      .map((suggestion) => suggestion.avoidAction)
       .filter((value): value is string => typeof value === "string" && value.length > 0),
   };
 }
@@ -242,35 +300,27 @@ async function insertConflictingApprovedGuidance(params: {
         params.context.agentId,
         params.context.sessionId,
         "Workflow improvement: for release proof notes, use PRE_CAPTURE_HARDENING_BATCH_REPORT_V1.md instead of ad hoc scratch notes.",
-        JSON.stringify({
-          candidateMetadata: {
-            autoCapture: {
-              lessonFamily: "generalized_workflow_lesson",
-              subjectKey: "release-proof-notes",
-              guidancePattern: "use_instead_of",
-              recommendedAction: "PRE_CAPTURE_HARDENING_BATCH_REPORT_V1.md",
-              avoidAction: "ad hoc scratch notes",
-            },
-            candidateLifecycle: {
-              family: "workflow_improvement",
-            },
-          },
-        }),
+        JSON.stringify(
+          buildApprovedCanonicalWorkflowGuidanceMetadata({
+            lessonFamily: "generalized_workflow_lesson",
+            subject: "release proof notes",
+            subjectKey: "release-proof-notes",
+            guidancePattern: "use_instead_of",
+            recommendedAction: "PRE_CAPTURE_HARDENING_BATCH_REPORT_V1.md",
+            avoidAction: "ad hoc scratch notes",
+          }),
+        ),
         "Workflow improvement: for release proof notes, use SELF_IMPROVING_AND_ADVISORY_BATCH_REPORT_V1.md instead of ad hoc scratch notes.",
-        JSON.stringify({
-          candidateMetadata: {
-            autoCapture: {
-              lessonFamily: "generalized_workflow_lesson",
-              subjectKey: "release-proof-notes",
-              guidancePattern: "use_instead_of",
-              recommendedAction: "SELF_IMPROVING_AND_ADVISORY_BATCH_REPORT_V1.md",
-              avoidAction: "ad hoc scratch notes",
-            },
-            candidateLifecycle: {
-              family: "workflow_improvement",
-            },
-          },
-        }),
+        JSON.stringify(
+          buildApprovedCanonicalWorkflowGuidanceMetadata({
+            lessonFamily: "generalized_workflow_lesson",
+            subject: "release proof notes",
+            subjectKey: "release-proof-notes",
+            guidancePattern: "use_instead_of",
+            recommendedAction: "SELF_IMPROVING_AND_ADVISORY_BATCH_REPORT_V1.md",
+            avoidAction: "ad hoc scratch notes",
+          }),
+        ),
       ],
     );
     return result.rows.map((row) => row.id);
@@ -697,15 +747,33 @@ export async function runAutomatedRolloutEval(params: {
     learnedGuidance.nativeWorkflow.outcome === "guidance_available" &&
     learnedGuidance.nativeWorkflow.advisoryOnly &&
     learnedGuidance.nativeWorkflow.provenances.includes("native_capture") &&
-    learnedGuidance.nativeWorkflow.toolKeys.includes(
-      REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedToolKey,
+    learnedGuidance.nativeWorkflow.lessonFamilies.includes(
+      REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedLessonFamily,
+    ) &&
+    learnedGuidance.nativeWorkflow.guidancePatterns.includes(
+      REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedGuidancePattern,
+    ) &&
+    learnedGuidance.nativeWorkflow.recommendedActions.includes(
+      REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedRecommendedAction,
+    ) &&
+    learnedGuidance.nativeWorkflow.avoidActions.includes(
+      REAL_WORKSPACE_NATIVE_WORKFLOW_PACKET.expectedAvoidAction,
     );
   const learnedGuidanceSelfImprovingPassed =
     learnedGuidance.selfImprovingWorkflow.outcome === "guidance_available" &&
     learnedGuidance.selfImprovingWorkflow.advisoryOnly &&
     learnedGuidance.selfImprovingWorkflow.provenances.includes("self_improving_capture") &&
-    learnedGuidance.selfImprovingWorkflow.toolKeys.includes(
-      REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedToolKey,
+    learnedGuidance.selfImprovingWorkflow.lessonFamilies.includes(
+      REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedLessonFamily,
+    ) &&
+    learnedGuidance.selfImprovingWorkflow.guidancePatterns.includes(
+      REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedGuidancePattern,
+    ) &&
+    learnedGuidance.selfImprovingWorkflow.recommendedActions.includes(
+      REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedRecommendedAction,
+    ) &&
+    learnedGuidance.selfImprovingWorkflow.avoidActions.includes(
+      REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedAvoidAction,
     );
   const learnedGuidanceConflictPassed =
     learnedGuidance.conflictingWorkflowGuidance.outcome === "conflict_suppressed" &&

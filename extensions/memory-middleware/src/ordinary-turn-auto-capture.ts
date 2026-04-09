@@ -3,6 +3,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { type CanonicalMemoryIngestionCandidate } from "openclaw/plugin-sdk/memory-canonical-ingestion";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/memory-core";
+import { getCaptureMetadataByCaptureClass } from "openclaw/plugin-sdk/memory-family-policy";
 import type { PluginLogger } from "../api.js";
 import type { CandidateIngressPort } from "./candidate-ingress.js";
 import {
@@ -21,10 +22,6 @@ import {
   resolveMemoryCorrectionPromotionPolicy,
   resolveMemoryCorrectionPlan,
 } from "./memory-correction-engine.js";
-import {
-  getCaptureMetadataByCaptureClass,
-  getMemoryFamilyIdByWorkflowLessonFamily,
-} from "./memory-family-registry.js";
 import {
   resolveProjectFactIngestion,
   resolveRecurringProcedureIngestion,
@@ -106,15 +103,12 @@ import {
 import {
   createGeneralizedWorkflowImprovementMatch,
   type WorkflowImprovementCanonicalMatch,
-  type WorkflowImprovementCaptureClass,
   type WorkflowImprovementGuidancePattern,
   type WorkflowImprovementLessonFamily,
-  type WorkflowImprovementLessonKey,
   type WorkflowImprovementNeedCategory,
   type WorkflowImprovementReasonCode,
   type WorkflowImprovementSemanticConfidence,
   type WorkflowImprovementTemplate,
-  type WorkflowImprovementToolKey,
 } from "./workflow-improvement-semantic.js";
 import {
   findApprovedWorkflowPhrasePatternMatch,
@@ -799,8 +793,6 @@ type WorkflowImprovementCaptureDecision = {
   evidence: string[];
   reviewMode: "pending_confirmation" | "hold_for_more_evidence";
   lessonFamily: WorkflowImprovementLessonFamily;
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
   match: OrdinaryTurnAutoCaptureMatch;
 };
@@ -1696,8 +1688,6 @@ async function detectWorkflowImprovementCaptureDecision(
     evidence: resolution.evidence,
     reviewMode: resolution.reviewMode,
     lessonFamily: resolution.lessonFamily,
-    ...(resolution.lessonKey ? { lessonKey: resolution.lessonKey } : {}),
-    ...(resolution.toolKey ? { toolKey: resolution.toolKey } : {}),
     ...(resolution.guidancePattern ? { guidancePattern: resolution.guidancePattern } : {}),
     match: resolution.parsed,
   };
@@ -1923,8 +1913,6 @@ function buildWorkflowImprovementSemanticMetadata(params: {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
   lessonFamily: WorkflowImprovementLessonFamily;
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
 }): Record<string, unknown> {
   return {
@@ -1940,8 +1928,6 @@ function buildWorkflowImprovementSemanticMetadata(params: {
       detectionSource: params.detectionSource,
       confidence: params.confidence,
       lessonFamily: params.lessonFamily,
-      ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
-      ...(params.toolKey ? { toolKey: params.toolKey } : {}),
       ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
       evidence: params.evidence,
     },
@@ -2029,8 +2015,6 @@ function buildWorkflowImprovementPendingConfirmationMetadata(params: {
   evidence: string[];
   lessonFamily: WorkflowImprovementLessonFamily;
   state?: "pending_confirmation" | "hold_for_more_evidence";
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
   observedAt?: string;
   clusterKey?: string;
@@ -2048,8 +2032,6 @@ function buildWorkflowImprovementPendingConfirmationMetadata(params: {
         Date.parse(observedAt) + WORKFLOW_IMPROVEMENT_CONFIRMATION_WINDOW_MS,
       ).toISOString(),
       lessonFamily: params.lessonFamily,
-      ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
-      ...(params.toolKey ? { toolKey: params.toolKey } : {}),
       ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
       ...(params.clusterKey ? { clusterKey: params.clusterKey } : {}),
       ...(typeof params.contradictionCount === "number"
@@ -2619,8 +2601,6 @@ async function rejectWorkflowImprovementCandidateIfPresent(params: {
   candidateId: string;
   subjectKey: string;
   lessonFamily: WorkflowImprovementLessonFamily;
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
   guidancePattern?: WorkflowImprovementGuidancePattern;
   rationale: string;
   reviewerAgentId?: string;
@@ -2640,8 +2620,6 @@ async function rejectWorkflowImprovementCandidateIfPresent(params: {
         state: "rejected",
         subjectKey: params.subjectKey,
         lessonFamily: params.lessonFamily,
-        ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
-        ...(params.toolKey ? { toolKey: params.toolKey } : {}),
         ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
       },
     },
@@ -2652,8 +2630,6 @@ async function rejectWorkflowImprovementCandidateIfPresent(params: {
         candidateId: params.candidateId,
         subjectKey: params.subjectKey,
         lessonFamily: params.lessonFamily,
-        ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
-        ...(params.toolKey ? { toolKey: params.toolKey } : {}),
         ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
         reason: result.reason ?? "unknown",
       }),
@@ -2672,8 +2648,8 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
   config: MemoryMiddlewareConfig;
   cfg?: OpenClawConfig;
   sessionKey?: string;
+  semanticProfileId?: "environment_constraint" | "workflow_tool_gotcha" | "api_workaround";
   lessonFamily: WorkflowImprovementLessonFamily;
-  lessonKey?: WorkflowImprovementLessonKey;
 }): Promise<string | null> {
   const reviewResult = await params.reviewCandidate({
     candidateId: params.candidateId,
@@ -2709,8 +2685,7 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
   }
 
   if (
-    (params.lessonKey === "python_command_unavailable" ||
-      params.lessonKey === "gateway_tools_invoke_forbidden") &&
+    params.semanticProfileId === "environment_constraint" &&
     promotionResult.promotedMemoryObjectId
   ) {
     await storeApprovedEnvironmentConstraintSemanticEmbedding({
@@ -2721,9 +2696,7 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
       logger: params.logger,
     });
   } else if (
-    (params.lessonKey === "vitest_wrapper_required" ||
-      params.lessonKey === "scripts_committer_required" ||
-      params.lessonKey === "git_stash_unsafe") &&
+    params.semanticProfileId === "workflow_tool_gotcha" &&
     promotionResult.promotedMemoryObjectId
   ) {
     await storeApprovedWorkflowToolGotchaSemanticEmbedding({
@@ -2734,8 +2707,7 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
       logger: params.logger,
     });
   } else if (
-    (params.lessonKey === "openai_embeddings_api_key_required" ||
-      params.lessonKey === "anthropic_context1m_eligible_credential_required") &&
+    params.semanticProfileId === "api_workaround" &&
     promotionResult.promotedMemoryObjectId
   ) {
     await storeApprovedApiWorkaroundSemanticEmbedding({
@@ -2760,8 +2732,6 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
 function buildWorkflowImprovementAutoPromotionMetadata(params: {
   match: OrdinaryTurnAutoCaptureMatch;
   lessonFamily: WorkflowImprovementLessonFamily;
-  lessonKey?: WorkflowImprovementLessonKey;
-  toolKey?: WorkflowImprovementToolKey;
   agentExternalKey: string;
   sessionKey: string;
   transcriptFile: string;
@@ -2779,8 +2749,6 @@ function buildWorkflowImprovementAutoPromotionMetadata(params: {
       captureClass: params.match.captureClass,
       reasonCode: params.match.reasonCode,
       lessonFamily: params.lessonFamily,
-      ...(params.lessonKey ? { lessonKey: params.lessonKey } : {}),
-      ...(params.toolKey ? { toolKey: params.toolKey } : {}),
       key: params.match.key,
       subjectKey: params.match.subjectKey,
       subject: params.match.subject,
@@ -2818,7 +2786,14 @@ function buildWorkflowImprovementAutoPromotionMetadata(params: {
 function isAutoReviewedManagedImprovementDecision(
   decision: WorkflowImprovementCaptureDecision,
 ): boolean {
-  return decision.lessonFamily !== "supported_lesson";
+  // All active workflow-improvement lesson families are canonicalized now.
+  // Keep auto-review available for the generalized workflow, project-rule,
+  // and unmet-need lanes instead of keying on a retired legacy family name.
+  return (
+    decision.lessonFamily === "generalized_workflow_lesson" ||
+    decision.lessonFamily === "generalized_project_rule" ||
+    decision.lessonFamily === "generalized_unmet_need"
+  );
 }
 
 function findConflictingApprovedGeneralizedGuidanceEntries(params: {
@@ -4165,9 +4140,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         effectiveDecision = {
           action: "capture",
           canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch({
-            familyId:
-              getMemoryFamilyIdByWorkflowLessonFamily(deterministicPattern.match.lessonFamily) ??
-              "workflow_improvement",
+            familyId: resolveWorkflowCaptureFamilyId(deterministicPattern.match.captureClass),
             match: deterministicMatch,
             reviewMode: "hold_for_more_evidence",
             detectionSource: "deterministic",
@@ -4195,8 +4168,6 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       confidence: effectiveDecision.confidence,
       evidence: effectiveDecision.evidence,
       lessonFamily: effectiveDecision.lessonFamily,
-      ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
-      ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
       ...(effectiveDecision.guidancePattern
         ? { guidancePattern: effectiveDecision.guidancePattern }
         : {}),
@@ -4245,8 +4216,6 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         candidateId: inspection.pendingCandidate.id,
         subjectKey: match.subjectKey,
         lessonFamily: effectiveDecision.lessonFamily,
-        ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
-        ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
         ...(effectiveDecision.guidancePattern
           ? { guidancePattern: effectiveDecision.guidancePattern }
           : {}),
@@ -4355,8 +4324,6 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       canonicalCandidate: decisionParams.decision.canonicalCandidate,
       autoCaptureExtras: {
         lessonFamily: effectiveDecision.lessonFamily,
-        ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
-        ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
         ...(effectiveDecision.guidancePattern
           ? { guidancePattern: effectiveDecision.guidancePattern }
           : {}),
@@ -4390,8 +4357,6 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           evidence: effectiveDecision.evidence,
           lessonFamily: effectiveDecision.lessonFamily,
           state: effectiveDecision.reviewMode,
-          ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
-          ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
           ...(effectiveDecision.guidancePattern
             ? { guidancePattern: effectiveDecision.guidancePattern }
             : {}),
@@ -4446,9 +4411,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       }
 
       const workflowCorrectionPlan = resolveMemoryCorrectionPlan({
-        familyId:
-          getMemoryFamilyIdByWorkflowLessonFamily(effectiveDecision.lessonFamily) ??
-          "workflow_improvement",
+        familyId: resolveWorkflowCaptureFamilyId(effectiveDecision.match.captureClass),
         trigger: "cluster_auto_review",
         conflictingApprovedObjectIds: conflictingApprovedGeneralizedEntries.map(
           (entry) => entry.id,
@@ -4467,6 +4430,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         config: params.config,
         cfg: params.cfg,
         sessionKey: decisionParams.sessionKey,
+        semanticProfileId: effectiveDecision.match.semanticProfileId,
         lessonFamily: effectiveDecision.lessonFamily,
         metadata: buildWorkflowImprovementAutoReviewMetadata({
           match,
@@ -4576,13 +4540,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         config: params.config,
         cfg: params.cfg,
         sessionKey: decisionParams.sessionKey,
+        semanticProfileId: effectiveDecision.match.semanticProfileId,
         lessonFamily: effectiveDecision.lessonFamily,
-        ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
         metadata: buildWorkflowImprovementAutoPromotionMetadata({
           match,
           lessonFamily: effectiveDecision.lessonFamily,
-          ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
-          ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
           agentExternalKey: decisionParams.agentExternalKey,
           sessionKey: decisionParams.sessionKey,
           transcriptFile: decisionParams.transcriptFile,
@@ -4600,8 +4562,6 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           key: match.key,
           subjectKey: match.subjectKey,
           lessonFamily: effectiveDecision.lessonFamily,
-          ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
-          ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
           confidence: effectiveDecision.confidence,
         },
       });
@@ -4657,8 +4617,6 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       formatLog("memory-middleware ordinary-turn workflow-improvement capture accepted", {
         key: match.key,
         lessonFamily: effectiveDecision.lessonFamily,
-        ...(effectiveDecision.lessonKey ? { lessonKey: effectiveDecision.lessonKey } : {}),
-        ...(effectiveDecision.toolKey ? { toolKey: effectiveDecision.toolKey } : {}),
         ...(effectiveDecision.guidancePattern
           ? { guidancePattern: effectiveDecision.guidancePattern }
           : {}),
@@ -5095,4 +5053,16 @@ export function createOrdinaryTurnAutoCaptureController(params: {
       }
     },
   };
+}
+function resolveWorkflowCaptureFamilyId(
+  captureClass: string,
+): "workflow_improvement" | "project_rule" | "unmet_need" {
+  const captureCategory = getCaptureMetadataByCaptureClass(captureClass)?.category;
+  if (captureCategory === "project_rule") {
+    return "project_rule";
+  }
+  if (captureCategory === "unmet_need") {
+    return "unmet_need";
+  }
+  return "workflow_improvement";
 }

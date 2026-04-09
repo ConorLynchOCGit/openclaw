@@ -209,10 +209,6 @@ describe("plugin-sdk subpath exports", () => {
       "createCanonicalMemoryRankingHint",
       "CANONICAL_MEMORY_SEMANTIC_FALLBACK_STRATEGIES",
     ]);
-    expectSourceOmitsImportPattern(
-      "memory-family-policy",
-      "../../extensions/memory-middleware/src/memory-family-registry.js",
-    );
     expectSourceMentions("telegram-core", [
       "ChannelMessageActionAdapter",
       "TelegramAccountConfig",

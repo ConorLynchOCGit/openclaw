@@ -27,8 +27,7 @@ describe("memory-canonical-ingestion", () => {
         scope: { kind: "project", projectId: "atlas-forge" },
         tags: ["feedback", "workflow"],
         facets: {
-          lessonKey: "lazy_loading_boundary",
-          toolKey: "pnpm build",
+          guidancePattern: "use_instead_of",
         },
       },
       identity: {
@@ -45,7 +44,6 @@ describe("memory-canonical-ingestion", () => {
         reviewMode: "hold_for_more_evidence",
       },
       compatibility: {
-        transitionalFamilyId: "workflow_improvement",
         candidateKind: "improvement",
         captureClass: "workflow_generalized_guidance",
         metadata: {
@@ -73,7 +71,6 @@ describe("memory-canonical-ingestion", () => {
         reviewMode: "hold_for_more_evidence",
       },
       compatibility: {
-        transitionalFamilyId: "workflow_improvement",
         candidateKind: "improvement",
         captureClass: "workflow_generalized_guidance",
         metadata: {

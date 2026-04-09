@@ -11,8 +11,12 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
       action: "capture",
       confidence: "high",
       match: {
-        lessonKey: "vitest_wrapper_required",
-        toolKey: "vitest",
+        lessonFamily: "generalized_workflow_lesson",
+        captureClass: "workflow_generalized_guidance",
+        guidancePattern: "use_instead_of",
+        subject: "repo tests",
+        recommendedAction: "pnpm test -- <path-or-filter> [vitest args...]",
+        avoidAction: "raw vitest",
       },
     });
   });
@@ -26,7 +30,9 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
       action: "capture",
       confidence: "medium",
       match: {
-        lessonKey: "vitest_wrapper_required",
+        lessonFamily: "generalized_workflow_lesson",
+        guidancePattern: "use_instead_of",
+        subject: "repo tests",
       },
     });
   });
@@ -40,8 +46,12 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
       action: "capture",
       confidence: "high",
       match: {
-        lessonKey: "scripts_committer_required",
-        toolKey: "scripts_committer",
+        lessonFamily: "generalized_workflow_lesson",
+        captureClass: "workflow_generalized_guidance",
+        guidancePattern: "use_instead_of",
+        subject: "scoped commits",
+        recommendedAction: 'scripts/committer "<msg>" <file...>',
+        avoidAction: "manual git add / git commit",
       },
     });
   });
@@ -55,8 +65,11 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
       action: "capture",
       confidence: "high",
       match: {
-        lessonKey: "git_stash_unsafe",
-        toolKey: "git_stash",
+        lessonFamily: "generalized_workflow_lesson",
+        captureClass: "workflow_generalized_guidance",
+        guidancePattern: "avoid_only",
+        subject: "concurrent repo",
+        avoidAction: "git stash",
       },
     });
   });
@@ -70,8 +83,12 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
       action: "capture",
       confidence: "high",
       match: {
-        lessonKey: "docs_only_check_fast",
-        toolKey: "validation_tier",
+        lessonFamily: "generalized_workflow_lesson",
+        captureClass: "workflow_generalized_guidance",
+        guidancePattern: "use_instead_of",
+        subject: "docs-only",
+        recommendedAction: "pnpm check:fast",
+        avoidAction: "full pnpm check or pnpm build",
       },
     });
   });
@@ -85,8 +102,12 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
       action: "capture",
       confidence: "high",
       match: {
-        lessonKey: "memory_proof_runner_required",
-        toolKey: "memory_proof_runner",
+        lessonFamily: "generalized_workflow_lesson",
+        captureClass: "workflow_generalized_guidance",
+        guidancePattern: "use_instead_of",
+        subject: "bounded memory proof",
+        recommendedAction: "pnpm memory:proof",
+        avoidAction: "bespoke host-side setup",
       },
     });
   });
@@ -100,8 +121,12 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
       action: "capture",
       confidence: "high",
       match: {
-        lessonKey: "readyz_for_readiness",
-        toolKey: "gateway_readiness",
+        lessonFamily: "generalized_workflow_lesson",
+        captureClass: "workflow_generalized_guidance",
+        guidancePattern: "trust_for_scope",
+        subject: "rollout readiness",
+        recommendedAction: "/readyz",
+        avoidAction: "/healthz",
       },
     });
   });
@@ -115,9 +140,12 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
       action: "capture",
       confidence: "high",
       match: {
-        lessonKey: "python_command_unavailable",
-        toolKey: "python_runtime",
         captureClass: "workflow_environment_constraint",
+        semanticProfileId: "environment_constraint",
+        lessonFamily: "generalized_workflow_lesson",
+        subject: "python command availability",
+        recommendedAction: "node --input-type=module or tsx",
+        avoidAction: "python",
       },
     });
   });
@@ -131,9 +159,12 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
       action: "capture",
       confidence: "high",
       match: {
-        lessonKey: "gateway_tools_invoke_forbidden",
-        toolKey: "gateway_tools_invoke",
         captureClass: "workflow_environment_constraint",
+        semanticProfileId: "environment_constraint",
+        lessonFamily: "generalized_workflow_lesson",
+        subject: "gateway tool invocation path",
+        recommendedAction: "direct runtime invocation",
+        avoidAction: "/tools/invoke",
       },
     });
   });
@@ -147,9 +178,12 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
       action: "capture",
       confidence: "high",
       match: {
-        lessonKey: "openai_embeddings_api_key_required",
-        toolKey: "openai_embeddings",
         captureClass: "workflow_api_workaround",
+        semanticProfileId: "api_workaround",
+        lessonFamily: "generalized_workflow_lesson",
+        subject: "OpenAI embeddings auth",
+        recommendedAction: "use a configured OPENAI_API_KEY or another embeddings provider",
+        avoidAction: "codex OAuth alone",
       },
     });
   });
@@ -163,9 +197,13 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
       action: "capture",
       confidence: "high",
       match: {
-        lessonKey: "anthropic_context1m_eligible_credential_required",
-        toolKey: "anthropic_context1m",
         captureClass: "workflow_api_workaround",
+        semanticProfileId: "api_workaround",
+        lessonFamily: "generalized_workflow_lesson",
+        subject: "Anthropic long-context eligibility",
+        recommendedAction:
+          "use an eligible billed API key or disable context1m and keep a fallback model configured",
+        avoidAction: "assuming the current credential can use context1m",
       },
     });
   });

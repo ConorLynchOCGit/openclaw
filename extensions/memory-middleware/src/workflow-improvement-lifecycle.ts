@@ -10,8 +10,8 @@ import {
   type ClusteredMemoryPendingCandidate,
 } from "./clustered-memory-lifecycle.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
-import { getMemoryFamilyDefinition } from "./memory-family-registry.js";
 import { executeApprovedMemoryObjectSupersede } from "./memory-object-supersede.js";
+import { getMemoryLifecycleRuntimePolicy } from "./memory-runtime-policy-views.js";
 
 type WorkflowImprovementLifecycleRow = ClusteredMemoryLifecycleRowBase & {
   resolved_template: string | null;
@@ -184,8 +184,7 @@ export async function inspectWorkflowImprovementLifecycle(params: {
         metadata->'promotionMetadata'->'autoPromotion'->>'normalizedRationale'
       ) as resolved_normalized_rationale`,
     ],
-    pendingStates:
-      getMemoryFamilyDefinition("workflow_improvement").lifecyclePolicy.pendingCandidateStates,
+    pendingStates: getMemoryLifecycleRuntimePolicy("workflow_improvement").pendingCandidateStates,
     toSubjectEntry: toWorkflowImprovementSubjectEntry,
   });
   if (!inspection) {

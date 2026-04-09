@@ -35,7 +35,7 @@ function createConfig(): MemoryMiddlewareConfig {
     selfImprovingCapture: {
       mode: "candidate-only",
       rolloutTarget: "off-production",
-      allowedLessonFamilies: ["generalized_workflow_lesson", "supported_lesson"],
+      allowedLessonFamilies: ["generalized_workflow_lesson"],
     },
   };
 }
@@ -73,16 +73,18 @@ describe("self-improving candidate capture", () => {
 
     expect(candidateIngress.submitImprovementNote).toHaveBeenCalledWith(
       expect.objectContaining({
+        projectId: "project-1",
         metadata: expect.objectContaining({
           canonicalIngestionCandidate: expect.objectContaining({
             record: expect.objectContaining({
               kind: "feedback",
               compatibility: expect.objectContaining({
-                transitionalFamilyId: "workflow_improvement",
+                captureCategory: "workflow_improvement",
               }),
             }),
             compatibility: expect.objectContaining({
               candidateKind: "improvement",
+              captureClass: "workflow_generalized_guidance",
             }),
           }),
         }),

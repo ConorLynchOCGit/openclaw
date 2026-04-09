@@ -18,9 +18,18 @@ export type WriteResultStage<TContext, TResult> = {
   apply: (params: { context: TContext; result: TResult }) => Promise<TResult>;
 };
 
-export type CandidateWriteStageMatch = {
+export type CandidateWriteStageCondition = {
   submissionKinds?: readonly CandidateSubmissionInput["kind"][];
+  lanes?: readonly CandidateWriteLane[];
   familyIds?: readonly MemoryFamilyId[];
+  canonicalKinds?: readonly string[];
+  captureCategories?: readonly string[];
+  captureClasses?: readonly string[];
+  derivedViews?: readonly string[];
+};
+
+export type CandidateWriteStageMatch = CandidateWriteStageCondition & {
+  anyOf?: readonly CandidateWriteStageCondition[];
 };
 
 export type CandidateWriteResolutionStage<TContext, TResult> = WriteResolutionStage<
@@ -76,7 +85,41 @@ export async function runWriteResultStages<TContext, TResult>(params: {
 
 function resolveCandidateWriteFamilyId(input: CandidateSubmissionInput): MemoryFamilyId | null {
   const canonicalCandidate = readCanonicalMemoryIngestionCandidateFromMetadata(input.metadata);
-  const canonicalFamilyId = canonicalCandidate?.compatibility.transitionalFamilyId;
+  const captureCategory =
+    typeof canonicalCandidate?.record.compatibility.captureCategory === "string"
+      ? canonicalCandidate.record.compatibility.captureCategory
+      : undefined;
+  const tags = canonicalCandidate?.record.tags ?? [];
+  const captureClass = canonicalCandidate?.compatibility.captureClass;
+  const canonicalFamilyId =
+    captureCategory === "project_fact" ||
+    captureCategory === "recurring_procedure" ||
+    captureCategory === "workflow_improvement" ||
+    captureCategory === "project_rule" ||
+    captureCategory === "unmet_need"
+      ? captureCategory
+      : captureClass === "explicit_preference" ||
+          captureClass === "preference_correction" ||
+          captureClass === "explicit_requirement" ||
+          captureClass === "requirement_correction"
+        ? "response_style"
+        : captureClass === "explicit_project_fact" || captureClass === "project_fact_correction"
+          ? "project_fact"
+          : captureClass === "recurring_procedure" ||
+              captureClass === "recurring_procedure_correction"
+            ? "recurring_procedure"
+            : captureClass === "workflow_tool_gotcha" ||
+                captureClass === "workflow_environment_constraint" ||
+                captureClass === "workflow_api_workaround" ||
+                captureClass === "workflow_generalized_guidance"
+              ? "workflow_improvement"
+              : captureClass === "project_rule_guidance"
+                ? "project_rule"
+                : captureClass === "unmet_need_recommendation"
+                  ? "unmet_need"
+                  : tags.includes("response_style")
+                    ? "response_style"
+                    : null;
   if (
     canonicalFamilyId === "response_style" ||
     canonicalFamilyId === "project_fact" ||
@@ -87,67 +130,160 @@ function resolveCandidateWriteFamilyId(input: CandidateSubmissionInput): MemoryF
   ) {
     return canonicalFamilyId;
   }
-
-  const metadata = input.metadata;
-  const autoCapture =
-    metadata?.autoCapture &&
-    typeof metadata.autoCapture === "object" &&
-    !Array.isArray(metadata.autoCapture)
-      ? (metadata.autoCapture as Record<string, unknown>)
-      : null;
-  const category = typeof metadata?.category === "string" ? metadata.category : null;
-  const captureClass =
-    typeof autoCapture?.captureClass === "string" ? autoCapture.captureClass : null;
-
-  if (
-    category === "user_preference" ||
-    category === "user_requirement" ||
-    captureClass === "explicit_preference" ||
-    captureClass === "explicit_requirement" ||
-    captureClass === "preference_correction" ||
-    captureClass === "requirement_correction"
-  ) {
-    return "response_style";
-  }
-  if (
-    category === "project_fact" ||
-    category === "project_fact_correction" ||
-    captureClass === "explicit_project_fact" ||
-    captureClass === "project_fact_correction"
-  ) {
-    return "project_fact";
-  }
-  if (
-    category === "recurring_procedure" ||
-    category === "recurring_procedure_correction" ||
-    captureClass === "explicit_recurring_procedure" ||
-    captureClass === "recurring_procedure_correction"
-  ) {
-    return "recurring_procedure";
-  }
-  if (
-    category === "project_rule" ||
-    category === "unmet_need" ||
-    category === "workflow_improvement" ||
-    captureClass === "project_rule_guidance" ||
-    captureClass === "unmet_need_recommendation" ||
-    captureClass === "workflow_generalized_guidance" ||
-    captureClass === "workflow_supported_lesson"
-  ) {
-    if (category === "project_rule" || captureClass === "project_rule_guidance") {
-      return "project_rule";
-    }
-    if (category === "unmet_need" || captureClass === "unmet_need_recommendation") {
-      return "unmet_need";
-    }
-    return "workflow_improvement";
-  }
   return null;
 }
 
-function matchesCandidateWriteStage(
+export type CandidateWriteClassification = {
+  lanes: readonly CandidateWriteLane[];
+  familyId: MemoryFamilyId | null;
+  canonicalKind?: string;
+  captureCategory?: string;
+  captureClass?: string;
+  derivedViews: readonly string[];
+  dedupeKey?: string;
+  subjectKey?: string;
+};
+
+export type CandidateWriteLane =
+  | "user_preference"
+  | "project_fact"
+  | "recurring_procedure"
+  | "workflow_guidance"
+  | "project_rule"
+  | "unmet_need";
+
+export type CandidateWriteOperation = {
+  id: string;
+  input: CandidateSubmissionInput;
+  classification: CandidateWriteClassification;
+};
+
+export type CandidateWritePlan = {
+  operation: CandidateWriteOperation;
+};
+
+function resolveCandidateWriteLanes(params: {
+  familyId: MemoryFamilyId | null;
+  captureCategory?: string;
+  derivedViews: readonly string[];
+}): readonly CandidateWriteLane[] {
+  const lanes = new Set<CandidateWriteLane>();
+  if (params.familyId === "response_style" || params.derivedViews.includes("response_style")) {
+    lanes.add("user_preference");
+  }
+  if (params.captureCategory === "project_fact" || params.familyId === "project_fact") {
+    lanes.add("project_fact");
+  }
+  if (
+    params.captureCategory === "recurring_procedure" ||
+    params.familyId === "recurring_procedure"
+  ) {
+    lanes.add("recurring_procedure");
+  }
+  if (
+    params.captureCategory === "workflow_improvement" ||
+    params.familyId === "workflow_improvement" ||
+    params.derivedViews.includes("workflow_guidance")
+  ) {
+    lanes.add("workflow_guidance");
+  }
+  if (params.captureCategory === "project_rule" || params.familyId === "project_rule") {
+    lanes.add("project_rule");
+  }
+  if (params.captureCategory === "unmet_need" || params.familyId === "unmet_need") {
+    lanes.add("unmet_need");
+  }
+  return [...lanes];
+}
+
+export function resolveCandidateWriteClassification(
   input: CandidateSubmissionInput,
-  match: CandidateWriteStageMatch | undefined,
+): CandidateWriteClassification {
+  const canonicalCandidate = readCanonicalMemoryIngestionCandidateFromMetadata(input.metadata);
+  const familyId = resolveCandidateWriteFamilyId(input);
+  const derivedViews =
+    Array.isArray(canonicalCandidate?.record.tags) &&
+    canonicalCandidate.record.tags.some((tag) => tag === "workflow_guidance")
+      ? ["workflow_guidance"]
+      : [];
+  const captureCategory =
+    typeof canonicalCandidate?.record.compatibility.captureCategory === "string"
+      ? canonicalCandidate.record.compatibility.captureCategory
+      : undefined;
+  return {
+    lanes: resolveCandidateWriteLanes({
+      familyId,
+      captureCategory,
+      derivedViews,
+    }),
+    familyId,
+    canonicalKind: canonicalCandidate?.record.kind,
+    captureCategory,
+    captureClass: canonicalCandidate?.compatibility.captureClass,
+    derivedViews,
+    dedupeKey:
+      typeof canonicalCandidate?.identity.dedupeKey === "string"
+        ? canonicalCandidate.identity.dedupeKey
+        : undefined,
+    subjectKey:
+      typeof canonicalCandidate?.identity.subjectKey === "string"
+        ? canonicalCandidate.identity.subjectKey
+        : undefined,
+  };
+}
+
+export function buildCandidateWritePlan(input: CandidateSubmissionInput): CandidateWritePlan {
+  const classification = resolveCandidateWriteClassification(input);
+  return {
+    operation: {
+      id: "primary",
+      input,
+      classification,
+    },
+  };
+}
+
+function readPrimaryCandidateWriteOperation<TContext extends { input: CandidateSubmissionInput }>(
+  context: TContext & {
+    candidateWritePlan?: CandidateWritePlan;
+  },
+): CandidateWriteOperation {
+  const plan = context.candidateWritePlan ?? buildCandidateWritePlan(context.input);
+  return plan.operation;
+}
+
+export function buildCandidateWriteExecutionContext<
+  TContext extends { input: CandidateSubmissionInput },
+>(
+  context: TContext,
+): TContext & {
+  candidateWritePlan: CandidateWritePlan;
+  candidateWriteClassification: CandidateWriteClassification;
+} {
+  const candidateWritePlan = buildCandidateWritePlan(context.input);
+  return {
+    ...context,
+    candidateWritePlan,
+    candidateWriteClassification: candidateWritePlan.operation.classification,
+  };
+}
+
+function readCandidateWriteClassification<TContext extends { input: CandidateSubmissionInput }>(
+  context: TContext & {
+    candidateWritePlan?: CandidateWritePlan;
+    candidateWriteClassification?: CandidateWriteClassification;
+  },
+): CandidateWriteClassification {
+  return (
+    context.candidateWriteClassification ??
+    readPrimaryCandidateWriteOperation(context).classification
+  );
+}
+
+function matchesCandidateWriteStageCondition(
+  input: CandidateSubmissionInput,
+  classification: CandidateWriteClassification,
+  match: CandidateWriteStageCondition | undefined,
 ): boolean {
   if (!match) {
     return true;
@@ -155,11 +291,65 @@ function matchesCandidateWriteStage(
   if (match.submissionKinds && !match.submissionKinds.includes(input.kind)) {
     return false;
   }
-  if (!match.familyIds) {
+  if (match.lanes && !match.lanes.some((lane) => classification.lanes.includes(lane))) {
+    return false;
+  }
+  if (match.familyIds) {
+    if (!classification.familyId || !match.familyIds.includes(classification.familyId)) {
+      return false;
+    }
+  }
+  if (
+    match.canonicalKinds &&
+    (!classification.canonicalKind || !match.canonicalKinds.includes(classification.canonicalKind))
+  ) {
+    return false;
+  }
+  if (
+    match.captureCategories &&
+    (!classification.captureCategory ||
+      !match.captureCategories.includes(classification.captureCategory))
+  ) {
+    return false;
+  }
+  if (
+    match.captureClasses &&
+    (!classification.captureClass || !match.captureClasses.includes(classification.captureClass))
+  ) {
+    return false;
+  }
+  if (
+    match.derivedViews &&
+    !match.derivedViews.some((derivedView) => classification.derivedViews.includes(derivedView))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function matchesCandidateWriteStage<TContext extends { input: CandidateSubmissionInput }>(
+  context: TContext & {
+    candidateWritePlan?: CandidateWritePlan;
+    candidateWriteClassification?: CandidateWriteClassification;
+  },
+  match: CandidateWriteStageMatch | undefined,
+): boolean {
+  if (!match) {
     return true;
   }
-  const familyId = resolveCandidateWriteFamilyId(input);
-  return familyId ? match.familyIds.includes(familyId) : false;
+  const classification = readCandidateWriteClassification(context);
+  if (!matchesCandidateWriteStageCondition(context.input, classification, match)) {
+    return false;
+  }
+  if (
+    match.anyOf &&
+    !match.anyOf.some((candidate) =>
+      matchesCandidateWriteStageCondition(context.input, classification, candidate),
+    )
+  ) {
+    return false;
+  }
+  return true;
 }
 
 export async function runCandidateWriteResolutionStages<
@@ -172,7 +362,7 @@ export async function runCandidateWriteResolutionStages<
   return runWriteResolutionStages({
     context: params.context,
     stages: params.stages.filter((stage) =>
-      matchesCandidateWriteStage(params.context.input, stage.match),
+      matchesCandidateWriteStage(params.context, stage.match),
     ),
   });
 }
@@ -189,7 +379,7 @@ export async function runCandidateWriteResultStages<
     context: params.context,
     result: params.result,
     stages: params.stages.filter((stage) =>
-      matchesCandidateWriteStage(params.context.input, stage.match),
+      matchesCandidateWriteStage(params.context, stage.match),
     ),
   });
 }
@@ -210,4 +400,14 @@ export async function submitCandidateByKind(params: {
 }): Promise<CandidateSubmissionResult> {
   const method = SUBMIT_CANDIDATE_INGRESS_METHOD[params.input.kind];
   return params.runtime.candidateIngress[method](params.input);
+}
+
+export async function submitCandidateWritePlan(params: {
+  runtime: MemoryMiddlewareRuntime;
+  plan: CandidateWritePlan;
+}): Promise<CandidateSubmissionResult> {
+  return submitCandidateByKind({
+    runtime: params.runtime,
+    input: params.plan.operation.input,
+  });
 }

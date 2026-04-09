@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCanonicalMemoryRecordForFamily,
+  getMemoryCorrectionPolicyView,
   getMemoryFamilyDefinition,
   getMemoryFamilyCanonicalProjection,
   getMemoryFamilyIdByWorkflowLessonFamily,
+  getMemoryLifecyclePolicyView,
   getMemoryProofDefinition,
+  getMemoryRetrievalPolicyView,
+  getMemorySemanticRoutingPolicyView,
   getPhrasePatternProofFamilyId,
+  listApprovedMemoryRetrievalPolicyViews,
   memoryFamilyProjectsToDerivedView,
   supportsMemoryFamilyReviewedPhrasePatterns,
 } from "./memory-family-policy.js";
@@ -29,6 +34,29 @@ describe("memory-family-policy", () => {
       artifactMode: "phrase_pattern",
       inspectionMode: "workflow_phrase_pattern_lifecycle",
     });
+    expect(getMemoryLifecyclePolicyView("project_fact")).toMatchObject({
+      pendingCandidateStates: ["pending_confirmation", "hold_for_more_evidence"],
+      staleWindowDays: 3,
+    });
+    expect(getMemoryCorrectionPolicyView("project_fact")).toMatchObject({
+      mode: "approved_memory_object_supersede_when_targeted",
+      targetKind: "approved_memory_object",
+      requiresExistingTarget: true,
+    });
+    expect(getMemoryRetrievalPolicyView("project_rule")).toMatchObject({
+      directIntentClass: "rule",
+      matchedFieldPrefix: "project_rule",
+    });
+    expect(getMemorySemanticRoutingPolicyView("recurring_procedure")).toEqual({
+      mode: "validated_procedure_only",
+    });
+    expect(listApprovedMemoryRetrievalPolicyViews().map((definition) => definition.id)).toEqual([
+      "response_style",
+      "project_fact",
+      "workflow_improvement",
+      "project_rule",
+      "unmet_need",
+    ]);
   });
 
   it("maps current memory families onto canonical kinds and derived views", () => {
@@ -92,11 +120,11 @@ describe("memory-family-policy", () => {
         directIntentClasses: ["rule"],
       },
       compatibility: {
-        transitionalFamilyId: "project_rule",
         captureCategory: "project_rule",
         captureSource: "explicit_project_rule",
       },
     });
     expect(record.compatibility).not.toHaveProperty("typedFastPaths");
+    expect(record.compatibility).not.toHaveProperty("workflowLessonFamilies");
   });
 });
