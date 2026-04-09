@@ -37,6 +37,8 @@ The canonical-core tranche of rigid-surface replacement is now also landed.
 
 The critical refactor-review and canonicalization batch is now also landed.
 
+The retirement tranche proper batch v1 is now also landed.
+
 ## What is live now
 
 Live families:
@@ -94,6 +96,12 @@ Live substrate properties:
   `src/agents/main-memory-routing.ts`
 - thinner OpenAI wrapper routing that applies the planner decision instead of
   owning the planner logic
+- canonical-family-aware write-stage routing for tool submission
+- one shared reviewed phrase-induction adapter seam for workflow and
+  response-style phrase patterns
+- flatter project-fact and workflow-ingestion resolver internals
+- one generic project-workflow semantic-embedding promotion helper instead of
+  three lesson-key-specific branches
 
 ## What is live but still bounded
 
@@ -182,6 +190,31 @@ It concluded:
   write-stage canonicalization, phrase-induction convergence, staged
   candidate-submit reduction, and continued shrinkage of family-heavy
   compatibility branches
+
+## What the retirement tranche proper batch v1 changed
+
+This batch landed six real outcomes:
+
+1. canonical-family-aware write-stage routing in the candidate-submit path
+2. convergence of workflow and response-style phrase induction onto one shared
+   adapter seam
+3. deletion of the narrow response-style paraphrase-key fast lane
+4. flatter project-fact and workflow-ingestion resolver internals
+5. one generic workflow semantic-embedding promotion helper instead of three
+   lesson-key-specific branches
+6. reduced legacy leakage from `memory-family-policy` into canonical
+   compatibility records
+
+It concluded:
+
+- `write-action-stages.ts` is no longer just a thin shell around kind/family
+  dispatch from `candidate-submit`
+- phrase induction is now one subsystem with family-specific adapters instead
+  of two parallel subsystems
+- the old frozen response-style paraphrase shim is gone
+- canonical compatibility records no longer inherit obsolete `typedFastPaths`
+- the next honest retirement work is deeper candidate-submit cleanup,
+  write-pipeline generalization, and continued mixed-era fallback deletion
 
 ## What the critical refactor-review and canonicalization batch changed
 

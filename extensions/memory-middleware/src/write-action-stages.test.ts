@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  runCandidateWriteResolutionStages,
+  runCandidateWriteResultStages,
   runWriteHandledStages,
   runWriteResolutionStages,
   runWriteResultStages,
@@ -58,6 +60,82 @@ describe("write action stages", () => {
     });
 
     expect(result).toBe(4);
+  });
+
+  it("routes candidate resolution stages through canonical family metadata", async () => {
+    const responseStyle = vi.fn(async () => ({ ok: "response_style" }));
+    const projectFact = vi.fn(async () => ({ ok: "project_fact" }));
+
+    const result = await runCandidateWriteResolutionStages({
+      context: {
+        input: {
+          kind: "learning" as const,
+          content: "keep this",
+          metadata: {
+            canonicalIngestionCandidate: {
+              compatibility: {
+                transitionalFamilyId: "project_fact",
+              },
+            },
+          },
+        },
+      },
+      stages: [
+        {
+          id: "response_style",
+          match: { familyIds: ["response_style"] },
+          resolve: responseStyle,
+        },
+        {
+          id: "project_fact",
+          match: { familyIds: ["project_fact"] },
+          resolve: projectFact,
+        },
+      ],
+    });
+
+    expect(result).toEqual({ ok: "project_fact" });
+    expect(responseStyle).not.toHaveBeenCalled();
+    expect(projectFact).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes candidate result stages through submission kind and canonical family metadata", async () => {
+    const result = await runCandidateWriteResultStages({
+      context: {
+        input: {
+          kind: "procedure" as const,
+          content: "deploy checklist",
+          metadata: {
+            canonicalIngestionCandidate: {
+              compatibility: {
+                transitionalFamilyId: "recurring_procedure",
+              },
+            },
+          },
+        },
+      },
+      result: ["start"],
+      stages: [
+        {
+          id: "skip_response_style",
+          match: {
+            submissionKinds: ["learning"],
+            familyIds: ["response_style"],
+          },
+          apply: async ({ result }) => [...result, "wrong"],
+        },
+        {
+          id: "apply_procedure",
+          match: {
+            submissionKinds: ["procedure"],
+            familyIds: ["recurring_procedure"],
+          },
+          apply: async ({ result }) => [...result, "procedure"],
+        },
+      ],
+    });
+
+    expect(result).toEqual(["start", "procedure"]);
   });
 
   it("submits by candidate kind through the matching ingress port", async () => {

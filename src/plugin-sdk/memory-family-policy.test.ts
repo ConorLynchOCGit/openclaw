@@ -7,6 +7,7 @@ import {
   getMemoryProofDefinition,
   getPhrasePatternProofFamilyId,
   memoryFamilyProjectsToDerivedView,
+  supportsMemoryFamilyReviewedPhrasePatterns,
 } from "./memory-family-policy.js";
 
 describe("memory-family-policy", () => {
@@ -23,6 +24,7 @@ describe("memory-family-policy", () => {
     });
     expect(getMemoryFamilyIdByWorkflowLessonFamily("generalized_unmet_need")).toBe("unmet_need");
     expect(getPhrasePatternProofFamilyId("response_style")).toBe("response_style_phrase_pattern");
+    expect(supportsMemoryFamilyReviewedPhrasePatterns("workflow_improvement")).toBe(true);
     expect(getMemoryProofDefinition("workflow_phrase_pattern")).toMatchObject({
       artifactMode: "phrase_pattern",
       inspectionMode: "workflow_phrase_pattern_lifecycle",
@@ -57,19 +59,19 @@ describe("memory-family-policy", () => {
   });
 
   it("builds canonical records for current family-owned surfaces through the compatibility seam", () => {
-    expect(
-      buildCanonicalMemoryRecordForFamily({
-        familyId: "project_rule",
-        subject: "docs wording",
-        statement: "keep the wording plugin, not extension",
-        projectId: "atlas-forge",
-        validationStatus: "approved",
-        facets: {
-          lessonKey: "plugin_not_extension",
-          guidancePattern: "terminology",
-        },
-      }),
-    ).toMatchObject({
+    const record = buildCanonicalMemoryRecordForFamily({
+      familyId: "project_rule",
+      subject: "docs wording",
+      statement: "keep the wording plugin, not extension",
+      projectId: "atlas-forge",
+      validationStatus: "approved",
+      facets: {
+        lessonKey: "plugin_not_extension",
+        guidancePattern: "terminology",
+      },
+    });
+
+    expect(record).toMatchObject({
       kind: "feedback",
       subject: "docs wording",
       statement: "keep the wording plugin, not extension",
@@ -95,5 +97,6 @@ describe("memory-family-policy", () => {
         captureSource: "explicit_project_rule",
       },
     });
+    expect(record.compatibility).not.toHaveProperty("typedFastPaths");
   });
 });

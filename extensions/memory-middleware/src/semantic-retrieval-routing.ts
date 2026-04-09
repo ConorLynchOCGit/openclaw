@@ -88,23 +88,6 @@ export type SemanticFallbackSharedState = {
   approvedProjectSemanticSearchPromise?: Promise<MemoryObjectSearchSemanticResult>;
 };
 
-const SUPPORTED_ENVIRONMENT_CONSTRAINT_LESSON_KEYS =
-  new Set<SupportedEnvironmentConstraintLessonKey>([
-    "python_command_unavailable",
-    "gateway_tools_invoke_forbidden",
-  ]);
-
-const SUPPORTED_WORKFLOW_TOOL_GOTCHA_LESSON_KEYS = new Set<SupportedWorkflowToolGotchaLessonKey>([
-  "vitest_wrapper_required",
-  "scripts_committer_required",
-  "git_stash_unsafe",
-]);
-
-const SUPPORTED_API_WORKAROUND_LESSON_KEYS = new Set<SupportedApiWorkaroundLessonKey>([
-  "openai_embeddings_api_key_required",
-  "anthropic_context1m_eligible_credential_required",
-]);
-
 type SupportedProjectWorkflowSemanticLessonKey =
   | SupportedEnvironmentConstraintLessonKey
   | SupportedWorkflowToolGotchaLessonKey
@@ -112,6 +95,70 @@ type SupportedProjectWorkflowSemanticLessonKey =
 
 type ApprovedProjectWorkflowSemanticSource =
   ApprovedWorkflowGuidanceSemanticSource<SupportedProjectWorkflowSemanticLessonKey>;
+
+type ProjectWorkflowSemanticProfileId =
+  | "environment_constraint"
+  | "workflow_tool_gotcha"
+  | "api_workaround";
+
+type ProjectWorkflowSemanticProfile = {
+  id: ProjectWorkflowSemanticProfileId;
+  lessonKeys: readonly SupportedProjectWorkflowSemanticLessonKey[];
+  familyLabel: "Environment constraint" | "Workflow improvement";
+  metadataSource: string;
+  metadataFamily: string;
+  debugLabel: string;
+};
+
+const PROJECT_WORKFLOW_SEMANTIC_PROFILES = [
+  {
+    id: "environment_constraint",
+    lessonKeys: [
+      "python_command_unavailable",
+      "gateway_tools_invoke_forbidden",
+    ] satisfies SupportedEnvironmentConstraintLessonKey[],
+    familyLabel: "Environment constraint",
+    metadataSource: "semantic_retrieval_routing_v2",
+    metadataFamily: "workflow_environment_constraint",
+    debugLabel: "environment-constraint",
+  },
+  {
+    id: "workflow_tool_gotcha",
+    lessonKeys: [
+      "vitest_wrapper_required",
+      "scripts_committer_required",
+      "git_stash_unsafe",
+    ] satisfies SupportedWorkflowToolGotchaLessonKey[],
+    familyLabel: "Workflow improvement",
+    metadataSource: "semantic_retrieval_routing_v5",
+    metadataFamily: "workflow_tool_gotcha",
+    debugLabel: "workflow-tool-gotcha",
+  },
+  {
+    id: "api_workaround",
+    lessonKeys: [
+      "openai_embeddings_api_key_required",
+      "anthropic_context1m_eligible_credential_required",
+    ] satisfies SupportedApiWorkaroundLessonKey[],
+    familyLabel: "Workflow improvement",
+    metadataSource: "semantic_retrieval_routing_v4",
+    metadataFamily: "workflow_api_workaround",
+    debugLabel: "workflow-api-workaround",
+  },
+] as const satisfies readonly ProjectWorkflowSemanticProfile[];
+
+const SUPPORTED_ENVIRONMENT_CONSTRAINT_LESSON_KEYS =
+  new Set<SupportedEnvironmentConstraintLessonKey>(
+    PROJECT_WORKFLOW_SEMANTIC_PROFILES[0].lessonKeys,
+  );
+
+const SUPPORTED_WORKFLOW_TOOL_GOTCHA_LESSON_KEYS = new Set<SupportedWorkflowToolGotchaLessonKey>(
+  PROJECT_WORKFLOW_SEMANTIC_PROFILES[1].lessonKeys,
+);
+
+const SUPPORTED_API_WORKAROUND_LESSON_KEYS = new Set<SupportedApiWorkaroundLessonKey>(
+  PROJECT_WORKFLOW_SEMANTIC_PROFILES[2].lessonKeys,
+);
 
 export function createSemanticFallbackSharedState(): SemanticFallbackSharedState {
   return {};
@@ -220,6 +267,19 @@ function isApiWorkaroundLessonKey(
 ): value is SupportedApiWorkaroundLessonKey {
   return Boolean(
     value && SUPPORTED_API_WORKAROUND_LESSON_KEYS.has(value as SupportedApiWorkaroundLessonKey),
+  );
+}
+
+function findProjectWorkflowSemanticProfile(
+  lessonKey: string | undefined,
+): ProjectWorkflowSemanticProfile | null {
+  if (!lessonKey) {
+    return null;
+  }
+  return (
+    PROJECT_WORKFLOW_SEMANTIC_PROFILES.find((profile) =>
+      (profile.lessonKeys as readonly string[]).includes(lessonKey),
+    ) ?? null
   );
 }
 
@@ -607,23 +667,13 @@ async function upsertMemoryObjectSemanticEmbedding(params: {
 function buildProjectWorkflowSemanticEmbeddingMetadata(params: {
   lessonKey: SupportedProjectWorkflowSemanticLessonKey;
 }): { source: string; family: string; lessonKey: SupportedProjectWorkflowSemanticLessonKey } {
-  if (isEnvironmentConstraintLessonKey(params.lessonKey)) {
-    return {
-      source: "semantic_retrieval_routing_v2",
-      family: "workflow_environment_constraint",
-      lessonKey: params.lessonKey,
-    };
-  }
-  if (isWorkflowToolGotchaLessonKey(params.lessonKey)) {
-    return {
-      source: "semantic_retrieval_routing_v5",
-      family: "workflow_tool_gotcha",
-      lessonKey: params.lessonKey,
-    };
+  const profile = findProjectWorkflowSemanticProfile(params.lessonKey);
+  if (!profile) {
+    throw new Error(`unsupported workflow semantic lesson key ${params.lessonKey}`);
   }
   return {
-    source: "semantic_retrieval_routing_v4",
-    family: "workflow_api_workaround",
+    source: profile.metadataSource,
+    family: profile.metadataFamily,
     lessonKey: params.lessonKey,
   };
 }
@@ -683,21 +733,20 @@ async function ensureApprovedProjectWorkflowSemanticEmbeddings(params: {
     config: params.config,
     embeddingModel: params.embeddingModel,
     embeddingVersion: params.embeddingVersion,
-    supportedLessonKeys: [
-      ...SUPPORTED_ENVIRONMENT_CONSTRAINT_LESSON_KEYS,
-      ...SUPPORTED_WORKFLOW_TOOL_GOTCHA_LESSON_KEYS,
-      ...SUPPORTED_API_WORKAROUND_LESSON_KEYS,
-    ],
+    supportedLessonKeys: PROJECT_WORKFLOW_SEMANTIC_PROFILES.flatMap(
+      (profile) => profile.lessonKeys,
+    ),
     isSupportedLessonKey: isSupportedProjectWorkflowSemanticLessonKey,
     ...(params.projectId ? { projectId: params.projectId } : {}),
   });
 
   for (const source of missingSources) {
-    const familyLabel = isEnvironmentConstraintLessonKey(source.lessonKey)
-      ? "Environment constraint"
-      : "Workflow improvement";
+    const profile = findProjectWorkflowSemanticProfile(source.lessonKey);
+    if (!profile) {
+      continue;
+    }
     const chunkText = buildWorkflowGuidanceSemanticText({
-      familyLabel,
+      familyLabel: profile.familyLabel,
       lessonKey: source.lessonKey,
       ...(source.subject ? { subject: source.subject } : {}),
       ...(source.value ? { value: source.value } : {}),
@@ -901,19 +950,38 @@ export async function storeApprovedEnvironmentConstraintSemanticEmbedding(params
   memoryObjectId: string;
   logger?: PluginLogger;
 }): Promise<boolean> {
+  return storeApprovedProjectWorkflowSemanticEmbedding({
+    ...params,
+    requiredProfileId: "environment_constraint",
+  });
+}
+
+export async function storeApprovedProjectWorkflowSemanticEmbedding(params: {
+  config: MemoryMiddlewareConfig;
+  cfg?: OpenClawConfig;
+  agentId?: string;
+  sessionKey?: string;
+  memoryObjectId: string;
+  logger?: PluginLogger;
+  requiredProfileId?: ProjectWorkflowSemanticProfileId;
+}): Promise<boolean> {
   if (!params.cfg) {
     return false;
   }
   const source = await loadApprovedWorkflowGuidanceSemanticSourceById({
     config: params.config,
     memoryObjectId: params.memoryObjectId,
-    isSupportedLessonKey: isEnvironmentConstraintLessonKey,
+    isSupportedLessonKey: isSupportedProjectWorkflowSemanticLessonKey,
   });
   if (!source) {
     return false;
   }
+  const profile = findProjectWorkflowSemanticProfile(source.lessonKey);
+  if (!profile || (params.requiredProfileId && profile.id !== params.requiredProfileId)) {
+    return false;
+  }
   const chunkText = buildWorkflowGuidanceSemanticText({
-    familyLabel: "Environment constraint",
+    familyLabel: profile.familyLabel,
     lessonKey: source.lessonKey,
     ...(source.subject ? { subject: source.subject } : {}),
     ...(source.value ? { value: source.value } : {}),
@@ -940,15 +1008,15 @@ export async function storeApprovedEnvironmentConstraintSemanticEmbedding(params
     embeddingModel: queryEmbedding.embeddingModel,
     embeddingVersion: queryEmbedding.embeddingVersion,
     metadata: {
-      source: "semantic_retrieval_routing_v2",
-      family: "workflow_environment_constraint",
+      source: profile.metadataSource,
+      family: profile.metadataFamily,
       lessonKey: source.lessonKey,
       mode: "approved_memory_source_embedding",
     },
   });
   params.logger?.debug?.(
     [
-      "memory-middleware environment-constraint semantic embedding upserted",
+      `memory-middleware ${profile.debugLabel} semantic embedding upserted`,
       `memoryObjectId=${source.memoryObjectId}`,
       `lessonKey=${source.lessonKey}`,
       `embeddingModel=${queryEmbedding.embeddingModel}`,
@@ -966,61 +1034,10 @@ export async function storeApprovedWorkflowToolGotchaSemanticEmbedding(params: {
   memoryObjectId: string;
   logger?: PluginLogger;
 }): Promise<boolean> {
-  if (!params.cfg) {
-    return false;
-  }
-  const source = await loadApprovedWorkflowGuidanceSemanticSourceById({
-    config: params.config,
-    memoryObjectId: params.memoryObjectId,
-    isSupportedLessonKey: isWorkflowToolGotchaLessonKey,
+  return storeApprovedProjectWorkflowSemanticEmbedding({
+    ...params,
+    requiredProfileId: "workflow_tool_gotcha",
   });
-  if (!source) {
-    return false;
-  }
-  const chunkText = buildWorkflowGuidanceSemanticText({
-    familyLabel: "Workflow improvement",
-    lessonKey: source.lessonKey,
-    ...(source.subject ? { subject: source.subject } : {}),
-    ...(source.value ? { value: source.value } : {}),
-    ...(source.title ? { title: source.title } : {}),
-    content: source.content,
-  });
-  const queryEmbedding = await embedMemorySearchQuery({
-    cfg: params.cfg,
-    agentId: resolveAgentId({
-      cfg: params.cfg,
-      agentId: params.agentId,
-      sessionKey: params.sessionKey,
-    }),
-    text: chunkText,
-  });
-  if (!queryEmbedding) {
-    return false;
-  }
-  await upsertMemoryObjectSemanticEmbedding({
-    config: params.config,
-    memoryObjectId: source.memoryObjectId,
-    chunkText,
-    embedding: queryEmbedding.embedding,
-    embeddingModel: queryEmbedding.embeddingModel,
-    embeddingVersion: queryEmbedding.embeddingVersion,
-    metadata: {
-      source: "semantic_retrieval_routing_v5",
-      family: "workflow_tool_gotcha",
-      lessonKey: source.lessonKey,
-      mode: "approved_memory_source_embedding",
-    },
-  });
-  params.logger?.debug?.(
-    [
-      "memory-middleware workflow-tool-gotcha semantic embedding upserted",
-      `memoryObjectId=${source.memoryObjectId}`,
-      `lessonKey=${source.lessonKey}`,
-      `embeddingModel=${queryEmbedding.embeddingModel}`,
-      `embeddingVersion=${queryEmbedding.embeddingVersion}`,
-    ].join(" "),
-  );
-  return true;
 }
 
 export async function storeApprovedApiWorkaroundSemanticEmbedding(params: {
@@ -1031,61 +1048,10 @@ export async function storeApprovedApiWorkaroundSemanticEmbedding(params: {
   memoryObjectId: string;
   logger?: PluginLogger;
 }): Promise<boolean> {
-  if (!params.cfg) {
-    return false;
-  }
-  const source = await loadApprovedWorkflowGuidanceSemanticSourceById({
-    config: params.config,
-    memoryObjectId: params.memoryObjectId,
-    isSupportedLessonKey: isApiWorkaroundLessonKey,
+  return storeApprovedProjectWorkflowSemanticEmbedding({
+    ...params,
+    requiredProfileId: "api_workaround",
   });
-  if (!source) {
-    return false;
-  }
-  const chunkText = buildWorkflowGuidanceSemanticText({
-    familyLabel: "Workflow improvement",
-    lessonKey: source.lessonKey,
-    ...(source.subject ? { subject: source.subject } : {}),
-    ...(source.value ? { value: source.value } : {}),
-    ...(source.title ? { title: source.title } : {}),
-    content: source.content,
-  });
-  const queryEmbedding = await embedMemorySearchQuery({
-    cfg: params.cfg,
-    agentId: resolveAgentId({
-      cfg: params.cfg,
-      agentId: params.agentId,
-      sessionKey: params.sessionKey,
-    }),
-    text: chunkText,
-  });
-  if (!queryEmbedding) {
-    return false;
-  }
-  await upsertMemoryObjectSemanticEmbedding({
-    config: params.config,
-    memoryObjectId: source.memoryObjectId,
-    chunkText,
-    embedding: queryEmbedding.embedding,
-    embeddingModel: queryEmbedding.embeddingModel,
-    embeddingVersion: queryEmbedding.embeddingVersion,
-    metadata: {
-      source: "semantic_retrieval_routing_v4",
-      family: "workflow_api_workaround",
-      lessonKey: source.lessonKey,
-      mode: "approved_memory_source_embedding",
-    },
-  });
-  params.logger?.debug?.(
-    [
-      "memory-middleware workflow-api-workaround semantic embedding upserted",
-      `memoryObjectId=${source.memoryObjectId}`,
-      `lessonKey=${source.lessonKey}`,
-      `embeddingModel=${queryEmbedding.embeddingModel}`,
-      `embeddingVersion=${queryEmbedding.embeddingVersion}`,
-    ].join(" "),
-  );
-  return true;
 }
 
 export async function maybeApplyProcedureSemanticFallback(params: {

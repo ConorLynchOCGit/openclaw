@@ -10,11 +10,7 @@ import type { ApprovedWorkflowPhrasePatternMatch } from "../workflow-phrase-indu
 const inspectWorkflowImprovementLifecycle = vi.hoisted(() =>
   vi.fn(async (): Promise<unknown> => null),
 );
-const storeApprovedApiWorkaroundSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
-const storeApprovedEnvironmentConstraintSemanticEmbedding = vi.hoisted(() =>
-  vi.fn(async () => true),
-);
-const storeApprovedWorkflowToolGotchaSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
+const storeApprovedProjectWorkflowSemanticEmbedding = vi.hoisted(() => vi.fn(async () => true));
 const findApprovedWorkflowPhrasePatternMatch = vi.hoisted(() =>
   vi.fn<() => Promise<ApprovedWorkflowPhrasePatternMatch | null>>(async () => null),
 );
@@ -30,9 +26,7 @@ const maybeInduceResponseStylePhrasePattern = vi.hoisted(() =>
 const resolveWorkflowImprovementIngestion = vi.hoisted(() => vi.fn());
 
 vi.mock("../semantic-retrieval-routing.js", () => ({
-  storeApprovedApiWorkaroundSemanticEmbedding,
-  storeApprovedEnvironmentConstraintSemanticEmbedding,
-  storeApprovedWorkflowToolGotchaSemanticEmbedding,
+  storeApprovedProjectWorkflowSemanticEmbedding,
 }));
 vi.mock("../workflow-phrase-induction.js", async () => {
   const actual = await vi.importActual<typeof import("../workflow-phrase-induction.js")>(
@@ -730,7 +724,7 @@ describe("memory candidate submit tool", () => {
   });
 
   it("stores an approved environment-constraint semantic embedding after confirmation promotion", async () => {
-    storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
+    storeApprovedProjectWorkflowSemanticEmbedding.mockClear();
     inspectWorkflowImprovementLifecycle.mockReset();
     inspectWorkflowImprovementLifecycle
       .mockResolvedValueOnce({
@@ -792,7 +786,7 @@ describe("memory candidate submit tool", () => {
         candidateId: "memory-1",
       }),
     );
-    expect(storeApprovedEnvironmentConstraintSemanticEmbedding).toHaveBeenCalledWith({
+    expect(storeApprovedProjectWorkflowSemanticEmbedding).toHaveBeenCalledWith({
       config: runtime.config,
       cfg: { plugins: { memory: { provider: "openai" } } },
       agentId: "main",
@@ -804,7 +798,7 @@ describe("memory candidate submit tool", () => {
 
   it("stores an approved workflow-tool-gotcha semantic embedding after confirmation promotion", async () => {
     const runtime = createRuntime();
-    storeApprovedWorkflowToolGotchaSemanticEmbedding.mockClear();
+    storeApprovedProjectWorkflowSemanticEmbedding.mockClear();
     inspectWorkflowImprovementLifecycle.mockImplementationOnce(async () => ({
       activeApprovedSubjectObjectIds: [],
       pendingSubjectCandidateIds: [],
@@ -863,7 +857,7 @@ describe("memory candidate submit tool", () => {
         candidateId: "memory-1",
       }),
     );
-    expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).toHaveBeenCalledWith({
+    expect(storeApprovedProjectWorkflowSemanticEmbedding).toHaveBeenCalledWith({
       config: runtime.config,
       cfg: { plugins: { memory: { provider: "openai" } } },
       agentId: "main",
@@ -875,7 +869,7 @@ describe("memory candidate submit tool", () => {
 
   it("stores an approved git-stash workflow-tool-gotcha semantic embedding after confirmation promotion", async () => {
     const runtime = createRuntime();
-    storeApprovedWorkflowToolGotchaSemanticEmbedding.mockClear();
+    storeApprovedProjectWorkflowSemanticEmbedding.mockClear();
     inspectWorkflowImprovementLifecycle.mockImplementationOnce(async () => ({
       activeApprovedSubjectObjectIds: [],
       pendingSubjectCandidateIds: [],
@@ -934,7 +928,7 @@ describe("memory candidate submit tool", () => {
         candidateId: "memory-stash-1",
       }),
     );
-    expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).toHaveBeenCalledWith({
+    expect(storeApprovedProjectWorkflowSemanticEmbedding).toHaveBeenCalledWith({
       config: runtime.config,
       cfg: { plugins: { memory: { provider: "openai" } } },
       agentId: "main",
@@ -946,9 +940,7 @@ describe("memory candidate submit tool", () => {
 
   it("stores an approved API workaround semantic embedding after confirmation promotion", async () => {
     const runtime = createRuntime();
-    storeApprovedApiWorkaroundSemanticEmbedding.mockClear();
-    storeApprovedEnvironmentConstraintSemanticEmbedding.mockClear();
-    storeApprovedWorkflowToolGotchaSemanticEmbedding.mockClear();
+    storeApprovedProjectWorkflowSemanticEmbedding.mockClear();
     inspectWorkflowImprovementLifecycle.mockImplementationOnce(async () => ({
       activeApprovedSubjectObjectIds: [],
       pendingSubjectCandidateIds: [],
@@ -1009,15 +1001,13 @@ describe("memory candidate submit tool", () => {
         candidateId: "memory-1",
       }),
     );
-    expect(storeApprovedApiWorkaroundSemanticEmbedding).toHaveBeenCalledWith({
+    expect(storeApprovedProjectWorkflowSemanticEmbedding).toHaveBeenCalledWith({
       config: runtime.config,
       cfg: { plugins: { memory: { provider: "openai" } } },
       agentId: "main",
       sessionKey: "agent:main:main",
       memoryObjectId: "approved-api-workaround-1",
     });
-    expect(storeApprovedEnvironmentConstraintSemanticEmbedding).not.toHaveBeenCalled();
-    expect(storeApprovedWorkflowToolGotchaSemanticEmbedding).not.toHaveBeenCalled();
     inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);
   });
 

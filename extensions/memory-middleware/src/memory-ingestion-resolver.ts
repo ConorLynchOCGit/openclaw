@@ -144,59 +144,18 @@ function normalizeGenericProjectFactSubjectLabel(subject: string): string | null
   return fieldLabel.length > 0 ? fieldLabel.replace(/\s+/g, " ") : null;
 }
 
-function resolveLearningProjectFactDeterministicMatch(
-  parsed: OrdinaryTurnAutoCaptureMatch | null,
-): {
+function resolveProjectFactDeterministicMatch(params: {
+  parsed: OrdinaryTurnAutoCaptureMatch | null;
+  expectedCaptureClass: "explicit_project_fact" | "project_fact_correction";
+}): {
   parsed: OrdinaryTurnAutoCaptureMatch;
   factFamily: ProjectFactFamily;
   fieldKey?: ProjectFactFieldKey;
 } | null {
+  const { parsed, expectedCaptureClass } = params;
   if (
     !parsed ||
-    parsed.captureClass !== "explicit_project_fact" ||
-    (parsed.template !== "project_fact_named_scope" &&
-      parsed.template !== "project_fact_generalized_named_scope")
-  ) {
-    return null;
-  }
-
-  const fieldKey = inferProjectFactFieldKeyFromSubject(parsed.subject);
-  if (fieldKey) {
-    return {
-      parsed,
-      factFamily: "supported_field",
-      fieldKey,
-    };
-  }
-
-  const subjectLabel = normalizeGenericProjectFactSubjectLabel(parsed.subject);
-  if (
-    parsed.template === "project_fact_generalized_named_scope" &&
-    subjectLabel &&
-    isBoundedGenericProjectFactReference({
-      subjectLabel,
-      value: parsed.value,
-    })
-  ) {
-    return {
-      parsed,
-      factFamily: "generalized_reference",
-    };
-  }
-
-  return null;
-}
-
-function resolveCorrectionProjectFactDeterministicMatch(
-  parsed: OrdinaryTurnAutoCaptureMatch | null,
-): {
-  parsed: OrdinaryTurnAutoCaptureMatch;
-  factFamily: ProjectFactFamily;
-  fieldKey?: ProjectFactFieldKey;
-} | null {
-  if (
-    !parsed ||
-    parsed.captureClass !== "project_fact_correction" ||
+    parsed.captureClass !== expectedCaptureClass ||
     (parsed.template !== "project_fact_named_scope" &&
       parsed.template !== "project_fact_generalized_named_scope")
   ) {
@@ -439,24 +398,16 @@ export function resolveProjectFactIngestion(params: {
 }): Promise<ResolvedProjectFactIngestion | null> {
   const contentDeterministicResolver: ProjectFactDeterministicPredicate =
     params.mode === "candidate_correction"
-      ? (parsed) => {
-          const match = resolveCorrectionProjectFactDeterministicMatch(parsed);
-          return match
-            ? {
-                factFamily: match.factFamily,
-                ...(match.fieldKey ? { fieldKey: match.fieldKey } : {}),
-              }
-            : null;
-        }
-      : (parsed) => {
-          const match = resolveLearningProjectFactDeterministicMatch(parsed);
-          return match
-            ? {
-                factFamily: match.factFamily,
-                ...(match.fieldKey ? { fieldKey: match.fieldKey } : {}),
-              }
-            : null;
-        };
+      ? (parsed) =>
+          resolveProjectFactDeterministicMatch({
+            parsed,
+            expectedCaptureClass: "project_fact_correction",
+          })
+      : (parsed) =>
+          resolveProjectFactDeterministicMatch({
+            parsed,
+            expectedCaptureClass: "explicit_project_fact",
+          });
 
   const resolveParsed = (text: string): OrdinaryTurnAutoCaptureMatch | null => {
     if (params.mode === "ordinary_turn") {
@@ -684,6 +635,83 @@ function buildResolvedWorkflowIngestion(params: {
   };
 }
 
+async function resolveWorkflowImprovementText(params: {
+  config: MemoryMiddlewareConfig;
+  text: string;
+  projectId?: string;
+  allowPhrasePatternMatch: boolean;
+  source: IngestionTextSource;
+}): Promise<Omit<ResolvedWorkflowIngestion, "source" | "observedText"> | null> {
+  if (params.allowPhrasePatternMatch && params.projectId) {
+    const deterministicPattern = await findApprovedWorkflowPhrasePatternMatch({
+      config: params.config,
+      text: params.text,
+      projectId: params.projectId,
+    });
+    if (deterministicPattern) {
+      const {
+        source: _source,
+        observedText: _observedText,
+        ...resolved
+      } = buildResolvedWorkflowIngestion({
+        match: deterministicPattern.match,
+        source: params.source,
+        detectionSource: "deterministic",
+        confidence: "high",
+        evidence: ["approved_phrase_pattern_match"],
+        reviewMode: "hold_for_more_evidence",
+        observedText: params.text,
+      });
+      return resolved;
+    }
+  }
+
+  const semanticDetectors = [
+    {
+      detect: detectProjectRuleSemanticDecision,
+      reviewMode: "hold_for_more_evidence" as const,
+    },
+    {
+      detect: detectUnmetNeedSemanticDecision,
+      reviewMode: "hold_for_more_evidence" as const,
+    },
+    {
+      detect: detectWorkflowImprovementSemanticDecision,
+      reviewModeFromMatch: (match: { lessonFamily: WorkflowImprovementLessonFamily }) =>
+        match.lessonFamily === "supported_lesson"
+          ? ("pending_confirmation" as const)
+          : ("hold_for_more_evidence" as const),
+    },
+  ] as const;
+
+  for (const detector of semanticDetectors) {
+    const decision = detector.detect(params.text);
+    if (decision.action !== "capture") {
+      continue;
+    }
+    const reviewMode =
+      "reviewModeFromMatch" in detector
+        ? detector.reviewModeFromMatch(decision.match)
+        : detector.reviewMode;
+    const {
+      source: _source,
+      observedText: _observedText,
+      ...resolved
+    } = buildResolvedWorkflowIngestion({
+      match: decision.match,
+      source: params.source,
+      detectionSource: "semantic",
+      confidence: decision.confidence,
+      evidence: decision.evidence,
+      reviewMode,
+      observedText: params.text,
+    });
+    return resolved;
+  }
+
+  return null;
+}
+
 export async function resolveWorkflowImprovementIngestion(params: {
   config: MemoryMiddlewareConfig;
   content: string;
@@ -692,131 +720,17 @@ export async function resolveWorkflowImprovementIngestion(params: {
   projectId?: string;
   allowPhrasePatternMatch: boolean;
 }): Promise<ResolvedWorkflowIngestion | null> {
-  const rawCandidates = params.rawCandidates ?? [];
-
-  if (params.allowPhrasePatternMatch && params.projectId) {
-    const deterministicFromContent = await findApprovedWorkflowPhrasePatternMatch({
-      config: params.config,
-      text: params.content,
-      projectId: params.projectId,
-    });
-    if (deterministicFromContent) {
-      return buildResolvedWorkflowIngestion({
-        match: deterministicFromContent.match,
-        source: params.primarySource,
-        detectionSource: "deterministic",
-        confidence: "high",
-        evidence: ["approved_phrase_pattern_match"],
-        reviewMode: "hold_for_more_evidence",
-        observedText: params.content,
-      });
-    }
-  }
-
-  const projectRuleFromContent = detectProjectRuleSemanticDecision(params.content);
-  if (projectRuleFromContent.action === "capture") {
-    return buildResolvedWorkflowIngestion({
-      match: projectRuleFromContent.match,
-      source: params.primarySource,
-      detectionSource: "semantic",
-      confidence: projectRuleFromContent.confidence,
-      evidence: projectRuleFromContent.evidence,
-      reviewMode: "hold_for_more_evidence",
-      observedText: params.content,
-    });
-  }
-
-  const unmetNeedFromContent = detectUnmetNeedSemanticDecision(params.content);
-  if (unmetNeedFromContent.action === "capture") {
-    return buildResolvedWorkflowIngestion({
-      match: unmetNeedFromContent.match,
-      source: params.primarySource,
-      detectionSource: "semantic",
-      confidence: unmetNeedFromContent.confidence,
-      evidence: unmetNeedFromContent.evidence,
-      reviewMode: "hold_for_more_evidence",
-      observedText: params.content,
-    });
-  }
-
-  const contentDecision = detectWorkflowImprovementSemanticDecision(params.content);
-  if (contentDecision.action === "capture") {
-    return buildResolvedWorkflowIngestion({
-      match: contentDecision.match,
-      source: params.primarySource,
-      detectionSource: "semantic",
-      confidence: contentDecision.confidence,
-      evidence: contentDecision.evidence,
-      reviewMode:
-        contentDecision.match.lessonFamily === "supported_lesson"
-          ? "pending_confirmation"
-          : "hold_for_more_evidence",
-      observedText: params.content,
-    });
-  }
-
-  for (const rawCandidate of rawCandidates) {
-    if (params.allowPhrasePatternMatch && params.projectId) {
-      const deterministicFromRaw = await findApprovedWorkflowPhrasePatternMatch({
+  return resolveAcrossSources({
+    content: params.content,
+    primarySource: params.primarySource,
+    rawCandidates: params.rawCandidates,
+    tryResolve: async (text, source) =>
+      resolveWorkflowImprovementText({
         config: params.config,
-        text: rawCandidate,
+        text,
         projectId: params.projectId,
-      });
-      if (deterministicFromRaw) {
-        return buildResolvedWorkflowIngestion({
-          match: deterministicFromRaw.match,
-          source: "raw",
-          detectionSource: "deterministic",
-          confidence: "high",
-          evidence: ["approved_phrase_pattern_match"],
-          reviewMode: "hold_for_more_evidence",
-          observedText: rawCandidate,
-        });
-      }
-    }
-
-    const projectRuleFromRaw = detectProjectRuleSemanticDecision(rawCandidate);
-    if (projectRuleFromRaw.action === "capture") {
-      return buildResolvedWorkflowIngestion({
-        match: projectRuleFromRaw.match,
-        source: "raw",
-        detectionSource: "semantic",
-        confidence: projectRuleFromRaw.confidence,
-        evidence: projectRuleFromRaw.evidence,
-        reviewMode: "hold_for_more_evidence",
-        observedText: rawCandidate,
-      });
-    }
-
-    const unmetNeedFromRaw = detectUnmetNeedSemanticDecision(rawCandidate);
-    if (unmetNeedFromRaw.action === "capture") {
-      return buildResolvedWorkflowIngestion({
-        match: unmetNeedFromRaw.match,
-        source: "raw",
-        detectionSource: "semantic",
-        confidence: unmetNeedFromRaw.confidence,
-        evidence: unmetNeedFromRaw.evidence,
-        reviewMode: "hold_for_more_evidence",
-        observedText: rawCandidate,
-      });
-    }
-
-    const semanticFromRaw = detectWorkflowImprovementSemanticDecision(rawCandidate);
-    if (semanticFromRaw.action === "capture") {
-      return buildResolvedWorkflowIngestion({
-        match: semanticFromRaw.match,
-        source: "raw",
-        detectionSource: "semantic",
-        confidence: semanticFromRaw.confidence,
-        evidence: semanticFromRaw.evidence,
-        reviewMode:
-          semanticFromRaw.match.lessonFamily === "supported_lesson"
-            ? "pending_confirmation"
-            : "hold_for_more_evidence",
-        observedText: rawCandidate,
-      });
-    }
-  }
-
-  return null;
+        allowPhrasePatternMatch: params.allowPhrasePatternMatch,
+        source,
+      }),
+  });
 }

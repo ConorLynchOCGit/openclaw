@@ -86,15 +86,28 @@ Current reevaluation judgment:
 
 ## What should land next
 
+The first retirement tranche is now landed:
+
+- write-stage routing is canonical-family aware in the tool-submit path
+- workflow and response-style phrase induction now share one reviewed adapter
+  seam
+- one frozen response-style paraphrase fast lane was removed
+- project-fact and workflow-ingestion resolution is flatter
+- project-workflow semantic-embedding promotion now uses one profile-driven
+  helper
+- canonical compatibility records no longer inherit obsolete `typedFastPaths`
+
 The next implementation slices should now be:
 
-- write-stage canonicalization so `extensions/memory-middleware/src/write-action-stages.ts`
-  stops being the dominant family/stage dispatcher
-- phrase-induction convergence across workflow and response-style so those
-  two parallel engines stop surviving for historical reasons
-- staged reduction of remaining family-heavy promotion and ingestion logic in
-  `extensions/memory-middleware/src/tools/candidate-submit.ts` and
+- push `extensions/memory-middleware/src/write-action-stages.ts` from
+  canonical-family-aware routing to a fuller canonical multi-candidate write
+  pipeline
+- continue staged deletion inside
+  `extensions/memory-middleware/src/tools/candidate-submit.ts`
+- continue internal canonicalization inside
   `extensions/memory-middleware/src/memory-ingestion-resolver.ts`
+- keep deleting mixed-era semantic fallback and promotion branches once the
+  canonical-era data path is enough on its own
 
 The canonical-core tranche is now already landed:
 
@@ -150,6 +163,6 @@ Before new families:
 
 ## Next implementation slice
 
-- canonical runtime retirement work, starting with write-stage
-  canonicalization, phrase-induction convergence, and staged deletion of the
-  remaining family-heavy promotion/ingestion branches
+- retirement tranche follow-through, starting with deeper write-pipeline
+  generalization and the next staged deletion pass inside candidate submit and
+  mixed-era fallback routing

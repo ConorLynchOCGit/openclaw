@@ -16,6 +16,7 @@ export {
   isMemoryProofInspectableFamily,
   listMemoryFamilyDefinitions,
   listMemoryFamilyPolicies,
+  supportsMemoryFamilyReviewedPhrasePatterns,
   getMemoryFamilyPolicy,
   type MemoryFamilyApplicationMode,
   type MemoryFamilyCanonicalField,

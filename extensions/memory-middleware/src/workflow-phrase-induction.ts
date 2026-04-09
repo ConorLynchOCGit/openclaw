@@ -1,18 +1,18 @@
 import type { PluginLogger } from "../api.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
+import { getPhrasePatternProofFamilyId } from "./memory-family-registry.js";
 import {
-  getMemoryFamilyDefinition,
-  getPhrasePatternProofFamilyId,
-} from "./memory-family-registry.js";
-import {
-  buildReviewedPhrasePatternProposal,
-  findApprovedReviewedPhrasePatternRows,
-  inspectReviewedPhrasePatternLifecycle,
-  maybeInduceReviewedPhrasePattern,
   type ApprovedPhrasePatternRowBase,
   type PhrasePatternLifecycleInspection,
   type PhrasePatternPendingCandidate,
 } from "./phrase-pattern-engine.js";
+import {
+  buildReviewedPhrasePatternProposalForTarget,
+  findApprovedReviewedPhrasePatternMatchForFamily,
+  inspectReviewedPhrasePatternLifecycleForFamily,
+  maybeInduceReviewedPhrasePatternForFamily,
+  type ReviewedPhraseInductionResult,
+} from "./reviewed-phrase-induction.js";
 import {
   createGeneralizedWorkflowImprovementMatch,
   normalizeWorkflowImprovementSemanticText,
@@ -104,23 +104,7 @@ type CandidatePromotionLike = {
   }): Promise<{ accepted: boolean; promotedMemoryObjectId?: string; reason?: string }>;
 };
 
-export type WorkflowPhraseInductionResult =
-  | {
-      status: "ignored" | "existing" | "waiting" | "conflict";
-      reason: string;
-      normalizedPhrase?: string;
-    }
-  | {
-      status: "held";
-      normalizedPhrase: string;
-      candidateId: string;
-    }
-  | {
-      status: "approved";
-      normalizedPhrase: string;
-      candidateId: string;
-      approvedObjectId: string;
-    };
+export type WorkflowPhraseInductionResult = ReviewedPhraseInductionResult;
 
 function tokenizeForPhraseAnchors(value: string | undefined): Set<string> {
   if (!value) {
@@ -272,8 +256,9 @@ export function buildWorkflowPhrasePatternProposal(params: {
   text: string;
   targetMatch: WorkflowImprovementCanonicalMatch;
 }): { patternKey: string; normalizedPhrase: string; phraseText: string } | null {
-  return buildReviewedPhrasePatternProposal({
+  return buildReviewedPhrasePatternProposalForTarget({
     text: params.text,
+    target: params.targetMatch,
     targetKey: params.targetMatch.key,
     targetContent: params.targetMatch.content,
     targetNormalizedValue: params.targetMatch.normalizedValue,
@@ -281,10 +266,10 @@ export function buildWorkflowPhrasePatternProposal(params: {
     maxLength: 220,
     normalizeText: normalizeWorkflowImprovementSemanticText,
     tokenizeForAnchors: tokenizeForPhraseAnchors,
-    anchorTexts: [
-      params.targetMatch.normalizedSubject,
-      params.targetMatch.normalizedRecommendedAction,
-      params.targetMatch.normalizedAvoidAction,
+    anchorTexts: (targetMatch) => [
+      targetMatch.normalizedSubject,
+      targetMatch.normalizedRecommendedAction,
+      targetMatch.normalizedAvoidAction,
     ],
     seed: "workflow-phrase-induction-v1",
   });
@@ -298,18 +283,15 @@ export async function inspectWorkflowPhrasePatternLifecycle(params: {
   projectId?: string;
   logger?: PluginLogger;
 }): Promise<WorkflowPhraseLifecycleInspection | null> {
-  const familyDefinition = getMemoryFamilyDefinition("workflow_improvement");
-  if (familyDefinition.phrasePolicy.mode !== "approved_pattern_reviewed") {
-    return null;
-  }
-  return inspectReviewedPhrasePatternLifecycle({
+  return inspectReviewedPhrasePatternLifecycleForFamily({
+    familyId: "workflow_improvement",
     config: params.config,
     artifactFamily: PHRASE_PATTERN_ARTIFACT_FAMILY,
     patternKey: params.patternKey,
     targetKey: params.targetKey,
     normalizedPhrase: params.normalizedPhrase,
     ...(params.projectId ? { projectId: params.projectId } : {}),
-    logger: params.logger,
+    ...(params.logger ? { logger: params.logger } : {}),
     logLabel: "workflow",
   });
 }
@@ -320,20 +302,19 @@ export async function findApprovedWorkflowPhrasePatternMatch(params: {
   projectId?: string;
   logger?: PluginLogger;
 }): Promise<ApprovedWorkflowPhrasePatternMatch | null> {
-  const familyDefinition = getMemoryFamilyDefinition("workflow_improvement");
-  if (familyDefinition.phrasePolicy.mode !== "approved_pattern_reviewed") {
-    return null;
-  }
-  const normalizedPhrase = normalizeWorkflowImprovementSemanticText(params.text);
-  if (normalizedPhrase.length < 24 || normalizedPhrase.length > 220) {
-    return null;
-  }
-  const rows = await findApprovedReviewedPhrasePatternRows<WorkflowApprovedPhraseRow>({
+  return findApprovedReviewedPhrasePatternMatchForFamily<
+    WorkflowApprovedPhraseRow,
+    WorkflowImprovementCanonicalMatch
+  >({
+    familyId: "workflow_improvement",
     config: params.config,
     artifactFamily: PHRASE_PATTERN_ARTIFACT_FAMILY,
-    normalizedPhrase,
+    text: params.text,
+    minLength: 24,
+    maxLength: 220,
+    normalizeText: normalizeWorkflowImprovementSemanticText,
     ...(params.projectId ? { projectId: params.projectId } : {}),
-    logger: params.logger,
+    ...(params.logger ? { logger: params.logger } : {}),
     logLabel: "workflow",
     selectAdditionalColumns: [
       `coalesce(
@@ -373,51 +354,51 @@ export async function findApprovedWorkflowPhrasePatternMatch(params: {
         metadata->'candidateMetadata'->'phraseInduction'->>'normalizedRationale'
       ) as resolved_normalized_rationale`,
     ],
+    resolveMatch: ({ rows, normalizedPhrase }) => {
+      const eligibleRows = rows.filter(
+        (row) =>
+          row.resolved_target_lesson_family === "generalized_workflow_lesson" &&
+          Boolean(row.resolved_target_key) &&
+          Boolean(row.resolved_guidance_pattern) &&
+          Boolean(row.resolved_subject),
+      );
+      if (eligibleRows.length === 0) {
+        return null;
+      }
+      const distinctTargetKeys = new Set(
+        eligibleRows.map((row) => row.resolved_target_key).filter(Boolean),
+      );
+      if (distinctTargetKeys.size !== 1) {
+        return null;
+      }
+
+      const row = eligibleRows[0];
+      const guidancePattern = row?.resolved_guidance_pattern;
+      if (
+        !row ||
+        !row.resolved_subject ||
+        (guidancePattern !== "use_instead_of" &&
+          guidancePattern !== "trust_for_scope" &&
+          guidancePattern !== "avoid_only")
+      ) {
+        return null;
+      }
+
+      return {
+        approvedObjectId: row.id,
+        normalizedPhrase,
+        match: createGeneralizedWorkflowImprovementMatch({
+          guidancePattern: guidancePattern as WorkflowImprovementGuidancePattern,
+          subject: row.resolved_subject,
+          ...(row.resolved_recommended_action
+            ? { recommendedAction: row.resolved_recommended_action }
+            : {}),
+          ...(row.resolved_avoid_action ? { avoidAction: row.resolved_avoid_action } : {}),
+          ...(row.resolved_rationale ? { rationale: row.resolved_rationale } : {}),
+        }),
+      };
+    },
   });
-  if (!rows) {
-    return null;
-  }
-  const eligibleRows = rows.filter(
-    (row) =>
-      row.resolved_target_lesson_family === "generalized_workflow_lesson" &&
-      Boolean(row.resolved_target_key) &&
-      Boolean(row.resolved_guidance_pattern) &&
-      Boolean(row.resolved_subject),
-  );
-  if (eligibleRows.length === 0) {
-    return null;
-  }
-  const distinctTargetKeys = new Set(
-    eligibleRows.map((row) => row.resolved_target_key).filter(Boolean),
-  );
-  if (distinctTargetKeys.size !== 1) {
-    return null;
-  }
-
-  const row = eligibleRows[0];
-  const guidancePattern = row.resolved_guidance_pattern;
-  if (
-    !row.resolved_subject ||
-    (guidancePattern !== "use_instead_of" &&
-      guidancePattern !== "trust_for_scope" &&
-      guidancePattern !== "avoid_only")
-  ) {
-    return null;
-  }
-
-  return {
-    approvedObjectId: row.id,
-    normalizedPhrase,
-    match: createGeneralizedWorkflowImprovementMatch({
-      guidancePattern: guidancePattern as WorkflowImprovementGuidancePattern,
-      subject: row.resolved_subject,
-      ...(row.resolved_recommended_action
-        ? { recommendedAction: row.resolved_recommended_action }
-        : {}),
-      ...(row.resolved_avoid_action ? { avoidAction: row.resolved_avoid_action } : {}),
-      ...(row.resolved_rationale ? { rationale: row.resolved_rationale } : {}),
-    }),
-  };
 }
 
 export async function maybeInduceWorkflowPhrasePattern(params: {
@@ -435,23 +416,10 @@ export async function maybeInduceWorkflowPhrasePattern(params: {
   source: string;
   observedAt?: string;
 }): Promise<WorkflowPhraseInductionResult> {
-  const observedAt = params.observedAt ?? new Date().toISOString();
-  const proposal = buildWorkflowPhrasePatternProposal({
-    text: params.text,
-    targetMatch: params.targetMatch,
-  });
-  return await maybeInduceReviewedPhrasePattern({
-    proposal,
-    inspection: proposal
-      ? await inspectWorkflowPhrasePatternLifecycle({
-          config: params.config,
-          patternKey: proposal.patternKey,
-          targetKey: params.targetMatch.key,
-          normalizedPhrase: proposal.normalizedPhrase,
-          ...(params.projectId ? { projectId: params.projectId } : {}),
-          logger: params.logger,
-        })
-      : null,
+  return maybeInduceReviewedPhrasePatternForFamily({
+    familyId: "workflow_improvement",
+    config: params.config,
+    artifactFamily: PHRASE_PATTERN_ARTIFACT_FAMILY,
     candidateIngress: params.candidateIngress,
     candidateReview: params.candidateReview,
     candidatePromotion: params.candidatePromotion,
@@ -459,6 +427,14 @@ export async function maybeInduceWorkflowPhrasePattern(params: {
     ...(params.sessionId ? { sessionId: params.sessionId } : {}),
     ...(params.agentId ? { agentId: params.agentId } : {}),
     source: params.source,
+    ...(params.logger ? { logger: params.logger } : {}),
+    logLabel: "workflow",
+    targetKey: params.targetMatch.key,
+    buildProposal: () =>
+      buildWorkflowPhrasePatternProposal({
+        text: params.text,
+        targetMatch: params.targetMatch,
+      }),
     lifecycleUnavailableReason: "workflow phrase-induction lifecycle inspection unavailable",
     conflictReason: "normalized phrase already belongs to a different approved workflow lesson",
     existingReason: "approved workflow phrase pattern already exists",
@@ -468,7 +444,6 @@ export async function maybeInduceWorkflowPhrasePattern(params: {
     promotionFailureReason: "workflow phrase pattern promotion failed",
     submissionFailureReason: "workflow phrase pattern candidate submission failed",
     rejectedLifecycleFamily: "workflow_phrase_induction",
-    targetKey: params.targetMatch.key,
     rejectedRationale: "workflow phrase pattern expired without enough repeated evidence",
     shouldSkipImmediateConfirmation: shouldSkipImmediateWorkflowPhraseConfirmation,
     isExpiredPendingCandidate: isExpiredPendingWorkflowPhraseCandidate,
@@ -477,7 +452,7 @@ export async function maybeInduceWorkflowPhrasePattern(params: {
         phraseText: proposal.phraseText,
         subject: params.targetMatch.subject,
       }),
-    buildLifecycleMetadata: (proposal) =>
+    buildLifecycleMetadata: (proposal, observedAt) =>
       buildPhraseLifecycleMetadata({
         patternKey: proposal.patternKey,
         targetMatch: params.targetMatch,

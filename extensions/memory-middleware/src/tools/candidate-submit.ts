@@ -91,11 +91,7 @@ import {
   type ResponseStyleSemanticConfidence,
 } from "../response-style-semantic.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
-import {
-  storeApprovedApiWorkaroundSemanticEmbedding,
-  storeApprovedEnvironmentConstraintSemanticEmbedding,
-  storeApprovedWorkflowToolGotchaSemanticEmbedding,
-} from "../semantic-retrieval-routing.js";
+import { storeApprovedProjectWorkflowSemanticEmbedding } from "../semantic-retrieval-routing.js";
 import {
   inspectWorkflowImprovementLifecycle,
   isExpiredPendingWorkflowImprovementCandidate,
@@ -113,8 +109,9 @@ import {
 } from "../workflow-improvement-semantic.js";
 import { maybeInduceWorkflowPhrasePattern } from "../workflow-phrase-induction.js";
 import {
+  runCandidateWriteResolutionStages,
+  runCandidateWriteResultStages,
   runWriteResolutionStages,
-  runWriteResultStages,
   submitCandidateByKind,
 } from "../write-action-stages.js";
 import {
@@ -133,20 +130,6 @@ const RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS = 5_000;
 const PROJECT_FACT_CONFIRMATION_MIN_AGE_MS = 5_000;
 const PROCEDURE_CONFIRMATION_MIN_AGE_MS = 5_000;
 const WORKFLOW_IMPROVEMENT_CONFIRMATION_MIN_AGE_MS = 5_000;
-const ENVIRONMENT_CONSTRAINT_LESSON_KEYS = new Set([
-  "python_command_unavailable",
-  "gateway_tools_invoke_forbidden",
-]);
-const WORKFLOW_TOOL_GOTCHA_SEMANTIC_LESSON_KEYS = new Set([
-  "vitest_wrapper_required",
-  "scripts_committer_required",
-  "git_stash_unsafe",
-]);
-const API_WORKAROUND_SEMANTIC_LESSON_KEYS = new Set([
-  "openai_embeddings_api_key_required",
-  "anthropic_context1m_eligible_credential_required",
-]);
-
 function candidateKindSchema() {
   return Type.Unsafe<CandidateSubmissionKind>({
     type: "string",
@@ -224,26 +207,6 @@ function readNestedMetadataString(
   path: string[],
 ): string | undefined {
   return readCanonicalFirstMetadataString(metadata, path);
-}
-
-function isEnvironmentConstraintLessonKey(
-  lessonKey: string | undefined,
-): lessonKey is "python_command_unavailable" | "gateway_tools_invoke_forbidden" {
-  return Boolean(lessonKey && ENVIRONMENT_CONSTRAINT_LESSON_KEYS.has(lessonKey));
-}
-
-function isWorkflowToolGotchaSemanticLessonKey(
-  lessonKey: string | undefined,
-): lessonKey is "vitest_wrapper_required" | "scripts_committer_required" | "git_stash_unsafe" {
-  return Boolean(lessonKey && WORKFLOW_TOOL_GOTCHA_SEMANTIC_LESSON_KEYS.has(lessonKey));
-}
-
-function isApiWorkaroundSemanticLessonKey(
-  lessonKey: string | undefined,
-): lessonKey is
-  | "openai_embeddings_api_key_required"
-  | "anthropic_context1m_eligible_credential_required" {
-  return Boolean(lessonKey && API_WORKAROUND_SEMANTIC_LESSON_KEYS.has(lessonKey));
 }
 
 function buildToolResponseStyleAutoPromotionMetadata(params: {
@@ -1656,36 +1619,8 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         reason: promotionResult.reason,
       };
     }
-    if (
-      lessonKey &&
-      isEnvironmentConstraintLessonKey(lessonKey) &&
-      promotionResult.promotedMemoryObjectId
-    ) {
-      await storeApprovedEnvironmentConstraintSemanticEmbedding({
-        config: params.runtime.config,
-        cfg: params.context?.runtimeConfig ?? params.context?.config,
-        agentId: params.context?.agentId,
-        sessionKey: params.context?.sessionKey,
-        memoryObjectId: promotionResult.promotedMemoryObjectId,
-      });
-    } else if (
-      lessonKey &&
-      isWorkflowToolGotchaSemanticLessonKey(lessonKey) &&
-      promotionResult.promotedMemoryObjectId
-    ) {
-      await storeApprovedWorkflowToolGotchaSemanticEmbedding({
-        config: params.runtime.config,
-        cfg: params.context?.runtimeConfig ?? params.context?.config,
-        agentId: params.context?.agentId,
-        sessionKey: params.context?.sessionKey,
-        memoryObjectId: promotionResult.promotedMemoryObjectId,
-      });
-    } else if (
-      lessonKey &&
-      isApiWorkaroundSemanticLessonKey(lessonKey) &&
-      promotionResult.promotedMemoryObjectId
-    ) {
-      await storeApprovedApiWorkaroundSemanticEmbedding({
+    if (lessonKey && promotionResult.promotedMemoryObjectId) {
+      await storeApprovedProjectWorkflowSemanticEmbedding({
         config: params.runtime.config,
         cfg: params.context?.runtimeConfig ?? params.context?.config,
         agentId: params.context?.agentId,
@@ -1774,11 +1709,15 @@ export async function submitCandidateFromTool(params: {
     input: normalizedInput,
     ...(params.context ? { context: params.context } : {}),
   };
-  const resolvedExisting = await runWriteResolutionStages({
+  const resolvedExisting = await runCandidateWriteResolutionStages({
     context: executionContext,
     stages: [
       {
         id: "resolve_response_style",
+        match: {
+          familyIds: ["response_style"],
+          submissionKinds: ["learning", "correction"],
+        },
         resolve: ({ runtime, input, context }) =>
           maybeResolveExistingResponseStyleCandidate({
             runtime,
@@ -1788,6 +1727,10 @@ export async function submitCandidateFromTool(params: {
       },
       {
         id: "resolve_project_fact",
+        match: {
+          familyIds: ["project_fact"],
+          submissionKinds: ["learning", "correction"],
+        },
         resolve: ({ runtime, input }) =>
           maybeResolveExistingProjectFactCandidate({
             runtime,
@@ -1796,6 +1739,10 @@ export async function submitCandidateFromTool(params: {
       },
       {
         id: "resolve_recurring_procedure",
+        match: {
+          familyIds: ["recurring_procedure"],
+          submissionKinds: ["procedure"],
+        },
         resolve: ({ runtime, input }) =>
           maybeResolveExistingRecurringProcedureCandidate({
             runtime,
@@ -1804,6 +1751,10 @@ export async function submitCandidateFromTool(params: {
       },
       {
         id: "resolve_workflow_improvement",
+        match: {
+          familyIds: ["workflow_improvement", "project_rule", "unmet_need"],
+          submissionKinds: ["improvement"],
+        },
         resolve: ({ runtime, input, context }) =>
           maybeResolveExistingWorkflowImprovementCandidate({
             runtime,
@@ -1816,34 +1767,39 @@ export async function submitCandidateFromTool(params: {
   if (resolvedExisting) {
     return resolvedExisting;
   }
-  const duplicateGuard = await runWriteResolutionStages({
+  const duplicateGuard = await runCandidateWriteResolutionStages({
     context: executionContext,
-    stages:
-      normalizedInput.kind === "learning" ||
-      normalizedInput.kind === "correction" ||
-      normalizedInput.kind === "improvement"
-        ? [
-            {
-              id: "reject_auto_capture_duplicate",
-              resolve: async ({ runtime, input, context }) => {
-                const duplicate = await findExistingAutoCaptureManagedDuplicate({
-                  runtime,
-                  input,
-                  ...(context ? { context } : {}),
-                });
-                if (!duplicate) {
-                  return null;
-                }
-                return {
-                  accepted: false as const,
-                  status: "failed" as const,
-                  kind: input.kind,
-                  reason: `ordinary-turn auto-capture already created ${duplicate.reviewState} candidate ${duplicate.id}`,
-                };
-              },
-            },
-          ]
-        : [],
+    stages: [
+      {
+        id: "reject_auto_capture_duplicate",
+        match: {
+          submissionKinds: ["learning", "correction", "improvement"],
+          familyIds: [
+            "response_style",
+            "project_fact",
+            "workflow_improvement",
+            "project_rule",
+            "unmet_need",
+          ],
+        },
+        resolve: async ({ runtime, input, context }) => {
+          const duplicate = await findExistingAutoCaptureManagedDuplicate({
+            runtime,
+            input,
+            ...(context ? { context } : {}),
+          });
+          if (!duplicate) {
+            return null;
+          }
+          return {
+            accepted: false as const,
+            status: "failed" as const,
+            kind: input.kind,
+            reason: `ordinary-turn auto-capture already created ${duplicate.reviewState} candidate ${duplicate.id}`,
+          };
+        },
+      },
+    ],
   });
   if (duplicateGuard) {
     return duplicateGuard;
@@ -1852,12 +1808,16 @@ export async function submitCandidateFromTool(params: {
     runtime: params.runtime,
     input: normalizedInput,
   });
-  return runWriteResultStages({
+  return runCandidateWriteResultStages({
     context: executionContext,
     result: submitted,
     stages: [
       {
         id: "auto_promote_preference",
+        match: {
+          familyIds: ["response_style"],
+          submissionKinds: ["learning", "correction"],
+        },
         apply: ({ context, result }) =>
           maybeAutoPromoteToolSubmittedPreference({
             runtime: context.runtime,
@@ -1867,6 +1827,10 @@ export async function submitCandidateFromTool(params: {
       },
       {
         id: "auto_promote_project_fact",
+        match: {
+          familyIds: ["project_fact"],
+          submissionKinds: ["learning", "correction"],
+        },
         apply: ({ context, result }) =>
           maybeAutoPromoteToolSubmittedProjectFact({
             runtime: context.runtime,
@@ -1876,6 +1840,10 @@ export async function submitCandidateFromTool(params: {
       },
       {
         id: "auto_promote_recurring_procedure",
+        match: {
+          familyIds: ["recurring_procedure"],
+          submissionKinds: ["procedure"],
+        },
         apply: ({ context, result }) =>
           maybeAutoPromoteToolSubmittedRecurringProcedure({
             runtime: context.runtime,
@@ -1980,29 +1948,6 @@ function normalizeCorrectionPreferenceKey(raw: unknown): string | null {
     return null;
   }
   return normalized;
-}
-
-function resolveResponseStyleLearningParaphraseKey(
-  content: string,
-): OrdinaryTurnAutoCaptureMatch["key"] | null {
-  const normalized = content.trim().toLowerCase();
-  if (!normalized) {
-    return null;
-  }
-
-  const canonicalRaw =
-    /^(?:user|[a-z][a-z0-9_-]*) prefers bullet points\b.*\b(?:reply|replies|response|responses|list|listing|structured)\b.*[.!?]?$/i.test(
-      content,
-    )
-      ? "Use bullet points for me."
-      : /^(?:user|[a-z][a-z0-9_-]*) prefers plain english\b.*(?:jargon)?.*[.!?]?$/i.test(content)
-        ? "Use plain English, not jargon."
-        : null;
-  if (!canonicalRaw) {
-    return null;
-  }
-
-  return parseOrdinaryTurnAutoCapturePreference(canonicalRaw, "user-preference-v2")?.key ?? null;
 }
 
 function extractAutoCaptureKey(metadata: Record<string, unknown> | undefined): string | null {
@@ -3555,7 +3500,7 @@ async function resolveManagedAutoCaptureKey(params: {
       (typeof metadata?.raw === "string"
         ? parseOrdinaryTurnAutoCapturePreference(metadata.raw, "user-preference-v2")
         : null);
-    return parsed?.key ?? resolveResponseStyleLearningParaphraseKey(input.content);
+    return parsed?.key ?? null;
   }
 
   if (input.kind === "correction") {

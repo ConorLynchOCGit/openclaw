@@ -27,6 +27,9 @@ Practical parity does not mean:
 
 That remains the central roadmap fact.
 
+The retirement tranche proper is now underway and has real landed code, not
+just review notes.
+
 ## Live baseline
 
 The current live boundary includes:
@@ -171,6 +174,34 @@ This phase should land before the repo adds new memory families.
 
 - artifact / read-model convergence if later self-improving or family-expansion
   pressure shows the procedure-versus-memory-object split is still too awkward
+
+## Phase D.5 — retirement tranche proper
+
+This phase is now partially landed.
+
+### Landed in retirement tranche proper batch v1
+
+1. canonical-family-aware write-stage routing
+2. phrase-induction convergence over one shared reviewed adapter seam
+3. ingestion-resolver flattening for project facts and workflow guidance
+4. reduction of lesson-key-specific promotion branching
+5. smaller canonical compatibility output from family policy
+
+### What this changed
+
+- the repo now deletes old routing shortcuts instead of only wrapping them
+- phrase induction is no longer two near-identical subsystems
+- the candidate-submit path is less family-first at its entry and promotion
+  edges
+- one frozen response-style paraphrase fast lane is gone
+
+### What still remains in this phase
+
+- deeper canonical multi-candidate write-pipeline work
+- more candidate-submit retirement work
+- continued mixed-era semantic fallback reduction
+- continued shrinkage of family-policy authority toward pure compatibility and
+  derived-view ownership
 
 ## Phase E — post-flattening hardening before reduced-profile self-improving capture
 

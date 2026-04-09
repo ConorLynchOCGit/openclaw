@@ -1,14 +1,7 @@
 import type { PluginLogger } from "../api.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
+import { getPhrasePatternProofFamilyId } from "./memory-family-registry.js";
 import {
-  getMemoryFamilyDefinition,
-  getPhrasePatternProofFamilyId,
-} from "./memory-family-registry.js";
-import {
-  buildReviewedPhrasePatternProposal,
-  findApprovedReviewedPhrasePatternRows,
-  inspectReviewedPhrasePatternLifecycle,
-  maybeInduceReviewedPhrasePattern,
   type ApprovedPhrasePatternRowBase,
   type PhrasePatternLifecycleInspection,
   type PhrasePatternPendingCandidate,
@@ -20,6 +13,13 @@ import {
   type ResponseStyleFamily,
   type ResponseStyleTemplate,
 } from "./response-style-semantic.js";
+import {
+  buildReviewedPhrasePatternProposalForTarget,
+  findApprovedReviewedPhrasePatternMatchForFamily,
+  inspectReviewedPhrasePatternLifecycleForFamily,
+  maybeInduceReviewedPhrasePatternForFamily,
+  type ReviewedPhraseInductionResult,
+} from "./reviewed-phrase-induction.js";
 
 const RESPONSE_STYLE_PHRASE_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
 const RESPONSE_STYLE_PHRASE_CONFIRMATION_MIN_AGE_MS = 5_000;
@@ -102,23 +102,7 @@ type CandidatePromotionLike = {
   }): Promise<{ accepted: boolean; promotedMemoryObjectId?: string; reason?: string }>;
 };
 
-export type ResponseStylePhraseInductionResult =
-  | {
-      status: "ignored" | "existing" | "waiting" | "conflict";
-      reason: string;
-      normalizedPhrase?: string;
-    }
-  | {
-      status: "held";
-      normalizedPhrase: string;
-      candidateId: string;
-    }
-  | {
-      status: "approved";
-      normalizedPhrase: string;
-      candidateId: string;
-      approvedObjectId: string;
-    };
+export type ResponseStylePhraseInductionResult = ReviewedPhraseInductionResult;
 
 function tokenizeForPhraseAnchors(value: string | undefined): Set<string> {
   if (!value) {
@@ -245,8 +229,9 @@ export function buildResponseStylePhrasePatternProposal(params: {
   text: string;
   targetMatch: ResponseStyleCanonicalMatch;
 }): { patternKey: string; normalizedPhrase: string; phraseText: string } | null {
-  return buildReviewedPhrasePatternProposal({
+  return buildReviewedPhrasePatternProposalForTarget({
     text: params.text,
+    target: params.targetMatch,
     targetKey: params.targetMatch.key,
     targetContent: params.targetMatch.content,
     targetNormalizedValue: params.targetMatch.normalizedValue,
@@ -254,7 +239,7 @@ export function buildResponseStylePhrasePatternProposal(params: {
     maxLength: 220,
     normalizeText: normalizeResponseStyleSemanticText,
     tokenizeForAnchors: tokenizeForPhraseAnchors,
-    anchorTexts: [params.targetMatch.normalizedSubject, params.targetMatch.normalizedValue],
+    anchorTexts: (targetMatch) => [targetMatch.normalizedSubject, targetMatch.normalizedValue],
     seed: "response-style-phrase-induction-v1",
   });
 }
@@ -266,17 +251,14 @@ export async function inspectResponseStylePhrasePatternLifecycle(params: {
   normalizedPhrase: string;
   logger?: PluginLogger;
 }): Promise<ResponseStylePhraseLifecycleInspection | null> {
-  const familyDefinition = getMemoryFamilyDefinition("response_style");
-  if (familyDefinition.phrasePolicy.mode !== "approved_pattern_reviewed") {
-    return null;
-  }
-  return inspectReviewedPhrasePatternLifecycle({
+  return inspectReviewedPhrasePatternLifecycleForFamily({
+    familyId: "response_style",
     config: params.config,
     artifactFamily: PHRASE_PATTERN_ARTIFACT_FAMILY,
     patternKey: params.patternKey,
     targetKey: params.targetKey,
     normalizedPhrase: params.normalizedPhrase,
-    logger: params.logger,
+    ...(params.logger ? { logger: params.logger } : {}),
     logLabel: "response-style",
   });
 }
@@ -286,19 +268,18 @@ export async function findApprovedResponseStylePhrasePatternMatch(params: {
   text: string;
   logger?: PluginLogger;
 }): Promise<ApprovedResponseStylePhrasePatternMatch | null> {
-  const familyDefinition = getMemoryFamilyDefinition("response_style");
-  if (familyDefinition.phrasePolicy.mode !== "approved_pattern_reviewed") {
-    return null;
-  }
-  const normalizedPhrase = normalizeResponseStyleSemanticText(params.text);
-  if (normalizedPhrase.length < 16 || normalizedPhrase.length > 220) {
-    return null;
-  }
-  const rows = await findApprovedReviewedPhrasePatternRows<ResponseStyleApprovedPhraseRow>({
+  return findApprovedReviewedPhrasePatternMatchForFamily<
+    ResponseStyleApprovedPhraseRow,
+    ResponseStyleCanonicalMatch
+  >({
+    familyId: "response_style",
     config: params.config,
     artifactFamily: PHRASE_PATTERN_ARTIFACT_FAMILY,
-    normalizedPhrase,
-    logger: params.logger,
+    text: params.text,
+    minLength: 16,
+    maxLength: 220,
+    normalizeText: normalizeResponseStyleSemanticText,
+    ...(params.logger ? { logger: params.logger } : {}),
     logLabel: "response-style",
     selectAdditionalColumns: [
       `coalesce(
@@ -326,46 +307,51 @@ export async function findApprovedResponseStylePhrasePatternMatch(params: {
         metadata->'candidateMetadata'->'phraseInduction'->>'normalizedValue'
       ) as resolved_normalized_value`,
     ],
+    resolveMatch: ({ rows, normalizedPhrase }) => {
+      const eligibleRows = rows.filter(
+        (row) =>
+          Boolean(row.resolved_target_key) &&
+          Boolean(row.resolved_target_subject_key) &&
+          Boolean(row.resolved_target_template) &&
+          Boolean(row.resolved_target_family) &&
+          Boolean(row.resolved_subject) &&
+          Boolean(row.resolved_value),
+      );
+      if (eligibleRows.length === 0) {
+        return null;
+      }
+      const distinctTargetKeys = new Set(
+        eligibleRows.map((row) => row.resolved_target_key).filter(Boolean),
+      );
+      if (distinctTargetKeys.size !== 1) {
+        return null;
+      }
+
+      const row = eligibleRows[0];
+      const targetTemplate = row?.resolved_target_template as ResponseStyleTemplate | null;
+      const targetFamily = row?.resolved_target_family as ResponseStyleFamily | null;
+      if (
+        !row ||
+        !targetTemplate ||
+        !targetFamily ||
+        !row.resolved_subject ||
+        !row.resolved_value
+      ) {
+        return null;
+      }
+
+      return {
+        approvedObjectId: row.id,
+        normalizedPhrase,
+        match: createResponseStyleCanonicalMatch({
+          template: targetTemplate,
+          family: targetFamily,
+          subject: row.resolved_subject,
+          value: row.resolved_value,
+        }),
+      };
+    },
   });
-  if (!rows) {
-    return null;
-  }
-  const eligibleRows = rows.filter(
-    (row) =>
-      Boolean(row.resolved_target_key) &&
-      Boolean(row.resolved_target_subject_key) &&
-      Boolean(row.resolved_target_template) &&
-      Boolean(row.resolved_target_family) &&
-      Boolean(row.resolved_subject) &&
-      Boolean(row.resolved_value),
-  );
-  if (eligibleRows.length === 0) {
-    return null;
-  }
-  const distinctTargetKeys = new Set(
-    eligibleRows.map((row) => row.resolved_target_key).filter(Boolean),
-  );
-  if (distinctTargetKeys.size !== 1) {
-    return null;
-  }
-
-  const row = eligibleRows[0];
-  const targetTemplate = row.resolved_target_template as ResponseStyleTemplate | null;
-  const targetFamily = row.resolved_target_family as ResponseStyleFamily | null;
-  if (!targetTemplate || !targetFamily || !row.resolved_subject || !row.resolved_value) {
-    return null;
-  }
-
-  return {
-    approvedObjectId: row.id,
-    normalizedPhrase,
-    match: createResponseStyleCanonicalMatch({
-      template: targetTemplate,
-      family: targetFamily,
-      subject: row.resolved_subject,
-      value: row.resolved_value,
-    }),
-  };
 }
 
 export async function maybeInduceResponseStylePhrasePattern(params: {
@@ -383,22 +369,10 @@ export async function maybeInduceResponseStylePhrasePattern(params: {
   source: string;
   observedAt?: string;
 }): Promise<ResponseStylePhraseInductionResult> {
-  const observedAt = params.observedAt ?? new Date().toISOString();
-  const proposal = buildResponseStylePhrasePatternProposal({
-    text: params.text,
-    targetMatch: params.targetMatch,
-  });
-  return await maybeInduceReviewedPhrasePattern({
-    proposal,
-    inspection: proposal
-      ? await inspectResponseStylePhrasePatternLifecycle({
-          config: params.config,
-          patternKey: proposal.patternKey,
-          targetKey: params.targetMatch.key,
-          normalizedPhrase: proposal.normalizedPhrase,
-          logger: params.logger,
-        })
-      : null,
+  return maybeInduceReviewedPhrasePatternForFamily({
+    familyId: "response_style",
+    config: params.config,
+    artifactFamily: PHRASE_PATTERN_ARTIFACT_FAMILY,
     candidateIngress: params.candidateIngress,
     candidateReview: params.candidateReview,
     candidatePromotion: params.candidatePromotion,
@@ -406,6 +380,14 @@ export async function maybeInduceResponseStylePhrasePattern(params: {
     ...(params.sessionId ? { sessionId: params.sessionId } : {}),
     ...(params.agentId ? { agentId: params.agentId } : {}),
     source: params.source,
+    ...(params.logger ? { logger: params.logger } : {}),
+    logLabel: "response-style",
+    targetKey: params.targetMatch.key,
+    buildProposal: () =>
+      buildResponseStylePhrasePatternProposal({
+        text: params.text,
+        targetMatch: params.targetMatch,
+      }),
     lifecycleUnavailableReason: "response-style phrase-induction lifecycle inspection unavailable",
     conflictReason:
       "normalized phrase already belongs to a different approved response-style target",
@@ -416,7 +398,6 @@ export async function maybeInduceResponseStylePhrasePattern(params: {
     promotionFailureReason: "response-style phrase pattern promotion failed",
     submissionFailureReason: "response-style phrase pattern submission failed",
     rejectedLifecycleFamily: "response_style_phrase_induction",
-    targetKey: params.targetMatch.key,
     rejectedRationale: "response-style phrase pattern expired without enough repeated evidence",
     shouldSkipImmediateConfirmation: shouldSkipImmediateResponseStylePhraseConfirmation,
     isExpiredPendingCandidate: isExpiredPendingResponseStylePhraseCandidate,
@@ -425,7 +406,7 @@ export async function maybeInduceResponseStylePhrasePattern(params: {
         phraseText: proposal.phraseText,
         subject: params.targetMatch.subject,
       }),
-    buildLifecycleMetadata: (proposal) =>
+    buildLifecycleMetadata: (proposal, observedAt) =>
       buildPhraseLifecycleMetadata({
         patternKey: proposal.patternKey,
         targetMatch: params.targetMatch,

@@ -770,6 +770,10 @@ export function getPhrasePatternProofFamilyId(
   return getMemoryFamilyDefinition(familyId).proofPolicy.phrasePattern?.familyId ?? null;
 }
 
+export function supportsMemoryFamilyReviewedPhrasePatterns(familyId: MemoryFamilyId): boolean {
+  return getMemoryFamilyDefinition(familyId).phrasePolicy.mode === "approved_pattern_reviewed";
+}
+
 export function getCaptureMetadataByCaptureClass(
   captureClass: string,
 ): MemoryFamilyCaptureMetadata | null {
@@ -810,7 +814,6 @@ function buildCanonicalCompatibility(
   return {
     transitionalFamilyId: definition.id,
     storageKinds: definition.storageKinds,
-    typedFastPaths: definition.typedFastPaths,
     workflowLessonFamilies: definition.workflowLessonFamilies,
     captureClasses: definition.captureClasses,
     captureCategory: definition.captureMetadata?.category,
