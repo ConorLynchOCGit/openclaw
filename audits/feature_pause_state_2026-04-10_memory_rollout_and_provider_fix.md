@@ -199,3 +199,23 @@ When this diagnosis/spec pass is accepted, resume from this state by:
    - do not re-implement feature code
    - re-run only the gates invalidated by any new doc/spec edits
    - finish the scoped commits and pushes for the already-complete feature work
+
+## Planned Follow-Up After Memory Closeout
+
+After the remaining memory closeout is landed, do a second focused
+test-throughput pass before the next full `pnpm test` and gateway landing.
+
+That deferred pass should implement:
+
+1. historical RSS-aware co-scheduling
+2. splitting the worst 5 to 10 long-running batches
+3. isolating the heaviest import-heavy and memory-heavy suites into dedicated
+   lanes
+4. trialing adaptive safe top-level parallelism in the `2` to `3` range when
+   host headroom allows it
+5. worker recycling for specific lane classes if the first four steps still do
+   not buy enough time
+
+The goal of that follow-up is to use the next full `pnpm test` and gateway
+landing as the measurement point for whether the extra throughput work buys
+enough additional wall-clock improvement on this host.

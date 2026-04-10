@@ -340,6 +340,16 @@ The remaining likely workflow and validation improvements are intentionally
 deferred until after memory implementation is complete because they require more
 serious work than the bounded workflow slices already landed.
 
+- before the next full `pnpm test` and gateway landing after memory closeout,
+  run a focused throughput tranche that:
+  - adds historical RSS-aware co-scheduling
+  - splits the worst `5` to `10` long-running batches
+  - isolates the heaviest import-heavy and memory-heavy suites into dedicated
+    lanes
+  - trials adaptive safe top-level parallelism in the `2` to `3` range when
+    host headroom allows it
+  - adds worker recycling for specific lane classes if the first four steps are
+    still too slow
 - make `pnpm tsgo` itself faster or more reliable
 - make hooks and commit tooling auto-select validation tiers from changed-file
   scope

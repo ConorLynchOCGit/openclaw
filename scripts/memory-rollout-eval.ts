@@ -100,6 +100,8 @@ async function startPostgresEvalEnvironment(): Promise<DbEnvironment> {
     "--rm",
     "--name",
     containerName,
+    "--tmpfs",
+    "/var/lib/postgresql/data:rw",
     "-e",
     "POSTGRES_HOST_AUTH_METHOD=trust",
     "-e",
