@@ -76,6 +76,17 @@ The next native-file rollout tranche is now also landed locally through:
 - a hardened manual sync command with explicit scope selection, summary output,
   and host-workspace targeting
 
+The broader native-file follow-through tranche is now also landed locally
+through:
+
+- project-local projections into the real allowlisted project `INDEX.md` docs,
+  with `MEMORY.md` only as a compatibility fallback
+- explicit specialized-agent projection rollout for `x-manager` and
+  `web-researcher`
+- metadata-first project precedence for project-scoped agent memory
+- stale-aware host-side projection status and refresh orchestration
+- confirmation that no schema change was required for this tranche
+
 The repo-local landing-test wrapper now also has a constrained-host safe mode
 for full repo runs, so low-memory hosts default to narrower unit batches,
 serial top-level execution, and a larger worker heap budget instead of

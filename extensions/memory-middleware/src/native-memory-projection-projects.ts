@@ -17,7 +17,7 @@ import {
   type WorkspaceProjectProjectionTarget,
 } from "./native-memory-projection-routing.js";
 import {
-  isProjectProjectionScope,
+  isEligibleForProjectProjection,
   resolveNativeMemoryProjectionScope,
 } from "./native-memory-projection-scope.js";
 
@@ -76,13 +76,22 @@ export async function syncProjectLocalProjections(params: {
   const allWorkspaceTargets = await discoverWorkspaceProjectProjectionTargets(params.workspaceDir, {
     includeUnallowlisted: true,
   });
-  const groups = new Map<string, ProjectProjectionGroup>();
+  const groups = new Map<string, ProjectProjectionGroup>(
+    targets.map((target) => [
+      target.slug,
+      {
+        target,
+        records: [],
+        candidates: [],
+      },
+    ]),
+  );
   const unmatched: Array<{ sourceId: string; reason: string }> = [];
   const skipped: NativeMemoryProjectionSkippedRecord[] = [];
 
   for (const record of records) {
     const scope = resolveNativeMemoryProjectionScope(record);
-    if (!isProjectProjectionScope(scope)) {
+    if (!isEligibleForProjectProjection(scope)) {
       skipped.push({
         sourceId: record.id,
         reason: "scope_filtered",
@@ -136,6 +145,7 @@ export async function syncProjectLocalProjections(params: {
       target: {
         target: "project-memory-digest",
         projectSlug: group.target.slug,
+        projectFileName: group.target.projectionFileName,
       },
       body,
       write: params.write,
@@ -149,7 +159,7 @@ export async function syncProjectLocalProjections(params: {
       selectedCount: trimmed.kept.length,
       omittedCount: trimmed.omittedCount,
       sourceCount: group.candidates.length,
-      pointerLine: `Project ${group.target.slug}: see ${group.target.relDir}/MEMORY.md`,
+      pointerLine: `Project ${group.target.slug}: see ${group.target.relProjectionPath}`,
       selectedSourceIds: trimmed.kept.map((candidate) => candidate.sourceId),
       omittedSourceIds: trimmed.omitted.map((candidate) => candidate.sourceId),
     });
@@ -157,7 +167,9 @@ export async function syncProjectLocalProjections(params: {
 
   return {
     results,
-    pointerItems: results.map((result) => result.pointerLine),
+    pointerItems: results
+      .filter((result) => result.sourceCount > 0)
+      .map((result) => result.pointerLine),
     projectedSourceIds,
     unmatched,
     skipped,

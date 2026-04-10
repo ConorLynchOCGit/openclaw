@@ -51,6 +51,12 @@ Project-local memory integration should publish compact, high-signal project
 views into existing project folders rather than inventing a second project store
 in top-level bootstrap files.
 
+For the current workspace:
+
+- `projects/<slug>/INDEX.md` is the default projection destination
+- `projects/<slug>/MEMORY.md` remains a compatibility fallback only when that
+  file already exists
+
 ## Agent workspace tiers
 
 Agent workspaces are heterogeneous today, so they should not all receive the
@@ -67,9 +73,10 @@ Use shared projections first.
 
 ### Tier B — role-specific agent workspaces
 
-Example:
+Examples:
 
 - `x-manager`
+- `web-researcher`
 
 These may later justify dedicated role-specific projections.
 
@@ -97,6 +104,9 @@ When agent-specific projections land, they should rely on:
 - explicit destination rules
 
 They should not use agent state directories as the projection destination.
+
+For the current tranche, explicit allowlisting is preferred over treating every
+specialized folder as projection-eligible by default.
 
 ## Project vs agent precedence
 

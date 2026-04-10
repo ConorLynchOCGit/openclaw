@@ -26,9 +26,15 @@ repo-wide landing tests honest on constrained hosts.
 - metadata-first shared/project/agent scope classification
 - first specialized-agent projection tranche for real specialized workspaces
 - explicit allowlisted project rollout for real workspace project folders
+- project-local projections now target real allowlisted `projects/<slug>/INDEX.md`
+  docs by default, with `MEMORY.md` only as a compatibility fallback
 - operator-facing projection summary output alongside machine-readable audit
 - daily operator-review integration for projection state
 - host-cron scheduled projection refresh plus a hardened manual sync command
+- broader specialized-agent rollout for `x-manager` and `web-researcher`
+- metadata-first project precedence for project-scoped agent memory
+- stale-aware host-side projection orchestration and status reporting
+- no schema change was required for the broader native-file tranche
 
 ### Landing-gate hardening
 
@@ -51,13 +57,13 @@ repo-wide landing tests honest on constrained hosts.
   continuity view, not canonical durable memory
 - scheduled projection refresh is daily host cron plus manual sync, not per-turn
   mutation
+- stale-aware refresh is host-side and bounded; it is not native runtime cron
+  and not per-turn mutation
 
 ## What still waits until later
 
-- project-local projection expansion beyond `MEMORY.md`
-- broader specialized-agent coverage
-- stronger agent-scoped DB memory semantics where metadata-first routing proves
+- truthful alias expansion for project records that still do not map to a real
+  workspace folder
+- broader specialized-agent coverage only if later real workspaces justify it
+- any schema changes only if future evidence proves metadata-first routing is
   insufficient
-- richer projection scheduling / orchestration beyond the current daily host
-  cron plus manual sync path
-- any schema changes, if later implementation proves they are truly required

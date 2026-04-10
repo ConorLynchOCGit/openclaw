@@ -14,6 +14,7 @@ import {
 import {
   classifyAgentWorkspaceProjectionTargets,
   discoverSiblingAgentWorkspaceTargets,
+  isSpecializedAgentProjectionAllowlisted,
   type AgentWorkspaceProjectionTarget,
 } from "./native-memory-projection-routing.js";
 import {
@@ -85,13 +86,21 @@ export async function syncAgentBootstrapProjections(params: {
     targets
       .filter(
         (target): target is AgentWorkspaceProjectionTarget & { kind: "specialized" } =>
-          target.kind === "specialized",
+          target.kind === "specialized" && isSpecializedAgentProjectionAllowlisted(target.agentKey),
       )
       .map((target) => [target.agentKey, target] as const),
   );
 
   const skipped: NativeMemoryProjectionSkippedRecord[] = [];
-  const groups = new Map<string, AgentProjectionGroup>();
+  const groups = new Map<string, AgentProjectionGroup>(
+    [...specializedTargets.entries()].map(([agentKey, target]) => [
+      agentKey,
+      {
+        target,
+        candidatesByTarget: new Map<AgentProjectionTarget, NativeMemoryProjectionCandidate[]>(),
+      },
+    ]),
+  );
   const records = await loadApprovedAgentProjectionRecords({
     db: params.db,
     limitPerKind: params.limitPerKind ?? 80,

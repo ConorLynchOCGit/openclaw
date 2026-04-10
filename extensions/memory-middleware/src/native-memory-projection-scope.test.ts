@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MemoryObjectRecord } from "./db/runtime.js";
 import {
+  isEligibleForProjectProjection,
   isAgentProjectionScope,
   isProjectProjectionScope,
   isSharedProjectionScope,
@@ -77,6 +78,8 @@ describe("native memory projection scope", () => {
     expect(isAgentProjectionScope(scope)).toBe(true);
     expect(scope.agentKey).toBe("x-manager");
     expect(scope.projectScoped).toBe(true);
+    expect(scope.projectSlug).toBe("maintenance");
+    expect(isEligibleForProjectProjection(scope)).toBe(true);
   });
 
   it("treats explicit session continuity records as session scope", () => {
@@ -99,5 +102,6 @@ describe("native memory projection scope", () => {
 
     expect(scope.kind).toBe("session");
     expect(scope.sessionKey).toBe("agent:web-researcher:proof");
+    expect(isEligibleForProjectProjection(scope)).toBe(false);
   });
 });

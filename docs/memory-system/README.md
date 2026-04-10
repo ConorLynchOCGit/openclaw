@@ -198,6 +198,19 @@ The next native-file rollout tranche is now also landed locally:
 - projection refresh now has a daily host-cron path and a hardened manual sync
   command
 
+The broader native-file follow-through tranche is now also landed locally:
+
+- project-local projections now target real project `INDEX.md` docs by default,
+  with `MEMORY.md` only as a compatibility fallback
+- the specialized-agent rollout explicitly covers `x-manager` and
+  `web-researcher`
+- project-scoped memory that also carries an agent key now still feeds the
+  project-local lane unless it is session continuity
+- projection orchestration now supports host-side status checks and
+  stale-aware refresh in addition to the daily cron and explicit manual sync
+- no schema change was needed for this broader project/agent/orchestration
+  tranche
+
 ## Rules of engagement
 
 - Do not try to implement the entire system in one pass.

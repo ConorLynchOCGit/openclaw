@@ -6,11 +6,14 @@ import {
   readCanonicalFirstMetadataString,
   readCanonicalMemoryRecordFromMetadata,
 } from "./memory-canonical-compat.js";
+import type { ProjectProjectionFilename } from "./native-memory-surfaces.js";
 
 export type WorkspaceProjectProjectionTarget = {
   slug: string;
   relDir: string;
   absDir: string;
+  projectionFileName: ProjectProjectionFilename;
+  relProjectionPath: string;
 };
 
 export const NATIVE_MEMORY_PROJECT_PROJECTION_ALLOWLIST = [
@@ -25,11 +28,30 @@ export const NATIVE_MEMORY_PROJECT_PROJECTION_ALLOWLIST = [
   "workflows",
 ] as const;
 
+export const NATIVE_MEMORY_SPECIALIZED_AGENT_PROJECTION_ALLOWLIST = [
+  "web-researcher",
+  "x-manager",
+] as const;
+
 export type AgentWorkspaceProjectionTarget = {
   agentKey: string;
   workspaceDir: string;
   kind: "shared" | "generic" | "specialized";
 };
+
+async function resolveProjectProjectionFileName(
+  absDir: string,
+): Promise<ProjectProjectionFilename> {
+  for (const fileName of ["INDEX.md", "MEMORY.md"] as const satisfies ProjectProjectionFilename[]) {
+    try {
+      const stat = await fs.stat(path.join(absDir, fileName));
+      if (stat.isFile()) {
+        return fileName;
+      }
+    } catch {}
+  }
+  return "INDEX.md";
+}
 
 function normalizeKey(value: string): string {
   return value
@@ -66,6 +88,12 @@ export function isWorkspaceProjectProjectionAllowlisted(slug: string): boolean {
   return (NATIVE_MEMORY_PROJECT_PROJECTION_ALLOWLIST as readonly string[]).includes(slug);
 }
 
+export function isSpecializedAgentProjectionAllowlisted(agentKey: string): boolean {
+  return (NATIVE_MEMORY_SPECIALIZED_AGENT_PROJECTION_ALLOWLIST as readonly string[]).includes(
+    agentKey,
+  );
+}
+
 export async function discoverWorkspaceProjectProjectionTargets(
   workspaceDir: string,
   options?: { includeUnallowlisted?: boolean },
@@ -78,18 +106,27 @@ export async function discoverWorkspaceProjectProjectionTargets(
     return [];
   }
 
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .filter(
-      (entry) =>
-        options?.includeUnallowlisted || isWorkspaceProjectProjectionAllowlisted(entry.name),
-    )
-    .map((entry) => ({
-      slug: entry.name,
-      relDir: `projects/${entry.name}`,
-      absDir: path.join(projectsDir, entry.name),
-    }))
-    .sort((left, right) => left.slug.localeCompare(right.slug));
+  const targets = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .filter(
+        (entry) =>
+          options?.includeUnallowlisted || isWorkspaceProjectProjectionAllowlisted(entry.name),
+      )
+      .map(async (entry) => {
+        const absDir = path.join(projectsDir, entry.name);
+        const projectionFileName = await resolveProjectProjectionFileName(absDir);
+        return {
+          slug: entry.name,
+          relDir: `projects/${entry.name}`,
+          absDir,
+          projectionFileName,
+          relProjectionPath: `projects/${entry.name}/${projectionFileName}`,
+        };
+      }),
+  );
+
+  return targets.sort((left, right) => left.slug.localeCompare(right.slug));
 }
 
 export async function discoverSiblingAgentWorkspaceTargets(

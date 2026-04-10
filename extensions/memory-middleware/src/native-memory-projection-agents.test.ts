@@ -31,10 +31,16 @@ describe("agent native memory projections", () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-native-agents-"));
     await fs.mkdir(path.join(tmpDir, "workspace"), { recursive: true });
     await fs.mkdir(path.join(tmpDir, "agent-workspaces", "x-manager"), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, "agent-workspaces", "web-researcher"), { recursive: true });
     await fs.mkdir(path.join(tmpDir, "agent-workspaces", "builder"), { recursive: true });
     await fs.writeFile(
       path.join(tmpDir, "agent-workspaces", "x-manager", "AGENTS.md"),
       "# X Manager Workspace\n",
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(tmpDir, "agent-workspaces", "web-researcher", "AGENTS.md"),
+      "# Web Researcher Workspace\n",
       "utf-8",
     );
     await fs.writeFile(
@@ -48,7 +54,7 @@ describe("agent native memory projections", () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("projects only into specialized agent workspaces", async () => {
+  it("projects only into the allowlisted specialized agent workspaces", async () => {
     const listMemoryObjects = vi.fn(async (input: unknown): Promise<MemoryObjectListResult> => {
       const kind = (input as { kind?: string }).kind;
       if (kind === "user") {
@@ -69,6 +75,23 @@ describe("agent native memory projections", () => {
                 canonicalIngestionCandidate: {
                   record: {
                     statement: "Keep Conor Lynch and American Atomics voices separate",
+                    tags: ["user", "preference"],
+                  },
+                },
+              },
+            }),
+            createRecord({
+              id: "web-user-1",
+              memoryKind: "user",
+              metadata: {
+                candidateMetadata: {
+                  autoCapture: {
+                    agentExternalKey: "web-researcher",
+                  },
+                },
+                canonicalIngestionCandidate: {
+                  record: {
+                    statement: "Prefer evidence packages with direct citations",
                     tags: ["user", "preference"],
                   },
                 },
@@ -114,6 +137,22 @@ describe("agent native memory projections", () => {
               },
             },
           }),
+          createRecord({
+            id: "web-feedback-1",
+            metadata: {
+              candidateMetadata: {
+                autoCapture: {
+                  agentExternalKey: "web-researcher",
+                },
+              },
+              canonicalIngestionCandidate: {
+                record: {
+                  statement: "Treat visible requested facts as strict required fields",
+                  tags: ["workflow_guidance", "feedback"],
+                },
+              },
+            },
+          }),
         ],
       };
     });
@@ -132,14 +171,31 @@ describe("agent native memory projections", () => {
       write: true,
     });
 
-    expect(result.results).toHaveLength(2);
-    expect(result.results.every((entry) => entry.agentKey === "x-manager")).toBe(true);
+    expect(result.results).toHaveLength(4);
+    expect(result.results.map((entry) => entry.agentKey)).toEqual([
+      "web-researcher",
+      "web-researcher",
+      "x-manager",
+      "x-manager",
+    ]);
     expect(
       await fs.readFile(path.join(tmpDir, "agent-workspaces", "x-manager", "USER.md"), "utf-8"),
     ).toContain("Keep Conor Lynch and American Atomics voices separate");
     expect(
       await fs.readFile(path.join(tmpDir, "agent-workspaces", "x-manager", "TOOLS.md"), "utf-8"),
     ).toContain("do_not_engage");
+    expect(
+      await fs.readFile(
+        path.join(tmpDir, "agent-workspaces", "web-researcher", "USER.md"),
+        "utf-8",
+      ),
+    ).toContain("Prefer evidence packages with direct citations");
+    expect(
+      await fs.readFile(
+        path.join(tmpDir, "agent-workspaces", "web-researcher", "TOOLS.md"),
+        "utf-8",
+      ),
+    ).toContain("strict required fields");
     await expect(
       fs.readFile(path.join(tmpDir, "agent-workspaces", "builder", "TOOLS.md"), "utf-8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
@@ -149,5 +205,36 @@ describe("agent native memory projections", () => {
       scopeKind: "agent",
       agentKey: "builder",
     });
+  });
+
+  it("prepares empty generated blocks for allowlisted specialized agents even without records", async () => {
+    const db = {
+      driver: "postgres",
+      config: { driver: "postgres" as const },
+      queries: {
+        listMemoryObjects: vi.fn(
+          async (): Promise<MemoryObjectListResult> => ({
+            accepted: true,
+            status: "ok",
+            scope: "approved_only",
+            records: [],
+          }),
+        ),
+      },
+    } as unknown as MemoryMiddlewareDb;
+
+    const result = await syncAgentBootstrapProjections({
+      db,
+      sharedWorkspaceDir: path.join(tmpDir, "workspace"),
+      write: true,
+    });
+
+    expect(result.results).toHaveLength(4);
+    expect(
+      await fs.readFile(
+        path.join(tmpDir, "agent-workspaces", "web-researcher", "USER.md"),
+        "utf-8",
+      ),
+    ).toContain("No eligible approved memory is currently projected.");
   });
 });

@@ -120,8 +120,8 @@ Current accepted framing:
 
 Current accepted framing:
 
-- approved project memory should compile into real `projects/<slug>/MEMORY.md`
-  surfaces only when a matching workspace project exists
+- approved project memory should compile into real project-local docs only when
+  a matching workspace project exists
 - top-level `MEMORY.md` should point toward those project-local surfaces rather
   than mirroring their detail
 - unmatched project records should stay visible in audit output instead of
@@ -158,6 +158,17 @@ Current accepted framing:
 - operators should still have one clear manual sync command with explicit
   write/dry-run posture, scope selection, and summary output
 
+## 2026-04 — project-local projections target real project index docs first
+
+Current accepted framing:
+
+- `projects/<slug>/INDEX.md` is the default project-local projection target for
+  the current workspace
+- `projects/<slug>/MEMORY.md` remains a compatibility fallback when an older
+  project folder already uses it
+- project-local rollout should use real existing workspace docs first rather
+  than inventing a second project file family by default
+
 ## 2026-04 — the first agent projection tranche is specialized-workspace only
 
 Current accepted framing:
@@ -168,6 +179,17 @@ Current accepted framing:
 - the initial specialized-agent projection surface stays narrow:
   `USER.md` and `TOOLS.md`, not a broad per-agent `MEMORY.md`
 
+## 2026-04 — the broader specialized-agent tranche is explicit and allowlisted
+
+Current accepted framing:
+
+- the current broader per-agent rollout explicitly targets the real specialized
+  workspaces `x-manager` and `web-researcher`
+- generic template workspaces remain outside compiler-owned per-agent
+  projections
+- allowlisted specialized workspaces may still receive prepared empty generated
+  sections so ownership stays visible even before eligible memory exists
+
 ## 2026-04 — projection routing is metadata-first and lane-explicit
 
 Current accepted framing:
@@ -175,9 +197,30 @@ Current accepted framing:
 - current projection routing should distinguish shared, project, agent, and
   session continuity scope using the existing relational fields plus current
   metadata first
-- specialized-agent-scoped durable records should not leak into shared or
-  project-local projections
+- specialized-agent-scoped durable records should not leak into shared
+  projections
+- project-scoped memory that also carries an agent key should still feed the
+  project-local lane unless it is session continuity
 - session continuity remains separate from durable projection lanes
+
+## 2026-04 — stale-aware host orchestration is enough for the current tranche
+
+Current accepted framing:
+
+- projection orchestration now includes host-side status checks and
+  stale-aware refresh, not just a blind daily cron plus manual sync
+- daily review prep may request a write refresh when the projection report is
+  stale or missing
+- no per-turn mutation is allowed
+
+## 2026-04 — no schema change was required for the broader native-file tranche
+
+Current accepted framing:
+
+- the broader project/agent/orchestration tranche stayed within the existing
+  schema and metadata contracts
+- no migration was required
+- any future schema change still needs a demonstrated metadata-first blocker
 
 ## 2026-04 — canonical core lands before generic ingestion and retrieval cutover
 

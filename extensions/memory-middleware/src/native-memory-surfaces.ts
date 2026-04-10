@@ -8,6 +8,10 @@ export const NATIVE_MEMORY_PROJECTION_TARGETS = [
 
 export type NativeMemoryProjectionTarget = (typeof NATIVE_MEMORY_PROJECTION_TARGETS)[number];
 
+export const PROJECT_PROJECTION_FILENAMES = ["INDEX.md", "MEMORY.md"] as const;
+
+export type ProjectProjectionFilename = (typeof PROJECT_PROJECTION_FILENAMES)[number];
+
 export const COMPILER_MANAGED_NATIVE_BOOTSTRAP_FILENAMES = [
   "USER.md",
   "TOOLS.md",
@@ -25,7 +29,7 @@ export const HUMAN_AUTHORED_NATIVE_BOOTSTRAP_FILENAMES = [
 export const OPERATOR_REVIEW_EVIDENCE_ROOT = "archives/daily_memory_evidence";
 const DAILY_MEMORY_LEAF_PATTERN = /^memory\/\d{4}-\d{2}-\d{2}-[^/]+\.md$/;
 const DAILY_MEMORY_CANONICAL_PATTERN = /^memory\/\d{4}-\d{2}-\d{2}\.md$/;
-const PROJECT_MEMORY_DIGEST_PATTERN = /^projects\/[^/]+\/MEMORY\.md$/;
+const PROJECT_MEMORY_DIGEST_PATTERN = /^projects\/[^/]+\/(?:INDEX|MEMORY)\.md$/;
 
 export type NativeMemorySurfaceClass =
   | "compiled-bootstrap-projection"
@@ -39,6 +43,7 @@ export type NativeMemorySurfaceClass =
 export function resolveNativeMemoryProjectionRelativePath(params: {
   target: NativeMemoryProjectionTarget;
   projectSlug?: string;
+  projectFileName?: ProjectProjectionFilename;
   date?: string;
 }): string {
   switch (params.target) {
@@ -52,7 +57,7 @@ export function resolveNativeMemoryProjectionRelativePath(params: {
       if (!params.projectSlug) {
         throw new Error("project-memory-digest target requires a projectSlug");
       }
-      return `projects/${params.projectSlug}/MEMORY.md`;
+      return `projects/${params.projectSlug}/${params.projectFileName ?? "INDEX.md"}`;
     case "daily-continuity":
       if (!params.date) {
         throw new Error("daily-continuity target requires a date");

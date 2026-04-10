@@ -43,6 +43,13 @@ describe("native memory projection compiler", () => {
     expect(resolveProjectionOutputPath({ target: "memory-digest" })).toBe("MEMORY.md");
     expect(
       resolveProjectionOutputPath({ target: "project-memory-digest", projectSlug: "maintenance" }),
+    ).toBe("projects/maintenance/INDEX.md");
+    expect(
+      resolveProjectionOutputPath({
+        target: "project-memory-digest",
+        projectSlug: "maintenance",
+        projectFileName: "MEMORY.md",
+      }),
     ).toBe("projects/maintenance/MEMORY.md");
     expect(resolveProjectionOutputPath({ target: "daily-continuity", date: "2026-04-10" })).toBe(
       "memory/2026-04-10.md",

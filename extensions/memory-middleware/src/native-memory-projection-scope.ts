@@ -11,6 +11,7 @@ export type NativeMemoryProjectionScope = {
   kind: NativeMemoryProjectionScopeKind;
   agentKey?: string;
   projectScoped: boolean;
+  projectSlug?: string;
   sessionKey?: string;
 };
 
@@ -53,26 +54,36 @@ function isSessionContinuityTagged(record: MemoryObjectRecord): boolean {
 }
 
 function isProjectScoped(record: MemoryObjectRecord): boolean {
+  return resolveProjectScope(record) !== undefined;
+}
+
+function resolveProjectScope(record: MemoryObjectRecord): string | undefined {
   const canonical = readCanonicalMemoryRecordFromMetadata(record.metadata);
-  return (
-    record.memoryKind === "project" ||
-    (typeof record.projectId === "string" && record.projectId.length > 0) ||
-    typeof canonical?.facets.projectScope === "string" ||
-    typeof readCanonicalFirstMetadataString(record.metadata, [
+  const value =
+    (typeof canonical?.facets.projectScope === "string"
+      ? canonical.facets.projectScope
+      : undefined) ??
+    readCanonicalFirstMetadataString(record.metadata, [
       "candidateMetadata",
       "autoCapture",
       "projectScope",
-    ]) === "string" ||
-    typeof readCanonicalFirstMetadataString(record.metadata, [
+    ]) ??
+    readCanonicalFirstMetadataString(record.metadata, [
       "promotionMetadata",
       "autoPromotion",
       "projectScope",
-    ]) === "string" ||
-    typeof readCanonicalFirstMetadataString(record.metadata, ["autoCapture", "projectScope"]) ===
-      "string" ||
-    typeof readCanonicalFirstMetadataString(record.metadata, ["autoPromotion", "projectScope"]) ===
-      "string"
-  );
+    ]) ??
+    readCanonicalFirstMetadataString(record.metadata, ["autoCapture", "projectScope"]) ??
+    readCanonicalFirstMetadataString(record.metadata, ["autoPromotion", "projectScope"]) ??
+    (typeof record.projectId === "string" && record.projectId.trim().length > 0
+      ? record.projectId
+      : undefined) ??
+    (record.memoryKind === "project" ? "project" : undefined);
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 export function resolveNativeMemoryProjectionScope(
@@ -80,6 +91,7 @@ export function resolveNativeMemoryProjectionScope(
 ): NativeMemoryProjectionScope {
   const agentKey = normalizeAgentKey(resolveProjectionAgentKey(record));
   const projectScoped = isProjectScoped(record);
+  const projectSlug = resolveProjectScope(record);
   const sessionKey = resolveSessionKey(record);
 
   if (isSessionContinuityTagged(record)) {
@@ -87,6 +99,7 @@ export function resolveNativeMemoryProjectionScope(
       kind: "session",
       ...(agentKey ? { agentKey } : {}),
       projectScoped,
+      ...(projectSlug ? { projectSlug } : {}),
       ...(sessionKey ? { sessionKey } : {}),
     };
   }
@@ -96,6 +109,7 @@ export function resolveNativeMemoryProjectionScope(
       kind: "agent",
       agentKey,
       projectScoped,
+      ...(projectSlug ? { projectSlug } : {}),
       ...(sessionKey ? { sessionKey } : {}),
     };
   }
@@ -104,6 +118,7 @@ export function resolveNativeMemoryProjectionScope(
     return {
       kind: "project",
       projectScoped,
+      ...(projectSlug ? { projectSlug } : {}),
       ...(agentKey ? { agentKey } : {}),
       ...(sessionKey ? { sessionKey } : {}),
     };
@@ -112,6 +127,7 @@ export function resolveNativeMemoryProjectionScope(
   return {
     kind: "shared",
     projectScoped: false,
+    ...(projectSlug ? { projectSlug } : {}),
     ...(agentKey ? { agentKey } : {}),
     ...(sessionKey ? { sessionKey } : {}),
   };
@@ -127,4 +143,8 @@ export function isProjectProjectionScope(scope: NativeMemoryProjectionScope): bo
 
 export function isAgentProjectionScope(scope: NativeMemoryProjectionScope): boolean {
   return scope.kind === "agent" && typeof scope.agentKey === "string" && scope.agentKey.length > 0;
+}
+
+export function isEligibleForProjectProjection(scope: NativeMemoryProjectionScope): boolean {
+  return scope.kind !== "session" && scope.projectScoped;
 }

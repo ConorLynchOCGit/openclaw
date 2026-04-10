@@ -8,6 +8,7 @@ import {
 import type { NativeMemoryProjectionCandidate } from "./native-memory-projection-eligibility.js";
 import {
   resolveNativeMemoryProjectionRelativePath,
+  type ProjectProjectionFilename,
   type NativeMemoryProjectionTarget,
 } from "./native-memory-surfaces.js";
 
@@ -28,6 +29,7 @@ export type NativeMemoryProjectionFileTarget =
   | {
       target: SharedProjectionRenderableTarget;
       projectSlug?: string;
+      projectFileName?: ProjectProjectionFilename;
     }
   | {
       target: "daily-continuity";

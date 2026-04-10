@@ -5,9 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MemoryObjectRecord } from "./db/runtime.js";
 import {
   NATIVE_MEMORY_PROJECT_PROJECTION_ALLOWLIST,
+  NATIVE_MEMORY_SPECIALIZED_AGENT_PROJECTION_ALLOWLIST,
   classifyAgentWorkspaceProjectionTargets,
   discoverSiblingAgentWorkspaceTargets,
   discoverWorkspaceProjectProjectionTargets,
+  isSpecializedAgentProjectionAllowlisted,
   isWorkspaceProjectProjectionAllowlisted,
   resolveProjectionAgentKey,
   resolveProjectProjectionTarget,
@@ -72,6 +74,8 @@ describe("native memory projection routing", () => {
         slug: "maintenance",
         relDir: "projects/maintenance",
         absDir: path.join(tmpDir, "projects", "maintenance"),
+        projectionFileName: "INDEX.md",
+        relProjectionPath: "projects/maintenance/INDEX.md",
       },
     ]);
     await expect(
@@ -81,16 +85,48 @@ describe("native memory projection routing", () => {
         slug: "experimental_lab",
         relDir: "projects/experimental_lab",
         absDir: path.join(tmpDir, "projects", "experimental_lab"),
+        projectionFileName: "INDEX.md",
+        relProjectionPath: "projects/experimental_lab/INDEX.md",
       },
       {
         slug: "maintenance",
         relDir: "projects/maintenance",
         absDir: path.join(tmpDir, "projects", "maintenance"),
+        projectionFileName: "INDEX.md",
+        relProjectionPath: "projects/maintenance/INDEX.md",
       },
     ]);
     expect(isWorkspaceProjectProjectionAllowlisted("maintenance")).toBe(true);
     expect(isWorkspaceProjectProjectionAllowlisted("experimental_lab")).toBe(false);
     expect(NATIVE_MEMORY_PROJECT_PROJECTION_ALLOWLIST).toContain("maintenance");
+  });
+
+  it("prefers existing project INDEX files and falls back to project MEMORY files", async () => {
+    await fs.mkdir(path.join(tmpDir, "projects", "maintenance"), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, "projects", "ops"), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, "projects", "maintenance", "INDEX.md"),
+      "# Index\n",
+      "utf-8",
+    );
+    await fs.writeFile(path.join(tmpDir, "projects", "ops", "MEMORY.md"), "# Memory\n", "utf-8");
+
+    await expect(discoverWorkspaceProjectProjectionTargets(tmpDir)).resolves.toEqual([
+      {
+        slug: "maintenance",
+        relDir: "projects/maintenance",
+        absDir: path.join(tmpDir, "projects", "maintenance"),
+        projectionFileName: "INDEX.md",
+        relProjectionPath: "projects/maintenance/INDEX.md",
+      },
+      {
+        slug: "ops",
+        relDir: "projects/ops",
+        absDir: path.join(tmpDir, "projects", "ops"),
+        projectionFileName: "MEMORY.md",
+        relProjectionPath: "projects/ops/MEMORY.md",
+      },
+    ]);
   });
 
   it("extracts agent applicability from canonical metadata", () => {
@@ -137,6 +173,12 @@ describe("native memory projection routing", () => {
       { agentKey: "builder", workspaceDir: genericDir, kind: "generic" },
       { agentKey: "main", workspaceDir: sharedDir, kind: "shared" },
       { agentKey: "x-manager", workspaceDir: specializedDir, kind: "specialized" },
+    ]);
+    expect(isSpecializedAgentProjectionAllowlisted("x-manager")).toBe(true);
+    expect(isSpecializedAgentProjectionAllowlisted("builder")).toBe(false);
+    expect(NATIVE_MEMORY_SPECIALIZED_AGENT_PROJECTION_ALLOWLIST).toEqual([
+      "web-researcher",
+      "x-manager",
     ]);
   });
 
