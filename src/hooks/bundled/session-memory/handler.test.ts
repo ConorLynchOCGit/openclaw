@@ -71,7 +71,8 @@ async function runNewWithPreviousSessionEntry(params: {
   action?: "new" | "reset";
   sessionKey?: string;
   workspaceDirOverride?: string;
-}): Promise<{ files: string[]; memoryContent: string }> {
+  timestamp?: string;
+}): Promise<{ files: string[]; memoryContent: string; allFiles: string[] }> {
   const event = createHookEvent(
     "command",
     params.action ?? "new",
@@ -86,21 +87,28 @@ async function runNewWithPreviousSessionEntry(params: {
       ...(params.workspaceDirOverride ? { workspaceDir: params.workspaceDirOverride } : {}),
     },
   );
+  if (params.timestamp) {
+    event.timestamp = new Date(params.timestamp);
+  }
 
   await handler(event);
 
   const memoryDir = path.join(params.tempDir, "memory");
-  const files = await fs.readdir(memoryDir);
+  const allFiles = (await fs.readdir(memoryDir)).toSorted((left, right) =>
+    left.localeCompare(right),
+  );
+  const files = allFiles.filter((file) => /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(file));
   const memoryContent =
     files.length > 0 ? await fs.readFile(path.join(memoryDir, files[0]), "utf-8") : "";
-  return { files, memoryContent };
+  return { files, memoryContent, allFiles };
 }
 
 async function runNewWithPreviousSession(params: {
   sessionContent: string;
   cfg?: (tempDir: string) => OpenClawConfig;
   action?: "new" | "reset";
-}): Promise<{ tempDir: string; files: string[]; memoryContent: string }> {
+  timestamp?: string;
+}): Promise<{ tempDir: string; files: string[]; memoryContent: string; allFiles: string[] }> {
   const tempDir = await createCaseWorkspace("workspace");
   const sessionsDir = path.join(tempDir, "sessions");
   await fs.mkdir(sessionsDir, { recursive: true });
@@ -117,16 +125,17 @@ async function runNewWithPreviousSession(params: {
       agents: { defaults: { workspace: tempDir } },
     } satisfies OpenClawConfig);
 
-  const { files, memoryContent } = await runNewWithPreviousSessionEntry({
+  const { files, memoryContent, allFiles } = await runNewWithPreviousSessionEntry({
     tempDir,
     cfg,
     action: params.action,
+    timestamp: params.timestamp,
     previousSessionEntry: {
       sessionId: "test-123",
       sessionFile,
     },
   });
-  return { tempDir, files, memoryContent };
+  return { tempDir, files, memoryContent, allFiles };
 }
 
 async function createSessionMemoryWorkspace(params?: {
@@ -222,7 +231,7 @@ describe("session-memory hook", () => {
       { role: "user", content: "What is 2+2?" },
       { role: "assistant", content: "2+2 equals 4" },
     ]);
-    const { files, memoryContent } = await runNewWithPreviousSession({ sessionContent });
+    const { tempDir, files, memoryContent } = await runNewWithPreviousSession({ sessionContent });
     expect(files.length).toBe(1);
 
     // Read the memory file and verify content
@@ -230,6 +239,13 @@ describe("session-memory hook", () => {
     expect(memoryContent).toContain("assistant: Hi! How can I help?");
     expect(memoryContent).toContain("user: What is 2+2?");
     expect(memoryContent).toContain("assistant: 2+2 equals 4");
+    const dateStr = new Date().toISOString().split("T")[0];
+    const exactDayContent = await fs.readFile(
+      path.join(tempDir, "memory", `${dateStr}.md`),
+      "utf-8",
+    );
+    expect(exactDayContent).toContain("## Combined continuity");
+    expect(exactDayContent).toContain(files[0] ?? "");
   });
 
   it("creates memory file with session content on /reset command", async () => {
@@ -237,7 +253,7 @@ describe("session-memory hook", () => {
       { role: "user", content: "Please reset and keep notes" },
       { role: "assistant", content: "Captured before reset" },
     ]);
-    const { files, memoryContent } = await runNewWithPreviousSession({
+    const { tempDir, files, memoryContent } = await runNewWithPreviousSession({
       sessionContent,
       action: "reset",
     });
@@ -245,6 +261,60 @@ describe("session-memory hook", () => {
     expect(files.length).toBe(1);
     expect(memoryContent).toContain("user: Please reset and keep notes");
     expect(memoryContent).toContain("assistant: Captured before reset");
+    const dateStr = new Date().toISOString().split("T")[0];
+    await expect(
+      fs.readFile(path.join(tempDir, "memory", `${dateStr}.md`), "utf-8"),
+    ).resolves.toContain("Captured before reset");
+  });
+
+  it("updates the exact-day continuity file as new raw leaves are added", async () => {
+    const tempDir = await createCaseWorkspace("workspace");
+    const sessionsDir = path.join(tempDir, "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    const dateStr = new Date().toISOString().split("T")[0];
+
+    const firstSessionFile = await writeWorkspaceFile({
+      dir: sessionsDir,
+      name: "first-session.jsonl",
+      content: createMockSessionContent([
+        { role: "user", content: "First continuity message" },
+        { role: "assistant", content: "First continuity summary" },
+      ]),
+    });
+
+    await runNewWithPreviousSessionEntry({
+      tempDir,
+      timestamp: "2026-04-10T03:56:00.000Z",
+      previousSessionEntry: {
+        sessionId: "first-session",
+        sessionFile: firstSessionFile,
+      },
+    });
+
+    const secondSessionFile = await writeWorkspaceFile({
+      dir: sessionsDir,
+      name: "second-session.jsonl",
+      content: createMockSessionContent([
+        { role: "user", content: "Second continuity message" },
+        { role: "assistant", content: "Second continuity summary" },
+      ]),
+    });
+
+    await runNewWithPreviousSessionEntry({
+      tempDir,
+      timestamp: "2026-04-10T03:57:00.000Z",
+      previousSessionEntry: {
+        sessionId: "second-session",
+        sessionFile: secondSessionFile,
+      },
+    });
+
+    const exactDayContent = await fs.readFile(
+      path.join(tempDir, "memory", `${dateStr}.md`),
+      "utf-8",
+    );
+    expect(exactDayContent).toContain("First continuity summary");
+    expect(exactDayContent).toContain("Second continuity summary");
   });
 
   it("prefers workspaceDir from hook context when sessionKey points at main", async () => {

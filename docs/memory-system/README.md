@@ -42,6 +42,12 @@ Then consult as needed:
 - `specs/ambiguity-and-clarification.md`
 - `specs/phrase-induction.md`
 - `specs/behavior-application.md`
+- `specs/native-openclaw-memory-integration.md`
+- `specs/source-of-truth-and-precedence.md`
+- `specs/memory-projection-destinations.md`
+- `specs/projection-compiler-and-file-ownership.md`
+- `specs/per-agent-and-per-project-memory-integration.md`
+- `specs/native-memory-governance-and-rollout.md`
 - `specs/user-repair-and-memory-control.md`
 - `specs/response-style-profile.md`
 - `specs/recurring-procedure-memory.md`
@@ -158,6 +164,15 @@ The canonical-core tranche is now also landed in repo code:
 Multi-memory capture is now part of the current bounded implementation, but the
 next major program is replacing the remaining rigid family-first seams with
 generic adaptable ones.
+
+The next planning line under that broader canonicalization program is native
+OpenClaw file integration:
+
+- Postgres remains canonical durable memory
+- native bootstrap and project files become selective compiled projections plus
+  human-authored control surfaces
+- daily/session continuity remains a separate continuity layer rather than a
+  second durable-memory database
 
 ## Rules of engagement
 

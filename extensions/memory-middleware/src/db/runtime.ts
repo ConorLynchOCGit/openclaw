@@ -759,11 +759,22 @@ export const MEMORY_OBJECT_READ_SURFACES = [
 
 export type MemoryObjectReadSurface = (typeof MEMORY_OBJECT_READ_SURFACES)[number];
 
+export const MEMORY_OBJECT_KINDS = [
+  "user",
+  "feedback",
+  "project",
+  "reference",
+  "procedure",
+  "policy",
+] as const;
+
+export type MemoryObjectKind = (typeof MEMORY_OBJECT_KINDS)[number];
+
 export type MemoryObjectRecord = {
   objectType: "memory_object";
   readSurface: "approved_memory_view" | "reviewable_candidates_view";
   id: string;
-  memoryKind: "project" | "feedback" | "procedure";
+  memoryKind: MemoryObjectKind;
   reviewState: "candidate" | "approved";
   content: string;
   projectId?: string;
@@ -801,7 +812,7 @@ export type MemoryObjectGetInput = {
 
 export type MemoryObjectListInput = {
   scope?: MemoryObjectSearchScope;
-  kind?: "project" | "feedback" | "procedure";
+  kind?: MemoryObjectKind;
   projectId?: string;
   agentId?: string;
   sessionId?: string;
@@ -811,7 +822,7 @@ export type MemoryObjectListInput = {
 export type MemoryObjectSearchBasicInput = {
   query: string;
   scope?: MemoryObjectSearchScope;
-  kind?: "project" | "feedback" | "procedure";
+  kind?: MemoryObjectKind;
   projectId?: string;
   limit?: number;
 };
@@ -819,7 +830,7 @@ export type MemoryObjectSearchBasicInput = {
 export type MemoryObjectSearchHybridInput = {
   query: string;
   scope?: MemoryObjectSearchScope;
-  kind?: "project" | "feedback" | "procedure";
+  kind?: MemoryObjectKind;
   projectId?: string;
   limit?: number;
 };
@@ -836,7 +847,7 @@ export type MemoryObjectSearchSemanticInput = {
   embeddingModel: string;
   embeddingVersion: string;
   scope?: MemoryObjectSemanticSearchScope;
-  kind?: "project" | "feedback" | "procedure";
+  kind?: MemoryObjectKind;
   projectId?: string;
   limit?: number;
 };

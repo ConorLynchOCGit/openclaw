@@ -8,6 +8,7 @@ import { runTasksWithConcurrency } from "../../../../src/utils/run-with-concurre
 import { estimateStructuredEmbeddingInputBytes } from "./embedding-input-limits.js";
 import { buildTextEmbeddingInput, type EmbeddingInput } from "./embedding-inputs.js";
 import { isFileMissingError } from "./fs-utils.js";
+import { stripGeneratedSectionBlocks } from "./generated-sections.js";
 import {
   buildMemoryMultimodalLabel,
   classifyMemoryMultimodalPath,
@@ -252,7 +253,8 @@ export async function buildFileEntry(
     }
     throw err;
   }
-  const hash = hashText(content);
+  const normalizedContent = stripGeneratedSectionBlocks(content);
+  const hash = hashText(normalizedContent);
   return {
     path: normalizedPath,
     absPath,
@@ -260,6 +262,7 @@ export async function buildFileEntry(
     size: stat.size,
     hash,
     kind: "markdown",
+    contentText: normalizedContent,
   };
 }
 

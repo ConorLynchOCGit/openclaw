@@ -16,6 +16,7 @@ import type { OpenClawConfig } from "../../../config/config.js";
 import { resolveStateDir } from "../../../config/paths.js";
 import { writeFileWithinRoot } from "../../../infra/fs-safe.js";
 import { createSubsystemLogger } from "../../../logging/subsystem.js";
+import { syncDailyContinuityFile } from "../../../plugin-sdk/memory-core-host-runtime-files.js";
 import {
   parseAgentSessionKey,
   resolveAgentIdFromSessionKey,
@@ -203,6 +204,11 @@ const saveSessionToMemory: HookHandler = async (event) => {
       relativePath: filename,
       data: entry,
       encoding: "utf-8",
+    });
+    await syncDailyContinuityFile({
+      workspaceDir,
+      date: dateStr,
+      write: true,
     });
     log.debug("Memory file written successfully");
 

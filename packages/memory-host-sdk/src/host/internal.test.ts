@@ -184,6 +184,29 @@ describe("buildFileEntry", () => {
     expect(entry?.size).toBeGreaterThan(0);
   });
 
+  it("strips generated projection sections from indexed markdown content", async () => {
+    const tmpDir = getTmpDir();
+    const target = path.join(tmpDir, "MEMORY.md");
+    await fs.writeFile(
+      target,
+      [
+        "# MEMORY",
+        "",
+        "Manual memory",
+        "",
+        "<!-- OPENCLAW:MEMORY-PROJECTION:START memory-digest -->",
+        "Generated digest",
+        "<!-- OPENCLAW:MEMORY-PROJECTION:END memory-digest -->",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const entry = await buildFileEntry(target, tmpDir);
+
+    expect(entry?.contentText).toBe(["# MEMORY", "", "Manual memory"].join("\n"));
+    expect(entry?.hash).toBeTruthy();
+  });
+
   it("returns multimodal metadata for eligible image files", async () => {
     const tmpDir = getTmpDir();
     const target = path.join(tmpDir, "diagram.png");

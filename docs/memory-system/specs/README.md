@@ -66,6 +66,12 @@ These remain important, but several now describe partial bridges rather than
 - `/memory-system/specs/architecture-fit-review`
 - `/memory-system/specs/behavior-application`
 - `/memory-system/archive/specs/canonical-four-kind-memory-migration`
+- `/memory-system/specs/native-openclaw-memory-integration`
+- `/memory-system/specs/source-of-truth-and-precedence`
+- `/memory-system/specs/memory-projection-destinations`
+- `/memory-system/specs/projection-compiler-and-file-ownership`
+- `/memory-system/specs/per-agent-and-per-project-memory-integration`
+- `/memory-system/specs/native-memory-governance-and-rollout`
 - `/memory-system/specs/semantic-retrieval-routing`
 - `/memory-system/specs/implementation-sequencing`
 - `/memory-system/specs/cross-domain-memory-families`
@@ -113,3 +119,19 @@ This spec pack still does not authorize:
 - broad autonomous memory behavior
 - automatic installation, procurement, or approval
 - global semantic routing
+
+## Native OpenClaw file integration specs
+
+Use this cluster when the slice is about integrating the canonical DB memory
+substrate with native OpenClaw file surfaces rather than changing the
+underlying middleware ontology itself.
+
+- `/memory-system/specs/native-openclaw-memory-integration`
+- `/memory-system/specs/source-of-truth-and-precedence`
+- `/memory-system/specs/memory-projection-destinations`
+- `/memory-system/specs/projection-compiler-and-file-ownership`
+- `/memory-system/specs/per-agent-and-per-project-memory-integration`
+- `/memory-system/specs/native-memory-governance-and-rollout`
+
+These specs intentionally stay documentation-first until an implementation pass
+is explicitly authorized.

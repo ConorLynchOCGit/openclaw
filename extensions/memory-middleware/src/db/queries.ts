@@ -1647,7 +1647,7 @@ function shapeProjectIntentRankedRecords(params: {
   records: RankedRetrievedMemoryRecord[];
   query: string;
   scope: MemoryObjectSearchScope;
-  kind?: "project" | "feedback" | "procedure";
+  kind?: MemoryObjectSearchHybridInput["kind"];
 }): RankedRetrievedMemoryRecord[] {
   return shapeRankedRetrievedRecordsForControlPlane({
     decision: buildMemoryObjectRetrievalControlDecision({

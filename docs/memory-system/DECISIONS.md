@@ -38,6 +38,84 @@ Current accepted framing:
   metadata, and derived planners rather than permanent top-level kinds
 - migration should be adapter-first and rollbackable
 
+## 2026-04 — Postgres remains canonical and native OpenClaw files are projections
+
+Current accepted framing:
+
+- the `memory_middleware` Postgres store remains the only canonical durable
+  memory substrate
+- native OpenClaw files are prompt-facing compiled views and human-maintained
+  control surfaces, not a second peer memory database
+- v1 does not introduce reverse sync from file edits back into canonical memory
+- daily/session continuity files remain continuity artifacts rather than
+  canonical durable storage
+
+## 2026-04 — compiler-owned generated zones protect human-authored control
+
+Current accepted framing:
+
+- any compiler-touched file must have an explicit generated zone and an
+  explicit human-authored zone
+- the compiler owns only the generated zone
+- human-authored guidance remains authoritative in its designated zone
+- drift inside generated zones should be overwritten or flagged explicitly, not
+  silently merged
+
+## 2026-04 — prompt-facing native files stay compact and role-specific
+
+Current accepted framing:
+
+- `USER.md` is the primary projection target for durable user-profile memory
+- `TOOLS.md` is the primary projection target for workflow and tool-use
+  preferences that should shape default behavior
+- top-level `MEMORY.md` remains a compact executive digest plus pointer surface,
+  not a historical ledger
+- project-specific durable detail should live in project-local docs rather than
+  top-level bootstrap files
+- the compiler should drop lower-priority material rather than exceed prompt
+  budgets
+
+## 2026-04 — AGENTS is policy, SOUL stays human-authored, and minimal bootstrap stays narrow
+
+Current accepted framing:
+
+- `AGENTS.md` remains the memory operating contract and precedence-policy
+  surface rather than a projection target for factual memory rows
+- `SOUL.md` stays fully human-authored in v1
+- `IDENTITY.md` and `HEARTBEAT.md` remain non-memory operational surfaces
+- subagent and cron bootstrap reach should stay narrow by default rather than
+  widening shared `MEMORY.md` into every session class
+
+## 2026-04 — compiled projections must not create a circular recall loop
+
+Current accepted framing:
+
+- compiler outputs should not become a second ingest path back into canonical
+  middleware memory
+- compiler-owned projection files should be excluded from default native
+  file-memory indexing so the system does not recall DB-derived material as if
+  it were an independent source
+- raw date-prefixed daily notes remain the continuity leaves
+- a canonical daily continuity file at `memory/YYYY-MM-DD.md` should compile
+  from the raw `memory/YYYY-MM-DD-*.md` leaves
+- the existing daily evidence artifact layer remains the operator-review
+  grounding surface, not the same thing as the daily continuity file
+
+## 2026-04 — shared and project projections land before agent-specific projections
+
+Current accepted framing:
+
+- the first implementation tranche should land:
+  - shared-workspace bootstrap projections
+  - project-local projections
+- agent-specific projections are intentionally deferred until after the first
+  build is stable
+- later agent-specific projection work should use existing agent workspaces and
+  stronger agent-scoped DB memory, not agent state directories
+- v1 should try to use existing `memory_objects.metadata` and current
+  relational fields before proposing new schema, with schema changes only if
+  implementation later proves a real blocker
+
 ## 2026-04 — canonical core lands before generic ingestion and retrieval cutover
 
 Current accepted framing:
