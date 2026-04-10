@@ -9,7 +9,7 @@ title: "Document Ingestion Runbook"
 
 # Document ingestion runbook
 
-Use this runbook when you need to expose selected host-side docs inside the workspace and prove that long docs were fully read.
+Use this runbook when you need to expose host-side docs inside the workspace and prove that long docs were fully read.
 
 See also: [Document Ingestion](/gateway/document-ingestion).
 
@@ -42,16 +42,17 @@ Accepted-baseline freeze exists and is the rollback anchor for this feature.
 
 ## Feature summary
 
-The accepted document-ingestion baseline has two layers:
+The accepted document-ingestion baseline has three layers:
 
-1. Selected host-side document roots are exposed inside the workspace through narrow read-only imports.
-2. Long documents are ingested through `document_read`, which fingerprints, chunks, tracks coverage, and verifies completeness before a full read can be claimed.
+1. A read-only hostfs surface exposes the broader host filesystem inside the workspace.
+2. Curated read-only imports expose the most important operational host trees through stable aliases.
+3. Long documents are ingested through `document_read`, which fingerprints, chunks, tracks coverage, and verifies completeness before a full read can be claimed.
 
 Read-only guarantees:
 
 - imported roots are curated explicitly
 - imported roots are read-only from the runtime’s perspective
-- the canonical import health record is `workspace/imports/_metadata/document-imports-manifest.json`
+- the canonical visibility source of truth is `workspace/imports/imports.manifest.json`
 
 Authoritative acceptance rule:
 
@@ -133,17 +134,20 @@ Do not leave old pre-fix or duplicate proof artifacts mixed into the active runt
 
 ## Import design
 
-Imported roots are declared in `config/document-imports.json`.
+Imported host visibility is declared in the canonical workspace manifest:
+
+- `workspace/imports/imports.manifest.json`
 
 Recommended workspace exposure:
 
-- `workspace/imports/system_docs/<root>`
+- `workspace/system/hostfs`
+- `workspace/imports/<name>/content`
 
 Current implementation expects:
 
-- host-side source roots chosen explicitly
-- read-only bind mounts into the runtime workspace
-- manifest and health report in `workspace/imports/_metadata/document-imports-manifest.json`
+- read-only bind mount of host `/` into `workspace/system/hostfs`
+- read-only curated bind mounts into `workspace/imports/<name>/content`
+- workspace-local verification through `workspace/scripts/verify_filesystem_visibility.mjs`
 
 ## Safe rollout sequence
 
@@ -152,10 +156,8 @@ Current implementation expects:
    - the Compose env file in use
    - the OpenClaw config dir
    - container inspect metadata
-2. Create the workspace import placeholders:
-   - `workspace/imports/system_docs`
-   - `workspace/imports/_metadata`
-3. Add only the required import env vars for the curated roots.
+2. Create the workspace mountpoints and curated import placeholders.
+3. Add only the required read-only mounts for the canonical hostfs and curated roots.
 4. Re-render Compose and confirm the mounts are:
    - exactly the intended source paths
    - exactly the intended workspace targets
@@ -171,7 +173,7 @@ Current implementation expects:
 Run:
 
 ```bash
-node --import tsx scripts/document-imports-verify.ts
+node workspace/scripts/verify_filesystem_visibility.mjs
 ```
 
 Expect:
@@ -180,11 +182,13 @@ Expect:
 - runtime-visible imported path exists
 - runtime-visible imported path is readable
 - runtime-visible imported path is not writable from the runtime
-- probe propagation succeeds for the dedicated probe import
+- representative curated imports are readable
+- the full-host surface is readable
+- the relevant index files exist
 
 Artifact:
 
-- `workspace/imports/_metadata/document-imports-manifest.json`
+- verification output from `workspace/scripts/verify_filesystem_visibility.mjs`
 
 ### Coverage proof
 
@@ -250,22 +254,19 @@ Do not accept a full read before the final verify step.
 
 The import manifest records:
 
-- source path
+- entry type
+- host path
 - workspace path
-- host workspace placeholder path
-- runtime-visible absolute path
-- source stat
-- runtime-visible imported stat
+- container path
 - read-only expectation
-- write-failure result
-- propagation result
-- health
+- purpose
+- handling notes
 
 Interpretation rules:
 
-- for bind-mounted file imports, the host workspace placeholder can be an empty placeholder file
-- the runtime-visible imported path is the source of truth
-- `health: ok` requires runtime readability, expected read-only behavior, and no propagation failure
+- curated import aliases are the default high-signal path
+- the hostfs surface is the broad fallback
+- runtime-visible workspace paths remain the source of truth for actual reads
 
 ## What the proof report means
 
@@ -387,14 +388,14 @@ Routine main/builder gateway-host usage should stay at `ask = off`. If prompts r
 
 ## Adding a new imported root safely
 
-1. Add a new entry to `config/document-imports.json`.
-2. Add exactly one env var for the source path.
-3. Add exactly one read-only bind mount target.
+1. Add a new entry to `workspace/imports/imports.manifest.json`.
+2. Add exactly one read-only bind mount target in Compose.
+3. Create the local `imports/<name>/INDEX.md`.
 4. Re-render Compose and inspect the resulting mount list.
-5. Rerun the import verifier.
+5. Rerun the workspace visibility verifier.
 6. If long-doc ingestion matters for that root, add a proof case or operator test that reads one representative long file.
 
-Do not expose a broad parent directory just because it is convenient.
+Do not create a new curated import when an existing canonical hostfs or curated alias already covers the need.
 
 ## Rollback
 
@@ -402,11 +403,11 @@ Do not expose a broad parent directory just because it is convenient.
 2. Restore from that freeze:
    - live config files
    - `docker-compose.yml` if needed
-   - document import config
+   - the workspace imports manifest if needed
 3. Recreate the affected OpenClaw services.
 4. Confirm runtime health.
 5. Verify:
-   - `workspace/imports/_metadata/document-imports-manifest.json` exists and is readable
+   - `workspace/imports/imports.manifest.json` exists and is readable
    - `document_read` is visible in the intended chat tool surface
    - the `large.md` routine acceptance test passes again
 6. If live runtime state is noisy or misleading, archive it into a dated `document-ingestion-artifact-archive-*` directory before recreating fresh acceptance evidence.
@@ -416,7 +417,7 @@ Do not expose a broad parent directory just because it is convenient.
 - backup taken
 - mount list rendered and inspected
 - runtime healthy after recreate
-- import verifier passed
+- workspace visibility verifier passed
 - proof harness passed
 - runtime-visible imported hash matches source hash for file imports
 - incomplete imported-doc proof passed

@@ -4,11 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createDocumentReadTool } from "../src/agents/tools/document-read-tool.js";
-import { loadSimpleDotEnv } from "./lib/document-imports.js";
 
 const execFileAsync = promisify(execFile);
-const runtimeContainerName =
-  process.env.OPENCLAW_RUNTIME_CONTAINER || "openclaw-upgrade-2026324-openclaw-gateway-1";
 
 type ProofCaseResult = {
   id: string;
@@ -17,7 +14,59 @@ type ProofCaseResult = {
   extra?: Record<string, unknown>;
 };
 
+async function loadSimpleDotEnv(filePath: string): Promise<Record<string, string>> {
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    const entries: Record<string, string> = {};
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        continue;
+      }
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex <= 0) {
+        continue;
+      }
+      const key = trimmed.slice(0, separatorIndex).trim();
+      let value = trimmed.slice(separatorIndex + 1).trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      entries[key] = value;
+    }
+    return entries;
+  } catch {
+    return {};
+  }
+}
+
+async function detectRuntimeContainerName() {
+  const explicit = process.env.OPENCLAW_RUNTIME_CONTAINER?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const { stdout } = await execFileAsync("docker", [
+    "ps",
+    "--filter",
+    "label=com.docker.compose.project.working_dir=/root/services/openclaw",
+    "--filter",
+    "label=com.docker.compose.service=openclaw-gateway",
+    "--format",
+    "{{.Names}}",
+  ]);
+  const detected = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  return detected || "openclaw-openclaw-gateway-1";
+}
+
 async function runImportedDocRuntimeCase(params: {
+  runtimeContainerName: string;
   workspaceDir: string;
   path: string;
   chunkLines: number;
@@ -77,7 +126,7 @@ process.exit(0);
   `;
   const { stdout } = await execFileAsync("docker", [
     "exec",
-    runtimeContainerName,
+    params.runtimeContainerName,
     "node",
     "--input-type=module",
     "-e",
@@ -96,6 +145,7 @@ process.exit(0);
 async function main() {
   const repoRoot = process.cwd();
   const repoDotEnv = await loadSimpleDotEnv(path.join(repoRoot, ".env"));
+  const runtimeContainerName = await detectRuntimeContainerName();
   const workspaceRoot =
     process.env.OPENCLAW_WORKSPACE_DIR?.trim() ||
     repoDotEnv.OPENCLAW_WORKSPACE_DIR?.trim() ||
@@ -227,8 +277,9 @@ async function main() {
 
   await addCase("imported-doc-incomplete-before-full-coverage", async () => {
     const result = await runImportedDocRuntimeCase({
+      runtimeContainerName,
       workspaceDir: runtimeWorkspaceDir,
-      path: "imports/system_docs/repo-docs/memory-system/README.md",
+      path: "imports/engineering_repo/content/docs/memory-system/README.md",
       chunkLines: 120,
       mode: "incomplete",
     });
@@ -246,8 +297,9 @@ async function main() {
 
   await addCase("imported-doc-complete-in-runtime", async () => {
     const result = await runImportedDocRuntimeCase({
+      runtimeContainerName,
       workspaceDir: runtimeWorkspaceDir,
-      path: "imports/system_docs/repo-docs/memory-system/README.md",
+      path: "imports/engineering_repo/content/docs/memory-system/README.md",
       chunkLines: 120,
       mode: "complete",
     });

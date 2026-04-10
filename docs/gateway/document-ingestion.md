@@ -1,5 +1,5 @@
 ---
-summary: "Deterministic document ingestion with read-only imported roots and coverage-verified long reads"
+summary: "Deterministic document ingestion with workspace-visible host surfaces and coverage-verified long reads"
 read_when:
   - Exposing host-side docs inside the workspace
   - Reading long files where completeness matters
@@ -10,10 +10,11 @@ title: "Document Ingestion"
 
 OpenClaw’s workspace is the intended file surface for agents. Long docs are not safely ingested by dumping them into terminal output and hoping the session keeps the whole result.
 
-This design adds two explicit layers:
+This design now relies on three explicit layers:
 
-1. Narrow read-only imports for selected host-side document roots.
-2. A deterministic `document_read` tool that fingerprints, chunks, verifies, and reports coverage before a document can be treated as fully read.
+1. A broad read-only host filesystem surface inside the workspace.
+2. Curated read-only imports for the most important operational host trees.
+3. A deterministic `document_read` tool that fingerprints, chunks, verifies, and reports coverage before a document can be treated as fully read.
 
 Read policy:
 
@@ -36,34 +37,39 @@ Golden rule:
 
 This system solves two problems:
 
-- make selected host-side docs available inside the workspace without broad host filesystem access
+- make host-side docs available inside the workspace through a canonical hostfs plus curated-import model
 - make long-file ingestion deterministic, resumable, auditable, and explicit about incomplete coverage
 
 ## Architecture
 
 ### Runtime topology
 
-- Host source roots remain outside the normal workspace surface.
-- Docker Compose bind-mounts selected source roots into `workspace/imports/system_docs/*` as read-only.
+- The runtime workspace remains the intended agent file surface.
+- Docker Compose bind-mounts host `/` into `workspace/system/hostfs` as read-only.
+- Docker Compose also bind-mounts curated high-signal host paths into `workspace/imports/*/content` as read-only.
 - Agents continue to operate through the normal workspace boundary.
 - Long-document reads use `document_read`, not terminal output, as the completeness boundary.
 
 ### Imported roots
 
-Imported roots are declared in `config/document-imports.json`.
+The canonical host visibility source of truth is:
+
+- `workspace/imports/imports.manifest.json`
 
 Each entry defines:
 
-- source env var
-- source type
+- entry type
+- host path
 - workspace-visible path
-- import mode
+- container path
 - read-only expectation
+- purpose and handling notes
 
 Current implementation:
 
-- read-only bind mounts for curated roots only
-- manifest + health verification written to `workspace/imports/_metadata/document-imports-manifest.json`
+- read-only bind mount of host `/` into `workspace/system/hostfs`
+- read-only bind mounts for curated roots under `workspace/imports/*/content`
+- verification handled by the workspace-local visibility verifier
 
 ### Long-file ingestion pipeline
 
@@ -136,8 +142,9 @@ For each file:
 
 Chosen design:
 
-- read-only bind mount for live imported roots
-- explicit manifest and health verification for auditability
+- read-only full-host surface for broad visibility
+- curated read-only imports for high-signal navigation
+- explicit manifest and verification for auditability
 
 ## Coverage model
 
@@ -211,8 +218,8 @@ When verifying an important read, always inspect:
 
 ## Artifacts
 
-- Import config: `config/document-imports.json`
-- Import verifier: `scripts/document-imports-verify.ts`
+- Workspace visibility manifest: `workspace/imports/imports.manifest.json`
+- Workspace visibility verifier: `workspace/scripts/verify_filesystem_visibility.mjs`
 - Proof harness: `scripts/document-ingestion-proof.ts`
 - Read tool: `src/agents/tools/document-read-tool.ts`
 - Session engine: `src/agents/document-read.ts`

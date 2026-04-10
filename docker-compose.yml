@@ -14,10 +14,14 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
-      - ${OPENCLAW_IMPORTED_REPO_DOCS_DIR}:/home/node/.openclaw/workspace/imports/system_docs/repo-docs:ro
-      - ${OPENCLAW_IMPORTED_REPO_AGENTS_FILE}:/home/node/.openclaw/workspace/imports/system_docs/repo-root/AGENTS.md:ro
-      - ${OPENCLAW_IMPORTED_REPO_README_FILE}:/home/node/.openclaw/workspace/imports/system_docs/repo-root/README.md:ro
-      - ${OPENCLAW_IMPORTED_DOC_PROBE_DIR}:/home/node/.openclaw/workspace/imports/system_docs/_probes:ro
+      - /:/home/node/.openclaw/workspace/system/hostfs:ro
+      - /root/services/openclaw:/home/node/.openclaw/workspace/imports/live_openclaw_stack/content:ro
+      - /root/services/openclaw-upgrade-2026.3.24:/home/node/.openclaw/workspace/imports/engineering_repo/content:ro
+      - /root/services/webhook-gateway:/home/node/.openclaw/workspace/imports/webhook_gateway/content:ro
+      - /root/.openclaw:/home/node/.openclaw/workspace/imports/runtime_state/content:ro
+      - /root/.openclaw/agent-workspaces:/home/node/.openclaw/workspace/imports/agent_workspaces/content:ro
+      - /root/data/n8n:/home/node/.openclaw/workspace/imports/n8n_data/content:ro
+      - /root/backups:/home/node/.openclaw/workspace/imports/backups/content:ro
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image
       ## (build with --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1) or use
@@ -76,10 +80,14 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
-      - ${OPENCLAW_IMPORTED_REPO_DOCS_DIR}:/home/node/.openclaw/workspace/imports/system_docs/repo-docs:ro
-      - ${OPENCLAW_IMPORTED_REPO_AGENTS_FILE}:/home/node/.openclaw/workspace/imports/system_docs/repo-root/AGENTS.md:ro
-      - ${OPENCLAW_IMPORTED_REPO_README_FILE}:/home/node/.openclaw/workspace/imports/system_docs/repo-root/README.md:ro
-      - ${OPENCLAW_IMPORTED_DOC_PROBE_DIR}:/home/node/.openclaw/workspace/imports/system_docs/_probes:ro
+      - /:/home/node/.openclaw/workspace/system/hostfs:ro
+      - /root/services/openclaw:/home/node/.openclaw/workspace/imports/live_openclaw_stack/content:ro
+      - /root/services/openclaw-upgrade-2026.3.24:/home/node/.openclaw/workspace/imports/engineering_repo/content:ro
+      - /root/services/webhook-gateway:/home/node/.openclaw/workspace/imports/webhook_gateway/content:ro
+      - /root/.openclaw:/home/node/.openclaw/workspace/imports/runtime_state/content:ro
+      - /root/.openclaw/agent-workspaces:/home/node/.openclaw/workspace/imports/agent_workspaces/content:ro
+      - /root/data/n8n:/home/node/.openclaw/workspace/imports/n8n_data/content:ro
+      - /root/backups:/home/node/.openclaw/workspace/imports/backups/content:ro
     stdin_open: true
     tty: true
     init: true
