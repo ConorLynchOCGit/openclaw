@@ -1,9 +1,13 @@
 {
   "config": "vitest.unit.config.ts",
-  "generatedAt": "2026-03-24T17:44:58.770Z",
+  "generatedAt": "2026-04-10T05:40:59.331Z",
   "defaultMinDeltaKb": 262144,
-  "lane": "unit-fast, unit-*",
+  "lane": "unit-fast, unit-fast-batch-*",
   "files": {
+    "src/acp/control-plane/manager.test.ts": {
+      "deltaKb": 4089446,
+      "sources": ["openclaw-unit-trace:unit-fast-batch-1"]
+    },
     "src/infra/outbound/channel-resolution.test.ts": {
       "deltaKb": 1111491,
       "sources": ["openclaw-test-memory-trace:unit-heavy-2"]

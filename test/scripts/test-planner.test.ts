@@ -155,7 +155,7 @@ describe("test planner", () => {
     artifacts.cleanupTempArtifacts();
   });
 
-  it("coalesces saturated high-memory local unit bursts into fewer shared batches", () => {
+  it("does not inflate shared unit batch duration targets under saturated load", () => {
     const env = {
       RUNNER_OS: "macOS",
       OPENCLAW_TEST_HOST_CPU_COUNT: "16",
@@ -200,9 +200,44 @@ describe("test planner", () => {
 
     expect(plan.runtimeCapabilities.memoryBand).toBe("high");
     expect(plan.runtimeCapabilities.loadBand).toBe("saturated");
-    expect(sharedUnitBatches.length).toBeLessThan(baselineSharedUnitBatches.length);
+    expect(sharedUnitBatches.length).toBeGreaterThanOrEqual(baselineSharedUnitBatches.length);
     expect(plan.executionBudget.unitIsolatedWorkers).toBe(1);
-    expect(plan.executionBudget.unitFastBatchTargetMs).toBe(90_000);
+    expect(plan.executionBudget.unitFastBatchTargetMs).toBe(45_000);
+    artifacts.cleanupTempArtifacts();
+  });
+
+  it("auto-enables constrained full-repo safe mode for local landing runs", () => {
+    const env = {
+      RUNNER_OS: "Linux",
+      OPENCLAW_TEST_HOST_CPU_COUNT: "4",
+      OPENCLAW_TEST_HOST_MEMORY_GIB: "8",
+      OPENCLAW_TEST_LOAD_AWARE: "0",
+    };
+    const artifacts = createExecutionArtifacts(env);
+    const plan = buildExecutionPlan(
+      {
+        profile: null,
+        mode: "local",
+        surfaces: [],
+        passthroughArgs: [],
+      },
+      {
+        env,
+        platform: "linux",
+        writeTempJsonArtifact: artifacts.writeTempJsonArtifact,
+      },
+    );
+
+    const sharedUnitBatches = plan.selectedUnits.filter(
+      (unit) => unit.surface === "unit" && !unit.isolate && unit.id.startsWith("unit-fast"),
+    );
+
+    expect(plan.fullRepoSafeMode).toBe(true);
+    expect(plan.topLevelParallelEnabled).toBe(false);
+    expect(plan.keepGatewaySerial).toBe(true);
+    expect(sharedUnitBatches.length).toBeGreaterThan(20);
+    expect(sharedUnitBatches.every((unit) => unit.maxWorkers === 1)).toBe(true);
+    expect(sharedUnitBatches.every((unit) => (unit.includeFiles?.length ?? 0) <= 24)).toBe(true);
     artifacts.cleanupTempArtifacts();
   });
 
@@ -418,7 +453,7 @@ describe("test planner", () => {
     artifacts.cleanupTempArtifacts();
   });
 
-  it("pins the smallest CI include-file batches to fixed shards", () => {
+  it("pins the smallest multi-file CI include-file batches to fixed shards", () => {
     const env = {
       CI: "true",
       GITHUB_ACTIONS: "true",
@@ -445,10 +480,11 @@ describe("test planner", () => {
         Array.isArray(unit.includeFiles) &&
         unit.includeFiles.length > 0,
     );
+    const multiFileShardableUnits = shardableUnits.filter((unit) => unit.includeFiles.length > 1);
     const smallestIncludeCount = Math.min(
-      ...shardableUnits.map((unit) => unit.includeFiles.length),
+      ...multiFileShardableUnits.map((unit) => unit.includeFiles.length),
     );
-    const smallestBatches = shardableUnits.filter(
+    const smallestBatches = multiFileShardableUnits.filter(
       (unit) => unit.includeFiles.length === smallestIncludeCount,
     );
 

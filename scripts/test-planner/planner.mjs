@@ -201,6 +201,7 @@ const createPlannerContext = (request, options = {}) => {
     nodeVersion: options.nodeVersion,
   });
   const executionBudget = resolveExecutionBudget(runtime);
+  const fullRepoSafeMode = resolveAutoFullRepoSafeMode(request, runtime, env);
   const catalog = options.catalog ?? loadTestCatalog();
   const unitTimingManifest = loadUnitTimingManifest();
   const channelTimingManifest = loadChannelTimingManifest();
@@ -210,6 +211,7 @@ const createPlannerContext = (request, options = {}) => {
     env,
     runtime,
     executionBudget,
+    fullRepoSafeMode,
     catalog,
     unitTimingManifest,
     channelTimingManifest,
@@ -272,24 +274,51 @@ const resolveEntryTimingEstimator = (entry, context) => {
   return null;
 };
 
-const splitFilesByDurationBudget = (files, targetDurationMs, estimateDurationMs) => {
-  if (!Number.isFinite(targetDurationMs) || targetDurationMs <= 0 || files.length <= 1) {
+const splitFilesByResourceBudget = (files, options) => {
+  const {
+    targetDurationMs,
+    estimateDurationMs,
+    maxFilesPerBatch = 0,
+    estimateHotspotDeltaKb = null,
+    maxHotspotDeltaKbPerBatch = 0,
+  } = options;
+  if (files.length <= 1) {
     return [files];
   }
 
   const batches = [];
   let currentBatch = [];
   let currentDurationMs = 0;
+  let currentHotspotDeltaKb = 0;
 
   for (const file of files) {
     const durationMs = estimateDurationMs(file);
-    if (currentBatch.length > 0 && currentDurationMs + durationMs > targetDurationMs) {
+    const hotspotDeltaKb = estimateHotspotDeltaKb ? estimateHotspotDeltaKb(file) : 0;
+    const wouldExceedDuration =
+      Number.isFinite(targetDurationMs) &&
+      targetDurationMs > 0 &&
+      currentBatch.length > 0 &&
+      currentDurationMs + durationMs > targetDurationMs;
+    const wouldExceedFileCap =
+      Number.isFinite(maxFilesPerBatch) &&
+      maxFilesPerBatch > 0 &&
+      currentBatch.length >= maxFilesPerBatch;
+    const wouldExceedHotspotBudget =
+      Number.isFinite(maxHotspotDeltaKbPerBatch) &&
+      maxHotspotDeltaKbPerBatch > 0 &&
+      currentBatch.length > 0 &&
+      currentHotspotDeltaKb + hotspotDeltaKb > maxHotspotDeltaKbPerBatch;
+
+    if (wouldExceedDuration || wouldExceedFileCap || wouldExceedHotspotBudget) {
       batches.push(currentBatch);
       currentBatch = [];
       currentDurationMs = 0;
+      currentHotspotDeltaKb = 0;
     }
+
     currentBatch.push(file);
     currentDurationMs += durationMs;
+    currentHotspotDeltaKb += hotspotDeltaKb;
   }
 
   if (currentBatch.length > 0) {
@@ -326,12 +355,37 @@ const resolveUnitFastBatchTargetMs = ({ context, selectedSurfaceSet, unitOnlyRun
   return defaultTargetMs;
 };
 
+const resolveAutoFullRepoSafeMode = (request, runtime, env) => {
+  const disabled =
+    env.OPENCLAW_TEST_DISABLE_AUTO_SAFE_MODE === "1" ||
+    env.OPENCLAW_TEST_DISABLE_AUTO_SAFE_MODE === "true";
+  if (disabled) {
+    return false;
+  }
+  if (runtime.isCI || runtime.intentProfile !== "normal" || runtime.memoryBand !== "constrained") {
+    return false;
+  }
+  if ((request.fileFilters ?? []).length > 0 || (request.surfaces ?? []).length > 0) {
+    return false;
+  }
+  if (
+    (request.passthroughArgs ?? []).length > 0 ||
+    (request.passthroughOptionArgs ?? []).length > 0
+  ) {
+    return false;
+  }
+  return true;
+};
+
 const resolveMaxWorkersForUnit = (unit, context) => {
   const overrideWorkers = Number.parseInt(context.env.OPENCLAW_TEST_WORKERS ?? "", 10);
   const resolvedOverride =
     Number.isFinite(overrideWorkers) && overrideWorkers > 0 ? overrideWorkers : null;
   if (resolvedOverride) {
     return resolvedOverride;
+  }
+  if (context.fullRepoSafeMode) {
+    return 1;
   }
   const budget = context.executionBudget;
   if (unit.isolate) {
@@ -438,10 +492,12 @@ const buildDefaultUnits = (context, request) => {
     unitTimingManifest,
     channelTimingManifest,
     extensionTimingManifest,
+    unitMemoryHotspotManifest,
   } = context;
   const noIsolateArgs = context.noIsolateArgs;
   const selectedSurfaces = buildRequestedSurfaces(request, env);
   const selectedSurfaceSet = new Set(selectedSurfaces);
+  const fullRepoSafeMode = context.fullRepoSafeMode;
   const unitOnlyRun = selectedSurfaceSet.size === 1 && selectedSurfaceSet.has("unit");
   const channelsOnlyRun = selectedSurfaceSet.size === 1 && selectedSurfaceSet.has("channels");
   const contractsOnlyRun = selectedSurfaceSet.size === 1 && selectedSurfaceSet.has("contracts");
@@ -472,6 +528,7 @@ const buildDefaultUnits = (context, request) => {
     channelTimingManifest.files[file]?.durationMs ?? channelTimingManifest.defaultDurationMs;
   const estimateExtensionDurationMs = (file) =>
     extensionTimingManifest.files[file]?.durationMs ?? extensionTimingManifest.defaultDurationMs;
+  const estimateUnitHotspotDeltaKb = (file) => unitMemoryHotspotManifest.files[file]?.deltaKb ?? 0;
   const unitFastCandidateFiles = catalog.allKnownUnitFiles.filter(
     (file) => !new Set(unitFastExcludedFiles).has(file),
   );
@@ -497,6 +554,13 @@ const buildDefaultUnits = (context, request) => {
     "OPENCLAW_TEST_EXTENSIONS_BATCH_TARGET_MS",
     defaultExtensionsBatchTargetMs,
   );
+  const extensionsMaxFilesPerBatch = parseEnvNumber(
+    env,
+    "OPENCLAW_TEST_EXTENSIONS_MAX_FILES_PER_BATCH",
+    fullRepoSafeMode
+      ? Math.min(executionBudget.extensionsMaxFilesPerBatch ?? 12, 12)
+      : (executionBudget.extensionsMaxFilesPerBatch ?? 0),
+  );
   const defaultUnitFastLaneCount = executionBudget.unitFastLaneCount;
   const unitFastLaneCount = Math.max(
     1,
@@ -510,13 +574,34 @@ const buildDefaultUnits = (context, request) => {
   const unitFastBatchTargetMs = parseEnvNumber(
     env,
     "OPENCLAW_TEST_UNIT_FAST_BATCH_TARGET_MS",
-    defaultUnitFastBatchTargetMs,
+    fullRepoSafeMode ? 12_000 : defaultUnitFastBatchTargetMs,
+  );
+  const unitFastMaxFilesPerBatch = parseEnvNumber(
+    env,
+    "OPENCLAW_TEST_UNIT_FAST_MAX_FILES_PER_BATCH",
+    fullRepoSafeMode
+      ? Math.max(executionBudget.unitFastMaxFilesPerBatch ?? 12, 24)
+      : (executionBudget.unitFastMaxFilesPerBatch ?? 0),
+  );
+  const unitFastMaxHotspotDeltaKbPerBatch = parseEnvNumber(
+    env,
+    "OPENCLAW_TEST_UNIT_FAST_MAX_HOTSPOT_DELTA_KB_PER_BATCH",
+    fullRepoSafeMode
+      ? Math.max(executionBudget.unitFastMaxHotspotDeltaKbPerBatch ?? 512 * 1024, 512 * 1024)
+      : (executionBudget.unitFastMaxHotspotDeltaKbPerBatch ?? 0),
   );
   const defaultChannelsBatchTargetMs = executionBudget.channelsBatchTargetMs;
   const channelsBatchTargetMs = parseEnvNumber(
     env,
     "OPENCLAW_TEST_CHANNELS_BATCH_TARGET_MS",
-    defaultChannelsBatchTargetMs,
+    fullRepoSafeMode ? Math.min(defaultChannelsBatchTargetMs, 8_000) : defaultChannelsBatchTargetMs,
+  );
+  const channelsMaxFilesPerBatch = parseEnvNumber(
+    env,
+    "OPENCLAW_TEST_CHANNELS_MAX_FILES_PER_BATCH",
+    fullRepoSafeMode
+      ? Math.max(executionBudget.channelsMaxFilesPerBatch ?? 18, 18)
+      : (executionBudget.channelsMaxFilesPerBatch ?? 0),
   );
   const unitFastBuckets =
     unitFastLaneCount > 1
@@ -528,11 +613,13 @@ const buildDefaultUnits = (context, request) => {
     for (const [laneIndex, files] of unitFastBuckets.entries()) {
       const laneName =
         unitFastBuckets.length === 1 ? "unit-fast" : `unit-fast-${String(laneIndex + 1)}`;
-      const recycledBatches = splitFilesByDurationBudget(
-        files,
-        unitFastBatchTargetMs,
-        estimateUnitDurationMs,
-      );
+      const recycledBatches = splitFilesByResourceBudget(files, {
+        targetDurationMs: unitFastBatchTargetMs,
+        estimateDurationMs: estimateUnitDurationMs,
+        maxFilesPerBatch: unitFastMaxFilesPerBatch,
+        estimateHotspotDeltaKb: estimateUnitHotspotDeltaKb,
+        maxHotspotDeltaKbPerBatch: unitFastMaxHotspotDeltaKbPerBatch,
+      });
       for (const [batchIndex, batch] of recycledBatches.entries()) {
         if (batch.length === 0) {
           continue;
@@ -708,11 +795,11 @@ const buildDefaultUnits = (context, request) => {
         }),
       );
     }
-    const extensionBatches = splitFilesByBalancedDurationBudget(
-      extensionSharedCandidateFiles,
-      extensionsBatchTargetMs,
-      estimateExtensionDurationMs,
-    );
+    const extensionBatches = splitFilesByResourceBudget(extensionSharedCandidateFiles, {
+      targetDurationMs: extensionsBatchTargetMs,
+      estimateDurationMs: estimateExtensionDurationMs,
+      maxFilesPerBatch: extensionsMaxFilesPerBatch,
+    });
     for (const [batchIndex, batch] of extensionBatches.entries()) {
       if (batch.length === 0) {
         continue;
@@ -744,11 +831,11 @@ const buildDefaultUnits = (context, request) => {
   }
 
   if (selectedSurfaceSet.has("channels")) {
-    const channelBatches = splitFilesByDurationBudget(
-      channelSharedCandidateFiles,
-      channelsBatchTargetMs,
-      estimateChannelDurationMs,
-    );
+    const channelBatches = splitFilesByResourceBudget(channelSharedCandidateFiles, {
+      targetDurationMs: channelsBatchTargetMs,
+      estimateDurationMs: estimateChannelDurationMs,
+      maxFilesPerBatch: channelsMaxFilesPerBatch,
+    });
     for (const [batchIndex, batch] of channelBatches.entries()) {
       if (batch.length === 0) {
         continue;
@@ -1537,6 +1624,7 @@ export function buildExecutionPlan(request, options = {}) {
     env.OPENCLAW_TEST_PARALLEL_GATEWAY === "1" ||
     (!context.runtime.isCI && context.executionBudget.gatewayWorkers > 1);
   const keepGatewaySerial =
+    context.fullRepoSafeMode ||
     context.runtime.isWindowsCi ||
     env.OPENCLAW_TEST_SERIAL_GATEWAY === "1" ||
     context.runtime.intentProfile === "serial" ||
@@ -1549,9 +1637,12 @@ export function buildExecutionPlan(request, options = {}) {
     : [];
   const serialPrefixUnits = parallelUnits.filter((unit) => unit.serialPhase);
   const deferredParallelUnits = parallelUnits.filter((unit) => !unit.serialPhase);
-  const topLevelParallelEnabled = context.executionBudget.topLevelParallelEnabled;
-  const baseTopLevelParallelLimit =
-    context.noIsolateArgs.length > 0
+  const topLevelParallelEnabled = context.fullRepoSafeMode
+    ? false
+    : context.executionBudget.topLevelParallelEnabled;
+  const baseTopLevelParallelLimit = context.fullRepoSafeMode
+    ? 1
+    : context.noIsolateArgs.length > 0
       ? context.executionBudget.topLevelParallelLimitNoIsolate
       : context.executionBudget.topLevelParallelLimitIsolated;
   const defaultTopLevelParallelLimit = resolveSurfaceAwareTopLevelParallelLimit(
@@ -1563,11 +1654,14 @@ export function buildExecutionPlan(request, options = {}) {
     1,
     parseEnvNumber(env, "OPENCLAW_TEST_TOP_LEVEL_CONCURRENCY", defaultTopLevelParallelLimit),
   );
-  const deferredRunConcurrency = context.executionBudget.deferredRunConcurrency;
+  const deferredRunConcurrency = context.fullRepoSafeMode
+    ? 1
+    : context.executionBudget.deferredRunConcurrency;
 
   return {
     runtimeCapabilities: context.runtime,
     executionBudget: context.executionBudget,
+    fullRepoSafeMode: context.fullRepoSafeMode,
     failurePolicy: normalizedFailurePolicy.failurePolicy,
     passthroughOptionArgs: normalizedFailurePolicy.passthroughOptionArgs,
     passthroughRequiresSingleRun,

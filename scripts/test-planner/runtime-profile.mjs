@@ -103,8 +103,12 @@ const LOCAL_MEMORY_BUDGETS = {
     heavyLaneCount: 3,
     memoryHeavyFileLimit: 8,
     unitFastBatchTargetMs: 10_000,
+    unitFastMaxFilesPerBatch: 12,
+    unitFastMaxHotspotDeltaKbPerBatch: 512 * 1024,
     channelsBatchTargetMs: 0,
+    channelsMaxFilesPerBatch: 18,
     extensionsBatchTargetMs: 60_000,
+    extensionsMaxFilesPerBatch: 18,
   },
   moderate: {
     vitestCap: 3,
@@ -121,8 +125,12 @@ const LOCAL_MEMORY_BUDGETS = {
     heavyLaneCount: 4,
     memoryHeavyFileLimit: 12,
     unitFastBatchTargetMs: 15_000,
+    unitFastMaxFilesPerBatch: 16,
+    unitFastMaxHotspotDeltaKbPerBatch: 768 * 1024,
     channelsBatchTargetMs: 0,
+    channelsMaxFilesPerBatch: 24,
     extensionsBatchTargetMs: 120_000,
+    extensionsMaxFilesPerBatch: 24,
   },
   mid: {
     vitestCap: 4,
@@ -139,8 +147,12 @@ const LOCAL_MEMORY_BUDGETS = {
     heavyLaneCount: 4,
     memoryHeavyFileLimit: 16,
     unitFastBatchTargetMs: 0,
+    unitFastMaxFilesPerBatch: 24,
+    unitFastMaxHotspotDeltaKbPerBatch: 1024 * 1024,
     channelsBatchTargetMs: 0,
+    channelsMaxFilesPerBatch: 30,
     extensionsBatchTargetMs: 180_000,
+    extensionsMaxFilesPerBatch: 32,
   },
   high: {
     vitestCap: 6,
@@ -157,8 +169,12 @@ const LOCAL_MEMORY_BUDGETS = {
     heavyLaneCount: 5,
     memoryHeavyFileLimit: 16,
     unitFastBatchTargetMs: 45_000,
+    unitFastMaxFilesPerBatch: 32,
+    unitFastMaxHotspotDeltaKbPerBatch: 1536 * 1024,
     channelsBatchTargetMs: 30_000,
+    channelsMaxFilesPerBatch: 40,
     extensionsBatchTargetMs: 300_000,
+    extensionsMaxFilesPerBatch: 40,
   },
 };
 
@@ -292,8 +308,12 @@ export function resolveExecutionBudget(runtimeCapabilities) {
       memoryHeavyUnitFileLimit: 64,
       unitFastLaneCount: runtime.isWindows ? 1 : 3,
       unitFastBatchTargetMs: runtime.isWindows ? 0 : 45_000,
+      unitFastMaxFilesPerBatch: runtime.isWindows ? 16 : 24,
+      unitFastMaxHotspotDeltaKbPerBatch: 2048 * 1024,
       channelsBatchTargetMs: runtime.isWindows ? 0 : 30_000,
+      channelsMaxFilesPerBatch: runtime.isWindows ? 18 : 28,
       extensionsBatchTargetMs: runtime.isWindows ? 0 : 30_000,
+      extensionsMaxFilesPerBatch: runtime.isWindows ? 18 : 24,
     };
   }
 
@@ -316,8 +336,12 @@ export function resolveExecutionBudget(runtimeCapabilities) {
     memoryHeavyUnitFileLimit: bandBudget.memoryHeavyFileLimit,
     unitFastLaneCount: 1,
     unitFastBatchTargetMs: bandBudget.unitFastBatchTargetMs,
+    unitFastMaxFilesPerBatch: bandBudget.unitFastMaxFilesPerBatch,
+    unitFastMaxHotspotDeltaKbPerBatch: bandBudget.unitFastMaxHotspotDeltaKbPerBatch,
     channelsBatchTargetMs: bandBudget.channelsBatchTargetMs ?? 0,
+    channelsMaxFilesPerBatch: bandBudget.channelsMaxFilesPerBatch ?? 0,
     extensionsBatchTargetMs: bandBudget.extensionsBatchTargetMs ?? 300_000,
+    extensionsMaxFilesPerBatch: bandBudget.extensionsMaxFilesPerBatch ?? 0,
   };
 
   const loadAdjustedBudget = {
@@ -341,12 +365,6 @@ export function resolveExecutionBudget(runtimeCapabilities) {
       baseBudget.topLevelParallelLimitIsolated,
       runtime.loadBand,
     ),
-    unitFastBatchTargetMs:
-      runtime.loadBand === "busy"
-        ? Math.max(baseBudget.unitFastBatchTargetMs, 60_000)
-        : runtime.loadBand === "saturated"
-          ? Math.max(baseBudget.unitFastBatchTargetMs, 90_000)
-          : baseBudget.unitFastBatchTargetMs,
     deferredRunConcurrency:
       runtime.loadBand === "busy"
         ? Math.max(1, (baseBudget.deferredRunConcurrency ?? 1) - 1)

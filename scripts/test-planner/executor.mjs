@@ -261,7 +261,7 @@ export const resolveVitestFsModuleCachePath = ({
 
 export function formatPlanOutput(plan) {
   return [
-    `runtime=${plan.runtimeCapabilities.runtimeProfileName} mode=${plan.runtimeCapabilities.mode} intent=${plan.runtimeCapabilities.intentProfile} memoryBand=${plan.runtimeCapabilities.memoryBand} loadBand=${plan.runtimeCapabilities.loadBand} failurePolicy=${plan.failurePolicy} vitestMaxWorkers=${String(plan.executionBudget.vitestMaxWorkers ?? "default")} topLevelParallel=${plan.topLevelParallelEnabled ? String(plan.topLevelParallelLimit) : "off"}`,
+    `runtime=${plan.runtimeCapabilities.runtimeProfileName} mode=${plan.runtimeCapabilities.mode} intent=${plan.runtimeCapabilities.intentProfile} memoryBand=${plan.runtimeCapabilities.memoryBand} loadBand=${plan.runtimeCapabilities.loadBand} failurePolicy=${plan.failurePolicy} vitestMaxWorkers=${String(plan.executionBudget.vitestMaxWorkers ?? "default")} topLevelParallel=${plan.topLevelParallelEnabled ? String(plan.topLevelParallelLimit) : "off"} safeMode=${plan.fullRepoSafeMode ? "constrained-full-repo" : "off"}`,
     ...plan.selectedUnits.map(
       (unit) =>
         `${unit.id} filters=${String(countUnitEntryFilters(unit) ?? "all")} maxWorkers=${String(
@@ -397,11 +397,22 @@ export async function executePlan(plan, options = {}) {
     if (Number.isFinite(parsed) && parsed > 0) {
       return parsed;
     }
+    if (plan.fullRepoSafeMode) {
+      return 4096;
+    }
     if (plan.runtimeCapabilities.isCI && !plan.runtimeCapabilities.isWindows) {
       return DEFAULT_CI_MAX_OLD_SPACE_SIZE_MB;
     }
     return null;
   })();
+
+  if (plan.fullRepoSafeMode) {
+    console.log(
+      `[test-parallel] constrained full-repo safe mode enabled maxOldSpaceSizeMb=${String(
+        maxOldSpaceSizeMb ?? "default",
+      )} topLevelParallel=${plan.topLevelParallelEnabled ? String(plan.topLevelParallelLimit) : "off"}`,
+    );
+  }
 
   const shutdown = (signal) => {
     for (const child of children) {

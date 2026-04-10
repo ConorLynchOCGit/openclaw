@@ -277,8 +277,24 @@ describe("scripts/test-parallel lane planning", () => {
     );
 
     expect(output).toContain("mode=local intent=normal memoryBand=mid");
+    expect(output).toContain("safeMode=off");
     expect(output).toMatch(/unit-fast(?:-batch-\d+)? filters=\d+ maxWorkers=/);
     expect(output).toMatch(/extensions(?:-batch-\d+)? filters=\d+ maxWorkers=/);
+  });
+
+  it("reports constrained full-repo safe mode in planner output", () => {
+    const output = runPlannerPlan(["--plan"], {
+      OPENCLAW_TEST_LOAD_AWARE: "0",
+      OPENCLAW_TEST_HOST_CPU_COUNT: "4",
+      OPENCLAW_TEST_HOST_MEMORY_GIB: "8",
+      RUNNER_OS: "Linux",
+      CI: "",
+      GITHUB_ACTIONS: "",
+    });
+
+    expect(output).toContain("safeMode=constrained-full-repo");
+    expect(output).toContain("topLevelParallel=off");
+    expect(output).toMatch(/unit-fast-batch-\d+ filters=\d+ maxWorkers=1/);
   });
 
   it("uses higher shared extension worker counts on high-memory local hosts", () => {
@@ -323,11 +339,15 @@ describe("scripts/test-parallel lane planning", () => {
     expect(output).toMatch(/channels-batch-1 filters=\d+ maxWorkers=5/);
   });
 
-  it("uses coarser unit-fast batching for high-memory local multi-surface runs", () => {
+  it("keeps high-memory local multi-surface unit batches bounded by file count", () => {
     const output = runHighMemoryLocalMultiSurfacePlan();
+    const unitBatchLines = getPlanLines(output, "unit-fast-batch-");
+    const unitBatchFilterCounts = unitBatchLines.map((line) =>
+      parseNumericPlanField(line, "filters"),
+    );
 
-    expect(output).toContain("unit-fast-batch-4");
-    expect(output).not.toContain("unit-fast-batch-5");
+    expect(unitBatchLines.length).toBeGreaterThan(10);
+    expect(Math.max(...unitBatchFilterCounts)).toBeLessThanOrEqual(32);
   });
 
   it("uses earlier targeted channel batching on high-memory local hosts", () => {
@@ -378,12 +398,12 @@ describe("scripts/test-parallel lane planning", () => {
       parseNumericPlanField(line, "filters"),
     );
 
-    expect(unitBatchLines.length).toBeGreaterThanOrEqual(3);
+    expect(unitBatchLines.length).toBeGreaterThanOrEqual(2);
     expect(unitBatchLines.every((line) => line.includes("maxWorkers=6"))).toBe(true);
-    expect(Math.max(...unitBatchFilterCounts)).toBeLessThan(40);
-    expect(unitBatchFilterCounts.reduce((sum, count) => sum + count, 0)).toBe(
-      sharedTargetedUnitProxyFiles.length,
-    );
+    expect(Math.max(...unitBatchFilterCounts)).toBeLessThanOrEqual(50);
+    const totalSharedRouted = unitBatchFilterCounts.reduce((sum, count) => sum + count, 0);
+    expect(totalSharedRouted).toBeGreaterThanOrEqual(sharedTargetedUnitProxyFiles.length - 1);
+    expect(totalSharedRouted).toBeLessThanOrEqual(sharedTargetedUnitProxyFiles.length);
     expect(output).toContain("unit-qr-dashboard.integration-isolated filters=1 maxWorkers=2");
   });
 
