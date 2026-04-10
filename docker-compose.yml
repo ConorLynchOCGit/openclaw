@@ -12,6 +12,16 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - /root/openclaw-config/agent-workspaces:/home/node/.openclaw/agent-workspaces
+      # Canonical workspace-visible host filesystem surfaces.
+      - /:/home/node/.openclaw/workspace/system/hostfs:ro
+      - /root/services/openclaw:/home/node/.openclaw/workspace/imports/live_openclaw_stack/content:ro
+      - /root/services/openclaw-upgrade-2026.3.24:/home/node/.openclaw/workspace/imports/engineering_repo/content:ro
+      - /root/services/webhook-gateway:/home/node/.openclaw/workspace/imports/webhook_gateway/content:ro
+      - /root/.openclaw:/home/node/.openclaw/workspace/imports/runtime_state/content:ro
+      - /root/.openclaw/agent-workspaces:/home/node/.openclaw/workspace/imports/agent_workspaces/content:ro
+      - /root/data/n8n:/home/node/.openclaw/workspace/imports/n8n_data/content:ro
+      - /root/backups:/home/node/.openclaw/workspace/imports/backups/content:ro
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image
       ## (build with --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1) or use
@@ -21,8 +31,8 @@ services:
     # group_add:
     #   - "${DOCKER_GID:-999}"
     ports:
-      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
-      - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
+      - "127.0.0.1:${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+      - "127.0.0.1:${OPENCLAW_BRIDGE_PORT:-18790}:18790"
     init: true
     restart: unless-stopped
     command:
@@ -68,6 +78,16 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      - /root/openclaw-config/agent-workspaces:/home/node/.openclaw/agent-workspaces
+      # Canonical workspace-visible host filesystem surfaces.
+      - /:/home/node/.openclaw/workspace/system/hostfs:ro
+      - /root/services/openclaw:/home/node/.openclaw/workspace/imports/live_openclaw_stack/content:ro
+      - /root/services/openclaw-upgrade-2026.3.24:/home/node/.openclaw/workspace/imports/engineering_repo/content:ro
+      - /root/services/webhook-gateway:/home/node/.openclaw/workspace/imports/webhook_gateway/content:ro
+      - /root/.openclaw:/home/node/.openclaw/workspace/imports/runtime_state/content:ro
+      - /root/.openclaw/agent-workspaces:/home/node/.openclaw/workspace/imports/agent_workspaces/content:ro
+      - /root/data/n8n:/home/node/.openclaw/workspace/imports/n8n_data/content:ro
+      - /root/backups:/home/node/.openclaw/workspace/imports/backups/content:ro
     stdin_open: true
     tty: true
     init: true
