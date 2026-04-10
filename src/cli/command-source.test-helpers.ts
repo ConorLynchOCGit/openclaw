@@ -26,6 +26,15 @@ async function readModuleSource(modulePath: string, seen: Set<string>): Promise<
     }
   }
 
+  for (const match of source.matchAll(
+    /^import(?:\s+type)?[\s\S]*?from "(?<target>\.[^"]+\.js)";$/gmu,
+  )) {
+    const target = match.groups?.target;
+    if (target) {
+      nestedTargets.add(resolveImportedTypeScriptPath(resolvedPath, target));
+    }
+  }
+
   for (const match of source.matchAll(/import\("(?<target>\.[^"]+\.runtime\.js)"\)/gmu)) {
     const target = match.groups?.target;
     if (target) {

@@ -45,6 +45,27 @@ describe("readCommandSource", () => {
     expect(source).toContain("resolveCommandSecretRefsViaGateway");
   });
 
+  it("follows local static imports when the resolver lives behind a helper boundary", async () => {
+    const rootDir = makeTempDir();
+    const cliDir = path.join(rootDir, "extensions", "memory-core", "src");
+    fs.mkdirSync(cliDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(cliDir, "cli.runtime.ts"),
+      'import { bootstrapMemoryCoreRuntime } from "./runtime-bootstrap.js";\nexport { bootstrapMemoryCoreRuntime };\n',
+    );
+    fs.writeFileSync(
+      path.join(cliDir, "runtime-bootstrap.ts"),
+      'import { resolveCommandSecretRefsViaGateway } from "../../src/cli/command-secret-gateway.js";\nexport { resolveCommandSecretRefsViaGateway };\n',
+    );
+
+    const source = await readCommandSource("extensions/memory-core/src/cli.runtime.ts", rootDir);
+
+    expect(source).toContain(
+      'import { bootstrapMemoryCoreRuntime } from "./runtime-bootstrap.js";',
+    );
+    expect(source).toContain("resolveCommandSecretRefsViaGateway");
+  });
+
   it("dedupes repeated runtime imports", async () => {
     const rootDir = makeTempDir();
     const cliDir = path.join(rootDir, "src", "cli");
