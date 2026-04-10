@@ -104,6 +104,45 @@ locally through:
   shapes
 - confirmation that no schema change was required for this tranche
 
+The soak-observability follow-through tranche is now also landed locally
+through:
+
+- a closed memory-lifecycle telemetry model for capture, retrieval,
+  application, review, projection, and orchestration
+- durable repo-local soak event history under `.local/memory-soak/events/`
+- latest plus timestamped soak summary artifacts under `.local/memory-soak/`
+- retrieval/application telemetry for surfaced records, selected guidance, and
+  truthful wrong-shape or missed-memory proxies
+- scope-distribution, specificity-override, and scope-conflict demand signals
+- review-burden and deferred-overflow follow-through telemetry
+- relation/alias/contradiction demand signals derived from current substrate
+- corpus-ingestion demand signals derived from long prompts, session-memory
+  density, and compaction pressure
+- operator summary and daily-brief surfaces integrated into the existing
+  native sync/report flow
+
+No schema change was required for this observability tranche.
+
+The current execution posture is now a soak period rather than another
+pre-scheduled feature tranche.
+
+During soak, the repo should prioritize:
+
+- observing how often the new capture/posture/overflow paths actually fire
+- measuring review burden and retrieval usefulness
+- reviewing the durable soak summaries instead of relying on ad hoc logs
+- collecting enough evidence to choose the next memory build honestly
+- keeping remaining roadmap items unscheduled until that evidence exists
+
+If soak exits cleanly after any required defect fixes, the leading candidate
+for the next scheduled memory tranche should be a separate
+corpus-ingestion-and-compilation capability for larger source sets, not more
+of the current bounded conversational memory path.
+
+Fuller agent-scoped memory should be revisited alongside the upcoming
+multiagent architecture, delegation, and workflow work rather than pulled
+forward independently.
+
 ## What is live now
 
 Live families:

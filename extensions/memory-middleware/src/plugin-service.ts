@@ -26,6 +26,7 @@ export function createMemoryMiddlewarePluginService(
         cfg: ctx.config,
         logger: ctx.logger,
         candidateIngress: runtime.candidateIngress,
+        soakTelemetry: runtime.soakTelemetry,
         subscribe: subscribeToTranscriptUpdates,
         deps: {
           reviewCandidate: (input) => runtime.candidateReview.review(input),

@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool, OpenClawPluginToolContext } from "../../api.js";
 import type { MemoryObjectSearchHybridInput, MemoryObjectSearchScope } from "../db/runtime.js";
 import { MEMORY_OBJECT_SEARCH_SCOPES } from "../db/runtime.js";
+import { buildMemorySoakRetrievalEvent } from "../memory-soak-telemetry.js";
 import {
   applyHybridRetrievalControlPlane,
   buildMemoryObjectRetrievalControlDecision,
@@ -95,7 +96,7 @@ export async function searchMemoryObjectsHybridFromTool(params: {
     input: params.input,
   });
   const result = await params.runtime.memoryObjectQuery.searchHybrid(params.input);
-  return applyHybridRetrievalControlPlane({
+  const controlled = await applyHybridRetrievalControlPlane({
     decision,
     runtime: params.runtime,
     input: params.input,
@@ -104,6 +105,13 @@ export async function searchMemoryObjectsHybridFromTool(params: {
     agentId: params.context?.agentId,
     sessionKey: params.context?.sessionKey,
   });
+  await params.runtime.soakTelemetry.record(
+    buildMemorySoakRetrievalEvent({
+      input: params.input,
+      result: controlled,
+    }),
+  );
+  return controlled;
 }
 
 export function createMemoryObjectSearchHybridTool(params: {

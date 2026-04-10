@@ -856,6 +856,58 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     );
   });
 
+  it("records soak telemetry for missing attribution and turn summaries", async () => {
+    const record = vi.fn(async () => {});
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      soakTelemetry: {
+        rootDir: ".local/memory-soak-test",
+        record,
+      },
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => null),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/example.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: "My favorite color is orange.",
+        timestamp: Date.parse("2026-04-10T12:00:00Z"),
+      },
+    });
+
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "capture",
+        action: "candidate_submission_failed",
+        source: "ordinary_turn_auto_capture",
+        reason: "missing_attribution",
+        family: "preference",
+        scope: "shared",
+      }),
+    );
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "capture",
+        action: "turn_summary",
+        source: "ordinary_turn_auto_capture",
+        candidatePlanCount: 1,
+        acceptedCaptureCount: 0,
+        deferredOverflowCount: 0,
+      }),
+    );
+  });
+
   it("skips disallowed agents and duplicate keys", async () => {
     const submitLearning = vi.fn();
     const handler = createOrdinaryTurnAutoCaptureHandler({

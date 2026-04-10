@@ -1092,6 +1092,7 @@
     "memory:native:sync": "node --import tsx scripts/memory-native-sync.ts",
     "memory:proof": "node --import tsx scripts/memory-proof-runner.ts",
     "memory:rollout-eval": "node --import tsx scripts/memory-rollout-eval.ts",
+    "memory:soak:report": "node --import tsx scripts/memory-soak-report.ts",
     "moltbot:rpc": "node scripts/run-node.mjs agent --mode rpc --json",
     "openclaw": "node scripts/run-node.mjs",
     "openclaw:rpc": "node scripts/run-node.mjs agent --mode rpc --json",

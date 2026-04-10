@@ -53,12 +53,17 @@ function createAcceptedSearchResult() {
 }
 
 function createRuntime() {
+  const record = vi.fn(async () => {});
   return {
     memoryObjectQuery: {
       get: vi.fn(),
       list: vi.fn(),
       searchBasic: vi.fn(),
       searchHybrid: vi.fn(async () => createAcceptedSearchResult()),
+    },
+    soakTelemetry: {
+      rootDir: ".local/memory-soak-test",
+      record,
     },
   } as unknown as MemoryMiddlewareRuntime;
 }
@@ -120,6 +125,14 @@ describe("memory object hybrid search tool", () => {
     expect(maybeApplyWorkflowToolGotchaSemanticFallback).not.toHaveBeenCalled();
     expect(maybeApplyApiWorkaroundSemanticFallback).not.toHaveBeenCalled();
     expect(result.details).toEqual(createAcceptedSearchResult());
+    expect(runtime.soakTelemetry.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "retrieval",
+        action: "hybrid_search",
+        source: "memory_object_search_hybrid",
+        recordCount: 1,
+      }),
+    );
   });
 
   it("surfaces empty ranked results without writes", async () => {

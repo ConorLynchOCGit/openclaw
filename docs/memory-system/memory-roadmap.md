@@ -793,10 +793,10 @@ Current tranche status:
   - generic retrieval/ranking contracts now exist in code
   - hybrid retrieval control decisions now consume canonical retrieval plans
     first
-  - learned-guidance planning now prefers canonical workflow-guidance records
-    and canonical retrieval plans first
-  - critical tool-submission and self-improving capture seams now emit
-    canonical candidates first
+- learned-guidance planning now prefers canonical workflow-guidance records
+  and canonical retrieval plans first
+- critical tool-submission and self-improving capture seams now emit
+  canonical candidates first
 - Step 6 is now in progress:
   - hybrid retrieval execution now reads canonical metadata first under the
     canonical control surface
@@ -810,14 +810,6 @@ Current tranche status:
   - correction promotion in tool submission is now more fully delegated to the
     shared correction engine
   - canonical write-stage routing now supports honest multi-lane matching
-- The next required retirement work after that is:
-  - finish the remaining family-specific correction and supersession wrappers
-    in `candidate-submit.ts`
-  - continue collapsing detector families in
-    `memory-ingestion-resolver.ts`
-  - contain or generalize the hard-coded supported workflow lesson catalog in
-    `workflow-improvement-semantic.ts`
-  - keep shrinking `memory-family-policy.ts` until it is compatibility-only
 
 Success for this phase should mean:
 
@@ -829,29 +821,103 @@ Success for this phase should mean:
 - future scaling work no longer depends on adding another family-specific
   branch for each new memory behavior
 
-## Phase P — cross-domain family expansion
+## Current soak posture
 
-Cross-domain family expansion resumes only after:
+Memory is now in a soak period for the next few days.
 
-1. substrate control-plane flattening
-2. substrate authority / scale cleanup
-3. reduced-profile self-improving capture
-4. learned-guidance advisory planning
-5. bounded rollout proof and reevaluation for those new functional seams
-6. bounded promotion follow-through, automated eval, and production-canary
-   evidence review
-7. multi-memory per-turn capture / retrieval proof
-8. mandatory rigid-surface replacement / canonicalization
+During soak:
 
-Recommended first tranche:
+- do not treat the remaining roadmap items as scheduled next phases
+- keep the currently landed memory surfaces stable unless a real defect or
+  safety issue appears
+- collect enough operational evidence to decide which future memory features
+  are worth building next
+
+The goal of soak is not just “wait and see.” The goal is to answer:
+
+- which landed memory behaviors are actually getting exercised
+- where users are hitting current bounds
+- whether deferred overflow is helping enough or still too conservative
+- whether retrieval/application quality is now blocked by missing features or
+  by rollout/proof gaps
+- which future roadmap items would buy the most practical value for the next
+  sprint
+
+Minimum evidence to record during soak:
+
+- long-prompt capture behavior:
+  - candidate-plan counts
+  - posture distribution (`default` vs `bulk`)
+  - immediate acceptance counts
+  - deferred overflow counts
+  - per-family immediate distribution
+- repeated-prompt follow-through:
+  - deferred candidate promotion counts
+  - repeated-prompt duplicate suppression rates
+  - cases where deferred overflow still appears to starve
+- retrieval/application evidence:
+  - approved vs candidate memory usage during real prompts
+  - cases where a useful memory existed but did not get surfaced or applied
+  - cases where the wrong memory family/shape dominated
+- operator evidence:
+  - review burden created by the current candidate flow
+  - false-positive / low-value capture examples
+  - any places where logs, reports, or current metadata are insufficient to
+    explain behavior
+- performance evidence:
+  - request-path latency or obvious hot spots in capture-heavy turns
+  - any DB/query or memory-tool cost patterns that change what expansion work
+    should come next
+
+Current soak evidence surfaces:
+
+- durable lifecycle events under `.local/memory-soak/events/`
+- latest plus timestamped summary artifacts under `.local/memory-soak/`
+- `pnpm memory:soak:report` for direct soak inspection
+- `pnpm memory:native:sync --format summary` for the combined projection plus
+  soak operator view
+
+## Unscheduled potential actions
+
+All remaining memory roadmap work now lives here until soak evidence justifies
+a new scheduled tranche.
+
+These are potential actions, not phase-ordered commitments.
+
+### Highest-priority post-soak candidate
+
+If the soak period is clean enough to move forward after any required bug
+fixes, the first candidate to schedule should be:
+
+- a separate corpus-ingestion-and-compilation capability for larger sources
+  such as research papers, articles, repos, datasets, and curated source packs
+
+Reason:
+
+- the current conversational memory path is optimized for small durable
+  memories
+- it is not the right ingestion model for bulk source facts, compiled research
+  knowledge, or compaction-time harvesting of many useful insights
+- this should be treated as a distinct capability class that can integrate
+  with canonical DB memory later, not as “raise the caps” on one-sentence
+  memory capture
+
+### Canonicalization and retirement follow-through
+
+- finish the remaining family-specific correction and supersession wrappers in
+  `candidate-submit.ts`
+- continue collapsing detector families in
+  `memory-ingestion-resolver.ts`
+- contain or generalize the hard-coded supported workflow lesson catalog in
+  `workflow-improvement-semantic.ts`
+- keep shrinking `memory-family-policy.ts` until it is compatibility-only
+
+### Cross-domain expansion candidates
 
 - decision + rationale
 - observation / result / finding
 - terminology / ontology / canonical definition
 - entity profile
-
-Recommended second tranche:
-
 - risk / hazard / safety constraint
 - metric / baseline / threshold
 - hypothesis / open question
@@ -859,10 +925,7 @@ Recommended second tranche:
 - source trust / authority ranking
 - exception / edge-case rule
 
-## Should-fix-soon work
-
-These items matter but do not necessarily need to block the first post-v3
-substrate slice:
+### Substrate and control-plane cleanup candidates
 
 - improve unit seams around retrieval intent, application selection, and
   semantic fallback
@@ -870,13 +933,68 @@ substrate slice:
   read surfaces
 - replace remaining stringly control-flow with closed policy enums or adapter
   registration
-
-## Could-fix-later work
-
 - more aggressive normalization of retrieval SQL generation once the
   control-plane rewrite is stronger
 - better artifact / read-model convergence if procedure and memory-object
   storage still feel too separate after the staged redesign
+
+### Capture and overflow follow-through candidates
+
+- broader deferred-overflow promotion policy beyond the current bounded
+  confirmation-style follow-through
+- richer operator/debug visibility for overflow and promotion outcomes
+- stronger explicit ingest posture for intentional multi-memory packets if
+  soak evidence shows the current bulk posture is still too conservative
+- any later schema change only if soak evidence proves the current
+  metadata-first approach is a real blocker
+
+### Native projection and orchestration follow-through candidates
+
+- truthful alias expansion for project records that still do not map to a real
+  workspace folder
+- broader specialized-agent coverage only if later real workspaces justify it
+- richer bounded projection orchestration and observability if current
+  stale-aware host control proves insufficient
+
+### Scoped-memory and browseability candidates
+
+- metadata-first agent-specific capture and recall with specificity-aware
+  retrieval across shared, project, and agent applicability
+- explicit agent+project specificity handling before any deeper schema change
+- a more concise startup digest plus deeper generated topical and scoped
+  projection views where they materially improve operator/agent browsing
+- stronger scope-conflict and scope-audit visibility so shared vs project vs
+  agent decisions are explainable during soak and later rollout
+- fuller agent-scoped memory should be scheduled alongside the upcoming
+  multiagent architecture, delegation, and workflow tranche instead of being
+  pulled forward independently
+
+### Compiled knowledge-product candidates
+
+- a wiki-like compiled knowledge product built from canonical approved memory
+  plus approved raw sources, kept explicitly non-canonical
+- project- or topic-local generated briefs/pages for research-heavy workflows
+- linting passes for contradiction, stale claims, orphan topic pages, and
+  missing source linkage on those compiled outputs
+- this depends on the separate corpus-ingestion-and-compilation capability
+  above; it is not an extension of the current conversational memory capture
+  path
+
+### Relation and temporal modeling candidates
+
+- typed relation or edge modeling inside the current Postgres substrate before
+  considering any standalone graph system
+- temporal lineage for changing project facts, workflow supersession, and
+  contradiction handling
+- stronger entity-key / subject-key normalization if soak evidence shows
+  repeated alias or multi-hop retrieval failures
+
+### Future roadmap expansion ideas
+
+- new memory ideas that come in during or after soak should be added here
+  first
+- do not force them into a fake next phase before the repo has decided they
+  are actually next
 
 ## Roadmap guardrails
 

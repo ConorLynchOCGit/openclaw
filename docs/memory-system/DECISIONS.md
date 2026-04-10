@@ -59,6 +59,19 @@ Current accepted framing:
 - bulk posture may inspect a larger bounded candidate pool and allow a larger
   bounded immediate set, but it still may not become an unbounded write path
 
+## 2026-04 — memory is now in a soak period and future work is unscheduled
+
+Current accepted framing:
+
+- the repo should spend the next few days observing the currently landed memory
+  system before scheduling another committed feature tranche
+- remaining roadmap items should live in one unscheduled potential-actions
+  block rather than pretending to be the next ordered phase
+- new memory ideas that appear during soak should enter that same unscheduled
+  block first
+- the next scheduled memory tranche should be chosen from soak evidence, not
+  from roadmap inertia
+
 ## 2026-04 — the current family-heavy memory architecture is transitional
 
 Current accepted framing:
@@ -200,6 +213,19 @@ Current accepted framing:
 - the scheduled refresh should run before daily operator-review prep
 - operators should still have one clear manual sync command with explicit
   write/dry-run posture, scope selection, and summary output
+
+## 2026-04 — soak telemetry extends existing memory audit surfaces
+
+Current accepted framing:
+
+- soak observability should attach to real memory lifecycle points rather than
+  creating a second observability subsystem
+- durable soak telemetry should live in repo-local bounded artifacts under
+  `.local/memory-soak/`
+- the existing native sync and operator-report surfaces should own the human
+  summary and concise daily-brief exposure
+- retrieval/application quality can use truthful proxies where certainty is not
+  available, but those blind spots must stay documented explicitly
 
 ## 2026-04 — project-local projections target real project index docs first
 

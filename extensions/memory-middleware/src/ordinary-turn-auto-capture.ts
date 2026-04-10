@@ -36,6 +36,11 @@ import {
   toOrdinaryTurnWorkflowImprovementMatch,
 } from "./memory-ingestion-types.js";
 import {
+  deriveCorpusDemandSignalsFromPrompt,
+  type MemorySoakTelemetryPort,
+  MEMORY_SOAK_TELEMETRY_SCHEMA_VERSION,
+} from "./memory-soak-telemetry.js";
+import {
   type ProjectFactLifecycleInspection,
   inspectProjectFactLifecycle,
   isExpiredPendingProjectFactCandidate,
@@ -878,6 +883,49 @@ function normalizeText(value: string): string {
 
 function normalizeLower(value: string): string {
   return normalizeText(value).toLowerCase();
+}
+
+function resolveTelemetryFamilyFromCaptureClass(
+  captureClass: string,
+): OrdinaryTurnAutoCaptureFamily | "project_rule" | "unmet_need" {
+  if (captureClass === "project_rule_guidance") {
+    return "project_rule";
+  }
+  if (captureClass === "unmet_need_recommendation") {
+    return "unmet_need";
+  }
+  if (captureClass.includes("project_fact")) {
+    return "project_fact";
+  }
+  if (captureClass.includes("recurring_procedure")) {
+    return "recurring_procedure";
+  }
+  if (captureClass === "explicit_requirement" || captureClass === "requirement_correction") {
+    return "response_style";
+  }
+  if (captureClass.startsWith("workflow_")) {
+    return "workflow_improvement";
+  }
+  return "preference";
+}
+
+function resolveTelemetryScopeFromMatch(params: {
+  projectScope?: string;
+  agentExternalKey?: string;
+}): "shared" | "project" | "agent" | "agent_project" {
+  const agentKey = params.agentExternalKey?.trim().toLowerCase();
+  const projectScoped = Boolean(params.projectScope?.trim());
+  const agentScoped = Boolean(agentKey && agentKey !== "main" && agentKey !== "chief");
+  if (projectScoped && agentScoped) {
+    return "agent_project";
+  }
+  if (projectScoped) {
+    return "project";
+  }
+  if (agentScoped) {
+    return "agent";
+  }
+  return "shared";
 }
 
 function stripTranscriptTimestampPrefix(value: string): string {
@@ -3376,6 +3424,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
   cfg?: OpenClawConfig;
   logger: PluginLogger;
   candidateIngress: CandidateIngressPort;
+  soakTelemetry?: MemorySoakTelemetryPort;
   deps?: Partial<OrdinaryTurnAutoCaptureHandlerDeps>;
 }): (update: SessionTranscriptUpdateLike) => Promise<void> {
   const autoCapture = params.config.autoCapture ?? DEFAULT_MEMORY_MIDDLEWARE_AUTO_CAPTURE_CONFIG;
@@ -3395,6 +3444,66 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
   };
   const inFlightKeys = new Set<string>();
   const recentKeys = new Map<string, number>();
+
+  function buildCaptureTelemetryContext(input: {
+    captureClass: string;
+    key?: string;
+    subjectKey?: string;
+    projectScope?: string;
+    agentExternalKey: string;
+    submissionMode?: OrdinaryTurnAutoCaptureSubmissionMode;
+    posture?: OrdinaryTurnAutoCapturePosture;
+    rank?: number;
+    candidatePoolSize?: number;
+  }) {
+    return {
+      family: resolveTelemetryFamilyFromCaptureClass(input.captureClass),
+      scope: resolveTelemetryScopeFromMatch({
+        projectScope: input.projectScope,
+        agentExternalKey: input.agentExternalKey,
+      }),
+      captureClass: input.captureClass,
+      ...(input.key ? { key: input.key } : {}),
+      ...(input.subjectKey ? { subjectKey: input.subjectKey } : {}),
+      ...(input.projectScope ? { projectScope: input.projectScope } : {}),
+      ...(input.agentExternalKey ? { agentKey: input.agentExternalKey } : {}),
+      ...(input.submissionMode ? { submissionMode: input.submissionMode } : {}),
+      ...(input.posture ? { posture: input.posture } : {}),
+      ...(typeof input.rank === "number" ? { rank: input.rank } : {}),
+      ...(typeof input.candidatePoolSize === "number"
+        ? { candidatePoolSize: input.candidatePoolSize }
+        : {}),
+    };
+  }
+
+  async function recordCaptureSuppressionTelemetry(input: {
+    action: "candidate_duplicate_suppressed" | "candidate_submission_failed";
+    reason: string;
+    captureClass: string;
+    key?: string;
+    subjectKey?: string;
+    projectScope?: string;
+    agentExternalKey: string;
+    submissionMode?: OrdinaryTurnAutoCaptureSubmissionMode;
+    posture?: OrdinaryTurnAutoCapturePosture;
+    rank?: number;
+    candidatePoolSize?: number;
+  }): Promise<void> {
+    if (!params.soakTelemetry) {
+      return;
+    }
+    await params.soakTelemetry.record({
+      schemaVersion: MEMORY_SOAK_TELEMETRY_SCHEMA_VERSION,
+      recordedAt: new Date().toISOString(),
+      category: "capture",
+      action: input.action,
+      source: "ordinary_turn_auto_capture",
+      ...buildCaptureTelemetryContext(input),
+      accepted: false,
+      status: input.action,
+      reason: input.reason,
+    });
+  }
 
   function markRecent(key: string): void {
     const now = Date.now();
@@ -3453,6 +3562,14 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             subjectKey: decisionParams.decision.subjectKey,
           }),
         );
+        await recordCaptureSuppressionTelemetry({
+          action: "candidate_submission_failed",
+          reason: "missing_attribution",
+          captureClass: "response_style_forget",
+          key: decisionParams.decision.subjectKey,
+          subjectKey: decisionParams.decision.subjectKey,
+          agentExternalKey: decisionParams.agentExternalKey,
+        });
         return true;
       }
       const inspection = await deps.inspectResponseStyleLifecycle({
@@ -3529,6 +3646,18 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           key: match.key,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_submission_failed",
+        reason: "missing_attribution",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       return true;
     }
 
@@ -3588,6 +3717,18 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           memoryObjectId: inspection.matchingApprovedObjectId,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason: "existing_approved_key",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       markRecent(match.key);
       return true;
     }
@@ -3598,6 +3739,18 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           key: match.key,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason: "recent_duplicate",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       return true;
     }
 
@@ -3711,6 +3864,18 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           candidateId: inspection.pendingCandidate.id,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason: "pending_candidate_wait_window",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       markRecent(match.key);
       return true;
     }
@@ -3962,6 +4127,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           key: match.key,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_submission_failed",
+        reason: "missing_attribution",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        projectScope: match.projectScope,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       return true;
     }
     const inspection = await deps.inspectProjectFactLifecycle({
@@ -3997,6 +4175,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           memoryObjectId: inspection.matchingApprovedObjectId,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason: "existing_approved_key",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        projectScope: match.projectScope,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       markRecent(match.key);
       return true;
     }
@@ -4007,6 +4198,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           key: match.key,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason: "recent_duplicate",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        projectScope: match.projectScope,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       return true;
     }
 
@@ -4174,6 +4378,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           candidateId: inspection.pendingCandidate.id,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason: "pending_candidate_wait_window",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        projectScope: match.projectScope,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       markRecent(match.key);
       return true;
     }
@@ -4348,6 +4565,18 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           key: match.key,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_submission_failed",
+        reason: "missing_attribution",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       return true;
     }
 
@@ -4378,6 +4607,18 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           procedureId: inspection.matchingValidatedProcedureId,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason: "existing_validated_key",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       markRecent(match.key);
       return true;
     }
@@ -4392,6 +4633,18 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           subjectKey: match.subjectKey,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason: "existing_active_subject",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       markRecent(match.key);
       return true;
     }
@@ -4402,6 +4655,18 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           key: match.key,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason: "recent_duplicate",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       return true;
     }
 
@@ -4577,6 +4842,18 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           candidateId: inspection.pendingCandidate.id,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason: "pending_candidate_wait_window",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       markRecent(match.key);
       return true;
     }
@@ -4722,6 +4999,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           key: match.key,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_submission_failed",
+        reason: "missing_attribution",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        projectScope: match.projectScope,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       return true;
     }
     if (effectiveDecision.lessonFamily === "generalized_workflow_lesson" && attribution.projectId) {
@@ -4923,6 +5213,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           memoryObjectId: inspection.matchingApprovedObjectId,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason: "existing_approved_key",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        projectScope: match.projectScope,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       markRecent(match.key);
       return true;
     }
@@ -4933,6 +5236,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           key: match.key,
         }),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason: "recent_duplicate",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        projectScope: match.projectScope,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       return true;
     }
 
@@ -5220,6 +5536,22 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           },
         ),
       );
+      await recordCaptureSuppressionTelemetry({
+        action: "candidate_duplicate_suppressed",
+        reason:
+          effectiveReviewMode === "hold_for_more_evidence"
+            ? "existing_held_cluster"
+            : "pending_candidate_wait_window",
+        captureClass: match.captureClass,
+        key: match.key,
+        subjectKey: match.subjectKey,
+        projectScope: match.projectScope,
+        agentExternalKey: decisionParams.agentExternalKey,
+        submissionMode: decisionParams.submissionMode,
+        posture: decisionParams.posture,
+        rank: decisionParams.rank,
+        candidatePoolSize: decisionParams.candidatePoolSize,
+      });
       markRecent(match.key);
       return true;
     }
@@ -5641,6 +5973,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
                   reviewState: existing.reviewState,
                 }),
               );
+              await recordCaptureSuppressionTelemetry({
+                action: "candidate_duplicate_suppressed",
+                reason: "existing_key",
+                captureClass: match.captureClass,
+                key: match.key,
+                subjectKey: match.subjectKey,
+                projectScope: match.projectScope,
+                agentExternalKey: paramsForPlan.agentExternalKey,
+                submissionMode,
+                posture,
+                rank,
+                candidatePoolSize,
+              });
               markRecent(match.key);
             }
             return true;
@@ -5652,6 +5997,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
                 key: match.key,
               }),
             );
+            await recordCaptureSuppressionTelemetry({
+              action: "candidate_duplicate_suppressed",
+              reason: "recent_duplicate",
+              captureClass: match.captureClass,
+              key: match.key,
+              subjectKey: match.subjectKey,
+              projectScope: match.projectScope,
+              agentExternalKey: paramsForPlan.agentExternalKey,
+              submissionMode,
+              posture,
+              rank,
+              candidatePoolSize,
+            });
             return true;
           }
 
@@ -5671,6 +6029,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
                 },
               ),
             );
+            await recordCaptureSuppressionTelemetry({
+              action: "candidate_submission_failed",
+              reason: "missing_attribution",
+              captureClass: match.captureClass,
+              key: match.key,
+              subjectKey: match.subjectKey,
+              projectScope: match.projectScope,
+              agentExternalKey: paramsForPlan.agentExternalKey,
+              submissionMode,
+              posture,
+              rank,
+              candidatePoolSize,
+            });
             return true;
           }
           const candidateMetadata =
@@ -5852,6 +6223,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         plan.kind === "capture" &&
         (plan.rankSignals.includes("capture:explicit") || plan.family === "preference"),
     ).length;
+    const demandSignals = deriveCorpusDemandSignalsFromPrompt({
+      text,
+      candidatePlanCount: capturePlans.length,
+      segmentCount: captureSegments.length,
+    });
     const capturePosture = resolveCapturePlanPosture({
       text,
       captureSegments,
@@ -5888,10 +6264,29 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     }
 
     if (
+      rankedPlans.length > 0 ||
+      demandSignals.length > 0 ||
       captureSegments.length > 1 ||
       turnState.acceptedKeys.size > 1 ||
       turnState.deferredKeys.size > 0
     ) {
+      await params.soakTelemetry?.record({
+        schemaVersion: MEMORY_SOAK_TELEMETRY_SCHEMA_VERSION,
+        recordedAt: new Date().toISOString(),
+        category: "capture",
+        action: "turn_summary",
+        source: "ordinary_turn_auto_capture",
+        agentKey: agentExternalKey,
+        sessionKey,
+        posture: capturePosture,
+        segmentCount: captureSegments.length,
+        candidatePlanCount: rankedPlans.length,
+        acceptedCaptureCount: turnState.acceptedKeys.size,
+        deferredOverflowCount: turnState.deferredKeys.size,
+        acceptedCaptureLimit: resolveImmediateCaptureLimit(capturePosture),
+        deferredOverflowLimit: resolveDeferredOverflowLimit(capturePosture),
+        demandSignals,
+      });
       params.logger.info(
         formatLog("memory-middleware ordinary-turn multi-capture summary", {
           posture: capturePosture,
@@ -5903,6 +6298,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           deferredKeys: [...turnState.deferredKeys],
           acceptedCaptureLimit: resolveImmediateCaptureLimit(capturePosture),
           deferredOverflowLimit: resolveDeferredOverflowLimit(capturePosture),
+          demandSignals,
         }),
       );
     }
@@ -5914,6 +6310,7 @@ export function createOrdinaryTurnAutoCaptureController(params: {
   cfg?: OpenClawConfig;
   logger: PluginLogger;
   candidateIngress: CandidateIngressPort;
+  soakTelemetry?: MemorySoakTelemetryPort;
   subscribe: (listener: (update: SessionTranscriptUpdateLike) => void) => () => void;
   deps?: Partial<OrdinaryTurnAutoCaptureHandlerDeps>;
 }): OrdinaryTurnAutoCaptureController {
@@ -5927,6 +6324,7 @@ export function createOrdinaryTurnAutoCaptureController(params: {
     cfg: params.cfg,
     logger: params.logger,
     candidateIngress: params.candidateIngress,
+    soakTelemetry: params.soakTelemetry,
     deps: params.deps,
   });
   const scanRecentTranscripts = async () => {

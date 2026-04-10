@@ -6,6 +6,7 @@ import {
 } from "./memory-learned-guidance-plan.js";
 
 function createRuntime() {
+  const record = vi.fn(async () => {});
   return {
     learnedGuidanceAdvisoryPlanning: {
       plan: vi.fn(async () => ({
@@ -48,6 +49,10 @@ function createRuntime() {
           reasons: ["approved workflow guidance matched the current query"],
         },
       })),
+    },
+    soakTelemetry: {
+      rootDir: ".local/memory-soak-test",
+      record,
     },
   } as unknown as MemoryMiddlewareRuntime;
 }
@@ -95,5 +100,13 @@ describe("memory learned-guidance-plan tool", () => {
         outcomeCode: "guidance_available",
       },
     });
+    expect(runtime.soakTelemetry.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "application",
+        action: "learned_guidance_plan",
+        source: "memory_learned_guidance_plan",
+        retrievedRecordCount: 1,
+      }),
+    );
   });
 });

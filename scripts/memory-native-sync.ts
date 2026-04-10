@@ -3,6 +3,14 @@ import { resolveDefaultAgentId } from "openclaw/plugin-sdk/memory-core";
 import { syncDailyContinuityFile } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
 import type { OpenClawPluginApi, PluginLogger } from "../extensions/memory-middleware/api.js";
 import { createMemoryMiddlewareRuntime } from "../extensions/memory-middleware/runtime-api.js";
+import {
+  buildMemorySoakTelemetrySummary,
+  renderMemorySoakTelemetryDailyBrief,
+  renderMemorySoakTelemetryOperatorSummary,
+  readMemorySoakTelemetryEvents,
+  writeMemorySoakTelemetrySummaryArtifacts,
+  MEMORY_SOAK_TELEMETRY_SCHEMA_VERSION,
+} from "../extensions/memory-middleware/src/memory-soak-telemetry.js";
 import { syncAgentBootstrapProjections } from "../extensions/memory-middleware/src/native-memory-projection-agents.js";
 import {
   buildNativeMemoryProjectionAuditReport,
@@ -148,11 +156,18 @@ async function main() {
   }
 
   const generatedAt = new Date().toISOString();
+  const scopes = [
+    ...(options.syncShared ? ["shared"] : []),
+    ...(options.syncProjects ? ["projects"] : []),
+    ...(options.syncAgents ? ["agents"] : []),
+    ...(options.syncDaily ? ["daily"] : []),
+  ];
   const report: Record<string, unknown> = {
     agentId,
     workspaceDir,
     generatedAt,
     write: options.write,
+    scopes,
   };
 
   let projectProjectionState: Awaited<ReturnType<typeof syncProjectLocalProjections>> | undefined;
@@ -267,8 +282,62 @@ async function main() {
   report.auditSummary = audit.summary;
   report.operatorSummary = renderNativeMemoryProjectionOperatorSummary(audit);
 
+  await runtime.soakTelemetry.record({
+    schemaVersion: MEMORY_SOAK_TELEMETRY_SCHEMA_VERSION,
+    recordedAt: generatedAt,
+    category: "projection",
+    action: "native_sync_projection",
+    source: "memory_native_sync",
+    write: options.write,
+    scopes,
+    changedTargets: audit.summary.changedTargets,
+    totalTargets: audit.summary.totalTargets,
+    selectedEntries: audit.summary.selectedEntries,
+    omittedEntries: audit.summary.omittedEntries,
+    skippedRecords: audit.summary.skippedRecords,
+    unmatchedRecords: audit.summary.unmatchedRecords,
+    recoveredPartialBlocks: audit.summary.recoveredPartialBlocks,
+  });
+
+  await runtime.soakTelemetry.record({
+    schemaVersion: MEMORY_SOAK_TELEMETRY_SCHEMA_VERSION,
+    recordedAt: generatedAt,
+    category: "orchestration",
+    action: "native_sync_run",
+    source: "memory_native_sync",
+    write: options.write,
+    scopes,
+    workspaceDir,
+    ...(options.date ? { date: options.date } : {}),
+    telemetrySummaryIncluded: true,
+  });
+
+  const soakEvents = await readMemorySoakTelemetryEvents({
+    rootDir: runtime.soakTelemetry.rootDir,
+  });
+  const soakSummary = buildMemorySoakTelemetrySummary({
+    events: soakEvents,
+    generatedAt,
+  });
+  const soakArtifacts = await writeMemorySoakTelemetrySummaryArtifacts({
+    rootDir: runtime.soakTelemetry.rootDir,
+    summary: soakSummary,
+  });
+  const soakOperatorSummary = renderMemorySoakTelemetryOperatorSummary(soakSummary);
+  const soakDailyBrief = renderMemorySoakTelemetryDailyBrief(soakSummary);
+
+  report.soakTelemetry = {
+    rootDir: runtime.soakTelemetry.rootDir,
+    summary: soakSummary,
+    operatorSummary: soakOperatorSummary,
+    dailyBrief: soakDailyBrief,
+    artifacts: soakArtifacts,
+  };
+
   if (options.format === "summary") {
-    process.stdout.write(`${String(report.operatorSummary)}\n`);
+    process.stdout.write(
+      `${String(report.operatorSummary)}\n\n${soakOperatorSummary}\n\n## Daily Brief\n\n${soakDailyBrief}\n`,
+    );
     return;
   }
 

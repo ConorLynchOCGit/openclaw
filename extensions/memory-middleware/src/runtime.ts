@@ -46,6 +46,17 @@ import {
 } from "./learned-guidance-advisory-planning.js";
 import { createMemoryObjectQueryPort, type MemoryObjectQueryPort } from "./memory-object-query.js";
 import {
+  observeCandidateIngressPort,
+  observeCandidatePromotionPort,
+  observeCandidateReviewPort,
+  observeCompactionPlanningPort,
+  observeSessionMemoryPort,
+} from "./memory-soak-runtime-observation.js";
+import {
+  createMemorySoakTelemetryPort,
+  type MemorySoakTelemetryPort,
+} from "./memory-soak-telemetry.js";
+import {
   createProactiveExecutionPort,
   type ProactiveExecutionPort,
 } from "./proactive-execution.js";
@@ -108,6 +119,7 @@ import { createToolResultStorePort, type ToolResultStorePort } from "./tool-resu
 
 export type MemoryMiddlewareRuntime = {
   config: MemoryMiddlewareConfig;
+  soakTelemetry: MemorySoakTelemetryPort;
   db: MemoryMiddlewareDb;
   candidateIngress: CandidateIngressPort;
   selfImprovingCandidateCapture: SelfImprovingCandidateCapturePort;
@@ -166,13 +178,29 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
     config: config.database,
     logger: api.logger,
   });
-  const candidateIngress = createCandidateIngressPort({
+  const soakTelemetry = createMemorySoakTelemetryPort({
+    logger: api.logger,
+  });
+  const rawCandidateIngress = createCandidateIngressPort({
     db,
     enabled: automation.submit,
   });
-  const candidateReview = createCandidateReviewPort({
+  const rawCandidateReview = createCandidateReviewPort({
     db,
     enabled: automation.review,
+  });
+  const candidateQuery = createCandidateQueryPort({
+    db,
+    mode: fullCandidateMode,
+  });
+  const candidateIngress = observeCandidateIngressPort({
+    port: rawCandidateIngress,
+    telemetry: soakTelemetry,
+  });
+  const candidateReview = observeCandidateReviewPort({
+    port: rawCandidateReview,
+    candidateQuery,
+    telemetry: soakTelemetry,
   });
   const driftCheckExecution = createDriftCheckExecutionPort({
     db,
@@ -185,6 +213,10 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
   const proactivePlanning = createProactivePlanningPort({
     db,
     mode: proactivePlanningMode,
+  });
+  const rawCompactionPlanning = createCompactionPlanningPort({
+    db,
+    mode: fullCandidateMode,
   });
   const consolidationPlanning = createConsolidationPlanningPort({
     db,
@@ -216,9 +248,32 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
     db,
     mode: config.memoryObjectQuery.mode,
   });
+  const rawCandidatePromotion = createCandidatePromotionPort({
+    db,
+    memoryPromotionEnabled: automation.memoryPromotion,
+    procedureDraftPromotionEnabled: automation.procedureDraftPromotion,
+  });
+  const candidatePromotion = observeCandidatePromotionPort({
+    port: rawCandidatePromotion,
+    candidateQuery,
+    telemetry: soakTelemetry,
+  });
+  const rawSessionMemory = createSessionMemoryPort({
+    db,
+    mode: fullCandidateMode,
+  });
+  const sessionMemory = observeSessionMemoryPort({
+    port: rawSessionMemory,
+    telemetry: soakTelemetry,
+  });
+  const compactionPlanning = observeCompactionPlanningPort({
+    port: rawCompactionPlanning,
+    telemetry: soakTelemetry,
+  });
 
   return {
     config,
+    soakTelemetry,
     db,
     candidateIngress,
     selfImprovingCandidateCapture: createSelfImprovingCandidateCapturePort({
@@ -234,27 +289,18 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
       allowedCaptureClasses: config.learnedGuidanceAdvisoryPlanning?.allowedCaptureClasses,
       defaultMaxSuggestions: config.learnedGuidanceAdvisoryPlanning?.defaultMaxSuggestions,
     }),
-    candidateQuery: createCandidateQueryPort({
-      db,
-      mode: fullCandidateMode,
-    }),
+    candidateQuery,
     memoryObjectQuery,
     toolResultStore: createToolResultStorePort({
       db,
       mode: fullCandidateMode,
     }),
-    sessionMemory: createSessionMemoryPort({
-      db,
-      mode: fullCandidateMode,
-    }),
+    sessionMemory,
     sessionMemoryCompaction: createSessionMemoryCompactionPort({
       db,
       mode: fullCandidateMode,
     }),
-    compactionPlanning: createCompactionPlanningPort({
-      db,
-      mode: fullCandidateMode,
-    }),
+    compactionPlanning,
     fullCompactionFallback: createFullCompactionFallbackPort({
       db,
       mode: fullCandidateMode,
@@ -282,11 +328,7 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
       db,
       enabled: automation.memoryPromotion || automation.procedureDraftPromotion,
     }),
-    candidatePromotion: createCandidatePromotionPort({
-      db,
-      memoryPromotionEnabled: automation.memoryPromotion,
-      procedureDraftPromotionEnabled: automation.procedureDraftPromotion,
-    }),
+    candidatePromotion,
     procedureValidationPlan: createProcedureValidationPlanPort({
       db,
       enabled: automation.procedureValidation,

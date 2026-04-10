@@ -187,6 +187,8 @@ async function startPostgresValidationEnvironment(): Promise<DbEnvironment> {
     "--rm",
     "--name",
     containerName,
+    "--tmpfs",
+    "/var/lib/postgresql/data:rw",
     "-e",
     "POSTGRES_HOST_AUTH_METHOD=trust",
     "-e",
@@ -650,6 +652,10 @@ function createRuntime(params: {
           ? { runnerOwnerId: params.backgroundJobRunnerOwnerId }
           : {}),
       },
+    },
+    soakTelemetry: {
+      rootDir: ".local/memory-soak-test",
+      record: async () => {},
     },
     db,
     candidateIngress,

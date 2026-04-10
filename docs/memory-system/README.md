@@ -47,6 +47,7 @@ Then consult as needed:
 - `specs/memory-projection-destinations.md`
 - `specs/projection-compiler-and-file-ownership.md`
 - `specs/per-agent-and-per-project-memory-integration.md`
+- `specs/soak-telemetry-model.md`
 - `specs/native-memory-governance-and-rollout.md`
 - `specs/user-repair-and-memory-control.md`
 - `specs/response-style-profile.md`
@@ -226,6 +227,62 @@ The next ordinary-turn capture expansion tranche is now also landed locally:
 - explicit multi-preference and multi-fact packets can enter a stronger bulk
   posture without making ordinary chat unsafe
 - no schema change was needed for this capture-expansion tranche
+
+The current execution posture after that tranche is a soak period:
+
+- keep the landed memory system stable for the next few days
+- record enough evidence about capture, overflow, retrieval, operator burden,
+  and performance to decide what future memory work is actually worth doing
+- keep the remaining roadmap items in an unscheduled potential-actions block
+  instead of pretending they are already committed next phases
+
+The current soak-observability follow-through is now also landed locally:
+
+- lifecycle telemetry writes bounded event history under
+  `.local/memory-soak/events/`
+- summary artifacts write latest plus timestamped history under
+  `.local/memory-soak/`
+- the native sync operator surface now includes both projection and soak
+  summaries plus a concise daily-brief line
+- the manual soak inspection path is `pnpm memory:soak:report`
+- retrieval/application quality remains partly proxy-based by design, but it is
+  now durable and reviewable instead of ephemeral log-only evidence
+
+## Soak observability surfaces
+
+Primary operator paths:
+
+- `pnpm memory:native:sync --format summary`
+- `pnpm memory:soak:report`
+
+Primary durable artifacts:
+
+- `.local/memory-soak/events/YYYY-MM-DD.jsonl`
+- `.local/memory-soak/latest-summary.json`
+- `.local/memory-soak/latest-summary.md`
+- `.local/memory-soak/history/summary-<timestamp>.json`
+- `.local/memory-soak/history/summary-<timestamp>.md`
+
+What the soak can now answer directly or through strong proxies:
+
+- how often long-prompt capture, bulk posture, and deferred overflow are used
+- whether lower-ranked deferred candidates later advance
+- what memory families and scopes dominated retrieval
+- when learned-guidance retrieval produced filtered-by-scope or no-guidance
+  outcomes
+- how much candidate review and promotion work is accumulating
+- whether relation/alias/contradiction trouble is recurring enough to justify
+  later relation-aware work
+- whether prompt/session/compaction shapes are signaling real demand for a
+  separate corpus-ingestion and compilation capability
+
+Known blind spots remain:
+
+- generic retrieval cannot prove final answer use with certainty outside
+  explicit application seams
+- “missed useful memory” remains a truthful proxy family, not a perfect label
+- corpus-ingestion demand is measured as demand signals, not as a simulated
+  bulk-ingestion success metric
 
 ## Rules of engagement
 

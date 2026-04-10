@@ -4,6 +4,7 @@ import type {
   LearnedGuidanceAdvisoryPlanningInput,
   LearnedGuidanceAdvisoryPlanningResult,
 } from "../learned-guidance-advisory-planning.js";
+import { buildMemorySoakApplicationEvent } from "../memory-soak-telemetry.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   asJsonToolResult,
@@ -56,7 +57,15 @@ export async function planLearnedGuidanceFromTool(params: {
   input: LearnedGuidanceAdvisoryPlanningInput;
   context?: OpenClawPluginToolContext;
 }): Promise<LearnedGuidanceAdvisoryPlanningResult> {
-  return params.runtime.learnedGuidanceAdvisoryPlanning.plan(params.input);
+  const result = await params.runtime.learnedGuidanceAdvisoryPlanning.plan(params.input);
+  await params.runtime.soakTelemetry.record(
+    buildMemorySoakApplicationEvent({
+      query: params.input.query,
+      ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+      result,
+    }),
+  );
+  return result;
 }
 
 export function createMemoryLearnedGuidancePlanTool(params: {
