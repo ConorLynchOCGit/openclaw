@@ -22,6 +22,10 @@ The goal is to keep the right gates at the right time:
 - no repeated expensive gates unless a later code change invalidated them
 - commit and push timing that match the actual proof and closeout flow
 
+Use the concrete landing tiers in
+[Landing Gate Tiers](/help/landing-gate-tiering-proposal) when you want the
+repo's default feature, integration, or production bar.
+
 ## Default phase order
 
 1. Implementation loop
@@ -48,6 +52,9 @@ Use while code is still moving.
 
 This gate is for fast feedback, not landing confidence.
 
+For most bounded slices, the next step up is the feature landing gate rather
+than a full `pnpm test && pnpm build` sweep.
+
 ### Pre-proof gate
 
 Run this once the code is stable enough for real proof.
@@ -60,6 +67,10 @@ Run this once the code is stable enough for real proof.
     work
   - `pnpm check:fast && pnpm check:types` or `pnpm check` for real runtime or
     typed-code changes
+- For the standardized repo-wide tiers, use:
+  - `pnpm gate:feature`
+  - `pnpm gate:integration`
+  - `pnpm gate:production`
 - Run `pnpm build` only if the touched surface can affect build output,
   packaging, lazy-loading or module boundaries, or a published runtime.
 - Treat `pnpm check:fast`, `pnpm check:types`, `pnpm check`, and `pnpm build`
@@ -82,6 +93,13 @@ Isolated proof is optional for:
 - refactors that do not need behavioral proof
 
 The isolated proof should be narrow and slice-shaped.
+
+For non-production runtime proof on the VPS, prefer:
+
+1. `pnpm build:runtime:fast`
+2. `pnpm runtime:proof:fast`
+
+Save the full image-oriented runtime path for production proof and promotion.
 
 ### Pre-production gate
 
@@ -223,10 +241,15 @@ Do not parallelize steps that hide causal order, such as proofing production
 before the pre-proof gate is done.
 Do not overlap expensive repo gates on the same checkout; the repo gate wrapper
 now guards `pnpm check:fast`, `pnpm check:types`, `pnpm check`, and
-`pnpm build` with a shared lock.
+`pnpm build` with a shared lock, and the same lock now covers the fast runtime
+proof helper.
 If you want to inspect running processes before a heavy gate, do that as a
 separate step instead of combining process inspection and gate launch in one
 parallel action.
+
+Use `pnpm task:status` when you want the current checkout's lock holder and
+active heavy-task PID before starting `pnpm test`, `pnpm check:*`, or
+`pnpm build`.
 
 ## Capture evidence once
 
@@ -291,6 +314,9 @@ For Docker-backed proof or rollout:
 - `pnpm check:types`
   - explicit type-check tier
   - currently runs `pnpm tsgo`
+  - targetable local tiers also exist:
+    - `pnpm check:types:core`
+    - `pnpm check:types:plugin-sdk`
   - required for real runtime or typed-code changes
 - `pnpm check`
   - full repo check

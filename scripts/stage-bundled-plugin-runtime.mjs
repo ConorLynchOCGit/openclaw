@@ -1,7 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  hashInputs,
+  readBuildStamp,
+  resolveBuildStampPath,
+  writeBuildStamp,
+} from "./lib/build-fingerprint.mjs";
 import { removePathIfExists } from "./runtime-postbuild-shared.mjs";
+
+const OVERLAY_STAMP = ".openclaw-runtime-overlay-stamp.json";
 
 function symlinkType() {
   return process.platform === "win32" ? "junction" : "dir";
@@ -116,6 +124,19 @@ function linkPluginNodeModules(params) {
   ensureSymlink(params.sourcePluginNodeModulesDir, runtimeNodeModulesDir, symlinkType());
 }
 
+function createPluginRuntimeOverlayFingerprint(repoRoot, distPluginDir) {
+  const relativePluginDir = path.relative(repoRoot, distPluginDir);
+  return hashInputs(repoRoot, [relativePluginDir], {
+    ignorePath(absolutePath, relativePath) {
+      const baseName = path.basename(absolutePath);
+      if (baseName === "node_modules" || baseName === OVERLAY_STAMP) {
+        return true;
+      }
+      return relativePath.endsWith("/.openclaw-runtime-deps-stamp.json");
+    },
+  });
+}
+
 export function stageBundledPluginRuntime(params = {}) {
   const repoRoot = params.cwd ?? params.repoRoot ?? process.cwd();
   const distRoot = path.join(repoRoot, "dist");
@@ -128,22 +149,59 @@ export function stageBundledPluginRuntime(params = {}) {
     return;
   }
 
-  removePathIfExists(runtimeRoot);
   fs.mkdirSync(runtimeExtensionsRoot, { recursive: true });
+  const livePluginNames = new Set();
 
   for (const dirent of fs.readdirSync(distExtensionsRoot, { withFileTypes: true })) {
     if (!dirent.isDirectory()) {
       continue;
     }
+    livePluginNames.add(dirent.name);
     const distPluginDir = path.join(distExtensionsRoot, dirent.name);
     const runtimePluginDir = path.join(runtimeExtensionsRoot, dirent.name);
     const distPluginNodeModulesDir = path.join(distPluginDir, "node_modules");
+    const overlayFingerprint = createPluginRuntimeOverlayFingerprint(repoRoot, distPluginDir);
+    const stampPath = resolveBuildStampPath(repoRoot, "runtime-overlay", `${dirent.name}.json`);
+    const existingStamp = readBuildStamp(stampPath);
 
-    stagePluginRuntimeOverlay(distPluginDir, runtimePluginDir);
+    if (
+      existingStamp?.fingerprint !== overlayFingerprint ||
+      !fs.existsSync(runtimePluginDir) ||
+      !fs.existsSync(path.join(runtimePluginDir, "index.js"))
+    ) {
+      removePathIfExists(runtimePluginDir);
+      stagePluginRuntimeOverlay(distPluginDir, runtimePluginDir);
+      writeBuildStamp(stampPath, {
+        fingerprint: overlayFingerprint,
+        generatedAt: new Date().toISOString(),
+      });
+    }
     linkPluginNodeModules({
       runtimePluginDir,
       sourcePluginNodeModulesDir: distPluginNodeModulesDir,
     });
+  }
+
+  for (const dirent of fs.readdirSync(runtimeExtensionsRoot, { withFileTypes: true })) {
+    if (!dirent.isDirectory()) {
+      continue;
+    }
+    if (!livePluginNames.has(dirent.name)) {
+      removePathIfExists(path.join(runtimeExtensionsRoot, dirent.name));
+    }
+  }
+
+  const stampDir = resolveBuildStampPath(repoRoot, "runtime-overlay");
+  if (fs.existsSync(stampDir)) {
+    for (const dirent of fs.readdirSync(stampDir, { withFileTypes: true })) {
+      if (!dirent.isFile() || !dirent.name.endsWith(".json")) {
+        continue;
+      }
+      const pluginId = dirent.name.replace(/\.json$/u, "");
+      if (!livePluginNames.has(pluginId)) {
+        removePathIfExists(path.join(stampDir, dirent.name));
+      }
+    }
   }
 }
 

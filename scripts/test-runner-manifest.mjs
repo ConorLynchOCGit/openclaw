@@ -1,3 +1,4 @@
+import { loadLocalTimingHistory, mergeTimingManifest } from "./test-planner/timing-history.mjs";
 import { normalizeTrackedRepoPath, tryReadJsonFile } from "./test-report-utils.mjs";
 
 export const behaviorManifestPath = "test/fixtures/test-parallel.behavior.json";
@@ -137,15 +138,24 @@ const loadTimingManifest = (manifestPath, fallbackManifest) => {
 };
 
 export function loadUnitTimingManifest() {
-  return loadTimingManifest(unitTimingManifestPath, defaultTimingManifest);
+  return mergeTimingManifest(
+    loadTimingManifest(unitTimingManifestPath, defaultTimingManifest),
+    loadLocalTimingHistory("vitest.unit.config.ts"),
+  );
 }
 
 export function loadChannelTimingManifest() {
-  return loadTimingManifest(channelTimingManifestPath, defaultChannelTimingManifest);
+  return mergeTimingManifest(
+    loadTimingManifest(channelTimingManifestPath, defaultChannelTimingManifest),
+    loadLocalTimingHistory("vitest.channels.config.ts"),
+  );
 }
 
 export function loadExtensionTimingManifest() {
-  return loadTimingManifest(extensionTimingManifestPath, defaultExtensionTimingManifest);
+  return mergeTimingManifest(
+    loadTimingManifest(extensionTimingManifestPath, defaultExtensionTimingManifest),
+    loadLocalTimingHistory("vitest.extensions.config.ts"),
+  );
 }
 
 export function loadUnitMemoryHotspotManifest() {

@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/plugin-sdk/**/*", "src/types/**/*", "packages/memory-host-sdk/src/**/*"],
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "packages/**/*.test.ts"]
+}

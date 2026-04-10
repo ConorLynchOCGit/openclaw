@@ -1,3 +1,4 @@
+import { acquireRepoHeavyLock } from "./lib/repo-heavy-task.mjs";
 import {
   createExecutionArtifacts,
   executePlan,
@@ -203,5 +204,17 @@ if (process.env.OPENCLAW_TEST_LIST_LANES === "1" || rawCli.plan) {
   exitWithCleanup(artifacts, 0);
 }
 
-const result = await executePlan(plan, { env: process.env, artifacts });
-process.exit(typeof result === "number" ? result : result.exitCode);
+let releaseLock = null;
+let exitCode = 1;
+try {
+  releaseLock = await acquireRepoHeavyLock("test");
+  const result = await executePlan(plan, { env: process.env, artifacts });
+  exitCode = typeof result === "number" ? result : result.exitCode;
+} catch (error) {
+  console.error(`[test-parallel] ${error instanceof Error ? error.message : String(error)}`);
+  exitWithCleanup(artifacts, 1);
+} finally {
+  await releaseLock?.();
+}
+
+process.exit(exitCode);

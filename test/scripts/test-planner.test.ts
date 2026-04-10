@@ -210,7 +210,7 @@ describe("test planner", () => {
     const env = {
       RUNNER_OS: "Linux",
       OPENCLAW_TEST_HOST_CPU_COUNT: "4",
-      OPENCLAW_TEST_HOST_MEMORY_GIB: "8",
+      OPENCLAW_TEST_HOST_MEMORY_GIB: "7",
       OPENCLAW_TEST_LOAD_AWARE: "0",
     };
     const artifacts = createExecutionArtifacts(env);
@@ -233,11 +233,12 @@ describe("test planner", () => {
     );
 
     expect(plan.fullRepoSafeMode).toBe(true);
-    expect(plan.topLevelParallelEnabled).toBe(false);
+    expect(plan.topLevelParallelEnabled).toBe(true);
+    expect(plan.topLevelParallelLimit).toBe(2);
     expect(plan.keepGatewaySerial).toBe(true);
     expect(sharedUnitBatches.length).toBeGreaterThan(20);
     expect(sharedUnitBatches.every((unit) => unit.maxWorkers === 1)).toBe(true);
-    expect(sharedUnitBatches.every((unit) => (unit.includeFiles?.length ?? 0) <= 24)).toBe(true);
+    expect(sharedUnitBatches.every((unit) => (unit.includeFiles?.length ?? 0) <= 20)).toBe(true);
     artifacts.cleanupTempArtifacts();
   });
 

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { writeGateMetricArtifact } from "../lib/gate-metrics.mjs";
 import {
   getProcessTreeRecords,
   parseCompletedTestFileLines,
@@ -13,6 +14,7 @@ import {
   hasFatalTestRunOutput,
   resolveTestRunExitCode,
 } from "../test-parallel-utils.mjs";
+import { writeObservedTimingHistory } from "./timing-history.mjs";
 import { countExplicitEntryFilters, getExplicitEntryFilters } from "./vitest-args.mjs";
 
 const countUnitEntryFilters = (unit) => {
@@ -24,6 +26,11 @@ const countUnitEntryFilters = (unit) => {
     return unit.includeFiles.length;
   }
   return null;
+};
+
+const resolveVitestConfigFromArgs = (args) => {
+  const configIndex = args.findIndex((arg) => arg === "--config");
+  return configIndex >= 0 ? (args[configIndex + 1] ?? "") : "";
 };
 
 export function resolvePnpmCommandInvocation(options = {}) {
@@ -148,6 +155,80 @@ const printFinalRunSummary = (plan, report, reportArtifactPath) => {
     }
   }
   console.error(`[test-parallel] summary artifact ${reportArtifactPath}`);
+};
+
+const persistObservedTimingsFromResults = (results) => {
+  const byConfig = new Map();
+  for (const result of results) {
+    if (!result.config || !Array.isArray(result.completedFileDurations)) {
+      continue;
+    }
+    const entries = byConfig.get(result.config) ?? [];
+    entries.push(...result.completedFileDurations);
+    byConfig.set(result.config, entries);
+  }
+
+  const persisted = [];
+  for (const [config, entries] of byConfig.entries()) {
+    if (entries.length === 0) {
+      continue;
+    }
+    persisted.push(writeObservedTimingHistory(config, entries));
+  }
+  return persisted;
+};
+
+const buildPlanShape = (plan) => ({
+  selectedUnitCount: Array.isArray(plan.selectedUnits) ? plan.selectedUnits.length : 0,
+  parallelUnitCount: Array.isArray(plan.parallelUnits) ? plan.parallelUnits.length : 0,
+  serialUnitCount: Array.isArray(plan.serialUnits) ? plan.serialUnits.length : 0,
+  serialPrefixUnitCount: Array.isArray(plan.serialPrefixUnits) ? plan.serialPrefixUnits.length : 0,
+  topLevelParallelEnabled: Boolean(plan.topLevelParallelEnabled),
+  topLevelParallelLimit: Number.isFinite(plan.topLevelParallelLimit)
+    ? plan.topLevelParallelLimit
+    : 1,
+  deferredRunConcurrency: plan.deferredRunConcurrency ?? 1,
+  shardCount: plan.shardCount,
+  failurePolicy: plan.failurePolicy,
+  fullRepoSafeMode: Boolean(plan.fullRepoSafeMode),
+  surfaces: [
+    ...new Set(
+      (Array.isArray(plan.selectedUnits) ? plan.selectedUnits : [])
+        .map((unit) => unit?.surface)
+        .filter((surface) => typeof surface === "string" && surface.length > 0),
+    ),
+  ],
+});
+
+const finalizeAndReport = (plan, report, artifacts, startedAtMs) => {
+  const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
+  printFinalRunSummary(plan, report, reportArtifactPath);
+  const persistedTimingHistory = persistObservedTimingsFromResults(report.results ?? []);
+  const finishedAtMs = Date.now();
+  const metric = writeGateMetricArtifact(
+    "test",
+    {
+      startedAt: new Date(startedAtMs).toISOString(),
+      finishedAt: new Date(finishedAtMs).toISOString(),
+      elapsedMs: finishedAtMs - startedAtMs,
+      status: report.exitCode === 0 ? "success" : "failed",
+      runtimeProfile: plan.runtimeCapabilities.runtimeProfileName,
+      runtimeMode: plan.runtimeCapabilities.mode,
+      memoryBand: plan.runtimeCapabilities.memoryBand,
+      loadBand: plan.runtimeCapabilities.loadBand,
+      plan: buildPlanShape(plan),
+      summary: report.summary,
+      results: report.results,
+      tempSummaryArtifactPath: reportArtifactPath,
+      localTimingHistoryPaths: persistedTimingHistory.map((entry) => entry.historyPath),
+    },
+    {
+      latestKey: "test",
+      historyKey: "test",
+    },
+  );
+  console.error(`[test-parallel] durable timing artifact ${metric.latestPath}`);
+  return report;
 };
 
 export function createExecutionArtifacts(env = process.env) {
@@ -341,6 +422,7 @@ const partitionUnitsBySurface = (units, surface) => {
 };
 
 export async function executePlan(plan, options = {}) {
+  const executionStartedAtMs = Date.now();
   const env = options.env ?? process.env;
   const artifacts = options.artifacts ?? createExecutionArtifacts(env);
   const pnpmInvocation = resolvePnpmCommandInvocation({
@@ -524,7 +606,10 @@ export async function executePlan(plan, options = {}) {
       let closeFallbackTimer = null;
       let failureArtifactPath = null;
       let failureTail = "";
+      const config = resolveVitestConfigFromArgs(entryArgs);
+      const completedFileDurations = new Map();
       const memoryFileRecords = [];
+      let completedTimingPendingLine = "";
       let initialTreeSample = null;
       let latestTreeSample = null;
       let peakTreeSample = null;
@@ -613,6 +698,15 @@ export async function executePlan(plan, options = {}) {
               peakTreeSample?.rssKb ?? record.rssKb,
             )} procs=${record.processCount}${record.durationMs ? ` duration=${formatElapsedMs(record.durationMs)}` : ""}`,
           );
+        }
+      };
+      const collectCompletedFileDurations = (text) => {
+        const combined = `${completedTimingPendingLine}${text}`;
+        const lines = combined.split(/\r?\n/u);
+        completedTimingPendingLine = lines.pop() ?? "";
+        const completedFiles = parseCompletedTestFileLines(lines.join("\n"));
+        for (const completedFile of completedFiles) {
+          completedFileDurations.set(completedFile.file, completedFile);
         }
       };
       const logMemoryTraceSummary = () => {
@@ -723,6 +817,7 @@ export async function executePlan(plan, options = {}) {
         });
         resolve({
           unitId: unit.id,
+          config,
           shardLabel,
           classification,
           exitCode: resolvedCode,
@@ -733,6 +828,8 @@ export async function executePlan(plan, options = {}) {
           failureArtifactPath,
           logPath: laneLogPath,
           outputTail: failureTail,
+          peakRssKb: peakTreeSample?.rssKb ?? null,
+          completedFileDurations: [...completedFileDurations.values()],
         });
       };
       try {
@@ -791,6 +888,7 @@ export async function executePlan(plan, options = {}) {
         fatalSeen ||= hasFatalTestRunOutput(`${output}${text}`);
         output = appendCapturedOutput(output, text);
         laneLogStream.write(text);
+        collectCompletedFileDurations(text);
         logMemoryTraceForText(text);
         process.stdout.write(chunk);
       });
@@ -799,6 +897,7 @@ export async function executePlan(plan, options = {}) {
         fatalSeen ||= hasFatalTestRunOutput(`${output}${text}`);
         output = appendCapturedOutput(output, text);
         laneLogStream.write(text);
+        collectCompletedFileDurations(text);
         logMemoryTraceForText(text);
         process.stderr.write(chunk);
       });
@@ -934,9 +1033,7 @@ export async function executePlan(plan, options = {}) {
         plan.passthroughOptionArgs,
       ),
     ]);
-    const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
-    printFinalRunSummary(plan, report, reportArtifactPath);
-    return report;
+    return finalizeAndReport(plan, report, artifacts, executionStartedAtMs);
   }
 
   if (plan.targetedUnits.length > 0) {
@@ -959,9 +1056,7 @@ export async function executePlan(plan, options = {}) {
     results.push(...(await runUnits(plan.parallelUnits, plan.passthroughOptionArgs)));
     if (!shouldCollectAllFailures && results.some((result) => result.exitCode !== 0)) {
       const report = buildFinalRunReport(results);
-      const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
-      printFinalRunSummary(plan, report, reportArtifactPath);
-      return report;
+      return finalizeAndReport(plan, report, artifacts, executionStartedAtMs);
     }
     for (const unit of plan.serialUnits) {
       results.push(
@@ -970,15 +1065,11 @@ export async function executePlan(plan, options = {}) {
       );
       if (!shouldCollectAllFailures && results.some((result) => result.exitCode !== 0)) {
         const report = buildFinalRunReport(results);
-        const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
-        printFinalRunSummary(plan, report, reportArtifactPath);
-        return report;
+        return finalizeAndReport(plan, report, artifacts, executionStartedAtMs);
       }
     }
     const report = buildFinalRunReport(results);
-    const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
-    printFinalRunSummary(plan, report, reportArtifactPath);
-    return report;
+    return finalizeAndReport(plan, report, artifacts, executionStartedAtMs);
   }
 
   if (plan.passthroughRequiresSingleRun && plan.passthroughOptionArgs.length > 0) {
@@ -1089,9 +1180,7 @@ export async function executePlan(plan, options = {}) {
           carriedDeferredResults.some((result) => result.exitCode !== 0)
         ) {
           const report = buildFinalRunReport(results);
-          const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
-          printFinalRunSummary(plan, report, reportArtifactPath);
-          return report;
+          return finalizeAndReport(plan, report, artifacts, executionStartedAtMs);
         }
         deferredCarryPromise = null;
         deferredCarrySurface = null;
@@ -1103,9 +1192,7 @@ export async function executePlan(plan, options = {}) {
         results.push(...deferredResults);
         if (!shouldCollectAllFailures && deferredResults.some((result) => result.exitCode !== 0)) {
           const report = buildFinalRunReport(results);
-          const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
-          printFinalRunSummary(plan, report, reportArtifactPath);
-          return report;
+          return finalizeAndReport(plan, report, artifacts, executionStartedAtMs);
         }
       }
       carriedDeferredPromise = deferredCarryPromise;
@@ -1123,9 +1210,7 @@ export async function executePlan(plan, options = {}) {
         deferredParallelResults.some((result) => result.exitCode !== 0)
       ) {
         const report = buildFinalRunReport(results);
-        const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
-        printFinalRunSummary(plan, report, reportArtifactPath);
-        return report;
+        return finalizeAndReport(plan, report, artifacts, executionStartedAtMs);
       }
     }
     if (carriedDeferredPromise !== null) {
@@ -1136,9 +1221,7 @@ export async function executePlan(plan, options = {}) {
         carriedDeferredResults.some((result) => result.exitCode !== 0)
       ) {
         const report = buildFinalRunReport(results);
-        const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
-        printFinalRunSummary(plan, report, reportArtifactPath);
-        return report;
+        return finalizeAndReport(plan, report, artifacts, executionStartedAtMs);
       }
     }
   } else {
@@ -1146,9 +1229,7 @@ export async function executePlan(plan, options = {}) {
     results.push(...parallelResults);
     if (!shouldCollectAllFailures && parallelResults.some((result) => result.exitCode !== 0)) {
       const report = buildFinalRunReport(results);
-      const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
-      printFinalRunSummary(plan, report, reportArtifactPath);
-      return report;
+      return finalizeAndReport(plan, report, artifacts, executionStartedAtMs);
     }
   }
 
@@ -1159,13 +1240,9 @@ export async function executePlan(plan, options = {}) {
     );
     if (!shouldCollectAllFailures && results.some((result) => result.exitCode !== 0)) {
       const report = buildFinalRunReport(results);
-      const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
-      printFinalRunSummary(plan, report, reportArtifactPath);
-      return report;
+      return finalizeAndReport(plan, report, artifacts, executionStartedAtMs);
     }
   }
   const report = buildFinalRunReport(results);
-  const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
-  printFinalRunSummary(plan, report, reportArtifactPath);
-  return report;
+  return finalizeAndReport(plan, report, artifacts, executionStartedAtMs);
 }

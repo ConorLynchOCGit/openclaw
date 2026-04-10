@@ -456,13 +456,21 @@ const resolveUnitHeavyFileGroups = (context) => {
     "OPENCLAW_TEST_HEAVY_UNIT_LANES",
     runtime.intentProfile === "max"
       ? Math.max(executionBudget.heavyUnitLaneCount, 6)
-      : executionBudget.heavyUnitLaneCount,
+      : context.fullRepoSafeMode
+        ? Math.max(executionBudget.heavyUnitLaneCount, 4)
+        : executionBudget.heavyUnitLaneCount,
   );
-  const heavyUnitMinDurationMs = parseEnvNumber(env, "OPENCLAW_TEST_HEAVY_UNIT_MIN_MS", 1200);
+  const heavyUnitMinDurationMs = parseEnvNumber(
+    env,
+    "OPENCLAW_TEST_HEAVY_UNIT_MIN_MS",
+    context.fullRepoSafeMode ? 700 : 1200,
+  );
   const memoryHeavyUnitFileLimit = parseEnvNumber(
     env,
     "OPENCLAW_TEST_MEMORY_HEAVY_UNIT_FILE_LIMIT",
-    executionBudget.memoryHeavyUnitFileLimit,
+    context.fullRepoSafeMode
+      ? Math.max(executionBudget.memoryHeavyUnitFileLimit, 12)
+      : executionBudget.memoryHeavyUnitFileLimit,
   );
   const memoryHeavyUnitMinDeltaKb = parseEnvNumber(
     env,
@@ -574,20 +582,22 @@ const buildDefaultUnits = (context, request) => {
   const unitFastBatchTargetMs = parseEnvNumber(
     env,
     "OPENCLAW_TEST_UNIT_FAST_BATCH_TARGET_MS",
-    fullRepoSafeMode ? 12_000 : defaultUnitFastBatchTargetMs,
+    fullRepoSafeMode
+      ? Math.max(defaultUnitFastBatchTargetMs, 14_000)
+      : defaultUnitFastBatchTargetMs,
   );
   const unitFastMaxFilesPerBatch = parseEnvNumber(
     env,
     "OPENCLAW_TEST_UNIT_FAST_MAX_FILES_PER_BATCH",
     fullRepoSafeMode
-      ? Math.max(executionBudget.unitFastMaxFilesPerBatch ?? 12, 24)
+      ? Math.max(executionBudget.unitFastMaxFilesPerBatch ?? 12, 20)
       : (executionBudget.unitFastMaxFilesPerBatch ?? 0),
   );
   const unitFastMaxHotspotDeltaKbPerBatch = parseEnvNumber(
     env,
     "OPENCLAW_TEST_UNIT_FAST_MAX_HOTSPOT_DELTA_KB_PER_BATCH",
     fullRepoSafeMode
-      ? Math.max(executionBudget.unitFastMaxHotspotDeltaKbPerBatch ?? 512 * 1024, 512 * 1024)
+      ? Math.min(executionBudget.unitFastMaxHotspotDeltaKbPerBatch ?? 512 * 1024, 384 * 1024)
       : (executionBudget.unitFastMaxHotspotDeltaKbPerBatch ?? 0),
   );
   const defaultChannelsBatchTargetMs = executionBudget.channelsBatchTargetMs;
@@ -1637,11 +1647,21 @@ export function buildExecutionPlan(request, options = {}) {
     : [];
   const serialPrefixUnits = parallelUnits.filter((unit) => unit.serialPhase);
   const deferredParallelUnits = parallelUnits.filter((unit) => !unit.serialPhase);
+  const safeModeTopLevelParallelLimit = context.fullRepoSafeMode
+    ? Math.max(
+        1,
+        parseEnvNumber(
+          env,
+          "OPENCLAW_TEST_SAFE_MODE_TOP_LEVEL_CONCURRENCY",
+          context.runtime.hostMemoryGiB >= 6 && context.runtime.loadBand !== "saturated" ? 2 : 1,
+        ),
+      )
+    : null;
   const topLevelParallelEnabled = context.fullRepoSafeMode
-    ? false
+    ? safeModeTopLevelParallelLimit > 1
     : context.executionBudget.topLevelParallelEnabled;
   const baseTopLevelParallelLimit = context.fullRepoSafeMode
-    ? 1
+    ? safeModeTopLevelParallelLimit
     : context.noIsolateArgs.length > 0
       ? context.executionBudget.topLevelParallelLimitNoIsolate
       : context.executionBudget.topLevelParallelLimitIsolated;

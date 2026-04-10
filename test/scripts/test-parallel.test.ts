@@ -293,7 +293,7 @@ describe("scripts/test-parallel lane planning", () => {
     });
 
     expect(output).toContain("safeMode=constrained-full-repo");
-    expect(output).toContain("topLevelParallel=off");
+    expect(output).toContain("topLevelParallel=2");
     expect(output).toMatch(/unit-fast-batch-\d+ filters=\d+ maxWorkers=1/);
   });
 

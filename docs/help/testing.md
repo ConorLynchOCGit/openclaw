@@ -27,14 +27,22 @@ production proof, commit, push, and closeout, use
 Most days:
 
 - Default local loop: `pnpm check:fast` plus the strongest nearby targeted tests
-- Use the smallest honest landing gate for the touched surface rather than
-  defaulting every push to `pnpm build && pnpm check && pnpm test`
+- Use the smallest honest landing gate for the touched surface:
+  - `pnpm gate:feature` for most bounded slices
+  - `pnpm gate:integration` when the change crosses multiple owned surfaces
+  - `pnpm gate:production` only when you need the full repo landing bar
+- Use `pnpm build:runtime:fast` plus `pnpm runtime:proof:fast` for non-production
+  runtime proof instead of defaulting every feature loop to the full image-based
+  path
 - Faster local full-suite run on a roomy machine: `pnpm test:max`
 
 Validation tiers:
 
 - `pnpm check:fast`: cheap repo hygiene + lint checks
 - `pnpm check:types`: explicit TypeScript type-check tier (`pnpm tsgo`)
+- Targetable type-check tiers are also available for narrower local loops:
+  - `pnpm check:types:core`
+  - `pnpm check:types:plugin-sdk`
 - `pnpm check`: full repo check; reuses a green `check:fast` result on the
   same unchanged tree instead of rerunning it
 
@@ -42,9 +50,26 @@ Gate wrapper notes:
 
 - `pnpm check:fast`, `pnpm check:types`, `pnpm check`, and `pnpm build` now
   use a repo-local gate wrapper with a shared lock.
+- `pnpm test` now uses that same shared repo-heavy lock through the planner
+  wrapper.
 - Do not start those commands in parallel on the same checkout.
 - `pnpm build` now prints phase timestamps for quieter stages, including
   `build:plugin-sdk:dts`.
+- `pnpm build:runtime:fast` is the runtime-oriented fast build path for feature
+  proof. It keeps the full `pnpm build` bar intact.
+- `pnpm runtime:proof:fast` runs a non-production proof gateway from the repo's
+  built runtime output, waits for `/readyz`, checks a shallow probe, and writes
+  durable timings.
+- `build:plugin-sdk:dts` now skips declaration emit when its true SDK inputs are
+  unchanged, and `runtime-postbuild` now prints subphase timings for the slower
+  overlay work.
+- Heavy gates now write durable timing artifacts under:
+  - `.local/gate-metrics/latest/*.json`
+  - `.local/gate-metrics/history/*.json`
+- `pnpm test` also writes local timing history under:
+  - `.local/test-runner-history/*.json`
+- Use `pnpm task:status` to see whether this checkout already has a running
+  heavy `test` / `check` / `build` task and which PID is holding the lock.
 - If you want to inspect running processes first, do that as a separate step
   before starting the next expensive gate.
 
@@ -95,8 +120,13 @@ Think of the suites as “increasing realism” (and increasing flakiness/cost):
   - No real keys required
   - Should be fast and stable
 - Scheduler note:
-  - `pnpm test` now keeps a small checked-in behavioral manifest for true pool/isolation overrides and a separate timing snapshot for the slowest unit files.
-  - Extension-only local runs now also use a checked-in extensions timing snapshot plus a slightly coarser shared batch target on high-memory hosts, so the shared extensions lane avoids spawning an extra batch when two measured shared runs are enough.
+- `pnpm test` now keeps a small checked-in behavioral manifest for true pool/isolation overrides and a separate timing snapshot for the slowest unit files.
+- On constrained local hosts, `pnpm test` now also records per-file timing
+  history and uses it to rebalance the next safe-mode plan instead of relying
+  only on the checked-in manifests.
+- Constrained full-repo safe mode now allows bounded top-level overlap on hosts
+  with enough headroom, while keeping each Vitest run at `maxWorkers=1`.
+- Extension-only local runs now also use a checked-in extensions timing snapshot plus a slightly coarser shared batch target on high-memory hosts, so the shared extensions lane avoids spawning an extra batch when two measured shared runs are enough.
   - High-memory local extension shared batches also run with a slightly higher worker cap than before, which shortened the two remaining shared extension batches without changing the isolated extension lanes.
   - High-memory local channel runs now reuse the checked-in channel timing snapshot to split the shared channels lane into a few measured batches instead of one long shared worker.
   - High-memory local channel shared batches also run with a slightly lower worker cap than shared unit batches, which helped targeted channel reruns avoid CPU oversubscription once isolated channel lanes are already in flight.
@@ -109,7 +139,9 @@ Think of the suites as “increasing realism” (and increasing flakiness/cost):
   - CLI startup benchmarking now has distinct saved outputs: `pnpm test:startup:bench:smoke` writes the targeted smoke artifact at `.artifacts/cli-startup-bench-smoke.json`, `pnpm test:startup:bench:save` writes the full-suite artifact at `.artifacts/cli-startup-bench-all.json` with `runs=5` and `warmup=1`, and `pnpm test:startup:bench:update` refreshes the checked-in fixture at `test/fixtures/cli-startup-bench.json` with `runs=5` and `warmup=1`.
   - For surface-only local runs, unit, extension, and channel shared lanes can overlap their isolated hotspots instead of waiting behind one serial prefix.
   - For multi-surface local runs, the wrapper keeps the shared surface phases ordered, but batches inside the same shared phase now fan out together, deferred isolated work can overlap the next shared phase, and spare `unit-fast` headroom now starts that deferred work earlier instead of leaving those slots idle.
-  - Refresh the timing snapshots with `pnpm test:perf:update-timings` and `pnpm test:perf:update-timings:extensions` after major suite shape changes.
+- Refresh the timing snapshots with `pnpm test:perf:update-timings` and `pnpm test:perf:update-timings:extensions` after major suite shape changes.
+- For current timing artifacts and the lighter-weight landing model, see
+  [Landing Gate Tiers](/help/landing-gate-tiering-proposal).
 - Embedded runner note:
   - When you change message-tool discovery inputs or compaction runtime context,
     keep both levels of coverage.

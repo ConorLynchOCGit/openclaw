@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   copyStaticExtensionAssets,
+  runRuntimePostBuild,
   writeStableRootRuntimeAliases,
 } from "../../scripts/runtime-postbuild.mjs";
 
@@ -83,5 +84,25 @@ describe("runtime postbuild static assets", () => {
       'export * from "./runtime-tts.runtime-AbCd1234.js";\n',
     );
     await expect(fs.stat(path.join(distDir, "library.js"))).rejects.toThrow();
+  });
+
+  it("writes runtime postbuild phase timings when requested", async () => {
+    const rootDir = await createTempRoot();
+    const timingFilePath = path.join(rootDir, ".local", "gate-metrics", "runtime-postbuild.json");
+
+    const timings = runRuntimePostBuild({
+      phases: [
+        ["phase-a", () => {}],
+        ["phase-b", () => {}],
+      ],
+      timingFilePath,
+    });
+
+    expect(timings.length).toBeGreaterThan(0);
+    const written = JSON.parse(await fs.readFile(timingFilePath, "utf8")) as {
+      phases?: Array<{ name?: string; elapsedMs?: number }>;
+    };
+    expect(written.phases?.length).toBe(timings.length);
+    expect(written.phases?.every((phase) => typeof phase.name === "string")).toBe(true);
   });
 });

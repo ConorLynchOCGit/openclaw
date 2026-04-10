@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { resolveBuildStampPath } from "../../scripts/lib/build-fingerprint.mjs";
 import {
   resolveNpmRunner,
   stageBundledPluginRuntimeDeps,
@@ -125,6 +126,16 @@ describe("resolveNpmRunner", () => {
 });
 
 describe("stageBundledPluginRuntimeDeps", () => {
+  function runtimeDepsStampPath(repoRoot: string, pluginId: string) {
+    return resolveBuildStampPath(repoRoot, "runtime-deps", `${pluginId}.json`);
+  }
+
+  function writeRuntimeDepsStamp(repoRoot: string, pluginId: string, fingerprint: string) {
+    const stampPath = runtimeDepsStampPath(repoRoot, pluginId);
+    fs.mkdirSync(path.dirname(stampPath), { recursive: true });
+    fs.writeFileSync(stampPath, `${JSON.stringify({ fingerprint }, null, 2)}\n`, "utf8");
+  }
+
   function createBundledPluginFixture(params: {
     packageJson: Record<string, unknown>;
     pluginId?: string;
@@ -162,11 +173,7 @@ describe("stageBundledPluginRuntimeDeps", () => {
       cwd: repoRoot,
       installPluginRuntimeDepsImpl: ({ fingerprint }: { fingerprint: string }) => {
         installCount += 1;
-        fs.writeFileSync(
-          path.join(pluginDir, ".openclaw-runtime-deps-stamp.json"),
-          `${JSON.stringify({ fingerprint }, null, 2)}\n`,
-          "utf8",
-        );
+        writeRuntimeDepsStamp(repoRoot, "fixture-plugin", fingerprint);
       },
     });
     stageBundledPluginRuntimeDeps({
@@ -205,11 +212,7 @@ describe("stageBundledPluginRuntimeDeps", () => {
           const nodeModulesDir = path.join(pluginDir, "node_modules");
           fs.mkdirSync(nodeModulesDir, { recursive: true });
           fs.writeFileSync(path.join(nodeModulesDir, "marker.txt"), `${installCount}\n`, "utf8");
-          fs.writeFileSync(
-            path.join(pluginDir, ".openclaw-runtime-deps-stamp.json"),
-            `${JSON.stringify({ fingerprint }, null, 2)}\n`,
-            "utf8",
-          );
+          writeRuntimeDepsStamp(repoRoot, "fixture-plugin", fingerprint);
         },
       });
 
@@ -250,11 +253,7 @@ describe("stageBundledPluginRuntimeDeps", () => {
         const nodeModulesDir = path.join(pluginDir, "node_modules");
         fs.mkdirSync(nodeModulesDir, { recursive: true });
         fs.writeFileSync(path.join(nodeModulesDir, "marker.txt"), "ok\n", "utf8");
-        fs.writeFileSync(
-          path.join(pluginDir, ".openclaw-runtime-deps-stamp.json"),
-          `${JSON.stringify({ fingerprint }, null, 2)}\n`,
-          "utf8",
-        );
+        writeRuntimeDepsStamp(repoRoot, "fixture-plugin", fingerprint);
       },
     });
 
@@ -286,5 +285,22 @@ describe("stageBundledPluginRuntimeDeps", () => {
       }),
     ).toThrow("attempt 2 failed");
     expect(installCount).toBe(2);
+  });
+
+  it("removes stale repo-local runtime-deps stamps for plugins no longer in dist", () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-runtime-deps-stale-"));
+    const staleStampPath = runtimeDepsStampPath(repoRoot, "removed-plugin");
+    fs.mkdirSync(path.dirname(staleStampPath), { recursive: true });
+    fs.writeFileSync(staleStampPath, '{"fingerprint":"stale"}\n', "utf8");
+
+    stageBundledPluginRuntimeDeps({
+      cwd: repoRoot,
+      installPluginRuntimeDepsImpl: () => {
+        throw new Error("should not install");
+      },
+    });
+
+    expect(fs.existsSync(staleStampPath)).toBe(false);
+    fs.rmSync(repoRoot, { recursive: true, force: true });
   });
 });

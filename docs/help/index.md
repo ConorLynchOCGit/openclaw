@@ -25,4 +25,5 @@ If you’re looking for conceptual questions (not “something broke”):
 - **Environment variables:** [Where OpenClaw loads env vars and precedence](/help/environment)
 - **Debugging:** [Watch mode, raw streams, and dev profile](/help/debugging)
 - **Testing:** [Test suites, live tests, and Docker runners](/help/testing)
+- **Landing gates:** [Feature vs integration vs production landing tiers](/help/landing-gate-tiering-proposal)
 - **Scripts:** [Repository helper scripts](/help/scripts)

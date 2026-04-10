@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { resolveBuildStampPath } from "./lib/build-fingerprint.mjs";
 
 const WINDOWS_UNSAFE_CMD_CHARS_RE = /[&|<>^%\r\n]/;
 
@@ -11,6 +12,7 @@ function readJson(filePath) {
 }
 
 function writeJson(filePath, value) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
@@ -92,7 +94,8 @@ function sanitizeBundledManifestForRuntimeInstall(pluginDir) {
 }
 
 function resolveRuntimeDepsStampPath(pluginDir) {
-  return path.join(pluginDir, ".openclaw-runtime-deps-stamp.json");
+  const repoRoot = path.resolve(pluginDir, "../../..");
+  return resolveBuildStampPath(repoRoot, "runtime-deps", `${path.basename(pluginDir)}.json`);
 }
 
 function createRuntimeDepsFingerprint(packageJson) {
@@ -288,8 +291,10 @@ export function stageBundledPluginRuntimeDeps(params = {}) {
   const installPluginRuntimeDepsImpl =
     params.installPluginRuntimeDepsImpl ?? installPluginRuntimeDeps;
   const installAttempts = params.installAttempts ?? 3;
+  const livePluginIds = new Set();
   for (const pluginDir of listBundledPluginRuntimeDirs(repoRoot)) {
     const pluginId = path.basename(pluginDir);
+    livePluginIds.add(pluginId);
     const packageJson = sanitizeBundledManifestForRuntimeInstall(pluginDir);
     const nodeModulesDir = path.join(pluginDir, "node_modules");
     const stampPath = resolveRuntimeDepsStampPath(pluginDir);
@@ -313,6 +318,19 @@ export function stageBundledPluginRuntimeDeps(params = {}) {
         pluginId,
       },
     });
+  }
+
+  const stampsDir = resolveBuildStampPath(repoRoot, "runtime-deps");
+  if (fs.existsSync(stampsDir)) {
+    for (const dirent of fs.readdirSync(stampsDir, { withFileTypes: true })) {
+      if (!dirent.isFile() || !dirent.name.endsWith(".json")) {
+        continue;
+      }
+      const pluginId = dirent.name.replace(/\.json$/u, "");
+      if (!livePluginIds.has(pluginId)) {
+        removePathIfExists(path.join(stampsDir, dirent.name));
+      }
+    }
   }
 }
 

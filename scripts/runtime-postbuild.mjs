@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { copyBundledPluginMetadata } from "./copy-bundled-plugin-metadata.mjs";
 import { copyPluginSdkRootAlias } from "./copy-plugin-sdk-root-alias.mjs";
@@ -69,15 +70,56 @@ export function writeStableRootRuntimeAliases(params = {}) {
 }
 
 export function runRuntimePostBuild(params = {}) {
-  copyPluginSdkRootAlias(params);
-  copyBundledPluginMetadata(params);
-  writeOfficialChannelCatalog(params);
-  stageBundledPluginRuntimeDeps(params);
-  stageBundledPluginRuntime(params);
-  writeStableRootRuntimeAliases(params);
-  copyStaticExtensionAssets(params);
+  const log = params.log ?? (() => {});
+  const repoRoot = params.cwd ?? params.repoRoot ?? params.rootDir ?? process.cwd();
+  const timingFilePath =
+    params.timingFilePath ??
+    (typeof process.env.OPENCLAW_RUNTIME_POSTBUILD_TIMINGS_FILE === "string"
+      ? process.env.OPENCLAW_RUNTIME_POSTBUILD_TIMINGS_FILE
+      : "");
+  /** @type {Array<[string, (params?: Record<string, unknown>) => void]>} */
+  const phases = params.phases ?? [
+    ["plugin-sdk-root-alias", copyPluginSdkRootAlias],
+    ["bundled-plugin-metadata", copyBundledPluginMetadata],
+    ["official-channel-catalog", writeOfficialChannelCatalog],
+    ["bundled-plugin-runtime-deps", stageBundledPluginRuntimeDeps],
+    ["bundled-plugin-runtime", stageBundledPluginRuntime],
+    ["stable-root-runtime-aliases", writeStableRootRuntimeAliases],
+    ["static-extension-assets", copyStaticExtensionAssets],
+  ];
+
+  const timings = [];
+  for (const [name, fn] of phases) {
+    const startedAt = performance.now();
+    log(`[runtime-postbuild] ${name} start`);
+    fn({
+      ...params,
+      cwd: repoRoot,
+      repoRoot,
+      rootDir: repoRoot,
+    });
+    const elapsedMs = performance.now() - startedAt;
+    timings.push({ name, elapsedMs });
+    log(`[runtime-postbuild] ${name} done (${(elapsedMs / 1000).toFixed(2)}s)`);
+  }
+  if (timingFilePath) {
+    fs.mkdirSync(path.dirname(timingFilePath), { recursive: true });
+    fs.writeFileSync(
+      timingFilePath,
+      `${JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          phases: timings,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+  }
+  return timings;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  runRuntimePostBuild();
+  runRuntimePostBuild({ log: (line) => process.stdout.write(`${line}\n`) });
 }
