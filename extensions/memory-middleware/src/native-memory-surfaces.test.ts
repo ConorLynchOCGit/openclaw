@@ -30,11 +30,20 @@ describe("native memory surfaces", () => {
         date: "2026-04-10",
       }),
     ).toBe("memory/2026-04-10.md");
+    expect(
+      resolveNativeMemoryProjectionRelativePath({
+        target: "project-memory-digest",
+        projectSlug: "maintenance",
+      }),
+    ).toBe("projects/maintenance/MEMORY.md");
   });
 
   it("classifies compiler-managed and human-authored surfaces", () => {
     expect(classifyNativeMemorySurface("MEMORY.md")).toBe("compiled-bootstrap-projection");
     expect(classifyNativeMemorySurface("SOUL.md")).toBe("human-authored-bootstrap");
+    expect(classifyNativeMemorySurface("projects/maintenance/MEMORY.md")).toBe(
+      "compiled-project-projection",
+    );
     expect(classifyNativeMemorySurface("memory/2026-04-10.md")).toBe("compiled-daily-continuity");
     expect(classifyNativeMemorySurface("memory/2026-04-10-0901.md")).toBe("raw-daily-leaf");
     expect(classifyNativeMemorySurface("archives/daily_memory_evidence/2026-04-10.md")).toBe(
@@ -44,6 +53,7 @@ describe("native memory surfaces", () => {
 
   it("recognizes compiler-managed projection paths and raw daily leaves", () => {
     expect(isCompilerManagedNativeProjectionPath("USER.md")).toBe(true);
+    expect(isCompilerManagedNativeProjectionPath("projects/maintenance/MEMORY.md")).toBe(true);
     expect(isCompilerManagedNativeProjectionPath("memory/2026-04-10.md")).toBe(true);
     expect(isCompilerManagedNativeProjectionPath("SOUL.md")).toBe(false);
     expect(isRawDailyMemoryLeafPath("memory/2026-04-10-foo.md")).toBe(true);

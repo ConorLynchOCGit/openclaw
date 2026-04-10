@@ -7,50 +7,55 @@ import type {
   MemoryObjectListResult,
   MemoryObjectRecord,
 } from "./db/runtime.js";
+import { syncProjectLocalProjections } from "./native-memory-projection-projects.js";
 import { syncSharedBootstrapProjections } from "./native-memory-projection-shared.js";
 
 function createRecord(overrides: Partial<MemoryObjectRecord>): MemoryObjectRecord {
   return {
     objectType: "memory_object",
     readSurface: "approved_memory_view",
-    id: "memory-1",
-    memoryKind: "feedback",
+    id: "project-1",
+    memoryKind: "project",
     reviewState: "approved",
-    content: "Use concise answers.",
+    content: "Project fact [maintenance]: run the daily audit first.",
     updatedAt: "2026-04-10T03:00:00.000Z",
     createdAt: "2026-04-10T03:00:00.000Z",
+    metadata: {},
     ...overrides,
   };
 }
 
-describe("shared native memory projections", () => {
+describe("project local native memory projections", () => {
   let tmpDir = "";
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-native-shared-"));
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-native-projects-"));
+    await fs.mkdir(path.join(tmpDir, "projects", "maintenance"), { recursive: true });
   });
 
   afterEach(async () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("writes shared USER/TOOLS/MEMORY projection blocks", async () => {
+  it("writes project-local MEMORY projections and surfaces pointers in top-level digest", async () => {
     const listMemoryObjects = vi.fn(async (input: unknown): Promise<MemoryObjectListResult> => {
       const kind = (input as { kind?: string }).kind;
-      if (kind === "user") {
+      if (kind === "project") {
         return {
           accepted: true,
           status: "ok",
           scope: "approved_only",
           records: [
             createRecord({
-              id: "user-1",
-              memoryKind: "user",
               metadata: {
                 canonicalIngestionCandidate: {
                   record: {
-                    statement: "Prefer concise answers",
-                    tags: ["user", "preference"],
+                    statement: "Run the daily audit first",
+                    subject: "maintenance / audit order",
+                    facets: {
+                      projectScope: "maintenance",
+                    },
+                    tags: ["project_fact", "project"],
                   },
                 },
               },
@@ -63,40 +68,14 @@ describe("shared native memory projections", () => {
           accepted: true,
           status: "ok",
           scope: "approved_only",
-          records: [
-            createRecord({
-              id: "feedback-1",
-              memoryKind: "feedback",
-              metadata: {
-                canonicalIngestionCandidate: {
-                  record: {
-                    statement: "Run pnpm check:fast before landing docs-only changes",
-                    tags: ["workflow_guidance", "feedback"],
-                  },
-                },
-              },
-            }),
-          ],
+          records: [],
         };
       }
       return {
         accepted: true,
         status: "ok",
         scope: "approved_only",
-        records: [
-          createRecord({
-            id: "project-1",
-            memoryKind: "project",
-            metadata: {
-              canonicalIngestionCandidate: {
-                record: {
-                  statement: "docs/zh-CN stays generated",
-                  tags: ["project_fact", "project"],
-                },
-              },
-            },
-          }),
-        ],
+        records: [],
       };
     });
 
@@ -108,26 +87,26 @@ describe("shared native memory projections", () => {
       },
     } as unknown as MemoryMiddlewareDb;
 
-    const results = await syncSharedBootstrapProjections({
+    const projects = await syncProjectLocalProjections({
       db,
       workspaceDir: tmpDir,
       write: true,
     });
+    const shared = await syncSharedBootstrapProjections({
+      db,
+      workspaceDir: tmpDir,
+      write: true,
+      excludeSourceIds: projects.projectedSourceIds,
+      extraMemoryDigestItems: projects.pointerItems,
+    });
 
-    expect(results.results).toHaveLength(3);
-    expect(results.skipped).toEqual([
-      {
-        sourceId: "project-1",
-        reason: "scope_filtered",
-        scopeKind: "project",
-      },
-    ]);
-    expect(await fs.readFile(path.join(tmpDir, "USER.md"), "utf-8")).toContain(
-      "Prefer concise answers",
-    );
-    expect(await fs.readFile(path.join(tmpDir, "TOOLS.md"), "utf-8")).toContain("pnpm check:fast");
+    expect(projects.results).toHaveLength(1);
+    expect(
+      await fs.readFile(path.join(tmpDir, "projects", "maintenance", "MEMORY.md"), "utf-8"),
+    ).toContain("Run the daily audit first");
+    expect(shared.results.find((entry) => entry.target === "memory-digest")?.selectedCount).toBe(1);
     expect(await fs.readFile(path.join(tmpDir, "MEMORY.md"), "utf-8")).toContain(
-      "No eligible approved memory is currently projected",
+      "projects/maintenance/MEMORY.md",
     );
   });
 });

@@ -116,6 +116,38 @@ Current accepted framing:
   relational fields before proposing new schema, with schema changes only if
   implementation later proves a real blocker
 
+## 2026-04 — project memory compiles locally and the top-level digest points instead of hoarding detail
+
+Current accepted framing:
+
+- approved project memory should compile into real `projects/<slug>/MEMORY.md`
+  surfaces only when a matching workspace project exists
+- top-level `MEMORY.md` should point toward those project-local surfaces rather
+  than mirroring their detail
+- unmatched project records should stay visible in audit output instead of
+  silently falling back into top-level bootstrap
+
+## 2026-04 — the first agent projection tranche is specialized-workspace only
+
+Current accepted framing:
+
+- the first per-agent projection tranche should target only real specialized
+  workspaces
+- generic template workspaces should not receive bespoke memory projections yet
+- the initial specialized-agent projection surface stays narrow:
+  `USER.md` and `TOOLS.md`, not a broad per-agent `MEMORY.md`
+
+## 2026-04 — projection routing is metadata-first and lane-explicit
+
+Current accepted framing:
+
+- current projection routing should distinguish shared, project, agent, and
+  session continuity scope using the existing relational fields plus current
+  metadata first
+- specialized-agent-scoped durable records should not leak into shared or
+  project-local projections
+- session continuity remains separate from durable projection lanes
+
 ## 2026-04 — canonical core lands before generic ingestion and retrieval cutover
 
 Current accepted framing:

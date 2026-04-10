@@ -207,6 +207,52 @@ describe("buildFileEntry", () => {
     expect(entry?.hash).toBeTruthy();
   });
 
+  it("skips indexing compiler-owned exact-day continuity files with no manual content", async () => {
+    const tmpDir = getTmpDir();
+    const target = path.join(tmpDir, "memory", "2026-04-10.md");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(
+      target,
+      [
+        "<!-- OPENCLAW:MEMORY-PROJECTION:START memory-projection:daily-continuity:2026-04-10 -->",
+        "Compiled day view",
+        "<!-- OPENCLAW:MEMORY-PROJECTION:END memory-projection:daily-continuity:2026-04-10 -->",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    await expect(buildFileEntry(target, tmpDir)).resolves.toBeNull();
+  });
+
+  it("skips indexing compiler-owned project memory files with no manual content", async () => {
+    const tmpDir = getTmpDir();
+    const target = path.join(tmpDir, "projects", "maintenance", "MEMORY.md");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(
+      target,
+      [
+        "<!-- OPENCLAW:MEMORY-PROJECTION:START memory-projection:project-memory-digest:maintenance -->",
+        "Compiled project memory",
+        "<!-- OPENCLAW:MEMORY-PROJECTION:END memory-projection:project-memory-digest:maintenance -->",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    await expect(buildFileEntry(target, tmpDir)).resolves.toBeNull();
+  });
+
+  it("keeps raw daily memory leaves indexable", async () => {
+    const tmpDir = getTmpDir();
+    const target = path.join(tmpDir, "memory", "2026-04-10-session-a.md");
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, "# Session note\n\nRemember the open loop.", "utf-8");
+
+    const entry = await buildFileEntry(target, tmpDir);
+
+    expect(entry?.path).toBe("memory/2026-04-10-session-a.md");
+    expect(entry?.contentText).toContain("Remember the open loop.");
+  });
+
   it("returns multimodal metadata for eligible image files", async () => {
     const tmpDir = getTmpDir();
     const target = path.join(tmpDir, "diagram.png");

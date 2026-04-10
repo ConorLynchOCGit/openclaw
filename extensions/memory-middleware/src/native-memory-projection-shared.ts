@@ -1,5 +1,6 @@
 import type { MemoryMiddlewareDb } from "./db/runtime.js";
 import type { MemoryObjectRecord } from "./db/runtime.js";
+import type { NativeMemoryProjectionSkippedRecord } from "./native-memory-projection-audit.js";
 import {
   NATIVE_MEMORY_PROJECTION_CHAR_BUDGETS,
   renderProjectionBody,
@@ -11,6 +12,10 @@ import {
   buildNativeMemoryProjectionCandidates,
   type SharedBootstrapProjectionTarget,
 } from "./native-memory-projection-eligibility.js";
+import {
+  isSharedProjectionScope,
+  resolveNativeMemoryProjectionScope,
+} from "./native-memory-projection-scope.js";
 
 const SHARED_PROJECTION_TITLES: Record<SharedBootstrapProjectionTarget, string> = {
   "user-profile": "Compiled User Memory",
@@ -24,6 +29,8 @@ export type SharedProjectionCompilationResult = NativeMemoryProjectionSyncResult
   selectedCount: number;
   omittedCount: number;
   sourceCount: number;
+  selectedSourceIds: string[];
+  omittedSourceIds: string[];
 };
 
 async function loadApprovedSharedProjectionRecords(params: {
@@ -54,12 +61,33 @@ export async function syncSharedBootstrapProjections(params: {
   workspaceDir: string;
   write: boolean;
   limitPerKind?: number;
-}): Promise<SharedProjectionCompilationResult[]> {
+  excludeSourceIds?: ReadonlySet<string>;
+  extraMemoryDigestItems?: string[];
+}): Promise<{
+  results: SharedProjectionCompilationResult[];
+  skipped: NativeMemoryProjectionSkippedRecord[];
+}> {
   const records = await loadApprovedSharedProjectionRecords({
     db: params.db,
     limitPerKind: params.limitPerKind ?? 80,
   });
-  const candidates = buildNativeMemoryProjectionCandidates(records);
+  const skipped: NativeMemoryProjectionSkippedRecord[] = [];
+  const scopedRecords = records.filter((record) => {
+    const scope = resolveNativeMemoryProjectionScope(record);
+    if (isSharedProjectionScope(scope)) {
+      return true;
+    }
+    skipped.push({
+      sourceId: record.id,
+      reason: "scope_filtered",
+      scopeKind: scope.kind,
+      ...(scope.agentKey ? { agentKey: scope.agentKey } : {}),
+    });
+    return false;
+  });
+  const candidates = buildNativeMemoryProjectionCandidates(scopedRecords).filter(
+    (candidate) => !params.excludeSourceIds?.has(candidate.sourceId),
+  );
   const targets: SharedBootstrapProjectionTarget[] = [
     "user-profile",
     "tool-preferences",
@@ -69,8 +97,22 @@ export async function syncSharedBootstrapProjections(params: {
   const results: SharedProjectionCompilationResult[] = [];
   for (const target of targets) {
     const selectedForTarget = candidates.filter((candidate) => candidate.target === target);
+    const selectedForTargetWithPointers =
+      target === "memory-digest"
+        ? [
+            ...(params.extraMemoryDigestItems ?? []).map((text, index) => ({
+              sourceId: `project-pointer:${String(index)}`,
+              sourceKind: "project" as const,
+              target,
+              priority: 10_000 - index,
+              text,
+              updatedAt: "1970-01-01T00:00:00.000Z",
+            })),
+            ...selectedForTarget,
+          ]
+        : selectedForTarget;
     const trimmed = trimProjectionCandidatesToBudget({
-      candidates: selectedForTarget,
+      candidates: selectedForTargetWithPointers,
       maxChars: NATIVE_MEMORY_PROJECTION_CHAR_BUDGETS[target],
     });
     const body = renderProjectionBody({
@@ -88,9 +130,14 @@ export async function syncSharedBootstrapProjections(params: {
       ...sync,
       selectedCount: trimmed.kept.length,
       omittedCount: trimmed.omittedCount,
-      sourceCount: selectedForTarget.length,
+      sourceCount: selectedForTargetWithPointers.length,
+      selectedSourceIds: trimmed.kept.map((candidate) => candidate.sourceId),
+      omittedSourceIds: trimmed.omitted.map((candidate) => candidate.sourceId),
     });
   }
 
-  return results;
+  return {
+    results,
+    skipped,
+  };
 }

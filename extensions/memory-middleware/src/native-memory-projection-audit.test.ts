@@ -1,0 +1,49 @@
+import { describe, expect, it } from "vitest";
+import { buildNativeMemoryProjectionAuditReport } from "./native-memory-projection-audit.js";
+
+describe("native memory projection audit", () => {
+  it("summarizes changed targets, omissions, skips, and recovered drift", () => {
+    const report = buildNativeMemoryProjectionAuditReport({
+      shared: [
+        {
+          lane: "shared",
+          target: "user-profile",
+          relPath: "USER.md",
+          changed: true,
+          changeKind: "recovered_partial_block",
+          sourceCount: 2,
+          selectedCount: 1,
+          omittedCount: 1,
+          selectedSourceIds: ["user-1"],
+          omittedSourceIds: ["user-2"],
+        },
+      ],
+      projects: [
+        {
+          lane: "project",
+          target: "project-memory-digest",
+          projectSlug: "maintenance",
+          relPath: "projects/maintenance/MEMORY.md",
+          changed: false,
+          changeKind: "unchanged",
+          sourceCount: 1,
+          selectedCount: 1,
+          omittedCount: 0,
+          selectedSourceIds: ["project-1"],
+          omittedSourceIds: [],
+        },
+      ],
+      skipped: [{ sourceId: "feedback-2", reason: "scope_filtered", scopeKind: "agent" }],
+      unmatched: [{ sourceId: "project-2", reason: "no_workspace_project_target" }],
+    });
+
+    expect(report.summary).toEqual({
+      changedTargets: 1,
+      omittedEntries: 1,
+      selectedEntries: 2,
+      skippedRecords: 1,
+      unmatchedRecords: 1,
+      recoveredPartialBlocks: 1,
+    });
+  });
+});

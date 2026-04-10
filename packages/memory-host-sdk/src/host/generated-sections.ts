@@ -86,6 +86,10 @@ export function stripGeneratedSectionBlocks(content: string): string {
   return stripped.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+export function containsAnyGeneratedSectionBlock(content: string): boolean {
+  return /<!-- OPENCLAW:MEMORY-PROJECTION:START [^\n]+ -->/u.test(content);
+}
+
 export function containsGeneratedSectionBlock(content: string, blockId: string): boolean {
   const markers = buildGeneratedSectionMarkers(blockId);
   return (

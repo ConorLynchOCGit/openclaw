@@ -1,6 +1,7 @@
 // Focused runtime contract for memory file/backend access.
 
 export {
+  containsAnyGeneratedSectionBlock,
   buildGeneratedSectionMarkers,
   containsGeneratedSectionBlock,
   renderGeneratedSectionBlock,

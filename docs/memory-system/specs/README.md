@@ -135,3 +135,8 @@ underlying middleware ontology itself.
 
 These specs intentionally stay documentation-first until an implementation pass
 is explicitly authorized.
+
+That authorization is now exercised through the first 10 native-file
+integration slices. The current remaining work is follow-on implementation,
+rollout proof, and later tranche expansion rather than architecture discovery
+for the shared/project/compiler baseline.

@@ -174,6 +174,20 @@ OpenClaw file integration:
 - daily/session continuity remains a separate continuity layer rather than a
   second durable-memory database
 
+The first 10 implementation slices of that native-file integration are now
+landed locally in repo code:
+
+- projection-surface inventory hardening
+- approved-only destination eligibility
+- generated-zone compiler scaffolding
+- shared bootstrap projections
+- canonical daily continuity compilation
+- project-local projections plus top-level pointers
+- projection audit / omission / drift reporting
+- explicit circularity protection in native file indexing
+- metadata-first shared/project/agent scope classification
+- the first specialized-agent projection tranche
+
 ## Rules of engagement
 
 - Do not try to implement the entire system in one pass.

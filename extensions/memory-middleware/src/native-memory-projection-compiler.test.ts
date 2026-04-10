@@ -41,13 +41,16 @@ describe("native memory projection compiler", () => {
       "memory-projection:memory-digest",
     );
     expect(resolveProjectionOutputPath({ target: "memory-digest" })).toBe("MEMORY.md");
+    expect(
+      resolveProjectionOutputPath({ target: "project-memory-digest", projectSlug: "maintenance" }),
+    ).toBe("projects/maintenance/MEMORY.md");
     expect(resolveProjectionOutputPath({ target: "daily-continuity", date: "2026-04-10" })).toBe(
       "memory/2026-04-10.md",
     );
   });
 
   it("trims candidates to a prompt budget deterministically", () => {
-    const { kept, omittedCount } = trimProjectionCandidatesToBudget({
+    const { kept, omitted, omittedCount } = trimProjectionCandidatesToBudget({
       candidates: [
         createCandidate({ text: "A".repeat(30) }),
         createCandidate({ sourceId: "memory-2", text: "B".repeat(30) }),
@@ -56,6 +59,7 @@ describe("native memory projection compiler", () => {
     });
 
     expect(kept).toHaveLength(1);
+    expect(omitted.map((candidate) => candidate.sourceId)).toEqual(["memory-2"]);
     expect(omittedCount).toBe(1);
   });
 
@@ -85,8 +89,36 @@ describe("native memory projection compiler", () => {
 
     const persisted = await fs.readFile(filePath, "utf-8");
     expect(result.changed).toBe(true);
+    expect(result.changeKind).toBe("inserted_block");
     expect(persisted).toContain("Manual section");
     expect(persisted).toContain("Prefer concise answers");
+  });
+
+  it("reports recovered partial blocks when stale markers are repaired", async () => {
+    const filePath = path.join(tmpDir, "TOOLS.md");
+    await fs.writeFile(
+      filePath,
+      [
+        "Manual section",
+        "",
+        "<!-- OPENCLAW:MEMORY-PROJECTION:START memory-projection:tool-preferences -->",
+        "stale partial block",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const result = await syncProjectionFile({
+      workspaceDir: tmpDir,
+      target: { target: "tool-preferences" },
+      body: renderProjectionBody({
+        title: "Compiled Tool Preferences",
+        items: ["Use pnpm check:fast for docs-only landings"],
+      }),
+      write: true,
+    });
+
+    expect(result.changeKind).toBe("recovered_partial_block");
+    expect(await fs.readFile(filePath, "utf-8")).toContain("Compiled Tool Preferences");
   });
 
   it("becomes a clean no-op when the generated output is unchanged", async () => {
@@ -110,6 +142,7 @@ describe("native memory projection compiler", () => {
     });
 
     expect(second.changed).toBe(false);
+    expect(second.changeKind).toBe("unchanged");
     expect(second.wroteFile).toBe(false);
   });
 });

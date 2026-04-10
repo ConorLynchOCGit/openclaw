@@ -56,6 +56,22 @@ The runtime-target consolidation batch is now also landed locally.
 The runtime-target consolidation and final flattening batch v1 is now also
 landed locally.
 
+The native OpenClaw file-integration tranche is now also landed locally
+through:
+
+- shared bootstrap projections
+- canonical daily continuity compilation
+- project-local projections and top-level pointer integration
+- projection audit / omission / drift reporting
+- explicit circularity protection in native file indexing
+- metadata-first scope classification for shared/project/agent projection lanes
+- a first specialized-agent projection tranche
+
+The repo-local landing-test wrapper now also has a constrained-host safe mode
+for full repo runs, so low-memory hosts default to narrower unit batches,
+serial top-level execution, and a larger worker heap budget instead of
+rediscovering the old worker-OOM path manually.
+
 ## What is live now
 
 Live families:
