@@ -137,19 +137,19 @@ describe("sessions view", () => {
         ...buildProps(
           buildMultiResult([
             {
-              key: "page-0",
+              key: "agent:main:main",
               kind: "direct",
               updatedAt: 20,
             },
             {
-              key: "page-1",
+              key: "agent:chief:main",
               kind: "direct",
               updatedAt: 10,
             },
           ]),
         ),
         pageSize: 1,
-        selectedKeys: new Set(["page-0", "off-page"]),
+        selectedKeys: new Set(["agent:main:main", "agent:chief:main"]),
         onSelectPage,
         onDeselectPage,
         onDeselectAll,
@@ -161,7 +161,7 @@ describe("sessions view", () => {
     const headerCheckbox = container.querySelector("thead input[type=checkbox]");
     headerCheckbox?.dispatchEvent(new Event("change", { bubbles: true }));
 
-    expect(onDeselectPage).toHaveBeenCalledWith(["page-0"]);
+    expect(onDeselectPage).toHaveBeenCalledWith(["agent:main:main"]);
     expect(onDeselectAll).not.toHaveBeenCalled();
     expect(onSelectPage).not.toHaveBeenCalled();
   });

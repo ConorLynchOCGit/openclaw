@@ -167,7 +167,7 @@ describe("resolveLocalVitestMaxWorkers", () => {
     expect(runtime.memoryBand).toBe("high");
     expect(runtime.loadBand).toBe("saturated");
     expect(budget.unitIsolatedWorkers).toBe(1);
-    expect(budget.unitFastBatchTargetMs).toBe(90_000);
+    expect(budget.unitFastBatchTargetMs).toBe(45_000);
   });
 
   it("keeps CI windows policy constrained independently of host load", () => {

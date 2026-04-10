@@ -1,8 +1,10 @@
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import {
+  deriveSessionChatType,
   isCronSessionKey,
   isDefaultHiddenUiSessionKey,
+  isSubagentSessionKey,
   parseAgentSessionKey,
 } from "../../../src/sessions/session-key-utils.js";
 export { isCronSessionKey } from "../../../src/sessions/session-key-utils.js";
@@ -807,6 +809,40 @@ export function resolveSessionOptionGroups(
     });
   };
 
+  const shouldIncludeInChatSelector = (
+    key: string,
+    row?: SessionsListResult["sessions"][number],
+  ) => {
+    if (row?.selectorVisibility === "hide") {
+      return false;
+    }
+    if (row?.selectorVisibility === "show") {
+      return true;
+    }
+    if (isSubagentSessionKey(key)) {
+      return true;
+    }
+    const parsed = parseAgentSessionKey(key);
+    const rest = parsed?.rest?.trim().toLowerCase() ?? "";
+    if (parsed && rest === "main") {
+      return true;
+    }
+    if (parsed && deriveSessionChatType(key) === "unknown") {
+      if (
+        rest.startsWith("acp:") ||
+        rest.startsWith("cron:") ||
+        rest.startsWith("dashboard:") ||
+        rest.startsWith("page-read:") ||
+        rest.startsWith("proof-") ||
+        /^w\d+:/i.test(rest)
+      ) {
+        return false;
+      }
+      return true;
+    }
+    return !isDefaultHiddenUiSessionKey(key, row);
+  };
+
   for (const row of rows) {
     if (row.kind === "global" || row.kind === "unknown") {
       continue;
@@ -814,7 +850,7 @@ export function resolveSessionOptionGroups(
     if (hideCron && isCronSessionKey(row.key)) {
       continue;
     }
-    if (isDefaultHiddenUiSessionKey(row.key, row)) {
+    if (!shouldIncludeInChatSelector(row.key, row)) {
       continue;
     }
     addOption(row.key);
@@ -826,7 +862,7 @@ export function resolveSessionOptionGroups(
       currentRow?.kind === "global" ||
       currentRow?.kind === "unknown" ||
       isCronSessionKey(sessionKey) ||
-      isDefaultHiddenUiSessionKey(sessionKey, currentRow)
+      !shouldIncludeInChatSelector(sessionKey, currentRow)
     );
   if (shouldShowCurrent) {
     addOption(sessionKey);
@@ -927,7 +963,7 @@ function resolveAgentGroupLabel(state: AppViewState, agentIdRaw: string): string
   );
   const name = agent?.identity?.name?.trim() || agent?.name?.trim() || "";
   if (name) {
-    return name;
+    return `${name} (${agent?.id ?? agentIdRaw})`;
   }
   switch (normalized) {
     case "main":

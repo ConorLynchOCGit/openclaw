@@ -1,23 +1,17 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const loadOpenClawPluginsMock = vi.fn();
-const loadPluginManifestRegistryMock = vi.fn();
-const applyPluginAutoEnableMock = vi.fn();
-
-vi.mock("./loader.js", () => ({
-  loadOpenClawPlugins: (...args: unknown[]) => loadOpenClawPluginsMock(...args),
-}));
-
-vi.mock("../config/plugin-auto-enable.js", () => ({
-  applyPluginAutoEnable: (...args: unknown[]) => applyPluginAutoEnableMock(...args),
-}));
-
-vi.mock("./manifest-registry.js", () => ({
-  loadPluginManifestRegistry: (...args: unknown[]) => loadPluginManifestRegistryMock(...args),
-}));
+type LoaderModule = typeof import("./loader.js");
+type ManifestRegistryModule = typeof import("./manifest-registry.js");
+type PluginAutoEnableModule = typeof import("../config/plugin-auto-enable.js");
 
 let resolveOwningPluginIdsForProvider: typeof import("./providers.js").resolveOwningPluginIdsForProvider;
 let resolvePluginProviders: typeof import("./providers.runtime.js").resolvePluginProviders;
+let loaderModule: LoaderModule;
+let manifestRegistryModule: ManifestRegistryModule;
+let pluginAutoEnableModule: PluginAutoEnableModule;
+let loadOpenClawPluginsMock: ReturnType<typeof vi.fn>;
+let loadPluginManifestRegistryMock: ReturnType<typeof vi.fn>;
+let applyPluginAutoEnableMock: ReturnType<typeof vi.fn>;
 
 function createManifestProviderPlugin(params: {
   id: string;
@@ -164,21 +158,24 @@ function expectBundledProviderLoad(params?: { config?: unknown; env?: NodeJS.Pro
 
 describe("resolvePluginProviders", () => {
   beforeAll(async () => {
+    loaderModule = await import("./loader.js");
+    manifestRegistryModule = await import("./manifest-registry.js");
+    pluginAutoEnableModule = await import("../config/plugin-auto-enable.js");
     ({ resolveOwningPluginIdsForProvider } = await import("./providers.js"));
     ({ resolvePluginProviders } = await import("./providers.runtime.js"));
   });
 
   beforeEach(() => {
-    loadOpenClawPluginsMock.mockReset();
-    loadOpenClawPluginsMock.mockReturnValue({
+    loadOpenClawPluginsMock = vi.spyOn(loaderModule, "loadOpenClawPlugins").mockReturnValue({
       providers: [{ pluginId: "google", provider: { id: "demo-provider" } }],
-    });
-    loadPluginManifestRegistryMock.mockReset();
-    applyPluginAutoEnableMock.mockReset();
-    applyPluginAutoEnableMock.mockImplementation((params: { config: unknown }) => ({
-      config: params.config,
-      changes: [],
-    }));
+    } as ReturnType<LoaderModule["loadOpenClawPlugins"]>);
+    loadPluginManifestRegistryMock = vi.spyOn(manifestRegistryModule, "loadPluginManifestRegistry");
+    applyPluginAutoEnableMock = vi
+      .spyOn(pluginAutoEnableModule, "applyPluginAutoEnable")
+      .mockImplementation((params) => ({
+        config: params.config,
+        changes: [],
+      }));
     setManifestPlugins([
       createManifestProviderPlugin({ id: "google", providerIds: ["google"] }),
       createManifestProviderPlugin({ id: "browser", providerIds: [] }),
@@ -191,6 +188,10 @@ describe("resolvePluginProviders", () => {
         origin: "workspace",
       }),
     ]);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("forwards an explicit env to plugin loading", () => {
