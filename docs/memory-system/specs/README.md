@@ -72,6 +72,7 @@ These remain important, but several now describe partial bridges rather than
 - `/memory-system/specs/projection-compiler-and-file-ownership`
 - `/memory-system/specs/per-agent-and-per-project-memory-integration`
 - `/memory-system/specs/native-memory-governance-and-rollout`
+- `/memory-system/specs/long-prompt-capture-and-overflow`
 - `/memory-system/specs/semantic-retrieval-routing`
 - `/memory-system/specs/implementation-sequencing`
 - `/memory-system/specs/cross-domain-memory-families`
@@ -132,6 +133,7 @@ underlying middleware ontology itself.
 - `/memory-system/specs/projection-compiler-and-file-ownership`
 - `/memory-system/specs/per-agent-and-per-project-memory-integration`
 - `/memory-system/specs/native-memory-governance-and-rollout`
+- `/memory-system/specs/long-prompt-capture-and-overflow`
 
 These specs intentionally stay documentation-first until an implementation pass
 is explicitly authorized.

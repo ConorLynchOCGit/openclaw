@@ -16,6 +16,49 @@ Current accepted framing:
 - duplicate suppression and review safety still remain mandatory
 - per-turn capture remains intentionally capped
 
+## 2026-04 — long-prompt capture uses ranked bounded pools, not first-hit order
+
+Current accepted framing:
+
+- long prompts may yield far more valid candidates than the immediate
+  acceptance budget allows
+- capture should build and rank a bounded candidate pool before acceptance
+  decisions instead of relying on first-hit order
+- ranking must stay inspectable and deterministic rather than turning into an
+  opaque heuristic blob
+
+## 2026-04 — lower-ranked valid candidates persist as deferred overflow evidence
+
+Current accepted framing:
+
+- when a prompt yields more valid candidates than the immediate acceptance
+  budget allows, the overflow should persist as deferred evidence instead of
+  being dropped
+- repeated prompts should reinforce deferred candidates instead of endlessly
+  resubmitting only the strongest already-seen candidates
+- deferred overflow must remain bounded and review-safe
+
+## 2026-04 — immediate capture stays bounded and family-aware
+
+Current accepted framing:
+
+- one flat immediate-acceptance cap is not enough for longer multi-memory
+  prompts
+- immediate acceptance should remain bounded by both a total posture-aware cap
+  and smaller per-family caps
+- one family should not be able to crowd out every other valid candidate in a
+  long prompt
+
+## 2026-04 — explicit multi-preference and multi-fact packets may use bulk posture
+
+Current accepted framing:
+
+- ordinary casual chat should stay on the tighter bounded posture
+- prompts that clearly act like explicit multi-memory packets may use a
+  stronger bulk posture
+- bulk posture may inspect a larger bounded candidate pool and allow a larger
+  bounded immediate set, but it still may not become an unbounded write path
+
 ## 2026-04 — the current family-heavy memory architecture is transitional
 
 Current accepted framing:

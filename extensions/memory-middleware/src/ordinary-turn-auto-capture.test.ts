@@ -125,6 +125,16 @@ function createConfig(): MemoryMiddlewareConfig {
   };
 }
 
+function buildPreferenceSentence(index: number): string {
+  return `My preferred bulk capture field ${index} is signal ${index}.`;
+}
+
+function readMetadataRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 describe("parseOrdinaryTurnAutoCapturePreference", () => {
   it("matches a narrow explicit preference statement", () => {
     expect(
@@ -3821,6 +3831,338 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
         }),
       }),
     );
+  });
+
+  it("captures a 20-item preference packet with bounded immediate promotion and deferred overflow", async () => {
+    const submitLearning = vi.fn(async (input: { metadata: Record<string, unknown> }) => {
+      const key = String(readMetadataRecord(input.metadata.autoCapture).key);
+      return {
+        accepted: true as const,
+        status: "accepted" as const,
+        kind: "learning" as const,
+        storage: "database" as const,
+        reviewState: "candidate" as const,
+        eventId: `event-${key}`,
+        memoryObjectId: `memory-${key}`,
+      };
+    });
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      reviewId: "review-bulk-capture-1",
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      promotedMemoryObjectId: "approved-bulk-capture-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-bulk-capture-1",
+          sessionId: "session-uuid-bulk-capture-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/bulk-capture-1.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: Array.from({ length: 20 }, (_, index) => buildPreferenceSentence(index + 1)).join(
+          " ",
+        ),
+        timestamp: Date.parse("2026-04-10T12:00:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(20);
+    expect(reviewCandidate).toHaveBeenCalledTimes(4);
+    expect(promoteToMemory).toHaveBeenCalledTimes(4);
+
+    const submitLearningCalls = submitLearning.mock.calls as unknown as Array<
+      [{ metadata?: Record<string, unknown> }]
+    >;
+    const overflowCalls = submitLearningCalls.filter(
+      (call) =>
+        readMetadataRecord(call[0].metadata?.candidateOverflow).mode === "deferred_overflow",
+    );
+    expect(overflowCalls).toHaveLength(16);
+    expect(
+      overflowCalls.every(
+        (call) => readMetadataRecord(call[0].metadata?.candidateOverflow).posture === "bulk",
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps mixed-family long prompts balanced instead of letting preferences crowd out project facts", async () => {
+    const submitLearning = vi.fn(async (input: { metadata: Record<string, unknown> }) => {
+      const key = String(readMetadataRecord(input.metadata.autoCapture).key);
+      return {
+        accepted: true as const,
+        status: "accepted" as const,
+        kind: "learning" as const,
+        storage: "database" as const,
+        reviewState: "candidate" as const,
+        eventId: `event-${key}`,
+        memoryObjectId: `memory-${key}`,
+      };
+    });
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      reviewId: "review-balanced-1",
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      promotedMemoryObjectId: "approved-balanced-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        inspectProjectFactLifecycle: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-balanced-1",
+          sessionId: "session-uuid-balanced-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/balanced-capture-1.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: [
+          ...Array.from({ length: 6 }, (_, index) => buildPreferenceSentence(index + 1)),
+          "For project atlas forge, the staging branch is atlas-staging.",
+          "For project atlas forge, the default branch is atlas-main.",
+        ].join(" "),
+        timestamp: Date.parse("2026-04-10T12:10:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(8);
+    expect(reviewCandidate).toHaveBeenCalledTimes(4);
+    expect(promoteToMemory).toHaveBeenCalledTimes(4);
+
+    const submitLearningCalls = submitLearning.mock.calls as unknown as Array<
+      [{ metadata?: Record<string, unknown> }]
+    >;
+    const projectFactCalls = submitLearningCalls.filter(
+      (call) =>
+        readMetadataRecord(call[0].metadata?.autoCapture).captureClass === "explicit_project_fact",
+    );
+    expect(projectFactCalls).toHaveLength(2);
+    expect(
+      projectFactCalls.every(
+        (call) => readMetadataRecord(call[0].metadata?.candidateOverflow).mode === undefined,
+      ),
+    ).toBe(true);
+
+    const overflowPreferenceCalls = submitLearningCalls.filter(
+      (call) =>
+        readMetadataRecord(call[0].metadata?.autoCapture).captureClass === "explicit_preference" &&
+        readMetadataRecord(call[0].metadata?.candidateOverflow).mode === "deferred_overflow",
+    );
+    expect(overflowPreferenceCalls).toHaveLength(2);
+  });
+
+  it("promotes deferred overflow preference candidates on a repeated prompt instead of resubmitting them", async () => {
+    type StoredCandidate = {
+      key: string;
+      id: string;
+      reviewState: "candidate" | "approved";
+      metadata: Record<string, unknown>;
+      createdAt: string;
+    };
+
+    let nextId = 1;
+    const storedByKey = new Map<string, StoredCandidate>();
+    const storedById = new Map<string, StoredCandidate>();
+    const findExistingByKey = vi.fn(async ({ key }: { key: string }) => {
+      const entry = storedByKey.get(key);
+      return entry
+        ? {
+            id: entry.id,
+            reviewState: entry.reviewState,
+            metadata: entry.metadata,
+            createdAt: entry.createdAt,
+          }
+        : null;
+    });
+    const submitLearning = vi.fn(async (input: { metadata: Record<string, unknown> }) => {
+      const autoCapture = readMetadataRecord(input.metadata.autoCapture);
+      const key = String(autoCapture.key);
+      const id = `memory-deferred-${nextId++}`;
+      const createdAt = String(
+        readMetadataRecord(input.metadata.candidateLifecycle).observedAt ??
+          "2026-04-10T12:20:00.000Z",
+      );
+      const entry: StoredCandidate = {
+        key,
+        id,
+        reviewState: "candidate",
+        metadata: input.metadata,
+        createdAt,
+      };
+      storedByKey.set(key, entry);
+      storedById.set(id, entry);
+      return {
+        accepted: true as const,
+        status: "accepted" as const,
+        kind: "learning" as const,
+        storage: "database" as const,
+        reviewState: "candidate" as const,
+        eventId: `event-${id}`,
+        memoryObjectId: id,
+      };
+    });
+    const reviewCandidate = vi.fn(async ({ candidateId }: { candidateId: string }) => ({
+      accepted: true as const,
+      reviewId: `review-${candidateId}`,
+    }));
+    const promoteToMemory = vi.fn(async ({ candidateId }: { candidateId: string }) => {
+      const entry = storedById.get(candidateId);
+      if (entry) {
+        entry.reviewState = "approved";
+      }
+      return {
+        accepted: true as const,
+        promotedMemoryObjectId: `approved-${candidateId}`,
+      };
+    });
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey,
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-deferred-1",
+          sessionId: "session-uuid-deferred-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    const repeatedPrompt = Array.from({ length: 7 }, (_, index) =>
+      buildPreferenceSentence(index + 1),
+    ).join(" ");
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/deferred-capture-1.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: repeatedPrompt,
+        timestamp: Date.parse("2026-04-10T12:20:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(7);
+    expect(reviewCandidate).toHaveBeenCalledTimes(4);
+    expect(promoteToMemory).toHaveBeenCalledTimes(4);
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/deferred-capture-1.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: repeatedPrompt,
+        timestamp: Date.parse("2026-04-10T12:45:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(7);
+    expect(reviewCandidate).toHaveBeenCalledTimes(7);
+    expect(promoteToMemory).toHaveBeenCalledTimes(7);
+    expect(findExistingByKey).toHaveBeenCalled();
+  });
+
+  it("keeps ordinary shorter prompts on the tighter default posture", async () => {
+    const submitLearning = vi.fn(async (input: { metadata: Record<string, unknown> }) => {
+      const key = String(readMetadataRecord(input.metadata.autoCapture).key);
+      return {
+        accepted: true as const,
+        status: "accepted" as const,
+        kind: "learning" as const,
+        storage: "database" as const,
+        reviewState: "candidate" as const,
+        eventId: `event-${key}`,
+        memoryObjectId: `memory-${key}`,
+      };
+    });
+    const reviewCandidate = vi.fn(async () => ({
+      accepted: true as const,
+      reviewId: "review-default-1",
+    }));
+    const promoteToMemory = vi.fn(async () => ({
+      accepted: true as const,
+      promotedMemoryObjectId: "approved-default-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-default-1",
+          sessionId: "session-uuid-default-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate,
+        promoteToMemory,
+      },
+    });
+
+    await handler({
+      sessionFile: "/root/.openclaw/agents/main/sessions/default-capture-1.jsonl",
+      sessionKey: "agent:main:main",
+      message: {
+        role: "user",
+        content: Array.from({ length: 4 }, (_, index) => buildPreferenceSentence(index + 1)).join(
+          " ",
+        ),
+        timestamp: Date.parse("2026-04-10T12:30:00Z"),
+      },
+    });
+
+    expect(submitLearning).toHaveBeenCalledTimes(4);
+    expect(reviewCandidate).toHaveBeenCalledTimes(2);
+    expect(promoteToMemory).toHaveBeenCalledTimes(2);
+
+    const submitLearningCalls = submitLearning.mock.calls as unknown as Array<
+      [{ metadata?: Record<string, unknown> }]
+    >;
+    const overflowCalls = submitLearningCalls.filter(
+      (call) =>
+        readMetadataRecord(call[0].metadata?.candidateOverflow).mode === "deferred_overflow",
+    );
+    expect(overflowCalls).toHaveLength(2);
+    expect(
+      overflowCalls.every(
+        (call) => readMetadataRecord(call[0].metadata?.candidateOverflow).posture === "default",
+      ),
+    ).toBe(true);
   });
 });
 

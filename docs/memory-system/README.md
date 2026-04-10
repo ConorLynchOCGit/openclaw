@@ -211,6 +211,22 @@ The broader native-file follow-through tranche is now also landed locally:
 - no schema change was needed for this broader project/agent/orchestration
   tranche
 
+The next ordinary-turn capture expansion tranche is now also landed locally:
+
+- long prompts now scan a larger bounded segment pool instead of stopping at
+  the earlier 12-segment ceiling
+- capture now ranks the full bounded candidate pool before deciding what gets
+  immediate acceptance
+- immediate acceptance remains bounded, but it now uses posture-aware total
+  caps plus per-family caps instead of one flat first-hit cap
+- lower-ranked valid candidates now persist as deferred overflow evidence
+  instead of disappearing when stronger candidates repeat
+- repeated prompts can advance deferred overflow candidates instead of
+  endlessly resubmitting only the strongest already-seen candidates
+- explicit multi-preference and multi-fact packets can enter a stronger bulk
+  posture without making ordinary chat unsafe
+- no schema change was needed for this capture-expansion tranche
+
 ## Rules of engagement
 
 - Do not try to implement the entire system in one pass.

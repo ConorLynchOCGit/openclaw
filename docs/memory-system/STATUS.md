@@ -92,6 +92,18 @@ for full repo runs, so low-memory hosts default to narrower unit batches,
 serial top-level execution, and a larger worker heap budget instead of
 rediscovering the old worker-OOM path manually.
 
+The long-prompt ordinary-turn capture expansion tranche is now also landed
+locally through:
+
+- larger bounded long-prompt segmentation for candidate-bearing turns
+- ranked candidate-pool selection instead of first-hit-only acceptance
+- posture-aware total immediate caps plus per-family immediate caps
+- persistent deferred-overflow evidence for lower-ranked valid candidates
+- repeated-prompt promotion for deferred overflow candidates
+- an explicit stronger bulk posture for multi-preference and multi-fact prompt
+  shapes
+- confirmation that no schema change was required for this tranche
+
 ## What is live now
 
 Live families:
@@ -145,6 +157,11 @@ Live substrate properties:
   and direct repo-lookup prompt classes
 - bounded multi-memory capture from a single long user turn when multiple
   distinct strong candidates are present
+- bounded long-prompt capture that can inspect materially more candidates than
+  the original three-memory path while still keeping immediate acceptance
+  bounded
+- deferred-overflow candidate metadata that preserves lower-ranked valid
+  candidates for later confirmation instead of silently discarding them
 - canonical memory record/envelope types on the public plugin-SDK surface
 - canonical facet/metadata contracts for the 4-kind target model
 - transitional family-policy builders that emit canonical-core-compatible

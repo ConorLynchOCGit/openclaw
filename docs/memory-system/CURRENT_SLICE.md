@@ -2,13 +2,13 @@
 
 ## Active slice
 
-Native OpenClaw file integration and landing-gate hardening
+Long-prompt ordinary-turn memory-capture expansion
 
 ## Objective
 
-Replace the remaining gap between canonical Postgres memory and native
-OpenClaw file surfaces with real projection infrastructure, while also making
-repo-wide landing tests honest on constrained hosts.
+Allow one long prompt to surface many more valid memory candidates without
+turning ordinary chat into memory spam, while keeping immediate acceptance
+bounded and preventing lower-ranked valid candidates from starving forever.
 
 ## What is now landed
 
@@ -44,6 +44,22 @@ repo-wide landing tests honest on constrained hosts.
 - higher default worker heap budget in constrained safe mode
 - planner output now makes the safe-mode decision visible
 
+### Long-prompt memory-capture expansion tranche
+
+- ordinary-turn auto-capture now scans a larger bounded segment pool for long
+  prompts instead of the old fixed 12-segment ceiling
+- capture now builds and ranks a bounded candidate pool before deciding what
+  gets immediate acceptance
+- immediate acceptance is still bounded, but now uses posture-aware total caps
+  plus per-family caps
+- lower-ranked valid candidates now persist as deferred overflow evidence
+  instead of being dropped on the floor
+- repeated prompts can promote deferred overflow candidates instead of
+  resubmitting only the strongest already-approved candidates forever
+- explicit multi-preference and multi-fact packets can enter a stronger bulk
+  posture while ordinary shorter prompts stay on the tighter default posture
+- no schema change was required for the deferred-overflow tranche
+
 ## What is live but still bounded
 
 - Postgres remains canonical durable memory
@@ -59,6 +75,12 @@ repo-wide landing tests honest on constrained hosts.
   mutation
 - stale-aware refresh is host-side and bounded; it is not native runtime cron
   and not per-turn mutation
+- ordinary-turn immediate acceptance is still intentionally bounded even in
+  bulk posture
+- deferred overflow is now durable evidence, but it is still a bounded queue
+  rather than an unbounded write path
+- repeated prompts can promote deferred overflow candidates, but this is still
+  confirmation-based and not broad autonomous approval
 
 ## What still waits until later
 
@@ -67,3 +89,5 @@ repo-wide landing tests honest on constrained hosts.
 - broader specialized-agent coverage only if later real workspaces justify it
 - any schema changes only if future evidence proves metadata-first routing is
   insufficient
+- richer deferred-overflow promotion policy if later rollout shows that
+  confirmation-only promotion is still too conservative
