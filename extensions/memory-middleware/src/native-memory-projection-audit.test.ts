@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildNativeMemoryProjectionAuditReport } from "./native-memory-projection-audit.js";
+import {
+  buildNativeMemoryProjectionAuditReport,
+  renderNativeMemoryProjectionOperatorSummary,
+} from "./native-memory-projection-audit.js";
 
 describe("native memory projection audit", () => {
   it("summarizes changed targets, omissions, skips, and recovered drift", () => {
@@ -11,6 +14,8 @@ describe("native memory projection audit", () => {
           relPath: "USER.md",
           changed: true,
           changeKind: "recovered_partial_block",
+          generatedChars: 120,
+          budgetChars: 2400,
           sourceCount: 2,
           selectedCount: 1,
           omittedCount: 1,
@@ -26,6 +31,8 @@ describe("native memory projection audit", () => {
           relPath: "projects/maintenance/MEMORY.md",
           changed: false,
           changeKind: "unchanged",
+          generatedChars: 98,
+          budgetChars: 3200,
           sourceCount: 1,
           selectedCount: 1,
           omittedCount: 0,
@@ -39,11 +46,20 @@ describe("native memory projection audit", () => {
 
     expect(report.summary).toEqual({
       changedTargets: 1,
+      totalTargets: 2,
       omittedEntries: 1,
       selectedEntries: 2,
       skippedRecords: 1,
       unmatchedRecords: 1,
       recoveredPartialBlocks: 1,
     });
+
+    expect(renderNativeMemoryProjectionOperatorSummary(report)).toContain("changed_targets: 1/2");
+    expect(renderNativeMemoryProjectionOperatorSummary(report)).toContain(
+      "shared USER.md: recovered_partial_block; selected 1/2; omitted 1; chars 120/2400",
+    );
+    expect(renderNativeMemoryProjectionOperatorSummary(report)).toContain(
+      "no_workspace_project_target",
+    );
   });
 });

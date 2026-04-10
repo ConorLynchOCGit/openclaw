@@ -188,6 +188,16 @@ landed locally in repo code:
 - metadata-first shared/project/agent scope classification
 - the first specialized-agent projection tranche
 
+The next native-file rollout tranche is now also landed locally:
+
+- project-local rollout now starts from an explicit allowlist of real workspace
+  project folders
+- projection runs now produce a human-friendly operator summary alongside the
+  JSON audit surface
+- the daily operator-review prep flow now includes projection status
+- projection refresh now has a daily host-cron path and a hardened manual sync
+  command
+
 ## Rules of engagement
 
 - Do not try to implement the entire system in one pass.

@@ -25,6 +25,10 @@ repo-wide landing tests honest on constrained hosts.
 - explicit circularity protection in native file indexing
 - metadata-first shared/project/agent scope classification
 - first specialized-agent projection tranche for real specialized workspaces
+- explicit allowlisted project rollout for real workspace project folders
+- operator-facing projection summary output alongside machine-readable audit
+- daily operator-review integration for projection state
+- host-cron scheduled projection refresh plus a hardened manual sync command
 
 ### Landing-gate hardening
 
@@ -39,10 +43,14 @@ repo-wide landing tests honest on constrained hosts.
 - Postgres remains canonical durable memory
 - native files remain one-way projections plus human-authored control surfaces
 - shared top-level `MEMORY.md` stays compact and pointer-oriented
+- project-local rollout starts from an explicit workspace allowlist rather than
+  every project folder
 - specialized per-agent projections stay narrow and only target justified
   workspaces
 - raw daily leaves remain continuity inputs; the exact-day file is a compiled
   continuity view, not canonical durable memory
+- scheduled projection refresh is daily host cron plus manual sync, not per-turn
+  mutation
 
 ## What still waits until later
 
@@ -50,5 +58,6 @@ repo-wide landing tests honest on constrained hosts.
 - broader specialized-agent coverage
 - stronger agent-scoped DB memory semantics where metadata-first routing proves
   insufficient
-- richer projection scheduling / orchestration beyond the explicit sync path
+- richer projection scheduling / orchestration beyond the current daily host
+  cron plus manual sync path
 - any schema changes, if later implementation proves they are truly required

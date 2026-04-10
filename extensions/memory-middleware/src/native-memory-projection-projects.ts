@@ -73,6 +73,9 @@ export async function syncProjectLocalProjections(params: {
     limit: params.limit ?? 120,
   });
   const targets = await discoverWorkspaceProjectProjectionTargets(params.workspaceDir);
+  const allWorkspaceTargets = await discoverWorkspaceProjectProjectionTargets(params.workspaceDir, {
+    includeUnallowlisted: true,
+  });
   const groups = new Map<string, ProjectProjectionGroup>();
   const unmatched: Array<{ sourceId: string; reason: string }> = [];
   const skipped: NativeMemoryProjectionSkippedRecord[] = [];
@@ -90,7 +93,13 @@ export async function syncProjectLocalProjections(params: {
     }
     const target = resolveProjectProjectionTarget(record, targets);
     if (!target) {
-      unmatched.push({ sourceId: record.id, reason: "no_workspace_project_target" });
+      const unallowlistedTarget = resolveProjectProjectionTarget(record, allWorkspaceTargets);
+      unmatched.push({
+        sourceId: record.id,
+        reason: unallowlistedTarget
+          ? "project_target_not_allowlisted"
+          : "no_workspace_project_target",
+      });
       continue;
     }
     const candidate = buildNativeMemoryProjectionCandidate(record);

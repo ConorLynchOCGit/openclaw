@@ -109,4 +109,51 @@ describe("project local native memory projections", () => {
       "projects/maintenance/MEMORY.md",
     );
   });
+
+  it("reports real but non-allowlisted project folders as intentionally unmatched", async () => {
+    await fs.mkdir(path.join(tmpDir, "projects", "experimental_lab"), { recursive: true });
+
+    const db = {
+      driver: "postgres",
+      config: { driver: "postgres" as const },
+      queries: {
+        listMemoryObjects: vi.fn(
+          async (): Promise<MemoryObjectListResult> => ({
+            accepted: true,
+            status: "ok",
+            scope: "approved_only",
+            records: [
+              createRecord({
+                id: "project-x",
+                content: "Project fact [experimental_lab]: do not ship this yet.",
+                metadata: {
+                  canonicalIngestionCandidate: {
+                    record: {
+                      statement: "Do not ship this yet",
+                      subject: "experimental_lab / launch",
+                      facets: {
+                        projectScope: "experimental_lab",
+                      },
+                      tags: ["project_fact", "project"],
+                    },
+                  },
+                },
+              }),
+            ],
+          }),
+        ),
+      },
+    } as unknown as MemoryMiddlewareDb;
+
+    const result = await syncProjectLocalProjections({
+      db,
+      workspaceDir: tmpDir,
+      write: true,
+    });
+
+    expect(result.results).toEqual([]);
+    expect(result.unmatched).toEqual([
+      { sourceId: "project-x", reason: "project_target_not_allowlisted" },
+    ]);
+  });
 });

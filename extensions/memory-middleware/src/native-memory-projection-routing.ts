@@ -13,6 +13,18 @@ export type WorkspaceProjectProjectionTarget = {
   absDir: string;
 };
 
+export const NATIVE_MEMORY_PROJECT_PROJECTION_ALLOWLIST = [
+  "channel_identity",
+  "github",
+  "intake",
+  "live_app_patches",
+  "maintenance",
+  "ops",
+  "roles",
+  "web_stack",
+  "workflows",
+] as const;
+
 export type AgentWorkspaceProjectionTarget = {
   agentKey: string;
   workspaceDir: string;
@@ -50,8 +62,13 @@ function extractBracketScopeLabel(content: string | undefined): string | undefin
   return match?.[1]?.trim();
 }
 
+export function isWorkspaceProjectProjectionAllowlisted(slug: string): boolean {
+  return (NATIVE_MEMORY_PROJECT_PROJECTION_ALLOWLIST as readonly string[]).includes(slug);
+}
+
 export async function discoverWorkspaceProjectProjectionTargets(
   workspaceDir: string,
+  options?: { includeUnallowlisted?: boolean },
 ): Promise<WorkspaceProjectProjectionTarget[]> {
   const projectsDir = path.join(workspaceDir, "projects");
   let entries: Dirent<string>[];
@@ -63,6 +80,10 @@ export async function discoverWorkspaceProjectProjectionTargets(
 
   return entries
     .filter((entry) => entry.isDirectory())
+    .filter(
+      (entry) =>
+        options?.includeUnallowlisted || isWorkspaceProjectProjectionAllowlisted(entry.name),
+    )
     .map((entry) => ({
       slug: entry.name,
       relDir: `projects/${entry.name}`,

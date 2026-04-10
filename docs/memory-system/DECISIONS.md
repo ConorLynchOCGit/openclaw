@@ -127,6 +127,37 @@ Current accepted framing:
 - unmatched project records should stay visible in audit output instead of
   silently falling back into top-level bootstrap
 
+## 2026-04 — project rollout starts from an explicit workspace allowlist
+
+Current accepted framing:
+
+- project-local projection should start from an explicit allowlist of real
+  workspace project folders
+- the allowlist is an operational rollout boundary, not a permanent denial of
+  future full project coverage
+- records that match real but not-yet-allowlisted project folders should stay
+  visible as intentional unmatched audit output
+
+## 2026-04 — projection observability is dual-surface and feeds the daily brief
+
+Current accepted framing:
+
+- every projection run should keep a machine-readable JSON audit surface
+- every projection run should also emit a compact human-friendly operator
+  summary
+- that operator summary should feed the daily operator-review prep flow rather
+  than staying trapped in standalone sync output
+
+## 2026-04 — projection refresh is host-scheduled and manually runnable
+
+Current accepted framing:
+
+- projection refresh should run on host cron, not per turn and not as a native
+  runtime cron
+- the scheduled refresh should run before daily operator-review prep
+- operators should still have one clear manual sync command with explicit
+  write/dry-run posture, scope selection, and summary output
+
 ## 2026-04 — the first agent projection tranche is specialized-workspace only
 
 Current accepted framing:

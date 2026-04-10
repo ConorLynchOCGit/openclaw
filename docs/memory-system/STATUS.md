@@ -67,6 +67,15 @@ through:
 - metadata-first scope classification for shared/project/agent projection lanes
 - a first specialized-agent projection tranche
 
+The next native-file rollout tranche is now also landed locally through:
+
+- an explicit allowlist for project-local projection targets
+- operator-facing projection summaries on top of the machine-readable audit
+- daily operator-review integration for projection state
+- daily host-cron projection refresh before daily review prep
+- a hardened manual sync command with explicit scope selection, summary output,
+  and host-workspace targeting
+
 The repo-local landing-test wrapper now also has a constrained-host safe mode
 for full repo runs, so low-memory hosts default to narrower unit batches,
 serial top-level execution, and a larger worker heap budget instead of

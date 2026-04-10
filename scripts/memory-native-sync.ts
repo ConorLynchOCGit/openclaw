@@ -4,7 +4,11 @@ import { syncDailyContinuityFile } from "openclaw/plugin-sdk/memory-core-host-ru
 import type { OpenClawPluginApi, PluginLogger } from "../extensions/memory-middleware/api.js";
 import { createMemoryMiddlewareRuntime } from "../extensions/memory-middleware/runtime-api.js";
 import { syncAgentBootstrapProjections } from "../extensions/memory-middleware/src/native-memory-projection-agents.js";
-import { buildNativeMemoryProjectionAuditReport } from "../extensions/memory-middleware/src/native-memory-projection-audit.js";
+import {
+  buildNativeMemoryProjectionAuditReport,
+  renderNativeMemoryProjectionOperatorSummary,
+} from "../extensions/memory-middleware/src/native-memory-projection-audit.js";
+import { NATIVE_MEMORY_PROJECTION_CHAR_BUDGETS } from "../extensions/memory-middleware/src/native-memory-projection-compiler.js";
 import { syncProjectLocalProjections } from "../extensions/memory-middleware/src/native-memory-projection-projects.js";
 import { syncSharedBootstrapProjections } from "../extensions/memory-middleware/src/native-memory-projection-shared.js";
 import { resolveAgentWorkspaceDir } from "../src/agents/agent-scope.js";
@@ -13,12 +17,49 @@ import { readBestEffortConfig } from "../src/config/config.js";
 type CliOptions = {
   agentId?: string;
   date?: string;
+  workspaceDir?: string;
   write: boolean;
+  format: "json" | "summary";
   syncShared: boolean;
   syncProjects: boolean;
   syncAgents: boolean;
   syncDaily: boolean;
 };
+
+const SCOPE_ALIASES = new Map<
+  string,
+  keyof Pick<CliOptions, "syncShared" | "syncProjects" | "syncAgents" | "syncDaily">
+>([
+  ["shared", "syncShared"],
+  ["project", "syncProjects"],
+  ["projects", "syncProjects"],
+  ["agent", "syncAgents"],
+  ["agents", "syncAgents"],
+  ["daily", "syncDaily"],
+]);
+
+function applyScopeSelection(
+  selected: Array<string> | undefined,
+): Pick<CliOptions, "syncShared" | "syncProjects" | "syncAgents" | "syncDaily"> | undefined {
+  if (!selected || selected.length === 0) {
+    return undefined;
+  }
+  const next = {
+    syncShared: false,
+    syncProjects: false,
+    syncAgents: false,
+    syncDaily: false,
+  };
+  for (const raw of selected) {
+    const normalized = raw.trim().toLowerCase();
+    const key = SCOPE_ALIASES.get(normalized);
+    if (!key) {
+      throw new Error(`Unsupported --scope value: ${raw}`);
+    }
+    next[key] = true;
+  }
+  return next;
+}
 
 function parseCliArgs(argv: string[]): CliOptions {
   const { values } = parseArgs({
@@ -26,7 +67,11 @@ function parseCliArgs(argv: string[]): CliOptions {
     options: {
       agent: { type: "string" },
       date: { type: "string" },
+      "workspace-dir": { type: "string" },
       write: { type: "boolean", default: false },
+      "dry-run": { type: "boolean", default: false },
+      format: { type: "string" },
+      scope: { type: "string", multiple: true },
       "skip-shared": { type: "boolean", default: false },
       "skip-projects": { type: "boolean", default: false },
       "skip-agents": { type: "boolean", default: false },
@@ -35,14 +80,31 @@ function parseCliArgs(argv: string[]): CliOptions {
     allowPositionals: false,
   });
 
+  if (values.write && values["dry-run"]) {
+    throw new Error("Cannot use --write and --dry-run together");
+  }
+  const format = values.format?.trim().toLowerCase();
+  if (format && format !== "json" && format !== "summary") {
+    throw new Error(`Unsupported --format value: ${values.format}`);
+  }
+  const explicitScopes = applyScopeSelection(values.scope);
+  const syncSelection = explicitScopes ?? {
+    syncShared: true,
+    syncProjects: true,
+    syncAgents: true,
+    syncDaily: true,
+  };
+
   return {
     ...(values.agent ? { agentId: values.agent.trim() } : {}),
     ...(values.date ? { date: values.date.trim() } : {}),
+    ...(values["workspace-dir"] ? { workspaceDir: values["workspace-dir"].trim() } : {}),
     write: values.write ?? false,
-    syncShared: !(values["skip-shared"] ?? false),
-    syncProjects: !(values["skip-projects"] ?? false),
-    syncAgents: !(values["skip-agents"] ?? false),
-    syncDaily: !(values["skip-daily"] ?? false),
+    format: (format as "json" | "summary" | undefined) ?? "json",
+    syncShared: syncSelection.syncShared && !(values["skip-shared"] ?? false),
+    syncProjects: syncSelection.syncProjects && !(values["skip-projects"] ?? false),
+    syncAgents: syncSelection.syncAgents && !(values["skip-agents"] ?? false),
+    syncDaily: syncSelection.syncDaily && !(values["skip-daily"] ?? false),
   };
 }
 
@@ -80,7 +142,7 @@ async function main() {
     pluginConfig: resolveMemoryMiddlewarePluginConfig(config as Record<string, unknown>),
   } as OpenClawPluginApi);
   const agentId = options.agentId ?? resolveDefaultAgentId(config);
-  const workspaceDir = resolveAgentWorkspaceDir(config, agentId);
+  const workspaceDir = options.workspaceDir ?? resolveAgentWorkspaceDir(config, agentId);
   if (!workspaceDir) {
     throw new Error(`Could not resolve workspace for agent ${agentId}`);
   }
@@ -159,6 +221,8 @@ async function main() {
       relPath: entry.relPath,
       changed: entry.changed,
       changeKind: entry.changeKind,
+      generatedChars: entry.generatedChars,
+      budgetChars: NATIVE_MEMORY_PROJECTION_CHAR_BUDGETS[entry.target],
       sourceCount: entry.sourceCount,
       selectedCount: entry.selectedCount,
       omittedCount: entry.omittedCount,
@@ -172,6 +236,8 @@ async function main() {
       relPath: entry.relPath,
       changed: entry.changed,
       changeKind: entry.changeKind,
+      generatedChars: entry.generatedChars,
+      budgetChars: NATIVE_MEMORY_PROJECTION_CHAR_BUDGETS[entry.target],
       sourceCount: entry.sourceCount,
       selectedCount: entry.selectedCount,
       omittedCount: entry.omittedCount,
@@ -186,6 +252,8 @@ async function main() {
       relPath: entry.relPath,
       changed: entry.changed,
       changeKind: entry.changeKind,
+      generatedChars: entry.generatedChars,
+      budgetChars: NATIVE_MEMORY_PROJECTION_CHAR_BUDGETS[entry.target],
       sourceCount: entry.sourceCount,
       selectedCount: entry.selectedCount,
       omittedCount: entry.omittedCount,
@@ -197,6 +265,12 @@ async function main() {
   });
   report.audit = audit;
   report.auditSummary = audit.summary;
+  report.operatorSummary = renderNativeMemoryProjectionOperatorSummary(audit);
+
+  if (options.format === "summary") {
+    process.stdout.write(`${String(report.operatorSummary)}\n`);
+    return;
+  }
 
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 }

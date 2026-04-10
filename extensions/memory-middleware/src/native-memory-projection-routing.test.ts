@@ -4,9 +4,11 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MemoryObjectRecord } from "./db/runtime.js";
 import {
+  NATIVE_MEMORY_PROJECT_PROJECTION_ALLOWLIST,
   classifyAgentWorkspaceProjectionTargets,
   discoverSiblingAgentWorkspaceTargets,
   discoverWorkspaceProjectProjectionTargets,
+  isWorkspaceProjectProjectionAllowlisted,
   resolveProjectionAgentKey,
   resolveProjectProjectionTarget,
 } from "./native-memory-projection-routing.js";
@@ -59,6 +61,36 @@ describe("native memory projection routing", () => {
     );
 
     expect(target?.slug).toBe("maintenance");
+  });
+
+  it("only discovers allowlisted project folders by default", async () => {
+    await fs.mkdir(path.join(tmpDir, "projects", "maintenance"), { recursive: true });
+    await fs.mkdir(path.join(tmpDir, "projects", "experimental_lab"), { recursive: true });
+
+    await expect(discoverWorkspaceProjectProjectionTargets(tmpDir)).resolves.toEqual([
+      {
+        slug: "maintenance",
+        relDir: "projects/maintenance",
+        absDir: path.join(tmpDir, "projects", "maintenance"),
+      },
+    ]);
+    await expect(
+      discoverWorkspaceProjectProjectionTargets(tmpDir, { includeUnallowlisted: true }),
+    ).resolves.toEqual([
+      {
+        slug: "experimental_lab",
+        relDir: "projects/experimental_lab",
+        absDir: path.join(tmpDir, "projects", "experimental_lab"),
+      },
+      {
+        slug: "maintenance",
+        relDir: "projects/maintenance",
+        absDir: path.join(tmpDir, "projects", "maintenance"),
+      },
+    ]);
+    expect(isWorkspaceProjectProjectionAllowlisted("maintenance")).toBe(true);
+    expect(isWorkspaceProjectProjectionAllowlisted("experimental_lab")).toBe(false);
+    expect(NATIVE_MEMORY_PROJECT_PROJECTION_ALLOWLIST).toContain("maintenance");
   });
 
   it("extracts agent applicability from canonical metadata", () => {
