@@ -8,6 +8,10 @@ import {
   toOrdinaryTurnWorkflowImprovementMatch,
 } from "./memory-ingestion-types.js";
 import {
+  resolveWorkflowCaptureCategoryFromCaptureClass,
+  resolveWorkflowReviewModeFromCaptureClass,
+} from "./memory-profile-routing.js";
+import {
   parseAutoCaptureManagedCandidateContent,
   parseManagedCorrectionCandidateContent,
   parseOrdinaryTurnAutoCapturePreference,
@@ -844,34 +848,6 @@ export type ResolvedCanonicalizableIngestion =
   | ResolvedWorkflowIngestion
   | Extract<ResolvedResponseStyleIngestion, { action: "capture" }>;
 
-function resolveWorkflowCaptureCategory(match: {
-  captureClass: WorkflowImprovementCaptureClass;
-}): WorkflowCaptureCategory {
-  const captureCategory = getCanonicalCaptureMetadataByCaptureClass(match.captureClass)?.category;
-  if (captureCategory === "project_rule") {
-    return "project_rule";
-  }
-  if (captureCategory === "unmet_need") {
-    return "unmet_need";
-  }
-  if (captureCategory === "workflow_improvement") {
-    return "workflow_improvement";
-  }
-  return "workflow_improvement";
-}
-
-function resolveWorkflowReviewMode(
-  captureClass: WorkflowImprovementCaptureClass,
-): "pending_confirmation" | "hold_for_more_evidence" {
-  const captureCategory = getCanonicalCaptureMetadataByCaptureClass(captureClass)?.category;
-  if (captureCategory === "project_rule" || captureCategory === "unmet_need") {
-    return "hold_for_more_evidence";
-  }
-  return captureClass === "workflow_generalized_guidance"
-    ? "hold_for_more_evidence"
-    : "pending_confirmation";
-}
-
 function resolveWorkflowSemanticDecision(text: string): {
   profileId: WorkflowSemanticDetectorProfile["id"];
   decision: WorkflowSemanticCaptureDecision;
@@ -887,8 +863,9 @@ function resolveWorkflowSemanticDecision(text: string): {
       if (decision.action !== "capture") {
         return null;
       }
-      const captureCategory = getCanonicalCaptureMetadataByCaptureClass(decision.match.captureClass)
-        ?.category as WorkflowCaptureCategory | undefined;
+      const captureCategory = resolveWorkflowCaptureCategoryFromCaptureClass(
+        decision.match.captureClass,
+      );
       if (!captureCategory) {
         return null;
       }
@@ -938,9 +915,7 @@ function buildResolvedWorkflowIngestion(params: {
   const parsed = toOrdinaryTurnWorkflowImprovementMatch(params.match);
   const lessonFamily = parsed.lessonFamily ?? params.match.lessonFamily;
   return {
-    captureCategory: resolveWorkflowCaptureCategory({
-      captureClass: params.match.captureClass,
-    }),
+    captureCategory: resolveWorkflowCaptureCategoryFromCaptureClass(params.match.captureClass),
     parsed,
     lessonFamily,
     reviewMode: params.reviewMode,
@@ -997,7 +972,7 @@ async function resolveWorkflowImprovementText(params: {
       detectionSource: "semantic",
       confidence: decision.confidence,
       evidence: decision.evidence,
-      reviewMode: resolveWorkflowReviewMode(decision.match.captureClass),
+      reviewMode: resolveWorkflowReviewModeFromCaptureClass(decision.match.captureClass),
       observedText: params.text,
     });
     return resolved;

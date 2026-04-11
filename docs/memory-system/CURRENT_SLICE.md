@@ -4,6 +4,17 @@
 
 Memory soak period and evidence collection
 
+Latest structural runtime follow-through:
+
+- canonical profile-registry consolidation for family-era runtime tables
+- shared submission/profile routing helpers for canonical and legacy metadata
+- shared lifecycle/semantic metadata builders across tool-submit and
+  ordinary-turn capture
+- the next high-value structural target is stage extraction from
+  `candidate-submit.ts` and detector-registry extraction from
+  `ordinary-turn-auto-capture.ts`, but those are now separate follow-on
+  surgeries rather than this pass
+
 ## Objective
 
 Hold new scheduled memory feature expansion for the next few days while

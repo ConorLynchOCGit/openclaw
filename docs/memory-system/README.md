@@ -161,6 +161,14 @@ The canonical-core tranche is now also landed in repo code:
 - canonical retrieval-plan contracts now exist on the public plugin SDK
   surface, with the current retrieval hint/control plane now populating them as
   a transitional adapter layer
+- the active runtime now derives its repeated family-era policy tables from one
+  canonical profile registry instead of maintaining separate copies in the SDK
+  bridge and middleware policy views
+- submission routing and workflow capture-category/review routing now use
+  shared profile-based helpers instead of each runtime seam re-deriving those
+  decisions independently
+- ordinary-turn capture and tool submission now share one lifecycle/semantic
+  metadata-builder layer instead of carrying parallel helper forests
 
 Multi-memory capture is now part of the current bounded implementation, but the
 next major program is replacing the remaining rigid family-first seams with

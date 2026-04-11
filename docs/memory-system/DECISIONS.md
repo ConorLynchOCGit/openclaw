@@ -94,6 +94,19 @@ Current accepted framing:
   metadata, and derived planners rather than permanent top-level kinds
 - migration should be adapter-first and rollbackable
 
+## 2026-04 — profile registries now outrank repeated family tables
+
+Current accepted framing:
+
+- transitional family ids may still exist as compatibility labels, but active
+  runtime tables should derive from one canonical profile registry wherever
+  possible
+- the SDK family bridge, middleware runtime policy views, workflow auto-review
+  posture, and capture metadata should not each own their own copy of the same
+  family table
+- if behavior differs by memory shape, prefer shared profile data plus shared
+  pipeline helpers over another family-specific runtime branch
+
 ## 2026-04 — Postgres remains canonical and native OpenClaw files are projections
 
 Current accepted framing:

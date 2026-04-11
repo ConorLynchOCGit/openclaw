@@ -152,6 +152,7 @@
   "memory-canonical-ingestion",
   "memory-canonical-ingestion-v1",
   "memory-canonical-retrieval",
+  "memory-profile-registry",
   "memory-family-policy",
   "memory-lancedb",
   "minimax",

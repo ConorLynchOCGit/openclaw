@@ -17,11 +17,7 @@ import {
   readCanonicalMemoryIngestionCandidateFromMetadata,
   readCanonicalFirstMetadataString,
 } from "../memory-canonical-compat.js";
-import {
-  getCompatibilityMemoryFamilyIdByCaptureClass,
-  getCompatibilityMemoryFamilyIdByWorkflowLessonFamily,
-  type CompatibilityMemoryFamilyId,
-} from "../memory-compatibility-family.js";
+import { type CompatibilityMemoryFamilyId } from "../memory-compatibility-family.js";
 import {
   attemptApprovedMemoryObjectCorrectionPromotion,
   resolveMemoryCorrectionPromotionPolicy,
@@ -40,6 +36,25 @@ import {
   toOrdinaryTurnRecurringProcedureMatch,
   toOrdinaryTurnResponseStyleMatch,
 } from "../memory-ingestion-types.js";
+import {
+  buildPendingConfirmationMetadata,
+  buildProjectFactPendingConfirmationMetadata,
+  buildProjectFactSemanticMetadata,
+  buildRecurringProcedurePendingConfirmationMetadata,
+  buildRecurringProcedureSemanticMetadata,
+  buildResponseStyleSemanticMetadata,
+  buildWorkflowImprovementPendingConfirmationMetadata,
+  buildWorkflowImprovementSemanticMetadata,
+  shouldSkipImmediateConfirmation,
+  shouldSkipImmediateProjectFactConfirmation,
+  shouldSkipImmediateRecurringProcedureConfirmation,
+  shouldSkipImmediateWorkflowImprovementConfirmation,
+} from "../memory-lifecycle-metadata.js";
+import {
+  matchesSubmissionRoutingTarget,
+  readSubmissionProfileId,
+  readWorkflowSubmissionCaptureCategory,
+} from "../memory-profile-routing.js";
 import {
   parseAutoCaptureManagedCandidateContent,
   parseManagedCorrectionCandidateContent,
@@ -94,10 +109,7 @@ import {
 } from "../response-style-semantic.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import { storeApprovedProjectWorkflowSemanticEmbedding } from "../semantic-retrieval-routing.js";
-import {
-  resolveCanonicalWorkflowAutoReviewProfile,
-  resolveWorkflowSemanticDetectionSource,
-} from "../workflow-canonical-policy.js";
+import { resolveCanonicalWorkflowAutoReviewProfile } from "../workflow-canonical-policy.js";
 import {
   inspectWorkflowImprovementLifecycle,
   isExpiredPendingWorkflowImprovementCandidate,
@@ -130,11 +142,6 @@ import {
 } from "./common.js";
 
 type CandidateSubmitRawParams = ToolRawParams;
-
-const RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS = 5_000;
-const PROJECT_FACT_CONFIRMATION_MIN_AGE_MS = 5_000;
-const PROCEDURE_CONFIRMATION_MIN_AGE_MS = 5_000;
-const WORKFLOW_IMPROVEMENT_CONFIRMATION_MIN_AGE_MS = 5_000;
 function candidateKindSchema() {
   return Type.Unsafe<CandidateSubmissionKind>({
     type: "string",
@@ -239,155 +246,10 @@ function readAutoCaptureString(
 
 type SubmissionCompatibilityFamilyId = CompatibilityMemoryFamilyId;
 
-function isLegacyResponseStyleRoutingHint(metadata: Record<string, unknown> | undefined): boolean {
-  const captureClass = readAutoCaptureString(metadata, "captureClass");
-  if (
-    captureClass === "explicit_preference" ||
-    captureClass === "preference_correction" ||
-    captureClass === "explicit_requirement" ||
-    captureClass === "requirement_correction"
-  ) {
-    return true;
-  }
-
-  const template = readAutoCaptureString(metadata, "template");
-  return (
-    template === "responses_concise" ||
-    template === "responses_bullets" ||
-    template === "responses_plain_english" ||
-    template === "responses_no_tables" ||
-    template === "responses_numbered_steps" ||
-    template === "response_style_generalized_guidance"
-  );
-}
-
-function readLegacySubmissionCompatibilityFamilyHint(
-  metadata: Record<string, unknown> | undefined,
-): SubmissionCompatibilityFamilyId | null {
-  if (isLegacyResponseStyleRoutingHint(metadata)) {
-    return "response_style";
-  }
-
-  const captureClass = readAutoCaptureString(metadata, "captureClass");
-  if (captureClass) {
-    const compatibilityFamilyId = getCompatibilityMemoryFamilyIdByCaptureClass(captureClass);
-    if (compatibilityFamilyId) {
-      return compatibilityFamilyId;
-    }
-  }
-
-  const lessonFamily = readAutoCaptureString(metadata, "lessonFamily");
-  if (lessonFamily) {
-    const compatibilityFamilyId =
-      getCompatibilityMemoryFamilyIdByWorkflowLessonFamily(lessonFamily);
-    if (compatibilityFamilyId) {
-      return compatibilityFamilyId;
-    }
-  }
-
-  if (readAutoCaptureString(metadata, "fieldKey")) {
-    return "project_fact";
-  }
-  if (readAutoCaptureString(metadata, "procedureKey") || readAutoCaptureString(metadata, "title")) {
-    return "recurring_procedure";
-  }
-  return null;
-}
-
 function readSubmissionCompatibilityFamilyId(
   metadata: Record<string, unknown> | undefined,
 ): SubmissionCompatibilityFamilyId | null {
-  for (const target of [
-    "response_style",
-    "project_fact",
-    "recurring_procedure",
-    "workflow_improvement",
-    "project_rule",
-    "unmet_need",
-  ] as const) {
-    if (matchesCanonicalSubmissionRoutingTarget(metadata, target)) {
-      return target;
-    }
-  }
-  return null;
-}
-
-function readCanonicalSubmissionCaptureCategory(
-  metadata: Record<string, unknown> | undefined,
-):
-  | "project_fact"
-  | "recurring_procedure"
-  | "workflow_improvement"
-  | "project_rule"
-  | "unmet_need"
-  | null {
-  const canonicalCandidate = readCanonicalMemoryIngestionCandidateFromMetadata(metadata);
-  const captureCategory = canonicalCandidate?.record.compatibility.captureCategory;
-  return captureCategory === "project_fact" ||
-    captureCategory === "recurring_procedure" ||
-    captureCategory === "workflow_improvement" ||
-    captureCategory === "project_rule" ||
-    captureCategory === "unmet_need"
-    ? captureCategory
-    : null;
-}
-
-function matchesCanonicalSubmissionRoutingTarget(
-  metadata: Record<string, unknown> | undefined,
-  target:
-    | "response_style"
-    | "project_fact"
-    | "recurring_procedure"
-    | "workflow_improvement"
-    | "project_rule"
-    | "unmet_need",
-): boolean {
-  const canonicalCandidate = readCanonicalMemoryIngestionCandidateFromMetadata(metadata);
-  if (!canonicalCandidate) {
-    const legacyCompatibilityFamilyId = readLegacySubmissionCompatibilityFamilyHint(metadata);
-    return legacyCompatibilityFamilyId === target;
-  }
-  const captureCategory = readCanonicalSubmissionCaptureCategory(metadata);
-  const captureClass = canonicalCandidate.compatibility.captureClass;
-  const tags = new Set(canonicalCandidate.record.tags);
-  switch (target) {
-    case "response_style":
-      return (
-        tags.has("response_style") ||
-        canonicalCandidate.record.kind === "user" ||
-        captureClass === "explicit_preference" ||
-        captureClass === "preference_correction" ||
-        captureClass === "explicit_requirement" ||
-        captureClass === "requirement_correction"
-      );
-    case "project_fact":
-      return (
-        captureCategory === "project_fact" ||
-        captureClass === "explicit_project_fact" ||
-        captureClass === "project_fact_correction"
-      );
-    case "recurring_procedure":
-      return (
-        captureCategory === "recurring_procedure" ||
-        captureClass === "explicit_recurring_procedure" ||
-        captureClass === "recurring_procedure_correction"
-      );
-    case "workflow_improvement":
-    case "project_rule":
-    case "unmet_need":
-      return captureCategory === target;
-  }
-}
-
-function readCanonicalSubmissionWorkflowCaptureCategory(
-  metadata: Record<string, unknown> | undefined,
-): "workflow_improvement" | "project_rule" | "unmet_need" | null {
-  const captureCategory = readCanonicalSubmissionCaptureCategory(metadata);
-  return captureCategory === "workflow_improvement" ||
-    captureCategory === "project_rule" ||
-    captureCategory === "unmet_need"
-    ? captureCategory
-    : null;
+  return readSubmissionProfileId(metadata) as SubmissionCompatibilityFamilyId | null;
 }
 
 function buildToolResponseStyleAutoPromotionMetadata(params: {
@@ -787,9 +649,7 @@ function buildToolWorkflowImprovementAutoPromotionMetadata(params: {
 }): Record<string, unknown> {
   const semanticDetection = params.input.metadata?.semanticDetection;
   const lessonFamily = readAutoCaptureString(params.input.metadata, "lessonFamily");
-  const workflowCaptureCategory = readCanonicalSubmissionWorkflowCaptureCategory(
-    params.input.metadata,
-  );
+  const workflowCaptureCategory = readWorkflowSubmissionCaptureCategory(params.input.metadata);
   const canonicalAutoReviewProfile = resolveCanonicalWorkflowAutoReviewProfile({
     captureClass: readAutoCaptureString(params.input.metadata, "captureClass"),
     ...(workflowCaptureCategory ? { captureCategory: workflowCaptureCategory } : {}),
@@ -1341,9 +1201,7 @@ async function maybeResolveExistingWorkflowImprovementCandidate(params: {
     template === "workflow_tool_gotcha" ||
     template === "workflow_environment_constraint" ||
     template === "workflow_api_workaround";
-  const workflowCaptureCategory = readCanonicalSubmissionWorkflowCaptureCategory(
-    params.input.metadata,
-  );
+  const workflowCaptureCategory = readWorkflowSubmissionCaptureCategory(params.input.metadata);
   const workflowAutoReviewProfile = resolveCanonicalWorkflowAutoReviewProfile({
     ...(captureClass ? { captureClass } : {}),
     ...(workflowCaptureCategory ? { captureCategory: workflowCaptureCategory } : {}),
@@ -2022,21 +1880,6 @@ function normalizeTranscriptUserText(value: string): string | null {
   return stripped.length > 0 ? stripped : null;
 }
 
-function buildResponseStyleSemanticMetadata(params: {
-  detectionSource: "deterministic" | "semantic";
-  confidence: "high" | ResponseStyleSemanticConfidence;
-  evidence: string[];
-}): Record<string, unknown> {
-  return {
-    semanticDetection: {
-      source: "response_style_semantic_v1",
-      detectionSource: params.detectionSource,
-      confidence: params.confidence,
-      evidence: params.evidence,
-    },
-  };
-}
-
 function buildFallbackResponseStyleResolution(params: {
   parsed: OrdinaryTurnAutoCaptureMatch;
   source: "content" | "raw";
@@ -2067,68 +1910,6 @@ function buildFallbackResponseStyleResolution(params: {
   };
 }
 
-function buildProjectFactSemanticMetadata(params: {
-  detectionSource: "deterministic" | "semantic";
-  confidence: "high" | ProjectFactSemanticConfidence;
-  evidence: string[];
-  factFamily: ProjectFactFamily;
-  fieldKey?: ProjectFactFieldKey;
-}): Record<string, unknown> {
-  return {
-    semanticDetection: {
-      source: "project_fact_semantic_v1",
-      detectionSource: params.detectionSource,
-      confidence: params.confidence,
-      factFamily: params.factFamily,
-      ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
-      evidence: params.evidence,
-    },
-  };
-}
-
-function buildRecurringProcedureSemanticMetadata(params: {
-  detectionSource: "semantic";
-  confidence: "high" | RecurringProcedureSemanticConfidence;
-  evidence: string[];
-  procedureFamily: RecurringProcedureFamily;
-  procedureKey?: RecurringProcedureKey;
-}): Record<string, unknown> {
-  return {
-    semanticDetection: {
-      source: "recurring_procedure_semantic_v1",
-      detectionSource: params.detectionSource,
-      confidence: params.confidence,
-      procedureFamily: params.procedureFamily,
-      ...(params.procedureKey ? { procedureKey: params.procedureKey } : {}),
-      evidence: params.evidence,
-    },
-  };
-}
-
-function buildWorkflowImprovementSemanticMetadata(params: {
-  detectionSource: "semantic" | "deterministic";
-  confidence: WorkflowImprovementSemanticConfidence;
-  evidence: string[];
-  captureClass?: WorkflowImprovementCaptureClass;
-  lessonFamily: WorkflowImprovementLessonFamily;
-  guidancePattern?: WorkflowImprovementGuidancePattern;
-}): Record<string, unknown> {
-  return {
-    semanticDetection: {
-      source: resolveWorkflowSemanticDetectionSource({
-        detectionSource: params.detectionSource,
-        ...(params.captureClass ? { captureClass: params.captureClass } : {}),
-        lessonFamily: params.lessonFamily,
-      }),
-      detectionSource: params.detectionSource,
-      confidence: params.confidence,
-      lessonFamily: params.lessonFamily,
-      ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
-      evidence: params.evidence,
-    },
-  };
-}
-
 function asWorkflowImprovementLessonFamily(
   value: string | null | undefined,
 ): WorkflowImprovementLessonFamily | undefined {
@@ -2137,105 +1918,6 @@ function asWorkflowImprovementLessonFamily(
     value === "generalized_unmet_need"
     ? value
     : undefined;
-}
-
-function buildPendingConfirmationMetadata(params: {
-  confidence: ResponseStyleSemanticConfidence;
-  evidence: string[];
-  responseStyleFamily: ResponseStyleFamily;
-  state?: "pending_confirmation" | "hold_for_more_evidence";
-}): Record<string, unknown> {
-  const observedAt = new Date().toISOString();
-  return {
-    candidateLifecycle: {
-      family: "response_style",
-      state: params.state ?? "pending_confirmation",
-      confidence: params.confidence,
-      evidenceCount: 1,
-      observedAt,
-      expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
-      responseStyleFamily: params.responseStyleFamily,
-      evidence: params.evidence,
-    },
-  };
-}
-
-function buildProjectFactPendingConfirmationMetadata(params: {
-  confidence: ProjectFactSemanticConfidence;
-  evidence: string[];
-  factFamily: ProjectFactFamily;
-  state?: "pending_confirmation" | "hold_for_more_evidence";
-  fieldKey?: ProjectFactFieldKey;
-  clusterKey?: string;
-}): Record<string, unknown> {
-  const observedAt = new Date().toISOString();
-  return {
-    candidateLifecycle: {
-      family: "project_fact",
-      state: params.state ?? "pending_confirmation",
-      confidence: params.confidence,
-      evidenceCount: 1,
-      observedAt,
-      expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
-      factFamily: params.factFamily,
-      ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
-      ...(params.clusterKey ? { clusterKey: params.clusterKey } : {}),
-      evidence: params.evidence,
-    },
-  };
-}
-
-function buildRecurringProcedurePendingConfirmationMetadata(params: {
-  confidence: RecurringProcedureSemanticConfidence;
-  evidence: string[];
-  procedureFamily: RecurringProcedureFamily;
-  procedureKey?: RecurringProcedureKey;
-  state?: "pending_confirmation" | "hold_for_more_evidence";
-  observedAt?: string;
-}): Record<string, unknown> {
-  const observedAt = params.observedAt ?? new Date().toISOString();
-  return {
-    candidateLifecycle: {
-      family: "recurring_procedure",
-      state: params.state ?? "pending_confirmation",
-      confidence: params.confidence,
-      evidenceCount: 1,
-      observedAt,
-      expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
-      procedureFamily: params.procedureFamily,
-      ...(params.procedureKey ? { procedureKey: params.procedureKey } : {}),
-      evidence: params.evidence,
-    },
-  };
-}
-
-function buildWorkflowImprovementPendingConfirmationMetadata(params: {
-  confidence: WorkflowImprovementSemanticConfidence;
-  evidence: string[];
-  lessonFamily: WorkflowImprovementLessonFamily;
-  state?: "pending_confirmation" | "hold_for_more_evidence";
-  guidancePattern?: WorkflowImprovementGuidancePattern;
-  clusterKey?: string;
-  contradictionCount?: number;
-}): Record<string, unknown> {
-  const observedAt = new Date().toISOString();
-  return {
-    candidateLifecycle: {
-      family: "workflow_improvement",
-      state: params.state ?? "pending_confirmation",
-      confidence: params.confidence,
-      evidenceCount: 1,
-      observedAt,
-      expiresAt: new Date(Date.parse(observedAt) + 72 * 60 * 60 * 1000).toISOString(),
-      lessonFamily: params.lessonFamily,
-      ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
-      ...(params.clusterKey ? { clusterKey: params.clusterKey } : {}),
-      ...(typeof params.contradictionCount === "number"
-        ? { contradictionCount: params.contradictionCount }
-        : {}),
-      evidence: params.evidence,
-    },
-  };
 }
 
 type TranscriptUserMessage = {
@@ -2426,34 +2108,6 @@ async function resolveLatestUserTurnFromContext(
     return readLatestTranscriptUserTextFromRaw(raw);
   }
   return null;
-}
-
-function shouldSkipImmediateConfirmation(createdAt: string, now = Date.now()): boolean {
-  const createdAtMs = Date.parse(createdAt);
-  return Number.isFinite(createdAtMs) && now - createdAtMs < RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS;
-}
-
-function shouldSkipImmediateProjectFactConfirmation(createdAt: string, now = Date.now()): boolean {
-  const createdAtMs = Date.parse(createdAt);
-  return Number.isFinite(createdAtMs) && now - createdAtMs < PROJECT_FACT_CONFIRMATION_MIN_AGE_MS;
-}
-
-function shouldSkipImmediateRecurringProcedureConfirmation(
-  createdAt: string,
-  now = Date.now(),
-): boolean {
-  const createdAtMs = Date.parse(createdAt);
-  return Number.isFinite(createdAtMs) && now - createdAtMs < PROCEDURE_CONFIRMATION_MIN_AGE_MS;
-}
-
-function shouldSkipImmediateWorkflowImprovementConfirmation(
-  createdAt: string,
-  now = Date.now(),
-): boolean {
-  const createdAtMs = Date.parse(createdAt);
-  return (
-    Number.isFinite(createdAtMs) && now - createdAtMs < WORKFLOW_IMPROVEMENT_CONFIRMATION_MIN_AGE_MS
-  );
 }
 
 function isManagedCorrectionMatch(
@@ -3376,7 +3030,7 @@ async function maybeAutoPromoteToolSubmittedPreference(params: {
   }
   if (
     readCanonicalMemoryIngestionCandidateFromMetadata(params.input.metadata) &&
-    !matchesCanonicalSubmissionRoutingTarget(params.input.metadata, "response_style")
+    !matchesSubmissionRoutingTarget(params.input.metadata, "response_style")
   ) {
     return params.result;
   }
@@ -3522,7 +3176,7 @@ async function maybeAutoPromoteToolSubmittedProjectFact(params: {
   }
   if (
     readCanonicalMemoryIngestionCandidateFromMetadata(params.input.metadata) &&
-    !matchesCanonicalSubmissionRoutingTarget(params.input.metadata, "project_fact")
+    !matchesSubmissionRoutingTarget(params.input.metadata, "project_fact")
   ) {
     return params.result;
   }
@@ -3619,7 +3273,7 @@ async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {
   }
   if (
     readCanonicalMemoryIngestionCandidateFromMetadata(params.input.metadata) &&
-    !matchesCanonicalSubmissionRoutingTarget(params.input.metadata, "recurring_procedure")
+    !matchesSubmissionRoutingTarget(params.input.metadata, "recurring_procedure")
   ) {
     return params.result;
   }

@@ -5,7 +5,6 @@ import {
   type CanonicalMemoryCompatibility,
   type CanonicalMemoryConfidence,
   type CanonicalMemoryFacetMap,
-  type CanonicalMemoryKind,
   type CanonicalMemoryProvenance,
   type CanonicalMemoryRecord,
   type CanonicalMemoryRecency,
@@ -13,6 +12,19 @@ import {
   type CanonicalMemoryStability,
   type CanonicalMemoryValidationStatus,
 } from "./memory-canonical-core.js";
+import {
+  getMemoryProfile,
+  getMemoryProfileByCaptureClass,
+  getMemoryProfileIdByWorkflowLessonFamily,
+  listMemoryProfiles,
+  MEMORY_PROFILE_IDS,
+  type MemoryProfileCaptureCategory,
+  type MemoryProfileCaptureSource,
+  type MemoryProfileDefinition,
+  type MemoryProfileId,
+  type MemoryProfileRetrievalFeature,
+  type MemoryProfileStorageKind,
+} from "./memory-profile-registry.js";
 
 /**
  * Compatibility-only family-era projection helpers.
@@ -27,16 +39,9 @@ import {
  * @deprecated Compatibility-only family ids. Active runtime code should prefer
  * canonical kinds, capture categories, and runtime policy views.
  */
-export const MEMORY_FAMILY_IDS = [
-  "response_style",
-  "project_fact",
-  "recurring_procedure",
-  "workflow_improvement",
-  "project_rule",
-  "unmet_need",
-] as const;
+export const MEMORY_FAMILY_IDS = MEMORY_PROFILE_IDS;
 
-export type MemoryFamilyId = (typeof MEMORY_FAMILY_IDS)[number];
+export type MemoryFamilyId = MemoryProfileId;
 
 export const MEMORY_PROOF_INSPECTABLE_FAMILY_IDS = MEMORY_FAMILY_IDS;
 
@@ -57,11 +62,7 @@ export const MEMORY_PROOF_FAMILY_IDS = [
 
 export type MemoryProofFamilyId = (typeof MEMORY_PROOF_FAMILY_IDS)[number];
 
-export type MemoryFamilyStorageKind =
-  | "memory_object"
-  | "procedure_candidate"
-  | "validated_procedure"
-  | "phrase_pattern";
+export type MemoryFamilyStorageKind = MemoryProfileStorageKind;
 
 export type MemoryFamilyScopeModel =
   | { kind: "global" }
@@ -99,16 +100,7 @@ export type MemoryFamilyRetrievalMode =
   | "validated_procedure_hybrid"
   | "approved_hybrid_with_semantic_gate";
 
-export type MemoryFamilyRetrievalFeature =
-  | "family_intent_match"
-  | "project_scope_match"
-  | "subject_match"
-  | "value_match"
-  | "recommended_action_match"
-  | "avoid_action_match"
-  | "needed_capability_match"
-  | "guidance_pattern_match"
-  | "procedure_title_match";
+export type MemoryFamilyRetrievalFeature = MemoryProfileRetrievalFeature;
 
 export type MemoryFamilyApplicationMode =
   | "shape_reply"
@@ -150,23 +142,13 @@ export type MemoryFamilyPhrasePatternProofPolicy = {
 };
 
 export type MemoryFamilyCaptureMetadata = {
-  category:
-    | "project_fact"
-    | "recurring_procedure"
-    | "workflow_improvement"
-    | "project_rule"
-    | "unmet_need";
-  source:
-    | "explicit_project_fact"
-    | "explicit_recurring_procedure"
-    | "explicit_workflow_improvement"
-    | "explicit_project_rule"
-    | "explicit_unmet_need";
+  category: MemoryProfileCaptureCategory;
+  source: MemoryProfileCaptureSource;
   subjectKeyMetadata?: "subject_key";
 };
 
 export type MemoryFamilyCanonicalProjection = {
-  kind: CanonicalMemoryKind;
+  kind: MemoryProfileDefinition["canonicalKind"];
   defaultTags: readonly string[];
   defaultFacets: CanonicalMemoryFacetMap;
   derivedViews: readonly string[];
@@ -254,526 +236,106 @@ export type MemoryFamilyDefinition = {
   captureClasses?: readonly string[];
 };
 
-const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = {
-  response_style: {
-    id: "response_style",
-    displayName: "Response Style",
-    canonicalProjection: {
-      kind: "user",
-      defaultTags: ["response_style", "preference", "user"],
-      defaultFacets: {
-        response_style: true,
-        preference: true,
-      },
-      derivedViews: ["response_style"],
-      compatibilityStatus: "transitional_family_adapter",
-    },
-    storageKinds: ["memory_object", "phrase_pattern"],
-    scopeModel: { kind: "global" },
-    canonicalFields: ["subject", "value"],
-    lifecyclePolicy: {
-      mode: "clustered_hold_auto_review",
-      clusterKeyFields: ["subject", "value"],
-      subjectKeyFields: ["subject"],
-      pendingCandidateStates: ["pending_confirmation", "hold_for_more_evidence"],
-      approvalThreshold: 2,
-      staleWindowDays: 3,
-    },
-    correctionPolicy: {
-      mode: "approved_memory_object_supersede_when_targeted",
-      targetKind: "approved_memory_object",
-      targetFields: ["subject", "value"],
-      explicitCorrectionRequired: true,
-      requiresExistingTarget: true,
-    },
-    phrasePolicy: {
-      mode: "approved_pattern_reviewed",
-      sourceStorageKind: "memory_object",
-      approvalStorageKind: "phrase_pattern",
-    },
-    retrievalPolicy: {
-      mode: "approved_hybrid",
-      featureWeights: {
-        subject_match: 170,
-        value_match: 105,
-      },
-      directIntentClass: "style",
-      matchedFieldPrefix: "response_style",
-    },
-    applicationPolicy: {
-      mode: "shape_reply",
-      guidanceOnly: false,
-      directUseOnlyOnClearAsk: false,
-      promptSection: "behavior",
-    },
-    semanticRoutingPolicy: {
-      mode: "disabled",
-      enabledQueryClasses: [],
-    },
-    proofPolicy: {
-      inspectionMode: "response_style_lifecycle",
-      artifactMode: "approved_memory_object",
-      phrasePattern: {
-        familyId: "response_style_phrase_pattern",
-        inspectionMode: "response_style_phrase_pattern_lifecycle",
-      },
-    },
-  },
-  project_fact: {
-    id: "project_fact",
-    displayName: "Project Fact",
-    canonicalProjection: {
-      kind: "project",
-      defaultTags: ["project_fact", "fact", "project"],
-      defaultFacets: {
-        fact: true,
-        project_scope: true,
-      },
-      derivedViews: ["project_fact"],
-      compatibilityStatus: "transitional_family_adapter",
-    },
-    storageKinds: ["memory_object"],
-    scopeModel: { kind: "project", projectRequired: true },
-    canonicalFields: ["scope", "subject", "value"],
-    lifecyclePolicy: {
-      mode: "clustered_hold_auto_review",
-      clusterKeyFields: ["scope", "subject", "value"],
-      subjectKeyFields: ["scope", "subject"],
-      pendingCandidateStates: ["pending_confirmation", "hold_for_more_evidence"],
-      approvalThreshold: 2,
-      staleWindowDays: 3,
-    },
-    correctionPolicy: {
-      mode: "approved_memory_object_supersede_when_targeted",
-      targetKind: "approved_memory_object",
-      targetFields: ["scope", "subject", "value"],
-      explicitCorrectionRequired: true,
-      requiresExistingTarget: true,
-    },
-    phrasePolicy: {
-      mode: "unsupported",
-    },
-    retrievalPolicy: {
-      mode: "approved_hybrid",
-      featureWeights: {
-        family_intent_match: 90,
-        project_scope_match: 205,
-        subject_match: 180,
-        value_match: 100,
-      },
-      directIntentClass: "fact",
-      suppressAdjacentFamilies: true,
-      matchedFieldPrefix: "project_fact",
-    },
-    applicationPolicy: {
-      mode: "direct_answer",
-      guidanceOnly: false,
-      directUseOnlyOnClearAsk: false,
-      promptSection: "project",
-    },
-    semanticRoutingPolicy: {
-      mode: "disabled",
-      enabledQueryClasses: [],
-    },
-    proofPolicy: {
-      inspectionMode: "project_fact_lifecycle",
-      artifactMode: "approved_memory_object",
-    },
-    captureMetadata: {
-      category: "project_fact",
-      source: "explicit_project_fact",
-      subjectKeyMetadata: "subject_key",
-    },
-    captureClasses: ["explicit_project_fact"],
-  },
-  recurring_procedure: {
-    id: "recurring_procedure",
-    displayName: "Recurring Procedure",
-    canonicalProjection: {
-      kind: "feedback",
-      defaultTags: ["recurring_procedure", "procedure", "validated_approach", "feedback"],
-      defaultFacets: {
-        procedure: true,
-        validated_approach: true,
-      },
-      derivedViews: ["procedure"],
-      compatibilityStatus: "transitional_family_adapter",
-    },
-    storageKinds: ["procedure_candidate", "validated_procedure"],
-    scopeModel: { kind: "mixed_project", projectPreferred: true },
-    canonicalFields: ["subject", "value", "procedure_title", "procedure_steps"],
-    lifecyclePolicy: {
-      mode: "procedure_validation",
-      clusterKeyFields: ["subject", "value"],
-      subjectKeyFields: ["subject"],
-      pendingCandidateStates: ["pending_confirmation", "hold_for_more_evidence"],
-      approvalThreshold: 2,
-      staleWindowDays: 3,
-    },
-    correctionPolicy: {
-      mode: "validated_procedure_supersede_when_targeted",
-      targetKind: "validated_procedure",
-      targetFields: ["subject", "value", "procedure_title"],
-      explicitCorrectionRequired: true,
-      requiresExistingTarget: false,
-    },
-    phrasePolicy: {
-      mode: "unsupported",
-    },
-    retrievalPolicy: {
-      mode: "validated_procedure_hybrid",
-      featureWeights: {
-        procedure_title_match: 0,
-        subject_match: 200,
-      },
-      directIntentClass: "procedure",
-      matchedFieldPrefix: "procedure",
-    },
-    applicationPolicy: {
-      mode: "suggestion_first",
-      guidanceOnly: false,
-      directUseOnlyOnClearAsk: true,
-      promptSection: "procedure",
-    },
-    semanticRoutingPolicy: {
-      mode: "validated_procedure_only",
-      enabledQueryClasses: ["clear_checklist_ask", "nearby_procedure_ask"],
-    },
-    proofPolicy: {
-      inspectionMode: "recurring_procedure_lifecycle",
-      artifactMode: "validated_procedure",
-    },
-    captureMetadata: {
-      category: "recurring_procedure",
-      source: "explicit_recurring_procedure",
-      subjectKeyMetadata: "subject_key",
-    },
-    captureClasses: ["explicit_recurring_procedure"],
-  },
-  workflow_improvement: {
-    id: "workflow_improvement",
-    displayName: "Workflow Improvement",
-    canonicalProjection: {
-      kind: "feedback",
-      defaultTags: ["workflow_improvement", "workflow_guidance", "feedback"],
-      defaultFacets: {
-        workflow_guidance: true,
-        validated_approach: true,
-      },
-      derivedViews: ["workflow_guidance", "learned_guidance"],
-      compatibilityStatus: "transitional_family_adapter",
-    },
-    storageKinds: ["memory_object", "phrase_pattern"],
-    scopeModel: { kind: "project", projectRequired: true },
-    canonicalFields: [
-      "scope",
-      "subject",
-      "guidance_pattern",
-      "recommended_action",
-      "avoid_action",
-      "rationale",
-    ],
-    lifecyclePolicy: {
-      mode: "clustered_hold_auto_review",
-      clusterKeyFields: [
-        "scope",
-        "subject",
-        "guidance_pattern",
-        "recommended_action",
-        "avoid_action",
-      ],
-      subjectKeyFields: ["scope", "subject"],
-      pendingCandidateStates: ["pending_confirmation", "review_required", "hold_for_more_evidence"],
-      approvalThreshold: 2,
-      staleWindowDays: 3,
-    },
-    correctionPolicy: {
-      mode: "approved_memory_object_supersede_when_targeted",
-      targetKind: "approved_memory_object",
-      targetFields: ["scope", "subject", "recommended_action", "avoid_action"],
-      explicitCorrectionRequired: true,
-      requiresExistingTarget: true,
-    },
-    phrasePolicy: {
-      mode: "approved_pattern_reviewed",
-      sourceStorageKind: "memory_object",
-      approvalStorageKind: "phrase_pattern",
-    },
-    retrievalPolicy: {
-      mode: "approved_hybrid_with_semantic_gate",
-      featureWeights: {
-        subject_match: 170,
-        recommended_action_match: 95,
-        avoid_action_match: 90,
-        guidance_pattern_match: 40,
-      },
-      matchedFieldPrefix: "generalized",
-    },
-    applicationPolicy: {
-      mode: "guidance_only",
-      guidanceOnly: true,
-      directUseOnlyOnClearAsk: false,
-      promptSection: "behavior",
-    },
-    semanticRoutingPolicy: {
-      mode: "family_gated_approved_only",
-      enabledQueryClasses: ["nearby_workflow_guidance_ask"],
-    },
-    proofPolicy: {
-      inspectionMode: "workflow_improvement_lifecycle",
-      artifactMode: "approved_memory_object",
-      phrasePattern: {
-        familyId: "workflow_phrase_pattern",
-        inspectionMode: "workflow_phrase_pattern_lifecycle",
-      },
-    },
-    captureMetadata: {
-      category: "workflow_improvement",
-      source: "explicit_workflow_improvement",
-      subjectKeyMetadata: "subject_key",
-    },
-    captureClasses: [
-      "workflow_tool_gotcha",
-      "workflow_environment_constraint",
-      "workflow_api_workaround",
-      "workflow_generalized_guidance",
-    ],
-  },
-  project_rule: {
-    id: "project_rule",
-    displayName: "Project Rule",
-    canonicalProjection: {
-      kind: "feedback",
-      defaultTags: ["project_rule", "rule", "feedback"],
-      defaultFacets: {
-        project_rule: true,
-        rule: true,
-      },
-      derivedViews: ["project_rule"],
-      compatibilityStatus: "transitional_family_adapter",
-    },
-    storageKinds: ["memory_object"],
-    scopeModel: { kind: "project", projectRequired: true },
-    canonicalFields: ["scope", "subject", "guidance_pattern", "recommended_action", "avoid_action"],
-    lifecyclePolicy: {
-      mode: "clustered_hold_auto_review",
-      clusterKeyFields: [
-        "scope",
-        "subject",
-        "guidance_pattern",
-        "recommended_action",
-        "avoid_action",
-      ],
-      subjectKeyFields: ["scope", "subject"],
-      pendingCandidateStates: ["pending_confirmation", "review_required", "hold_for_more_evidence"],
-      approvalThreshold: 2,
-      staleWindowDays: 3,
-    },
-    correctionPolicy: {
-      mode: "approved_memory_object_supersede_when_targeted",
-      targetKind: "approved_memory_object",
-      targetFields: ["scope", "subject", "recommended_action", "avoid_action"],
-      explicitCorrectionRequired: true,
-      requiresExistingTarget: true,
-    },
-    phrasePolicy: {
-      mode: "unsupported",
-    },
-    retrievalPolicy: {
-      mode: "approved_hybrid",
-      featureWeights: {
-        family_intent_match: 95,
-        project_scope_match: 210,
-        subject_match: 165,
-        recommended_action_match: 95,
-        avoid_action_match: 90,
-        guidance_pattern_match: 40,
-      },
-      directIntentClass: "rule",
-      suppressAdjacentFamilies: true,
-      matchedFieldPrefix: "project_rule",
-    },
-    applicationPolicy: {
-      mode: "guidance_only",
-      guidanceOnly: true,
-      directUseOnlyOnClearAsk: false,
-      promptSection: "project",
-    },
-    semanticRoutingPolicy: {
-      mode: "disabled",
-      enabledQueryClasses: [],
-    },
-    proofPolicy: {
-      inspectionMode: "workflow_improvement_lifecycle",
-      artifactMode: "approved_memory_object",
-    },
-    captureMetadata: {
-      category: "project_rule",
-      source: "explicit_project_rule",
-      subjectKeyMetadata: "subject_key",
-    },
-    captureClasses: ["project_rule_guidance"],
-  },
-  unmet_need: {
-    id: "unmet_need",
-    displayName: "Unmet Need",
-    canonicalProjection: {
-      kind: "project",
-      defaultTags: ["unmet_need", "open_need", "project"],
-      defaultFacets: {
-        open_need: true,
-        project_scope: true,
-      },
-      derivedViews: ["unmet_need"],
-      compatibilityStatus: "transitional_family_adapter",
-    },
-    storageKinds: ["memory_object"],
-    scopeModel: { kind: "project", projectRequired: true },
-    canonicalFields: ["scope", "subject", "needed_capability"],
-    lifecyclePolicy: {
-      mode: "clustered_hold_auto_review",
-      clusterKeyFields: ["scope", "subject", "needed_capability"],
-      subjectKeyFields: ["scope", "subject", "needed_capability"],
-      pendingCandidateStates: ["pending_confirmation", "review_required", "hold_for_more_evidence"],
-      approvalThreshold: 2,
-      staleWindowDays: 3,
-    },
-    correctionPolicy: {
-      mode: "held_correction",
-      targetKind: "approved_memory_object",
-      targetFields: ["scope", "subject", "needed_capability"],
-      explicitCorrectionRequired: true,
-      requiresExistingTarget: true,
-    },
-    phrasePolicy: {
-      mode: "unsupported",
-    },
-    retrievalPolicy: {
-      mode: "approved_hybrid",
-      featureWeights: {
-        family_intent_match: 130,
-        project_scope_match: 205,
-        subject_match: 160,
-        needed_capability_match: 110,
-      },
-      directIntentClass: "need",
-      suppressAdjacentFamilies: true,
-      matchedFieldPrefix: "unmet_need",
-    },
-    applicationPolicy: {
-      mode: "recommendation_only",
-      guidanceOnly: true,
-      directUseOnlyOnClearAsk: false,
-      promptSection: "project",
-    },
-    semanticRoutingPolicy: {
-      mode: "disabled",
-      enabledQueryClasses: [],
-    },
-    proofPolicy: {
-      inspectionMode: "workflow_improvement_lifecycle",
-      artifactMode: "approved_memory_object",
-    },
-    captureMetadata: {
-      category: "unmet_need",
-      source: "explicit_unmet_need",
-      subjectKeyMetadata: "subject_key",
-    },
-    captureClasses: ["unmet_need_recommendation"],
-  },
-};
-
-const WORKFLOW_LESSON_FAMILY_COMPATIBILITY: Record<
-  string,
-  {
-    familyId: MemoryFamilyId;
-    captureMetadata?: MemoryFamilyCaptureMetadata;
+function toScopeModel(scopeModel: MemoryProfileDefinition["scopeModel"]): MemoryFamilyScopeModel {
+  switch (scopeModel) {
+    case "global":
+      return { kind: "global" };
+    case "project":
+      return { kind: "project", projectRequired: true };
+    case "mixed":
+      return { kind: "mixed_project", projectPreferred: true };
   }
-> = {
-  generalized_workflow_lesson: {
-    familyId: "workflow_improvement",
-    captureMetadata: FAMILY_DEFINITIONS.workflow_improvement.captureMetadata,
-  },
-  generalized_project_rule: {
-    familyId: "project_rule",
-    captureMetadata: FAMILY_DEFINITIONS.project_rule.captureMetadata,
-  },
-  generalized_unmet_need: {
-    familyId: "unmet_need",
-    captureMetadata: FAMILY_DEFINITIONS.unmet_need.captureMetadata,
-  },
-};
+}
 
-const CAPTURE_CLASS_TO_FAMILY_ID = new Map<string, MemoryFamilyId>();
-const WORKFLOW_LESSON_FAMILY_TO_FAMILY_ID = new Map<string, MemoryFamilyId>();
-const CAPTURE_CLASS_TO_CAPTURE_METADATA = new Map<string, MemoryFamilyCaptureMetadata>();
-const WORKFLOW_LESSON_FAMILY_TO_CAPTURE_METADATA = new Map<string, MemoryFamilyCaptureMetadata>();
+function toCaptureMetadata(
+  profile: MemoryProfileDefinition,
+): MemoryFamilyCaptureMetadata | undefined {
+  if (!profile.capture) {
+    return undefined;
+  }
+  return {
+    category: profile.capture.category,
+    source: profile.capture.source,
+    ...(profile.capture.subjectKeyMetadata
+      ? { subjectKeyMetadata: profile.capture.subjectKeyMetadata }
+      : {}),
+  };
+}
+
+function toFamilyDefinition(profile: MemoryProfileDefinition): MemoryFamilyDefinition {
+  return {
+    id: profile.id,
+    displayName: profile.displayName,
+    canonicalProjection: {
+      kind: profile.canonicalKind,
+      defaultTags: profile.defaultTags,
+      defaultFacets: profile.defaultFacets,
+      derivedViews: profile.derivedViews,
+      compatibilityStatus: "transitional_family_adapter",
+    },
+    storageKinds: profile.storageKinds,
+    scopeModel: toScopeModel(profile.scopeModel),
+    canonicalFields: profile.canonicalFields,
+    lifecyclePolicy: { ...profile.lifecycle },
+    correctionPolicy: { ...profile.correction },
+    phrasePolicy: { ...profile.phrase },
+    retrievalPolicy: { ...profile.retrieval },
+    applicationPolicy: { ...profile.application },
+    semanticRoutingPolicy: { ...profile.semanticRouting },
+    proofPolicy: {
+      inspectionMode: profile.proof.inspectionMode,
+      artifactMode: profile.proof.artifactMode,
+      ...(profile.proof.phrasePattern
+        ? {
+            phrasePattern: {
+              familyId: profile.proof.phrasePattern.familyId,
+              inspectionMode: profile.proof.phrasePattern.inspectionMode,
+            },
+          }
+        : {}),
+    },
+    ...(toCaptureMetadata(profile) ? { captureMetadata: toCaptureMetadata(profile) } : {}),
+    ...(profile.capture ? { captureClasses: profile.capture.captureClasses } : {}),
+  };
+}
+
+const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = Object.fromEntries(
+  listMemoryProfiles().map((profile) => [profile.id, toFamilyDefinition(profile)]),
+) as Record<MemoryFamilyId, MemoryFamilyDefinition>;
+
 const PHRASE_PATTERN_PROOF_FAMILY_TO_DEFINITION = new Map<
   MemoryPhrasePatternProofFamilyId,
   MemoryProofDefinition
 >();
-const FAMILY_ID_TO_LIFECYCLE_POLICY_VIEW = new Map<MemoryFamilyId, MemoryLifecyclePolicyView>();
-const FAMILY_ID_TO_CORRECTION_POLICY_VIEW = new Map<MemoryFamilyId, MemoryCorrectionPolicyView>();
-const FAMILY_ID_TO_RETRIEVAL_POLICY_VIEW = new Map<MemoryFamilyId, MemoryRetrievalPolicyView>();
-const FAMILY_ID_TO_SEMANTIC_ROUTING_POLICY_VIEW = new Map<
-  MemoryFamilyId,
-  MemorySemanticRoutingPolicyView
->();
 const APPROVED_MEMORY_RETRIEVAL_POLICY_VIEWS: ApprovedMemoryRetrievalPolicyView[] = [];
 
-for (const definition of Object.values(FAMILY_DEFINITIONS)) {
-  FAMILY_ID_TO_LIFECYCLE_POLICY_VIEW.set(definition.id, {
-    pendingCandidateStates: definition.lifecyclePolicy.pendingCandidateStates,
-    staleWindowDays: definition.lifecyclePolicy.staleWindowDays,
-  });
-  FAMILY_ID_TO_CORRECTION_POLICY_VIEW.set(definition.id, {
-    mode: definition.correctionPolicy.mode,
-    targetKind: definition.correctionPolicy.targetKind,
-    requiresExistingTarget: definition.correctionPolicy.requiresExistingTarget,
-  });
-  FAMILY_ID_TO_RETRIEVAL_POLICY_VIEW.set(definition.id, {
-    featureWeights: definition.retrievalPolicy.featureWeights,
-    ...(definition.retrievalPolicy.directIntentClass
-      ? { directIntentClass: definition.retrievalPolicy.directIntentClass }
-      : {}),
-    ...(definition.retrievalPolicy.matchedFieldPrefix
-      ? { matchedFieldPrefix: definition.retrievalPolicy.matchedFieldPrefix }
-      : {}),
-  });
-  FAMILY_ID_TO_SEMANTIC_ROUTING_POLICY_VIEW.set(definition.id, {
-    mode: definition.semanticRoutingPolicy.mode,
-  });
-  for (const captureClass of definition.captureClasses ?? []) {
-    CAPTURE_CLASS_TO_FAMILY_ID.set(captureClass, definition.id);
-    if (definition.captureMetadata) {
-      CAPTURE_CLASS_TO_CAPTURE_METADATA.set(captureClass, definition.captureMetadata);
-    }
-  }
-  if (definition.proofPolicy.phrasePattern) {
-    PHRASE_PATTERN_PROOF_FAMILY_TO_DEFINITION.set(definition.proofPolicy.phrasePattern.familyId, {
-      id: definition.proofPolicy.phrasePattern.familyId,
-      inspectionMode: definition.proofPolicy.phrasePattern.inspectionMode,
+for (const profile of listMemoryProfiles()) {
+  if (profile.proof.phrasePattern) {
+    PHRASE_PATTERN_PROOF_FAMILY_TO_DEFINITION.set(profile.proof.phrasePattern.familyId, {
+      id: profile.proof.phrasePattern.familyId,
+      inspectionMode: profile.proof.phrasePattern.inspectionMode,
       artifactMode: "phrase_pattern",
     });
   }
   if (
-    definition.storageKinds.includes("memory_object") &&
-    definition.id !== "recurring_procedure" &&
-    Object.keys(definition.retrievalPolicy.featureWeights).length > 0
+    profile.storageKinds.includes("memory_object") &&
+    profile.id !== "recurring_procedure" &&
+    Object.keys(profile.retrieval.featureWeights).length > 0
   ) {
     APPROVED_MEMORY_RETRIEVAL_POLICY_VIEWS.push({
-      id: definition.id,
-      storageKinds: definition.storageKinds,
-      derivedViews: definition.canonicalProjection.derivedViews,
-      retrievalPolicy: FAMILY_ID_TO_RETRIEVAL_POLICY_VIEW.get(definition.id)!,
+      id: profile.id,
+      storageKinds: profile.storageKinds,
+      derivedViews: profile.derivedViews,
+      retrievalPolicy: {
+        featureWeights: profile.retrieval.featureWeights,
+        ...(profile.retrieval.directIntentClass
+          ? { directIntentClass: profile.retrieval.directIntentClass }
+          : {}),
+        ...(profile.retrieval.matchedFieldPrefix
+          ? { matchedFieldPrefix: profile.retrieval.matchedFieldPrefix }
+          : {}),
+      },
     });
-  }
-}
-
-for (const [lessonFamily, compatibility] of Object.entries(WORKFLOW_LESSON_FAMILY_COMPATIBILITY)) {
-  WORKFLOW_LESSON_FAMILY_TO_FAMILY_ID.set(lessonFamily, compatibility.familyId);
-  if (compatibility.captureMetadata) {
-    WORKFLOW_LESSON_FAMILY_TO_CAPTURE_METADATA.set(lessonFamily, compatibility.captureMetadata);
   }
 }
 
@@ -804,23 +366,43 @@ export function getMemoryFamilyCanonicalProjection(
 }
 
 export function getMemoryLifecyclePolicyView(familyId: MemoryFamilyId): MemoryLifecyclePolicyView {
-  return FAMILY_ID_TO_LIFECYCLE_POLICY_VIEW.get(familyId)!;
+  const profile = getMemoryProfile(familyId);
+  return {
+    pendingCandidateStates: profile.lifecycle.pendingCandidateStates,
+    staleWindowDays: profile.lifecycle.staleWindowDays,
+  };
 }
 
 export function getMemoryCorrectionPolicyView(
   familyId: MemoryFamilyId,
 ): MemoryCorrectionPolicyView {
-  return FAMILY_ID_TO_CORRECTION_POLICY_VIEW.get(familyId)!;
+  const profile = getMemoryProfile(familyId);
+  return {
+    mode: profile.correction.mode,
+    targetKind: profile.correction.targetKind,
+    requiresExistingTarget: profile.correction.requiresExistingTarget,
+  };
 }
 
 export function getMemoryRetrievalPolicyView(familyId: MemoryFamilyId): MemoryRetrievalPolicyView {
-  return FAMILY_ID_TO_RETRIEVAL_POLICY_VIEW.get(familyId)!;
+  const profile = getMemoryProfile(familyId);
+  return {
+    featureWeights: profile.retrieval.featureWeights,
+    ...(profile.retrieval.directIntentClass
+      ? { directIntentClass: profile.retrieval.directIntentClass }
+      : {}),
+    ...(profile.retrieval.matchedFieldPrefix
+      ? { matchedFieldPrefix: profile.retrieval.matchedFieldPrefix }
+      : {}),
+  };
 }
 
 export function getMemorySemanticRoutingPolicyView(
   familyId: MemoryFamilyId,
 ): MemorySemanticRoutingPolicyView {
-  return FAMILY_ID_TO_SEMANTIC_ROUTING_POLICY_VIEW.get(familyId)!;
+  return {
+    mode: getMemoryProfile(familyId).semanticRouting.mode,
+  };
 }
 
 export function listApprovedMemoryRetrievalPolicyViews(): ApprovedMemoryRetrievalPolicyView[] {
@@ -841,8 +423,8 @@ export function memoryFamilyProjectsToDerivedView(
 export function getMemoryFamilyDefinitionByCaptureClass(
   captureClass: string,
 ): MemoryFamilyDefinition | null {
-  const familyId = CAPTURE_CLASS_TO_FAMILY_ID.get(captureClass);
-  return familyId ? getMemoryFamilyDefinition(familyId) : null;
+  const profile = getMemoryProfileByCaptureClass(captureClass);
+  return profile ? getMemoryFamilyDefinition(profile.id) : null;
 }
 
 /**
@@ -852,7 +434,7 @@ export function getMemoryFamilyDefinitionByCaptureClass(
 export function getMemoryFamilyIdByWorkflowLessonFamily(
   lessonFamily: string,
 ): MemoryFamilyId | null {
-  return WORKFLOW_LESSON_FAMILY_TO_FAMILY_ID.get(lessonFamily) ?? null;
+  return getMemoryProfileIdByWorkflowLessonFamily(lessonFamily);
 }
 
 export function isMemoryProofInspectableFamily(
@@ -896,13 +478,17 @@ export function supportsMemoryFamilyReviewedPhrasePatterns(familyId: MemoryFamil
 export function getCaptureMetadataByCaptureClass(
   captureClass: string,
 ): MemoryFamilyCaptureMetadata | null {
-  return CAPTURE_CLASS_TO_CAPTURE_METADATA.get(captureClass) ?? null;
+  const profile = getMemoryProfileByCaptureClass(captureClass);
+  return profile ? (toCaptureMetadata(profile) ?? null) : null;
 }
 
 export function getCaptureMetadataByWorkflowLessonFamily(
   lessonFamily: string,
 ): MemoryFamilyCaptureMetadata | null {
-  return WORKFLOW_LESSON_FAMILY_TO_CAPTURE_METADATA.get(lessonFamily) ?? null;
+  const workflowProfileId = getMemoryProfileIdByWorkflowLessonFamily(lessonFamily);
+  return workflowProfileId
+    ? (toCaptureMetadata(getMemoryProfile(workflowProfileId)) ?? null)
+    : null;
 }
 
 function resolveCanonicalScope(

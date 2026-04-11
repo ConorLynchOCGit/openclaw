@@ -186,13 +186,16 @@ export function buildApprovedMemoryRetrievalFeatureSql(params: {
   const matchedFieldClauses: string[] = [];
 
   for (const definition of listApprovedMemoryRetrievalRuntimePolicies()) {
-    for (const [feature, weight] of Object.entries(definition.retrievalPolicy.featureWeights)) {
+    const featureEntries = Object.entries(definition.retrievalPolicy.featureWeights) as Array<
+      [MemoryRetrievalRuntimeFeature, number | undefined]
+    >;
+    for (const [feature, weight] of featureEntries) {
       if (!weight) {
         continue;
       }
       const clause = buildApprovedMemoryFeatureClause({
         definition,
-        feature: feature as MemoryRetrievalRuntimeFeature,
+        feature,
         weight,
         expressions: params.expressions,
         paramRefs: params.paramRefs,

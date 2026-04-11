@@ -123,6 +123,25 @@ through:
 
 No schema change was required for this observability tranche.
 
+The broad profile-over-family structural refactor batch on 2026-04-11 is now
+also landed locally through:
+
+- one canonical profile registry for the active transitional runtime surfaces
+- a thinner plugin-SDK family bridge derived from that registry instead of
+  owning a separate giant table
+- thinner middleware compatibility, capture-metadata, runtime-policy, and
+  workflow-policy views derived from the same registry
+- shared submission/profile routing helpers for canonical candidate metadata,
+  legacy fallback metadata, and workflow capture-category/review resolution
+- shared lifecycle/semantic metadata builders reused by both
+  `candidate-submit.ts` and `ordinary-turn-auto-capture.ts`
+
+This did not finish the full orchestrator simplification program.
+`candidate-submit.ts` and `ordinary-turn-auto-capture.ts` remain the next
+highest-value runtime-core extraction targets, but the registry/routing/helper
+duplication that kept reintroducing family-era architecture is materially
+smaller than before.
+
 The current execution posture is now a soak period rather than another
 pre-scheduled feature tranche.
 

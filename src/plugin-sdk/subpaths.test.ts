@@ -209,6 +209,11 @@ describe("plugin-sdk subpath exports", () => {
       "createCanonicalMemoryRankingHint",
       "CANONICAL_MEMORY_SEMANTIC_FALLBACK_STRATEGIES",
     ]);
+    expectSourceMentions("memory-profile-registry", [
+      "getMemoryProfile",
+      "getMemoryProfileByCaptureClass",
+      "getMemoryProfileIdByWorkflowLessonFamily",
+    ]);
     expectSourceMentions("telegram-core", [
       "ChannelMessageActionAdapter",
       "TelegramAccountConfig",

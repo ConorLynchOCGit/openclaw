@@ -36,6 +36,20 @@ import {
   toOrdinaryTurnWorkflowImprovementMatch,
 } from "./memory-ingestion-types.js";
 import {
+  buildPendingConfirmationMetadata as buildPendingConfirmationLifecycleMetadata,
+  buildProjectFactPendingConfirmationMetadata as buildProjectFactPendingConfirmationLifecycleMetadata,
+  buildProjectFactSemanticMetadata as buildProjectFactSemanticDetectionMetadata,
+  buildRecurringProcedurePendingConfirmationMetadata as buildRecurringProcedurePendingConfirmationLifecycleMetadata,
+  buildRecurringProcedureSemanticMetadata as buildRecurringProcedureSemanticDetectionMetadata,
+  buildResponseStyleSemanticMetadata as buildResponseStyleSemanticDetectionMetadata,
+  buildWorkflowImprovementPendingConfirmationMetadata as buildWorkflowImprovementPendingConfirmationLifecycleMetadata,
+  buildWorkflowImprovementSemanticMetadata as buildWorkflowImprovementSemanticDetectionMetadata,
+  shouldSkipImmediateConfirmation as shouldSkipImmediateResponseStyleConfirmation,
+  shouldSkipImmediateProjectFactConfirmation as shouldSkipImmediateProjectFactLifecycleConfirmation,
+  shouldSkipImmediateRecurringProcedureConfirmation as shouldSkipImmediateRecurringProcedureLifecycleConfirmation,
+  shouldSkipImmediateWorkflowImprovementConfirmation as shouldSkipImmediateWorkflowImprovementLifecycleConfirmation,
+} from "./memory-lifecycle-metadata.js";
+import {
   deriveCorpusDemandSignalsFromPrompt,
   type MemorySoakTelemetryPort,
   MEMORY_SOAK_TELEMETRY_SCHEMA_VERSION,
@@ -127,14 +141,7 @@ const AUTO_PROMOTION_SOURCE = "ordinary_turn_auto_promotion";
 const RESPONSE_STYLE_FORGET_SOURCE = "response_style_forget_request";
 const AUTO_CAPTURE_ALLOWED_ROLES = new Set(["user"]);
 const DEFAULT_ALLOWED_AGENTS = new Set(["chief", "main"]);
-const RESPONSE_STYLE_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
-const RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS = 5_000;
-const PROJECT_FACT_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
-const PROJECT_FACT_CONFIRMATION_MIN_AGE_MS = 5_000;
-const PROCEDURE_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
-const PROCEDURE_CONFIRMATION_MIN_AGE_MS = 5_000;
-const WORKFLOW_IMPROVEMENT_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
-const WORKFLOW_IMPROVEMENT_CONFIRMATION_MIN_AGE_MS = 5_000;
+const CANDIDATE_CONFIRMATION_WINDOW_MS = 72 * 60 * 60 * 1000;
 const CORRECTION_PREFIX =
   "(?:actually,?|correction:|no,?|i meant,?|that(?:'|’)s not right,?|sorry,?)\\s*";
 const PROJECT_FACT_FIELD_LABEL_TO_KEY: Record<string, ProjectFactFieldKey> = {
@@ -2083,14 +2090,11 @@ function buildResponseStyleSemanticMetadata(params: {
   confidence: ResponseStyleSemanticConfidence | "high";
   evidence: string[];
 }): Record<string, unknown> {
-  return {
-    semanticDetection: {
-      source: "response_style_semantic_v1",
-      detectionSource: params.detectionSource,
-      confidence: params.confidence,
-      evidence: params.evidence,
-    },
-  };
+  return buildResponseStyleSemanticDetectionMetadata({
+    detectionSource: params.detectionSource,
+    confidence: params.confidence,
+    evidence: params.evidence,
+  });
 }
 
 function buildProjectFactSemanticMetadata(params: {
@@ -2100,16 +2104,13 @@ function buildProjectFactSemanticMetadata(params: {
   factFamily: ProjectFactFamily;
   fieldKey?: ProjectFactFieldKey;
 }): Record<string, unknown> {
-  return {
-    semanticDetection: {
-      source: "project_fact_semantic_v1",
-      detectionSource: params.detectionSource,
-      confidence: params.confidence,
-      factFamily: params.factFamily,
-      ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
-      evidence: params.evidence,
-    },
-  };
+  return buildProjectFactSemanticDetectionMetadata({
+    detectionSource: params.detectionSource,
+    confidence: params.confidence,
+    evidence: params.evidence,
+    factFamily: params.factFamily,
+    ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
+  });
 }
 
 function buildRecurringProcedureSemanticMetadata(params: {
@@ -2119,16 +2120,13 @@ function buildRecurringProcedureSemanticMetadata(params: {
   procedureFamily: RecurringProcedureFamily;
   procedureKey?: RecurringProcedureKey;
 }): Record<string, unknown> {
-  return {
-    semanticDetection: {
-      source: "recurring_procedure_semantic_v1",
-      detectionSource: params.detectionSource,
-      confidence: params.confidence,
-      procedureFamily: params.procedureFamily,
-      ...(params.procedureKey ? { procedureKey: params.procedureKey } : {}),
-      evidence: params.evidence,
-    },
-  };
+  return buildRecurringProcedureSemanticDetectionMetadata({
+    detectionSource: params.detectionSource,
+    confidence: params.confidence,
+    evidence: params.evidence,
+    procedureFamily: params.procedureFamily,
+    ...(params.procedureKey ? { procedureKey: params.procedureKey } : {}),
+  });
 }
 
 function buildWorkflowImprovementSemanticMetadata(params: {
@@ -2138,23 +2136,13 @@ function buildWorkflowImprovementSemanticMetadata(params: {
   lessonFamily: WorkflowImprovementLessonFamily;
   guidancePattern?: WorkflowImprovementGuidancePattern;
 }): Record<string, unknown> {
-  return {
-    semanticDetection: {
-      source:
-        params.detectionSource === "deterministic"
-          ? "workflow_phrase_induction_v1"
-          : params.lessonFamily === "generalized_project_rule"
-            ? "project_rule_semantic_v1"
-            : params.lessonFamily === "generalized_unmet_need"
-              ? "unmet_need_semantic_v1"
-              : "workflow_improvement_semantic_v2",
-      detectionSource: params.detectionSource,
-      confidence: params.confidence,
-      lessonFamily: params.lessonFamily,
-      ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
-      evidence: params.evidence,
-    },
-  };
+  return buildWorkflowImprovementSemanticDetectionMetadata({
+    detectionSource: params.detectionSource,
+    confidence: params.confidence,
+    evidence: params.evidence,
+    lessonFamily: params.lessonFamily,
+    ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
+  });
 }
 
 function buildPendingConfirmationMetadata(params: {
@@ -2164,21 +2152,7 @@ function buildPendingConfirmationMetadata(params: {
   state?: "pending_confirmation" | "hold_for_more_evidence";
   observedAt?: string;
 }): Record<string, unknown> {
-  const observedAt = params.observedAt ?? new Date().toISOString();
-  return {
-    candidateLifecycle: {
-      family: "response_style",
-      state: params.state ?? "pending_confirmation",
-      confidence: params.confidence,
-      evidenceCount: 1,
-      observedAt,
-      expiresAt: new Date(
-        Date.parse(observedAt) + RESPONSE_STYLE_CONFIRMATION_WINDOW_MS,
-      ).toISOString(),
-      responseStyleFamily: params.responseStyleFamily,
-      evidence: params.evidence,
-    },
-  };
+  return buildPendingConfirmationLifecycleMetadata(params);
 }
 
 function buildProjectFactPendingConfirmationMetadata(params: {
@@ -2190,21 +2164,7 @@ function buildProjectFactPendingConfirmationMetadata(params: {
   clusterKey?: string;
   observedAt?: string;
 }): Record<string, unknown> {
-  const observedAt = params.observedAt ?? new Date().toISOString();
-  return {
-    candidateLifecycle: {
-      family: "project_fact",
-      state: params.state ?? "pending_confirmation",
-      confidence: params.confidence,
-      evidenceCount: 1,
-      observedAt,
-      expiresAt: new Date(Date.parse(observedAt) + PROCEDURE_CONFIRMATION_WINDOW_MS).toISOString(),
-      factFamily: params.factFamily,
-      ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
-      ...(params.clusterKey ? { clusterKey: params.clusterKey } : {}),
-      evidence: params.evidence,
-    },
-  };
+  return buildProjectFactPendingConfirmationLifecycleMetadata(params);
 }
 
 function buildRecurringProcedurePendingConfirmationMetadata(params: {
@@ -2215,22 +2175,7 @@ function buildRecurringProcedurePendingConfirmationMetadata(params: {
   state?: "pending_confirmation" | "hold_for_more_evidence";
   observedAt?: string;
 }): Record<string, unknown> {
-  const observedAt = params.observedAt ?? new Date().toISOString();
-  return {
-    candidateLifecycle: {
-      family: "recurring_procedure",
-      state: params.state ?? "pending_confirmation",
-      confidence: params.confidence,
-      evidenceCount: 1,
-      observedAt,
-      expiresAt: new Date(
-        Date.parse(observedAt) + PROJECT_FACT_CONFIRMATION_WINDOW_MS,
-      ).toISOString(),
-      procedureFamily: params.procedureFamily,
-      ...(params.procedureKey ? { procedureKey: params.procedureKey } : {}),
-      evidence: params.evidence,
-    },
-  };
+  return buildRecurringProcedurePendingConfirmationLifecycleMetadata(params);
 }
 
 function buildWorkflowImprovementPendingConfirmationMetadata(params: {
@@ -2243,26 +2188,7 @@ function buildWorkflowImprovementPendingConfirmationMetadata(params: {
   clusterKey?: string;
   contradictionCount?: number;
 }): Record<string, unknown> {
-  const observedAt = params.observedAt ?? new Date().toISOString();
-  return {
-    candidateLifecycle: {
-      family: "workflow_improvement",
-      state: params.state ?? "pending_confirmation",
-      confidence: params.confidence,
-      evidenceCount: 1,
-      observedAt,
-      expiresAt: new Date(
-        Date.parse(observedAt) + WORKFLOW_IMPROVEMENT_CONFIRMATION_WINDOW_MS,
-      ).toISOString(),
-      lessonFamily: params.lessonFamily,
-      ...(params.guidancePattern ? { guidancePattern: params.guidancePattern } : {}),
-      ...(params.clusterKey ? { clusterKey: params.clusterKey } : {}),
-      ...(typeof params.contradictionCount === "number"
-        ? { contradictionCount: params.contradictionCount }
-        : {}),
-      evidence: params.evidence,
-    },
-  };
+  return buildWorkflowImprovementPendingConfirmationLifecycleMetadata(params);
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -2319,7 +2245,7 @@ function buildDeferredOverflowMetadata(params: {
 }): Record<string, unknown> {
   const observedAt = params.observedAt ?? new Date().toISOString();
   const expiresAt = new Date(
-    Date.parse(observedAt) + WORKFLOW_IMPROVEMENT_CONFIRMATION_WINDOW_MS,
+    Date.parse(observedAt) + CANDIDATE_CONFIRMATION_WINDOW_MS,
   ).toISOString();
   return {
     candidateLifecycle: {
@@ -2351,31 +2277,25 @@ function resolveDeferredReviewMode(
 }
 
 function shouldSkipImmediateConfirmation(createdAt: string, now = Date.now()): boolean {
-  const createdAtMs = Date.parse(createdAt);
-  return Number.isFinite(createdAtMs) && now - createdAtMs < RESPONSE_STYLE_CONFIRMATION_MIN_AGE_MS;
+  return shouldSkipImmediateResponseStyleConfirmation(createdAt, now);
 }
 
 function shouldSkipImmediateProjectFactConfirmation(createdAt: string, now = Date.now()): boolean {
-  const createdAtMs = Date.parse(createdAt);
-  return Number.isFinite(createdAtMs) && now - createdAtMs < PROJECT_FACT_CONFIRMATION_MIN_AGE_MS;
+  return shouldSkipImmediateProjectFactLifecycleConfirmation(createdAt, now);
 }
 
 function shouldSkipImmediateRecurringProcedureConfirmation(
   createdAt: string,
   now = Date.now(),
 ): boolean {
-  const createdAtMs = Date.parse(createdAt);
-  return Number.isFinite(createdAtMs) && now - createdAtMs < PROCEDURE_CONFIRMATION_MIN_AGE_MS;
+  return shouldSkipImmediateRecurringProcedureLifecycleConfirmation(createdAt, now);
 }
 
 function shouldSkipImmediateWorkflowImprovementConfirmation(
   createdAt: string,
   now = Date.now(),
 ): boolean {
-  const createdAtMs = Date.parse(createdAt);
-  return (
-    Number.isFinite(createdAtMs) && now - createdAtMs < WORKFLOW_IMPROVEMENT_CONFIRMATION_MIN_AGE_MS
-  );
+  return shouldSkipImmediateWorkflowImprovementLifecycleConfirmation(createdAt, now);
 }
 
 function resolveCapturePlanPosture(params: {
@@ -3836,7 +3756,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             state: "confirmed",
             method: "repeat_subject_signal",
             confirmationEvidenceCount: 2,
-            confirmationWindowMs: RESPONSE_STYLE_CONFIRMATION_WINDOW_MS,
+            confirmationWindowMs: CANDIDATE_CONFIRMATION_WINDOW_MS,
           },
         }),
         logContext: {
@@ -4343,7 +4263,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
               ? "generalized_cluster_auto_review"
               : "repeat_subject_signal",
             confirmationEvidenceCount: 2,
-            confirmationWindowMs: PROJECT_FACT_CONFIRMATION_WINDOW_MS,
+            confirmationWindowMs: CANDIDATE_CONFIRMATION_WINDOW_MS,
             ...(isGeneralizedProjectFactMatch(match) ? { clusterKey: match.key } : {}),
           },
         }),
@@ -4806,7 +4726,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
                 ? "generalized_cluster_auto_review"
                 : "repeat_subject_signal",
             confirmationEvidenceCount: 2,
-            confirmationWindowMs: PROCEDURE_CONFIRMATION_WINDOW_MS,
+            confirmationWindowMs: CANDIDATE_CONFIRMATION_WINDOW_MS,
           },
         }),
         logContext: {
@@ -5497,7 +5417,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             state: "confirmed",
             method: "repeat_subject_signal",
             confirmationEvidenceCount: 2,
-            confirmationWindowMs: WORKFLOW_IMPROVEMENT_CONFIRMATION_WINDOW_MS,
+            confirmationWindowMs: CANDIDATE_CONFIRMATION_WINDOW_MS,
           },
         }),
         logContext: {
@@ -5952,7 +5872,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
                     state: "confirmed",
                     method: "repeat_subject_signal",
                     confirmationEvidenceCount: 2,
-                    confirmationWindowMs: RESPONSE_STYLE_CONFIRMATION_WINDOW_MS,
+                    confirmationWindowMs: CANDIDATE_CONFIRMATION_WINDOW_MS,
                   },
                 },
                 logContext: {

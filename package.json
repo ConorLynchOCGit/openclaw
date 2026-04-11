@@ -649,6 +649,10 @@
       "types": "./dist/plugin-sdk/memory-canonical-retrieval.d.ts",
       "default": "./dist/plugin-sdk/memory-canonical-retrieval.js"
     },
+    "./plugin-sdk/memory-profile-registry": {
+      "types": "./dist/plugin-sdk/memory-profile-registry.d.ts",
+      "default": "./dist/plugin-sdk/memory-profile-registry.js"
+    },
     "./plugin-sdk/memory-family-policy": {
       "types": "./dist/plugin-sdk/memory-family-policy.d.ts",
       "default": "./dist/plugin-sdk/memory-family-policy.js"

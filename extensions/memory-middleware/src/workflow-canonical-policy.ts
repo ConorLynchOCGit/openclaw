@@ -1,26 +1,28 @@
-import { getCanonicalCaptureMetadataByCaptureClass } from "./capture-class-metadata.js";
+import {
+  getMemoryProfile,
+  getMemoryProfileByCaptureClass,
+  getMemoryProfileByWorkflowLessonFamily,
+  type MemoryProfileCaptureCategory,
+} from "openclaw/plugin-sdk/memory-profile-registry";
 import type {
   WorkflowImprovementCaptureClass,
   WorkflowImprovementLessonFamily,
   WorkflowImprovementTemplate,
 } from "./workflow-improvement-semantic.js";
 
-export type CanonicalWorkflowCaptureCategory =
-  | "workflow_improvement"
-  | "project_rule"
-  | "unmet_need";
+export type CanonicalWorkflowCaptureCategory = Extract<
+  MemoryProfileCaptureCategory,
+  "workflow_improvement" | "project_rule" | "unmet_need"
+>;
 
 export type CanonicalWorkflowAutoReviewProfile = {
   captureCategory: CanonicalWorkflowCaptureCategory;
   compatibilityCategory: CanonicalWorkflowCaptureCategory;
-  lessonFamily: Extract<
-    WorkflowImprovementLessonFamily,
-    "generalized_workflow_lesson" | "generalized_project_rule" | "generalized_unmet_need"
-  >;
-  template: Extract<
-    WorkflowImprovementTemplate,
-    "workflow_generalized_guidance" | "project_rule_guidance" | "unmet_need_recommendation"
-  >;
+  lessonFamily:
+    | "generalized_workflow_lesson"
+    | "generalized_project_rule"
+    | "generalized_unmet_need";
+  template: "workflow_generalized_guidance" | "project_rule_guidance" | "unmet_need_recommendation";
   semanticDetectionSource:
     | "workflow_improvement_semantic_v2"
     | "project_rule_semantic_v1"
@@ -45,47 +47,19 @@ export type CanonicalWorkflowAutoReviewProfile = {
   modeMetadata: { guidanceMode: "guidance_only" } | { recommendationMode: "recommendation_only" };
 };
 
-const WORKFLOW_AUTO_REVIEW_PROFILES = {
-  workflow_improvement: {
-    captureCategory: "workflow_improvement",
-    compatibilityCategory: "workflow_improvement",
-    lessonFamily: "generalized_workflow_lesson",
-    template: "workflow_generalized_guidance",
-    semanticDetectionSource: "workflow_improvement_semantic_v2",
-    autoReviewSource: "candidate_submit_workflow_improvement_generic_auto_review",
-    autoReviewProfile: "workflow_generalized_auto_review_v1",
-    clusterLabel: "generalized workflow lesson cluster",
-    approvedLabel: "approved workflow-improvement memory",
-    supportsPhraseInduction: true,
-    modeMetadata: { guidanceMode: "guidance_only" },
-  },
-  project_rule: {
-    captureCategory: "project_rule",
-    compatibilityCategory: "project_rule",
-    lessonFamily: "generalized_project_rule",
-    template: "project_rule_guidance",
-    semanticDetectionSource: "project_rule_semantic_v1",
-    autoReviewSource: "candidate_submit_project_rule_auto_review",
-    autoReviewProfile: "project_rule_auto_review_v1",
-    clusterLabel: "project-rule cluster",
-    approvedLabel: "approved project rule",
-    supportsPhraseInduction: false,
-    modeMetadata: { guidanceMode: "guidance_only" },
-  },
-  unmet_need: {
-    captureCategory: "unmet_need",
-    compatibilityCategory: "unmet_need",
-    lessonFamily: "generalized_unmet_need",
-    template: "unmet_need_recommendation",
-    semanticDetectionSource: "unmet_need_semantic_v1",
-    autoReviewSource: "candidate_submit_unmet_need_auto_review",
-    autoReviewProfile: "unmet_need_auto_review_v1",
-    clusterLabel: "unmet-need cluster",
-    approvedLabel: "approved unmet-need recommendation",
-    supportsPhraseInduction: false,
-    modeMetadata: { recommendationMode: "recommendation_only" },
-  },
-} as const satisfies Record<CanonicalWorkflowCaptureCategory, CanonicalWorkflowAutoReviewProfile>;
+function asCanonicalWorkflowProfile(
+  captureCategory: CanonicalWorkflowCaptureCategory,
+): CanonicalWorkflowAutoReviewProfile {
+  const workflowAutoReview = getMemoryProfile(captureCategory).workflowAutoReview;
+  if (!workflowAutoReview) {
+    throw new Error(`workflow auto-review profile missing for ${captureCategory}`);
+  }
+  return {
+    captureCategory,
+    compatibilityCategory: captureCategory,
+    ...workflowAutoReview,
+  };
+}
 
 function resolveCanonicalWorkflowCaptureCategory(params: {
   captureCategory?: string;
@@ -100,7 +74,7 @@ function resolveCanonicalWorkflowCaptureCategory(params: {
     return params.captureCategory;
   }
   const captureClassCategory = params.captureClass
-    ? getCanonicalCaptureMetadataByCaptureClass(params.captureClass)?.category
+    ? getMemoryProfileByCaptureClass(params.captureClass)?.capture?.category
     : undefined;
   if (
     captureClassCategory === "workflow_improvement" ||
@@ -109,14 +83,15 @@ function resolveCanonicalWorkflowCaptureCategory(params: {
   ) {
     return captureClassCategory;
   }
-  if (params.lessonFamily === "generalized_project_rule") {
-    return "project_rule";
-  }
-  if (params.lessonFamily === "generalized_unmet_need") {
-    return "unmet_need";
-  }
-  if (params.lessonFamily === "generalized_workflow_lesson") {
-    return "workflow_improvement";
+  const lessonFamilyProfile = params.lessonFamily
+    ? getMemoryProfileByWorkflowLessonFamily(params.lessonFamily)
+    : null;
+  if (
+    lessonFamilyProfile?.id === "workflow_improvement" ||
+    lessonFamilyProfile?.id === "project_rule" ||
+    lessonFamilyProfile?.id === "unmet_need"
+  ) {
+    return lessonFamilyProfile.id;
   }
   return null;
 }
@@ -131,7 +106,7 @@ export function resolveCanonicalWorkflowAutoReviewProfile(params: {
   if (!captureCategory) {
     return null;
   }
-  const profile = WORKFLOW_AUTO_REVIEW_PROFILES[captureCategory];
+  const profile = asCanonicalWorkflowProfile(captureCategory);
   if (params.template && params.template !== profile.template) {
     return null;
   }
