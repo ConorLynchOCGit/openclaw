@@ -11,6 +11,7 @@ import {
   buildCIExecutionManifest,
   buildExecutionPlan,
   explainExecutionTarget,
+  resolvePlanningDurationMs,
 } from "../../scripts/test-planner/planner.mjs";
 import { bundledPluginFile } from "../helpers/bundled-plugin-paths.js";
 
@@ -243,6 +244,51 @@ describe("test planner", () => {
     artifacts.cleanupTempArtifacts();
   });
 
+  it("attaches file-level decomposition metadata to shared batches", () => {
+    const env = {
+      RUNNER_OS: "Linux",
+      OPENCLAW_TEST_HOST_CPU_COUNT: "4",
+      OPENCLAW_TEST_HOST_MEMORY_GIB: "7",
+      OPENCLAW_TEST_LOAD_AWARE: "0",
+    };
+    const artifacts = createExecutionArtifacts(env);
+    const plan = buildExecutionPlan(
+      {
+        profile: null,
+        mode: "local",
+        surfaces: ["unit"],
+        passthroughArgs: [],
+      },
+      {
+        env,
+        platform: "linux",
+        writeTempJsonArtifact: artifacts.writeTempJsonArtifact,
+      },
+    );
+
+    const unit = plan.selectedUnits.find((entry) =>
+      entry.batchDecomposition?.files?.some(
+        (file) => file.file === "src/channels/plugins/plugins-channel.test.ts",
+      ),
+    );
+
+    expect(unit?.batchDecomposition).toMatchObject({
+      fileCount: expect.any(Number),
+      files: expect.any(Array),
+      dominantGroupingKey: expect.any(String),
+    });
+    expect(unit?.batchDecomposition?.files).toContainEqual(
+      expect.objectContaining({
+        file: "src/channels/plugins/plugins-channel.test.ts",
+        estimateSource: expect.stringMatching(
+          /^(local-observed|local-batch-observed|fixture|default-estimate)$/u,
+        ),
+        groupingKey: "src/channels/plugins",
+      }),
+    );
+    artifacts.cleanupTempArtifacts();
+  });
+
   it("splits dominant shared directory clusters in constrained full-repo safe mode", () => {
     const env = {
       RUNNER_OS: "Linux",
@@ -280,6 +326,66 @@ describe("test planner", () => {
     expect(maxPrefixCountInBatch("src/cron/isolated-agent")).toBeLessThan(16);
     expect(maxPrefixCountInBatch("src/infra/outbound/")).toBeLessThan(16);
     artifacts.cleanupTempArtifacts();
+  });
+
+  it("keeps constrained full-repo shared plans bounded instead of exploding unknown-heavy batches", () => {
+    const env = {
+      RUNNER_OS: "Linux",
+      OPENCLAW_TEST_HOST_CPU_COUNT: "4",
+      OPENCLAW_TEST_HOST_MEMORY_GIB: "7",
+      OPENCLAW_TEST_LOAD_AWARE: "0",
+    };
+    const artifacts = createExecutionArtifacts(env);
+    const plan = buildExecutionPlan(
+      {
+        profile: null,
+        mode: "local",
+        surfaces: [],
+        passthroughArgs: [],
+      },
+      {
+        env,
+        platform: "linux",
+        writeTempJsonArtifact: artifacts.writeTempJsonArtifact,
+      },
+    );
+
+    const channelPluginBatches = plan.selectedUnits.filter((unit) =>
+      unit.includeFiles?.some((file) => file.startsWith("src/channels/plugins/")),
+    );
+    const sharedUnitBatches = plan.selectedUnits.filter(
+      (unit) => unit.surface === "unit" && !unit.isolate && unit.id.startsWith("unit-fast"),
+    );
+
+    expect(plan.fullRepoSafeMode).toBe(true);
+    expect(plan.selectedUnits.length).toBeLessThan(120);
+    expect(sharedUnitBatches.length).toBeLessThan(80);
+    expect(channelPluginBatches.length).toBeGreaterThan(1);
+    expect(
+      Math.max(0, ...channelPluginBatches.map((unit) => unit.includeFiles?.length ?? 0)),
+    ).toBeLessThanOrEqual(20);
+    artifacts.cleanupTempArtifacts();
+  });
+
+  it("treats batch-coarse timing as weak fallback for constrained full-suite shared packing", () => {
+    const manifest = {
+      defaultDurationMs: 250,
+      files: {
+        "src/example.test.ts": {
+          durationMs: 18_000,
+          observationMode: "batch-coarse",
+          runs: 2,
+        },
+      },
+    };
+
+    expect(resolvePlanningDurationMs("src/example.test.ts", manifest)).toBe(18_000);
+    expect(
+      resolvePlanningDurationMs("src/example.test.ts", manifest, { ignoreBatchCoarse: true }),
+    ).toBe(250);
+    expect(
+      resolvePlanningDurationMs("src/unknown.test.ts", manifest, { ignoreBatchCoarse: true }),
+    ).toBe(250);
   });
 
   it("promotes constrained idle full-repo plans to adaptive top-level parallelism", () => {

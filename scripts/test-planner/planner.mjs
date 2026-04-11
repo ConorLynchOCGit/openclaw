@@ -149,6 +149,12 @@ const buildRequestedSurfaces = (request, env) => {
   return surfaces;
 };
 
+const buildExplicitRequestedSurfaces = (request) => {
+  const explicit = normalizeSurfaces(request.surfaces ?? []);
+  validateExplicitSurfaces(explicit);
+  return explicit;
+};
+
 const normalizeFailurePolicy = (requestFailurePolicy, optionArgs) => {
   if (requestFailurePolicy !== null && requestFailurePolicy !== undefined) {
     if (!FAILURE_POLICIES.has(requestFailurePolicy)) {
@@ -276,6 +282,132 @@ const resolveEntryTimingEstimator = (entry, context) => {
   return null;
 };
 
+const resolveTimingManifestForArgs = (args, context) => {
+  const configIndex = args.findIndex((arg) => arg === "--config");
+  const config = configIndex >= 0 ? (args[configIndex + 1] ?? "") : "";
+  if (config === "vitest.unit.config.ts") {
+    return context.unitTimingManifest;
+  }
+  if (config === "vitest.channels.config.ts") {
+    return context.channelTimingManifest;
+  }
+  if (config === "vitest.extensions.config.ts") {
+    return context.extensionTimingManifest;
+  }
+  return null;
+};
+
+const classifyEstimatedFileTiming = (file, manifest) => {
+  const manifestEntry = manifest?.files?.[file];
+  const estimatedDurationMs =
+    manifestEntry?.durationMs ??
+    (Number.isFinite(manifest?.defaultDurationMs) && manifest.defaultDurationMs > 0
+      ? manifest.defaultDurationMs
+      : null);
+  if (!Number.isFinite(estimatedDurationMs) || estimatedDurationMs <= 0) {
+    return null;
+  }
+  const observedRuns =
+    Number.isFinite(manifestEntry?.runs) && manifestEntry.runs > 0
+      ? Math.round(manifestEntry.runs)
+      : 0;
+  const estimateSource =
+    manifestEntry && observedRuns > 0
+      ? manifestEntry.observationMode === "batch-coarse"
+        ? "local-batch-observed"
+        : "local-observed"
+      : manifestEntry
+        ? "fixture"
+        : "default-estimate";
+  return {
+    estimatedDurationMs: Math.round(estimatedDurationMs),
+    estimateSource,
+    observedRuns,
+  };
+};
+
+export const resolvePlanningDurationMs = (file, manifest, options = {}) => {
+  const manifestEntry = manifest?.files?.[file];
+  const defaultDurationMs =
+    Number.isFinite(manifest?.defaultDurationMs) && manifest.defaultDurationMs > 0
+      ? Math.round(manifest.defaultDurationMs)
+      : null;
+  const ignoreBatchCoarse = options.ignoreBatchCoarse === true;
+  if (
+    ignoreBatchCoarse &&
+    manifestEntry?.observationMode === "batch-coarse" &&
+    defaultDurationMs !== null
+  ) {
+    return defaultDurationMs;
+  }
+  const estimatedDurationMs =
+    manifestEntry?.durationMs ??
+    defaultDurationMs ??
+    (Number.isFinite(options.fallbackDurationMs) ? Math.round(options.fallbackDurationMs) : null);
+  return Number.isFinite(estimatedDurationMs) && estimatedDurationMs > 0
+    ? Math.round(estimatedDurationMs)
+    : 1_000;
+};
+
+const buildUnitBatchDecomposition = (config, context) => {
+  const candidateFiles =
+    Array.isArray(config.includeFiles) && config.includeFiles.length > 0
+      ? config.includeFiles
+      : getExplicitEntryFilters(config.args);
+  if (candidateFiles.length === 0) {
+    return null;
+  }
+  const manifest = resolveTimingManifestForArgs(config.args, context);
+  if (!manifest) {
+    return {
+      fileCount: candidateFiles.length,
+      dominantGroupingKey: resolveDominantPathPrefix(candidateFiles).dominantPrefix || null,
+      files: candidateFiles.map((file) => ({
+        file,
+        estimatedDurationMs: null,
+        estimateSource: "unknown-config",
+        observedRuns: 0,
+        groupingKey: resolveBatchGroupingKey(file),
+      })),
+    };
+  }
+
+  const files = candidateFiles.map((file) => {
+    const timing = classifyEstimatedFileTiming(file, manifest);
+    return {
+      file,
+      estimatedDurationMs: timing?.estimatedDurationMs ?? null,
+      estimateSource: timing?.estimateSource ?? "default-estimate",
+      observedRuns: timing?.observedRuns ?? 0,
+      groupingKey: resolveBatchGroupingKey(file),
+    };
+  });
+  const estimateSourceCounts = Object.fromEntries(
+    files.reduce((counts, entry) => {
+      counts.set(entry.estimateSource, (counts.get(entry.estimateSource) ?? 0) + 1);
+      return counts;
+    }, new Map()),
+  );
+  const observedFileCount = files.filter(
+    (entry) => entry.estimateSource === "local-observed",
+  ).length;
+  const fixtureFileCount = files.filter((entry) => entry.estimateSource === "fixture").length;
+  const defaultEstimateFileCount = files.filter(
+    (entry) => entry.estimateSource === "default-estimate",
+  ).length;
+  const dominantGrouping = resolveDominantPathPrefix(candidateFiles);
+  return {
+    fileCount: files.length,
+    observedFileCount,
+    fixtureFileCount,
+    defaultEstimateFileCount,
+    estimateSourceCounts,
+    dominantGroupingKey: dominantGrouping.dominantPrefix || null,
+    dominantGroupingFileCount: dominantGrouping.dominantCount,
+    files,
+  };
+};
+
 const splitFilesByResourceBudget = (files, options) => {
   const {
     targetDurationMs,
@@ -398,6 +530,36 @@ const splitCohesiveSafeModeUnitBatch = (files, estimateDurationMs, options = {})
   );
 };
 
+const splitUnknownHeavySafeModeUnitBatch = (files, estimateDurationMs, manifest, options = {}) => {
+  if (options.enabled === false) {
+    return [files];
+  }
+  const minFiles = options.minFiles ?? 10;
+  const minUnknownRatio = options.minUnknownRatio ?? 0.75;
+  const targetFilesPerBatch = options.targetFilesPerBatch ?? 6;
+  const maxSplitCount = options.maxSplitCount ?? 3;
+  if (files.length < minFiles) {
+    return [files];
+  }
+  const unknownCount = files.reduce(
+    (count, file) => (manifest?.files?.[file] ? count : count + 1),
+    0,
+  );
+  if (unknownCount / files.length < minUnknownRatio) {
+    return [files];
+  }
+  const splitCount = clamp(Math.ceil(files.length / targetFilesPerBatch), 1, maxSplitCount);
+  if (splitCount <= 1) {
+    return [files];
+  }
+  const originalOrder = new Map(files.map((file, index) => [file, index]));
+  return packFilesByDuration(files, splitCount, estimateDurationMs).map((batch) =>
+    [...batch].toSorted(
+      (left, right) => (originalOrder.get(left) ?? 0) - (originalOrder.get(right) ?? 0),
+    ),
+  );
+};
+
 const sumPositiveNumbers = (values) =>
   values.reduce(
     (total, value) => (Number.isFinite(value) && value > 0 ? total + Math.round(value) : total),
@@ -495,6 +657,7 @@ const createExecutionUnit = (context, config) => {
     estimatedHotspotDeltaKb: config.estimatedHotspotDeltaKb ?? 0,
     timeoutMs: config.timeoutMs,
     reasons: config.reasons ?? [],
+    batchDecomposition: buildUnitBatchDecomposition(config, context),
   };
   unit.maxWorkers = resolveMaxWorkersForUnit(unit, context);
   return unit;
@@ -623,12 +786,15 @@ const buildDefaultUnits = (context, request) => {
       ...catalog.channelIsolatedFiles,
     ]),
   ];
-  const estimateUnitDurationMs = (file) =>
-    unitTimingManifest.files[file]?.durationMs ?? unitTimingManifest.defaultDurationMs;
+  const estimateUnitDurationMs = (file) => resolvePlanningDurationMs(file, unitTimingManifest);
+  const estimateUnitSharedDurationMs = (file) =>
+    resolvePlanningDurationMs(file, unitTimingManifest, {
+      ignoreBatchCoarse: fullRepoSafeMode,
+    });
   const estimateChannelDurationMs = (file) =>
-    channelTimingManifest.files[file]?.durationMs ?? channelTimingManifest.defaultDurationMs;
+    resolvePlanningDurationMs(file, channelTimingManifest);
   const estimateExtensionDurationMs = (file) =>
-    extensionTimingManifest.files[file]?.durationMs ?? extensionTimingManifest.defaultDurationMs;
+    resolvePlanningDurationMs(file, extensionTimingManifest);
   const estimateUnitHotspotDeltaKb = (file) => unitMemoryHotspotManifest.files[file]?.deltaKb ?? 0;
   const estimateBatchHotspotDeltaKb = (files) =>
     sumPositiveNumbers(files.map((file) => estimateUnitHotspotDeltaKb(file)));
@@ -710,7 +876,7 @@ const buildDefaultUnits = (context, request) => {
   );
   const unitFastBuckets =
     unitFastLaneCount > 1
-      ? packFilesByDuration(unitFastCandidateFiles, unitFastLaneCount, estimateUnitDurationMs)
+      ? packFilesByDuration(unitFastCandidateFiles, unitFastLaneCount, estimateUnitSharedDurationMs)
       : [unitFastCandidateFiles];
   const units = [];
 
@@ -720,14 +886,21 @@ const buildDefaultUnits = (context, request) => {
         unitFastBuckets.length === 1 ? "unit-fast" : `unit-fast-${String(laneIndex + 1)}`;
       const recycledBatches = splitFilesByResourceBudget(files, {
         targetDurationMs: unitFastBatchTargetMs,
-        estimateDurationMs: estimateUnitDurationMs,
+        estimateDurationMs: estimateUnitSharedDurationMs,
         maxFilesPerBatch: unitFastMaxFilesPerBatch,
         estimateHotspotDeltaKb: estimateUnitHotspotDeltaKb,
         maxHotspotDeltaKbPerBatch: unitFastMaxHotspotDeltaKbPerBatch,
       });
       const finalizedBatches = fullRepoSafeMode
         ? recycledBatches.flatMap((batch) =>
-            splitCohesiveSafeModeUnitBatch(batch, estimateUnitDurationMs),
+            splitUnknownHeavySafeModeUnitBatch(
+              batch,
+              estimateUnitSharedDurationMs,
+              context.unitTimingManifest,
+              { enabled: false },
+            ).flatMap((candidateBatch) =>
+              splitCohesiveSafeModeUnitBatch(candidateBatch, estimateUnitSharedDurationMs),
+            ),
           )
         : recycledBatches;
       for (const [batchIndex, batch] of finalizedBatches.entries()) {
@@ -743,10 +916,9 @@ const buildDefaultUnits = (context, request) => {
             isolate: false,
             serialPhase: shouldPhaseUnitFastBatches ? "unit-fast" : undefined,
             includeFiles: batch,
-            estimatedDurationMs: estimateEntryFilesDurationMs(
-              { args: ["vitest", "run", "--config", "vitest.unit.config.ts"] },
-              batch,
-              context,
+            estimatedDurationMs: batch.reduce(
+              (totalMs, file) => totalMs + estimateUnitSharedDurationMs(file),
+              0,
             ),
             estimatedHotspotDeltaKb: estimateBatchHotspotDeltaKb(batch),
             env: withIncludeFileEnv(
@@ -1906,6 +2078,8 @@ export function buildExecutionPlan(request, options = {}) {
     estimatedHotspotBudgetKb,
     deferredRunConcurrency,
     keepGatewaySerial,
+    requestedSurfaces: buildRequestedSurfaces(request, env),
+    explicitRequestedSurfaces: buildExplicitRequestedSurfaces(request),
     shardCount: context.shardCount,
     shardIndexOverride: context.shardIndexOverride,
     topLevelSingleShardAssignments,
