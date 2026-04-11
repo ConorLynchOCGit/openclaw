@@ -1,5 +1,6 @@
 import { vi } from "vitest";
-import { signalOutbound, telegramOutbound } from "../../test/channel-outbounds.js";
+import { signalOutbound } from "../../test/channel-outbounds/signal.js";
+import { telegramOutbound } from "../../test/channel-outbounds/telegram.js";
 import { loadModelCatalog } from "../agents/model-catalog.js";
 import { runEmbeddedPiAgent } from "../agents/pi-embedded.js";
 import { runSubagentAnnounceFlow } from "../agents/subagent-announce.js";

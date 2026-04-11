@@ -214,6 +214,23 @@ const buildPlanShape = (plan) => ({
   topLevelParallelLimit: Number.isFinite(plan.topLevelParallelLimit)
     ? plan.topLevelParallelLimit
     : 1,
+  safeModeTopLevelParallelDecision:
+    plan.safeModeTopLevelParallelDecision &&
+    typeof plan.safeModeTopLevelParallelDecision === "object"
+      ? {
+          limit: Number.isFinite(plan.safeModeTopLevelParallelDecision.limit)
+            ? plan.safeModeTopLevelParallelDecision.limit
+            : null,
+          mode:
+            typeof plan.safeModeTopLevelParallelDecision.mode === "string"
+              ? plan.safeModeTopLevelParallelDecision.mode
+              : null,
+          reason:
+            typeof plan.safeModeTopLevelParallelDecision.reason === "string"
+              ? plan.safeModeTopLevelParallelDecision.reason
+              : null,
+        }
+      : null,
   estimatedHotspotBudgetKb: Number.isFinite(plan.estimatedHotspotBudgetKb)
     ? plan.estimatedHotspotBudgetKb
     : null,
@@ -243,6 +260,9 @@ const finalizeAndReport = (plan, report, artifacts, startedAtMs) => {
       finishedAt: new Date(finishedAtMs).toISOString(),
       elapsedMs: finishedAtMs - startedAtMs,
       status: report.exitCode === 0 ? "success" : "failed",
+      ...(typeof artifacts.treeFingerprint === "string" && artifacts.treeFingerprint.length > 0
+        ? { treeFingerprint: artifacts.treeFingerprint }
+        : {}),
       runtimeProfile: plan.runtimeCapabilities.runtimeProfileName,
       runtimeMode: plan.runtimeCapabilities.mode,
       memoryBand: plan.runtimeCapabilities.memoryBand,
@@ -263,8 +283,14 @@ const finalizeAndReport = (plan, report, artifacts, startedAtMs) => {
   return report;
 };
 
-export function createExecutionArtifacts(env = process.env) {
+export function createExecutionArtifacts(env = process.env, options = {}) {
   let tempArtifactDir = null;
+  const artifactState = {
+    treeFingerprint:
+      typeof options.treeFingerprint === "string" && options.treeFingerprint.length > 0
+        ? options.treeFingerprint
+        : null,
+  };
   const ensureTempArtifactDir = () => {
     if (tempArtifactDir === null) {
       tempArtifactDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-test-parallel-"));
@@ -287,7 +313,17 @@ export function createExecutionArtifacts(env = process.env) {
     fs.rmSync(tempArtifactDir, { recursive: true, force: true });
     tempArtifactDir = null;
   };
-  return { ensureTempArtifactDir, writeTempJsonArtifact, cleanupTempArtifacts };
+  return {
+    ensureTempArtifactDir,
+    writeTempJsonArtifact,
+    cleanupTempArtifacts,
+    get treeFingerprint() {
+      return artifactState.treeFingerprint;
+    },
+    set treeFingerprint(value) {
+      artifactState.treeFingerprint = typeof value === "string" && value.length > 0 ? value : null;
+    },
+  };
 }
 
 export function createTempArtifactWriteStream(filePath) {
@@ -839,6 +875,16 @@ export async function executePlan(plan, options = {}) {
         console.log(
           `[test-parallel] done ${unit.id} code=${String(resolvedCode)} elapsed=${formatElapsedMs(elapsedMs)}`,
         );
+        if (
+          resolvedCode === 0 &&
+          completedFileDurations.size === 0 &&
+          explicitEntryFilters.length === 1
+        ) {
+          completedFileDurations.set(explicitEntryFilters[0], {
+            file: explicitEntryFilters[0],
+            durationMs: elapsedMs,
+          });
+        }
         const failedTestFiles = extractFailedTestFiles(output);
         const classification = classifyRunResult({
           resolvedCode,

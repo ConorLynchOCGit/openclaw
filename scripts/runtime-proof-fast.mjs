@@ -7,6 +7,11 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { writeGateMetricArtifact } from "./lib/gate-metrics.mjs";
 import { acquireRepoHeavyLock, ROOT_DIR, nowIso } from "./lib/repo-heavy-task.mjs";
+import {
+  currentTreeFingerprint,
+  loadReusableLatestArtifact,
+  stripArtifactEnvelope,
+} from "./lib/unchanged-tree-reuse.mjs";
 
 const DEFAULT_PORT = 19089;
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -15,6 +20,41 @@ const DEFAULT_PROBE_PATH = "/healthz";
 
 function log(message) {
   process.stdout.write(`[runtime-proof ${nowIso()}] ${message}\n`);
+}
+
+function buildReuseMetadata(latestKey, sourceArtifact) {
+  return {
+    ...stripArtifactEnvelope(sourceArtifact),
+    status: "success",
+    reused: true,
+    reusedFrom: {
+      latestKey,
+      recordedAt: sourceArtifact.recordedAt ?? null,
+      elapsedMs: sourceArtifact.elapsedMs ?? null,
+    },
+  };
+}
+
+export function resolveRuntimeProofBuildDecision(options = {}) {
+  if (options.skipBuild) {
+    return {
+      shouldBuild: false,
+      reuseMetadata: null,
+      reason: "skip-build-flag",
+    };
+  }
+  if (options.reusableBuildArtifact) {
+    return {
+      shouldBuild: false,
+      reuseMetadata: buildReuseMetadata("build-runtime-fast", options.reusableBuildArtifact),
+      reason: "unchanged-tree-reuse",
+    };
+  }
+  return {
+    shouldBuild: true,
+    reuseMetadata: null,
+    reason: "fresh-build-required",
+  };
 }
 
 export function parseRuntimeProofFastArgs(argv) {
@@ -176,7 +216,9 @@ export async function runRuntimeProofFast(options = {}) {
 
   let status = "failed";
   let failureMessage = null;
+  const treeFingerprint = await currentTreeFingerprint();
   let buildElapsedMs = 0;
+  let buildReuseMetadata = null;
   let launchElapsedMs = 0;
   let readyElapsedMs = 0;
   let healthElapsedMs = 0;
@@ -184,8 +226,19 @@ export async function runRuntimeProofFast(options = {}) {
 
   let releaseLock = async () => {};
   try {
-    if (!options.skipBuild) {
+    const reusableBuildArtifact = await loadReusableLatestArtifact(
+      "build-runtime-fast",
+      treeFingerprint,
+    );
+    const buildDecision = resolveRuntimeProofBuildDecision({
+      skipBuild: options.skipBuild,
+      reusableBuildArtifact,
+    });
+    buildReuseMetadata = buildDecision.reuseMetadata;
+    if (buildDecision.shouldBuild) {
       buildElapsedMs = await runCommand("build:runtime:fast", "pnpm", ["build:runtime:fast"]);
+    } else if (buildDecision.reason === "unchanged-tree-reuse") {
+      log("reusing existing green build:runtime:fast result for unchanged tree");
     }
     releaseLock = await acquireRepoHeavyLock("runtime-proof-fast", { log });
 
@@ -247,7 +300,9 @@ export async function runRuntimeProofFast(options = {}) {
         startedAt: new Date(startedAtMs).toISOString(),
         finishedAt: new Date(finishedAtMs).toISOString(),
         elapsedMs: finishedAtMs - startedAtMs,
+        treeFingerprint,
         buildElapsedMs,
+        ...(buildReuseMetadata ? { buildReuseMetadata } : {}),
         launchElapsedMs,
         readyElapsedMs,
         proofCheckElapsedMs: healthElapsedMs,

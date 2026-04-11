@@ -4,6 +4,11 @@ import { spawn } from "node:child_process";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { writeGateMetricArtifact } from "./lib/gate-metrics.mjs";
+import {
+  currentTreeFingerprint,
+  loadReusableLatestArtifact,
+  resolveLatestArtifactKeyForStep,
+} from "./lib/unchanged-tree-reuse.mjs";
 
 const GATE_PLANS = {
   feature: [["pnpm", ["check:fast"]]],
@@ -29,6 +34,26 @@ export function resolveLandingGatePlan(tier) {
   return {
     tier: normalizedTier,
     steps: plan.map(([command, args]) => ({ command, args })),
+  };
+}
+
+export function resolveLandingGateExecution(tier, reusableLatestKeys = new Set()) {
+  const plan = resolveLandingGatePlan(tier);
+  const executionSteps = [];
+  for (const step of plan.steps) {
+    const latestKey = resolveLatestArtifactKeyForStep(step.command, step.args);
+    const reused = latestKey !== null && reusableLatestKeys.has(latestKey);
+    executionSteps.push({
+      ...step,
+      ...(latestKey ? { latestKey } : {}),
+      reused,
+    });
+  }
+  return {
+    tier: plan.tier,
+    steps: executionSteps,
+    pendingSteps: executionSteps.filter((step) => !step.reused),
+    reusedSteps: executionSteps.filter((step) => step.reused),
   };
 }
 
@@ -61,13 +86,37 @@ async function runStep(command, args) {
 
 async function main() {
   const startedAtMs = Date.now();
-  const { tier, steps } = resolveLandingGatePlan(process.argv[2]);
+  const tier = resolveLandingGatePlan(process.argv[2]).tier;
+  const treeFingerprint = await currentTreeFingerprint();
+  const reusableLatestKeys = new Set();
+  for (const step of resolveLandingGatePlan(tier).steps) {
+    const latestKey = resolveLatestArtifactKeyForStep(step.command, step.args);
+    if (!latestKey) {
+      continue;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    const reusable = await loadReusableLatestArtifact(latestKey, treeFingerprint);
+    if (reusable) {
+      reusableLatestKeys.add(latestKey);
+    }
+  }
+  const { steps } = resolveLandingGateExecution(tier, reusableLatestKeys);
   let status = "failed";
   let failureMessage = null;
   const results = [];
 
   try {
     for (const step of steps) {
+      if (step.reused) {
+        results.push({
+          command: step.command,
+          args: step.args,
+          elapsedMs: 0,
+          reused: true,
+          latestKey: step.latestKey,
+        });
+        continue;
+      }
       // eslint-disable-next-line no-await-in-loop
       results.push(await runStep(step.command, step.args));
     }
@@ -85,6 +134,7 @@ async function main() {
         finishedAt: new Date(finishedAtMs).toISOString(),
         elapsedMs: finishedAtMs - startedAtMs,
         status,
+        treeFingerprint,
         steps: results,
         ...(failureMessage ? { failureMessage } : {}),
       },

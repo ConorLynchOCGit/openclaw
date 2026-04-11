@@ -1,10 +1,8 @@
 import path from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  signalOutbound,
-  telegramOutbound,
-  whatsappOutbound,
-} from "../../../test/channel-outbounds.js";
+import { signalOutbound } from "../../../test/channel-outbounds/signal.js";
+import { telegramOutbound } from "../../../test/channel-outbounds/telegram.js";
+import { whatsappLightOutbound } from "../../../test/channel-outbounds/whatsapp-light.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { createHookRunner } from "../../plugins/hooks.js";
 import { addTestHook } from "../../plugins/hooks.test-helpers.js";
@@ -1313,7 +1311,7 @@ const defaultRegistry = createTestRegistry([
   },
   {
     pluginId: "whatsapp",
-    plugin: createOutboundTestPlugin({ id: "whatsapp", outbound: whatsappOutbound }),
+    plugin: createOutboundTestPlugin({ id: "whatsapp", outbound: whatsappLightOutbound }),
     source: "test",
   },
   {

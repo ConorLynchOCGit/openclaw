@@ -15,6 +15,13 @@ the engineering repo:
 - durable gate metrics now record Turbo cache hit or miss status for those
   phases
 - remote cache remains intentionally local-only for now
+- unchanged-tree gate reuse now exists for the heavy local landing path, so the
+  same unchanged tree no longer needs to rerun equivalent full-suite work at
+  each later tier
+- adaptive safe-mode top-level parallelism now records an explicit decision and
+  can truthfully promote to `3` on this host when runtime conditions are safe
+- the worst generic outbound Signal and WhatsApp hot tests now use local
+  contract-faithful adapters instead of loading the full bundled plugin runtime
 
 The core conclusion in this diagnosis still stands: Turbo is a complement to
 the existing workflow, not a replacement for the constrained-host test
@@ -109,6 +116,18 @@ Heaviest observed test batches in that run:
 - `unit-fast-batch-27`: `133,719 ms`
 - `unit-deliver-memory-isolated`: `101,197 ms`
 - `unit-isolated-agent.skips-delivery-without-whatsapp-recipient-besteffortdeliver-true-memory-isolated`: `99,177 ms`
+
+Current tranche update before final full-suite revalidation:
+
+- unchanged-tree landing now reuses stronger earlier gate results instead of
+  rerunning the same full suite on the same tree
+- local observed history now estimates:
+  - `unit-deliver-memory-isolated` at about `50.3 s`
+  - `unit-isolated-agent.skips-delivery-without-whatsapp-recipient-besteffortdeliver-true-memory-isolated`
+    at about `56.3 s`
+- current planned shared tails are clustered around `~5 s`, so the dominant
+  remaining pain has moved away from the shared batches and back toward a
+  smaller set of import-heavy isolated lanes
 
 Interpretation:
 

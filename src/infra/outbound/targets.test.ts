@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { telegramOutbound, whatsappOutbound } from "../../../test/channel-outbounds.js";
+import { telegramOutbound } from "../../../test/channel-outbounds/telegram.js";
+import { whatsappOutbound } from "../../../test/channel-outbounds/whatsapp.js";
 import type { ChannelOutboundAdapter } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions/types.js";

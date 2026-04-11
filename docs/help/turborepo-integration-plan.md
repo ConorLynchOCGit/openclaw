@@ -41,6 +41,15 @@ Implemented:
 - canonical `pnpm check:fast`, `pnpm check:types`, and `pnpm build` routing
   selected phases through Turbo-backed wrappers
 - durable gate metrics that record Turbo cache status for Turbo-backed phases
+- unchanged-tree reuse for `check`, `build`, `build:runtime:fast`, and later
+  landing tiers when the same tree fingerprint and required outputs still match
+- `runtime:proof:fast` reuse of a green unchanged-tree `build:runtime:fast`
+  result when the reusable artifact is still valid
+- artifact-visible adaptive safe-mode top-level parallel decisions, including
+  truthful promotion to `3` on this host
+- local light Signal and WhatsApp outbound adapters for the worst generic
+  outbound hot-path tests so those tests do not load the full bundled plugin
+  runtime unnecessarily
 
 Still intentionally custom:
 
@@ -53,6 +62,13 @@ Remote cache posture:
 - local-only cache for now
 - no repo-default remote cache enablement yet
 - remote cache stays deferred until more tasks have stable inputs and outputs
+
+Workflow-throughput posture:
+
+- validate slices with targeted tests and script-level checks first
+- do not rerun the full landing workflow after every intermediate slice
+- on one unchanged landing tree, pay `pnpm test` at most once
+- durable artifacts must show what ran versus what was reused
 
 ## Architecture Posture
 
@@ -99,6 +115,8 @@ not as a total replacement for the current repo workflow.
 - cleaner CI task graphing
 - optional remote-cache reuse across local and CI machines
 - simpler long-term ownership once more work moves out of the root package
+- materially shorter unchanged-tree landing loops because stronger earlier gate
+  results can be reused instead of rerunning the same full suite
 
 ### Limited gains
 
@@ -112,6 +130,8 @@ not as a total replacement for the current repo workflow.
 - oversized long-tail test batches
 - readiness waits in `runtime:proof:fast`
 - expensive phases that are still modeled as a single root step
+- import-heavy test helpers that still load real bundled plugin runtime when a
+  local contract stub would be sufficient for that test
 
 ## Recommended Migration Sequence
 
@@ -189,6 +209,12 @@ Current landed extraction:
 
 - `ui` is now a real package-local Turbo task owner for `build` and `test`
 
+Current deferral:
+
+- further non-UI extraction remains conservative until the next candidate tasks
+  would be real package ownership instead of decorative wrappers back to the
+  root scripts
+
 Validation:
 
 - package ownership remains truthful
@@ -236,6 +262,8 @@ Current decision:
 - do not enable remote cache in repo defaults yet
 - revisit only after more package-local tasks exist and cache boundaries are
   exercised on a broader set of work
+- current unchanged-tree local reuse already removes a large amount of repeated
+  work without needing remote cache
 
 Validation:
 
@@ -321,10 +349,19 @@ Current landed scope:
 - constrained-host plans now peel the worst timed unit files into dedicated
   lanes
 - constrained-host timed-heavy buckets are split more aggressively
-- idle constrained local hosts can now promote from top-level `2` to `3`
-  concurrent runs
+- safe constrained local hosts can now promote from top-level `2` to `3`
+  concurrent runs at `idle` or `normal` load, and the decision is recorded in
+  artifacts
 - top-level scheduler now respects an estimated hotspot budget instead of only
   a flat concurrency count
+- unchanged-tree landing tiers now reuse stronger earlier gate results instead
+  of rerunning the same full suite on the same tree
+- the worst generic outbound import hotspots were reduced by replacing the
+  Signal and WhatsApp bundled-plugin helpers used in those hot tests with local
+  contract-faithful adapters
+- the dominant shared tails are now roughly flat at about `5 s`, so the main
+  remaining pain has shifted away from shared batching and back toward a
+  smaller set of import-heavy isolated lanes
 
 Still deferred inside the throughput tranche:
 

@@ -1,13 +1,11 @@
 import "./isolated-agent.mocks.js";
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  discordOutbound,
-  imessageOutbound,
-  signalOutbound,
-  slackOutbound,
-  telegramOutbound,
-  whatsappOutbound,
-} from "../../test/channel-outbounds.js";
+import { discordOutbound } from "../../test/channel-outbounds/discord.js";
+import { imessageOutbound } from "../../test/channel-outbounds/imessage.js";
+import { signalOutbound } from "../../test/channel-outbounds/signal.js";
+import { slackOutbound } from "../../test/channel-outbounds/slack.js";
+import { telegramOutbound } from "../../test/channel-outbounds/telegram.js";
+import { whatsappLightOutbound } from "../../test/channel-outbounds/whatsapp-light.js";
 import { runSubagentAnnounceFlow } from "../agents/subagent-announce.js";
 import type { CliDeps } from "../cli/deps.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
@@ -115,7 +113,7 @@ describe("runCronIsolatedAgentTurn core-channel direct delivery", () => {
         },
         {
           pluginId: "whatsapp",
-          plugin: createOutboundTestPlugin({ id: "whatsapp", outbound: whatsappOutbound }),
+          plugin: createOutboundTestPlugin({ id: "whatsapp", outbound: whatsappLightOutbound }),
           source: "test",
         },
         {

@@ -45,6 +45,9 @@ Validation tiers:
   - `pnpm check:types:plugin-sdk`
 - `pnpm check`: full repo check; reuses a green `check:fast` result on the
   same unchanged tree instead of rerunning it
+- `pnpm gate:integration` and `pnpm gate:production` now reuse already-green
+  unchanged-tree heavy results when the stronger later gate does not need to
+  rerun them
 
 Gate wrapper notes:
 
@@ -53,6 +56,10 @@ Gate wrapper notes:
 - `pnpm test` now uses that same shared repo-heavy lock through the planner
   wrapper.
 - Do not start those commands in parallel on the same checkout.
+- On an unchanged landing tree, the canonical flow should pay full `pnpm test`
+  at most once. If the stronger relevant landing gate already recorded a green
+  full-suite result for the same tree, do not rerun `pnpm test` directly just
+  for ceremony.
 - `pnpm build` now prints phase timestamps for quieter stages, including
   `build:plugin-sdk:dts`.
 - Turbo now owns the cacheable UI `build` and `test` tasks plus the cacheable
@@ -136,9 +143,11 @@ Think of the suites as “increasing realism” (and increasing flakiness/cost):
   together.
 - Constrained full-repo safe mode now allows bounded top-level overlap on hosts
   with enough headroom, while keeping each Vitest run at `maxWorkers=1`.
-- On idle constrained local hosts with enough headroom, that safe-mode overlap
-  can now promote from `2` to `3` top-level runs. This is still bounded by the
-  hotspot-aware scheduler, not just a flat concurrency increase.
+- On constrained local hosts with enough headroom, that safe-mode overlap can
+  now promote from `2` to `3` top-level runs under safe `idle` or `normal`
+  load. This is still bounded by the hotspot-aware scheduler, not just a flat
+  concurrency increase, and the planner now records why it promoted or stayed
+  at the base limit.
 - Extension-only local runs now also use a checked-in extensions timing snapshot plus a slightly coarser shared batch target on high-memory hosts, so the shared extensions lane avoids spawning an extra batch when two measured shared runs are enough.
   - High-memory local extension shared batches also run with a slightly higher worker cap than before, which shortened the two remaining shared extension batches without changing the isolated extension lanes.
   - High-memory local channel runs now reuse the checked-in channel timing snapshot to split the shared channels lane into a few measured batches instead of one long shared worker.

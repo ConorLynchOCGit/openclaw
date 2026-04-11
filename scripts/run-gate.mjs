@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -13,6 +12,11 @@ import {
   readJson,
   ROOT_DIR,
 } from "./lib/repo-heavy-task.mjs";
+import {
+  currentTreeFingerprint,
+  loadReusableLatestArtifact,
+  stripArtifactEnvelope,
+} from "./lib/unchanged-tree-reuse.mjs";
 
 const LOCAL_DIR = path.join(ROOT_DIR, ".local");
 const STAMP_PATH = path.join(LOCAL_DIR, "gate-stamps", "check-fast.json");
@@ -108,48 +112,6 @@ async function runCommand(label, command, args, options = {}) {
   return phase;
 }
 
-async function capture(command, args) {
-  return await new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: ROOT_DIR,
-      stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve(stdout);
-        return;
-      }
-      reject(new Error(`${command} ${args.join(" ")} failed: ${stderr || stdout}`));
-    });
-  });
-}
-
-async function currentTreeFingerprint() {
-  const hash = createHash("sha256");
-  hash.update(await capture("git", ["rev-parse", "HEAD"]));
-  hash.update(await capture("git", ["status", "--porcelain=v1", "--untracked-files=all"]));
-  hash.update(await capture("git", ["diff", "--no-ext-diff", "--binary", "HEAD", "--", "."]));
-
-  const untrackedRaw = await capture("git", ["ls-files", "--others", "--exclude-standard", "-z"]);
-  const untrackedFiles = untrackedRaw.split("\u0000").filter((value) => value.length > 0);
-  for (const relativePath of untrackedFiles) {
-    hash.update(relativePath);
-    hash.update(await fs.readFile(path.join(ROOT_DIR, relativePath)));
-  }
-
-  return hash.digest("hex");
-}
-
 async function readCheckFastStamp() {
   if (!(await pathExists(STAMP_PATH))) {
     return null;
@@ -181,30 +143,69 @@ async function clearCheckFastStamp() {
   await fs.rm(STAMP_PATH, { force: true });
 }
 
-async function runCheckFastRaw() {
+function buildReuseMetadata(latestKey, sourceArtifact) {
+  return {
+    ...stripArtifactEnvelope(sourceArtifact),
+    status: "success",
+    reused: true,
+    reusedFrom: {
+      latestKey,
+      recordedAt: sourceArtifact.recordedAt ?? null,
+      elapsedMs: sourceArtifact.elapsedMs ?? null,
+    },
+  };
+}
+
+async function runCheckFastRaw(treeFingerprint) {
+  const reusable = await loadReusableLatestArtifact("gate-check-fast", treeFingerprint);
+  if (reusable) {
+    log("reusing existing green check:fast result for unchanged tree");
+    return buildReuseMetadata("gate-check-fast", reusable);
+  }
   await runCommand("check:fast:raw", "pnpm", ["turbo:repo:check:fast:raw"], {
     captureOutput: true,
     detectTurboCacheStatus: true,
   });
-  await writeCheckFastStamp(await currentTreeFingerprint());
+  await writeCheckFastStamp(treeFingerprint);
+  return null;
 }
 
-async function runCheckTypesRaw() {
+async function runCheckTypesRaw(treeFingerprint) {
+  const reusable = await loadReusableLatestArtifact("gate-check-types", treeFingerprint);
+  if (reusable) {
+    log("reusing existing green check:types result for unchanged tree");
+    return buildReuseMetadata("gate-check-types", reusable);
+  }
   await runCommand("check:types:raw", "pnpm", ["turbo:repo:check:types:raw"], {
     captureOutput: true,
     detectTurboCacheStatus: true,
   });
+  return null;
 }
 
-async function runCheck() {
-  const fingerprint = await currentTreeFingerprint();
+async function runCheck(fingerprint) {
+  const reusable = await loadReusableLatestArtifact("gate-check", fingerprint);
+  if (reusable) {
+    log("reusing existing green check result for unchanged tree");
+    return buildReuseMetadata("gate-check", reusable);
+  }
   const stamp = await readCheckFastStamp();
+  let reusedFast = null;
   if (stamp?.fingerprint === fingerprint) {
     log("reusing existing green check:fast result for unchanged tree");
   } else {
-    await runCheckFastRaw();
+    reusedFast = await runCheckFastRaw(fingerprint);
   }
-  await runCheckTypesRaw();
+  const reusedTypes = await runCheckTypesRaw(fingerprint);
+  if (reusedFast || reusedTypes) {
+    return {
+      reusedInputs: {
+        checkFast: reusedFast?.reusedFrom ?? (stamp?.fingerprint === fingerprint ? "stamp" : null),
+        checkTypes: reusedTypes?.reusedFrom ?? null,
+      },
+    };
+  }
+  return null;
 }
 
 async function runBuildPhases(phases) {
@@ -251,29 +252,32 @@ async function main() {
   }
 
   const startedAt = Date.now();
+  const treeFingerprint = await currentTreeFingerprint();
   const runMetadata = {
     gate,
     cwd: ROOT_DIR,
     pid: process.pid,
+    treeFingerprint,
   };
   let phases = [];
   let status = "failed";
   let failureMessage = null;
+  let reuseMetadata = null;
   const releaseLock = await acquireRepoHeavyLock(gate, { log });
   try {
     if (gate === "check-fast") {
-      await runCheckFastRaw();
+      reuseMetadata = await runCheckFastRaw(treeFingerprint);
       status = "success";
       return;
     }
     if (gate === "check-types") {
       await clearCheckFastStamp();
-      await runCheckTypesRaw();
+      reuseMetadata = await runCheckTypesRaw(treeFingerprint);
       status = "success";
       return;
     }
     if (gate === "check") {
-      await runCheck();
+      reuseMetadata = await runCheck(treeFingerprint);
       status = "success";
       return;
     }
@@ -297,6 +301,13 @@ async function main() {
     }
     if (gate === "build-runtime-fast") {
       await clearCheckFastStamp();
+      const reusable = await loadReusableLatestArtifact("build-runtime-fast", treeFingerprint);
+      if (reusable) {
+        log("reusing existing green build:runtime:fast result for unchanged tree");
+        reuseMetadata = buildReuseMetadata("build-runtime-fast", reusable);
+        status = "success";
+        return;
+      }
       phases = await runBuildPhases([
         ["build:tsdown:fast", "node", ["scripts/tsdown-build.mjs", "--no-clean"]],
         ["build:runtime-postbuild", "node", ["scripts/runtime-postbuild.mjs"]],
@@ -327,6 +338,13 @@ async function main() {
     }
 
     await clearCheckFastStamp();
+    const reusable = await loadReusableLatestArtifact("build", treeFingerprint);
+    if (reusable) {
+      log("reusing existing green build result for unchanged tree");
+      reuseMetadata = buildReuseMetadata("build", reusable);
+      status = "success";
+      return;
+    }
     phases = await runBuildPhases([
       ["build:canvas:a2ui:bundle", "pnpm", ["canvas:a2ui:bundle"]],
       ["build:tsdown", "node", ["scripts/tsdown-build.mjs"]],
@@ -370,6 +388,7 @@ async function main() {
         elapsedMs: finishedAt - startedAt,
         status,
         ...(failureMessage ? { failureMessage } : {}),
+        ...(reuseMetadata ? { reuseMetadata } : {}),
         phases,
       },
       {

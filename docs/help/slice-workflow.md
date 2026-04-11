@@ -82,6 +82,10 @@ Run this once the code is stable enough for real proof.
 
 If no code changes happen after this gate, do not rerun these same expensive
 checks later just for ceremony.
+On an unchanged tree, prefer reusing the stronger landing gate result instead
+of rerunning the same full-suite command directly. In particular, once the same
+tree has already passed the relevant repo-wide `pnpm test` gate, do not run a
+second direct `pnpm test` just to restate the same result.
 
 ### Isolated-proof gate
 
@@ -153,6 +157,8 @@ Also run any gate that was invalidated after proof. Typical examples:
 
 If the only post-proof edits were docs or proof notes, do not repeat the same
 code-heavy test, lint, and build gates.
+If the unchanged tree already cleared a stronger landing gate, reuse that
+result rather than replaying the same heavy command again during closeout.
 
 ## Commit and push timing
 
@@ -289,7 +295,9 @@ For a typical bounded production slice:
 4. Capture rollback reference and pre-proof health.
 5. Run narrow production proof.
 6. Fill final docs and evidence.
-7. Run `git diff --check` and only the gates invalidated after proof.
+7. Run `git diff --check` and only the gates invalidated after proof. Reuse
+   already-green unchanged-tree landing results instead of rerunning the same
+   heavy suite.
 8. Commit with `scripts/committer`, optionally `FAST_COMMIT=1` if equivalent
    gates already ran on the same tree.
 9. Push.
@@ -334,6 +342,18 @@ For Docker-backed proof or rollout:
 - `pnpm build`
   - serialized by the repo gate wrapper
   - prints timestamped phases, including `build:plugin-sdk:dts`
+  - can reuse a green unchanged-tree build result when the required outputs
+    still exist
+
+Landing gate reuse:
+
+- `pnpm gate:integration` and `pnpm gate:production` consult the latest durable
+  gate artifacts for the current tree fingerprint.
+- On an unchanged tree, `pnpm gate:production` can reuse the green integration
+  `pnpm test` result and only pay for the additional production-only work that
+  still matters, such as `pnpm build`.
+- The same rule applies to direct closeout: do not rerun `pnpm test` manually
+  after an unchanged tree already passed the stronger gate that required it.
 
 Current VPS caveat:
 

@@ -1,9 +1,7 @@
 import { vi } from "vitest";
-import {
-  signalOutbound,
-  telegramOutbound,
-  whatsappOutbound,
-} from "../../../test/channel-outbounds.js";
+import { signalOutbound } from "../../../test/channel-outbounds/signal.js";
+import { telegramOutbound } from "../../../test/channel-outbounds/telegram.js";
+import { whatsappLightOutbound } from "../../../test/channel-outbounds/whatsapp-light.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { setActivePluginRegistry } from "../../plugins/runtime.js";
 import { createOutboundTestPlugin, createTestRegistry } from "../../test-utils/channel-plugins.js";
@@ -169,7 +167,7 @@ export const defaultRegistry = createTestRegistry([
     source: "test",
     plugin: createOutboundTestPlugin({
       id: "whatsapp",
-      outbound: whatsappOutbound,
+      outbound: whatsappLightOutbound,
     }),
   },
   {

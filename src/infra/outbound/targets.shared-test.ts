@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { telegramOutbound, whatsappOutbound } from "../../../test/channel-outbounds.js";
+import { telegramOutbound } from "../../../test/channel-outbounds/telegram.js";
+import { whatsappOutbound } from "../../../test/channel-outbounds/whatsapp.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { isWhatsAppGroupJid, normalizeWhatsAppTarget } from "../../plugin-sdk/whatsapp-targets.js";
 import { setActivePluginRegistry } from "../../plugins/runtime.js";

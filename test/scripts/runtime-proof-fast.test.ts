@@ -1,6 +1,10 @@
 import http from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseRuntimeProofFastArgs, waitForHttpReady } from "../../scripts/runtime-proof-fast.mjs";
+import {
+  parseRuntimeProofFastArgs,
+  resolveRuntimeProofBuildDecision,
+  waitForHttpReady,
+} from "../../scripts/runtime-proof-fast.mjs";
 
 const servers: http.Server[] = [];
 
@@ -37,6 +41,43 @@ describe("runtime proof fast", () => {
       timeoutMs: 9000,
       intervalMs: 250,
       probePath: "/readyz",
+    });
+  });
+
+  it("reuses a green unchanged-tree fast runtime build when present", () => {
+    expect(
+      resolveRuntimeProofBuildDecision({
+        skipBuild: false,
+        reusableBuildArtifact: {
+          recordedAt: "2026-04-11T00:00:00.000Z",
+          elapsedMs: 26150,
+          status: "success",
+          treeFingerprint: "same-tree",
+        },
+      }),
+    ).toMatchObject({
+      shouldBuild: false,
+      reason: "unchanged-tree-reuse",
+      reuseMetadata: {
+        reused: true,
+        reusedFrom: {
+          latestKey: "build-runtime-fast",
+          elapsedMs: 26150,
+        },
+      },
+    });
+  });
+
+  it("honors --skip-build even without a reusable runtime build artifact", () => {
+    expect(
+      resolveRuntimeProofBuildDecision({
+        skipBuild: true,
+        reusableBuildArtifact: null,
+      }),
+    ).toEqual({
+      shouldBuild: false,
+      reuseMetadata: null,
+      reason: "skip-build-flag",
     });
   });
 

@@ -344,6 +344,60 @@ const splitFilesByBalancedDurationBudget = (files, targetDurationMs, estimateDur
   );
 };
 
+const resolveBatchGroupingKey = (file) => {
+  const segments = file.split("/");
+  if (segments.length >= 4) {
+    return segments.slice(0, 3).join("/");
+  }
+  const fileName = segments[segments.length - 1] ?? "";
+  const dottedStem = fileName.replace(/\.test\.[cm]?[jt]sx?$/u, "");
+  const familyStem = dottedStem.split(".")[0] ?? dottedStem;
+  return [...segments.slice(0, -1), familyStem].join("/");
+};
+
+const resolveDominantPathPrefix = (files) => {
+  const prefixCounts = new Map();
+  for (const file of files) {
+    const prefix = resolveBatchGroupingKey(file);
+    prefixCounts.set(prefix, (prefixCounts.get(prefix) ?? 0) + 1);
+  }
+  let dominantPrefix = "";
+  let dominantCount = 0;
+  for (const [prefix, count] of prefixCounts.entries()) {
+    if (count > dominantCount) {
+      dominantPrefix = prefix;
+      dominantCount = count;
+    }
+  }
+  return {
+    dominantPrefix,
+    dominantCount,
+  };
+};
+
+const splitCohesiveSafeModeUnitBatch = (files, estimateDurationMs, options = {}) => {
+  const minFiles = options.minFiles ?? 16;
+  const minDominanceRatio = options.minDominanceRatio ?? 0.8;
+  const splitTargetSize = options.splitTargetSize ?? 10;
+  if (files.length < minFiles) {
+    return [files];
+  }
+  const { dominantCount } = resolveDominantPathPrefix(files);
+  if (dominantCount / files.length < minDominanceRatio) {
+    return [files];
+  }
+  const splitCount = clamp(Math.ceil(files.length / splitTargetSize), 1, files.length);
+  if (splitCount <= 1) {
+    return [files];
+  }
+  const originalOrder = new Map(files.map((file, index) => [file, index]));
+  return packFilesByDuration(files, splitCount, estimateDurationMs).map((batch) =>
+    [...batch].toSorted(
+      (left, right) => (originalOrder.get(left) ?? 0) - (originalOrder.get(right) ?? 0),
+    ),
+  );
+};
+
 const sumPositiveNumbers = (values) =>
   values.reduce(
     (total, value) => (Number.isFinite(value) && value > 0 ? total + Math.round(value) : total),
@@ -496,39 +550,29 @@ const resolveUnitHeavyFileGroups = (context) => {
     "OPENCLAW_TEST_MEMORY_HEAVY_UNIT_MIN_KB",
     unitMemoryHotspotManifest.defaultMinDeltaKb,
   );
-  return {
-    heavyUnitLaneCount,
-    dedicatedTimedFiles:
-      dedicatedTimedUnitFileLimit > 0
-        ? selectTimedHeavyFiles({
-            candidates: catalog.allKnownUnitFiles,
-            limit: dedicatedTimedUnitFileLimit,
-            minDurationMs: dedicatedTimedUnitMinDurationMs,
-            exclude: new Set([
-              ...catalog.unitBehaviorOverrideSet,
-              ...selectMemoryHeavyFiles({
-                candidates: catalog.allKnownUnitFiles,
-                limit: memoryHeavyUnitFileLimit,
-                minDeltaKb: memoryHeavyUnitMinDeltaKb,
-                exclude: catalog.unitBehaviorOverrideSet,
-                hotspots: unitMemoryHotspotManifest,
-              }),
-            ]),
-            timings: unitTimingManifest,
-          })
-        : [],
-    ...selectUnitHeavyFileGroups({
-      candidates: catalog.allKnownUnitFiles,
-      behaviorOverrides: new Set([
-        ...catalog.unitBehaviorOverrideSet,
-        ...selectTimedHeavyFiles({
+  const selectedMemoryHeavyFiles = selectMemoryHeavyFiles({
+    candidates: catalog.allKnownUnitFiles,
+    limit: memoryHeavyUnitFileLimit,
+    minDeltaKb: memoryHeavyUnitMinDeltaKb,
+    exclude: catalog.unitBehaviorOverrideSet,
+    hotspots: unitMemoryHotspotManifest,
+  });
+  const dedicatedTimedFiles =
+    dedicatedTimedUnitFileLimit > 0
+      ? selectTimedHeavyFiles({
           candidates: catalog.allKnownUnitFiles,
           limit: dedicatedTimedUnitFileLimit,
           minDurationMs: dedicatedTimedUnitMinDurationMs,
-          exclude: new Set(),
+          exclude: new Set([...catalog.unitBehaviorOverrideSet, ...selectedMemoryHeavyFiles]),
           timings: unitTimingManifest,
-        }),
-      ]),
+        })
+      : [];
+  return {
+    heavyUnitLaneCount,
+    dedicatedTimedFiles,
+    ...selectUnitHeavyFileGroups({
+      candidates: catalog.allKnownUnitFiles,
+      behaviorOverrides: new Set([...catalog.unitBehaviorOverrideSet, ...dedicatedTimedFiles]),
       timedLimit: heavyUnitFileLimit,
       timedMinDurationMs: heavyUnitMinDurationMs,
       memoryLimit: memoryHeavyUnitFileLimit,
@@ -681,12 +725,17 @@ const buildDefaultUnits = (context, request) => {
         estimateHotspotDeltaKb: estimateUnitHotspotDeltaKb,
         maxHotspotDeltaKbPerBatch: unitFastMaxHotspotDeltaKbPerBatch,
       });
-      for (const [batchIndex, batch] of recycledBatches.entries()) {
+      const finalizedBatches = fullRepoSafeMode
+        ? recycledBatches.flatMap((batch) =>
+            splitCohesiveSafeModeUnitBatch(batch, estimateUnitDurationMs),
+          )
+        : recycledBatches;
+      for (const [batchIndex, batch] of finalizedBatches.entries()) {
         if (batch.length === 0) {
           continue;
         }
         const unitId =
-          recycledBatches.length === 1 ? laneName : `${laneName}-batch-${String(batchIndex + 1)}`;
+          finalizedBatches.length === 1 ? laneName : `${laneName}-batch-${String(batchIndex + 1)}`;
         units.push(
           createExecutionUnit(context, {
             id: unitId,
@@ -1595,10 +1644,14 @@ function resolveSurfaceAwareTopLevelParallelLimit(context, units, defaultLimit) 
   return Math.min(defaultLimit, 2);
 }
 
-function resolveSafeModeTopLevelParallelLimit(context, selectedUnits, env) {
+function resolveSafeModeTopLevelParallelDecision(context, selectedUnits, env) {
   const override = parseEnvNumber(env, "OPENCLAW_TEST_SAFE_MODE_TOP_LEVEL_CONCURRENCY", -1);
   if (override >= 0) {
-    return Math.max(1, override);
+    return {
+      limit: Math.max(1, override),
+      mode: "override",
+      reason: "env-override",
+    };
   }
   const loadAwareDisabledRaw = env.OPENCLAW_TEST_LOAD_AWARE?.trim().toLowerCase();
   const loadAwareDisabled = loadAwareDisabledRaw === "0" || loadAwareDisabledRaw === "false";
@@ -1617,18 +1670,45 @@ function resolveSafeModeTopLevelParallelLimit(context, selectedUnits, env) {
   );
   const onlyUnitSurface =
     selectedUnits.length > 0 && selectedUnits.every((unit) => unit.surface === "unit");
-  if (
+  const adaptiveEligible =
     baseLimit >= 2 &&
     !loadAwareDisabled &&
-    context.runtime.loadBand === "idle" &&
+    (context.runtime.loadBand === "idle" || context.runtime.loadBand === "normal") &&
     context.runtime.hostMemoryGiB >= 7 &&
     onlyUnitSurface &&
     sharedUnitBatches.length >= 16 &&
-    dedicatedMemoryOrTimedUnits.length >= 8
-  ) {
-    return 3;
+    dedicatedMemoryOrTimedUnits.length >= 8;
+
+  if (adaptiveEligible) {
+    return {
+      limit: 3,
+      mode: "adaptive",
+      reason: context.runtime.loadBand === "idle" ? "adaptive-safe-idle" : "adaptive-safe-normal",
+    };
   }
-  return baseLimit;
+
+  const reason =
+    baseLimit < 2
+      ? "base-limit-below-2"
+      : loadAwareDisabled
+        ? "load-aware-disabled"
+        : context.runtime.loadBand === "busy" || context.runtime.loadBand === "saturated"
+          ? `load-band-${context.runtime.loadBand}`
+          : context.runtime.hostMemoryGiB < 7
+            ? "host-memory-below-7gib"
+            : !onlyUnitSurface
+              ? "mixed-surfaces"
+              : sharedUnitBatches.length < 16
+                ? "insufficient-shared-unit-batches"
+                : dedicatedMemoryOrTimedUnits.length < 8
+                  ? "insufficient-dedicated-heavy-lanes"
+                  : "adaptive-not-eligible";
+
+  return {
+    limit: baseLimit,
+    mode: "base",
+    reason,
+  };
 }
 
 function resolveEstimatedHotspotBudgetKb(context, env, topLevelParallelLimit) {
@@ -1774,9 +1854,10 @@ export function buildExecutionPlan(request, options = {}) {
     : [];
   const serialPrefixUnits = parallelUnits.filter((unit) => unit.serialPhase);
   const deferredParallelUnits = parallelUnits.filter((unit) => !unit.serialPhase);
-  const safeModeTopLevelParallelLimit = context.fullRepoSafeMode
-    ? resolveSafeModeTopLevelParallelLimit(context, selectedUnits, env)
+  const safeModeTopLevelParallelDecision = context.fullRepoSafeMode
+    ? resolveSafeModeTopLevelParallelDecision(context, selectedUnits, env)
     : null;
+  const safeModeTopLevelParallelLimit = safeModeTopLevelParallelDecision?.limit ?? null;
   const topLevelParallelEnabled = context.fullRepoSafeMode
     ? safeModeTopLevelParallelLimit > 1
     : context.executionBudget.topLevelParallelEnabled;
@@ -1821,6 +1902,7 @@ export function buildExecutionPlan(request, options = {}) {
     deferredParallelUnits,
     topLevelParallelEnabled,
     topLevelParallelLimit,
+    safeModeTopLevelParallelDecision,
     estimatedHotspotBudgetKb,
     deferredRunConcurrency,
     keepGatewaySerial,

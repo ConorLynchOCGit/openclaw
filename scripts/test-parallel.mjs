@@ -1,4 +1,5 @@
 import { acquireRepoHeavyLock } from "./lib/repo-heavy-task.mjs";
+import { currentTreeFingerprint } from "./lib/unchanged-tree-reuse.mjs";
 import {
   createExecutionArtifacts,
   executePlan,
@@ -207,6 +208,7 @@ if (process.env.OPENCLAW_TEST_LIST_LANES === "1" || rawCli.plan) {
 let releaseLock = null;
 let exitCode = 1;
 try {
+  artifacts.treeFingerprint = await currentTreeFingerprint();
   releaseLock = await acquireRepoHeavyLock("test");
   const result = await executePlan(plan, { env: process.env, artifacts });
   exitCode = typeof result === "number" ? result : result.exitCode;

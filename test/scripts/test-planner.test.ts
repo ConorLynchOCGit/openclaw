@@ -243,6 +243,45 @@ describe("test planner", () => {
     artifacts.cleanupTempArtifacts();
   });
 
+  it("splits dominant shared directory clusters in constrained full-repo safe mode", () => {
+    const env = {
+      RUNNER_OS: "Linux",
+      OPENCLAW_TEST_HOST_CPU_COUNT: "4",
+      OPENCLAW_TEST_HOST_MEMORY_GIB: "7",
+      OPENCLAW_TEST_LOAD_AWARE: "0",
+    };
+    const artifacts = createExecutionArtifacts(env);
+    const plan = buildExecutionPlan(
+      {
+        profile: null,
+        mode: "local",
+        surfaces: [],
+        passthroughArgs: [],
+      },
+      {
+        env,
+        platform: "linux",
+        writeTempJsonArtifact: artifacts.writeTempJsonArtifact,
+      },
+    );
+
+    const sharedUnitBatches = plan.selectedUnits.filter(
+      (unit) => unit.surface === "unit" && !unit.isolate && unit.id.startsWith("unit-fast"),
+    );
+    const maxPrefixCountInBatch = (prefix) =>
+      Math.max(
+        0,
+        ...sharedUnitBatches.map(
+          (unit) => (unit.includeFiles ?? []).filter((file) => file.startsWith(prefix)).length,
+        ),
+      );
+
+    expect(maxPrefixCountInBatch("src/channels/plugins/")).toBeLessThan(16);
+    expect(maxPrefixCountInBatch("src/cron/isolated-agent")).toBeLessThan(16);
+    expect(maxPrefixCountInBatch("src/infra/outbound/")).toBeLessThan(16);
+    artifacts.cleanupTempArtifacts();
+  });
+
   it("promotes constrained idle full-repo plans to adaptive top-level parallelism", () => {
     const env = {
       RUNNER_OS: "Linux",
@@ -268,7 +307,79 @@ describe("test planner", () => {
     expect(plan.fullRepoSafeMode).toBe(true);
     expect(plan.topLevelParallelEnabled).toBe(true);
     expect(plan.topLevelParallelLimit).toBe(3);
+    expect(plan.safeModeTopLevelParallelDecision).toMatchObject({
+      limit: 3,
+      mode: "adaptive",
+      reason: "adaptive-safe-idle",
+    });
     expect(plan.estimatedHotspotBudgetKb).toBe(1536 * 1024);
+    artifacts.cleanupTempArtifacts();
+  });
+
+  it("promotes constrained normal-load full-repo plans to adaptive top-level parallelism", () => {
+    const env = {
+      RUNNER_OS: "Linux",
+      OPENCLAW_TEST_HOST_CPU_COUNT: "4",
+      OPENCLAW_TEST_HOST_MEMORY_GIB: "7",
+    };
+    const artifacts = createExecutionArtifacts(env);
+    const plan = buildExecutionPlan(
+      {
+        profile: null,
+        mode: "local",
+        surfaces: [],
+        passthroughArgs: [],
+      },
+      {
+        env,
+        platform: "linux",
+        loadAverage: [2.4, 2.4, 2.4],
+        writeTempJsonArtifact: artifacts.writeTempJsonArtifact,
+      },
+    );
+
+    expect(plan.runtimeCapabilities.loadBand).toBe("normal");
+    expect(plan.fullRepoSafeMode).toBe(true);
+    expect(plan.topLevelParallelEnabled).toBe(true);
+    expect(plan.topLevelParallelLimit).toBe(3);
+    expect(plan.safeModeTopLevelParallelDecision).toMatchObject({
+      limit: 3,
+      mode: "adaptive",
+      reason: "adaptive-safe-normal",
+    });
+    expect(plan.estimatedHotspotBudgetKb).toBe(1536 * 1024);
+    artifacts.cleanupTempArtifacts();
+  });
+
+  it("records why constrained full-repo plans stay at the base safe limit", () => {
+    const env = {
+      RUNNER_OS: "Linux",
+      OPENCLAW_TEST_HOST_CPU_COUNT: "4",
+      OPENCLAW_TEST_HOST_MEMORY_GIB: "7",
+    };
+    const artifacts = createExecutionArtifacts(env);
+    const plan = buildExecutionPlan(
+      {
+        profile: null,
+        mode: "local",
+        surfaces: [],
+        passthroughArgs: [],
+      },
+      {
+        env,
+        platform: "linux",
+        loadAverage: [4, 4, 4],
+        writeTempJsonArtifact: artifacts.writeTempJsonArtifact,
+      },
+    );
+
+    expect(plan.runtimeCapabilities.loadBand).toBe("busy");
+    expect(plan.topLevelParallelLimit).toBe(2);
+    expect(plan.safeModeTopLevelParallelDecision).toMatchObject({
+      limit: 2,
+      mode: "base",
+      reason: "load-band-busy",
+    });
     artifacts.cleanupTempArtifacts();
   });
 
@@ -333,6 +444,65 @@ describe("test planner", () => {
     expect(dedicatedUnits.length).toBeGreaterThanOrEqual(5);
     expect(dedicatedUnits.some((unit) => unit.id.includes("service.issue-regressions"))).toBe(true);
     expect(dedicatedUnits.every((unit) => unit.surface === "unit")).toBe(true);
+    artifacts.cleanupTempArtifacts();
+  });
+
+  it("keeps memory hotspots memory-isolated even when they are also long-running", () => {
+    const env = {
+      RUNNER_OS: "Linux",
+      OPENCLAW_TEST_HOST_CPU_COUNT: "2",
+      OPENCLAW_TEST_HOST_MEMORY_GIB: "7",
+      OPENCLAW_TEST_LOAD_AWARE: "0",
+    };
+    const artifacts = createExecutionArtifacts(env);
+    const plan = buildExecutionPlan(
+      {
+        profile: null,
+        mode: "local",
+        surfaces: [],
+        passthroughArgs: [],
+      },
+      {
+        env,
+        platform: "linux",
+        writeTempJsonArtifact: artifacts.writeTempJsonArtifact,
+      },
+    );
+
+    const memoryIsolatedUnits = plan.selectedUnits.filter((unit) =>
+      unit.reasons.includes("unit-memory-isolated"),
+    );
+    const sharedUnits = plan.selectedUnits.filter((unit) =>
+      unit.reasons.includes("unit-fast-shared"),
+    );
+
+    expect(
+      memoryIsolatedUnits.some(
+        (unit) =>
+          Array.isArray(unit.args) && unit.args.includes("src/infra/outbound/deliver.test.ts"),
+      ),
+    ).toBe(true);
+    expect(
+      memoryIsolatedUnits.some(
+        (unit) =>
+          Array.isArray(unit.args) &&
+          unit.args.includes(
+            "src/cron/isolated-agent.skips-delivery-without-whatsapp-recipient-besteffortdeliver-true.test.ts",
+          ),
+      ),
+    ).toBe(true);
+    expect(
+      sharedUnits.some((unit) =>
+        (unit.includeFiles ?? []).includes("src/infra/outbound/deliver.test.ts"),
+      ),
+    ).toBe(false);
+    expect(
+      sharedUnits.some((unit) =>
+        (unit.includeFiles ?? []).includes(
+          "src/cron/isolated-agent.skips-delivery-without-whatsapp-recipient-besteffortdeliver-true.test.ts",
+        ),
+      ),
+    ).toBe(false);
     artifacts.cleanupTempArtifacts();
   });
 
