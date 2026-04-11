@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { telegramOutbound } from "../../../test/channel-outbounds/telegram.js";
-import { whatsappOutbound } from "../../../test/channel-outbounds/whatsapp.js";
+import { telegramLightOutbound } from "../../../test/channel-outbounds/telegram-light.js";
+import { whatsappLightOutbound } from "../../../test/channel-outbounds/whatsapp-light.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { isWhatsAppGroupJid, normalizeWhatsAppTarget } from "../../plugin-sdk/whatsapp-targets.js";
 import { setActivePluginRegistry } from "../../plugins/runtime.js";
@@ -80,7 +80,7 @@ export function installResolveOutboundTargetPluginRegistryHooks(): void {
             ...createOutboundTestPlugin({
               id: "whatsapp",
               label: "WhatsApp",
-              outbound: whatsappOutbound,
+              outbound: whatsappLightOutbound,
               messaging: whatsappMessaging,
             }),
             config: {
@@ -99,7 +99,7 @@ export function installResolveOutboundTargetPluginRegistryHooks(): void {
             ...createOutboundTestPlugin({
               id: "telegram",
               label: "Telegram",
-              outbound: telegramOutbound,
+              outbound: telegramLightOutbound,
               messaging: telegramMessaging,
             }),
             config: {

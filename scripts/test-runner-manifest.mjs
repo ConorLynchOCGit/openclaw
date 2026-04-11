@@ -120,6 +120,10 @@ const loadTimingManifest = (manifestPath, fallbackManifest) => {
           Number.isFinite(value?.durationMs) && value.durationMs >= 0 ? value.durationMs : null;
         const testCount =
           Number.isFinite(value?.testCount) && value.testCount >= 0 ? value.testCount : null;
+        const observationMode =
+          value?.observationMode === "batch-coarse" || value?.observationMode === "per-file"
+            ? value.observationMode
+            : null;
         if (!durationMs) {
           return [normalizedFile, null];
         }
@@ -128,6 +132,7 @@ const loadTimingManifest = (manifestPath, fallbackManifest) => {
           {
             durationMs,
             ...(testCount !== null ? { testCount } : {}),
+            ...(observationMode ? { observationMode } : {}),
           },
         ];
       })

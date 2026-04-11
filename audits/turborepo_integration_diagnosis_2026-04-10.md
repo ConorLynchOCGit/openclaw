@@ -10,11 +10,18 @@ the engineering repo:
 - a real `turbo.json` exists
 - cacheable root ownership now covers `build:plugin-sdk:dts`
 - package-local Turbo ownership now covers UI `build` and `test`
+- package-local Turbo ownership now also covers:
+  - `@openclaw/diffs` `build` and `test`
+  - `@openclaw/memory-host-sdk` `test`
+  - `@openclaw/plugin-package-contract` `test`
 - canonical `pnpm check:fast`, `pnpm check:types`, and `pnpm build` now route
   selected build/check phases through Turbo-backed wrappers
 - durable gate metrics now record Turbo cache hit or miss status for those
   phases
-- remote cache remains intentionally local-only for now
+- durable gate metrics now also record whether a Turbo-backed gate phase ran in
+  local-only mode or with remote-cache credentials configured
+- remote cache remains repo-default local-only for now, with explicit opt-in
+  remote use supported only for the currently extracted Turbo tasks
 - unchanged-tree gate reuse now exists for the heavy local landing path, so the
   same unchanged tree no longer needs to rerun equivalent full-suite work at
   each later tier
@@ -22,6 +29,8 @@ the engineering repo:
   can truthfully promote to `3` on this host when runtime conditions are safe
 - the worst generic outbound Signal and WhatsApp hot tests now use local
   contract-faithful adapters instead of loading the full bundled plugin runtime
+- shared-batch test artifacts now include file-level decomposition metadata and
+  import/setup-versus-test-body dominance where the executor can infer it
 
 The core conclusion in this diagnosis still stands: Turbo is a complement to
 the existing workflow, not a replacement for the constrained-host test
@@ -83,11 +92,14 @@ OpenClaw is a real `pnpm` workspace:
 - `packages/*`
 - `extensions/*`
 
-But package-local task ownership is still thin:
+But package-local task ownership is still thin relative to the whole repo:
 
 - `ui/package.json` exposes `build`, `dev`, and `test`
-- most `packages/*` and `extensions/*` packages do not expose their own
-  `build` / `test` / `check` scripts
+- `extensions/diffs` now exposes package-local `build` and `test`
+- `packages/memory-host-sdk` now exposes a package-local `test`
+- `packages/plugin-package-contract` now exposes a package-local `test`
+- most other `packages/*` and `extensions/*` packages do not yet expose their
+  own `build` / `test` / `check` scripts
 - this means the repo is not yet in a package-task shape where Turborepo can
   immediately take over the expensive paths just by adding `turbo.json`
 
@@ -123,11 +135,12 @@ Current tranche update before final full-suite revalidation:
   rerunning the same full suite on the same tree
 - local observed history now estimates:
   - `unit-deliver-memory-isolated` at about `50.3 s`
-  - `unit-isolated-agent.skips-delivery-without-whatsapp-recipient-besteffortdeliver-true-memory-isolated`
-    at about `56.3 s`
-- current planned shared tails are clustered around `~5 s`, so the dominant
-  remaining pain has moved away from the shared batches and back toward a
-  smaller set of import-heavy isolated lanes
+- `unit-isolated-agent.skips-delivery-without-whatsapp-recipient-besteffortdeliver-true-memory-isolated`
+  at about `56.3 s`
+- shared-batch artifacts now expose likely file-level drivers and whether a
+  batch was import/setup dominated, test-body dominated, or mixed
+- final full-suite validation is still required before claiming the new shared
+  tail wall times on this host
 
 Interpretation:
 
@@ -318,7 +331,8 @@ Implication for OpenClaw:
 
 - simply adding `turbo.json` on top of today's root-owned scripts would not
   solve the main pain
-- the repo first needs more real package-local task ownership
+- the repo first needs more real package-local task ownership, and the current
+  tranche has only started that outside `ui`
 - Turbo is most valuable after or during that extraction
 
 ## Honest Architecture Conclusion

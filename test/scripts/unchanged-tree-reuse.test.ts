@@ -85,7 +85,7 @@ describe("unchanged tree reuse helpers", () => {
     await expect(loadReusableLatestArtifact("build", "same-tree", rootDir)).resolves.toBeNull();
   });
 
-  it("reuses unchanged-tree test artifacts only when the fingerprint still matches", async () => {
+  it("reuses unchanged-tree test artifacts only when they are full-suite results on the same tree", async () => {
     const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-unchanged-tree-test-"));
     cleanupDirs.push(rootDir);
     fs.mkdirSync(path.join(rootDir, ".local", "gate-metrics", "latest"), { recursive: true });
@@ -98,6 +98,32 @@ describe("unchanged tree reuse helpers", () => {
           recordedAt: "2026-04-11T00:00:00.000Z",
           status: "success",
           treeFingerprint: "same-tree",
+          scope: {
+            kind: "targeted",
+            reusableForLanding: false,
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    await expect(loadReusableLatestArtifact("test", "same-tree", rootDir)).resolves.toBeNull();
+
+    fs.writeFileSync(
+      path.join(rootDir, ".local", "gate-metrics", "latest", "test.json"),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          kind: "test",
+          recordedAt: "2026-04-11T00:00:00.000Z",
+          status: "success",
+          treeFingerprint: "same-tree",
+          scope: {
+            kind: "full-suite",
+            reusableForLanding: true,
+          },
         },
         null,
         2,
@@ -108,6 +134,10 @@ describe("unchanged tree reuse helpers", () => {
     await expect(loadReusableLatestArtifact("test", "same-tree", rootDir)).resolves.toMatchObject({
       status: "success",
       treeFingerprint: "same-tree",
+      scope: {
+        kind: "full-suite",
+        reusableForLanding: true,
+      },
     });
     await expect(loadReusableLatestArtifact("test", "other-tree", rootDir)).resolves.toBeNull();
   });

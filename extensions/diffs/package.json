@@ -5,7 +5,9 @@
   "description": "OpenClaw diff viewer plugin",
   "type": "module",
   "scripts": {
-    "build:viewer": "bun build src/viewer-client.ts --target browser --format esm --minify --outfile assets/viewer-runtime.js"
+    "build": "pnpm build:viewer",
+    "build:viewer": "pnpm exec esbuild src/viewer-client.ts --platform=browser --format=esm --minify --outfile=assets/viewer-runtime.js",
+    "test": "pnpm --dir ../.. exec vitest run --config vitest.extensions.config.ts extensions/diffs/src"
   },
   "dependencies": {
     "@pierre/diffs": "1.1.7",

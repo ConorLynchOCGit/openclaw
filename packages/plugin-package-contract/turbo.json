@@ -1,0 +1,10 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "cache": false,
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputLogs": "full"
+    }
+  }
+}

@@ -91,9 +91,14 @@ export function mergeTimingManifest(baseManifest, localManifest) {
         ? Math.round(value.testCount)
         : null;
     const runs = Number.isFinite(value?.runs) && value.runs > 0 ? Math.round(value.runs) : null;
+    const observationMode =
+      value?.observationMode === "batch-coarse" || value?.observationMode === "per-file"
+        ? value.observationMode
+        : null;
     files[normalizedFile] = {
       durationMs,
       ...(testCount !== null ? { testCount } : {}),
+      ...(observationMode ? { observationMode } : {}),
       ...(runs !== null ? { runs } : {}),
     };
   }
@@ -181,9 +186,14 @@ export function writeObservedTimingHistory(config, observedEntries, options = {}
       Number.isFinite(entry?.testCount) && entry.testCount >= 0
         ? Math.round(entry.testCount)
         : previous?.testCount;
+    const observationMode =
+      entry?.observationMode === "batch-coarse" || entry?.observationMode === "per-file"
+        ? entry.observationMode
+        : previous?.observationMode;
     files[normalizedFile] = {
       durationMs: nextDuration,
       ...(Number.isFinite(testCount) ? { testCount } : {}),
+      ...(observationMode ? { observationMode } : {}),
       runs: runs + 1,
       observedAt: new Date().toISOString(),
     };

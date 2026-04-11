@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { telegramOutbound } from "../../../test/channel-outbounds/telegram.js";
-import { whatsappOutbound } from "../../../test/channel-outbounds/whatsapp.js";
+import { telegramLightOutbound } from "../../../test/channel-outbounds/telegram-light.js";
+import { whatsappLightOutbound } from "../../../test/channel-outbounds/whatsapp-light.js";
 import type { ChannelOutboundAdapter } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
@@ -58,7 +58,7 @@ beforeEach(() => {
         pluginId: "telegram",
         plugin: createOutboundTestPlugin({
           id: "telegram",
-          outbound: telegramOutbound,
+          outbound: telegramLightOutbound,
           messaging: telegramMessagingForTest,
         }),
         source: "test",
@@ -67,7 +67,7 @@ beforeEach(() => {
         pluginId: "whatsapp",
         plugin: createOutboundTestPlugin({
           id: "whatsapp",
-          outbound: whatsappOutbound,
+          outbound: whatsappLightOutbound,
           messaging: whatsappMessaging,
         }),
         source: "test",
@@ -141,7 +141,7 @@ describe("resolveOutboundTarget defaultTo config fallback", () => {
       pluginId: "telegram",
       plugin: createOutboundTestPlugin({
         id: "telegram",
-        outbound: telegramOutbound,
+        outbound: telegramLightOutbound,
         messaging: telegramMessagingForTest,
       }),
       source: "test",

@@ -60,11 +60,27 @@ Gate wrapper notes:
   at most once. If the stronger relevant landing gate already recorded a green
   full-suite result for the same tree, do not rerun `pnpm test` directly just
   for ceremony.
+- True full-suite `pnpm test` runs now keep the reusable landing artifact at
+  `.local/gate-metrics/latest/test.json`.
+- Targeted post-proof or script-level `pnpm test -- ...` runs now write
+  `.local/gate-metrics/latest/test-targeted.json` instead, so they do not
+  clobber the canonical reusable full-suite result during closeout.
 - `pnpm build` now prints phase timestamps for quieter stages, including
   `build:plugin-sdk:dts`.
 - Turbo now owns the cacheable UI `build` and `test` tasks plus the cacheable
   `build:plugin-sdk:dts` phase, while the outer gate semantics stay in the
   existing repo wrappers.
+- Additional package-local Turbo tasks now exist outside `ui` for targeted
+  work:
+  - `pnpm turbo:repo:diffs:build`
+  - `pnpm turbo:repo:diffs:test`
+  - `pnpm turbo:repo:memory-host-sdk:test`
+  - `pnpm turbo:repo:plugin-package-contract:test`
+- Those package-local Turbo commands are for bounded local work and changed
+  scope iteration. They do not replace the canonical repo landing gates.
+- Remote cache is still off by default. If you explicitly configure Turbo
+  remote cache via environment variables, treat that as an opt-in acceleration
+  path for the extracted Turbo tasks, not as the source of truth for landing.
 - `pnpm build:runtime:fast` is the runtime-oriented fast build path for feature
   proof. It keeps the full `pnpm build` bar intact.
 - `pnpm runtime:proof:fast` runs a non-production proof gateway from the repo's
@@ -78,6 +94,10 @@ Gate wrapper notes:
   - `.local/gate-metrics/history/*.json`
 - `pnpm test` also writes local timing history under:
   - `.local/test-runner-history/*.json`
+- Shared-batch test artifacts now also include file-level decomposition data
+  and import/setup-versus-test-body dominance where the executor can infer it.
+  Use that data when a shared batch becomes the new dominant tail instead of
+  guessing from the batch label alone.
 - On memory-traced runs, `pnpm test` also persists local unit memory-hotspot
   history there so later constrained-host plans can use real observed RSS
   growth instead of only the checked-in hotspot fixture.
@@ -195,6 +215,8 @@ Think of the suites as “increasing realism” (and increasing flakiness/cost):
   - `pnpm test:perf:imports:changed` scopes the same profiling view to files changed since `origin/main`.
   - `pnpm test:perf:profile:main` writes a main-thread CPU profile for Vitest/Vite startup and transform overhead.
   - `pnpm test:perf:profile:runner` writes runner CPU+heap profiles for the unit suite with file parallelism disabled.
+  - The shared-batch timing artifacts are now the first place to look when a
+    `unit-fast-batch-*` outlier appears repeatedly in the landing flow.
 
 ### E2E (gateway smoke)
 

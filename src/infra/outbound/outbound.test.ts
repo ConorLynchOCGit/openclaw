@@ -1,16 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
-import { createTestRegistry } from "../../test-utils/channel-plugins.js";
 import { typedCases } from "../../test-utils/typed-cases.js";
 import { DirectoryCache } from "./directory-cache.js";
 import { buildOutboundResultEnvelope } from "./envelope.js";
 import type { OutboundDeliveryJson } from "./format.js";
 import { runResolveOutboundTargetCoreTests } from "./targets.shared-test.js";
-
-beforeEach(() => {
-  setActivePluginRegistry(createTestRegistry([]));
-});
 
 describe("DirectoryCache", () => {
   const cfg = {} as OpenClawConfig;

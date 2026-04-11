@@ -9,6 +9,15 @@ const LATEST_ARTIFACT_OUTPUTS = {
   "build-runtime-fast": ["dist/index.js", ".local/build-stamps/plugin-sdk-dts.json"],
 };
 
+function isReusableLandingTestArtifact(artifact) {
+  return (
+    artifact?.kind === "test" &&
+    artifact?.status === "success" &&
+    artifact?.scope?.kind === "full-suite" &&
+    artifact?.scope?.reusableForLanding === true
+  );
+}
+
 function resolveLatestArtifactPath(latestKey, rootDir = ROOT_DIR) {
   return path.join(rootDir, ".local", "gate-metrics", "latest", `${latestKey}.json`);
 }
@@ -123,6 +132,9 @@ export async function hasReusableOutputsForLatestKey(latestKey, rootDir = ROOT_D
 export async function loadReusableLatestArtifact(latestKey, treeFingerprint, rootDir = ROOT_DIR) {
   const artifact = await loadLatestArtifact(latestKey, rootDir);
   if (!artifact || artifact.status !== "success") {
+    return null;
+  }
+  if (latestKey === "test" && !isReusableLandingTestArtifact(artifact)) {
     return null;
   }
   if (artifact.treeFingerprint !== treeFingerprint) {

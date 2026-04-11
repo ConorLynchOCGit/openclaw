@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { slackOutbound } from "../../../test/channel-outbounds/slack.js";
+import { slackLightOutbound } from "../../../test/channel-outbounds/slack-light.js";
 import type { CliDeps } from "../../cli/outbound-send-deps.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { setActivePluginRegistry } from "../../plugins/runtime.js";
@@ -17,7 +17,7 @@ const slackRegistry = createTestRegistry([
     source: "test",
     plugin: createOutboundTestPlugin({
       id: "slack",
-      outbound: slackOutbound,
+      outbound: slackLightOutbound,
       messaging: {
         enableInteractiveReplies: ({ cfg }) =>
           (cfg.channels?.slack as { capabilities?: { interactiveReplies?: boolean } } | undefined)

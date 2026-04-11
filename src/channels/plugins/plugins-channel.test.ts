@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { telegramOutbound, whatsappOutbound } from "../../../test/channel-outbounds.js";
+import { telegramLightOutbound } from "../../../test/channel-outbounds/telegram-light.js";
+import { whatsappLightOutbound } from "../../../test/channel-outbounds/whatsapp-light.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { normalizeIMessageMessagingTarget } from "./normalize/imessage.js";
 import { looksLikeSignalTargetId, normalizeSignalMessagingTarget } from "./normalize/signal.js";
@@ -73,7 +74,7 @@ describe("telegramOutbound.sendPayload", () => {
   it("sends text payload with buttons", async () => {
     const sendTelegram = vi.fn(async () => ({ messageId: "m1", chatId: "c1" }));
 
-    const result = await telegramOutbound.sendPayload?.({
+    const result = await telegramLightOutbound.sendPayload?.({
       cfg: {} as OpenClawConfig,
       to: "telegram:123",
       text: "ignored",
@@ -106,7 +107,7 @@ describe("telegramOutbound.sendPayload", () => {
       .mockResolvedValueOnce({ messageId: "m1", chatId: "c1" })
       .mockResolvedValueOnce({ messageId: "m2", chatId: "c1" });
 
-    const result = await telegramOutbound.sendPayload?.({
+    const result = await telegramLightOutbound.sendPayload?.({
       cfg: {} as OpenClawConfig,
       to: "telegram:123",
       text: "ignored",
@@ -148,7 +149,7 @@ describe("telegramOutbound.sendPayload", () => {
 
 describe("whatsappOutbound.resolveTarget", () => {
   it("returns error when no target is provided even with allowFrom", () => {
-    const result = whatsappOutbound.resolveTarget?.({
+    const result = whatsappLightOutbound.resolveTarget?.({
       to: undefined,
       allowFrom: ["+15551234567"],
       mode: "implicit",
@@ -158,7 +159,7 @@ describe("whatsappOutbound.resolveTarget", () => {
   });
 
   it("returns error when implicit target is not in allowFrom", () => {
-    const result = whatsappOutbound.resolveTarget?.({
+    const result = whatsappLightOutbound.resolveTarget?.({
       to: "+15550000000",
       allowFrom: ["+15551234567"],
       mode: "implicit",
@@ -174,7 +175,7 @@ describe("whatsappOutbound.resolveTarget", () => {
   });
 
   it("keeps group JID targets even when allowFrom does not contain them", () => {
-    const result = whatsappOutbound.resolveTarget?.({
+    const result = whatsappLightOutbound.resolveTarget?.({
       to: "120363401234567890@g.us",
       allowFrom: ["+15551234567"],
       mode: "implicit",

@@ -17,5 +17,8 @@
     "./query": "./src/query.ts",
     "./secret": "./src/secret.ts",
     "./status": "./src/status.ts"
+  },
+  "scripts": {
+    "test": "pnpm --dir ../.. exec vitest run --config vitest.unit.config.ts packages/memory-host-sdk/src"
   }
 }

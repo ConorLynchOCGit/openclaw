@@ -47,6 +47,12 @@ Use while code is still moving.
 - Run nearby targeted tests only.
 - Run `pnpm check:fast` when it is cheap and useful for the touched surface.
 - Add `pnpm check:types` only when the change touches runtime or typed code.
+- For extracted package-local surfaces, prefer the smallest truthful scoped
+  command during implementation, for example:
+  - `pnpm turbo:repo:diffs:build`
+  - `pnpm turbo:repo:diffs:test`
+  - `pnpm turbo:repo:memory-host-sdk:test`
+  - `pnpm turbo:repo:plugin-package-contract:test`
 - Do not pay for broad sweeps, builds, or proof yet unless the change is hard
   to iterate without them.
 
@@ -79,6 +85,9 @@ Run this once the code is stable enough for real proof.
   commands remain the policy boundary. Keep using the canonical `pnpm` gate
   commands instead of calling ad hoc Turbo commands as a substitute for the
   landing bar.
+- Remote cache, if explicitly configured for Turbo, is only an acceleration
+  layer for those extracted tasks. It does not change the gate semantics or
+  remove the need for the canonical landing commands.
 
 If no code changes happen after this gate, do not rerun these same expensive
 checks later just for ceremony.
@@ -159,6 +168,9 @@ If the only post-proof edits were docs or proof notes, do not repeat the same
 code-heavy test, lint, and build gates.
 If the unchanged tree already cleared a stronger landing gate, reuse that
 result rather than replaying the same heavy command again during closeout.
+When you do need post-proof targeted script validation, keep it targeted:
+those runs now write a separate `latest/test-targeted.json` artifact so they
+do not overwrite the canonical reusable full-suite `latest/test.json`.
 
 ## Commit and push timing
 

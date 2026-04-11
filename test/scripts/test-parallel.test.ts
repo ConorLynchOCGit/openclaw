@@ -7,6 +7,7 @@ import {
   parseCompletedTestFileLines,
   parseMemoryTraceSummaryLines,
   parseMemoryValueKb,
+  parseVitestDurationSummaryLines,
 } from "../../scripts/test-parallel-memory.mjs";
 import {
   appendCapturedOutput,
@@ -231,6 +232,31 @@ describe("scripts/test-parallel memory trace parsing", () => {
         },
       ],
     });
+  });
+
+  it("parses Vitest duration summaries into phase breakdowns", () => {
+    const summaries = parseVitestDurationSummaryLines(
+      [
+        " Duration  41.80s (transform 1.22s, setup 110ms, collect 37.03s, tests 2.44s, environment 0ms, prepare 1.00s)",
+      ].join("\n"),
+    );
+
+    expect(summaries).toEqual([
+      {
+        totalMs: 41_800,
+        phases: {
+          transform: 1_220,
+          setup: 110,
+          collect: 37_030,
+          tests: 2_440,
+          environment: 0,
+          prepare: 1_000,
+        },
+        importSetupMs: 39_360,
+        testBodyMs: 2_440,
+        dominance: "import-setup-dominated",
+      },
+    ]);
   });
 });
 

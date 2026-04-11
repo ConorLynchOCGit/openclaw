@@ -6,6 +6,7 @@ import { writeGateMetricArtifact } from "../lib/gate-metrics.mjs";
 import {
   getProcessTreeRecords,
   parseCompletedTestFileLines,
+  parseVitestDurationSummaryLines,
   sampleProcessTreeRssKb,
 } from "../test-parallel-memory.mjs";
 import {
@@ -110,6 +111,25 @@ const classifyRunResult = ({ resolvedCode, signal, fatalSeen, childError, failed
 const formatRunLabel = (result) =>
   `unit=${result.unitId}${result.shardLabel ? ` shard=${result.shardLabel}` : ""}`;
 
+const summarizeBatchDecomposition = (decomposition) => {
+  if (!decomposition || !Array.isArray(decomposition.files) || decomposition.files.length === 0) {
+    return null;
+  }
+  const sortedFiles = [...decomposition.files].toSorted(
+    (left, right) => (right.estimatedDurationMs ?? 0) - (left.estimatedDurationMs ?? 0),
+  );
+  return {
+    fileCount: decomposition.fileCount ?? sortedFiles.length,
+    observedFileCount: decomposition.observedFileCount ?? 0,
+    fixtureFileCount: decomposition.fixtureFileCount ?? 0,
+    defaultEstimateFileCount: decomposition.defaultEstimateFileCount ?? 0,
+    estimateSourceCounts: decomposition.estimateSourceCounts ?? {},
+    dominantGroupingKey: decomposition.dominantGroupingKey ?? null,
+    dominantGroupingFileCount: decomposition.dominantGroupingFileCount ?? null,
+    topEstimatedFiles: sortedFiles.slice(0, 5),
+  };
+};
+
 const buildFinalRunReport = (results) => {
   const failedResults = results.filter((result) => result.exitCode !== 0);
   const failedUnits = new Set(failedResults.map((result) => result.unitId));
@@ -160,11 +180,53 @@ const printFinalRunSummary = (plan, report, reportArtifactPath) => {
 const persistObservedTimingsFromResults = (results) => {
   const byConfig = new Map();
   for (const result of results) {
-    if (!result.config || !Array.isArray(result.completedFileDurations)) {
+    if (!result.config) {
       continue;
     }
     const entries = byConfig.get(result.config) ?? [];
-    entries.push(...result.completedFileDurations);
+    if (Array.isArray(result.completedFileDurations)) {
+      entries.push(
+        ...result.completedFileDurations.map((entry) => ({
+          ...entry,
+          observationMode: "per-file",
+        })),
+      );
+    }
+    if (
+      Array.isArray(result.batchDecomposition?.files) &&
+      result.batchDecomposition.files.length > 1 &&
+      Array.isArray(result.completedFileDurations) &&
+      result.completedFileDurations.length === 0 &&
+      Number.isFinite(result.elapsedMs) &&
+      result.elapsedMs > 0
+    ) {
+      const weightedFiles = result.batchDecomposition.files.filter(
+        (entry) => typeof entry?.file === "string" && entry.file.length > 0,
+      );
+      const totalWeight = weightedFiles.reduce(
+        (sum, entry) =>
+          sum +
+          (Number.isFinite(entry?.estimatedDurationMs) && entry.estimatedDurationMs > 0
+            ? entry.estimatedDurationMs
+            : 1),
+        0,
+      );
+      if (weightedFiles.length > 0 && totalWeight > 0) {
+        entries.push(
+          ...weightedFiles.map((entry) => {
+            const weight =
+              Number.isFinite(entry?.estimatedDurationMs) && entry.estimatedDurationMs > 0
+                ? entry.estimatedDurationMs
+                : 1;
+            return {
+              file: entry.file,
+              durationMs: Math.max(1, Math.round((result.elapsedMs * weight) / totalWeight)),
+              observationMode: "batch-coarse",
+            };
+          }),
+        );
+      }
+    }
     byConfig.set(result.config, entries);
   }
 
@@ -247,12 +309,35 @@ const buildPlanShape = (plan) => ({
   ],
 });
 
+export const resolveTestSuiteScope = (plan) => {
+  const requestedSurfaces = Array.isArray(plan.explicitRequestedSurfaces)
+    ? plan.explicitRequestedSurfaces
+    : Array.isArray(plan.requestedSurfaces)
+      ? plan.requestedSurfaces
+      : [];
+  const fileFilters = Array.isArray(plan.fileFilters) ? plan.fileFilters : [];
+  const passthroughOptionArgs = Array.isArray(plan.passthroughOptionArgs)
+    ? plan.passthroughOptionArgs
+    : [];
+  const fullSuite =
+    requestedSurfaces.length === 0 &&
+    fileFilters.length === 0 &&
+    passthroughOptionArgs.length === 0 &&
+    !plan.passthroughMetadataOnly &&
+    (plan.selectedUnits?.length ?? 0) > 1;
+  return {
+    kind: fullSuite ? "full-suite" : "targeted",
+    reusableForLanding: fullSuite,
+  };
+};
+
 const finalizeAndReport = (plan, report, artifacts, startedAtMs) => {
   const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
   printFinalRunSummary(plan, report, reportArtifactPath);
   const persistedTimingHistory = persistObservedTimingsFromResults(report.results ?? []);
   const persistedMemoryHistory = persistObservedMemoryHistoryFromResults(report.results ?? []);
   const finishedAtMs = Date.now();
+  const scope = resolveTestSuiteScope(plan, report);
   const metric = writeGateMetricArtifact(
     "test",
     {
@@ -267,6 +352,7 @@ const finalizeAndReport = (plan, report, artifacts, startedAtMs) => {
       runtimeMode: plan.runtimeCapabilities.mode,
       memoryBand: plan.runtimeCapabilities.memoryBand,
       loadBand: plan.runtimeCapabilities.loadBand,
+      scope,
       plan: buildPlanShape(plan),
       summary: report.summary,
       results: report.results,
@@ -275,7 +361,7 @@ const finalizeAndReport = (plan, report, artifacts, startedAtMs) => {
       localMemoryHistoryPaths: persistedMemoryHistory.map((entry) => entry.historyPath),
     },
     {
-      latestKey: "test",
+      latestKey: scope.reusableForLanding ? "test" : "test-targeted",
       historyKey: "test",
     },
   );
@@ -677,6 +763,7 @@ export async function executePlan(plan, options = {}) {
       const config = resolveVitestConfigFromArgs(entryArgs);
       const completedFileDurations = new Map();
       const memoryFileRecords = [];
+      let batchPhaseBreakdown = null;
       let completedTimingPendingLine = "";
       let initialTreeSample = null;
       let latestTreeSample = null;
@@ -772,9 +859,15 @@ export async function executePlan(plan, options = {}) {
         const combined = `${completedTimingPendingLine}${text}`;
         const lines = combined.split(/\r?\n/u);
         completedTimingPendingLine = lines.pop() ?? "";
-        const completedFiles = parseCompletedTestFileLines(lines.join("\n"));
+        const normalizedText = lines.join("\n");
+        const completedFiles = parseCompletedTestFileLines(normalizedText);
         for (const completedFile of completedFiles) {
           completedFileDurations.set(completedFile.file, completedFile);
+        }
+        const durationSummaries = parseVitestDurationSummaryLines(normalizedText);
+        const lastSummary = durationSummaries.at(-1) ?? null;
+        if (lastSummary) {
+          batchPhaseBreakdown = lastSummary;
         }
       };
       const logMemoryTraceSummary = () => {
@@ -901,12 +994,24 @@ export async function executePlan(plan, options = {}) {
           exitCode: resolvedCode,
           signal: signal ?? null,
           elapsedMs,
+          reasons: Array.isArray(unit.reasons) ? unit.reasons : [],
+          estimatedDurationMs:
+            Number.isFinite(unit.estimatedDurationMs) && unit.estimatedDurationMs > 0
+              ? Math.round(unit.estimatedDurationMs)
+              : null,
+          estimatedHotspotDeltaKb:
+            Number.isFinite(unit.estimatedHotspotDeltaKb) && unit.estimatedHotspotDeltaKb > 0
+              ? Math.round(unit.estimatedHotspotDeltaKb)
+              : 0,
           failedTestFiles,
           explicitEntryFilters,
           failureArtifactPath,
           logPath: laneLogPath,
           outputTail: failureTail,
           peakRssKb: peakTreeSample?.rssKb ?? null,
+          batchPhaseBreakdown,
+          batchDecomposition: unit.batchDecomposition ?? null,
+          batchDecompositionSummary: summarizeBatchDecomposition(unit.batchDecomposition),
           completedFileDurations: [...completedFileDurations.values()],
           completedFileMemoryRecords: memoryFileRecords,
         });

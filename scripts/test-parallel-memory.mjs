@@ -15,6 +15,10 @@ const MEMORY_TRACE_SUMMARY_PATTERN =
   /^\[test-parallel\]\[mem\] summary (?<lane>\S+) files=(?<files>\d+) peak=(?<peak>[0-9]+(?:\.[0-9]+)?(?:GiB|MiB|KiB)) totalDelta=(?<totalDelta>[+-]?[0-9]+(?:\.[0-9]+)?(?:GiB|MiB|KiB)) peakAt=(?<peakAt>\S+) top=(?<top>.*)$/u;
 const MEMORY_TRACE_TOP_ENTRY_PATTERN =
   /^(?<file>(?:src|extensions|test|ui)\/\S+?\.(?:live\.test|e2e\.test|test)\.ts):(?<delta>[+-]?[0-9]+(?:\.[0-9]+)?(?:GiB|MiB|KiB))$/u;
+const VITEST_DURATION_SUMMARY_PATTERN =
+  /^\s*Duration\s+(?<total>\d+(?:\.\d+)?)(?<unit>ms|s)\s+\((?<phases>.+)\)\s*$/u;
+const VITEST_DURATION_PHASE_PATTERN =
+  /(?<label>[a-z][a-z0-9_-]*)\s+(?<duration>\d+(?:\.\d+)?)(?<unit>ms|s)/giu;
 
 const PS_COLUMNS = ["pid=", "ppid=", "rss=", "comm="];
 
@@ -108,6 +112,58 @@ export function parseMemoryTraceSummaryLines(text) {
         totalDeltaKb,
         peakAt: match.groups.peakAt,
         top,
+      };
+    })
+    .filter((entry) => entry !== null);
+}
+
+export function parseVitestDurationSummaryLines(text) {
+  return stripAnsi(text)
+    .split(/\r?\n/u)
+    .map((line) => normalizeLogLine(line))
+    .map((line) => {
+      const match = line.match(VITEST_DURATION_SUMMARY_PATTERN);
+      if (!match?.groups) {
+        return null;
+      }
+      const totalMs = parseDurationMs(match.groups.total, match.groups.unit);
+      if (!Number.isFinite(totalMs)) {
+        return null;
+      }
+      const phases = {};
+      for (const phaseMatch of match.groups.phases.matchAll(VITEST_DURATION_PHASE_PATTERN)) {
+        const label = String(phaseMatch.groups?.label ?? "").trim();
+        const durationMs = parseDurationMs(
+          phaseMatch.groups?.duration ?? "",
+          phaseMatch.groups?.unit ?? "",
+        );
+        if (!label || !Number.isFinite(durationMs)) {
+          continue;
+        }
+        phases[label] = durationMs;
+      }
+      const importSetupMs =
+        (phases.import ?? 0) +
+        (phases.transform ?? 0) +
+        (phases.setup ?? 0) +
+        (phases.collect ?? 0) +
+        (phases.prepare ?? 0) +
+        (phases.environment ?? 0);
+      const testBodyMs = phases.tests ?? 0;
+      const dominance =
+        importSetupMs > 0 || testBodyMs > 0
+          ? importSetupMs >= Math.max(testBodyMs * 2, 1_000)
+            ? "import-setup-dominated"
+            : testBodyMs >= Math.max(importSetupMs * 2, 1_000)
+              ? "test-body-dominated"
+              : "mixed"
+          : "unknown";
+      return {
+        totalMs,
+        phases,
+        importSetupMs,
+        testBodyMs,
+        dominance,
       };
     })
     .filter((entry) => entry !== null);

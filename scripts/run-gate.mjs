@@ -27,6 +27,10 @@ function log(message) {
   process.stdout.write(`[gate ${nowIso()}] ${message}\n`);
 }
 
+function detectTurboCacheMode(env) {
+  return env.TURBO_TOKEN && (env.TURBO_TEAM || env.TURBO_API) ? "remote-configured" : "local-only";
+}
+
 async function ensureParentDir(filePath) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
 }
@@ -106,6 +110,7 @@ async function runCommand(label, command, args, options = {}) {
         : combinedOutput.includes("cache miss")
           ? "miss"
           : "unknown";
+      phase.turboCacheMode = detectTurboCacheMode(childEnv);
     }
     log(`${label} done (${(elapsedMs / 1000).toFixed(2)}s)`);
   }

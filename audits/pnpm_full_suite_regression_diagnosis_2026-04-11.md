@@ -274,6 +274,67 @@ Interpretation:
 - the next throughput tranche should target the remaining real import-heavy
   outliers directly, not add more broad planner complexity
 
+## Follow-On Outlier Tranche Outcome
+
+A second narrow tranche then targeted the remaining real outliers instead of
+reopening planner architecture work.
+
+Main reductions landed:
+
+- outbound and heartbeat hot tests now use the lighter channel helper surfaces
+  where the full bundled-plugin public surface was not required
+- the shared outbound target tests no longer pay an extra redundant plugin
+  registry reset at the top level
+- full-suite test artifact scope now stays reusable for true full-suite runs
+  even though the planner internally shards them with explicit entry filters
+- targeted post-proof script runs now write `latest/test-targeted.json` instead
+  of overwriting the canonical reusable `latest/test.json`
+
+New full-suite proof result:
+
+- `1,495,223 ms` (`24m 55.2s`)
+
+Comparison:
+
+- versus best recent run (`1,587,529 ms` / `26m 27.5s`):
+  `-92,306 ms` (`-1m 32.3s`)
+- versus post-planner-fix run (`1,775,483 ms` / `29m 35.5s`):
+  `-280,260 ms` (`-4m 40.3s`)
+- versus regressed slow run (`2,501,669 ms` / `41m 41.7s`):
+  `-1,006,446 ms` (`-16m 46.4s`)
+
+Recovered plan shape:
+
+- selected units: `98`
+- adaptive safe-mode top-level parallelism: `3`
+
+Largest remaining outliers in the new best run:
+
+- `unit-fast-batch-43`: `76,444 ms`, mixed import/setup plus real test body
+- `unit-fast-batch-48`: `76,068 ms`, import/setup dominated
+- `unit-fast-batch-18`: `69,034 ms`, import/setup dominated
+- `unit-fast-batch-30`: `63,884 ms`, import/setup dominated
+- `unit-fast-batch-23`: `63,437 ms`, import/setup dominated
+- `unit-fast-batch-38`: `62,026 ms`, import/setup dominated
+- `unit-package-contract-guardrails-isolated`: `60,486 ms`, test-body dominated
+
+What changed relative to the previous `29m 35.5s` state:
+
+- `unit-fast-batch-35` dropped from `162,688 ms` to about `50.1s`
+- `unit-heartbeat-runner.returns-default-unset-dedicated` dropped from
+  `118,216 ms` to about `34.2s`
+- `unit-outbound-dedicated` dropped from `82,231 ms` to about `16.3s`
+- `unit-heavy-6` dropped from `91,615 ms` to about `18.6s`
+
+Conclusion:
+
+- the current bottleneck is no longer planner explosion
+- the suite is now faster than the prior `26m 27.5s` best checkpoint on this
+  host
+- the remaining work should target the still-dominant import-heavy shared
+  batches plus the one slow test-body-dominated isolated lane, not reopen the
+  earlier planner-regression diagnosis
+
 ## Import/Setup Versus Test-Body Findings
 
 The older good artifacts do not include phase breakdowns. The current slow

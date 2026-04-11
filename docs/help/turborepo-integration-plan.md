@@ -38,15 +38,23 @@ Implemented:
   `check:types:raw`
 - cacheable Turbo ownership for `build:plugin-sdk:dts:raw`
 - package-local Turbo ownership for UI `build` and `test` via `ui/turbo.json`
+- package-local Turbo ownership for:
+  - `@openclaw/diffs` `build` and `test`
+  - `@openclaw/memory-host-sdk` `test`
+  - `@openclaw/plugin-package-contract` `test`
 - canonical `pnpm check:fast`, `pnpm check:types`, and `pnpm build` routing
   selected phases through Turbo-backed wrappers
 - durable gate metrics that record Turbo cache status for Turbo-backed phases
+- durable gate metrics now also record whether a Turbo-backed gate phase ran in
+  local-only mode or with remote-cache credentials configured
 - unchanged-tree reuse for `check`, `build`, `build:runtime:fast`, and later
   landing tiers when the same tree fingerprint and required outputs still match
 - `runtime:proof:fast` reuse of a green unchanged-tree `build:runtime:fast`
   result when the reusable artifact is still valid
 - artifact-visible adaptive safe-mode top-level parallel decisions, including
   truthful promotion to `3` on this host
+- shared-batch test artifacts now include file-level decomposition metadata plus
+  import/setup-versus-test-body dominance where the executor can infer it
 - local light Signal and WhatsApp outbound adapters for the worst generic
   outbound hot-path tests so those tests do not load the full bundled plugin
   runtime unnecessarily
@@ -59,9 +67,14 @@ Still intentionally custom:
 
 Remote cache posture:
 
-- local-only cache for now
-- no repo-default remote cache enablement yet
-- remote cache stays deferred until more tasks have stable inputs and outputs
+- repo defaults stay local-only
+- Turbo-backed tasks now expose an explicit remote-configured versus local-only
+  posture in gate metrics
+- remote cache may be used as an explicit opt-in via standard Turbo
+  environment variables such as `TURBO_TEAM`, `TURBO_TOKEN`, and `TURBO_API`
+- no repo-default remote cache enablement yet, because the landing-critical
+  path is still dominated by custom non-cacheable gates and only a narrow set
+  of package tasks have trustworthy cache boundaries today
 
 Workflow-throughput posture:
 
@@ -208,10 +221,14 @@ Likely extractions:
 Current landed extraction:
 
 - `ui` is now a real package-local Turbo task owner for `build` and `test`
+- `@openclaw/diffs` is now a real package-local Turbo task owner for `build`
+  and `test`
+- `@openclaw/memory-host-sdk` now owns a package-scoped `test` task
+- `@openclaw/plugin-package-contract` now owns a package-scoped `test` task
 
 Current deferral:
 
-- further non-UI extraction remains conservative until the next candidate tasks
+- broader non-UI extraction remains conservative until the next candidate tasks
   would be real package ownership instead of decorative wrappers back to the
   root scripts
 
@@ -259,11 +276,15 @@ Remote cache should wait until local task correctness is already proven.
 Current decision:
 
 - keep Turbo local-only by default
+- support explicit opt-in remote cache use through standard Turbo environment
+  variables, but do not rely on it for the canonical landing workflow
+- record remote-configured versus local-only posture in gate metrics for
+  Turbo-backed gate phases
 - do not enable remote cache in repo defaults yet
-- revisit only after more package-local tasks exist and cache boundaries are
-  exercised on a broader set of work
+- revisit broader enablement only after more package-local tasks exist and
+  cache boundaries are exercised on a broader set of work
 - current unchanged-tree local reuse already removes a large amount of repeated
-  work without needing remote cache
+  landing work without needing remote cache
 
 Validation:
 
@@ -359,9 +380,11 @@ Current landed scope:
 - the worst generic outbound import hotspots were reduced by replacing the
   Signal and WhatsApp bundled-plugin helpers used in those hot tests with local
   contract-faithful adapters
-- the dominant shared tails are now roughly flat at about `5 s`, so the main
-  remaining pain has shifted away from shared batching and back toward a
-  smaller set of import-heavy isolated lanes
+- shared-batch artifacts now record file-level decomposition and phase
+  dominance so later shared-tail work can target real file drivers instead of
+  anecdotal batch names
+- the current tranche still needs final full-suite revalidation before claiming
+  the new shared-tail wall times
 
 Still deferred inside the throughput tranche:
 

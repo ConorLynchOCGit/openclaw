@@ -1,0 +1,15 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": ["$TURBO_DEFAULT$", "!assets/viewer-runtime.js"],
+      "outputs": ["assets/viewer-runtime.js"],
+      "outputLogs": "new-only"
+    },
+    "test": {
+      "cache": false,
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputLogs": "full"
+    }
+  }
+}

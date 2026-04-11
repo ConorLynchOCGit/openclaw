@@ -1,10 +1,10 @@
 import "./isolated-agent.mocks.js";
 import { beforeEach, describe, expect, it } from "vitest";
-import { discordOutbound } from "../../test/channel-outbounds/discord.js";
-import { imessageOutbound } from "../../test/channel-outbounds/imessage.js";
+import { discordLightOutbound } from "../../test/channel-outbounds/discord-light.js";
+import { imessageLightOutbound } from "../../test/channel-outbounds/imessage-light.js";
 import { signalOutbound } from "../../test/channel-outbounds/signal.js";
-import { slackOutbound } from "../../test/channel-outbounds/slack.js";
-import { telegramOutbound } from "../../test/channel-outbounds/telegram.js";
+import { slackLightOutbound } from "../../test/channel-outbounds/slack-light.js";
+import { telegramLightOutbound } from "../../test/channel-outbounds/telegram-light.js";
 import { whatsappLightOutbound } from "../../test/channel-outbounds/whatsapp-light.js";
 import { runSubagentAnnounceFlow } from "../agents/subagent-announce.js";
 import type { CliDeps } from "../cli/deps.js";
@@ -93,7 +93,7 @@ describe("runCronIsolatedAgentTurn core-channel direct delivery", () => {
       createTestRegistry([
         {
           pluginId: "telegram",
-          plugin: createOutboundTestPlugin({ id: "telegram", outbound: telegramOutbound }),
+          plugin: createOutboundTestPlugin({ id: "telegram", outbound: telegramLightOutbound }),
           source: "test",
         },
         {
@@ -103,12 +103,12 @@ describe("runCronIsolatedAgentTurn core-channel direct delivery", () => {
         },
         {
           pluginId: "slack",
-          plugin: createOutboundTestPlugin({ id: "slack", outbound: slackOutbound }),
+          plugin: createOutboundTestPlugin({ id: "slack", outbound: slackLightOutbound }),
           source: "test",
         },
         {
           pluginId: "discord",
-          plugin: createOutboundTestPlugin({ id: "discord", outbound: discordOutbound }),
+          plugin: createOutboundTestPlugin({ id: "discord", outbound: discordLightOutbound }),
           source: "test",
         },
         {
@@ -118,7 +118,7 @@ describe("runCronIsolatedAgentTurn core-channel direct delivery", () => {
         },
         {
           pluginId: "imessage",
-          plugin: createOutboundTestPlugin({ id: "imessage", outbound: imessageOutbound }),
+          plugin: createOutboundTestPlugin({ id: "imessage", outbound: imessageLightOutbound }),
           source: "test",
         },
       ]),

@@ -3,6 +3,10 @@ import {
   resolveOutboundSendDep,
   type OutboundSendDeps,
 } from "../../src/infra/outbound/send-deps.js";
+import {
+  isWhatsAppGroupJid,
+  normalizeWhatsAppTarget,
+} from "../../src/plugin-sdk/whatsapp-targets.js";
 
 type WhatsAppSendResult = { messageId: string; toJid?: string };
 type WhatsAppSend = (
@@ -50,11 +54,44 @@ const attachWhatsAppChannel = (result: WhatsAppSendResult) => ({
   ...result,
 });
 
+function normalizeAllowFromEntry(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === "*") {
+    return trimmed || null;
+  }
+  return normalizeWhatsAppTarget(trimmed);
+}
+
 export const whatsappLightOutbound: ChannelOutboundAdapter = {
   deliveryMode: "direct",
   chunker: (text, limit) => chunkWhatsAppText(text, limit),
   chunkerMode: "text",
   textChunkLimit: DEFAULT_WHATSAPP_TEXT_LIMIT,
+  resolveTarget: ({ to, allowFrom }) => {
+    const normalized = normalizeWhatsAppTarget(to ?? "");
+    if (!normalized) {
+      return { ok: false as const, error: new Error("WhatsApp target is required") };
+    }
+    if (isWhatsAppGroupJid(normalized)) {
+      return { ok: true as const, to: normalized };
+    }
+    const normalizedAllowFrom = (allowFrom ?? [])
+      .map((entry) => normalizeAllowFromEntry(String(entry)))
+      .filter((entry): entry is string => Boolean(entry));
+    if (
+      normalizedAllowFrom.length === 0 ||
+      normalizedAllowFrom.includes("*") ||
+      normalizedAllowFrom.includes(normalized)
+    ) {
+      return { ok: true as const, to: normalized };
+    }
+    return {
+      ok: false as const,
+      error: new Error(
+        `Target "${normalized}" is not listed in the configured WhatsApp allowFrom policy.`,
+      ),
+    };
+  },
   sendText: async ({ cfg, to, text, deps, accountId }) => {
     const send = resolveWhatsAppSender(deps);
     return attachWhatsAppChannel(

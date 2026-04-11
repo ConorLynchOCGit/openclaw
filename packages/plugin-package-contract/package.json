@@ -5,5 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "pnpm --dir ../.. exec vitest run --config vitest.unit.config.ts packages/plugin-package-contract/src"
   }
 }

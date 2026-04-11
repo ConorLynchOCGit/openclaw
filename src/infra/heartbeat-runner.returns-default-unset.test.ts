@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { whatsappOutbound } from "../../test/channel-outbounds.js";
+import { whatsappLightOutbound } from "../../test/channel-outbounds/whatsapp-light.js";
 import { HEARTBEAT_PROMPT } from "../auto-reply/heartbeat.js";
 import * as replyModule from "../auto-reply/reply.js";
 import type { OpenClawConfig } from "../config/config.js";
@@ -45,7 +45,10 @@ const createCaseDir = async (prefix: string) => {
 beforeAll(async () => {
   previousRegistry = getActivePluginRegistry();
 
-  const whatsappPlugin = createOutboundTestPlugin({ id: "whatsapp", outbound: whatsappOutbound });
+  const whatsappPlugin = createOutboundTestPlugin({
+    id: "whatsapp",
+    outbound: whatsappLightOutbound,
+  });
   whatsappPlugin.config = {
     ...whatsappPlugin.config,
     resolveAllowFrom: ({ cfg }) =>
