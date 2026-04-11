@@ -35,6 +35,8 @@ async function runCommand(label, command, args, options = {}) {
   };
   log(`${label} start: ${[command, ...args].join(" ")}`);
   let runtimePostbuildSubphases = null;
+  let capturedStdout = "";
+  let capturedStderr = "";
   const phase = {
     label,
     command,
@@ -46,9 +48,21 @@ async function runCommand(label, command, args, options = {}) {
     await new Promise((resolve, reject) => {
       const child = spawn(command, args, {
         cwd: ROOT_DIR,
-        stdio: "inherit",
+        stdio: options.captureOutput ? ["ignore", "pipe", "pipe"] : "inherit",
         env: childEnv,
       });
+      if (options.captureOutput) {
+        child.stdout?.on("data", (chunk) => {
+          const text = chunk.toString();
+          capturedStdout += text;
+          process.stdout.write(text);
+        });
+        child.stderr?.on("data", (chunk) => {
+          const text = chunk.toString();
+          capturedStderr += text;
+          process.stderr.write(text);
+        });
+      }
       child.on("error", reject);
       child.on("exit", (code, signal) => {
         if (code === 0) {
@@ -80,6 +94,14 @@ async function runCommand(label, command, args, options = {}) {
     }
     if (runtimePostbuildSubphases) {
       phase.subphases = runtimePostbuildSubphases;
+    }
+    if (options.detectTurboCacheStatus) {
+      const combinedOutput = `${capturedStdout}\n${capturedStderr}`;
+      phase.turboCacheStatus = combinedOutput.includes("cache hit")
+        ? "hit"
+        : combinedOutput.includes("cache miss")
+          ? "miss"
+          : "unknown";
     }
     log(`${label} done (${(elapsedMs / 1000).toFixed(2)}s)`);
   }
@@ -160,12 +182,18 @@ async function clearCheckFastStamp() {
 }
 
 async function runCheckFastRaw() {
-  await runCommand("check:fast:raw", "pnpm", ["check:fast:raw"]);
+  await runCommand("check:fast:raw", "pnpm", ["turbo:repo:check:fast:raw"], {
+    captureOutput: true,
+    detectTurboCacheStatus: true,
+  });
   await writeCheckFastStamp(await currentTreeFingerprint());
 }
 
 async function runCheckTypesRaw() {
-  await runCommand("check:types:raw", "pnpm", ["check:types:raw"]);
+  await runCommand("check:types:raw", "pnpm", ["turbo:repo:check:types:raw"], {
+    captureOutput: true,
+    detectTurboCacheStatus: true,
+  });
 }
 
 async function runCheck() {
@@ -193,6 +221,10 @@ async function runBuildPhases(phases) {
         : null;
     results.push(
       await runCommand(label, command, args, {
+        captureOutput:
+          command === "pnpm" && typeof args[0] === "string" && args[0].startsWith("turbo:repo:"),
+        detectTurboCacheStatus:
+          command === "pnpm" && typeof args[0] === "string" && args[0].startsWith("turbo:repo:"),
         env:
           runtimePostbuildTimingsPath === null
             ? undefined
@@ -252,7 +284,7 @@ async function main() {
         ["build:tsdown", "node", ["scripts/tsdown-build.mjs"]],
         ["build:runtime-postbuild", "node", ["scripts/runtime-postbuild.mjs"]],
         ["build:stamp", "node", ["scripts/build-stamp.mjs"]],
-        ["build:plugin-sdk:dts", "pnpm", ["build:plugin-sdk:dts:raw"]],
+        ["build:plugin-sdk:dts", "pnpm", ["turbo:repo:build:plugin-sdk:dts"]],
         [
           "build:plugin-sdk:entry-dts",
           "node",
@@ -269,7 +301,7 @@ async function main() {
         ["build:tsdown:fast", "node", ["scripts/tsdown-build.mjs", "--no-clean"]],
         ["build:runtime-postbuild", "node", ["scripts/runtime-postbuild.mjs"]],
         ["build:stamp", "node", ["scripts/build-stamp.mjs"]],
-        ["build:plugin-sdk:dts", "pnpm", ["build:plugin-sdk:dts:raw"]],
+        ["build:plugin-sdk:dts", "pnpm", ["turbo:repo:build:plugin-sdk:dts"]],
         [
           "build:plugin-sdk:entry-dts",
           "node",
@@ -300,7 +332,7 @@ async function main() {
       ["build:tsdown", "node", ["scripts/tsdown-build.mjs"]],
       ["build:runtime-postbuild", "node", ["scripts/runtime-postbuild.mjs"]],
       ["build:stamp", "node", ["scripts/build-stamp.mjs"]],
-      ["build:plugin-sdk:dts", "pnpm", ["build:plugin-sdk:dts:raw"]],
+      ["build:plugin-sdk:dts", "pnpm", ["turbo:repo:build:plugin-sdk:dts"]],
       [
         "build:plugin-sdk:entry-dts",
         "node",
@@ -321,7 +353,7 @@ async function main() {
         ["--import", "tsx", "scripts/write-cli-startup-metadata.ts"],
       ],
       ["build:write-cli-compat", "node", ["--import", "tsx", "scripts/write-cli-compat.ts"]],
-      ["build:ui", "pnpm", ["ui:build"]],
+      ["build:ui", "pnpm", ["turbo:repo:ui:build"]],
     ]);
     status = "success";
   } catch (error) {

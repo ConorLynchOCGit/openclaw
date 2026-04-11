@@ -14,7 +14,7 @@ import {
   hasFatalTestRunOutput,
   resolveTestRunExitCode,
 } from "../test-parallel-utils.mjs";
-import { writeObservedTimingHistory } from "./timing-history.mjs";
+import { writeObservedMemoryHistory, writeObservedTimingHistory } from "./timing-history.mjs";
 import { countExplicitEntryFilters, getExplicitEntryFilters } from "./vitest-args.mjs";
 
 const countUnitEntryFilters = (unit) => {
@@ -178,6 +178,33 @@ const persistObservedTimingsFromResults = (results) => {
   return persisted;
 };
 
+const persistObservedMemoryHistoryFromResults = (results) => {
+  const byConfig = new Map();
+  for (const result of results) {
+    if (!result.config || !Array.isArray(result.completedFileMemoryRecords)) {
+      continue;
+    }
+    const entries = byConfig.get(result.config) ?? [];
+    entries.push(
+      ...result.completedFileMemoryRecords.map((entry) => ({
+        file: entry.file,
+        deltaKb: entry.deltaKb,
+        peakRssKb: entry.rssKb,
+      })),
+    );
+    byConfig.set(result.config, entries);
+  }
+
+  const persisted = [];
+  for (const [config, entries] of byConfig.entries()) {
+    if (entries.length === 0) {
+      continue;
+    }
+    persisted.push(writeObservedMemoryHistory(config, entries));
+  }
+  return persisted;
+};
+
 const buildPlanShape = (plan) => ({
   selectedUnitCount: Array.isArray(plan.selectedUnits) ? plan.selectedUnits.length : 0,
   parallelUnitCount: Array.isArray(plan.parallelUnits) ? plan.parallelUnits.length : 0,
@@ -187,6 +214,9 @@ const buildPlanShape = (plan) => ({
   topLevelParallelLimit: Number.isFinite(plan.topLevelParallelLimit)
     ? plan.topLevelParallelLimit
     : 1,
+  estimatedHotspotBudgetKb: Number.isFinite(plan.estimatedHotspotBudgetKb)
+    ? plan.estimatedHotspotBudgetKb
+    : null,
   deferredRunConcurrency: plan.deferredRunConcurrency ?? 1,
   shardCount: plan.shardCount,
   failurePolicy: plan.failurePolicy,
@@ -204,6 +234,7 @@ const finalizeAndReport = (plan, report, artifacts, startedAtMs) => {
   const reportArtifactPath = artifacts.writeTempJsonArtifact("summary-report", report);
   printFinalRunSummary(plan, report, reportArtifactPath);
   const persistedTimingHistory = persistObservedTimingsFromResults(report.results ?? []);
+  const persistedMemoryHistory = persistObservedMemoryHistoryFromResults(report.results ?? []);
   const finishedAtMs = Date.now();
   const metric = writeGateMetricArtifact(
     "test",
@@ -221,6 +252,7 @@ const finalizeAndReport = (plan, report, artifacts, startedAtMs) => {
       results: report.results,
       tempSummaryArtifactPath: reportArtifactPath,
       localTimingHistoryPaths: persistedTimingHistory.map((entry) => entry.historyPath),
+      localMemoryHistoryPaths: persistedMemoryHistory.map((entry) => entry.historyPath),
     },
     {
       latestKey: "test",
@@ -830,6 +862,7 @@ export async function executePlan(plan, options = {}) {
           outputTail: failureTail,
           peakRssKb: peakTreeSample?.rssKb ?? null,
           completedFileDurations: [...completedFileDurations.values()],
+          completedFileMemoryRecords: memoryFileRecords,
         });
       };
       try {
@@ -994,24 +1027,88 @@ export async function executePlan(plan, options = {}) {
       }
       return results;
     }
-    let nextIndex = 0;
+    const pendingUnits = [...units];
     let stopScheduling = false;
-    const worker = async () => {
-      while (!stopScheduling) {
-        const unitIndex = nextIndex;
-        nextIndex += 1;
-        if (unitIndex >= units.length) {
-          return;
-        }
-        const unitResults = await runUnit(units[unitIndex], extraArgs);
-        results.push(...unitResults);
-        if (!shouldCollectAllFailures && unitResults.some((result) => result.exitCode !== 0)) {
-          stopScheduling = true;
+    const hotspotBudgetKb =
+      Number.isFinite(plan.estimatedHotspotBudgetKb) && plan.estimatedHotspotBudgetKb > 0
+        ? Math.round(plan.estimatedHotspotBudgetKb)
+        : null;
+    let inflightEstimatedHotspotKb = 0;
+
+    const pickNextUnitIndex = () => {
+      if (pendingUnits.length === 0) {
+        return -1;
+      }
+      if (hotspotBudgetKb === null) {
+        return 0;
+      }
+      for (let index = 0; index < pendingUnits.length; index += 1) {
+        const estimatedHotspotKb =
+          Number.isFinite(pendingUnits[index]?.estimatedHotspotDeltaKb) &&
+          pendingUnits[index].estimatedHotspotDeltaKb > 0
+            ? Math.round(pendingUnits[index].estimatedHotspotDeltaKb)
+            : 0;
+        if (
+          inflightEstimatedHotspotKb === 0 ||
+          estimatedHotspotKb === 0 ||
+          inflightEstimatedHotspotKb + estimatedHotspotKb <= hotspotBudgetKb
+        ) {
+          return index;
         }
       }
+      return -1;
     };
-    const workerCount = Math.min(normalizedConcurrency, units.length);
-    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+    await new Promise((resolve, reject) => {
+      let activeWorkers = 0;
+
+      const maybeSchedule = () => {
+        if (activeWorkers === 0 && (stopScheduling || pendingUnits.length === 0)) {
+          resolve(undefined);
+          return;
+        }
+        while (!stopScheduling && activeWorkers < normalizedConcurrency) {
+          const nextIndex = pickNextUnitIndex();
+          if (nextIndex < 0) {
+            if (activeWorkers === 0) {
+              resolve(undefined);
+            }
+            return;
+          }
+          const [unit] = pendingUnits.splice(nextIndex, 1);
+          const estimatedHotspotKb =
+            Number.isFinite(unit?.estimatedHotspotDeltaKb) && unit.estimatedHotspotDeltaKb > 0
+              ? Math.round(unit.estimatedHotspotDeltaKb)
+              : 0;
+          activeWorkers += 1;
+          inflightEstimatedHotspotKb += estimatedHotspotKb;
+          void runUnit(unit, extraArgs)
+            .then((unitResults) => {
+              results.push(...unitResults);
+              if (
+                !shouldCollectAllFailures &&
+                unitResults.some((result) => result.exitCode !== 0)
+              ) {
+                stopScheduling = true;
+              }
+            })
+            .catch((error) => {
+              stopScheduling = true;
+              reject(error);
+            })
+            .finally(() => {
+              activeWorkers -= 1;
+              inflightEstimatedHotspotKb = Math.max(
+                0,
+                inflightEstimatedHotspotKb - estimatedHotspotKb,
+              );
+              maybeSchedule();
+            });
+        }
+      };
+
+      maybeSchedule();
+    });
     return results;
   };
 

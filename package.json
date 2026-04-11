@@ -1181,15 +1181,21 @@
     "test:startup:bench:smoke": "node --import tsx scripts/bench-cli-startup.ts --preset real --case gatewayStatusJson --runs 1 --warmup 0 --output .artifacts/cli-startup-bench-smoke.json",
     "test:startup:bench:update": "node scripts/test-update-cli-startup-bench.mjs",
     "test:startup:memory": "node scripts/check-cli-startup-memory.mjs",
-    "test:ui": "pnpm lint:ui:no-raw-window-open && pnpm --dir ui test",
+    "test:ui": "pnpm lint:ui:no-raw-window-open && pnpm turbo:repo:ui:test",
     "test:voicecall:closedloop": "node scripts/test-voicecall-closedloop.mjs",
     "test:watch": "vitest",
     "ts-topology": "node --import tsx scripts/ts-topology.ts",
     "tui": "node scripts/run-node.mjs tui",
     "tui:dev": "OPENCLAW_PROFILE=dev node scripts/run-node.mjs --dev tui",
+    "turbo:repo:build:plugin-sdk:dts": "turbo run build:plugin-sdk:dts:raw --filter=// --output-logs=new-only",
+    "turbo:repo:check:fast:raw": "turbo run check:fast:raw --filter=// --output-logs=new-only",
+    "turbo:repo:check:types:raw": "turbo run check:types:raw --filter=// --output-logs=new-only",
+    "turbo:repo:ui:build": "turbo run build --filter=openclaw-control-ui --output-logs=new-only",
+    "turbo:repo:ui:test": "turbo run test --filter=openclaw-control-ui --output-logs=new-only",
     "ui:build": "node scripts/ui.js build",
     "ui:dev": "node scripts/ui.js dev",
-    "ui:install": "node scripts/ui.js install"
+    "ui:install": "node scripts/ui.js install",
+    "ui:test": "node scripts/ui.js test"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.17.1",
@@ -1260,6 +1266,7 @@
     "signal-utils": "0.21.1",
     "tsdown": "0.21.7",
     "tsx": "^4.21.0",
+    "turbo": "2.9.6",
     "typescript": "^6.0.2",
     "vitest": "^4.1.2"
   },

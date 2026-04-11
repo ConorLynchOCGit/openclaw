@@ -1,4 +1,9 @@
-import { loadLocalTimingHistory, mergeTimingManifest } from "./test-planner/timing-history.mjs";
+import {
+  loadLocalMemoryHistory,
+  loadLocalTimingHistory,
+  mergeMemoryHotspotManifest,
+  mergeTimingManifest,
+} from "./test-planner/timing-history.mjs";
 import { normalizeTrackedRepoPath, tryReadJsonFile } from "./test-report-utils.mjs";
 
 export const behaviorManifestPath = "test/fixtures/test-parallel.behavior.json";
@@ -187,15 +192,18 @@ export function loadUnitMemoryHotspotManifest() {
       .filter(([, value]) => value !== null),
   );
 
-  return {
-    config:
-      typeof raw.config === "string" && raw.config
-        ? raw.config
-        : defaultMemoryHotspotManifest.config,
-    generatedAt: typeof raw.generatedAt === "string" ? raw.generatedAt : "",
-    defaultMinDeltaKb,
-    files,
-  };
+  return mergeMemoryHotspotManifest(
+    {
+      config:
+        typeof raw.config === "string" && raw.config
+          ? raw.config
+          : defaultMemoryHotspotManifest.config,
+      generatedAt: typeof raw.generatedAt === "string" ? raw.generatedAt : "",
+      defaultMinDeltaKb,
+      files,
+    },
+    loadLocalMemoryHistory("vitest.unit.config.ts"),
+  );
 }
 
 export function selectTimedHeavyFiles({

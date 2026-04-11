@@ -1,0 +1,26 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "globalDependencies": ["package.json", "pnpm-lock.yaml", "tsconfig.json", "ui/package.json"],
+  "tasks": {
+    "//#check:fast:raw": {
+      "cache": false,
+      "outputLogs": "new-only"
+    },
+    "//#check:types:raw": {
+      "cache": false,
+      "outputLogs": "new-only"
+    },
+    "//#build:plugin-sdk:dts:raw": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "packages/memory-host-sdk/src/**",
+        "src/plugin-sdk/**",
+        "src/types/**",
+        "tsconfig.json",
+        "tsconfig.plugin-sdk.dts.json"
+      ],
+      "outputs": ["dist/plugin-sdk/**", ".local/build-stamps/plugin-sdk-dts.json"],
+      "outputLogs": "new-only"
+    }
+  }
+}

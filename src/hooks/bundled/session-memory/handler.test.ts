@@ -224,6 +224,8 @@ describe("session-memory hook", () => {
   });
 
   it("creates memory file with session content on /new command", async () => {
+    const timestamp = "2026-04-10T03:55:00.000Z";
+    const dateStr = "2026-04-10";
     // Create a mock session file with user/assistant messages
     const sessionContent = createMockSessionContent([
       { role: "user", content: "Hello there" },
@@ -231,7 +233,10 @@ describe("session-memory hook", () => {
       { role: "user", content: "What is 2+2?" },
       { role: "assistant", content: "2+2 equals 4" },
     ]);
-    const { tempDir, files, memoryContent } = await runNewWithPreviousSession({ sessionContent });
+    const { tempDir, files, memoryContent } = await runNewWithPreviousSession({
+      sessionContent,
+      timestamp,
+    });
     expect(files.length).toBe(1);
 
     // Read the memory file and verify content
@@ -239,7 +244,6 @@ describe("session-memory hook", () => {
     expect(memoryContent).toContain("assistant: Hi! How can I help?");
     expect(memoryContent).toContain("user: What is 2+2?");
     expect(memoryContent).toContain("assistant: 2+2 equals 4");
-    const dateStr = new Date().toISOString().split("T")[0];
     const exactDayContent = await fs.readFile(
       path.join(tempDir, "memory", `${dateStr}.md`),
       "utf-8",
@@ -249,6 +253,8 @@ describe("session-memory hook", () => {
   });
 
   it("creates memory file with session content on /reset command", async () => {
+    const timestamp = "2026-04-10T03:56:00.000Z";
+    const dateStr = "2026-04-10";
     const sessionContent = createMockSessionContent([
       { role: "user", content: "Please reset and keep notes" },
       { role: "assistant", content: "Captured before reset" },
@@ -256,12 +262,12 @@ describe("session-memory hook", () => {
     const { tempDir, files, memoryContent } = await runNewWithPreviousSession({
       sessionContent,
       action: "reset",
+      timestamp,
     });
 
     expect(files.length).toBe(1);
     expect(memoryContent).toContain("user: Please reset and keep notes");
     expect(memoryContent).toContain("assistant: Captured before reset");
-    const dateStr = new Date().toISOString().split("T")[0];
     await expect(
       fs.readFile(path.join(tempDir, "memory", `${dateStr}.md`), "utf-8"),
     ).resolves.toContain("Captured before reset");
@@ -271,7 +277,7 @@ describe("session-memory hook", () => {
     const tempDir = await createCaseWorkspace("workspace");
     const sessionsDir = path.join(tempDir, "sessions");
     await fs.mkdir(sessionsDir, { recursive: true });
-    const dateStr = new Date().toISOString().split("T")[0];
+    const dateStr = "2026-04-10";
 
     const firstSessionFile = await writeWorkspaceFile({
       dir: sessionsDir,

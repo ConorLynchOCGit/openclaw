@@ -26,5 +26,5 @@ If you’re looking for conceptual questions (not “something broke”):
 - **Debugging:** [Watch mode, raw streams, and dev profile](/help/debugging)
 - **Testing:** [Test suites, live tests, and Docker runners](/help/testing)
 - **Landing gates:** [Feature vs integration vs production landing tiers](/help/landing-gate-tiering-proposal)
-- **Turborepo plan:** [Build and check workflow migration plan](/help/turborepo-integration-plan)
+- **Turborepo workflow:** [Build and check workflow migration plan](/help/turborepo-integration-plan)
 - **Scripts:** [Repository helper scripts](/help/scripts)

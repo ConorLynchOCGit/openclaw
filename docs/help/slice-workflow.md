@@ -75,6 +75,10 @@ Run this once the code is stable enough for real proof.
   packaging, lazy-loading or module boundaries, or a published runtime.
 - Treat `pnpm check:fast`, `pnpm check:types`, `pnpm check`, and `pnpm build`
   as serialized expensive gates on one checkout.
+- Some of those gates now run Turbo-backed subphases underneath, but the gate
+  commands remain the policy boundary. Keep using the canonical `pnpm` gate
+  commands instead of calling ad hoc Turbo commands as a substitute for the
+  landing bar.
 
 If no code changes happen after this gate, do not rerun these same expensive
 checks later just for ceremony.
@@ -100,6 +104,10 @@ For non-production runtime proof on the VPS, prefer:
 2. `pnpm runtime:proof:fast`
 
 Save the full image-oriented runtime path for production proof and promotion.
+
+Even after Turbo adoption, keep `pnpm runtime:proof:fast` as the authoritative
+proof entrypoint. Turbo can help feed build artifacts into that path, but it is
+not the owner of gateway restart or `/readyz` proof semantics.
 
 ### Pre-production gate
 

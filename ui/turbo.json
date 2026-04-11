@@ -1,0 +1,15 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputs": ["../dist/control-ui/**"],
+      "outputLogs": "new-only"
+    },
+    "test": {
+      "cache": false,
+      "inputs": ["$TURBO_DEFAULT$"],
+      "outputLogs": "full"
+    }
+  }
+}

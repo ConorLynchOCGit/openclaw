@@ -235,10 +235,40 @@ describe("test planner", () => {
     expect(plan.fullRepoSafeMode).toBe(true);
     expect(plan.topLevelParallelEnabled).toBe(true);
     expect(plan.topLevelParallelLimit).toBe(2);
+    expect(plan.estimatedHotspotBudgetKb).toBe(1280 * 1024);
     expect(plan.keepGatewaySerial).toBe(true);
     expect(sharedUnitBatches.length).toBeGreaterThan(20);
     expect(sharedUnitBatches.every((unit) => unit.maxWorkers === 1)).toBe(true);
     expect(sharedUnitBatches.every((unit) => (unit.includeFiles?.length ?? 0) <= 20)).toBe(true);
+    artifacts.cleanupTempArtifacts();
+  });
+
+  it("promotes constrained idle full-repo plans to adaptive top-level parallelism", () => {
+    const env = {
+      RUNNER_OS: "Linux",
+      OPENCLAW_TEST_HOST_CPU_COUNT: "2",
+      OPENCLAW_TEST_HOST_MEMORY_GIB: "7",
+    };
+    const artifacts = createExecutionArtifacts(env);
+    const plan = buildExecutionPlan(
+      {
+        profile: null,
+        mode: "local",
+        surfaces: [],
+        passthroughArgs: [],
+      },
+      {
+        env,
+        platform: "linux",
+        loadAverage: [0.05, 0.05, 0.05],
+        writeTempJsonArtifact: artifacts.writeTempJsonArtifact,
+      },
+    );
+
+    expect(plan.fullRepoSafeMode).toBe(true);
+    expect(plan.topLevelParallelEnabled).toBe(true);
+    expect(plan.topLevelParallelLimit).toBe(3);
+    expect(plan.estimatedHotspotBudgetKb).toBe(1536 * 1024);
     artifacts.cleanupTempArtifacts();
   });
 
@@ -271,6 +301,38 @@ describe("test planner", () => {
     expect(sharedUnitBatches.length).toBeGreaterThanOrEqual(4);
     expect(plan.serialPrefixUnits.some((unit) => unit.serialPhase === "unit-fast")).toBe(true);
     expect(plan.topLevelParallelLimit).toBe(3);
+    artifacts.cleanupTempArtifacts();
+  });
+
+  it("routes the worst timed unit files into dedicated lanes before shared batching", () => {
+    const env = {
+      RUNNER_OS: "Linux",
+      OPENCLAW_TEST_HOST_CPU_COUNT: "2",
+      OPENCLAW_TEST_HOST_MEMORY_GIB: "7",
+      OPENCLAW_TEST_LOAD_AWARE: "0",
+    };
+    const artifacts = createExecutionArtifacts(env);
+    const plan = buildExecutionPlan(
+      {
+        profile: null,
+        mode: "local",
+        surfaces: [],
+        passthroughArgs: [],
+      },
+      {
+        env,
+        platform: "linux",
+        writeTempJsonArtifact: artifacts.writeTempJsonArtifact,
+      },
+    );
+
+    const dedicatedUnits = plan.selectedUnits.filter((unit) =>
+      unit.reasons.includes("unit-timed-dedicated"),
+    );
+
+    expect(dedicatedUnits.length).toBeGreaterThanOrEqual(5);
+    expect(dedicatedUnits.some((unit) => unit.id.includes("service.issue-regressions"))).toBe(true);
+    expect(dedicatedUnits.every((unit) => unit.surface === "unit")).toBe(true);
     artifacts.cleanupTempArtifacts();
   });
 
@@ -490,9 +552,12 @@ describe("test planner", () => {
     );
 
     expect(smallestBatches.length).toBeGreaterThan(0);
-    expect(smallestBatches.every((unit) => typeof unit.fixedShardIndex === "number")).toBe(true);
     expect(
-      smallestBatches.every((unit) => plan.topLevelSingleShardAssignments.get(unit) === undefined),
+      smallestBatches.every((unit) => {
+        const fixedShardIndex = unit.fixedShardIndex;
+        const assignedShard = plan.topLevelSingleShardAssignments.get(unit);
+        return typeof fixedShardIndex === "number" || typeof assignedShard === "number";
+      }),
     ).toBe(true);
 
     artifacts.cleanupTempArtifacts();

@@ -2,6 +2,24 @@
 
 Date: 2026-04-10
 
+Implementation update: 2026-04-11
+
+Slices 1 through 8 from the migration plan are now partially implemented in
+the engineering repo:
+
+- a real `turbo.json` exists
+- cacheable root ownership now covers `build:plugin-sdk:dts`
+- package-local Turbo ownership now covers UI `build` and `test`
+- canonical `pnpm check:fast`, `pnpm check:types`, and `pnpm build` now route
+  selected build/check phases through Turbo-backed wrappers
+- durable gate metrics now record Turbo cache hit or miss status for those
+  phases
+- remote cache remains intentionally local-only for now
+
+The core conclusion in this diagnosis still stands: Turbo is a complement to
+the existing workflow, not a replacement for the constrained-host test
+scheduler or the runtime-proof layer.
+
 ## Scope
 
 This is a diagnosis artifact for possible deep Turborepo integration in the

@@ -14,6 +14,8 @@ __pycache__/
 *.pyc
 .tsbuildinfo
 .pnpm-store
+.turbo/
+**/.turbo/
 .worktrees/
 .DS_Store
 **/.DS_Store

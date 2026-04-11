@@ -9,10 +9,10 @@ read_when:
 
 # Turborepo Integration Plan
 
-This document records the current plan for possible Turborepo adoption in
-OpenClaw.
+This document records the current Turbo migration posture in OpenClaw.
 
-It is a planning artifact, not an implementation claim.
+It started as a planning artifact. Parts of that plan are now implemented, so
+this doc tracks both the landed posture and the still-deferred work.
 
 Current canonical workflow remains:
 
@@ -26,6 +26,33 @@ Current canonical workflow remains:
 - `pnpm gate:feature`
 - `pnpm gate:integration`
 - `pnpm gate:production`
+
+## Landed Status
+
+As of 2026-04-11, the repo has a safe first Turbo layer in place.
+
+Implemented:
+
+- root `turbo.json`
+- non-cacheable root Turbo wrappers for `check:fast:raw` and
+  `check:types:raw`
+- cacheable Turbo ownership for `build:plugin-sdk:dts:raw`
+- package-local Turbo ownership for UI `build` and `test` via `ui/turbo.json`
+- canonical `pnpm check:fast`, `pnpm check:types`, and `pnpm build` routing
+  selected phases through Turbo-backed wrappers
+- durable gate metrics that record Turbo cache status for Turbo-backed phases
+
+Still intentionally custom:
+
+- `pnpm test` planning and constrained-host scheduling
+- `pnpm runtime:proof:fast`
+- landing-gate policy in `pnpm gate:*`
+
+Remote cache posture:
+
+- local-only cache for now
+- no repo-default remote cache enablement yet
+- remote cache stays deferred until more tasks have stable inputs and outputs
 
 ## Architecture Posture
 
@@ -93,6 +120,8 @@ The sequence below is designed to avoid false confidence from a shallow
 
 ### Slice 1. Turbo skeleton and root-task posture
 
+Status: implemented
+
 Add:
 
 - `turbo.json`
@@ -113,6 +142,8 @@ Validation:
 
 ### Slice 2. Map current gates into Turbo-owned or Turbo-wrapped tasks
 
+Status: partially implemented
+
 Start with the least controversial tasks:
 
 - UI build
@@ -125,6 +156,14 @@ Keep current outer wrappers where needed:
 - `run-gate.mjs`
 - `run-landing-gate.mjs`
 
+Current landed scope:
+
+- UI build and UI test are package-local Turbo tasks
+- `build:plugin-sdk:dts` now runs through a Turbo-backed wrapper inside the
+  canonical build gates
+- `check:fast` and `check:types` use Turbo-backed root wrappers with caching
+  intentionally disabled
+
 Validation:
 
 - task graph correctness
@@ -132,6 +171,8 @@ Validation:
 - durable timing artifact preservation
 
 ### Slice 3. Extract real package-local build/check ownership
+
+Status: started
 
 This is the key enabling step.
 
@@ -144,12 +185,18 @@ Likely extractions:
 - package-local `check` or `typecheck` scripts where honest
 - package-scoped generated outputs
 
+Current landed extraction:
+
+- `ui` is now a real package-local Turbo task owner for `build` and `test`
+
 Validation:
 
 - package ownership remains truthful
 - root orchestration shrinks instead of adding duplicate paths
 
 ### Slice 4. Cache/input/output correctness hardening
+
+Status: partially implemented
 
 Before trusting Turbo deeply:
 
@@ -164,7 +211,16 @@ Validation:
 - deliberate invalidation proof
 - logs and artifacts stay truthful
 
+Current landed hardening:
+
+- Turbo workdirs are ignored so `.turbo` artifacts do not invalidate the next
+  run
+- root Turbo config now has conservative `globalDependencies`
+- `run-gate.mjs` records Turbo cache hits and misses in durable metrics
+
 ### Slice 5. Remote-cache posture decision
+
+Status: decided, not broadly enabled
 
 Decide:
 
@@ -174,6 +230,13 @@ Decide:
 
 Remote cache should wait until local task correctness is already proven.
 
+Current decision:
+
+- keep Turbo local-only by default
+- do not enable remote cache in repo defaults yet
+- revisit only after more package-local tasks exist and cache boundaries are
+  exercised on a broader set of work
+
 Validation:
 
 - remote replay proof
@@ -181,6 +244,8 @@ Validation:
 - operator guidance for safe usage
 
 ### Slice 6. Integrate Turbo with the current gate-tier model
+
+Status: implemented at the gate-wrapper layer
 
 Keep gate policy explicit:
 
@@ -197,6 +262,8 @@ Validation:
 - operators still know which bar to use
 
 ### Slice 7. Preserve and adapt timing artifacts
+
+Status: implemented
 
 Do not lose observability when Turbo arrives.
 
@@ -217,8 +284,16 @@ Validation:
 
 ### Slice 8. Keep fast runtime proof outside or alongside Turbo
 
+Status: implemented posture
+
 `build:runtime:fast` may become Turbo-assisted later, but
 `runtime:proof:fast` should remain a proof helper path with cache disabled.
+
+Current landed posture:
+
+- `build:runtime:fast` reuses the Turbo-backed `build:plugin-sdk:dts` phase
+- `runtime:proof:fast` remains authoritative and custom
+- Turbo does not own gateway restart, `/readyz`, or proof timing semantics
 
 Validation:
 
@@ -227,6 +302,8 @@ Validation:
 - no accidental production-path weakening
 
 ### Slice 9. Finish the remaining `pnpm test` throughput tranche
+
+Status: partially implemented
 
 This remains necessary even if Turbo lands first.
 
@@ -237,6 +314,22 @@ Order:
 3. isolate the heaviest import/memory suites into dedicated lanes
 4. trial adaptive top-level safe parallelism from `2` to adaptive `2-3`
 5. if still too slow, add worker recycling for specific lane classes
+
+Current landed scope:
+
+- durable local memory-hotspot history now supplements checked-in hotspot data
+- constrained-host plans now peel the worst timed unit files into dedicated
+  lanes
+- constrained-host timed-heavy buckets are split more aggressively
+- idle constrained local hosts can now promote from top-level `2` to `3`
+  concurrent runs
+- top-level scheduler now respects an estimated hotspot budget instead of only
+  a flat concurrency count
+
+Still deferred inside the throughput tranche:
+
+- any additional worker-recycling changes that prove necessary after observing
+  the new scheduler on more full-suite runs
 
 Rationale:
 

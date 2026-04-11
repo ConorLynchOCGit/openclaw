@@ -8,6 +8,8 @@ import {
   loadUnitTimingManifest,
   packFilesByDuration,
   packFilesByDurationWithBaseLoads,
+  selectMemoryHeavyFiles,
+  selectTimedHeavyFiles,
   selectUnitHeavyFileGroups,
 } from "../test-runner-manifest.mjs";
 import { loadTestCatalog, normalizeRepoPath } from "./catalog.mjs";
@@ -342,6 +344,12 @@ const splitFilesByBalancedDurationBudget = (files, targetDurationMs, estimateDur
   );
 };
 
+const sumPositiveNumbers = (values) =>
+  values.reduce(
+    (total, value) => (Number.isFinite(value) && value > 0 ? total + Math.round(value) : total),
+    0,
+  );
+
 const resolveUnitFastBatchTargetMs = ({ context, selectedSurfaceSet, unitOnlyRun }) => {
   const defaultTargetMs = context.executionBudget.unitFastBatchTargetMs;
   if (
@@ -430,6 +438,7 @@ const createExecutionUnit = (context, config) => {
     serialPhase: config.serialPhase,
     fixedShardIndex: config.fixedShardIndex,
     estimatedDurationMs: config.estimatedDurationMs,
+    estimatedHotspotDeltaKb: config.estimatedHotspotDeltaKb ?? 0,
     timeoutMs: config.timeoutMs,
     reasons: config.reasons ?? [],
   };
@@ -457,8 +466,18 @@ const resolveUnitHeavyFileGroups = (context) => {
     runtime.intentProfile === "max"
       ? Math.max(executionBudget.heavyUnitLaneCount, 6)
       : context.fullRepoSafeMode
-        ? Math.max(executionBudget.heavyUnitLaneCount, 4)
+        ? Math.max(executionBudget.heavyUnitLaneCount, 6)
         : executionBudget.heavyUnitLaneCount,
+  );
+  const dedicatedTimedUnitFileLimit = parseEnvNumber(
+    env,
+    "OPENCLAW_TEST_DEDICATED_TIMED_UNIT_FILE_LIMIT",
+    context.fullRepoSafeMode ? 8 : 5,
+  );
+  const dedicatedTimedUnitMinDurationMs = parseEnvNumber(
+    env,
+    "OPENCLAW_TEST_DEDICATED_TIMED_UNIT_MIN_MS",
+    context.fullRepoSafeMode ? 1_000 : 2_000,
   );
   const heavyUnitMinDurationMs = parseEnvNumber(
     env,
@@ -479,9 +498,37 @@ const resolveUnitHeavyFileGroups = (context) => {
   );
   return {
     heavyUnitLaneCount,
+    dedicatedTimedFiles:
+      dedicatedTimedUnitFileLimit > 0
+        ? selectTimedHeavyFiles({
+            candidates: catalog.allKnownUnitFiles,
+            limit: dedicatedTimedUnitFileLimit,
+            minDurationMs: dedicatedTimedUnitMinDurationMs,
+            exclude: new Set([
+              ...catalog.unitBehaviorOverrideSet,
+              ...selectMemoryHeavyFiles({
+                candidates: catalog.allKnownUnitFiles,
+                limit: memoryHeavyUnitFileLimit,
+                minDeltaKb: memoryHeavyUnitMinDeltaKb,
+                exclude: catalog.unitBehaviorOverrideSet,
+                hotspots: unitMemoryHotspotManifest,
+              }),
+            ]),
+            timings: unitTimingManifest,
+          })
+        : [],
     ...selectUnitHeavyFileGroups({
       candidates: catalog.allKnownUnitFiles,
-      behaviorOverrides: catalog.unitBehaviorOverrideSet,
+      behaviorOverrides: new Set([
+        ...catalog.unitBehaviorOverrideSet,
+        ...selectTimedHeavyFiles({
+          candidates: catalog.allKnownUnitFiles,
+          limit: dedicatedTimedUnitFileLimit,
+          minDurationMs: dedicatedTimedUnitMinDurationMs,
+          exclude: new Set(),
+          timings: unitTimingManifest,
+        }),
+      ]),
       timedLimit: heavyUnitFileLimit,
       timedMinDurationMs: heavyUnitMinDurationMs,
       memoryLimit: memoryHeavyUnitFileLimit,
@@ -513,6 +560,7 @@ const buildDefaultUnits = (context, request) => {
 
   const {
     heavyUnitLaneCount,
+    dedicatedTimedFiles,
     memoryHeavyFiles: memoryHeavyUnitFiles,
     timedHeavyFiles: timedHeavyUnitFiles,
   } = resolveUnitHeavyFileGroups(context);
@@ -522,6 +570,7 @@ const buildDefaultUnits = (context, request) => {
   const unitSchedulingOverrideSet = new Set([
     ...catalog.unitBehaviorOverrideSet,
     ...memoryHeavyUnitFiles,
+    ...dedicatedTimedFiles,
   ]);
   const unitFastExcludedFiles = [
     ...new Set([
@@ -537,6 +586,8 @@ const buildDefaultUnits = (context, request) => {
   const estimateExtensionDurationMs = (file) =>
     extensionTimingManifest.files[file]?.durationMs ?? extensionTimingManifest.defaultDurationMs;
   const estimateUnitHotspotDeltaKb = (file) => unitMemoryHotspotManifest.files[file]?.deltaKb ?? 0;
+  const estimateBatchHotspotDeltaKb = (files) =>
+    sumPositiveNumbers(files.map((file) => estimateUnitHotspotDeltaKb(file)));
   const unitFastCandidateFiles = catalog.allKnownUnitFiles.filter(
     (file) => !new Set(unitFastExcludedFiles).has(file),
   );
@@ -648,6 +699,7 @@ const buildDefaultUnits = (context, request) => {
               batch,
               context,
             ),
+            estimatedHotspotDeltaKb: estimateBatchHotspotDeltaKb(batch),
             env: withIncludeFileEnv(
               context,
               `vitest-unit-fast-include-${String(laneIndex + 1)}-${String(batchIndex + 1)}`,
@@ -667,6 +719,28 @@ const buildDefaultUnits = (context, request) => {
       }
     }
 
+    for (const file of dedicatedTimedFiles) {
+      units.push(
+        createExecutionUnit(context, {
+          id: `unit-${path.basename(file, ".test.ts")}-dedicated`,
+          surface: "unit",
+          isolate: false,
+          estimatedDurationMs: estimateUnitDurationMs(file),
+          estimatedHotspotDeltaKb: estimateUnitHotspotDeltaKb(file),
+          args: [
+            "vitest",
+            "run",
+            "--config",
+            "vitest.unit.config.ts",
+            "--pool=forks",
+            ...noIsolateArgs,
+            file,
+          ],
+          reasons: ["unit-timed-dedicated"],
+        }),
+      );
+    }
+
     for (const file of catalog.unitForkIsolatedFiles) {
       units.push(
         createExecutionUnit(context, {
@@ -674,6 +748,7 @@ const buildDefaultUnits = (context, request) => {
           surface: "unit",
           isolate: true,
           estimatedDurationMs: estimateUnitDurationMs(file),
+          estimatedHotspotDeltaKb: estimateUnitHotspotDeltaKb(file),
           args: [
             "vitest",
             "run",
@@ -700,6 +775,7 @@ const buildDefaultUnits = (context, request) => {
           surface: "unit",
           isolate: false,
           estimatedDurationMs: files.reduce((sum, file) => sum + estimateUnitDurationMs(file), 0),
+          estimatedHotspotDeltaKb: estimateBatchHotspotDeltaKb(files),
           args: [
             "vitest",
             "run",
@@ -721,6 +797,7 @@ const buildDefaultUnits = (context, request) => {
           surface: "unit",
           isolate: true,
           estimatedDurationMs: estimateUnitDurationMs(file),
+          estimatedHotspotDeltaKb: estimateUnitHotspotDeltaKb(file),
           args: [
             "vitest",
             "run",
@@ -1518,6 +1595,56 @@ function resolveSurfaceAwareTopLevelParallelLimit(context, units, defaultLimit) 
   return Math.min(defaultLimit, 2);
 }
 
+function resolveSafeModeTopLevelParallelLimit(context, selectedUnits, env) {
+  const override = parseEnvNumber(env, "OPENCLAW_TEST_SAFE_MODE_TOP_LEVEL_CONCURRENCY", -1);
+  if (override >= 0) {
+    return Math.max(1, override);
+  }
+  const loadAwareDisabledRaw = env.OPENCLAW_TEST_LOAD_AWARE?.trim().toLowerCase();
+  const loadAwareDisabled = loadAwareDisabledRaw === "0" || loadAwareDisabledRaw === "false";
+  const baseLimit =
+    context.runtime.hostMemoryGiB >= 6 && context.runtime.loadBand !== "saturated" ? 2 : 1;
+  const sharedUnitBatches = selectedUnits.filter(
+    (unit) => unit.surface === "unit" && !unit.isolate && unit.id.startsWith("unit-fast"),
+  );
+  const dedicatedMemoryOrTimedUnits = selectedUnits.filter((unit) =>
+    unit.reasons.some(
+      (reason) =>
+        reason === "unit-memory-isolated" ||
+        reason === "unit-timed-dedicated" ||
+        reason === "unit-timed-heavy",
+    ),
+  );
+  const onlyUnitSurface =
+    selectedUnits.length > 0 && selectedUnits.every((unit) => unit.surface === "unit");
+  if (
+    baseLimit >= 2 &&
+    !loadAwareDisabled &&
+    context.runtime.loadBand === "idle" &&
+    context.runtime.hostMemoryGiB >= 7 &&
+    onlyUnitSurface &&
+    sharedUnitBatches.length >= 16 &&
+    dedicatedMemoryOrTimedUnits.length >= 8
+  ) {
+    return 3;
+  }
+  return baseLimit;
+}
+
+function resolveEstimatedHotspotBudgetKb(context, env, topLevelParallelLimit) {
+  if (!context.fullRepoSafeMode || topLevelParallelLimit <= 1) {
+    return null;
+  }
+  return Math.max(
+    256 * 1024,
+    parseEnvNumber(
+      env,
+      "OPENCLAW_TEST_SAFE_MODE_ESTIMATED_HOTSPOT_BUDGET_KB",
+      topLevelParallelLimit >= 3 ? 1536 * 1024 : 1280 * 1024,
+    ),
+  );
+}
+
 export function explainExecutionTarget(request, options = {}) {
   const context = createPlannerContext(request, options);
   context.noIsolateArgs =
@@ -1648,14 +1775,7 @@ export function buildExecutionPlan(request, options = {}) {
   const serialPrefixUnits = parallelUnits.filter((unit) => unit.serialPhase);
   const deferredParallelUnits = parallelUnits.filter((unit) => !unit.serialPhase);
   const safeModeTopLevelParallelLimit = context.fullRepoSafeMode
-    ? Math.max(
-        1,
-        parseEnvNumber(
-          env,
-          "OPENCLAW_TEST_SAFE_MODE_TOP_LEVEL_CONCURRENCY",
-          context.runtime.hostMemoryGiB >= 6 && context.runtime.loadBand !== "saturated" ? 2 : 1,
-        ),
-      )
+    ? resolveSafeModeTopLevelParallelLimit(context, selectedUnits, env)
     : null;
   const topLevelParallelEnabled = context.fullRepoSafeMode
     ? safeModeTopLevelParallelLimit > 1
@@ -1677,6 +1797,11 @@ export function buildExecutionPlan(request, options = {}) {
   const deferredRunConcurrency = context.fullRepoSafeMode
     ? 1
     : context.executionBudget.deferredRunConcurrency;
+  const estimatedHotspotBudgetKb = resolveEstimatedHotspotBudgetKb(
+    context,
+    env,
+    topLevelParallelLimit,
+  );
 
   return {
     runtimeCapabilities: context.runtime,
@@ -1696,6 +1821,7 @@ export function buildExecutionPlan(request, options = {}) {
     deferredParallelUnits,
     topLevelParallelEnabled,
     topLevelParallelLimit,
+    estimatedHotspotBudgetKb,
     deferredRunConcurrency,
     keepGatewaySerial,
     shardCount: context.shardCount,

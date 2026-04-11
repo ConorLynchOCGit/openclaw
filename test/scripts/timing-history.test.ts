@@ -3,9 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  loadLocalMemoryHistory,
   loadLocalTimingHistory,
+  mergeMemoryHotspotManifest,
+  resolveLocalMemoryHistoryPath,
   mergeTimingManifest,
   resolveLocalTimingHistoryPath,
+  writeObservedMemoryHistory,
   writeObservedTimingHistory,
 } from "../../scripts/test-planner/timing-history.mjs";
 
@@ -68,5 +72,61 @@ describe("timing history", () => {
     });
     expect(merged.files["src/kept.test.ts"]).toMatchObject({ durationMs: 700, testCount: 1 });
     expect(merged.files["src/new.test.ts"]).toMatchObject({ durationMs: 900, testCount: 1 });
+  });
+
+  it("persists observed memory history under .local/test-runner-history", () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-memory-history-"));
+    cleanupDirs.push(rootDir);
+
+    const { historyPath, payload } = writeObservedMemoryHistory(
+      "vitest.unit.config.ts",
+      [{ file: "src/example.test.ts", deltaKb: 512 * 1024, peakRssKb: 1024 * 1024 }],
+      { rootDir },
+    );
+
+    expect(historyPath).toBe(resolveLocalMemoryHistoryPath("vitest.unit.config.ts", { rootDir }));
+    expect(fs.existsSync(historyPath)).toBe(true);
+    expect(payload.files["src/example.test.ts"]).toMatchObject({
+      deltaKb: 512 * 1024,
+      peakRssKb: 1024 * 1024,
+      runs: 1,
+    });
+    expect(loadLocalMemoryHistory("vitest.unit.config.ts", { rootDir })?.files).toHaveProperty(
+      "src/example.test.ts",
+    );
+  });
+
+  it("merges local memory history on top of checked-in hotspot manifests", () => {
+    const merged = mergeMemoryHotspotManifest(
+      {
+        config: "vitest.unit.config.ts",
+        generatedAt: "old",
+        defaultMinDeltaKb: 256 * 1024,
+        files: {
+          "src/example.test.ts": { deltaKb: 100 * 1024 },
+          "src/kept.test.ts": { deltaKb: 200 * 1024 },
+        },
+      },
+      {
+        generatedAt: "new",
+        files: {
+          "src/example.test.ts": { deltaKb: 500 * 1024, peakRssKb: 1024 * 1024, runs: 2 },
+          "src/new.test.ts": { deltaKb: 700 * 1024, peakRssKb: 1200 * 1024, runs: 1 },
+        },
+      },
+    );
+
+    expect(merged.generatedAt).toBe("new");
+    expect(merged.files["src/example.test.ts"]).toMatchObject({
+      deltaKb: 500 * 1024,
+      peakRssKb: 1024 * 1024,
+      runs: 2,
+    });
+    expect(merged.files["src/kept.test.ts"]).toMatchObject({ deltaKb: 200 * 1024 });
+    expect(merged.files["src/new.test.ts"]).toMatchObject({
+      deltaKb: 700 * 1024,
+      peakRssKb: 1200 * 1024,
+      runs: 1,
+    });
   });
 });

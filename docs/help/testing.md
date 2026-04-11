@@ -55,6 +55,9 @@ Gate wrapper notes:
 - Do not start those commands in parallel on the same checkout.
 - `pnpm build` now prints phase timestamps for quieter stages, including
   `build:plugin-sdk:dts`.
+- Turbo now owns the cacheable UI `build` and `test` tasks plus the cacheable
+  `build:plugin-sdk:dts` phase, while the outer gate semantics stay in the
+  existing repo wrappers.
 - `pnpm build:runtime:fast` is the runtime-oriented fast build path for feature
   proof. It keeps the full `pnpm build` bar intact.
 - `pnpm runtime:proof:fast` runs a non-production proof gateway from the repo's
@@ -68,6 +71,9 @@ Gate wrapper notes:
   - `.local/gate-metrics/history/*.json`
 - `pnpm test` also writes local timing history under:
   - `.local/test-runner-history/*.json`
+- On memory-traced runs, `pnpm test` also persists local unit memory-hotspot
+  history there so later constrained-host plans can use real observed RSS
+  growth instead of only the checked-in hotspot fixture.
 - Use `pnpm task:status` to see whether this checkout already has a running
   heavy `test` / `check` / `build` task and which PID is holding the lock.
 - If you want to inspect running processes first, do that as a separate step
@@ -124,8 +130,15 @@ Think of the suites as “increasing realism” (and increasing flakiness/cost):
 - On constrained local hosts, `pnpm test` now also records per-file timing
   history and uses it to rebalance the next safe-mode plan instead of relying
   only on the checked-in manifests.
+- Constrained local hosts now also persist per-file hotspot history when memory
+  tracing is enabled, peel the worst timed unit files into dedicated lanes, and
+  use an estimated hotspot budget to avoid co-scheduling the heaviest lanes
+  together.
 - Constrained full-repo safe mode now allows bounded top-level overlap on hosts
   with enough headroom, while keeping each Vitest run at `maxWorkers=1`.
+- On idle constrained local hosts with enough headroom, that safe-mode overlap
+  can now promote from `2` to `3` top-level runs. This is still bounded by the
+  hotspot-aware scheduler, not just a flat concurrency increase.
 - Extension-only local runs now also use a checked-in extensions timing snapshot plus a slightly coarser shared batch target on high-memory hosts, so the shared extensions lane avoids spawning an extra batch when two measured shared runs are enough.
   - High-memory local extension shared batches also run with a slightly higher worker cap than before, which shortened the two remaining shared extension batches without changing the isolated extension lanes.
   - High-memory local channel runs now reuse the checked-in channel timing snapshot to split the shared channels lane into a few measured batches instead of one long shared worker.
