@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, expect, vi } from "vitest";
+import type { MockFn } from "../../test-utils/vitest-mock-fn.js";
 
 let actualOpenBoundaryFile:
   | ((
@@ -57,8 +58,8 @@ export function createSandboxFsBridge(
   return createSandboxFsBridgeImpl(...args);
 }
 
-export const mockedExecDockerRaw = hoisted.execDockerRaw;
-export const mockedOpenBoundaryFile = hoisted.openBoundaryFile;
+export const mockedExecDockerRaw: MockFn = hoisted.execDockerRaw;
+export const mockedOpenBoundaryFile: MockFn = hoisted.openBoundaryFile;
 const DOCKER_SCRIPT_INDEX = 5;
 const DOCKER_FIRST_SCRIPT_ARG_INDEX = 7;
 

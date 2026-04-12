@@ -118,7 +118,11 @@ function expectFocusedBindingShape(binding: ChannelFocusedBindingContext) {
 export function createSlackOutboundPayloadHarness(params: {
   payload: ReplyPayload;
   sendResults?: Array<{ messageId: string }>;
-}) {
+}): {
+  run: () => ReturnType<NonNullable<typeof slackOutbound.sendPayload>>;
+  sendMock: Mock<(...args: unknown[]) => unknown>;
+  to: string;
+} {
   const sendSlack = vi.fn();
   primeChannelOutboundSendMock(
     sendSlack,

@@ -7,10 +7,23 @@ const loadProviderAuthLoginRuntime = createLazyRuntimeModule(
 );
 const bindProviderAuthLoginRuntime = createLazyRuntimeMethodBinder(loadProviderAuthLoginRuntime);
 
-export const githubCopilotLoginCommand = bindProviderAuthLoginRuntime(
+type ProviderAuthLoginRuntime = Awaited<ReturnType<typeof loadProviderAuthLoginRuntime>>;
+type GithubCopilotLoginCommand = ProviderAuthLoginRuntime["githubCopilotLoginCommand"];
+type LoginChutes = ProviderAuthLoginRuntime["loginChutes"];
+type LoginOpenAICodexOAuth = ProviderAuthLoginRuntime["loginOpenAICodexOAuth"];
+
+export const githubCopilotLoginCommand: (
+  ...args: Parameters<GithubCopilotLoginCommand>
+) => Promise<Awaited<ReturnType<GithubCopilotLoginCommand>>> = bindProviderAuthLoginRuntime(
   (runtime) => runtime.githubCopilotLoginCommand,
 );
-export const loginChutes = bindProviderAuthLoginRuntime((runtime) => runtime.loginChutes);
-export const loginOpenAICodexOAuth = bindProviderAuthLoginRuntime(
+export const loginChutes: (
+  ...args: Parameters<LoginChutes>
+) => Promise<Awaited<ReturnType<LoginChutes>>> = bindProviderAuthLoginRuntime(
+  (runtime) => runtime.loginChutes,
+);
+export const loginOpenAICodexOAuth: (
+  ...args: Parameters<LoginOpenAICodexOAuth>
+) => Promise<Awaited<ReturnType<LoginOpenAICodexOAuth>>> = bindProviderAuthLoginRuntime(
   (runtime) => runtime.loginOpenAICodexOAuth,
 );

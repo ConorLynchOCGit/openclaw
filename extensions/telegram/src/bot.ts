@@ -75,6 +75,8 @@ type TelegramBotRuntime = {
   apiThrottler: typeof apiThrottler;
 };
 
+type CreatedTelegramBot = InstanceType<TelegramBotRuntime["Bot"]>;
+
 const DEFAULT_TELEGRAM_BOT_RUNTIME: TelegramBotRuntime = {
   Bot,
   sequentialize,
@@ -135,7 +137,7 @@ function extractTelegramApiMethod(input: TelegramFetchInput): string | null {
   }
 }
 
-export function createTelegramBot(opts: TelegramBotOptions) {
+export function createTelegramBot(opts: TelegramBotOptions): CreatedTelegramBot {
   const botRuntime = telegramBotRuntimeForTest ?? DEFAULT_TELEGRAM_BOT_RUNTIME;
   const runtime: RuntimeEnv = opts.runtime ?? createNonExitingRuntime();
   const telegramDeps = opts.telegramDeps ?? defaultTelegramBotDeps;

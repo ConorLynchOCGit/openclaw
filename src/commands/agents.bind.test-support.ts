@@ -1,5 +1,6 @@
 import { vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+import type { MockFn } from "../test-utils/vitest-mock-fn.js";
 import { mergeMockedModule } from "../test-utils/vitest-module-mocks.js";
 import { createTestRuntime } from "./test-runtime-config-helpers.js";
 
@@ -7,9 +8,9 @@ type ReplaceConfigFileResult = Awaited<
   ReturnType<(typeof import("../config/config.js"))["replaceConfigFile"]>
 >;
 
-export const readConfigFileSnapshotMock = vi.fn();
-export const writeConfigFileMock = vi.fn().mockResolvedValue(undefined);
-export const replaceConfigFileMock = vi.fn(
+export const readConfigFileSnapshotMock: MockFn = vi.fn();
+export const writeConfigFileMock: MockFn = vi.fn().mockResolvedValue(undefined);
+export const replaceConfigFileMock: MockFn = vi.fn(
   async (params: { nextConfig: OpenClawConfig }): Promise<ReplaceConfigFileResult> => {
     await writeConfigFileMock(params.nextConfig);
     return {

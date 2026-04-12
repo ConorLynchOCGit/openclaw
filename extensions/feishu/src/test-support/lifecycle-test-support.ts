@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { MockFn } from "openclaw/plugin-sdk/testing";
 import { expect, vi } from "vitest";
 import { createPluginRuntimeMock } from "../../../../test/helpers/plugins/plugin-runtime-mock.js";
 import type { ClawdbotConfig, PluginRuntime, RuntimeEnv } from "../../runtime-api.js";
@@ -28,7 +29,20 @@ export const FEISHU_PREFETCHED_BOT_OPEN_ID_SOURCE = {
   botName: "Bot",
 } as const;
 
-export function createFeishuLifecycleReplyDispatcher() {
+type FeishuLifecycleReplyDispatcher = {
+  dispatcher: {
+    sendToolResult: MockFn<() => boolean>;
+    sendBlockReply: MockFn<() => boolean>;
+    sendFinalReply: MockFn<() => Promise<boolean>>;
+    waitForIdle: MockFn<() => Promise<void>>;
+    getQueuedCounts: MockFn<() => { tool: number; block: number; final: number }>;
+    markComplete: MockFn;
+  };
+  replyOptions: {};
+  markDispatchIdle: MockFn;
+};
+
+export function createFeishuLifecycleReplyDispatcher(): FeishuLifecycleReplyDispatcher {
   return {
     dispatcher: {
       sendToolResult: vi.fn(() => false),

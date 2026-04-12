@@ -74,6 +74,32 @@ describe("updateSessionStoreAfterAgentRun", () => {
       [sessionKey]: {
         sessionId,
         updatedAt: Date.now(),
+        systemPromptReport: {
+          source: "run",
+          generatedAt: Date.now() - 60_000,
+          promptArtifacts: {
+            fullSystemPromptHash: "full-a",
+            fullSystemPromptChars: 9,
+            baseSystemPromptHash: "base-a",
+            baseSystemPromptChars: 8,
+            injectedFilesHash: "inject-a",
+            injectedFilesChars: 3,
+            skillsHash: "skills-a",
+            skillsChars: 1,
+            toolsListHash: "tools-list-a",
+            toolsListChars: 1,
+            toolsSchemaHash: "tools-schema-a",
+            toolsSchemaChars: 1,
+          },
+          systemPrompt: {
+            chars: 9,
+            projectContextChars: 1,
+            nonProjectContextChars: 8,
+          },
+          injectedWorkspaceFiles: [],
+          skills: { promptChars: 0, entries: [] },
+          tools: { listChars: 0, schemaChars: 0, entries: [] },
+        },
       },
     };
     await fs.writeFile(storePath, JSON.stringify(sessionStore, null, 2), "utf8");
@@ -81,6 +107,22 @@ describe("updateSessionStoreAfterAgentRun", () => {
     const report = {
       source: "run" as const,
       generatedAt: Date.now(),
+      promptArtifacts: {
+        fullSystemPromptHash: "full-b",
+        fullSystemPromptChars: 10,
+        baseSystemPromptHash: "base-b",
+        baseSystemPromptChars: 8,
+        memoryPackPromptHash: "memory-b",
+        memoryPackPromptChars: 2,
+        injectedFilesHash: "inject-b",
+        injectedFilesChars: 3,
+        skillsHash: "skills-b",
+        skillsChars: 1,
+        toolsListHash: "tools-list-b",
+        toolsListChars: 1,
+        toolsSchemaHash: "tools-schema-b",
+        toolsSchemaChars: 1,
+      },
       bootstrapTruncation: {
         warningMode: "once" as const,
         warningSignaturesSeen: ["sig-a", "sig-b"],
@@ -120,6 +162,20 @@ describe("updateSessionStoreAfterAgentRun", () => {
       "sig-a",
       "sig-b",
     ]);
+    expect(persisted?.systemPromptReport?.promptArtifactChanges).toEqual({
+      comparedToGeneratedAt: expect.any(Number),
+      changed: true,
+      changedTailOnly: false,
+      stablePrefixReusable: false,
+      reasons: [
+        "base_prompt_changed",
+        "memory_pack_presence_changed",
+        "injected_files_changed",
+        "skills_prompt_changed",
+        "tools_list_changed",
+        "tools_schema_changed",
+      ],
+    });
     expect(sessionStore[sessionKey]?.systemPromptReport?.bootstrapTruncation?.warningMode).toBe(
       "once",
     );

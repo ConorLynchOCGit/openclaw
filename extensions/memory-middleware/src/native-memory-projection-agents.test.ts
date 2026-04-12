@@ -81,6 +81,18 @@ describe("agent native memory projections", () => {
               },
             }),
             createRecord({
+              id: "shared-user-1",
+              memoryKind: "user",
+              metadata: {
+                canonicalIngestionCandidate: {
+                  record: {
+                    statement: "Prefer concise answers",
+                    tags: ["user", "preference"],
+                  },
+                },
+              },
+            }),
+            createRecord({
               id: "web-user-1",
               memoryKind: "user",
               metadata: {
@@ -116,6 +128,17 @@ describe("agent native memory projections", () => {
               canonicalIngestionCandidate: {
                 record: {
                   statement: "Default to do_not_engage unless the opening is clearly high-signal",
+                  tags: ["workflow_guidance", "feedback"],
+                },
+              },
+            },
+          }),
+          createRecord({
+            id: "shared-feedback-1",
+            metadata: {
+              canonicalIngestionCandidate: {
+                record: {
+                  statement: "Use pnpm check:fast before landing docs-only changes",
                   tags: ["workflow_guidance", "feedback"],
                 },
               },
@@ -182,8 +205,14 @@ describe("agent native memory projections", () => {
       await fs.readFile(path.join(tmpDir, "agent-workspaces", "x-manager", "USER.md"), "utf-8"),
     ).toContain("Keep Conor Lynch and American Atomics voices separate");
     expect(
+      await fs.readFile(path.join(tmpDir, "agent-workspaces", "x-manager", "USER.md"), "utf-8"),
+    ).toContain("Prefer concise answers");
+    expect(
       await fs.readFile(path.join(tmpDir, "agent-workspaces", "x-manager", "TOOLS.md"), "utf-8"),
     ).toContain("do_not_engage");
+    expect(
+      await fs.readFile(path.join(tmpDir, "agent-workspaces", "x-manager", "TOOLS.md"), "utf-8"),
+    ).toContain("pnpm check:fast");
     expect(
       await fs.readFile(
         path.join(tmpDir, "agent-workspaces", "web-researcher", "USER.md"),
@@ -192,10 +221,22 @@ describe("agent native memory projections", () => {
     ).toContain("Prefer evidence packages with direct citations");
     expect(
       await fs.readFile(
+        path.join(tmpDir, "agent-workspaces", "web-researcher", "USER.md"),
+        "utf-8",
+      ),
+    ).toContain("Prefer concise answers");
+    expect(
+      await fs.readFile(
         path.join(tmpDir, "agent-workspaces", "web-researcher", "TOOLS.md"),
         "utf-8",
       ),
     ).toContain("strict required fields");
+    expect(
+      await fs.readFile(
+        path.join(tmpDir, "agent-workspaces", "web-researcher", "TOOLS.md"),
+        "utf-8",
+      ),
+    ).toContain("pnpm check:fast");
     await expect(
       fs.readFile(path.join(tmpDir, "agent-workspaces", "builder", "TOOLS.md"), "utf-8"),
     ).rejects.toMatchObject({ code: "ENOENT" });

@@ -3,6 +3,8 @@ import { isVerbose } from "./global-state.js";
 import { getLogger, isFileLogLevelEnabled } from "./logging/logger.js";
 import { theme } from "./terminal/theme.js";
 
+type ThemeFormatter = (value: string) => string;
+
 export function shouldLogVerbose() {
   return isVerbose() || isFileLogLevelEnabled("debug");
 }
@@ -29,7 +31,7 @@ export function logVerboseConsole(message: string) {
   console.log(theme.muted(message));
 }
 
-export const success = theme.success;
-export const warn = theme.warn;
-export const info = theme.info;
-export const danger = theme.error;
+export const success: ThemeFormatter = theme.success;
+export const warn: ThemeFormatter = theme.warn;
+export const info: ThemeFormatter = theme.info;
+export const danger: ThemeFormatter = theme.error;

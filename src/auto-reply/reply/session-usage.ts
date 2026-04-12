@@ -1,4 +1,5 @@
 import { setCliSessionBinding, setCliSessionId } from "../../agents/cli-session.js";
+import { annotatePromptArtifactChanges } from "../../agents/system-prompt-artifacts.js";
 import {
   deriveSessionTotalTokens,
   hasNonzeroUsage,
@@ -137,7 +138,11 @@ export async function persistSessionUsageUpdate(params: {
             modelProvider: params.providerUsed ?? entry.modelProvider,
             model: params.modelUsed ?? entry.model,
             contextTokens: resolvedContextTokens,
-            systemPromptReport: params.systemPromptReport ?? entry.systemPromptReport,
+            systemPromptReport:
+              annotatePromptArtifactChanges({
+                current: params.systemPromptReport,
+                previous: entry.systemPromptReport,
+              }) ?? entry.systemPromptReport,
             updatedAt: Date.now(),
           };
           if (hasUsage) {
@@ -177,7 +182,11 @@ export async function persistSessionUsageUpdate(params: {
             modelProvider: params.providerUsed ?? entry.modelProvider,
             model: params.modelUsed ?? entry.model,
             contextTokens: params.contextTokensUsed ?? entry.contextTokens,
-            systemPromptReport: params.systemPromptReport ?? entry.systemPromptReport,
+            systemPromptReport:
+              annotatePromptArtifactChanges({
+                current: params.systemPromptReport,
+                previous: entry.systemPromptReport,
+              }) ?? entry.systemPromptReport,
             updatedAt: Date.now(),
           };
           return applyCliSessionIdToSessionPatch(params, entry, patch);

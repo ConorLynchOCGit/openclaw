@@ -3,8 +3,10 @@ import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { resetLogger, setLoggerOverride } from "openclaw/plugin-sdk/runtime-env";
+import type { MockFn } from "openclaw/plugin-sdk/testing";
 import { afterEach, beforeEach, expect, vi } from "vitest";
 import {
+  type AsyncMock,
   loadConfigMock,
   readAllowFromStoreMock as pairingReadAllowFromStoreMock,
   resetPairingSecurityMocks,
@@ -29,9 +31,9 @@ export const DEFAULT_WEB_INBOX_CONFIG = {
     responsePrefix: undefined,
   },
 } as const;
-export const mockLoadConfig = loadConfigMock;
-export const readAllowFromStoreMock = pairingReadAllowFromStoreMock;
-export const upsertPairingRequestMock = pairingUpsertPairingRequestMock;
+export const mockLoadConfig: MockFn = loadConfigMock;
+export const readAllowFromStoreMock: AsyncMock = pairingReadAllowFromStoreMock;
+export const upsertPairingRequestMock: AsyncMock = pairingUpsertPairingRequestMock;
 
 export type MockSock = {
   ev: EventEmitter;

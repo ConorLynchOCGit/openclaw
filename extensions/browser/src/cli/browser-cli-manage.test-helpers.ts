@@ -1,5 +1,7 @@
+import type { Command } from "commander";
 import { vi } from "vitest";
 import * as parentCoreApiModule from "../core-api.js";
+import type { MockFn } from "../test-utils/vitest-mock-fn.js";
 import * as browserCliSharedModule from "./browser-cli-shared.js";
 import * as cliCoreApiModule from "./core-api.js";
 
@@ -56,7 +58,7 @@ vi.spyOn(cliCoreApiModule.defaultRuntime, "exit").mockImplementation(browserCliR
 
 const { registerBrowserManageCommands } = await import("./browser-cli-manage.js");
 
-export function createBrowserManageProgram(params?: { withParentTimeout?: boolean }) {
+export function createBrowserManageProgram(params?: { withParentTimeout?: boolean }): Command {
   const { program, browser, parentOpts } = createBrowserProgram();
   if (params?.withParentTimeout) {
     browser.option("--timeout <ms>", "Timeout in ms", "30000");
@@ -65,7 +67,13 @@ export function createBrowserManageProgram(params?: { withParentTimeout?: boolea
   return program;
 }
 
-export function getBrowserManageCallBrowserRequestMock() {
+export function getBrowserManageCallBrowserRequestMock(): MockFn<
+  (
+    opts: unknown,
+    req: BrowserRequest,
+    runtimeOpts?: BrowserRuntimeOptions,
+  ) => Promise<Record<string, unknown>>
+> {
   return browserManageMocks.callBrowserRequest;
 }
 

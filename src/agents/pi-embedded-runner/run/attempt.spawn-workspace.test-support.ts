@@ -12,8 +12,29 @@ import type {
   IngestBatchResult,
   IngestResult,
 } from "../../../context-engine/types.js";
+import type { MockFn } from "../../../test-utils/vitest-mock-fn.js";
 import type { EmbeddedContextFile } from "../../pi-embedded-helpers.js";
 import type { WorkspaceBootstrapFile } from "../../workspace.js";
+
+type AttemptSpawnWorkspaceHoisted = {
+  spawnSubagentDirectMock: MockFn;
+  createAgentSessionMock: MockFn;
+  sessionManagerOpenMock: MockFn;
+  resolveSandboxContextMock: MockFn;
+  subscribeEmbeddedPiSessionMock: MockFn;
+  acquireSessionWriteLockMock: MockFn;
+  resolveBootstrapContextForRunMock: MockFn;
+  getGlobalHookRunnerMock: MockFn;
+  initializeGlobalHookRunnerMock: MockFn;
+  runContextEngineMaintenanceMock: MockFn;
+  sessionManager: {
+    getLeafEntry: MockFn;
+    branch: MockFn;
+    resetLeaf: MockFn;
+    buildSessionContext: MockFn<() => { messages: AgentMessage[] }>;
+    appendCustomEntry: MockFn;
+  };
+};
 
 const hoisted = vi.hoisted(() => {
   type BootstrapContext = {
@@ -55,7 +76,7 @@ const hoisted = vi.hoisted(() => {
   };
 });
 
-export function getHoisted() {
+export function getHoisted(): AttemptSpawnWorkspaceHoisted {
   return hoisted;
 }
 

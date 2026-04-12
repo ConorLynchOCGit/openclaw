@@ -139,17 +139,12 @@ import { installToolResultContextGuard } from "../tool-result-context-guard.js";
 import { splitSdkTools } from "../tool-split.js";
 import { describeUnknownError, mapThinkingLevel } from "../utils.js";
 import { flushPendingToolResultsAfterIdle } from "../wait-for-idle-before-flush.js";
-import {
-  assembleAttemptContextEngine,
-  finalizeAttemptContextEngineTurn,
-  runAttemptContextEngineBootstrap,
-} from "./attempt.context-engine-helpers.js";
+import { runAttemptContextEngineBootstrap } from "./attempt.context-engine-helpers.js";
+import { prepareAttemptPromptContextStage } from "./attempt.prompt-context-stage.js";
 import {
   buildAfterTurnRuntimeContext,
   buildWorkspaceNotesForAttempt,
-  prependSystemPromptAddition,
   resolveAttemptFsWorkspaceOnly,
-  resolvePromptBuildHookResult,
   resolvePromptModeForSession,
   shouldInjectHeartbeatPrompt,
 } from "./attempt.prompt-helpers.js";
@@ -163,7 +158,6 @@ import {
 import { wrapStreamFnHandleSensitiveStopReason } from "./attempt.stop-reason-recovery.js";
 import {
   appendAttemptCacheTtlIfNeeded,
-  composeSystemPromptWithHookContext,
   resolveAttemptSpawnWorkspaceDir,
   shouldUseOpenAIWebSocketTransport,
 } from "./attempt.thread-helpers.js";
@@ -176,11 +170,11 @@ import {
   wrapStreamFnSanitizeMalformedToolCalls,
   wrapStreamFnTrimToolCallNames,
 } from "./attempt.tool-call-normalization.js";
+import { finalizeAttemptTurnStage } from "./attempt.turn-finalization-stage.js";
 import { waitForCompactionRetryWithAggregateTimeout } from "./compaction-retry-aggregate-timeout.js";
 import {
   resolveRunTimeoutDuringCompaction,
   resolveRunTimeoutWithCompactionGraceMs,
-  selectCompactionTimeoutSnapshot,
   shouldFlagCompactionTimeout,
 } from "./compaction-timeout.js";
 import { pruneProcessedHistoryImages } from "./history-image-prune.js";
@@ -693,7 +687,7 @@ export async function runEmbeddedAttempt(
       contextFiles,
       memoryCitationsMode: params.config?.memory?.citations,
     });
-    const systemPromptReport = buildSystemPromptReport({
+    const systemPromptReportBase = {
       source: "run",
       generatedAt: Date.now(),
       sessionId: params.sessionId,
@@ -722,6 +716,14 @@ export async function runEmbeddedAttempt(
       tools: effectiveTools,
       runtimeBuild,
       mainMemoryRouting,
+    } as const;
+    let systemPromptReport = buildSystemPromptReport({
+      ...systemPromptReportBase,
+      systemPrompt: appendPrompt,
+      segmentPlanInput: {
+        tokenBudget: params.contextTokenBudget,
+        currentPrompt: params.prompt,
+      },
     });
     const systemPromptOverride = createSystemPromptOverride(appendPrompt);
     let systemPromptText = systemPromptOverride();
@@ -1154,40 +1156,6 @@ export async function runEmbeddedAttempt(
         if (limited.length > 0) {
           activeSession.agent.replaceMessages(limited);
         }
-
-        if (params.contextEngine) {
-          try {
-            const assembled = await assembleAttemptContextEngine({
-              contextEngine: params.contextEngine,
-              sessionId: params.sessionId,
-              sessionKey: params.sessionKey,
-              messages: activeSession.messages,
-              tokenBudget: params.contextTokenBudget,
-              modelId: params.modelId,
-              ...(params.prompt !== undefined ? { prompt: params.prompt } : {}),
-            });
-            if (!assembled) {
-              throw new Error("context engine assemble returned no result");
-            }
-            if (assembled.messages !== activeSession.messages) {
-              activeSession.agent.replaceMessages(assembled.messages);
-            }
-            if (assembled.systemPromptAddition) {
-              systemPromptText = prependSystemPromptAddition({
-                systemPrompt: systemPromptText,
-                systemPromptAddition: assembled.systemPromptAddition,
-              });
-              applySystemPromptOverrideToSession(activeSession, systemPromptText);
-              log.debug(
-                `context engine: prepended system prompt addition (${assembled.systemPromptAddition.length} chars)`,
-              );
-            }
-          } catch (assembleErr) {
-            log.warn(
-              `context engine assemble failed, using pipeline messages: ${String(assembleErr)}`,
-            );
-          }
-        }
       } catch (err) {
         await flushPendingToolResultsAfterIdle({
           agent: activeSession?.agent,
@@ -1443,43 +1411,25 @@ export async function runEmbeddedAttempt(
           trigger: params.trigger,
           channelId: params.messageChannel ?? params.messageProvider ?? undefined,
         };
-        const hookResult = await resolvePromptBuildHookResult({
-          prompt: params.prompt,
-          messages: activeSession.messages,
+        const preparedPromptContext = await prepareAttemptPromptContextStage({
+          session: activeSession,
+          contextEngine: params.contextEngine,
+          sessionId: params.sessionId,
+          sessionKey: params.sessionKey,
+          tokenBudget: params.contextTokenBudget,
+          modelId: params.modelId,
+          prompt: effectivePrompt,
+          baseSystemPrompt: systemPromptText,
           hookCtx,
           hookRunner,
           legacyBeforeAgentStartResult: params.legacyBeforeAgentStartResult,
+          systemPromptReportBase,
+          currentPrompt: params.prompt,
+          onLog: (message) => log.debug(message),
         });
-        {
-          if (hookResult?.prependContext) {
-            effectivePrompt = `${hookResult.prependContext}\n\n${effectivePrompt}`;
-            log.debug(
-              `hooks: prepended context to prompt (${hookResult.prependContext.length} chars)`,
-            );
-          }
-          const legacySystemPrompt =
-            typeof hookResult?.systemPrompt === "string" ? hookResult.systemPrompt.trim() : "";
-          if (legacySystemPrompt) {
-            applySystemPromptOverrideToSession(activeSession, legacySystemPrompt);
-            systemPromptText = legacySystemPrompt;
-            log.debug(`hooks: applied systemPrompt override (${legacySystemPrompt.length} chars)`);
-          }
-          const prependedOrAppendedSystemPrompt = composeSystemPromptWithHookContext({
-            baseSystemPrompt: systemPromptText,
-            prependSystemContext: hookResult?.prependSystemContext,
-            appendSystemContext: hookResult?.appendSystemContext,
-          });
-          if (prependedOrAppendedSystemPrompt) {
-            const prependSystemLen = hookResult?.prependSystemContext?.trim().length ?? 0;
-            const appendSystemLen = hookResult?.appendSystemContext?.trim().length ?? 0;
-            applySystemPromptOverrideToSession(activeSession, prependedOrAppendedSystemPrompt);
-            systemPromptText = prependedOrAppendedSystemPrompt;
-            log.debug(
-              `hooks: applied prependSystemContext/appendSystemContext (${prependSystemLen}+${appendSystemLen} chars)`,
-            );
-          }
-        }
-
+        effectivePrompt = preparedPromptContext.effectivePrompt;
+        systemPromptText = preparedPromptContext.systemPrompt;
+        systemPromptReport = preparedPromptContext.systemPromptReport;
         log.debug(`embedded run prompt start: runId=${params.runId} sessionId=${params.sessionId}`);
         cacheTrace?.recordStage("prompt:before", {
           prompt: effectivePrompt,
@@ -1684,105 +1634,54 @@ export async function runEmbeddedAttempt(
           }
         }
 
-        // Check if ANY compaction occurred during the entire attempt (prompt + retry).
-        // Using a cumulative count (> 0) instead of a delta check avoids missing
-        // compactions that complete during activeSession.prompt() before the delta
-        // baseline is sampled.
-        const compactionOccurredThisAttempt = getCompactionCount() > 0;
-        // Append cache-TTL timestamp AFTER prompt + compaction retry completes.
-        // Previously this was before the prompt, which caused a custom entry to be
-        // inserted between compaction and the next prompt — breaking the
-        // prepareCompaction() guard that checks the last entry type, leading to
-        // double-compaction. See: https://github.com/openclaw/openclaw/issues/9282
-        // Skip when timed out during compaction — session state may be inconsistent.
-        // Also skip when compaction ran this attempt — appending a custom entry
-        // after compaction would break the guard again. See: #28491
-        appendAttemptCacheTtlIfNeeded({
+        const finalizedTurn = await finalizeAttemptTurnStage({
           sessionManager,
           timedOutDuringCompaction,
-          compactionOccurredThisAttempt,
+          getCompactionCount,
+          preCompactionSnapshot,
+          preCompactionSessionId,
+          currentMessages: activeSession.messages,
+          currentSessionId: activeSession.sessionId,
           config: params.config,
           provider: params.provider,
           modelId: params.modelId,
+          modelApi: params.model.api,
           isCacheTtlEligibleProvider,
-        });
-
-        // If timeout occurred during compaction, use pre-compaction snapshot when available
-        // (compaction restructures messages but does not add user/assistant turns).
-        const snapshotSelection = selectCompactionTimeoutSnapshot({
-          timedOutDuringCompaction,
-          preCompactionSnapshot,
-          preCompactionSessionId,
-          currentSnapshot: activeSession.messages.slice(),
-          currentSessionId: activeSession.sessionId,
-        });
-        if (timedOutDuringCompaction) {
-          if (!isProbeSession) {
-            log.warn(
-              `using ${snapshotSelection.source} snapshot: timed out during compaction runId=${params.runId} sessionId=${params.sessionId}`,
-            );
-          }
-        }
-        messagesSnapshot = snapshotSelection.messagesSnapshot;
-        sessionIdUsed = snapshotSelection.sessionIdUsed;
-
-        if (promptError && promptErrorSource === "prompt" && !compactionOccurredThisAttempt) {
-          try {
-            sessionManager.appendCustomEntry("openclaw:prompt-error", {
-              timestamp: Date.now(),
-              runId: params.runId,
-              sessionId: params.sessionId,
-              provider: params.provider,
-              model: params.modelId,
-              api: params.model.api,
-              error: describeUnknownError(promptError),
-            });
-          } catch (entryErr) {
-            log.warn(`failed to persist prompt error entry: ${String(entryErr)}`);
-          }
-        }
-
-        // Let the active context engine run its post-turn lifecycle.
-        if (params.contextEngine) {
-          const afterTurnRuntimeContext = buildAfterTurnRuntimeContext({
+          promptError,
+          promptErrorSource,
+          runId: params.runId,
+          sessionId: params.sessionId,
+          isProbeSession,
+          warn: (message) => log.warn(message),
+          contextEngine: params.contextEngine,
+          aborted,
+          yieldAborted,
+          sessionKey: params.sessionKey,
+          sessionFile: params.sessionFile,
+          prePromptMessageCount,
+          tokenBudget: params.contextTokenBudget,
+          runtimeContext: buildAfterTurnRuntimeContext({
             attempt: params,
             workspaceDir: effectiveWorkspace,
             agentDir,
-          });
-          await finalizeAttemptContextEngineTurn({
-            contextEngine: params.contextEngine,
-            promptError: Boolean(promptError),
-            aborted,
-            yieldAborted,
-            sessionIdUsed,
-            sessionKey: params.sessionKey,
-            sessionFile: params.sessionFile,
-            messagesSnapshot,
-            prePromptMessageCount,
-            tokenBudget: params.contextTokenBudget,
-            runtimeContext: afterTurnRuntimeContext,
-            runMaintenance: async (contextParams) =>
-              await runContextEngineMaintenance({
-                contextEngine: contextParams.contextEngine as never,
-                sessionId: contextParams.sessionId,
-                sessionKey: contextParams.sessionKey,
-                sessionFile: contextParams.sessionFile,
-                reason: contextParams.reason,
-                sessionManager: contextParams.sessionManager as never,
-                runtimeContext: contextParams.runtimeContext,
-              }),
-            sessionManager,
-            warn: (message) => log.warn(message),
-          });
-        }
+          }),
+          runMaintenance: async (contextParams) =>
+            await runContextEngineMaintenance({
+              contextEngine: contextParams.contextEngine as never,
+              sessionId: contextParams.sessionId,
+              sessionKey: contextParams.sessionKey,
+              sessionFile: contextParams.sessionFile,
+              reason: contextParams.reason,
+              sessionManager: contextParams.sessionManager as never,
+              runtimeContext: contextParams.runtimeContext,
+            }),
+        });
+        messagesSnapshot = finalizedTurn.messagesSnapshot;
+        sessionIdUsed = finalizedTurn.sessionIdUsed;
 
         cacheTrace?.recordStage("session:after", {
           messages: messagesSnapshot,
-          note: timedOutDuringCompaction
-            ? "compaction timeout"
-            : promptError
-              ? "prompt error"
-              : undefined,
+          note: finalizedTurn.cacheTraceNote,
         });
         anthropicPayloadLogger?.recordUsage(messagesSnapshot, promptError);
 

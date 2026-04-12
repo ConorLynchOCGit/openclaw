@@ -1,36 +1,39 @@
 import { Command } from "commander";
 import { vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+import type { MockFn } from "../test-utils/vitest-mock-fn.js";
 import { createCliRuntimeCapture } from "./test-runtime-capture.js";
 
-export const loadConfig = vi.fn<() => OpenClawConfig>(() => ({}) as OpenClawConfig);
-export const readConfigFileSnapshot = vi.fn();
-export const writeConfigFile = vi.fn<(config: OpenClawConfig) => Promise<void>>(
-  async () => undefined,
+export const loadConfig: MockFn<() => OpenClawConfig> = vi.fn<() => OpenClawConfig>(
+  () => ({}) as OpenClawConfig,
 );
-export const replaceConfigFile = vi.fn(
+export const readConfigFileSnapshot: MockFn = vi.fn();
+export const writeConfigFile: MockFn<(config: OpenClawConfig) => Promise<void>> = vi.fn<
+  (config: OpenClawConfig) => Promise<void>
+>(async () => undefined);
+export const replaceConfigFile: MockFn = vi.fn(
   async (params: { nextConfig: OpenClawConfig }) => await writeConfigFile(params.nextConfig),
 );
-export const resolveStateDir = vi.fn(() => "/tmp/openclaw-state");
-export const installPluginFromMarketplace = vi.fn();
-export const listMarketplacePlugins = vi.fn();
-export const resolveMarketplaceInstallShortcut = vi.fn();
-export const enablePluginInConfig = vi.fn();
-export const recordPluginInstall = vi.fn();
-export const clearPluginManifestRegistryCache = vi.fn();
-export const buildPluginStatusReport = vi.fn();
-export const applyExclusiveSlotSelection = vi.fn();
-export const uninstallPlugin = vi.fn();
-export const updateNpmInstalledPlugins = vi.fn();
-export const updateNpmInstalledHookPacks = vi.fn();
-export const promptYesNo = vi.fn();
-export const installPluginFromNpmSpec = vi.fn();
-export const installPluginFromPath = vi.fn();
-export const installPluginFromClawHub = vi.fn();
-export const parseClawHubPluginSpec = vi.fn();
-export const installHooksFromNpmSpec = vi.fn();
-export const installHooksFromPath = vi.fn();
-export const recordHookInstall = vi.fn();
+export const resolveStateDir: MockFn<() => string> = vi.fn(() => "/tmp/openclaw-state");
+export const installPluginFromMarketplace: MockFn = vi.fn();
+export const listMarketplacePlugins: MockFn = vi.fn();
+export const resolveMarketplaceInstallShortcut: MockFn = vi.fn();
+export const enablePluginInConfig: MockFn = vi.fn();
+export const recordPluginInstall: MockFn = vi.fn();
+export const clearPluginManifestRegistryCache: MockFn = vi.fn();
+export const buildPluginStatusReport: MockFn = vi.fn();
+export const applyExclusiveSlotSelection: MockFn = vi.fn();
+export const uninstallPlugin: MockFn = vi.fn();
+export const updateNpmInstalledPlugins: MockFn = vi.fn();
+export const updateNpmInstalledHookPacks: MockFn = vi.fn();
+export const promptYesNo: MockFn = vi.fn();
+export const installPluginFromNpmSpec: MockFn = vi.fn();
+export const installPluginFromPath: MockFn = vi.fn();
+export const installPluginFromClawHub: MockFn = vi.fn();
+export const parseClawHubPluginSpec: MockFn = vi.fn();
+export const installHooksFromNpmSpec: MockFn = vi.fn();
+export const installHooksFromPath: MockFn = vi.fn();
+export const recordHookInstall: MockFn = vi.fn();
 
 const { defaultRuntime, runtimeLogs, runtimeErrors, resetRuntimeCapture } =
   createCliRuntimeCapture();

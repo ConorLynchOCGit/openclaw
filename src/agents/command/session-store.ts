@@ -10,6 +10,7 @@ import { setCliSessionBinding, setCliSessionId } from "../cli-session.js";
 import { resolveContextTokensForModel } from "../context.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../defaults.js";
 import { isCliProvider } from "../model-selection.js";
+import { annotatePromptArtifactChanges } from "../system-prompt-artifacts.js";
 import { deriveSessionTotalTokens, hasNonzeroUsage } from "../usage.js";
 
 type RunResult = Awaited<ReturnType<(typeof import("../pi-embedded.js"))["runEmbeddedPiAgent"]>>;
@@ -86,7 +87,10 @@ export async function updateSessionStoreAfterAgentRun(params: {
   }
   next.abortedLastRun = result.meta.aborted ?? false;
   if (result.meta.systemPromptReport) {
-    next.systemPromptReport = result.meta.systemPromptReport;
+    next.systemPromptReport = annotatePromptArtifactChanges({
+      current: result.meta.systemPromptReport,
+      previous: entry.systemPromptReport,
+    });
   }
   if (hasNonzeroUsage(usage)) {
     const input = usage.input ?? 0;

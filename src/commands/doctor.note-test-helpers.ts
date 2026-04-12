@@ -1,6 +1,7 @@
 import { vi } from "vitest";
+import type { MockFn } from "../test-utils/vitest-mock-fn.js";
 
-export const terminalNoteMock = vi.fn();
+export const terminalNoteMock: MockFn = vi.fn();
 
 vi.mock("../terminal/note.js", () => ({
   note: (...args: unknown[]) => terminalNoteMock(...args),

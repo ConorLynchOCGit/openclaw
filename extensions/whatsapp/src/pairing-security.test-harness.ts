@@ -1,3 +1,4 @@
+import type { MockFn } from "openclaw/plugin-sdk/testing";
 import { vi } from "vitest";
 
 export type AsyncMock<TArgs extends unknown[] = unknown[], TResult = unknown> = {
@@ -7,7 +8,7 @@ export type AsyncMock<TArgs extends unknown[] = unknown[], TResult = unknown> = 
   mockResolvedValueOnce: (value: TResult) => AsyncMock<TArgs, TResult>;
 };
 
-export const loadConfigMock = vi.fn();
+export const loadConfigMock: MockFn = vi.fn();
 export const readAllowFromStoreMock = vi.fn() as AsyncMock;
 export const upsertPairingRequestMock = vi.fn() as AsyncMock;
 

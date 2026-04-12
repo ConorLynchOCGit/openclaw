@@ -35,6 +35,8 @@ import {
   createProcedureValidationPort,
   createProcedureValidationPlanPort,
   type CandidateSubmissionKind,
+  createMemoryContextControlPlanePort,
+  createMemoryContextOutcomeProofPort,
   createSelfImprovingCandidateCapturePort,
 } from "../../runtime-api.js";
 import { runAutomatedRolloutEval } from "../automated-rollout-eval.js";
@@ -657,6 +659,10 @@ function createRuntime(params: {
       rootDir: ".local/memory-soak-test",
       record: async () => {},
     },
+    contextControl: createMemoryContextControlPlanePort({
+      db,
+    }),
+    outcomeProof: createMemoryContextOutcomeProofPort(),
     db,
     candidateIngress,
     selfImprovingCandidateCapture: createSelfImprovingCandidateCapturePort({

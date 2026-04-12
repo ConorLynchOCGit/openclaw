@@ -23,3 +23,8 @@ export { LegacyContextEngine, registerLegacyContextEngine } from "./legacy.js";
 export { delegateCompactionToRuntime } from "./delegate.js";
 
 export { ensureContextEnginesInitialized } from "./init.js";
+export {
+  composeContextPromptAssembly,
+  type ContextPromptAssemblyInput,
+  type ContextPromptAssemblyResult,
+} from "./prompt-assembly.js";

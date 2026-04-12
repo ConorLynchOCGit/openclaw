@@ -1,6 +1,8 @@
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import { createHash } from "node:crypto";
+import type { AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
 import type { SessionSystemPromptReport } from "../config/sessions/types.js";
 import { buildBootstrapInjectionStats } from "./bootstrap-budget.js";
+import { buildContextSegmentPlan } from "./context-segment-planner.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
 import type { WorkspaceBootstrapFile } from "./workspace.js";
 
@@ -77,6 +79,98 @@ function extractToolListText(systemPrompt: string): string {
   return extracted.text.replace(markerA, "").trim();
 }
 
+function hashText(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 16);
+}
+
+function estimateTokens(chars: number): number {
+  return Math.ceil(chars / 4);
+}
+
+function extractApprovedMemoryContextText(systemPrompt: string): string {
+  const marker = "\n## Approved Durable Memory Context\n";
+  const inlineMarker = "## Approved Durable Memory Context\n";
+  const start = systemPrompt.indexOf(marker);
+  if (start !== -1) {
+    return systemPrompt.slice(start + 1).trim();
+  }
+  if (systemPrompt.startsWith(inlineMarker)) {
+    return systemPrompt.trim();
+  }
+  const directPackMatch = systemPrompt.match(
+    /(?:^|\n)(## (?:User|Project|Procedure) Memory Pack\n[\s\S]*)$/u,
+  );
+  if (directPackMatch?.[1]) {
+    return directPackMatch[1].trim();
+  }
+  return "";
+}
+
+function stripApprovedMemoryContextText(systemPrompt: string): string {
+  const marker = "\n## Approved Durable Memory Context\n";
+  const start = systemPrompt.indexOf(marker);
+  if (start !== -1) {
+    return systemPrompt.slice(0, start).trimEnd();
+  }
+  if (systemPrompt.startsWith("## Approved Durable Memory Context\n")) {
+    return "";
+  }
+  const directPackMatch = systemPrompt.match(
+    /^(?<prefix>[\s\S]*?)(?:\n)?## (?:User|Project|Procedure) Memory Pack\n[\s\S]*$/u,
+  );
+  if (directPackMatch?.groups?.prefix !== undefined) {
+    return directPackMatch.groups.prefix.trimEnd();
+  }
+  return systemPrompt;
+}
+
+function extractMemoryPackEntries(
+  promptText: string,
+): NonNullable<SessionSystemPromptReport["memoryPacks"]>["entries"] {
+  const titleMatches = Array.from(
+    promptText.matchAll(
+      /^## (?<title>User Memory Pack|Project Memory Pack|Procedure Memory Pack)$/gmu,
+    ),
+  );
+
+  return titleMatches.map((match, index) => {
+    const title = match.groups?.title?.trim() ?? "User Memory Pack";
+    const start = match.index ?? 0;
+    const nextStart = titleMatches[index + 1]?.index ?? promptText.length;
+    const sectionText = promptText.slice(start, nextStart).trim();
+    const body = sectionText.replace(/^## [^\n]+\n?/u, "").trim();
+    const kind =
+      title === "Project Memory Pack"
+        ? "project"
+        : title === "Procedure Memory Pack"
+          ? "procedure"
+          : "user";
+    const text = sectionText;
+    const itemCount = body
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(
+        (line) =>
+          line.startsWith("- ") &&
+          !line.includes("Additional active entries omitted to stay within"),
+      ).length;
+    const omittedItemCount = Number(
+      body.match(
+        /Additional active entries omitted to stay within the prompt budget \((\d+) more\)\./u,
+      )?.[1] ?? 0,
+    );
+    return {
+      kind,
+      title,
+      chars: text.length,
+      approxTokens: estimateTokens(text.length),
+      hash: hashText(text),
+      itemCount,
+      omittedItemCount,
+    };
+  });
+}
+
 export function buildSystemPromptReport(params: {
   source: SessionSystemPromptReport["source"];
   generatedAt: number;
@@ -96,6 +190,16 @@ export function buildSystemPromptReport(params: {
   tools: AgentTool[];
   runtimeBuild?: SessionSystemPromptReport["runtimeBuild"];
   mainMemoryRouting?: SessionSystemPromptReport["mainMemoryRouting"];
+  segmentPlanInput?: {
+    tokenBudget?: number;
+    contextEngineSystemPromptAddition?: string;
+    hookPrependSystemContext?: string;
+    hookAppendSystemContext?: string;
+    hookSystemPromptOverride?: string;
+    promptPrependContext?: string;
+    currentPrompt?: string;
+    messages?: AgentMessage[];
+  };
 }): SessionSystemPromptReport {
   const systemPrompt = params.systemPrompt.trim();
   const projectContext = extractBetween(
@@ -109,6 +213,37 @@ export function buildSystemPromptReport(params: {
   const toolsEntries = buildToolsEntries(params.tools);
   const toolsSchemaChars = toolsEntries.reduce((sum, t) => sum + (t.schemaChars ?? 0), 0);
   const skillsEntries = parseSkillBlocks(params.skillsPrompt);
+  const promptPrependContext = params.segmentPlanInput?.promptPrependContext?.trim() ?? "";
+  const approvedMemoryContextText =
+    extractApprovedMemoryContextText(systemPrompt) ||
+    extractApprovedMemoryContextText(promptPrependContext);
+  const baseSystemPrompt = stripApprovedMemoryContextText(systemPrompt);
+  const memoryPackEntries = extractMemoryPackEntries(approvedMemoryContextText || systemPrompt);
+  const injectedFilesHash = hashText(
+    params.injectedFiles.map((file) => `${file.path}\n${file.content}`).join("\n\n---\n\n"),
+  );
+  const toolsListHash = hashText(toolListText);
+  const toolsSchemaHash = hashText(
+    JSON.stringify(
+      toolsEntries.map((entry) => ({
+        name: entry.name,
+        schemaChars: entry.schemaChars,
+        propertiesCount: entry.propertiesCount ?? null,
+      })),
+    ),
+  );
+  const contextSegments = buildContextSegmentPlan({
+    baseSystemPrompt,
+    approvedMemoryContextText,
+    tokenBudget: params.segmentPlanInput?.tokenBudget,
+    contextEngineSystemPromptAddition: params.segmentPlanInput?.contextEngineSystemPromptAddition,
+    hookPrependSystemContext: params.segmentPlanInput?.hookPrependSystemContext,
+    hookAppendSystemContext: params.segmentPlanInput?.hookAppendSystemContext,
+    hookSystemPromptOverride: params.segmentPlanInput?.hookSystemPromptOverride,
+    promptPrependContext,
+    currentPrompt: params.segmentPlanInput?.currentPrompt,
+    messages: params.segmentPlanInput?.messages,
+  });
 
   return {
     source: params.source,
@@ -129,6 +264,35 @@ export function buildSystemPromptReport(params: {
       projectContextChars,
       nonProjectContextChars: Math.max(0, systemPrompt.length - projectContextChars),
     },
+    promptArtifacts: {
+      fullSystemPromptHash: hashText(systemPrompt),
+      fullSystemPromptChars: systemPrompt.length,
+      baseSystemPromptHash: hashText(baseSystemPrompt),
+      baseSystemPromptChars: baseSystemPrompt.length,
+      ...(approvedMemoryContextText
+        ? {
+            memoryPackPromptHash: hashText(approvedMemoryContextText),
+            memoryPackPromptChars: approvedMemoryContextText.length,
+          }
+        : {}),
+      injectedFilesHash,
+      injectedFilesChars: params.injectedFiles.reduce((sum, file) => sum + file.content.length, 0),
+      skillsHash: hashText(params.skillsPrompt),
+      skillsChars: params.skillsPrompt.length,
+      toolsListHash,
+      toolsListChars: toolListText.length,
+      toolsSchemaHash,
+      toolsSchemaChars,
+    },
+    ...(memoryPackEntries.length > 0
+      ? {
+          memoryPacks: {
+            promptChars: memoryPackEntries.reduce((sum, entry) => sum + entry.chars, 0),
+            entries: memoryPackEntries,
+          },
+        }
+      : {}),
+    contextSegments,
     injectedWorkspaceFiles: buildBootstrapInjectionStats({
       bootstrapFiles: params.bootstrapFiles,
       injectedFiles: params.injectedFiles,

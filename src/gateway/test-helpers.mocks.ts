@@ -42,6 +42,8 @@ type GetReplyFromConfigFn = (
   configOverride?: OpenClawConfig,
 ) => Promise<ReplyPayload | ReplyPayload[] | undefined>;
 
+type GenericVitestMock = ReturnType<typeof vi.fn>;
+
 const createStubOutboundAdapter = (channelId: ChannelPlugin["id"]): ChannelOutboundAdapter => ({
   deliveryMode: "direct",
   sendText: async () => ({
@@ -319,13 +321,13 @@ export const setTestConfigRoot = (root: string) => {
 export const testTailnetIPv4 = hoisted.testTailnetIPv4;
 export const testTailscaleWhois = hoisted.testTailscaleWhois;
 export const piSdkMock = hoisted.piSdkMock;
-export const cronIsolatedRun = hoisted.cronIsolatedRun;
-export const agentCommand = hoisted.agentCommand;
+export const cronIsolatedRun: GenericVitestMock = hoisted.cronIsolatedRun;
+export const agentCommand: GenericVitestMock = hoisted.agentCommand;
 export const getReplyFromConfig: Mock<GetReplyFromConfigFn> = hoisted.getReplyFromConfig;
 export const mockGetReplyFromConfigOnce = (impl: GetReplyFromConfigFn) => {
   getReplyFromConfig.mockImplementationOnce(impl);
 };
-export const sendWhatsAppMock = hoisted.sendWhatsAppMock;
+export const sendWhatsAppMock: GenericVitestMock = hoisted.sendWhatsAppMock;
 
 export const testState = hoisted.testState;
 

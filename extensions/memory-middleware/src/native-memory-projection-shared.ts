@@ -1,5 +1,6 @@
+import { loadActiveMemorySlots } from "./active-memory-slots.js";
 import type { MemoryMiddlewareDb } from "./db/runtime.js";
-import type { MemoryObjectRecord } from "./db/runtime.js";
+import { buildNativeMemoryProjectionCandidatesFromActiveSlots } from "./native-memory-projection-active-slots.js";
 import type { NativeMemoryProjectionSkippedRecord } from "./native-memory-projection-audit.js";
 import {
   NATIVE_MEMORY_PROJECTION_CHAR_BUDGETS,
@@ -8,22 +9,14 @@ import {
   trimProjectionCandidatesToBudget,
   type NativeMemoryProjectionSyncResult,
 } from "./native-memory-projection-compiler.js";
-import {
-  buildNativeMemoryProjectionCandidates,
-  type SharedBootstrapProjectionTarget,
-} from "./native-memory-projection-eligibility.js";
-import {
-  isSharedProjectionScope,
-  resolveNativeMemoryProjectionScope,
-} from "./native-memory-projection-scope.js";
+import { type SharedBootstrapProjectionTarget } from "./native-memory-projection-eligibility.js";
+import { isSharedProjectionScope } from "./native-memory-projection-scope.js";
 
 const SHARED_PROJECTION_TITLES: Record<SharedBootstrapProjectionTarget, string> = {
   "user-profile": "Compiled User Memory",
   "tool-preferences": "Compiled Tool Preferences",
   "memory-digest": "Compiled Memory Digest",
 };
-
-const SHARED_QUERY_KINDS = ["user", "feedback", "project"] as const;
 
 export type SharedProjectionCompilationResult = NativeMemoryProjectionSyncResult & {
   selectedCount: number;
@@ -32,29 +25,6 @@ export type SharedProjectionCompilationResult = NativeMemoryProjectionSyncResult
   selectedSourceIds: string[];
   omittedSourceIds: string[];
 };
-
-async function loadApprovedSharedProjectionRecords(params: {
-  db: MemoryMiddlewareDb;
-  limitPerKind: number;
-}): Promise<MemoryObjectRecord[]> {
-  const records: MemoryObjectRecord[] = [];
-  for (const kind of SHARED_QUERY_KINDS) {
-    const result = await params.db.queries.listMemoryObjects({
-      scope: "approved_only",
-      kind,
-      limit: params.limitPerKind,
-    });
-    if (!result.accepted) {
-      throw new Error(`shared native projection query failed for ${kind}: ${result.reason}`);
-    }
-    records.push(
-      ...result.records.filter(
-        (record): record is MemoryObjectRecord => record.objectType === "memory_object",
-      ),
-    );
-  }
-  return records;
-}
 
 export async function syncSharedBootstrapProjections(params: {
   db: MemoryMiddlewareDb;
@@ -67,25 +37,32 @@ export async function syncSharedBootstrapProjections(params: {
   results: SharedProjectionCompilationResult[];
   skipped: NativeMemoryProjectionSkippedRecord[];
 }> {
-  const records = await loadApprovedSharedProjectionRecords({
+  const slots = await loadActiveMemorySlots({
     db: params.db,
     limitPerKind: params.limitPerKind ?? 80,
+    includeProcedures: false,
   });
   const skipped: NativeMemoryProjectionSkippedRecord[] = [];
-  const scopedRecords = records.filter((record) => {
-    const scope = resolveNativeMemoryProjectionScope(record);
+  const scopedSlots = slots.filter((slot) => {
+    const scope = {
+      kind: slot.scopeKind,
+      projectScoped: slot.projectScoped,
+      ...(slot.projectSlug ? { projectSlug: slot.projectSlug } : {}),
+      ...(slot.agentKey ? { agentKey: slot.agentKey } : {}),
+      ...(slot.sessionKey ? { sessionKey: slot.sessionKey } : {}),
+    };
     if (isSharedProjectionScope(scope)) {
       return true;
     }
     skipped.push({
-      sourceId: record.id,
+      sourceId: slot.primarySourceId,
       reason: "scope_filtered",
       scopeKind: scope.kind,
       ...(scope.agentKey ? { agentKey: scope.agentKey } : {}),
     });
     return false;
   });
-  const candidates = buildNativeMemoryProjectionCandidates(scopedRecords).filter(
+  const candidates = buildNativeMemoryProjectionCandidatesFromActiveSlots(scopedSlots).filter(
     (candidate) => !params.excludeSourceIds?.has(candidate.sourceId),
   );
   const targets: SharedBootstrapProjectionTarget[] = [

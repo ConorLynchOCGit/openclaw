@@ -1,11 +1,20 @@
+import type { MockFn } from "openclaw/plugin-sdk/testing";
 import { expect, vi } from "vitest";
 
-export function createDiscordOutboundHoisted() {
-  const sendMessageDiscordMock = vi.fn();
-  const sendDiscordComponentMessageMock = vi.fn();
-  const sendPollDiscordMock = vi.fn();
-  const sendWebhookMessageDiscordMock = vi.fn();
-  const getThreadBindingManagerMock = vi.fn();
+type DiscordOutboundHoisted = {
+  sendMessageDiscordMock: MockFn;
+  sendDiscordComponentMessageMock: MockFn;
+  sendPollDiscordMock: MockFn;
+  sendWebhookMessageDiscordMock: MockFn;
+  getThreadBindingManagerMock: MockFn;
+};
+
+export function createDiscordOutboundHoisted(): DiscordOutboundHoisted {
+  const sendMessageDiscordMock: MockFn = vi.fn();
+  const sendDiscordComponentMessageMock: MockFn = vi.fn();
+  const sendPollDiscordMock: MockFn = vi.fn();
+  const sendWebhookMessageDiscordMock: MockFn = vi.fn();
+  const getThreadBindingManagerMock: MockFn = vi.fn();
   return {
     sendMessageDiscordMock,
     sendDiscordComponentMessageMock,
@@ -23,8 +32,6 @@ export const DEFAULT_DISCORD_SEND_RESULT = {
   messageId: "msg-1",
   channelId: "ch-1",
 } as const;
-
-type DiscordOutboundHoisted = ReturnType<typeof createDiscordOutboundHoisted>;
 
 export async function createDiscordSendModuleMock(
   hoisted: DiscordOutboundHoisted,

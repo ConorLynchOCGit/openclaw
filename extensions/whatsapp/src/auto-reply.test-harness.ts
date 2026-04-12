@@ -6,6 +6,7 @@ import { createPinnedLookup } from "openclaw/plugin-sdk/fetch-runtime";
 import { resetInboundDedupe } from "openclaw/plugin-sdk/reply-runtime";
 import { resetLogger, setLoggerOverride } from "openclaw/plugin-sdk/runtime-env";
 import * as ssrf from "openclaw/plugin-sdk/ssrf-runtime";
+import type { MockFn } from "openclaw/plugin-sdk/testing";
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vitest";
 import type { WebInboundMessage, WebListenerCloseReason } from "./inbound.js";
 import {
@@ -26,6 +27,26 @@ type MockWebListener = {
   sendPoll: () => Promise<{ messageId: string }>;
   sendReaction: () => Promise<void>;
   sendComposingTo: () => Promise<void>;
+};
+
+type WebInboundDeliverySpies = {
+  sendMedia: MockFn;
+  reply: MockFn<() => Promise<void>>;
+  sendComposing: MockFn;
+};
+
+type WebAutoReplyRuntime = {
+  log: MockFn;
+  error: MockFn;
+  exit: MockFn;
+};
+
+type ScriptedWebListenerFactory = {
+  listenerFactory: MockFn;
+  listeners: MockWebListener[];
+  getOnMessage: (index?: number) => ((msg: WebInboundMessage) => Promise<void>) | undefined;
+  resolveClose: (index: number, reason?: unknown) => void;
+  getListenerCount: () => number;
 };
 
 export const TEST_NET_IP = "203.0.113.10";
@@ -188,7 +209,7 @@ export function createMockWebListener(): MockWebListener {
   };
 }
 
-export function createScriptedWebListenerFactory(): AnyExport {
+export function createScriptedWebListenerFactory(): ScriptedWebListenerFactory {
   const onMessages: Array<(msg: WebInboundMessage) => Promise<void>> = [];
   const closeResolvers: Array<(reason: unknown) => void> = [];
   const listeners: MockWebListener[] = [];
@@ -220,7 +241,7 @@ export function createScriptedWebListenerFactory(): AnyExport {
   };
 }
 
-export function createWebInboundDeliverySpies(): AnyExport {
+export function createWebInboundDeliverySpies(): WebInboundDeliverySpies {
   return {
     sendMedia: vi.fn(),
     reply: vi.fn().mockResolvedValue(undefined),
@@ -228,7 +249,7 @@ export function createWebInboundDeliverySpies(): AnyExport {
   };
 }
 
-export function createWebAutoReplyRuntime() {
+export function createWebAutoReplyRuntime(): WebAutoReplyRuntime {
   return {
     log: vi.fn(),
     error: vi.fn(),
@@ -245,7 +266,11 @@ export function startWebAutoReplyMonitor(params: {
   messageTimeoutMs?: number;
   watchdogCheckMs?: number;
   reconnect?: { initialMs: number; maxMs: number; maxAttempts: number; factor: number };
-}) {
+}): {
+  runtime: WebAutoReplyRuntime;
+  controller: AbortController;
+  run: Promise<unknown>;
+} {
   const runtime = createWebAutoReplyRuntime();
   const controller = new AbortController();
   const run = params.monitorWebChannelFn(

@@ -1,3 +1,4 @@
+import type { MockFn } from "openclaw/plugin-sdk/testing";
 import { vi } from "vitest";
 
 const runtimeMocks = vi.hoisted(() => ({
@@ -8,12 +9,13 @@ const runtimeMocks = vi.hoisted(() => ({
   buildPluginBindingResolvedTextMock: vi.fn(),
 }));
 
-export const readAllowFromStoreMock = runtimeMocks.readAllowFromStoreMock;
-export const upsertPairingRequestMock = runtimeMocks.upsertPairingRequestMock;
-export const recordInboundSessionMock = runtimeMocks.recordInboundSessionMock;
+export const readAllowFromStoreMock: MockFn = runtimeMocks.readAllowFromStoreMock;
+export const upsertPairingRequestMock: MockFn = runtimeMocks.upsertPairingRequestMock;
+export const recordInboundSessionMock: MockFn = runtimeMocks.recordInboundSessionMock;
 export const resolvePluginConversationBindingApprovalMock =
-  runtimeMocks.resolvePluginConversationBindingApprovalMock;
-export const buildPluginBindingResolvedTextMock = runtimeMocks.buildPluginBindingResolvedTextMock;
+  runtimeMocks.resolvePluginConversationBindingApprovalMock as MockFn;
+export const buildPluginBindingResolvedTextMock =
+  runtimeMocks.buildPluginBindingResolvedTextMock as MockFn;
 
 async function createConversationRuntimeMock(
   importOriginal: () => Promise<typeof import("openclaw/plugin-sdk/conversation-runtime")>,

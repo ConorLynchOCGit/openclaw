@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { MockFn } from "openclaw/plugin-sdk/testing";
 import { expect, vi } from "vitest";
 import type { ResolvedBlueBubblesAccount } from "./accounts.js";
 import { handleBlueBubblesWebhookRequest } from "./monitor.js";
@@ -182,9 +183,12 @@ export function createLoopbackWebhookRequestParamsForTest(
 export function createHangingWebhookRequestForTest(
   url = "/bluebubbles-webhook?password=test-password",
   remoteAddress = "127.0.0.1",
-) {
+): {
+  req: IncomingMessage;
+  destroyMock: MockFn<IncomingMessage["destroy"]>;
+} {
   const req = new EventEmitter() as IncomingMessage;
-  const destroyMock = vi.fn();
+  const destroyMock: MockFn<IncomingMessage["destroy"]> = vi.fn();
   req.method = "POST";
   req.url = url;
   req.headers = {};

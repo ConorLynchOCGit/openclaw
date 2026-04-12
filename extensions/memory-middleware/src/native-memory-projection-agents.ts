@@ -1,4 +1,6 @@
-import type { MemoryMiddlewareDb, MemoryObjectRecord } from "./db/runtime.js";
+import { loadActiveMemorySlots } from "./active-memory-slots.js";
+import type { MemoryMiddlewareDb } from "./db/runtime.js";
+import { buildNativeMemoryProjectionCandidatesFromActiveSlots } from "./native-memory-projection-active-slots.js";
 import type { NativeMemoryProjectionSkippedRecord } from "./native-memory-projection-audit.js";
 import {
   NATIVE_MEMORY_PROJECTION_CHAR_BUDGETS,
@@ -7,20 +9,13 @@ import {
   trimProjectionCandidatesToBudget,
   type NativeMemoryProjectionSyncResult,
 } from "./native-memory-projection-compiler.js";
-import {
-  buildNativeMemoryProjectionCandidate,
-  type NativeMemoryProjectionCandidate,
-} from "./native-memory-projection-eligibility.js";
+import { type NativeMemoryProjectionCandidate } from "./native-memory-projection-eligibility.js";
 import {
   classifyAgentWorkspaceProjectionTargets,
   discoverSiblingAgentWorkspaceTargets,
   isSpecializedAgentProjectionAllowlisted,
   type AgentWorkspaceProjectionTarget,
 } from "./native-memory-projection-routing.js";
-import {
-  isAgentProjectionScope,
-  resolveNativeMemoryProjectionScope,
-} from "./native-memory-projection-scope.js";
 
 const AGENT_PROJECTION_TITLES = {
   "user-profile": "Compiled Agent User Memory",
@@ -44,27 +39,8 @@ type AgentProjectionGroup = {
   candidatesByTarget: Map<AgentProjectionTarget, NativeMemoryProjectionCandidate[]>;
 };
 
-async function loadApprovedAgentProjectionRecords(params: {
-  db: MemoryMiddlewareDb;
-  limitPerKind: number;
-}): Promise<MemoryObjectRecord[]> {
-  const records: MemoryObjectRecord[] = [];
-  for (const kind of ["user", "feedback"] as const) {
-    const result = await params.db.queries.listMemoryObjects({
-      scope: "approved_only",
-      kind,
-      limit: params.limitPerKind,
-    });
-    if (!result.accepted) {
-      throw new Error(`agent native projection query failed for ${kind}: ${result.reason}`);
-    }
-    records.push(
-      ...result.records.filter(
-        (record): record is MemoryObjectRecord => record.objectType === "memory_object",
-      ),
-    );
-  }
-  return records;
+function isAgentProjectionTarget(target: string): target is AgentProjectionTarget {
+  return target === "user-profile" || target === "tool-preferences";
 }
 
 export async function syncAgentBootstrapProjections(params: {
@@ -101,50 +77,38 @@ export async function syncAgentBootstrapProjections(params: {
       },
     ]),
   );
-  const records = await loadApprovedAgentProjectionRecords({
+  const slots = await loadActiveMemorySlots({
     db: params.db,
     limitPerKind: params.limitPerKind ?? 80,
+    includeProcedures: false,
   });
+  const sharedBaselineSlots = slots.filter(
+    (entry) =>
+      (entry.sourceMemoryKind === "user" || entry.sourceMemoryKind === "feedback") &&
+      entry.scopeKind === "shared" &&
+      entry.projectionTargets.some((target) => isAgentProjectionTarget(target)),
+  );
 
-  for (const record of records) {
-    const scope = resolveNativeMemoryProjectionScope(record);
-    if (!isAgentProjectionScope(scope)) {
-      skipped.push({
-        sourceId: record.id,
-        reason: "scope_filtered",
-        scopeKind: scope.kind,
-        ...(scope.agentKey ? { agentKey: scope.agentKey } : {}),
-      });
-      continue;
-    }
-    const agentKey = scope.agentKey;
+  for (const slot of slots.filter(
+    (entry) =>
+      (entry.sourceMemoryKind === "user" || entry.sourceMemoryKind === "feedback") &&
+      entry.scopeKind === "agent",
+  )) {
+    const agentKey = slot.agentKey;
     if (!agentKey) {
       skipped.push({
-        sourceId: record.id,
+        sourceId: slot.primarySourceId,
         reason: "missing_agent_key",
-        scopeKind: scope.kind,
+        scopeKind: slot.scopeKind,
       });
       continue;
     }
     const targetWorkspace = specializedTargets.get(agentKey);
     if (!targetWorkspace) {
       skipped.push({
-        sourceId: record.id,
+        sourceId: slot.primarySourceId,
         reason: "no_specialized_agent_workspace_target",
-        scopeKind: scope.kind,
-        agentKey,
-      });
-      continue;
-    }
-    const candidate = buildNativeMemoryProjectionCandidate(record);
-    if (
-      !candidate ||
-      (candidate.target !== "user-profile" && candidate.target !== "tool-preferences")
-    ) {
-      skipped.push({
-        sourceId: record.id,
-        reason: "ineligible_agent_projection_candidate",
-        scopeKind: scope.kind,
+        scopeKind: slot.scopeKind,
         agentKey,
       });
       continue;
@@ -153,9 +117,27 @@ export async function syncAgentBootstrapProjections(params: {
       target: targetWorkspace,
       candidatesByTarget: new Map<AgentProjectionTarget, NativeMemoryProjectionCandidate[]>(),
     };
-    const bucket = group.candidatesByTarget.get(candidate.target) ?? [];
-    bucket.push(candidate);
-    group.candidatesByTarget.set(candidate.target, bucket);
+    const slotCandidates = buildNativeMemoryProjectionCandidatesFromActiveSlots([slot]).filter(
+      (
+        candidate,
+      ): candidate is NativeMemoryProjectionCandidate & {
+        target: AgentProjectionTarget;
+      } => isAgentProjectionTarget(candidate.target),
+    );
+    if (slotCandidates.length === 0) {
+      skipped.push({
+        sourceId: slot.primarySourceId,
+        reason: "ineligible_agent_projection_candidate",
+        scopeKind: slot.scopeKind,
+        agentKey,
+      });
+      continue;
+    }
+    for (const candidate of slotCandidates) {
+      const bucket = group.candidatesByTarget.get(candidate.target) ?? [];
+      bucket.push(candidate);
+      group.candidatesByTarget.set(candidate.target, bucket);
+    }
     groups.set(agentKey, group);
   }
 
@@ -163,11 +145,28 @@ export async function syncAgentBootstrapProjections(params: {
   for (const group of [...groups.values()].toSorted((left, right) =>
     left.target.agentKey.localeCompare(right.target.agentKey),
   )) {
+    const inheritedCandidates = buildNativeMemoryProjectionCandidatesFromActiveSlots(
+      sharedBaselineSlots,
+    ).filter(
+      (
+        candidate,
+      ): candidate is NativeMemoryProjectionCandidate & {
+        target: AgentProjectionTarget;
+      } => isAgentProjectionTarget(candidate.target),
+    );
     for (const target of [
       "user-profile",
       "tool-preferences",
     ] as const satisfies AgentProjectionTarget[]) {
-      const candidates = group.candidatesByTarget.get(target) ?? [];
+      const candidates = [
+        ...inheritedCandidates.filter((candidate) => candidate.target === target),
+        ...(group.candidatesByTarget.get(target) ?? []),
+      ].toSorted(
+        (left, right) =>
+          right.priority - left.priority ||
+          Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
+          left.sourceId.localeCompare(right.sourceId),
+      );
       const trimmed = trimProjectionCandidatesToBudget({
         candidates,
         maxChars: NATIVE_MEMORY_PROJECTION_CHAR_BUDGETS[target],

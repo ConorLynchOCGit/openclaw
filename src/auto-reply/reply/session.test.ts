@@ -2142,6 +2142,89 @@ describe("persistSessionUsageUpdate", () => {
     expect(stored[sessionKey].outputTokens).toBe(456);
   });
 
+  it("annotates persisted systemPromptReport with prompt artifact drift", async () => {
+    const storePath = await createStorePath("openclaw-usage-prompt-artifacts-");
+    const sessionKey = "main";
+    await seedSessionStore({
+      storePath,
+      sessionKey,
+      entry: {
+        sessionId: "s1",
+        updatedAt: Date.now(),
+        systemPromptReport: {
+          source: "run",
+          generatedAt: Date.now() - 60_000,
+          promptArtifacts: {
+            fullSystemPromptHash: "full-a",
+            fullSystemPromptChars: 100,
+            baseSystemPromptHash: "base-a",
+            baseSystemPromptChars: 80,
+            injectedFilesHash: "inject-a",
+            injectedFilesChars: 12,
+            skillsHash: "skills-a",
+            skillsChars: 5,
+            toolsListHash: "tools-list-a",
+            toolsListChars: 6,
+            toolsSchemaHash: "tools-schema-a",
+            toolsSchemaChars: 18,
+          },
+          systemPrompt: {
+            chars: 100,
+            projectContextChars: 0,
+            nonProjectContextChars: 100,
+          },
+          injectedWorkspaceFiles: [],
+          skills: { promptChars: 0, entries: [] },
+          tools: { listChars: 0, schemaChars: 0, entries: [] },
+        },
+      },
+    });
+
+    await persistSessionUsageUpdate({
+      storePath,
+      sessionKey,
+      systemPromptReport: {
+        source: "run",
+        generatedAt: Date.now(),
+        promptArtifacts: {
+          fullSystemPromptHash: "full-b",
+          fullSystemPromptChars: 110,
+          baseSystemPromptHash: "base-a",
+          baseSystemPromptChars: 80,
+          memoryPackPromptHash: "memory-b",
+          memoryPackPromptChars: 30,
+          injectedFilesHash: "inject-a",
+          injectedFilesChars: 12,
+          skillsHash: "skills-a",
+          skillsChars: 5,
+          toolsListHash: "tools-list-a",
+          toolsListChars: 6,
+          toolsSchemaHash: "tools-schema-a",
+          toolsSchemaChars: 18,
+        },
+        systemPrompt: {
+          chars: 110,
+          projectContextChars: 0,
+          nonProjectContextChars: 110,
+        },
+        injectedWorkspaceFiles: [],
+        skills: { promptChars: 0, entries: [] },
+        tools: { listChars: 0, schemaChars: 0, entries: [] },
+      },
+      promptTokens: 11_000,
+      contextTokensUsed: 200_000,
+    });
+
+    const stored = JSON.parse(await fs.readFile(storePath, "utf-8"));
+    expect(stored[sessionKey].systemPromptReport.promptArtifactChanges).toEqual({
+      comparedToGeneratedAt: expect.any(Number),
+      changed: true,
+      changedTailOnly: true,
+      stablePrefixReusable: true,
+      reasons: ["memory_pack_presence_changed"],
+    });
+  });
+
   it("keeps non-clamped lastCallUsage totalTokens when exceeding context window", async () => {
     const storePath = await createStorePath("openclaw-usage-");
     const sessionKey = "main";

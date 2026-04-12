@@ -23,12 +23,39 @@ Latest structural runtime follow-through:
 - reduced remaining inline literal policy branching in
   `candidate-submit.ts` and `ordinary-turn-auto-capture.ts` into closed helper
   tables where the runtime behavior was already shared
+- derived active-memory slot normalization from approved canonical memory
+  records as a shared runtime truth layer
+- rebased native file projections onto active-memory slots instead of compiling
+  directly from raw approved objects
+- added compiled user/project memory packs through `before_prompt_build` so
+  approved memory can affect default turn assembly without rewriting the
+  harness
+- added prompt-report and soak-telemetry visibility for attached memory packs
+- added a closed-loop outcome proof tracker that records:
+  - pack attachment
+  - response observation
+  - turn-boundary survival without repeat correction
+  - repeated corrections against previously attached approved memory
+  - learned-guidance alignment with already attached approved sources
+- added prompt-artifact diagnostics that split:
+  - full final system prompt
+  - base non-memory prompt
+  - attached memory-pack segment
+  - injected workspace/skills/tool artifacts
+- surfaced those prompt-artifact diagnostics through `/context detail` so
+  cache-relevant prompt churn is visible without raw trace inspection
+- added session-level prompt-artifact drift classification so a run can now say:
+  - what changed versus the previous run
+  - whether only the tail changed
+  - whether the stable prefix is still reusable for cache planning
+- extended soak summaries from attached-pack counts to attached-pack outcome
+  rates so later soak analysis can judge effectiveness instead of raw volume
 
 ## Objective
 
-Keep collapsing transitional family-era runtime structure into explicit
-canonical/profile stages while preserving current behavior under fast-lane
-proof.
+Bridge durable memory into normal turn assembly through normalized slots and
+compiled packs while preserving the existing Postgres-ledger and native-file
+projection model.
 
 ## What is now landed
 
@@ -55,6 +82,17 @@ proof.
 - metadata-first project precedence for project-scoped agent memory
 - stale-aware host-side projection orchestration and status reporting
 - no schema change was required for the broader native-file tranche
+- active-memory slot compilation from approved durable memory records and
+  validated procedures
+- shared middleware context-control-plane port that compiles:
+  - user memory packs
+  - project memory packs
+  - optional procedure packs
+- middleware `before_prompt_build` injection of approved durable-memory packs
+- session prompt-report parsing of compiled memory-pack sections
+- soak-telemetry counters for memory-pack attachment volume
+- session-local outcome-proof telemetry for attached-pack follow-through and
+  repeated-correction proxies
 
 ### Landing-gate hardening
 
@@ -87,8 +125,13 @@ proof.
   runtime-critical paths
 - prefer shared canonical/profile helpers over repeated capture-class or
   family-id branching
-- stop when additional work would mostly reshuffle large behavior-heavy seams
-  instead of removing architectural duplication
+- keep pack selection deterministic and compact so future cache work has a
+  stable shape to optimize
+- keep prompt-artifact hashes and segment sizes truthful so future cache
+  planning can explain why prefixes changed instead of guessing
+- the bridge now has a first truthful outcome-proof loop, so the next likely
+  step is improving pack quality and applying the same proof discipline to any
+  future wider memory classes rather than adding more substrate tables
 
 ## What the soak period is for
 
@@ -147,6 +190,11 @@ Directly instrumented today:
   - family and scope distribution
   - specificity override and wrong-shape dominance proxies
   - filtered-by-scope and suppressed-conflict counts from learned guidance
+  - attached-pack outcomes:
+    - response observation after attachment
+    - next-turn survival without repeat correction
+    - repeated corrections after attached memory
+    - learned-guidance alignment with attached approved sources
 - review/promotion soak events now capture:
   - candidate review outcomes
   - deferred-overflow promotions
@@ -186,6 +234,9 @@ questions explicitly proxy-based.
 ## What is live but still bounded
 
 - Postgres remains canonical durable memory
+- active-memory slots now sit between the Postgres ledger and both:
+  - native compiled file projections
+  - per-turn compiled memory packs
 - native files remain one-way projections plus human-authored control surfaces
 - shared top-level `MEMORY.md` stays compact and pointer-oriented
 - project-local rollout starts from an explicit workspace allowlist rather than
@@ -198,6 +249,8 @@ questions explicitly proxy-based.
   mutation
 - stale-aware refresh is host-side and bounded; it is not native runtime cron
   and not per-turn mutation
+- per-turn durable-memory use now goes through compiled packs injected at prompt
+  build time, not raw ad hoc retrieval dumps
 - ordinary-turn immediate acceptance is still intentionally bounded even in
   bulk posture
 - deferred overflow is now durable evidence, but it is still a bounded queue

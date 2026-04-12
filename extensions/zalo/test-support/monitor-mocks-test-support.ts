@@ -1,3 +1,4 @@
+import type { MockFn } from "openclaw/plugin-sdk/testing";
 import type { OpenClawConfig, PluginRuntime } from "openclaw/plugin-sdk/zalo";
 import { vi } from "vitest";
 import {
@@ -30,14 +31,14 @@ const lifecycleMocks = vi.hoisted(() => ({
   getZaloRuntimeMock: vi.fn(),
 }));
 
-export const setWebhookMock = lifecycleMocks.setWebhookMock;
-export const deleteWebhookMock = lifecycleMocks.deleteWebhookMock;
-export const getWebhookInfoMock = lifecycleMocks.getWebhookInfoMock;
-export const getUpdatesMock = lifecycleMocks.getUpdatesMock;
-export const sendChatActionMock = lifecycleMocks.sendChatActionMock;
-export const sendMessageMock = lifecycleMocks.sendMessageMock;
-export const sendPhotoMock = lifecycleMocks.sendPhotoMock;
-export const getZaloRuntimeMock = lifecycleMocks.getZaloRuntimeMock;
+export const setWebhookMock: MockFn = lifecycleMocks.setWebhookMock;
+export const deleteWebhookMock: MockFn = lifecycleMocks.deleteWebhookMock;
+export const getWebhookInfoMock: MockFn = lifecycleMocks.getWebhookInfoMock;
+export const getUpdatesMock: MockFn = lifecycleMocks.getUpdatesMock;
+export const sendChatActionMock: MockFn = lifecycleMocks.sendChatActionMock;
+export const sendMessageMock: MockFn = lifecycleMocks.sendMessageMock;
+export const sendPhotoMock: MockFn = lifecycleMocks.sendPhotoMock;
+export const getZaloRuntimeMock: MockFn = lifecycleMocks.getZaloRuntimeMock;
 
 function installLifecycleModuleMocks() {
   vi.doMock(apiModuleId, async (importOriginal) => {

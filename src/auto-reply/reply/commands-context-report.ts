@@ -18,6 +18,18 @@ function formatCharsAndTokens(chars: number): string {
   return `${formatInt(chars)} chars (~${formatInt(estimateTokensFromChars(chars))} tok)`;
 }
 
+function formatArtifactHash(hash: string | undefined): string {
+  return hash ? hash.slice(0, 12) : "n/a";
+}
+
+function formatPromptArtifactReason(reason: string): string {
+  return reason.replaceAll("_", " ");
+}
+
+function formatSegmentClass(value: string): string {
+  return value.replaceAll("_", "-");
+}
+
 function parseContextArgs(commandBodyNormalized: string): string {
   if (commandBodyNormalized === "/context") {
     return "";
@@ -123,6 +135,80 @@ export async function buildContextReply(params: HandleCommandsParams): Promise<R
   const sandboxLine = `Sandbox: mode=${report.sandbox?.mode ?? "unknown"} sandboxed=${report.sandbox?.sandboxed ?? false}`;
   const toolSchemaLine = `Tool schemas (JSON): ${formatCharsAndTokens(report.tools.schemaChars)} (counts toward context; not shown as text)`;
   const toolListLine = `Tool list (system prompt text): ${formatCharsAndTokens(report.tools.listChars)}`;
+  const promptArtifacts = report.promptArtifacts;
+  const promptArtifactLines = promptArtifacts
+    ? [
+        `- full prompt: ${formatArtifactHash(promptArtifacts.fullSystemPromptHash)} | ${formatCharsAndTokens(promptArtifacts.fullSystemPromptChars)}`,
+        `- base prompt: ${formatArtifactHash(promptArtifacts.baseSystemPromptHash)} | ${formatCharsAndTokens(promptArtifacts.baseSystemPromptChars)}`,
+        ...(promptArtifacts.memoryPackPromptHash
+          ? [
+              `- memory packs: ${formatArtifactHash(promptArtifacts.memoryPackPromptHash)} | ${formatCharsAndTokens(promptArtifacts.memoryPackPromptChars ?? 0)}`,
+            ]
+          : []),
+        `- injected files: ${formatArtifactHash(promptArtifacts.injectedFilesHash)} | ${formatCharsAndTokens(promptArtifacts.injectedFilesChars)}`,
+        `- skills prompt: ${formatArtifactHash(promptArtifacts.skillsHash)} | ${formatCharsAndTokens(promptArtifacts.skillsChars)}`,
+        `- tool list text: ${formatArtifactHash(promptArtifacts.toolsListHash)} | ${formatCharsAndTokens(promptArtifacts.toolsListChars)}`,
+        `- tool schemas: ${formatArtifactHash(promptArtifacts.toolsSchemaHash)} | ${formatCharsAndTokens(promptArtifacts.toolsSchemaChars)}`,
+      ]
+    : [];
+  const contextSegments = report.contextSegments;
+  const contextSegmentSummaryLines = contextSegments
+    ? [
+        `- stable: ${formatCharsAndTokens(contextSegments.totals.stableChars)} | ${contextSegments.totals.stablePressure}`,
+        `- semi-stable: ${formatCharsAndTokens(contextSegments.totals.semiStableChars)} | ${contextSegments.totals.semiStablePressure}`,
+        `- volatile: ${formatCharsAndTokens(contextSegments.totals.volatileChars)} | ${contextSegments.totals.volatilePressure}`,
+        ...(contextSegments.usableBudgetTokens
+          ? [
+              `- usable budget: ~${formatInt(contextSegments.usableBudgetTokens)} tok (stable ${formatInt(contextSegments.policy.stableTargetTokens ?? 0)}, semi-stable ${formatInt(contextSegments.policy.semiStableTargetTokens ?? 0)}, volatile ${formatInt(contextSegments.policy.volatileTargetTokens ?? 0)})`,
+            ]
+          : []),
+      ]
+    : [];
+  const contextSegmentLines =
+    contextSegments?.segments.map(
+      (segment) =>
+        `- ${segment.label}: ${formatSegmentClass(segment.class)} | ${segment.owner} | ${formatCharsAndTokens(segment.chars)} | ${segment.budgetPressure}`,
+    ) ?? [];
+  const omittedSegmentLines =
+    contextSegments?.omittedSegments?.map(
+      (segment) =>
+        `- ${segment.label}: ${formatSegmentClass(segment.class)} omitted (${segment.reason.replaceAll("_", " ")})`,
+    ) ?? [];
+  const memoryPackLines =
+    report.memoryPacks?.entries.map(
+      (entry) =>
+        `- ${entry.title}: ${formatInt(entry.chars)} chars | ~${formatInt(entry.approxTokens)} tok | ${String(entry.itemCount)} entries` +
+        (entry.omittedItemCount > 0 ? ` | omitted ${String(entry.omittedItemCount)}` : ""),
+    ) ?? [];
+  const promptArtifactChangeLines = report.promptArtifactChanges
+    ? report.promptArtifactChanges.changed
+      ? [
+          `Prompt drift vs previous run: changed (${report.promptArtifactChanges.reasons
+            .map(formatPromptArtifactReason)
+            .join(", ")})`,
+          ...(report.promptArtifactChanges.segmentDrift
+            ? [
+                `Segment drift vs previous run: stable=${report.promptArtifactChanges.segmentDrift.stableChanged} semi-stable=${report.promptArtifactChanges.segmentDrift.semiStableChanged} volatile=${report.promptArtifactChanges.segmentDrift.volatileChanged}`,
+              ]
+            : []),
+          `Cache posture vs previous run: ${
+            report.promptArtifactChanges.stablePrefixReusable
+              ? report.promptArtifactChanges.changedTailOnly
+                ? "stable prefix reusable; changed tail only"
+                : "stable prefix reusable"
+              : "stable prefix changed"
+          }`,
+        ]
+      : [
+          "Prompt drift vs previous run: stable",
+          ...(report.promptArtifactChanges.segmentDrift
+            ? [
+                `Segment drift vs previous run: stable=${report.promptArtifactChanges.segmentDrift.stableChanged} semi-stable=${report.promptArtifactChanges.segmentDrift.semiStableChanged} volatile=${report.promptArtifactChanges.segmentDrift.volatileChanged}`,
+              ]
+            : []),
+          "Cache posture vs previous run: stable prefix reusable",
+        ]
+    : [];
   const skillNameSet = new Set(report.skills.entries.map((s) => s.name));
   const skillNames = Array.from(skillNameSet);
   const toolNames = report.tools.entries.map((t) => t.name);
@@ -201,6 +287,20 @@ export async function buildContextReply(params: HandleCommandsParams): Promise<R
     "",
     "Injected workspace files:",
     ...fileLines,
+    ...(memoryPackLines.length
+      ? [
+          "",
+          `Memory packs total: ${formatCharsAndTokens(report.memoryPacks?.promptChars ?? 0)}`,
+          ...memoryPackLines,
+        ]
+      : []),
+    ...(contextSegmentSummaryLines.length
+      ? ["", "Context segments:", ...contextSegmentSummaryLines]
+      : []),
+    ...(contextSegmentLines.length ? ["", "Segment ownership:", ...contextSegmentLines] : []),
+    ...(omittedSegmentLines.length ? ["", "Omitted segments:", ...omittedSegmentLines] : []),
+    ...(promptArtifactLines.length ? ["", "Prompt artifacts:", ...promptArtifactLines] : []),
+    ...(promptArtifactChangeLines.length ? ["", ...promptArtifactChangeLines] : []),
     "",
     skillsLine,
     skillsNamesLine,

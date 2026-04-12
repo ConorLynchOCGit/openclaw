@@ -1,3 +1,4 @@
+import type { MockFn } from "openclaw/plugin-sdk/testing";
 import { vi } from "vitest";
 
 const zaloJsMocks = vi.hoisted(() => ({
@@ -27,20 +28,20 @@ const zaloJsMocks = vi.hoisted(() => ({
   })),
 }));
 
-export const checkZaloAuthenticatedMock = zaloJsMocks.checkZaloAuthenticatedMock;
-export const getZaloUserInfoMock = zaloJsMocks.getZaloUserInfoMock;
-export const listZaloFriendsMock = zaloJsMocks.listZaloFriendsMock;
-export const listZaloFriendsMatchingMock = zaloJsMocks.listZaloFriendsMatchingMock;
-export const listZaloGroupMembersMock = zaloJsMocks.listZaloGroupMembersMock;
-export const listZaloGroupsMock = zaloJsMocks.listZaloGroupsMock;
-export const listZaloGroupsMatchingMock = zaloJsMocks.listZaloGroupsMatchingMock;
-export const logoutZaloProfileMock = zaloJsMocks.logoutZaloProfileMock;
-export const resolveZaloAllowFromEntriesMock = zaloJsMocks.resolveZaloAllowFromEntriesMock;
-export const resolveZaloGroupContextMock = zaloJsMocks.resolveZaloGroupContextMock;
-export const resolveZaloGroupsByEntriesMock = zaloJsMocks.resolveZaloGroupsByEntriesMock;
-export const startZaloListenerMock = zaloJsMocks.startZaloListenerMock;
-export const startZaloQrLoginMock = zaloJsMocks.startZaloQrLoginMock;
-export const waitForZaloQrLoginMock = zaloJsMocks.waitForZaloQrLoginMock;
+export const checkZaloAuthenticatedMock: MockFn = zaloJsMocks.checkZaloAuthenticatedMock;
+export const getZaloUserInfoMock: MockFn = zaloJsMocks.getZaloUserInfoMock;
+export const listZaloFriendsMock: MockFn = zaloJsMocks.listZaloFriendsMock;
+export const listZaloFriendsMatchingMock: MockFn = zaloJsMocks.listZaloFriendsMatchingMock;
+export const listZaloGroupMembersMock: MockFn = zaloJsMocks.listZaloGroupMembersMock;
+export const listZaloGroupsMock: MockFn = zaloJsMocks.listZaloGroupsMock;
+export const listZaloGroupsMatchingMock: MockFn = zaloJsMocks.listZaloGroupsMatchingMock;
+export const logoutZaloProfileMock: MockFn = zaloJsMocks.logoutZaloProfileMock;
+export const resolveZaloAllowFromEntriesMock: MockFn = zaloJsMocks.resolveZaloAllowFromEntriesMock;
+export const resolveZaloGroupContextMock: MockFn = zaloJsMocks.resolveZaloGroupContextMock;
+export const resolveZaloGroupsByEntriesMock: MockFn = zaloJsMocks.resolveZaloGroupsByEntriesMock;
+export const startZaloListenerMock: MockFn = zaloJsMocks.startZaloListenerMock;
+export const startZaloQrLoginMock: MockFn = zaloJsMocks.startZaloQrLoginMock;
+export const waitForZaloQrLoginMock: MockFn = zaloJsMocks.waitForZaloQrLoginMock;
 
 vi.mock("./zalo-js.js", () => ({
   checkZaloAuthenticated: checkZaloAuthenticatedMock,

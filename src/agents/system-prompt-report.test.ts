@@ -189,4 +189,67 @@ describe("buildSystemPromptReport", () => {
     });
     expect(report.injectedWorkspaceFiles[0]?.priorityTier).toBe("must_survive");
   });
+
+  it("extracts compiled memory pack diagnostics from the final system prompt", () => {
+    const file = makeBootstrapFile({ path: "/tmp/workspace/policies/AGENTS.md" });
+    const report = buildSystemPromptReport({
+      source: "run",
+      generatedAt: 0,
+      bootstrapMaxChars: 20_000,
+      systemPrompt: "system",
+      bootstrapFiles: [file],
+      injectedFiles: [{ path: "/tmp/workspace/policies/AGENTS.md", content: "trimmed" }],
+      skillsPrompt: "",
+      tools: [],
+      segmentPlanInput: {
+        promptPrependContext: [
+          "## Approved Durable Memory Context",
+          "",
+          "## User Memory Pack",
+          "",
+          "- Prefer concise answers.",
+          "- Prefer plain English.",
+          "",
+          "## Project Memory Pack",
+          "",
+          "- default branch: main",
+        ].join("\n"),
+      },
+    });
+
+    expect(report.memoryPacks?.entries.map((entry) => entry.kind)).toEqual(["user", "project"]);
+    expect(report.memoryPacks?.entries[0]).toMatchObject({
+      title: "User Memory Pack",
+      itemCount: 2,
+      omittedItemCount: 0,
+    });
+    expect(report.memoryPacks?.entries[0]?.hash).toMatch(/^[a-f0-9]{16}$/u);
+    expect(report.memoryPacks?.entries[0]?.approxTokens).toBeGreaterThan(0);
+    expect(report.memoryPacks?.promptChars).toBeGreaterThan(0);
+    expect(report.promptArtifacts).toMatchObject({
+      fullSystemPromptChars: expect.any(Number),
+      baseSystemPromptChars: expect.any(Number),
+      memoryPackPromptChars: expect.any(Number),
+      injectedFilesChars: "trimmed".length,
+      skillsChars: 0,
+      toolsListChars: 0,
+      toolsSchemaChars: 0,
+    });
+    expect(report.promptArtifacts?.fullSystemPromptHash).toMatch(/^[a-f0-9]{16}$/u);
+    expect(report.promptArtifacts?.baseSystemPromptHash).toMatch(/^[a-f0-9]{16}$/u);
+    expect(report.promptArtifacts?.memoryPackPromptHash).toMatch(/^[a-f0-9]{16}$/u);
+    expect(report.promptArtifacts?.fullSystemPromptHash).not.toBe(
+      report.promptArtifacts?.memoryPackPromptHash,
+    );
+    expect(report.promptArtifacts?.baseSystemPromptChars).toBe(
+      report.promptArtifacts?.fullSystemPromptChars,
+    );
+    expect(report.contextSegments?.segments.map((segment) => segment.id)).toEqual([
+      "base_system_prompt",
+      "approved_memory_context_prompt",
+    ]);
+    expect(report.contextSegments?.totals.stableTokens).toBeGreaterThan(0);
+    expect(report.contextSegments?.totals.semiStableTokens).toBeGreaterThan(0);
+    expect(report.contextSegments?.totals.volatileTokens).toBe(0);
+  });
 });

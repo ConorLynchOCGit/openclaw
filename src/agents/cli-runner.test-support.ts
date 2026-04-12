@@ -6,14 +6,15 @@ import { buildOpenAICodexCliBackend } from "../../extensions/openai/test-api.js"
 import type { OpenClawConfig } from "../config/config.js";
 import { createEmptyPluginRegistry } from "../plugins/registry.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
+import type { MockFn } from "../test-utils/vitest-mock-fn.js";
 import { setCliRunnerExecuteTestDeps } from "./cli-runner/execute.js";
 import { setCliRunnerPrepareTestDeps } from "./cli-runner/prepare.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
 import type { WorkspaceBootstrapFile } from "./workspace.js";
 
-export const supervisorSpawnMock = vi.fn();
-export const enqueueSystemEventMock = vi.fn();
-export const requestHeartbeatNowMock = vi.fn();
+export const supervisorSpawnMock: MockFn = vi.fn();
+export const enqueueSystemEventMock: MockFn = vi.fn();
+export const requestHeartbeatNowMock: MockFn = vi.fn();
 export const SMALL_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/woAAn8B9FD5fHAAAAAASUVORK5CYII=";
 
@@ -71,7 +72,16 @@ type TestCliBackendConfig = {
   clearEnv?: string[];
 };
 
-export function createManagedRun(exit: MockRunExit, pid = 1234) {
+type ManagedRun = {
+  runId: string;
+  pid: number;
+  startedAtMs: number;
+  stdin: undefined;
+  wait: MockFn<() => Promise<MockRunExit>>;
+  cancel: MockFn;
+};
+
+export function createManagedRun(exit: MockRunExit, pid = 1234): ManagedRun {
   return {
     runId: "run-supervisor",
     pid,

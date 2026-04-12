@@ -44,6 +44,14 @@ import {
   createLearnedGuidanceAdvisoryPlanningPort,
   type LearnedGuidanceAdvisoryPlanningPort,
 } from "./learned-guidance-advisory-planning.js";
+import {
+  createMemoryContextControlPlanePort,
+  type MemoryContextControlPlanePort,
+} from "./memory-context-control-plane.js";
+import {
+  createMemoryContextOutcomeProofPort,
+  type MemoryContextOutcomeProofPort,
+} from "./memory-context-outcome-proof.js";
 import { createMemoryObjectQueryPort, type MemoryObjectQueryPort } from "./memory-object-query.js";
 import {
   observeCandidateIngressPort,
@@ -120,6 +128,8 @@ import { createToolResultStorePort, type ToolResultStorePort } from "./tool-resu
 export type MemoryMiddlewareRuntime = {
   config: MemoryMiddlewareConfig;
   soakTelemetry: MemorySoakTelemetryPort;
+  contextControl: MemoryContextControlPlanePort;
+  outcomeProof: MemoryContextOutcomeProofPort;
   db: MemoryMiddlewareDb;
   candidateIngress: CandidateIngressPort;
   selfImprovingCandidateCapture: SelfImprovingCandidateCapturePort;
@@ -181,6 +191,10 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
   const soakTelemetry = createMemorySoakTelemetryPort({
     logger: api.logger,
   });
+  const memoryContextOutcomeProof = createMemoryContextOutcomeProofPort({
+    telemetry: soakTelemetry,
+    logger: api.logger,
+  });
   const rawCandidateIngress = createCandidateIngressPort({
     db,
     enabled: automation.submit,
@@ -196,6 +210,7 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
   const candidateIngress = observeCandidateIngressPort({
     port: rawCandidateIngress,
     telemetry: soakTelemetry,
+    outcomeProof: memoryContextOutcomeProof,
   });
   const candidateReview = observeCandidateReviewPort({
     port: rawCandidateReview,
@@ -270,10 +285,17 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
     port: rawCompactionPlanning,
     telemetry: soakTelemetry,
   });
+  const contextControl = createMemoryContextControlPlanePort({
+    db,
+    logger: api.logger,
+    telemetry: soakTelemetry,
+  });
 
   return {
     config,
     soakTelemetry,
+    contextControl,
+    outcomeProof: memoryContextOutcomeProof,
     db,
     candidateIngress,
     selfImprovingCandidateCapture: createSelfImprovingCandidateCapturePort({

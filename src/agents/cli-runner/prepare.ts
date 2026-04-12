@@ -162,6 +162,9 @@ export async function prepareCliRunContext(
     injectedFiles: contextFiles,
     skillsPrompt: "",
     tools: [],
+    segmentPlanInput: {
+      currentPrompt: params.prompt,
+    },
   });
 
   return {

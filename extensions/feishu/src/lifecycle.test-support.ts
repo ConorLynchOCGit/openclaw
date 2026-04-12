@@ -1,3 +1,4 @@
+import type { MockFn } from "openclaw/plugin-sdk/testing";
 import { vi } from "vitest";
 
 type BoundConversation = {
@@ -25,7 +26,27 @@ const feishuLifecycleTestMocks = vi.hoisted(() => ({
   sendCardFeishuMock: vi.fn(async () => ({ messageId: "om_card", chatId: "chat_default" })),
 }));
 
-export function getFeishuLifecycleTestMocks() {
+type FeishuLifecycleTestMocks = {
+  createEventDispatcherMock: MockFn;
+  monitorWebSocketMock: MockFn;
+  monitorWebhookMock: MockFn;
+  createFeishuThreadBindingManagerMock: MockFn;
+  createFeishuReplyDispatcherMock: MockFn;
+  resolveBoundConversationMock: MockFn<() => BoundConversation | null>;
+  touchBindingMock: MockFn;
+  resolveAgentRouteMock: MockFn;
+  resolveConfiguredBindingRouteMock: MockFn;
+  ensureConfiguredBindingRouteReadyMock: MockFn;
+  dispatchReplyFromConfigMock: MockFn;
+  withReplyDispatcherMock: MockFn;
+  finalizeInboundContextMock: MockFn<(ctx: unknown) => unknown>;
+  getMessageFeishuMock: MockFn;
+  listFeishuThreadMessagesMock: MockFn;
+  sendMessageFeishuMock: MockFn;
+  sendCardFeishuMock: MockFn;
+};
+
+export function getFeishuLifecycleTestMocks(): FeishuLifecycleTestMocks {
   return feishuLifecycleTestMocks;
 }
 

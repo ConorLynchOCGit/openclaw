@@ -1,7 +1,22 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import { composeContextPromptAssembly } from "../../../context-engine/prompt-assembly.js";
 import type { ContextEngine, ContextEngineRuntimeContext } from "../../../context-engine/types.js";
+import type {
+  PluginHookAgentContext,
+  PluginHookBeforeAgentStartResult,
+  PluginHookBeforePromptBuildResult,
+} from "../../../plugins/types.js";
+import type { PromptBuildHookRunner } from "./attempt.prompt-helpers.js";
+import { resolvePromptBuildHookResult } from "./attempt.prompt-helpers.js";
 
 export type AttemptContextEngine = ContextEngine;
+export type AttemptManagedContextAssemblyResult = {
+  messages: AgentMessage[];
+  systemPrompt: string;
+  prompt: string;
+  contextEngineSystemPromptAddition?: string;
+  hookResult: PluginHookBeforePromptBuildResult;
+};
 
 export async function runAttemptContextEngineBootstrap(params: {
   hadSessionFile: boolean;
@@ -70,6 +85,58 @@ export async function assembleAttemptContextEngine(params: {
     model: params.modelId,
     ...(params.prompt !== undefined ? { prompt: params.prompt } : {}),
   });
+}
+
+export async function assembleAttemptManagedContext(params: {
+  contextEngine?: AttemptContextEngine;
+  sessionId: string;
+  sessionKey?: string;
+  messages: AgentMessage[];
+  tokenBudget?: number;
+  modelId: string;
+  prompt: string;
+  baseSystemPrompt: string;
+  hookCtx: PluginHookAgentContext;
+  hookRunner?: PromptBuildHookRunner | null;
+  legacyBeforeAgentStartResult?: PluginHookBeforeAgentStartResult;
+}): Promise<AttemptManagedContextAssemblyResult> {
+  const assembled = await assembleAttemptContextEngine({
+    contextEngine: params.contextEngine,
+    sessionId: params.sessionId,
+    sessionKey: params.sessionKey,
+    messages: params.messages,
+    tokenBudget: params.tokenBudget,
+    modelId: params.modelId,
+    prompt: params.prompt,
+  });
+
+  const messages = assembled?.messages ?? params.messages;
+  const hookResult = await resolvePromptBuildHookResult({
+    prompt: params.prompt,
+    messages,
+    hookCtx: params.hookCtx,
+    hookRunner: params.hookRunner,
+    legacyBeforeAgentStartResult: params.legacyBeforeAgentStartResult,
+  });
+  const promptAssembly = composeContextPromptAssembly({
+    baseSystemPrompt: params.baseSystemPrompt,
+    basePrompt: params.prompt,
+    contextEngineSystemPromptAddition: assembled?.systemPromptAddition,
+    hookSystemPromptOverride: hookResult.systemPrompt,
+    hookPrependSystemContext: hookResult.prependSystemContext,
+    hookAppendSystemContext: hookResult.appendSystemContext,
+    hookPrependContext: hookResult.prependContext,
+  });
+
+  return {
+    messages,
+    systemPrompt: promptAssembly.systemPrompt,
+    prompt: promptAssembly.prompt,
+    ...(assembled?.systemPromptAddition
+      ? { contextEngineSystemPromptAddition: assembled.systemPromptAddition }
+      : {}),
+    hookResult,
+  };
 }
 
 export async function finalizeAttemptContextEngineTurn(params: {

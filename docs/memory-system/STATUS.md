@@ -167,10 +167,83 @@ duplicating normalization, resolver, detector, and scope logic.
 The current execution posture is now a soak period rather than another
 pre-scheduled feature tranche.
 
+The memory-to-context bridge tranche on 2026-04-12 is now also landed locally
+through:
+
+- a derived `active-memory-slots` layer that normalizes approved durable memory
+  into one shared runtime truth for scope, category, supersession shape, and
+  projection eligibility
+- native shared/project/agent projections now compiling from slots instead of
+  directly from raw approved objects
+- a middleware context-control-plane port that compiles small user/project
+  memory packs for ordinary turn assembly
+- `before_prompt_build` injection of approved durable-memory packs so memory
+  can shape default runs without moving prompt logic into the harness
+- prompt-report parsing and soak-telemetry counters for attached memory-pack
+  sections
+
+No schema change was required for this bridge tranche.
+
+The closed-loop outcome-proof follow-through on 2026-04-12 is now also landed
+locally through:
+
+- a shared outcome-proof tracker keyed to the same deterministic approved-memory
+  packs attached at prompt-build time
+- application telemetry that now distinguishes:
+  - pack attachment
+  - response observation after attachment
+  - survival to the next turn boundary without repeat correction
+  - repeated corrections against previously attached approved-memory semantics
+  - learned-guidance alignment with approved sources that were already attached
+- shared semantic slot-key normalization so corrective candidates and attached
+  approved-memory packs can be compared by canonical meaning instead of brittle
+  family/category identity
+
+No schema change was required for this outcome-proof follow-through.
+
+The prompt-artifact observability follow-through on 2026-04-12 is now also
+landed locally through:
+
+- self-contained prompt-artifact hashes and char counts in
+  `systemPromptReport` for:
+  - the full final system prompt
+  - the base prompt without attached durable-memory packs
+  - the attached memory-pack segment when present
+  - injected workspace content
+  - skills prompt text
+  - tool-list and tool-schema artifacts
+- `/context detail` output that now exposes those prompt artifacts directly so
+  cache-relevant prompt-shape drift can be inspected without enabling raw cache
+  traces
+- persisted prompt-artifact change classification across runs, including:
+  - component-level drift reasons
+  - whether only the attached-memory tail changed
+  - whether the stable prompt prefix is still reusable
+- operator-facing `/context detail` output that now reports both prompt drift
+  reasons and cache-posture classification
+
+No schema change was required for this prompt-artifact follow-through.
+
+The memory outcome-measurement follow-through on 2026-04-12 is now also landed
+locally through:
+
+- derived effectiveness rates on top of the attached-memory outcome counters,
+  including:
+  - attachment-to-response rate
+  - survival-after-response rate
+  - repeated-correction-after-response rate
+  - guidance-alignment rate
+- operator-summary rendering that now exposes those rates directly instead of
+  only raw counts
+
+No schema change was required for this measurement follow-through.
+
 During soak, the repo should prioritize:
 
 - observing how often the new capture/posture/overflow paths actually fire
 - measuring review burden and retrieval usefulness
+- measuring whether attached approved-memory packs survive later turns without
+  triggering matching corrections
 - reviewing the durable soak summaries instead of relying on ad hoc logs
 - collecting enough evidence to choose the next memory build honestly
 - keeping remaining roadmap items unscheduled until that evidence exists
@@ -250,6 +323,9 @@ Live substrate properties:
   surface
 - a shared canonical-first metadata reader used by retrieval control and
   candidate submission instead of legacy `autoCapture` reads
+- a slot-to-pack bridge between the Postgres ledger and prompt assembly, so
+  the runtime no longer has to choose between raw retrieval dumps and static
+  native-file projections
 - a dedicated Main canonical-memory planner surface in
   `src/agents/main-memory-routing.ts`
 - thinner OpenAI wrapper routing that applies the planner decision instead of

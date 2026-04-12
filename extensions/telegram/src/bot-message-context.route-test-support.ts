@@ -1,10 +1,11 @@
+import type { MockFn } from "openclaw/plugin-sdk/testing";
 import { vi } from "vitest";
 
 const hoisted = vi.hoisted(() => ({
   recordInboundSessionMock: vi.fn().mockResolvedValue(undefined),
 }));
 
-export const recordInboundSessionMock = hoisted.recordInboundSessionMock;
+export const recordInboundSessionMock: MockFn = hoisted.recordInboundSessionMock;
 
 vi.mock("openclaw/plugin-sdk/conversation-runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("openclaw/plugin-sdk/conversation-runtime")>();

@@ -7,6 +7,7 @@ import type { OpenClawPluginApi } from "./runtime-api.js";
 function createApi() {
   const registerService = vi.fn();
   const registerTool = vi.fn();
+  const on = vi.fn();
   const api = createTestPluginApi({
     id: "memory-middleware",
     name: "Memory Middleware",
@@ -15,19 +16,20 @@ function createApi() {
     runtime: {} as OpenClawPluginApi["runtime"],
     registerService,
     registerTool,
+    on,
   }) as OpenClawPluginApi;
 
-  return { api, registerService, registerTool };
+  return { api, registerService, registerTool, on };
 }
 
 describe("memory-middleware plugin", () => {
   it("keeps the plugin non-exclusive while registering the bounded middleware tool surfaces", () => {
-    const { api, registerService, registerTool } = createApi();
+    const { api, registerService, registerTool, on } = createApi();
 
     memoryMiddlewarePlugin.register(api);
 
     expect(memoryMiddlewarePlugin).not.toHaveProperty("kind");
-    expect(registerTool).toHaveBeenCalledTimes(43);
+    expect(registerTool).toHaveBeenCalledTimes(24);
     const toolNames = registerTool.mock.calls.map((call) => {
       const toolFactory = call[0] as OpenClawPluginToolFactory;
       const tool = toolFactory({ sessionId: "session-1", agentId: "agent-1" });
@@ -37,9 +39,6 @@ describe("memory-middleware plugin", () => {
     });
     expect(toolNames).toEqual([
       "memory_candidate_submit",
-      "memory_self_improving_capture_candidate",
-      "memory_candidate_list",
-      "memory_candidate_get",
       "memory_object_list",
       "memory_object_get",
       "memory_object_search_basic",
@@ -63,26 +62,13 @@ describe("memory-middleware plugin", () => {
       "memory_background_job_list",
       "memory_background_job_get",
       "memory_background_job_run_next",
-      "memory_candidate_review",
-      "memory_candidate_promote_plan",
-      "memory_candidate_promote_memory",
-      "memory_candidate_promote_procedure",
-      "memory_procedure_validate_plan",
-      "memory_procedure_validate",
-      "memory_skill_candidate_approval_plan",
-      "memory_skill_candidate_approve",
-      "memory_skill_candidate_install_handoff",
-      "memory_skill_candidate_install_record_create",
-      "memory_skill_candidate_plan",
-      "memory_skill_candidate_create",
-      "memory_skill_candidate_procurement_plan",
-      "memory_skill_candidate_procurement_record_create",
-      "memory_skill_candidate_skill_vetter_handoff",
-      "memory_skill_candidate_vetting_result_record",
     ]);
     expect(registerService).toHaveBeenCalledTimes(1);
     expect(registerService).toHaveBeenCalledWith(
       expect.objectContaining({ id: "memory-middleware-base" }),
     );
+    expect(on).toHaveBeenCalledWith("before_prompt_build", expect.any(Function));
+    expect(on).toHaveBeenCalledWith("llm_output", expect.any(Function));
+    expect(on).toHaveBeenCalledWith("after_tool_call", expect.any(Function));
   });
 });

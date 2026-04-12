@@ -98,6 +98,67 @@ describe("memory soak telemetry", () => {
         },
         {
           schemaVersion: 1,
+          recordedAt: "2026-04-10T10:03:30.000Z",
+          category: "application",
+          action: "memory_context_outcome",
+          source: "memory_context_outcome_tracker",
+          outcome: "pack_attached",
+          attribution: "observational",
+          runId: "run-1",
+          sessionId: "session-1",
+          agentId: "main",
+          packCount: 2,
+          packKinds: ["user", "project"],
+          attachedSlotCount: 2,
+        },
+        {
+          schemaVersion: 1,
+          recordedAt: "2026-04-10T10:03:40.000Z",
+          category: "application",
+          action: "memory_context_outcome",
+          source: "memory_context_outcome_tracker",
+          outcome: "response_observed",
+          attribution: "observational",
+          runId: "run-1",
+          sessionId: "session-1",
+          agentId: "main",
+          packCount: 2,
+          packKinds: ["user", "project"],
+          attachedSlotCount: 2,
+        },
+        {
+          schemaVersion: 1,
+          recordedAt: "2026-04-10T10:03:50.000Z",
+          category: "application",
+          action: "memory_context_outcome",
+          source: "memory_context_outcome_tracker",
+          outcome: "survived_turn_boundary",
+          attribution: "proxy",
+          runId: "run-1",
+          sessionId: "session-1",
+          agentId: "main",
+          packCount: 2,
+          packKinds: ["user", "project"],
+          attachedSlotCount: 2,
+        },
+        {
+          schemaVersion: 1,
+          recordedAt: "2026-04-10T10:03:55.000Z",
+          category: "application",
+          action: "memory_context_outcome",
+          source: "memory_context_outcome_tracker",
+          outcome: "guidance_missed",
+          attribution: "causal",
+          runId: "run-1",
+          sessionId: "session-1",
+          agentId: "main",
+          packCount: 2,
+          packKinds: ["user", "project"],
+          attachedSlotCount: 2,
+          suggestionCount: 0,
+        },
+        {
+          schemaVersion: 1,
           recordedAt: "2026-04-10T10:04:00.000Z",
           category: "review",
           action: "candidate_review",
@@ -198,6 +259,16 @@ describe("memory soak telemetry", () => {
       expect(summary.capture.deferredOverflowCount).toBe(4);
       expect(summary.retrieval.strongerScopePresentBelowTopCount).toBe(1);
       expect(summary.application.filteredOutByScopeCount).toBe(1);
+      expect(summary.application.memoryContextAttachments).toBe(1);
+      expect(summary.application.memoryContextResponses).toBe(1);
+      expect(summary.application.survivedTurnBoundaryCount).toBe(1);
+      expect(summary.application.memoryContextResponseRate).toBe(1);
+      expect(summary.application.survivalAfterResponseRate).toBe(1);
+      expect(summary.application.repeatedCorrectionAfterResponseRate).toBe(0);
+      expect(summary.application.repeatedCorrectionAvoidanceRate).toBe(1);
+      expect(summary.application.guidanceAlignmentRate).toBe(0);
+      expect(summary.application.guidanceMissCount).toBe(1);
+      expect(summary.application.causalGuidanceUsefulnessRate).toBe(0);
       expect(summary.review.deferredOverflowPromotions).toBe(1);
       expect(summary.projection.runs).toBe(1);
       expect(summary.orchestration.factDenseSessionMemoryCount).toBe(1);
@@ -208,6 +279,12 @@ describe("memory soak telemetry", () => {
       );
       expect(renderMemorySoakTelemetryOperatorSummary(summary)).toContain(
         "# Memory Soak Telemetry Summary",
+      );
+      expect(renderMemorySoakTelemetryOperatorSummary(summary)).toContain(
+        "- memory_context_response_rate: 100.0%",
+      );
+      expect(renderMemorySoakTelemetryOperatorSummary(summary)).toContain(
+        "- causal_guidance_missed_with_attached_memory: 1",
       );
       expect(renderMemorySoakTelemetryDailyBrief(summary)).toContain("memory_soak:");
       expect(latestSummary).toContain("Corpus Demand Signals");

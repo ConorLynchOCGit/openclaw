@@ -170,6 +170,33 @@ export type MemorySoakApplicationEvent = MemorySoakTelemetryBaseEvent & {
   suppressedConflictSubjectKeys: string[];
 };
 
+export type MemorySoakMemoryContextOutcomeEvent = MemorySoakTelemetryBaseEvent & {
+  category: "application";
+  action: "memory_context_outcome";
+  source: "memory_context_outcome_tracker";
+  outcome:
+    | "pack_attached"
+    | "response_observed"
+    | "survived_turn_boundary"
+    | "repeated_correction"
+    | "guidance_aligned"
+    | "guidance_missed";
+  attribution?: "observational" | "proxy" | "causal";
+  runId?: string;
+  sessionId?: string;
+  agentId?: string;
+  packCount?: number;
+  packKinds?: string[];
+  attachedSlotCount?: number;
+  omittedSlotCount?: number;
+  matchedSlotCount?: number;
+  matchedSlotKeys?: string[];
+  matchedSourceIds?: string[];
+  correctionKind?: "learning" | "correction" | "procedure" | "improvement";
+  suggestionCount?: number;
+  packHash?: string;
+};
+
 export type MemorySoakReviewEvent = MemorySoakTelemetryBaseEvent & {
   category: "review";
   action: "candidate_review" | "candidate_promotion";
@@ -206,8 +233,12 @@ export type MemorySoakProjectionEvent = MemorySoakTelemetryBaseEvent & {
 
 export type MemorySoakOrchestrationEvent = MemorySoakTelemetryBaseEvent & {
   category: "orchestration";
-  action: "native_sync_run" | "session_memory_update" | "compaction_plan";
-  source: "memory_native_sync" | "session_memory" | "compaction_planning";
+  action: "native_sync_run" | "session_memory_update" | "compaction_plan" | "memory_context_pack";
+  source:
+    | "memory_native_sync"
+    | "session_memory"
+    | "compaction_planning"
+    | "memory_context_control_plane";
   write?: boolean;
   scopes?: string[];
   workspaceDir?: string;
@@ -223,6 +254,10 @@ export type MemorySoakOrchestrationEvent = MemorySoakTelemetryBaseEvent & {
   estimatedPromptTokenThreshold?: number;
   clearCandidateCount?: number;
   sessionMemoryStatus?: string;
+  packCount?: number;
+  packKinds?: string[];
+  attachedSlotCount?: number;
+  omittedSlotCount?: number;
 };
 
 export type MemorySoakTelemetryEvent =
@@ -230,6 +265,7 @@ export type MemorySoakTelemetryEvent =
   | MemorySoakCaptureCandidateEvent
   | MemorySoakRetrievalEvent
   | MemorySoakApplicationEvent
+  | MemorySoakMemoryContextOutcomeEvent
   | MemorySoakReviewEvent
   | MemorySoakProjectionEvent
   | MemorySoakOrchestrationEvent;
@@ -279,6 +315,19 @@ export type MemorySoakTelemetrySummary = {
     filteredOutByScopeCount: number;
     suggestionCount: number;
     suppressedConflictCount: number;
+    memoryContextAttachments: number;
+    memoryContextResponses: number;
+    survivedTurnBoundaryCount: number;
+    repeatedCorrectionAfterAttachmentCount: number;
+    guidanceAlignedCount: number;
+    guidanceMissCount: number;
+    matchedRepeatedCorrectionSlots: number;
+    memoryContextResponseRate: number | null;
+    survivalAfterResponseRate: number | null;
+    repeatedCorrectionAfterResponseRate: number | null;
+    repeatedCorrectionAvoidanceRate: number | null;
+    guidanceAlignmentRate: number | null;
+    causalGuidanceUsefulnessRate: number | null;
   };
   review: {
     candidateReviews: number;
@@ -305,6 +354,9 @@ export type MemorySoakTelemetrySummary = {
     dryRuns: number;
     sessionMemoryUpdates: number;
     compactionPlans: number;
+    memoryContextPackBuilds: number;
+    attachedMemorySlots: number;
+    omittedMemorySlots: number;
     highCompactionPressureCount: number;
     factDenseSessionMemoryCount: number;
   };
@@ -338,6 +390,20 @@ function incrementCounter<T extends string>(
   amount = 1,
 ): void {
   counts[key] = (counts[key] ?? 0) + amount;
+}
+
+function ratio(numerator: number, denominator: number): number | null {
+  if (!Number.isFinite(denominator) || denominator <= 0) {
+    return null;
+  }
+  return numerator / denominator;
+}
+
+function formatPercent(value: number | null): string {
+  if (value === null) {
+    return "n/a";
+  }
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 async function ensureDir(dir: string): Promise<void> {
@@ -429,6 +495,9 @@ function buildAttentionFlags(summary: MemorySoakTelemetrySummary): string[] {
   if (summary.application.filteredOutByScopeCount > 0) {
     flags.push("some learned-guidance records were filtered out by scope");
   }
+  if (summary.application.repeatedCorrectionAfterAttachmentCount > 0) {
+    flags.push("some runs attached approved memory but still received matching later corrections");
+  }
   if (summary.retrieval.conflictingSubjectCount > 0) {
     flags.push(
       "retrieval saw competing subject clusters that may justify later relation or precedence work",
@@ -492,6 +561,19 @@ export function buildMemorySoakTelemetrySummary(params: {
       filteredOutByScopeCount: 0,
       suggestionCount: 0,
       suppressedConflictCount: 0,
+      memoryContextAttachments: 0,
+      memoryContextResponses: 0,
+      survivedTurnBoundaryCount: 0,
+      repeatedCorrectionAfterAttachmentCount: 0,
+      guidanceAlignedCount: 0,
+      guidanceMissCount: 0,
+      matchedRepeatedCorrectionSlots: 0,
+      memoryContextResponseRate: null,
+      survivalAfterResponseRate: null,
+      repeatedCorrectionAfterResponseRate: null,
+      repeatedCorrectionAvoidanceRate: null,
+      guidanceAlignmentRate: null,
+      causalGuidanceUsefulnessRate: null,
     },
     review: {
       candidateReviews: 0,
@@ -518,6 +600,9 @@ export function buildMemorySoakTelemetrySummary(params: {
       dryRuns: 0,
       sessionMemoryUpdates: 0,
       compactionPlans: 0,
+      memoryContextPackBuilds: 0,
+      attachedMemorySlots: 0,
+      omittedMemorySlots: 0,
       highCompactionPressureCount: 0,
       factDenseSessionMemoryCount: 0,
     },
@@ -599,22 +684,44 @@ export function buildMemorySoakTelemetrySummary(params: {
         }
         break;
       case "application":
-        summary.application.guidancePlans += 1;
-        if (event.accepted) {
-          summary.application.acceptedPlans += 1;
+        if (event.action === "learned_guidance_plan") {
+          summary.application.guidancePlans += 1;
+          if (event.accepted) {
+            summary.application.acceptedPlans += 1;
+          }
+          if (event.suggestionCount > 0) {
+            summary.application.plansWithSuggestions += 1;
+          }
+          if (event.noGuidanceDespiteRetrieval) {
+            summary.application.noGuidanceDespiteRetrievalCount += 1;
+          }
+          if (event.wrongShapeDominanceProxy) {
+            summary.application.wrongShapeDominanceProxyCount += 1;
+          }
+          summary.application.filteredOutByScopeCount += event.filteredOutByScopeCount;
+          summary.application.suggestionCount += event.suggestionCount;
+          summary.application.suppressedConflictCount += event.suppressedConflictCount;
+          break;
         }
-        if (event.suggestionCount > 0) {
-          summary.application.plansWithSuggestions += 1;
+        if (event.outcome === "pack_attached") {
+          summary.application.memoryContextAttachments += 1;
         }
-        if (event.noGuidanceDespiteRetrieval) {
-          summary.application.noGuidanceDespiteRetrievalCount += 1;
+        if (event.outcome === "response_observed") {
+          summary.application.memoryContextResponses += 1;
         }
-        if (event.wrongShapeDominanceProxy) {
-          summary.application.wrongShapeDominanceProxyCount += 1;
+        if (event.outcome === "survived_turn_boundary") {
+          summary.application.survivedTurnBoundaryCount += 1;
         }
-        summary.application.filteredOutByScopeCount += event.filteredOutByScopeCount;
-        summary.application.suggestionCount += event.suggestionCount;
-        summary.application.suppressedConflictCount += event.suppressedConflictCount;
+        if (event.outcome === "repeated_correction") {
+          summary.application.repeatedCorrectionAfterAttachmentCount += 1;
+          summary.application.matchedRepeatedCorrectionSlots += event.matchedSlotCount ?? 0;
+        }
+        if (event.outcome === "guidance_aligned") {
+          summary.application.guidanceAlignedCount += 1;
+        }
+        if (event.outcome === "guidance_missed") {
+          summary.application.guidanceMissCount += 1;
+        }
         break;
       case "review":
         if (event.action === "candidate_review") {
@@ -681,9 +788,39 @@ export function buildMemorySoakTelemetrySummary(params: {
             incrementCounter(summary.corpusDemand.signalCounts, signal);
           }
         }
+        if (event.action === "memory_context_pack") {
+          summary.orchestration.memoryContextPackBuilds += 1;
+          summary.orchestration.attachedMemorySlots += event.attachedSlotCount ?? 0;
+          summary.orchestration.omittedMemorySlots += event.omittedSlotCount ?? 0;
+        }
         break;
     }
   }
+
+  summary.application.memoryContextResponseRate = ratio(
+    summary.application.memoryContextResponses,
+    summary.application.memoryContextAttachments,
+  );
+  summary.application.survivalAfterResponseRate = ratio(
+    summary.application.survivedTurnBoundaryCount,
+    summary.application.memoryContextResponses,
+  );
+  summary.application.repeatedCorrectionAfterResponseRate = ratio(
+    summary.application.repeatedCorrectionAfterAttachmentCount,
+    summary.application.memoryContextResponses,
+  );
+  summary.application.repeatedCorrectionAvoidanceRate =
+    summary.application.repeatedCorrectionAfterResponseRate === null
+      ? null
+      : Math.max(0, 1 - summary.application.repeatedCorrectionAfterResponseRate);
+  summary.application.guidanceAlignmentRate = ratio(
+    summary.application.guidanceAlignedCount,
+    summary.application.guidancePlans,
+  );
+  summary.application.causalGuidanceUsefulnessRate = ratio(
+    summary.application.guidanceAlignedCount,
+    summary.application.guidanceAlignedCount + summary.application.guidanceMissCount,
+  );
 
   summary.attentionFlags = buildAttentionFlags(summary);
   return summary;
@@ -703,10 +840,23 @@ export function renderMemorySoakTelemetryOperatorSummary(
     `- no_result_searches: ${String(summary.retrieval.noResultSearches)}`,
     `- guidance_plans: ${String(summary.application.guidancePlans)}`,
     `- guidance_suggestions: ${String(summary.application.suggestionCount)}`,
+    `- memory_context_attachments: ${String(summary.application.memoryContextAttachments)}`,
+    `- memory_context_responses: ${String(summary.application.memoryContextResponses)}`,
+    `- memory_context_response_rate: ${formatPercent(summary.application.memoryContextResponseRate)}`,
+    `- proxy_survived_without_repeat_correction: ${String(summary.application.survivedTurnBoundaryCount)}`,
+    `- proxy_survival_rate_after_response: ${formatPercent(summary.application.survivalAfterResponseRate)}`,
+    `- causal_repeated_corrections_after_attachment: ${String(summary.application.repeatedCorrectionAfterAttachmentCount)}`,
+    `- causal_repeated_correction_rate_after_response: ${formatPercent(summary.application.repeatedCorrectionAfterResponseRate)}`,
+    `- causal_repeated_correction_avoidance_rate: ${formatPercent(summary.application.repeatedCorrectionAvoidanceRate)}`,
+    `- causal_guidance_aligned_with_attached_memory: ${String(summary.application.guidanceAlignedCount)}`,
+    `- causal_guidance_missed_with_attached_memory: ${String(summary.application.guidanceMissCount)}`,
+    `- guidance_alignment_rate: ${formatPercent(summary.application.guidanceAlignmentRate)}`,
+    `- causal_guidance_usefulness_rate: ${formatPercent(summary.application.causalGuidanceUsefulnessRate)}`,
     `- candidate_reviews: ${String(summary.review.candidateReviews)}`,
     `- memory_promotions: ${String(summary.review.memoryPromotions)}`,
     `- projection_runs: ${String(summary.projection.runs)}`,
     `- native_sync_runs: ${String(summary.orchestration.nativeSyncRuns)}`,
+    `- memory_context_packs: ${String(summary.orchestration.memoryContextPackBuilds)}`,
   ];
 
   if (summary.attentionFlags.length > 0) {

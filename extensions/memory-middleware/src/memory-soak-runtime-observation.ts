@@ -5,6 +5,7 @@ import type { CandidateQueryPort } from "./candidate-query.js";
 import type { CandidateReviewPort } from "./candidate-review.js";
 import type { CompactionPlanningPort } from "./compaction-planning.js";
 import type { CandidateRecord } from "./db/runtime.js";
+import type { MemoryContextOutcomeProofPort } from "./memory-context-outcome-proof.js";
 import {
   type MemorySoakTelemetryPort,
   deriveCorpusDemandSignalsFromCompaction,
@@ -64,6 +65,7 @@ async function loadCandidate(
 export function observeCandidateIngressPort(params: {
   port: CandidateIngressPort;
   telemetry: MemorySoakTelemetryPort;
+  outcomeProof?: MemoryContextOutcomeProofPort;
 }): CandidateIngressPort {
   async function observeSubmission(
     input: CandidateLearningInput,
@@ -86,6 +88,11 @@ export function observeCandidateIngressPort(params: {
         ? { eventId: result.eventId, memoryObjectId: result.memoryObjectId }
         : {}),
       ...(result.accepted ? {} : { reason: result.reason }),
+    });
+    await params.outcomeProof?.recordCandidateSubmission({
+      kind,
+      input,
+      accepted: result.accepted,
     });
     return result;
   }

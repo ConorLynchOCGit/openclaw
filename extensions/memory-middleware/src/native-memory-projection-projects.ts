@@ -1,4 +1,7 @@
-import type { MemoryMiddlewareDb, MemoryObjectRecord } from "./db/runtime.js";
+import type { ActiveMemorySlot } from "./active-memory-slots.js";
+import { loadActiveMemorySlots } from "./active-memory-slots.js";
+import type { MemoryMiddlewareDb } from "./db/runtime.js";
+import { buildNativeMemoryProjectionCandidatesFromActiveSlots } from "./native-memory-projection-active-slots.js";
 import type { NativeMemoryProjectionSkippedRecord } from "./native-memory-projection-audit.js";
 import {
   NATIVE_MEMORY_PROJECTION_CHAR_BUDGETS,
@@ -7,19 +10,12 @@ import {
   trimProjectionCandidatesToBudget,
   type NativeMemoryProjectionSyncResult,
 } from "./native-memory-projection-compiler.js";
-import {
-  buildNativeMemoryProjectionCandidate,
-  type NativeMemoryProjectionCandidate,
-} from "./native-memory-projection-eligibility.js";
+import { type NativeMemoryProjectionCandidate } from "./native-memory-projection-eligibility.js";
 import {
   discoverWorkspaceProjectProjectionTargets,
-  resolveProjectProjectionTarget,
   type WorkspaceProjectProjectionTarget,
 } from "./native-memory-projection-routing.js";
-import {
-  isEligibleForProjectProjection,
-  resolveNativeMemoryProjectionScope,
-} from "./native-memory-projection-scope.js";
+import { isEligibleForProjectProjection } from "./native-memory-projection-scope.js";
 
 const PROJECT_PROJECTION_TITLE = "Compiled Project Memory";
 
@@ -35,25 +31,19 @@ export type ProjectProjectionCompilationResult = NativeMemoryProjectionSyncResul
 
 type ProjectProjectionGroup = {
   target: WorkspaceProjectProjectionTarget;
-  records: MemoryObjectRecord[];
+  slots: ActiveMemorySlot[];
   candidates: NativeMemoryProjectionCandidate[];
 };
 
-async function loadApprovedProjectProjectionRecords(params: {
-  db: MemoryMiddlewareDb;
-  limit: number;
-}): Promise<MemoryObjectRecord[]> {
-  const result = await params.db.queries.listMemoryObjects({
-    scope: "approved_only",
-    kind: "project",
-    limit: params.limit,
-  });
-  if (!result.accepted) {
-    throw new Error(`project native projection query failed: ${result.reason}`);
+function resolveProjectProjectionTargetFromSlot(
+  slot: ActiveMemorySlot,
+  targets: WorkspaceProjectProjectionTarget[],
+): WorkspaceProjectProjectionTarget | null {
+  const projectSlug = slot.projectSlug?.trim().toLowerCase();
+  if (!projectSlug) {
+    return null;
   }
-  return result.records.filter(
-    (record): record is MemoryObjectRecord => record.objectType === "memory_object",
-  );
+  return targets.find((target) => target.slug.trim().toLowerCase() === projectSlug) ?? null;
 }
 
 export async function syncProjectLocalProjections(params: {
@@ -68,9 +58,10 @@ export async function syncProjectLocalProjections(params: {
   unmatched: Array<{ sourceId: string; reason: string }>;
   skipped: NativeMemoryProjectionSkippedRecord[];
 }> {
-  const records = await loadApprovedProjectProjectionRecords({
+  const slots = await loadActiveMemorySlots({
     db: params.db,
-    limit: params.limit ?? 120,
+    limitPerKind: params.limit ?? 120,
+    includeProcedures: false,
   });
   const targets = await discoverWorkspaceProjectProjectionTargets(params.workspaceDir);
   const allWorkspaceTargets = await discoverWorkspaceProjectProjectionTargets(params.workspaceDir, {
@@ -81,7 +72,7 @@ export async function syncProjectLocalProjections(params: {
       target.slug,
       {
         target,
-        records: [],
+        slots: [],
         candidates: [],
       },
     ]),
@@ -89,40 +80,52 @@ export async function syncProjectLocalProjections(params: {
   const unmatched: Array<{ sourceId: string; reason: string }> = [];
   const skipped: NativeMemoryProjectionSkippedRecord[] = [];
 
-  for (const record of records) {
-    const scope = resolveNativeMemoryProjectionScope(record);
+  for (const slot of slots.filter((entry) => entry.sourceMemoryKind === "project")) {
+    const scope = {
+      kind: slot.scopeKind,
+      projectScoped: slot.projectScoped,
+      ...(slot.projectSlug ? { projectSlug: slot.projectSlug } : {}),
+      ...(slot.agentKey ? { agentKey: slot.agentKey } : {}),
+      ...(slot.sessionKey ? { sessionKey: slot.sessionKey } : {}),
+    };
     if (!isEligibleForProjectProjection(scope)) {
       skipped.push({
-        sourceId: record.id,
+        sourceId: slot.primarySourceId,
         reason: "scope_filtered",
         scopeKind: scope.kind,
         ...(scope.agentKey ? { agentKey: scope.agentKey } : {}),
       });
       continue;
     }
-    const target = resolveProjectProjectionTarget(record, targets);
+
+    const target = resolveProjectProjectionTargetFromSlot(slot, targets);
     if (!target) {
-      const unallowlistedTarget = resolveProjectProjectionTarget(record, allWorkspaceTargets);
+      const unallowlistedTarget = resolveProjectProjectionTargetFromSlot(slot, allWorkspaceTargets);
       unmatched.push({
-        sourceId: record.id,
+        sourceId: slot.primarySourceId,
         reason: unallowlistedTarget
           ? "project_target_not_allowlisted"
           : "no_workspace_project_target",
       });
       continue;
     }
-    const candidate = buildNativeMemoryProjectionCandidate(record);
-    if (!candidate) {
-      unmatched.push({ sourceId: record.id, reason: "ineligible_project_projection_candidate" });
+
+    const candidates = buildNativeMemoryProjectionCandidatesFromActiveSlots([slot]);
+    if (candidates.length === 0) {
+      unmatched.push({
+        sourceId: slot.primarySourceId,
+        reason: "ineligible_project_projection_candidate",
+      });
       continue;
     }
+
     const existing = groups.get(target.slug) ?? {
       target,
-      records: [],
+      slots: [],
       candidates: [],
     };
-    existing.records.push(record);
-    existing.candidates.push(candidate);
+    existing.slots.push(slot);
+    existing.candidates.push(...candidates);
     groups.set(target.slug, existing);
   }
 

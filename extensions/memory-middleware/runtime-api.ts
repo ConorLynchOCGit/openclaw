@@ -21,6 +21,24 @@ export {
   type MemoryMiddlewareMemoryObjectQueryConfig,
 } from "./src/config.js";
 export { createMemoryMiddlewareRuntime, type MemoryMiddlewareRuntime } from "./src/runtime.js";
+export {
+  createMemoryContextControlPlanePort,
+  type CompiledMemoryPack,
+  type CompiledMemoryPackKind,
+  type CompiledMemoryPromptContext,
+  type MemoryContextControlPlanePort,
+} from "./src/memory-context-control-plane.js";
+export {
+  createMemoryContextOutcomeProofPort,
+  type MemoryContextOutcomeProofPort,
+} from "./src/memory-context-outcome-proof.js";
+export {
+  buildActiveMemorySlots,
+  loadActiveMemorySlots,
+  type ActiveMemorySlot,
+  type ActiveMemorySlotCategory,
+  type ActiveMemorySlotScopeKind,
+} from "./src/active-memory-slots.js";
 export { createMemoryMiddlewarePluginService } from "./src/plugin-service.js";
 export { registerMemoryMiddlewareTools } from "./src/tools/registry.js";
 export {

@@ -500,6 +500,10 @@ export type SessionRuntimeBuildReport = {
   commit?: string | null;
 };
 
+export type SessionPromptSegmentClass = "stable" | "semi_stable" | "volatile";
+
+export type SessionPromptSegmentBudgetPressure = "within_target" | "over_target" | "unknown";
+
 export type SessionSystemPromptReport = {
   source: "run" | "estimate";
   generatedAt: number;
@@ -529,6 +533,98 @@ export type SessionSystemPromptReport = {
     chars: number;
     projectContextChars: number;
     nonProjectContextChars: number;
+  };
+  promptArtifacts?: {
+    fullSystemPromptHash: string;
+    fullSystemPromptChars: number;
+    baseSystemPromptHash: string;
+    baseSystemPromptChars: number;
+    memoryPackPromptHash?: string;
+    memoryPackPromptChars?: number;
+    injectedFilesHash: string;
+    injectedFilesChars: number;
+    skillsHash: string;
+    skillsChars: number;
+    toolsListHash: string;
+    toolsListChars: number;
+    toolsSchemaHash: string;
+    toolsSchemaChars: number;
+  };
+  promptArtifactChanges?: {
+    comparedToGeneratedAt?: number;
+    changed: boolean;
+    changedTailOnly: boolean;
+    stablePrefixReusable: boolean;
+    segmentDrift?: {
+      stableChanged: boolean;
+      semiStableChanged: boolean;
+      volatileChanged: boolean;
+    };
+    reasons: Array<
+      | "base_prompt_changed"
+      | "memory_pack_segment_changed"
+      | "memory_pack_presence_changed"
+      | "injected_files_changed"
+      | "skills_prompt_changed"
+      | "tools_list_changed"
+      | "tools_schema_changed"
+    >;
+  };
+  memoryPacks?: {
+    promptChars: number;
+    entries: Array<{
+      kind: "user" | "project" | "procedure";
+      title: string;
+      chars: number;
+      approxTokens: number;
+      hash: string;
+      itemCount: number;
+      omittedItemCount: number;
+    }>;
+  };
+  contextSegments?: {
+    totalBudgetTokens?: number;
+    usableBudgetTokens?: number;
+    policy: {
+      reserveOutputTokens?: number;
+      reserveToolLoopTokens?: number;
+      reserveGuardTokens?: number;
+      stableTargetTokens?: number;
+      semiStableTargetTokens?: number;
+      volatileTargetTokens?: number;
+      overflowDegradeOrder: string[];
+    };
+    totals: {
+      stableChars: number;
+      stableTokens: number;
+      stableHash: string;
+      stablePressure: SessionPromptSegmentBudgetPressure;
+      semiStableChars: number;
+      semiStableTokens: number;
+      semiStableHash: string;
+      semiStablePressure: SessionPromptSegmentBudgetPressure;
+      volatileChars: number;
+      volatileTokens: number;
+      volatileHash: string;
+      volatilePressure: SessionPromptSegmentBudgetPressure;
+    };
+    segments: Array<{
+      id: string;
+      label: string;
+      owner: string;
+      class: SessionPromptSegmentClass;
+      chars: number;
+      approxTokens: number;
+      hash: string;
+      order: number;
+      budgetPressure: SessionPromptSegmentBudgetPressure;
+    }>;
+    omittedSegments?: Array<{
+      id: string;
+      label: string;
+      class: SessionPromptSegmentClass;
+      reason: string;
+    }>;
   };
   injectedWorkspaceFiles: Array<{
     name: string;

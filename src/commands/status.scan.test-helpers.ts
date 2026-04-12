@@ -1,7 +1,24 @@
 import { vi } from "vitest";
 import type { OpenClawConfig } from "../config/types.js";
+import type { MockFn } from "../test-utils/vitest-mock-fn.js";
 
-export function createStatusScanSharedMocks(configPathLabel: string) {
+type StatusScanSharedMocks = {
+  resolveConfigPath: MockFn<() => string>;
+  hasPotentialConfiguredChannels: MockFn;
+  readBestEffortConfig: MockFn;
+  resolveCommandSecretRefsViaGateway: MockFn;
+  getUpdateCheckResult: MockFn;
+  getAgentLocalStatuses: MockFn;
+  getStatusSummary: MockFn;
+  getMemorySearchManager: MockFn;
+  buildGatewayConnectionDetails: MockFn;
+  probeGateway: MockFn;
+  resolveGatewayProbeAuthResolution: MockFn;
+  ensurePluginRegistryLoaded: MockFn;
+  buildPluginCompatibilityNotices: MockFn<() => unknown[]>;
+};
+
+export function createStatusScanSharedMocks(configPathLabel: string): StatusScanSharedMocks {
   return {
     resolveConfigPath: vi.fn(() => `/tmp/openclaw-${configPathLabel}-missing-${process.pid}.json`),
     hasPotentialConfiguredChannels: vi.fn(),
@@ -19,9 +36,9 @@ export function createStatusScanSharedMocks(configPathLabel: string) {
   };
 }
 
-export type StatusScanSharedMocks = ReturnType<typeof createStatusScanSharedMocks>;
-
-export function createStatusOsSummaryModuleMock() {
+export function createStatusOsSummaryModuleMock(): {
+  resolveOsSummary: MockFn<() => { label: string }>;
+} {
   return {
     resolveOsSummary: vi.fn(() => ({ label: "test-os" })),
   };
@@ -29,7 +46,10 @@ export function createStatusOsSummaryModuleMock() {
 
 export function createStatusScanDepsRuntimeModuleMock(
   mocks: Pick<StatusScanSharedMocks, "getMemorySearchManager">,
-) {
+): {
+  getTailnetHostname: MockFn;
+  getMemorySearchManager: StatusScanSharedMocks["getMemorySearchManager"];
+} {
   return {
     getTailnetHostname: vi.fn(),
     getMemorySearchManager: mocks.getMemorySearchManager,
@@ -38,7 +58,10 @@ export function createStatusScanDepsRuntimeModuleMock(
 
 export function createStatusGatewayProbeModuleMock(
   mocks: Pick<StatusScanSharedMocks, "resolveGatewayProbeAuthResolution">,
-) {
+): {
+  pickGatewaySelfPresence: MockFn<() => null>;
+  resolveGatewayProbeAuthResolution: StatusScanSharedMocks["resolveGatewayProbeAuthResolution"];
+} {
   return {
     pickGatewaySelfPresence: vi.fn(() => null),
     resolveGatewayProbeAuthResolution: mocks.resolveGatewayProbeAuthResolution,
@@ -49,7 +72,10 @@ export function createStatusGatewayCallModuleMock(
   mocks: Pick<StatusScanSharedMocks, "buildGatewayConnectionDetails"> & {
     callGateway?: unknown;
   },
-) {
+): {
+  buildGatewayConnectionDetails: StatusScanSharedMocks["buildGatewayConnectionDetails"];
+  callGateway?: unknown;
+} {
   return {
     buildGatewayConnectionDetails: mocks.buildGatewayConnectionDetails,
     ...(mocks.callGateway ? { callGateway: mocks.callGateway } : {}),
@@ -58,7 +84,9 @@ export function createStatusGatewayCallModuleMock(
 
 export function createStatusPluginRegistryModuleMock(
   mocks: Pick<StatusScanSharedMocks, "ensurePluginRegistryLoaded">,
-) {
+): {
+  ensurePluginRegistryLoaded: StatusScanSharedMocks["ensurePluginRegistryLoaded"];
+} {
   return {
     ensurePluginRegistryLoaded: mocks.ensurePluginRegistryLoaded,
   };
@@ -74,7 +102,9 @@ export function createStatusPluginStatusModuleMock(
 
 export function createStatusUpdateModuleMock(
   mocks: Pick<StatusScanSharedMocks, "getUpdateCheckResult">,
-) {
+): {
+  getUpdateCheckResult: StatusScanSharedMocks["getUpdateCheckResult"];
+} {
   return {
     getUpdateCheckResult: mocks.getUpdateCheckResult,
   };
@@ -82,7 +112,9 @@ export function createStatusUpdateModuleMock(
 
 export function createStatusAgentLocalModuleMock(
   mocks: Pick<StatusScanSharedMocks, "getAgentLocalStatuses">,
-) {
+): {
+  getAgentLocalStatuses: StatusScanSharedMocks["getAgentLocalStatuses"];
+} {
   return {
     getAgentLocalStatuses: mocks.getAgentLocalStatuses,
   };
@@ -90,13 +122,17 @@ export function createStatusAgentLocalModuleMock(
 
 export function createStatusSummaryModuleMock(
   mocks: Pick<StatusScanSharedMocks, "getStatusSummary">,
-) {
+): {
+  getStatusSummary: StatusScanSharedMocks["getStatusSummary"];
+} {
   return {
     getStatusSummary: mocks.getStatusSummary,
   };
 }
 
-export function createStatusExecModuleMock() {
+export function createStatusExecModuleMock(): {
+  runExec: MockFn;
+} {
   return {
     runExec: vi.fn(),
   };
