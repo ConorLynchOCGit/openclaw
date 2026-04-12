@@ -52,7 +52,7 @@ async function detectRuntimeContainerName() {
   const { stdout } = await execFileAsync("docker", [
     "ps",
     "--filter",
-    "label=com.docker.compose.project.working_dir=/root/services/openclaw",
+    "label=com.docker.compose.project.working_dir=/root/services/openclaw-roles/live",
     "--filter",
     "label=com.docker.compose.service=openclaw-gateway",
     "--format",
@@ -279,7 +279,7 @@ async function main() {
     const result = await runImportedDocRuntimeCase({
       runtimeContainerName,
       workspaceDir: runtimeWorkspaceDir,
-      path: "imports/engineering_repo/content/docs/memory-system/README.md",
+      path: "imports/product_dev/content/docs/memory-system/README.md",
       chunkLines: 120,
       mode: "incomplete",
     });
@@ -299,7 +299,7 @@ async function main() {
     const result = await runImportedDocRuntimeCase({
       runtimeContainerName,
       workspaceDir: runtimeWorkspaceDir,
-      path: "imports/engineering_repo/content/docs/memory-system/README.md",
+      path: "imports/product_dev/content/docs/memory-system/README.md",
       chunkLines: 120,
       mode: "complete",
     });

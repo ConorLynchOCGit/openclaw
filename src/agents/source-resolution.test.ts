@@ -34,7 +34,7 @@ describe("resolveSourceResolutionReport", () => {
       coverageState: "unread",
     });
     expect(report.canonicalEntrypoints).toContain(
-      "imports/engineering_repo/content/docs/memory-system/README.md",
+      "imports/product_dev/content/docs/memory-system/README.md",
     );
   });
 

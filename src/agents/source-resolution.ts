@@ -33,9 +33,9 @@ const SOURCE_RESOLUTION_DOMAINS: readonly SourceResolutionDomainEntry[] = [
     ],
     workspaceEntrypoints: ["projects/memory/INDEX.md", "memory/INDEX.md"],
     canonicalEntrypoints: [
-      "imports/engineering_repo/INDEX.md",
-      "imports/engineering_repo/content/docs/memory-system/README.md",
-      "imports/engineering_repo/content/docs/memory-system/STATUS.md",
+      "imports/product_dev/INDEX.md",
+      "imports/product_dev/content/docs/memory-system/README.md",
+      "imports/product_dev/content/docs/memory-system/STATUS.md",
     ],
     requiresCanonicalVerification: true,
   },
@@ -46,9 +46,9 @@ const SOURCE_RESOLUTION_DOMAINS: readonly SourceResolutionDomainEntry[] = [
     ],
     workspaceEntrypoints: ["projects/maintenance/INDEX.md"],
     canonicalEntrypoints: [
-      "imports/engineering_repo/content/docs/plugins/sdk-overview.md",
-      "imports/engineering_repo/content/docs/plugins/architecture.md",
-      "imports/engineering_repo/content/src/plugin-sdk/",
+      "imports/product_dev/content/docs/plugins/sdk-overview.md",
+      "imports/product_dev/content/docs/plugins/architecture.md",
+      "imports/product_dev/content/src/plugin-sdk/",
     ],
     requiresCanonicalVerification: true,
   },
@@ -59,8 +59,8 @@ const SOURCE_RESOLUTION_DOMAINS: readonly SourceResolutionDomainEntry[] = [
     ],
     workspaceEntrypoints: ["projects/maintenance/INDEX.md"],
     canonicalEntrypoints: [
-      "imports/engineering_repo/content/docs/gateway/protocol.md",
-      "imports/engineering_repo/content/src/gateway/protocol/",
+      "imports/product_dev/content/docs/gateway/protocol.md",
+      "imports/product_dev/content/src/gateway/protocol/",
     ],
     requiresCanonicalVerification: true,
   },
@@ -153,9 +153,7 @@ export function resolveSourceResolutionReport(params: {
   }
 
   if (questionKind === "implementation" || questionKind === "mixed") {
-    const canonicalEntrypoints = domain?.canonicalEntrypoints ?? [
-      "imports/engineering_repo/INDEX.md",
-    ];
+    const canonicalEntrypoints = domain?.canonicalEntrypoints ?? ["imports/product_dev/INDEX.md"];
     const workspaceEntrypoints = domain?.workspaceEntrypoints ?? ["projects/INDEX.md"];
     const coverageRequirement: SessionSourceResolutionCoverageRequirement =
       domain?.requiresCanonicalVerification === false
