@@ -84,6 +84,43 @@ After the accepted post-v3 architecture review, the roadmap now treats the
 remaining work as several more flatten/refactor tranches, not one narrow
 cleanup slice.
 
+The next major roadmap line is now the full model-native completion program
+captured in `/memory-system/specs/model-native-memory-architecture-program`.
+
+That program does not reduce the target architecture.
+It sequences the remaining work into three ordered landing passes:
+
+1. substrate and evaluation truth
+2. runtime semantic cutover
+3. context, prompt, operational, and landing convergence
+
+This is now the preferred route for finishing the memory lane honestly.
+
+### Pass 1 acceptance bar
+
+Pass 1 is the substrate-and-evaluation truth pass.
+Its concrete deliverables are now tracked through:
+
+- `/memory-system/specs/structural-normalization-cleanup`
+- `/memory-system/specs/unified-source-envelope-contract`
+- `/memory-system/specs/shared-provenance-model`
+- `/memory-system/specs/model-interpretation-contract-v2`
+- `/memory-system/specs/live-model-benchmark-harness`
+- `/memory-system/specs/gold-judgment-corpus`
+- `/memory-system/specs/model-calibration-lane`
+- `/memory-system/specs/heuristic-block-typing-retirement`
+
+Pass 1 is only complete when:
+
+- normalization is structural-only
+- shared source-envelope and provenance contracts exist for the touched
+  surfaces
+- interpretation contract v2 exists
+- live-model benchmarking is the primary semantic proof surface
+- the gold corpus includes expected captures and expected omissions
+- calibration produces an explicit acceptance bar
+- heuristic block typing no longer acts as a semantic planner in normal runtime
+
 ## Phase A — existing-family parity
 
 This phase is complete enough to proceed.

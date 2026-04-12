@@ -130,6 +130,24 @@ projection model.
 
 ## Current emphasis
 
+- the current execution slice is Pass 1 of the model-native completion program
+  in `/memory-system/specs/model-native-memory-architecture-program`
+- land the Pass 1 slice pack directly:
+  - `/memory-system/specs/structural-normalization-cleanup`
+  - `/memory-system/specs/unified-source-envelope-contract`
+  - `/memory-system/specs/shared-provenance-model`
+  - `/memory-system/specs/model-interpretation-contract-v2`
+  - `/memory-system/specs/live-model-benchmark-harness`
+  - `/memory-system/specs/gold-judgment-corpus`
+  - `/memory-system/specs/model-calibration-lane`
+  - `/memory-system/specs/heuristic-block-typing-retirement`
+- treat normalization as structural-only and push semantic class ownership to
+  the model interpretation seam
+- treat live-model benchmarking plus the maintained gold corpus as the primary
+  truth surface for Pass 1 acceptance, not rule-based semantic surrogate tests
+- keep runtime semantic cutover, broader heuristic retirement, context-planner
+  convergence, prompt/cache/compaction redesign, DB-native ingestion, and soak
+  proof deferred to Pass 2 and Pass 3
 - pause the bounded conversational lane for soak instead of widening the
   runtime again immediately
 - watch whether the sharpened packs are now specific enough to change behavior
@@ -149,6 +167,10 @@ projection model.
   `/memory-system/specs/model-driven-semantic-interpretation` if the lane
   chooses to replace heuristic first-pass semantic detectors instead of merely
   reshaping their inputs
+- keep the full three-pass model-native completion program visible in
+  `/memory-system/specs/model-native-memory-architecture-program` so the repo
+  does not lose the complete end-state just because it now needs staged
+  landing discipline
 
 ## What the soak period is for
 

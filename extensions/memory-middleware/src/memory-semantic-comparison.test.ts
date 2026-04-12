@@ -53,6 +53,9 @@ function createTranscriptBlock(params: {
   sourceId: string;
   text: string;
   parentContext?: NormalizedTranscriptContextEntry[];
+  projectScope?: string;
+  workflowScope?: string;
+  contextualScopeMarkers?: string[];
 }): NormalizedMemoryBlock {
   return selectPrimaryBlock(
     normalizeTranscriptMemorySource({
@@ -65,12 +68,17 @@ function createTranscriptBlock(params: {
       parentContext: params.parentContext ?? [],
       maxSegments: 1,
       timestamp: "2026-04-12T00:00:00.000Z",
+      ...(params.projectScope ? { projectScope: params.projectScope } : {}),
+      ...(params.workflowScope ? { workflowScope: params.workflowScope } : {}),
+      ...(params.contextualScopeMarkers
+        ? { contextualScopeMarkers: params.contextualScopeMarkers }
+        : {}),
     }),
   );
 }
 
 describe("memory semantic comparison", () => {
-  it("keeps model-driven parity across equivalent document and transcript blocks", async () => {
+  it("keeps scripted model summaries aligned across equivalent document and transcript blocks", async () => {
     const documentProjectFact = createDocumentBlock({
       sourceId: "doc-project-fact",
       path: "benchmarks/project-fact.md",
@@ -85,6 +93,7 @@ describe("memory semantic comparison", () => {
     const transcriptProjectFact = createTranscriptBlock({
       sourceId: "turn-project-fact",
       text: "Default branch is atlas-main.",
+      projectScope: "atlas forge",
       parentContext: [
         {
           role: "system",
@@ -203,7 +212,7 @@ describe("memory semantic comparison", () => {
     expect(documentProcedureSummary?.subject).toBe(transcriptProcedureSummary?.subject);
   });
 
-  it("shows the model-first path beating the legacy heuristic path on benchmarked weak cases", async () => {
+  it("keeps a scripted heuristic-baseline comparison for known weak cases", async () => {
     const cases = [
       {
         id: "stable_preference_paraphrase",
@@ -258,6 +267,7 @@ describe("memory semantic comparison", () => {
         block: createTranscriptBlock({
           sourceId: "compare-turn-project-fact",
           text: "Default branch is atlas-main.",
+          projectScope: "atlas forge",
           parentContext: [
             {
               role: "system",

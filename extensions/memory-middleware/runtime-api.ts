@@ -50,14 +50,19 @@ export {
 } from "./src/memory-model-semantic-interpreter.js";
 export {
   buildModelSemanticInterpretationPrompt,
+  defaultDecisionProvenance,
   parseMemorySemanticInterpretationDecision,
+  renderMemorySemanticDecisionText,
   type MemorySemanticCaptureCategoryHint,
+  type MemorySemanticCanonicalProcedure,
   type MemorySemanticClass,
   type MemorySemanticInterpretationDecision,
   type MemorySemanticInterpretationInput,
   type MemorySemanticInterpretationLane,
+  type MemorySemanticProvenanceReference,
   type MemorySemanticInterpretationResult,
   type MemorySemanticReviewModeHint,
+  type MemorySemanticScopeInterpretation,
 } from "./src/memory-semantic-interpretation.js";
 export {
   planNormalizedMemoryBlock,
@@ -66,15 +71,41 @@ export {
 export {
   normalizeDocumentMemorySource,
   normalizeTranscriptMemorySource,
-  type MemoryBlockType,
   type MemoryContextRole,
   type MemoryProvenanceRegion,
+  type MemorySourceEnvelope,
   type MemoryScopeEnvelope,
+  type MemoryProvenanceAnchor,
   type NormalizedMemoryBlock,
   type NormalizedMemorySource,
   type NormalizedMemorySourceKind,
   type NormalizedTranscriptContextEntry,
 } from "./src/memory-source-normalization.js";
+export {
+  typeNormalizedMemoryBlockHeuristically,
+  type HeuristicMemoryBlockType,
+} from "./src/memory-heuristic-block-typing.js";
+export {
+  MEMORY_SEMANTIC_GOLD_CORPUS,
+  type MemorySemanticGoldCase,
+  type MemorySemanticGoldExpectedCandidate,
+  type MemorySemanticGoldForbiddenCandidate,
+} from "./src/memory-semantic-gold-corpus.js";
+export {
+  MEMORY_SEMANTIC_BENCHMARK_CRITERIA,
+  runMemorySemanticGoldCorpusBenchmark,
+  type MemorySemanticBenchmarkCaseResult,
+  type MemorySemanticBenchmarkCandidateSummary,
+  type MemorySemanticBenchmarkIssue,
+  type MemorySemanticBenchmarkIssueSeverity,
+  type MemorySemanticBenchmarkReport,
+} from "./src/memory-live-benchmark.js";
+export {
+  DEFAULT_MEMORY_SEMANTIC_CALIBRATION_THRESHOLDS,
+  evaluateMemorySemanticCalibration,
+  type MemorySemanticCalibrationResult,
+  type MemorySemanticCalibrationThresholds,
+} from "./src/memory-semantic-calibration.js";
 export {
   DOCUMENT_MEMORY_BENCHMARK_CASES,
   DOCUMENT_MEMORY_BENCHMARK_CRITERIA,

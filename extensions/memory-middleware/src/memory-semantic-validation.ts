@@ -18,6 +18,7 @@ import type {
   MemorySemanticInterpretationLane,
   MemorySemanticReviewModeHint,
 } from "./memory-semantic-interpretation.js";
+import { renderMemorySemanticDecisionText } from "./memory-semantic-interpretation.js";
 import {
   createProjectFactCanonicalMatch,
   isBoundedGenericProjectFactReference,
@@ -562,7 +563,8 @@ export async function validateMemorySemanticDecision(params: {
   }
 
   if (decision.action === "forget") {
-    const resolved = inferForgetResponseStyle(decision.candidateText);
+    const canonicalText = renderMemorySemanticDecisionText(decision);
+    const resolved = canonicalText ? inferForgetResponseStyle(canonicalText) : null;
     return resolved
       ? { action: "forget", resolved }
       : {
@@ -582,7 +584,8 @@ export async function validateMemorySemanticDecision(params: {
 
   switch (decision.captureCategoryHint) {
     case "response_style": {
-      const canonical = inferResponseStyleCanonicalMatch(decision.candidateText);
+      const canonicalText = renderMemorySemanticDecisionText(decision);
+      const canonical = canonicalText ? inferResponseStyleCanonicalMatch(canonicalText) : null;
       if (!canonical) {
         return {
           action: "ignore",
@@ -603,12 +606,13 @@ export async function validateMemorySemanticDecision(params: {
           detectionSource: "deterministic",
           confidence,
           evidence: readEvidence(decision),
-          observedText: decision.candidateText,
+          observedText: canonicalText ?? "",
         }),
       };
     }
     case "project_fact": {
-      const resolved = inferProjectFactResolved(decision.candidateText, confidence);
+      const canonicalText = renderMemorySemanticDecisionText(decision);
+      const resolved = canonicalText ? inferProjectFactResolved(canonicalText, confidence) : null;
       return resolved
         ? { action: "capture", resolved: applyReviewModeHint(resolved) }
         : {
@@ -618,7 +622,10 @@ export async function validateMemorySemanticDecision(params: {
           };
     }
     case "recurring_procedure": {
-      const resolved = inferRecurringProcedureResolved(decision.candidateText, confidence);
+      const canonicalText = renderMemorySemanticDecisionText(decision);
+      const resolved = canonicalText
+        ? inferRecurringProcedureResolved(canonicalText, confidence)
+        : null;
       return resolved
         ? { action: "capture", resolved: applyReviewModeHint(resolved) }
         : {
@@ -631,8 +638,9 @@ export async function validateMemorySemanticDecision(params: {
     case "project_rule":
     case "unmet_need":
     case "reference_routing": {
+      const canonicalText = renderMemorySemanticDecisionText(decision);
       const workflow = inferWorkflowResolved({
-        text: decision.candidateText,
+        text: canonicalText ?? "",
         confidence,
         categoryHint: decision.captureCategoryHint,
       });

@@ -179,6 +179,46 @@ too brittle after that normalization work, the model-first follow-on is now
 captured separately in
 `/memory-system/specs/model-driven-semantic-interpretation`.
 
+The full model-native completion program is now also captured explicitly in
+`/memory-system/specs/model-native-memory-architecture-program`.
+That program keeps the original end-state intact but groups the work into
+three ordered implementation passes:
+
+- Pass 1 — substrate and evaluation truth
+- Pass 2 — runtime semantic cutover
+- Pass 3 — context, prompt, operational, and landing convergence
+
+The current accepted posture is that this work should be split into those
+passes rather than falsely reduced in ambition or overclaimed as one honest
+single landing pass from the current tree.
+
+Pass 1 is now landing locally through the following concrete substrate and
+evaluation-truth changes:
+
+- structural-only normalization in the shared source-normalization substrate
+- one shared source-envelope contract for the touched capture sources
+- one shared provenance model for normalization, interpretation, and benchmark
+  reporting surfaces touched in this pass
+- interpretation contract v2 for the full durable-memory class set plus
+  routing/context decisions
+- a live-model benchmark harness that runs the real model seam against a
+  maintained gold corpus
+- explicit calibration over that gold corpus instead of unsupported “seems
+  better” runtime claims
+- retirement of normalization-time heuristic block typing as a normal runtime
+  semantic decision point
+
+The dedicated Pass 1 slice specs now live in:
+
+- `/memory-system/specs/structural-normalization-cleanup`
+- `/memory-system/specs/unified-source-envelope-contract`
+- `/memory-system/specs/shared-provenance-model`
+- `/memory-system/specs/model-interpretation-contract-v2`
+- `/memory-system/specs/live-model-benchmark-harness`
+- `/memory-system/specs/gold-judgment-corpus`
+- `/memory-system/specs/model-calibration-lane`
+- `/memory-system/specs/heuristic-block-typing-retirement`
+
 The memory-to-context bridge tranche on 2026-04-12 is now also landed locally
 through:
 

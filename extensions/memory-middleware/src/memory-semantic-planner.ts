@@ -7,13 +7,9 @@ import {
   validateMemorySemanticDecision,
   type ValidatedMemorySemanticDecision,
 } from "./memory-semantic-validation.js";
-import {
-  typeNormalizedMemoryBlock,
-  type NormalizedMemoryBlock,
-} from "./memory-source-normalization.js";
+import type { NormalizedMemoryBlock } from "./memory-source-normalization.js";
 
 export type PlannedNormalizedMemoryDecision = {
-  blockType: ReturnType<typeof typeNormalizedMemoryBlock>;
   validation: ValidatedMemorySemanticDecision;
   modelId: string;
   promptVersion: string;
@@ -26,15 +22,10 @@ export async function planNormalizedMemoryBlock(params: {
   interpreter: MemorySemanticInterpreterPort;
   projectId?: string;
 }): Promise<PlannedNormalizedMemoryDecision | null> {
-  const blockType = typeNormalizedMemoryBlock(params.block);
-  if (blockType === "ignore") {
-    return null;
-  }
   const interpreted = await params.interpreter.interpretBlock({
     lane: params.lane,
     source: params.block.source,
     block: params.block,
-    blockType,
   });
   const validation = await validateMemorySemanticDecision({
     config: params.config,
@@ -43,7 +34,6 @@ export async function planNormalizedMemoryBlock(params: {
     ...(params.projectId ? { projectId: params.projectId } : {}),
   });
   return {
-    blockType,
     validation,
     modelId: interpreted.modelId,
     promptVersion: interpreted.promptVersion,

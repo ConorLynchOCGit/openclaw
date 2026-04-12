@@ -240,6 +240,39 @@ Current accepted framing:
 - retrieval/application quality can use truthful proxies where certainty is not
   available, but those blind spots must stay documented explicitly
 
+## 2026-04 — the full model-native completion program stays intact but lands in three passes
+
+Current accepted framing:
+
+- the remaining model-native target is still required
+- the target should not be reduced because the implementation is large
+- the work should land in three ordered passes rather than as one enormous
+  single-pass change
+- Pass 1 must clean up structural normalization and make benchmark truth
+  model-native before later runtime cutovers claim success
+- Pass 2 must move document and ordinary-turn capture onto one shared
+  model-native semantic runtime and retire heuristic semantic ownership
+- Pass 3 must converge context, prompt, cache, compaction, governance,
+  ingestion, soak, and code deletion on top of that runtime
+- if a future pass still depends materially on heuristic semantic
+  classification in normal runtime where that pass was meant to remove it, the
+  pass is not complete
+
+## 2026-04 — Pass 1 owns substrate and evaluation truth, not runtime cutover theater
+
+Current accepted framing:
+
+- Pass 1 must make normalization structural-only rather than semantic-ish
+- Pass 1 must define one shared source-envelope and provenance vocabulary for
+  the touched capture and benchmark surfaces
+- Pass 1 must widen the interpretation contract enough to express all four
+  durable-memory classes plus durable routing/context decisions
+- the primary benchmark truth for Pass 1 must be a live-model benchmark
+  harness over a maintained gold judgment corpus
+- calibration must turn benchmark results into an explicit acceptance bar
+- heuristic block typing may survive as a baseline or diagnostic helper only,
+  not as a normal runtime semantic decision point
+
 ## 2026-04 — project-local projections target real project index docs first
 
 Current accepted framing:

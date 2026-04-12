@@ -58,6 +58,15 @@ Then consult as needed:
 - `specs/messy-language-eval.md`
 - `specs/governance-surface-productionization.md`
 - `specs/implementation-sequencing.md`
+- `specs/model-native-memory-architecture-program.md`
+- `specs/structural-normalization-cleanup.md`
+- `specs/unified-source-envelope-contract.md`
+- `specs/shared-provenance-model.md`
+- `specs/model-interpretation-contract-v2.md`
+- `specs/live-model-benchmark-harness.md`
+- `specs/gold-judgment-corpus.md`
+- `specs/model-calibration-lane.md`
+- `specs/heuristic-block-typing-retirement.md`
 - `archive/specs/canonical-four-kind-memory-migration.md`
 - `specs/premortem.md`
 - `specs/architecture-fit-review.md`
@@ -255,6 +264,23 @@ The current soak-observability follow-through is now also landed locally:
 - the manual soak inspection path is `pnpm memory:soak:report`
 - retrieval/application quality remains partly proxy-based by design, but it is
   now durable and reviewable instead of ephemeral log-only evidence
+
+The current future-architecture completion program is now recorded in
+`specs/model-native-memory-architecture-program.md`.
+That document preserves the full model-native end-state while splitting the
+remaining work into three ordered landing passes instead of pretending the
+entire cutover is one honest single-pass change from the current tree.
+
+The current Pass 1 substrate-and-evaluation slice pack is recorded directly in:
+
+- `specs/structural-normalization-cleanup.md`
+- `specs/unified-source-envelope-contract.md`
+- `specs/shared-provenance-model.md`
+- `specs/model-interpretation-contract-v2.md`
+- `specs/live-model-benchmark-harness.md`
+- `specs/gold-judgment-corpus.md`
+- `specs/model-calibration-lane.md`
+- `specs/heuristic-block-typing-retirement.md`
 
 ## Soak observability surfaces
 

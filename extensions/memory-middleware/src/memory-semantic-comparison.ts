@@ -2,6 +2,10 @@ import type { MemoryMiddlewareConfig } from "./config.js";
 import type { DocumentMemoryIngestionCategory } from "./document-memory-ingestion-types.js";
 import { buildCanonicalMemoryIngestionCandidateFromResolvedIngestion } from "./memory-canonical-compat-builders.js";
 import {
+  type HeuristicMemoryBlockType,
+  typeNormalizedMemoryBlockHeuristically,
+} from "./memory-heuristic-block-typing.js";
+import {
   type ResolvedCanonicalizableIngestion,
   resolveProjectFactIngestion,
   resolveRecurringProcedureIngestion,
@@ -16,15 +20,11 @@ import {
   planNormalizedMemoryBlock,
   type PlannedNormalizedMemoryDecision,
 } from "./memory-semantic-planner.js";
-import {
-  type MemoryBlockType,
-  typeNormalizedMemoryBlock,
-  type NormalizedMemoryBlock,
-} from "./memory-source-normalization.js";
+import { type NormalizedMemoryBlock } from "./memory-source-normalization.js";
 
 export type MemorySemanticPlanSummary = {
   planner: "heuristic" | "model";
-  blockType: MemoryBlockType;
+  blockType?: HeuristicMemoryBlockType;
   category: DocumentMemoryIngestionCategory;
   subject: string;
   statement: string;
@@ -55,7 +55,7 @@ function resolveComparisonCategory(
 
 function buildSummary(params: {
   planner: "heuristic" | "model";
-  blockType: MemoryBlockType;
+  blockType?: HeuristicMemoryBlockType;
   lane: MemorySemanticInterpretationLane;
   ingestion: ResolvedCanonicalizableIngestion;
   projectId?: string;
@@ -90,7 +90,7 @@ export async function summarizeHeuristicMemoryBlock(params: {
   block: NormalizedMemoryBlock;
   projectId?: string;
 }): Promise<MemorySemanticPlanSummary | null> {
-  const blockType = typeNormalizedMemoryBlock(params.block);
+  const blockType = typeNormalizedMemoryBlockHeuristically(params.block);
   if (blockType === "ignore") {
     return null;
   }
@@ -208,7 +208,6 @@ export function summarizePlannedModelDecision(params: {
   }
   return buildSummary({
     planner: "model",
-    blockType: params.planned.blockType,
     lane: params.lane,
     ingestion: params.planned.validation.resolved,
     ...(params.projectId ? { projectId: params.projectId } : {}),

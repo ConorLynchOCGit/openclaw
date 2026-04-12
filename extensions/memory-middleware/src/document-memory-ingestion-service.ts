@@ -308,7 +308,6 @@ function maybePushExtractedCandidate(
       ...resolved.evidence,
       `model:${params.planned.modelId}`,
       `prompt:${params.planned.promptVersion}`,
-      `block_type:${params.planned.blockType}`,
     ],
     rank:
       confidenceRank(resolved.confidence) * 100 +

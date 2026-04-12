@@ -67,6 +67,17 @@ These remain important, but several now describe partial bridges rather than
 - `/memory-system/specs/behavior-application`
 - `/memory-system/specs/shared-source-normalization-and-block-typing`
 - `/memory-system/specs/model-driven-semantic-interpretation`
+- `/memory-system/specs/model-native-memory-architecture-program`
+- `/memory-system/specs/structural-normalization-cleanup`
+- `/memory-system/specs/unified-source-envelope-contract`
+- `/memory-system/specs/shared-provenance-model`
+- `/memory-system/specs/model-interpretation-contract-v2`
+- `/memory-system/specs/live-model-benchmark-harness`
+- `/memory-system/specs/gold-judgment-corpus`
+- `/memory-system/specs/model-calibration-lane`
+- `/memory-system/specs/heuristic-block-typing-retirement`
+- `/memory-system/specs/model-native-pass-2-runtime-semantic-cutover`
+- `/memory-system/specs/model-native-pass-3-context-prompt-operational-convergence`
 - `/memory-system/archive/specs/canonical-four-kind-memory-migration`
 - `/memory-system/specs/native-openclaw-memory-integration`
 - `/memory-system/specs/source-of-truth-and-precedence`
@@ -149,6 +160,9 @@ The newest future-work candidates in this pack are:
 
 - `/memory-system/specs/shared-source-normalization-and-block-typing`
 - `/memory-system/specs/model-driven-semantic-interpretation`
+- `/memory-system/specs/model-native-memory-architecture-program`
+- `/memory-system/specs/model-native-pass-2-runtime-semantic-cutover`
+- `/memory-system/specs/model-native-pass-3-context-prompt-operational-convergence`
 
 Use the shared-normalization spec when the lane needs one source-shaping model
 ahead of semantic resolution instead of more lane-local detector hardening.
@@ -156,3 +170,31 @@ ahead of semantic resolution instead of more lane-local detector hardening.
 Use the model-driven interpretation spec when the lane needs the first-pass
 semantic engine itself to move from heuristic detectors to one shared
 model-first interpretation boundary.
+
+Use the model-native architecture program when the lane needs the full
+three-pass execution sequence for finishing the cutover across normalization,
+evaluation, runtime semantics, context planning, cache, compaction,
+governance, DB ingestion, soak, and deletion.
+
+Use the Pass 1 slice specs when the lane is actively landing substrate and
+evaluation-truth work instead of only reading the higher-level program:
+
+- `/memory-system/specs/structural-normalization-cleanup`
+- `/memory-system/specs/unified-source-envelope-contract`
+- `/memory-system/specs/shared-provenance-model`
+- `/memory-system/specs/model-interpretation-contract-v2`
+- `/memory-system/specs/live-model-benchmark-harness`
+- `/memory-system/specs/gold-judgment-corpus`
+- `/memory-system/specs/model-calibration-lane`
+- `/memory-system/specs/heuristic-block-typing-retirement`
+
+Use the Pass 2 runtime-semantic-cutover prompt when Pass 1 is complete and the
+lane is ready to unify semantic planning, canonical object handling, review
+policy, dedupe/supersession, model-native capture behavior, runtime heuristic
+retirement, and cross-lane replay proof.
+
+Use the Pass 3 context/prompt/operational convergence prompt when Pass 2 is
+complete and the lane is ready to finish context-planner ownership, prompt
+cache and compaction redesign, outcome-proof redesign, operational control
+policy, DB-native ingestion, genuine-DB-memory soak, and post-cutover code
+slimming.
