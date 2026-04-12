@@ -27,6 +27,7 @@ export function createMemoryMiddlewarePluginService(
         logger: ctx.logger,
         candidateIngress: runtime.candidateIngress,
         soakTelemetry: runtime.soakTelemetry,
+        semanticInterpreter: runtime.semanticInterpreter,
         subscribe: subscribeToTranscriptUpdates,
         deps: {
           reviewCandidate: (input) => runtime.candidateReview.review(input),

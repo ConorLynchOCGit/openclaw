@@ -65,6 +65,8 @@ These remain important, but several now describe partial bridges rather than
 
 - `/memory-system/specs/architecture-fit-review`
 - `/memory-system/specs/behavior-application`
+- `/memory-system/specs/shared-source-normalization-and-block-typing`
+- `/memory-system/specs/model-driven-semantic-interpretation`
 - `/memory-system/archive/specs/canonical-four-kind-memory-migration`
 - `/memory-system/specs/native-openclaw-memory-integration`
 - `/memory-system/specs/source-of-truth-and-precedence`
@@ -142,3 +144,15 @@ That authorization is now exercised through the first 10 native-file
 integration slices. The current remaining work is follow-on implementation,
 rollout proof, and later tranche expansion rather than architecture discovery
 for the shared/project/compiler baseline.
+
+The newest future-work candidates in this pack are:
+
+- `/memory-system/specs/shared-source-normalization-and-block-typing`
+- `/memory-system/specs/model-driven-semantic-interpretation`
+
+Use the shared-normalization spec when the lane needs one source-shaping model
+ahead of semantic resolution instead of more lane-local detector hardening.
+
+Use the model-driven interpretation spec when the lane needs the first-pass
+semantic engine itself to move from heuristic detectors to one shared
+model-first interpretation boundary.

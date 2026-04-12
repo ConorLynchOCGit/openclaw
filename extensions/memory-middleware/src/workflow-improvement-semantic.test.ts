@@ -131,6 +131,24 @@ describe("detectWorkflowImprovementSemanticDecision", () => {
     });
   });
 
+  it("captures the runtime proof entrypoint lesson", () => {
+    expect(
+      detectWorkflowImprovementSemanticDecision(
+        "Even after Turbo adoption, keep pnpm runtime:proof:fast as the authoritative proof entrypoint because it owns gateway restart and /readyz proof semantics.",
+      ),
+    ).toMatchObject({
+      action: "capture",
+      confidence: "high",
+      match: {
+        lessonFamily: "generalized_workflow_lesson",
+        captureClass: "workflow_generalized_guidance",
+        guidancePattern: "use_instead_of",
+        subject: "non-production runtime proof",
+        recommendedAction: "pnpm runtime:proof:fast",
+      },
+    });
+  });
+
   it("captures the python-unavailable environment constraint", () => {
     expect(
       detectWorkflowImprovementSemanticDecision(

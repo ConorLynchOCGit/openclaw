@@ -57,6 +57,7 @@ vi.mock("./memory-ingestion-resolver.js", async () => {
   };
 });
 
+import { createRuleBasedTestMemorySemanticInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
 import {
   createOrdinaryTurnAutoCaptureController,
   createOrdinaryTurnAutoCaptureHandler,
@@ -133,6 +134,15 @@ function readMetadataRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+async function writeOrdinaryTurnTranscript(entries: unknown[], fileName: string): Promise<string> {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "ordinary-turn-auto-capture-"));
+  const sessionDir = path.join(tmpDir, "agents", "main", "sessions");
+  await mkdir(sessionDir, { recursive: true });
+  const sessionFile = path.join(sessionDir, fileName);
+  await writeFile(sessionFile, entries.map((entry) => JSON.stringify(entry)).join("\n"), "utf8");
+  return sessionFile;
 }
 
 describe("parseOrdinaryTurnAutoCapturePreference", () => {
@@ -2323,6 +2333,306 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
     expect(promoteToMemory).toHaveBeenCalledTimes(1);
   });
 
+  it("captures a project fact correction from prior tool-result context when the turn omits project scope", async () => {
+    const sessionFile = await writeOrdinaryTurnTranscript(
+      [
+        {
+          type: "tool_result",
+          tool: "project_lookup",
+          result: "For project atlas forge, the staging branch is atlas-staging.",
+        },
+        {
+          type: "message",
+          id: "user-1",
+          message: {
+            role: "user",
+            content: "Actually, the staging branch is atlas-green.",
+            timestamp: Date.parse("2026-04-09T10:00:00Z"),
+          },
+        },
+      ],
+      "contextual-project-fact.jsonl",
+    );
+    const submitCorrectionSuggestion = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "correction" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-context-project-correction-1",
+      memoryObjectId: "memory-context-project-correction-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-context-project",
+          sessionId: "session-uuid-context-project",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion,
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile,
+      sessionKey: "agent:main:main",
+    });
+
+    expect(submitCorrectionSuggestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "Project correction [atlas forge]: staging branch is atlas-green.",
+        metadata: expect.objectContaining({
+          category: "project_fact_correction",
+          source: "conversational_project_fact_correction",
+          autoCapture: expect.objectContaining({
+            captureClass: "project_fact_correction",
+            projectScope: "atlas forge",
+            reasonCode: "explicit_project_fact_correction",
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("passes docs-scoped contextual raw candidates into workflow capture when prior system context carries project scope", async () => {
+    resolveWorkflowImprovementIngestion.mockClear();
+    const sessionFile = await writeOrdinaryTurnTranscript(
+      [
+        {
+          type: "message",
+          id: "system-1",
+          message: {
+            role: "system",
+            content: "For project atlas forge docs, we are defining docs localization rules.",
+            timestamp: Date.parse("2026-04-09T10:04:00Z"),
+          },
+        },
+        {
+          type: "message",
+          id: "user-1",
+          message: {
+            role: "user",
+            content:
+              "Update the English docs first and rerun docs i18n instead of editing docs/zh-CN directly.",
+            timestamp: Date.parse("2026-04-09T10:05:00Z"),
+          },
+        },
+      ],
+      "contextual-docs-workflow.jsonl",
+    );
+    const submitImprovementNote = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "improvement" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-context-docs-rule-1",
+      memoryObjectId: "memory-context-docs-rule-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-context-docs",
+          sessionId: "session-uuid-context-docs",
+        })),
+        submitLearning: vi.fn(),
+        submitCorrectionSuggestion: vi.fn(),
+        submitProcedureSuggestion: vi.fn(),
+        submitImprovementNote,
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+        inspectWorkflowImprovementLifecycle: vi.fn(async () => ({
+          activeApprovedSubjectObjectIds: [],
+          pendingSubjectCandidateIds: [],
+          activeApprovedSubjectEntries: [],
+          pendingSubjectCandidates: [],
+        })),
+      },
+    });
+
+    await handler({
+      sessionFile,
+      sessionKey: "agent:main:main",
+    });
+
+    expect(resolveWorkflowImprovementIngestion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content:
+          "Update the English docs first and rerun docs i18n instead of editing docs/zh-CN directly.",
+        rawCandidates: expect.arrayContaining([
+          "For atlas forge docs, update the English docs first and rerun docs i18n instead of editing docs/zh-CN directly.",
+        ]),
+      }),
+    );
+    expect(submitImprovementNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining("Project rule [atlas forge]:"),
+        metadata: expect.objectContaining({
+          category: "project_rule",
+          autoCapture: expect.objectContaining({
+            captureClass: "project_rule_guidance",
+            projectScope: "atlas forge",
+          }),
+          canonicalIngestionCandidate: expect.objectContaining({
+            capture: expect.objectContaining({
+              source: "raw",
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("captures terse response-format replies when prior assistant context makes the choice explicit", async () => {
+    const sessionFile = await writeOrdinaryTurnTranscript(
+      [
+        {
+          type: "message",
+          id: "assistant-1",
+          message: {
+            role: "assistant",
+            content: "Do you want bullet points or a paragraph for later replies?",
+            timestamp: Date.parse("2026-04-09T10:09:00Z"),
+          },
+        },
+        {
+          type: "message",
+          id: "user-1",
+          message: {
+            role: "user",
+            content: "Bullets.",
+            timestamp: Date.parse("2026-04-09T10:09:10Z"),
+          },
+        },
+      ],
+      "contextual-response-style.jsonl",
+    );
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-context-style-1",
+      memoryObjectId: "memory-context-style-1",
+    }));
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-context-style",
+          sessionId: "session-uuid-context-style",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion: vi.fn(),
+        reviewCandidate: vi.fn(async () => ({
+          accepted: true as const,
+          reviewId: "review-context-style-1",
+        })),
+        promoteToMemory: vi.fn(async () => ({
+          accepted: true as const,
+          promotedMemoryObjectId: "approved-context-style-1",
+        })),
+      },
+    });
+
+    await handler({
+      sessionFile,
+      sessionKey: "agent:chief:main",
+    });
+
+    expect(submitLearning).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "User requirement: use bullet points when listing items.",
+        metadata: expect.objectContaining({
+          autoCapture: expect.objectContaining({
+            captureClass: "explicit_requirement",
+            value: "use bullet points when listing items",
+          }),
+          canonicalIngestionCandidate: expect.objectContaining({
+            capture: expect.objectContaining({
+              source: "raw",
+            }),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("does not overcapture vague replies even when prior context is strong", async () => {
+    const sessionFile = await writeOrdinaryTurnTranscript(
+      [
+        {
+          type: "message",
+          id: "assistant-1",
+          message: {
+            role: "assistant",
+            content: "For project atlas forge, the staging branch is atlas-staging.",
+            timestamp: Date.parse("2026-04-09T10:12:00Z"),
+          },
+        },
+        {
+          type: "message",
+          id: "user-1",
+          message: {
+            role: "user",
+            content: "That one.",
+            timestamp: Date.parse("2026-04-09T10:12:10Z"),
+          },
+        },
+      ],
+      "contextual-vague-reply.jsonl",
+    );
+    const submitLearning = vi.fn();
+    const submitCorrectionSuggestion = vi.fn();
+    const submitImprovementNote = vi.fn();
+    const submitProcedureSuggestion = vi.fn();
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      deps: {
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-context-vague",
+          sessionId: "session-uuid-context-vague",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion,
+        submitImprovementNote,
+        submitProcedureSuggestion,
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+        promoteToProcedureDraft: vi.fn(),
+        validateProcedure: vi.fn(),
+      },
+    });
+
+    await handler({
+      sessionFile,
+      sessionKey: "agent:main:main",
+    });
+
+    expect(submitLearning).not.toHaveBeenCalled();
+    expect(submitCorrectionSuggestion).not.toHaveBeenCalled();
+    expect(submitImprovementNote).not.toHaveBeenCalled();
+    expect(submitProcedureSuggestion).not.toHaveBeenCalled();
+  });
+
   it("does not persist vague project caution statements from ordinary turns", async () => {
     const submitLearning = vi.fn();
     const submitCorrectionSuggestion = vi.fn();
@@ -4225,6 +4535,7 @@ describe("createOrdinaryTurnAutoCaptureController", () => {
       config: createConfig(),
       logger: { info() {}, warn() {}, error() {}, debug() {} },
       candidateIngress: createUnusedCandidateIngress(),
+      semanticInterpreter: createRuleBasedTestMemorySemanticInterpreter(),
       subscribe,
       deps: {
         findExistingByKey: vi.fn(async () => null),

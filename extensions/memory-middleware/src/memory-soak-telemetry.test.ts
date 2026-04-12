@@ -147,7 +147,7 @@ describe("memory soak telemetry", () => {
           category: "application",
           action: "memory_context_outcome",
           source: "memory_context_outcome_tracker",
-          outcome: "guidance_missed",
+          outcome: "application_missed",
           attribution: "causal",
           runId: "run-1",
           sessionId: "session-1",
@@ -156,6 +156,7 @@ describe("memory soak telemetry", () => {
           packKinds: ["user", "project"],
           attachedSlotCount: 2,
           suggestionCount: 0,
+          applicationMode: "guidance_only",
         },
         {
           schemaVersion: 1,
@@ -261,14 +262,18 @@ describe("memory soak telemetry", () => {
       expect(summary.application.filteredOutByScopeCount).toBe(1);
       expect(summary.application.memoryContextAttachments).toBe(1);
       expect(summary.application.memoryContextResponses).toBe(1);
+      expect(summary.application.proxyOnlyResponseCount).toBe(0);
       expect(summary.application.survivedTurnBoundaryCount).toBe(1);
       expect(summary.application.memoryContextResponseRate).toBe(1);
       expect(summary.application.survivalAfterResponseRate).toBe(1);
+      expect(summary.application.survivalAfterExplicitApplicationRate).toBe(null);
       expect(summary.application.repeatedCorrectionAfterResponseRate).toBe(0);
       expect(summary.application.repeatedCorrectionAvoidanceRate).toBe(1);
-      expect(summary.application.guidanceAlignmentRate).toBe(0);
-      expect(summary.application.guidanceMissCount).toBe(1);
-      expect(summary.application.causalGuidanceUsefulnessRate).toBe(0);
+      expect(summary.application.explicitApplicationAlignmentRate).toBe(0);
+      expect(summary.application.explicitApplicationMissCount).toBe(1);
+      expect(summary.application.causalApplicationUsefulnessRate).toBe(0);
+      expect(summary.application.contradictedAfterExplicitApplicationCount).toBe(0);
+      expect(summary.application.explicitApplicationContradictionRate).toBe(null);
       expect(summary.review.deferredOverflowPromotions).toBe(1);
       expect(summary.projection.runs).toBe(1);
       expect(summary.orchestration.factDenseSessionMemoryCount).toBe(1);
@@ -284,7 +289,7 @@ describe("memory soak telemetry", () => {
         "- memory_context_response_rate: 100.0%",
       );
       expect(renderMemorySoakTelemetryOperatorSummary(summary)).toContain(
-        "- causal_guidance_missed_with_attached_memory: 1",
+        "- causal_application_missed_with_attached_memory: 1",
       );
       expect(renderMemorySoakTelemetryDailyBrief(summary)).toContain("memory_soak:");
       expect(latestSummary).toContain("Corpus Demand Signals");

@@ -104,4 +104,34 @@ describe("selectCompiledMemoryPackPlans", () => {
     expect(plans[0]?.kind).toBe("project");
     expect(plans[0]?.slots.map((slot) => slot.slotKey)).toEqual(["workflow-newer"]);
   });
+
+  it("prefers the stronger redundant user directive over a weaker paraphrase", () => {
+    const plans = selectCompiledMemoryPackPlans({
+      slots: [
+        createSlot({
+          slotKey: "weak-bullets",
+          semanticKey: "user.response.bullets.weak",
+          promptText: "Use bullet points.",
+          searchText: "use bullet points",
+          selectionKey: "user.response.bullets.weak",
+          compatibilityTemplate: "responses_bullets",
+        }),
+        createSlot({
+          slotKey: "strong-bullets",
+          semanticKey: "user.response.bullets.strong",
+          promptText: "Use bullet points when listing items.",
+          searchText: "use bullet points when listing items",
+          selectionKey: "user.response.bullets.strong",
+          compatibilityTemplate: "responses_bullets",
+          updatedAt: "2026-04-11T00:00:00.000Z",
+        }),
+      ],
+      prompt: "Please give me a few options for how to handle this.",
+      agentId: "main",
+    });
+
+    expect(plans).toHaveLength(1);
+    expect(plans[0]?.kind).toBe("user");
+    expect(plans[0]?.slots.map((slot) => slot.slotKey)).toEqual(["strong-bullets"]);
+  });
 });

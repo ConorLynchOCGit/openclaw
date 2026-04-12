@@ -260,7 +260,9 @@ describe("memory context outcome proof", () => {
       expect.objectContaining({
         category: "application",
         action: "memory_context_outcome",
-        outcome: "guidance_aligned",
+        outcome: "application_aligned",
+        applicationMode: "guidance_only",
+        matchedSlotKeys: ["project_rule|project|maintenance|||project_maintenance_default_branch"],
         matchedSourceIds: ["memory-branch-1"],
       }),
     );
@@ -359,7 +361,8 @@ describe("memory context outcome proof", () => {
       expect.objectContaining({
         category: "application",
         action: "memory_context_outcome",
-        outcome: "guidance_missed",
+        outcome: "application_missed",
+        applicationMode: "guidance_only",
         suggestionCount: 1,
       }),
     );

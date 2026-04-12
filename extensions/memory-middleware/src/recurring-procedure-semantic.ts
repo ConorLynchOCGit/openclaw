@@ -234,6 +234,83 @@ function inferGenericProcedureTitleFromMediumSubject(rawLabel: string): string |
   return toDisplayProcedureTitle(titled);
 }
 
+function isExplicitActionProcedureStep(step: string): boolean {
+  const normalizedStep = normalizeText(step);
+  const colonIndex = normalizedStep.indexOf(":");
+  const actionLead =
+    colonIndex > 0 && colonIndex < normalizedStep.length - 1
+      ? normalizeText(normalizedStep.slice(colonIndex + 1))
+      : normalizedStep;
+  return /^(?:run|add|freeze|capture|confirm|rerun|commit|push|verify|iterate|fill|reuse|prefer|use|treat|trust|include|avoid|do not|keep|save|post|update|follow|check|debug)\b/i.test(
+    actionLead,
+  );
+}
+
+function isActionableProcedureStep(step: string): boolean {
+  const normalizedStep = normalizeText(step);
+  if (isExplicitActionProcedureStep(normalizedStep)) {
+    return true;
+  }
+  const colonIndex = normalizedStep.indexOf(":");
+  return colonIndex > 0 && /`[^`]{2,80}`/.test(normalizedStep);
+}
+
+function hasActionableProcedureSteps(steps: string[]): boolean {
+  return steps.filter((step) => isActionableProcedureStep(step)).length >= 2;
+}
+
+function hasExplicitActionProcedureSteps(steps: string[]): boolean {
+  return steps.some((step) => isExplicitActionProcedureStep(step));
+}
+
+function inferGenericProcedureTitleFromStructuredLabel(
+  rawLabel: string,
+  steps: string[],
+): string | null {
+  const supportedTitle = inferProcedureKey(rawLabel);
+  if (supportedTitle) {
+    return PROCEDURE_KEY_SPECS[supportedTitle].title;
+  }
+
+  const explicitGenericTitle = inferGenericProcedureTitleFromExplicitLabel(rawLabel);
+  if (explicitGenericTitle) {
+    return explicitGenericTitle;
+  }
+
+  const cleaned = cleanGenericProcedureLabel(rawLabel);
+  if (
+    !cleaned ||
+    cleaned.length < 6 ||
+    cleaned.length > 96 ||
+    GENERIC_PROCEDURE_AMBIGUOUS_LABEL_PATTERN.test(cleaned) ||
+    GENERIC_PROCEDURE_BLOCKLIST_PATTERN.test(cleaned)
+  ) {
+    return null;
+  }
+
+  if (/\bphase order\b/i.test(cleaned)) {
+    return toDisplayProcedureTitle(cleaned);
+  }
+  if (/\bgate\b/i.test(cleaned) && hasActionableProcedureSteps(steps)) {
+    return toDisplayProcedureTitle(cleaned);
+  }
+  if (/\btiming\b/i.test(cleaned) && hasActionableProcedureSteps(steps)) {
+    return toDisplayProcedureTitle(cleaned);
+  }
+  if (/\bverification\b/i.test(cleaned) && steps.length >= 2) {
+    return toDisplayProcedureTitle(cleaned);
+  }
+  if (
+    hasActionableProcedureSteps(steps) &&
+    hasExplicitActionProcedureSteps(steps) &&
+    cleaned.length <= 72
+  ) {
+    return toDisplayProcedureTitle(cleaned);
+  }
+
+  return null;
+}
+
 function cleanStep(step: string): string {
   return normalizeText(step)
     .replace(/[.!?]+$/, "")
@@ -252,8 +329,8 @@ function parseChecklistSteps(body: string): string[] | null {
     .map((line) => line.match(/^(?:[-*]|\d+[.)])\s+(.+)$/)?.[1] ?? null)
     .filter((step): step is string => Boolean(step))
     .map(cleanStep)
-    .filter((step) => step.length >= 4 && step.length <= 160);
-  if (multilineSteps.length >= 2 && multilineSteps.length <= 8) {
+    .filter((step) => step.length >= 4 && step.length <= 280);
+  if (multilineSteps.length >= 2 && multilineSteps.length <= 12) {
     return multilineSteps;
   }
 
@@ -261,12 +338,50 @@ function parseChecklistSteps(body: string): string[] | null {
     ...normalized.matchAll(/(?:^|\s)(?:\d+[.)])\s+([^]+?)(?=(?:\s+\d+[.)]\s)|$)/g),
   ]
     .map((match) => cleanStep(match[1] ?? ""))
-    .filter((step) => step.length >= 4 && step.length <= 160);
-  if (inlineSteps.length >= 2 && inlineSteps.length <= 8) {
+    .filter((step) => step.length >= 4 && step.length <= 280);
+  if (inlineSteps.length >= 2 && inlineSteps.length <= 12) {
     return inlineSteps;
   }
 
   return null;
+}
+
+function detectStructuredBlockProcedure(
+  normalized: string,
+  corrected: boolean,
+): RecurringProcedureSemanticCaptureDecision | null {
+  const matched = normalized.match(/^([^\n:]{4,96}):\n([\s\S]+)$/);
+  if (!matched) {
+    return null;
+  }
+
+  const rawLabel = matched[1] ?? "";
+  const steps = parseChecklistSteps(matched[2] ?? "");
+  if (!steps) {
+    return null;
+  }
+
+  const procedureKey = inferProcedureKey(rawLabel);
+  const title = inferGenericProcedureTitleFromStructuredLabel(rawLabel, steps);
+  if (!title) {
+    return null;
+  }
+
+  return {
+    action: "capture",
+    confidence: /\bphase order\b/i.test(rawLabel) ? "medium" : "high",
+    evidence: corrected
+      ? ["structured_titled_block", "structured_steps", "correction_prefix"]
+      : ["structured_titled_block", "structured_steps"],
+    match: buildCanonicalMatch({
+      procedureFamily: procedureKey ? "supported_key" : "generalized_named_checklist",
+      ...(procedureKey ? { procedureKey } : {}),
+      title,
+      template: procedureKey ? "named_recurring_checklist" : "generalized_recurring_checklist",
+      steps,
+      corrected,
+    }),
+  };
 }
 
 function buildCanonicalMatch(params: {
@@ -300,6 +415,23 @@ function buildCanonicalMatch(params: {
     subjectKey: buildAutoCaptureSubjectKey({ normalizedTitle }),
     key: buildAutoCaptureKey({ normalizedTitle, normalizedBody }),
   };
+}
+
+export function createRecurringProcedureCanonicalMatch(params: {
+  title: string;
+  steps: string[];
+  procedureFamily: RecurringProcedureFamily;
+  procedureKey?: RecurringProcedureKey;
+  correction?: boolean;
+}): RecurringProcedureCanonicalMatch {
+  return buildCanonicalMatch({
+    title: params.title,
+    steps: params.steps,
+    procedureFamily: params.procedureFamily,
+    ...(params.procedureKey ? { procedureKey: params.procedureKey } : {}),
+    template: params.procedureKey ? "named_recurring_checklist" : "generalized_recurring_checklist",
+    corrected: params.correction ?? false,
+  });
 }
 
 export function isSupportedRecurringProcedureKey(value: string): value is RecurringProcedureKey {
@@ -390,6 +522,14 @@ export function detectRecurringProcedureSemanticDecision(
         corrected: correction.corrected,
       }),
     };
+  }
+
+  const structuredBlockDecision = detectStructuredBlockProcedure(
+    correction.normalized,
+    correction.corrected,
+  );
+  if (structuredBlockDecision) {
+    return structuredBlockDecision;
   }
 
   return {

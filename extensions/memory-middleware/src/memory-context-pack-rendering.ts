@@ -47,7 +47,7 @@ export function renderCompiledMemoryPack(plan: CompiledMemoryPackPlan): Compiled
   if (trimmed.omitted.length > 0) {
     lines.push(
       "",
-      `- Additional active entries omitted to stay within the prompt budget (${String(trimmed.omitted.length)} more).`,
+      `- Lower-priority active entries omitted to stay within the prompt budget (${String(trimmed.omitted.length)} more).`,
     );
   }
   const text = lines.join("\n");

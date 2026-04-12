@@ -613,6 +613,18 @@ function createRuntime(params: {
     db,
     mode: queryMode,
   });
+  const semanticInterpreter = {
+    interpretBlock: async () => ({
+      decision: {
+        action: "ignore" as const,
+        semanticClass: "ignore" as const,
+        confidence: "weak" as const,
+        rationale: ["test semantic interpreter stub"],
+      },
+      modelId: "test/stub-semantic-interpreter",
+      promptVersion: "test-stub-v1",
+    }),
+  };
 
   return {
     config: {
@@ -663,6 +675,7 @@ function createRuntime(params: {
       db,
     }),
     outcomeProof: createMemoryContextOutcomeProofPort(),
+    semanticInterpreter,
     db,
     candidateIngress,
     selfImprovingCandidateCapture: createSelfImprovingCandidateCapturePort({

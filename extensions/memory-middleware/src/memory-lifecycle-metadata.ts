@@ -62,7 +62,7 @@ export function buildProjectFactSemanticMetadata(params: {
 }
 
 export function buildRecurringProcedureSemanticMetadata(params: {
-  detectionSource: "semantic";
+  detectionSource: "semantic" | "deterministic";
   confidence: "high" | RecurringProcedureSemanticConfidence;
   evidence: string[];
   procedureFamily: RecurringProcedureFamily;

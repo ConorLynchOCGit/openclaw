@@ -327,6 +327,24 @@ function buildProjectFactMatch(params: {
   };
 }
 
+export function createProjectFactCanonicalMatch(params: {
+  projectScope: string;
+  subjectLabel: string;
+  value: string;
+  factFamily: ProjectFactFamily;
+  fieldKey?: ProjectFactFieldKey;
+  correction?: boolean;
+}): ProjectFactCanonicalMatch {
+  return buildProjectFactMatch({
+    correction: params.correction ?? false,
+    projectScope: params.projectScope,
+    subjectLabel: params.subjectLabel,
+    value: params.value,
+    factFamily: params.factFamily,
+    ...(params.fieldKey ? { fieldKey: params.fieldKey } : {}),
+  });
+}
+
 function matchProjectFactUrl(
   remainder: string,
   params: {

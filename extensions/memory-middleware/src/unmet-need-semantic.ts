@@ -170,6 +170,15 @@ function createUnmetNeedMatch(params: {
   };
 }
 
+export function createUnmetNeedCanonicalMatch(params: {
+  projectScope: string;
+  subject: string;
+  neededCapability: string;
+  rationale?: string;
+}): UnmetNeedCanonicalMatch {
+  return createUnmetNeedMatch(params);
+}
+
 export function detectUnmetNeedSemanticDecision(text: string): UnmetNeedSemanticCaptureDecision {
   const normalized = normalizeText(text);
   if (

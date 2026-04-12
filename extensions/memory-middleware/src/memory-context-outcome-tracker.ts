@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { CandidateLearningInput } from "./candidate-ingress.js";
 import type { LearnedGuidanceAdvisoryPlanningResult } from "./learned-guidance-advisory-planning.js";
 import { readCanonicalMemoryIngestionCandidateFromMetadata } from "./memory-canonical-compat.js";
@@ -24,7 +25,13 @@ type AttachedMemoryRunRecord = {
   attachedSlotKeys: Set<string>;
   attachedSemanticKeys: Set<string>;
   attachedSourceIds: Set<string>;
+  sourceToSlotKeys: Map<string, Set<string>>;
   repeatedCorrectionSlotKeys: Set<string>;
+  applicationAligned: boolean;
+  applicationMissed: boolean;
+  appliedSourceIds: Set<string>;
+  appliedSlotKeys: Set<string>;
+  applicationMode?: string;
 };
 
 const ATTACHMENT_TTL_MS = 6 * 60 * 60 * 1000;
@@ -162,20 +169,38 @@ export function createMemoryContextOutcomeTracker(): MemoryContextOutcomeTracker
       ) {
         previous.finalized = true;
         observations.push({
-          outcome: "survived_turn_boundary",
-          attribution: "proxy",
+          outcome: previous.applicationAligned
+            ? "survived_after_application"
+            : "survived_turn_boundary",
+          attribution: previous.applicationAligned ? "causal" : "proxy",
           ...(previous.runId ? { runId: previous.runId } : {}),
           ...(previous.sessionId ? { sessionId: previous.sessionId } : {}),
           ...(previous.agentId ? { agentId: previous.agentId } : {}),
           packCount: previous.packCount,
           packKinds: previous.packKinds,
           attachedSlotCount: previous.attachedSlotKeys.size,
+          matchedSlotCount: previous.applicationAligned ? previous.appliedSlotKeys.size : undefined,
+          matchedSlotKeys: previous.applicationAligned
+            ? [...previous.appliedSlotKeys].sort((left, right) => left.localeCompare(right))
+            : undefined,
+          matchedSourceIds: previous.applicationAligned
+            ? [...previous.appliedSourceIds].sort((left, right) => left.localeCompare(right))
+            : undefined,
+          applicationMode: previous.applicationMode,
         });
       }
 
-      const runId =
-        input.runId ??
-        `memory-context-run:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+      const runId = input.runId ?? `memory-context-run:${randomUUID()}`;
+      const sourceToSlotKeys = new Map<string, Set<string>>();
+      for (const pack of input.compiled.packs) {
+        for (const sourceId of pack.sourceIds) {
+          const existing = sourceToSlotKeys.get(sourceId) ?? new Set<string>();
+          for (const slotKey of pack.slotKeys) {
+            existing.add(slotKey);
+          }
+          sourceToSlotKeys.set(sourceId, existing);
+        }
+      }
       const record: AttachedMemoryRunRecord = {
         runId,
         sessionId: input.sessionId,
@@ -190,7 +215,12 @@ export function createMemoryContextOutcomeTracker(): MemoryContextOutcomeTracker
         attachedSlotKeys: new Set(input.compiled.packs.flatMap((pack) => pack.slotKeys)),
         attachedSemanticKeys: new Set(input.compiled.packs.flatMap((pack) => pack.semanticKeys)),
         attachedSourceIds: new Set(input.compiled.packs.flatMap((pack) => pack.sourceIds)),
+        sourceToSlotKeys,
         repeatedCorrectionSlotKeys: new Set<string>(),
+        applicationAligned: false,
+        applicationMissed: false,
+        appliedSourceIds: new Set<string>(),
+        appliedSlotKeys: new Set<string>(),
       };
       runsById.set(runId, record);
       if (input.sessionId) {
@@ -270,6 +300,8 @@ export function createMemoryContextOutcomeTracker(): MemoryContextOutcomeTracker
           attachedSlotCount: record.attachedSlotKeys.size,
           matchedSlotCount: 1,
           matchedSlotKeys: [semanticKey],
+          applicationMode: record.applicationMode,
+          applicationAlignedBeforeFailure: record.applicationAligned,
         },
       ];
     },
@@ -289,9 +321,11 @@ export function createMemoryContextOutcomeTracker(): MemoryContextOutcomeTracker
         .map((suggestion) => suggestion.memoryObjectId)
         .filter((memoryObjectId) => record.attachedSourceIds.has(memoryObjectId));
       if (matchedSourceIds.length === 0) {
+        record.applicationMissed = true;
+        record.applicationMode = input.result.applicationMode;
         return [
           {
-            outcome: "guidance_missed",
+            outcome: "application_missed",
             attribution: "causal",
             ...(record.runId ? { runId: record.runId } : {}),
             ...(record.sessionId ? { sessionId: record.sessionId } : {}),
@@ -300,13 +334,24 @@ export function createMemoryContextOutcomeTracker(): MemoryContextOutcomeTracker
             packKinds: record.packKinds,
             attachedSlotCount: record.attachedSlotKeys.size,
             suggestionCount: input.result.suggestions.length,
+            applicationMode: input.result.applicationMode,
           },
         ];
       }
 
+      record.applicationAligned = true;
+      record.applicationMode = input.result.applicationMode;
+      for (const sourceId of matchedSourceIds) {
+        record.appliedSourceIds.add(sourceId);
+        const slotKeys = record.sourceToSlotKeys.get(sourceId);
+        for (const slotKey of slotKeys ?? []) {
+          record.appliedSlotKeys.add(slotKey);
+        }
+      }
+
       return [
         {
-          outcome: "guidance_aligned",
+          outcome: "application_aligned",
           attribution: "causal",
           ...(record.runId ? { runId: record.runId } : {}),
           ...(record.sessionId ? { sessionId: record.sessionId } : {}),
@@ -314,9 +359,13 @@ export function createMemoryContextOutcomeTracker(): MemoryContextOutcomeTracker
           packCount: record.packCount,
           packKinds: record.packKinds,
           attachedSlotCount: record.attachedSlotKeys.size,
-          matchedSlotCount: matchedSourceIds.length,
+          matchedSlotCount: record.appliedSlotKeys.size,
+          matchedSlotKeys: [...record.appliedSlotKeys].sort((left, right) =>
+            left.localeCompare(right),
+          ),
           matchedSourceIds,
           suggestionCount: input.result.suggestions.length,
+          applicationMode: input.result.applicationMode,
         },
       ];
     },

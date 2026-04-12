@@ -518,6 +518,54 @@ function detectGitStashWorkflowGuidance(normalized: string): {
   return null;
 }
 
+function detectRuntimeProofFastWorkflowGuidance(normalized: string): {
+  confidence: WorkflowImprovementSemanticConfidence;
+  evidence: string[];
+  match: WorkflowImprovementCanonicalMatch;
+} | null {
+  const hasRuntimeProofFast =
+    /\bpnpm runtime proof fast\b/.test(normalized) || /\bruntime proof fast\b/.test(normalized);
+  const hasAuthoritativeLanguage =
+    /\bauthoritative\b/.test(normalized) ||
+    /\bproof entrypoint\b/.test(normalized) ||
+    /\bowner of .*proof semantics\b/.test(normalized);
+  const hasProofScope =
+    /\bnon production\b/.test(normalized) ||
+    /\bproof\b/.test(normalized) ||
+    /\breadyz\b/.test(normalized) ||
+    /\bgateway restart\b/.test(normalized);
+
+  if (hasRuntimeProofFast && hasAuthoritativeLanguage && hasProofScope) {
+    return {
+      confidence: "high",
+      evidence: ["tool_runtime_proof_fast", "authoritative_entrypoint", "proof_scope"],
+      match: createGeneralizedWorkflowImprovementMatch({
+        guidancePattern: "use_instead_of",
+        subject: "non-production runtime proof",
+        recommendedAction: "pnpm runtime:proof:fast",
+        avoidAction: "ad hoc proof entrypoints",
+        rationale: "it owns gateway restart and /readyz proof semantics",
+      }),
+    };
+  }
+
+  if (hasRuntimeProofFast && hasProofScope) {
+    return {
+      confidence: "medium",
+      evidence: ["tool_runtime_proof_fast", "proof_scope"],
+      match: createGeneralizedWorkflowImprovementMatch({
+        guidancePattern: "use_instead_of",
+        subject: "non-production runtime proof",
+        recommendedAction: "pnpm runtime:proof:fast",
+        avoidAction: "ad hoc proof entrypoints",
+        rationale: "it owns gateway restart and /readyz proof semantics",
+      }),
+    };
+  }
+
+  return null;
+}
+
 function detectPythonUnavailableLesson(normalized: string): {
   confidence: WorkflowImprovementSemanticConfidence;
   evidence: string[];
@@ -923,6 +971,16 @@ export function detectWorkflowImprovementSemanticDecision(
       confidence: gitStash.confidence,
       evidence: gitStash.evidence,
       match: gitStash.match,
+    };
+  }
+
+  const runtimeProofFast = detectRuntimeProofFastWorkflowGuidance(normalized);
+  if (runtimeProofFast) {
+    return {
+      action: "capture",
+      confidence: runtimeProofFast.confidence,
+      evidence: runtimeProofFast.evidence,
+      match: runtimeProofFast.match,
     };
   }
 

@@ -49,12 +49,18 @@ import {
   shouldSkipImmediateRecurringProcedureConfirmation as shouldSkipImmediateRecurringProcedureLifecycleConfirmation,
   shouldSkipImmediateWorkflowImprovementConfirmation as shouldSkipImmediateWorkflowImprovementLifecycleConfirmation,
 } from "./memory-lifecycle-metadata.js";
+import { type MemorySemanticInterpreterPort } from "./memory-model-semantic-interpreter.js";
 import { resolveWorkflowCaptureCategoryFromCaptureClass } from "./memory-profile-routing.js";
+import { planNormalizedMemoryBlock } from "./memory-semantic-planner.js";
 import {
   deriveCorpusDemandSignalsFromPrompt,
   type MemorySoakTelemetryPort,
   MEMORY_SOAK_TELEMETRY_SCHEMA_VERSION,
 } from "./memory-soak-telemetry.js";
+import {
+  normalizeTranscriptMemorySource,
+  type NormalizedTranscriptContextEntry,
+} from "./memory-source-normalization.js";
 import {
   buildDeferredOverflowMetadata,
   readCandidateLifecycleState,
@@ -645,6 +651,8 @@ const AUTO_CAPTURE_DEFAULT_MULTI_SEGMENT_LIMIT = 24;
 const AUTO_CAPTURE_BULK_MULTI_SEGMENT_LIMIT = 48;
 const AUTO_CAPTURE_BULK_LIST_ITEM_THRESHOLD = 4;
 const AUTO_CAPTURE_BULK_SENTENCE_THRESHOLD = 16;
+const AUTO_CAPTURE_CONTEXT_LOOKBACK_MESSAGES = 4;
+const AUTO_CAPTURE_CONTEXT_ENTRY_MAX_CHARS = 360;
 
 type SessionTranscriptUpdateLike = {
   sessionFile: string;
@@ -658,6 +666,9 @@ type TranscriptUserMessage = {
   content: string | Array<{ text?: unknown }>;
   timestamp?: number;
 };
+
+type TranscriptMessageRole = "user" | "assistant" | "system" | "tool";
+type TranscriptContextEntry = NormalizedTranscriptContextEntry;
 
 type ResolvedAttribution = {
   agentId: string;
@@ -781,7 +792,7 @@ export type OrdinaryTurnAutoCaptureController = {
 
 type ResponseStyleDetectionSource = "deterministic" | "semantic";
 type ProjectFactDetectionSource = "deterministic" | "semantic";
-type RecurringProcedureDetectionSource = "semantic";
+type RecurringProcedureDetectionSource = "deterministic" | "semantic";
 type WorkflowImprovementDetectionSource = "semantic" | "deterministic";
 
 type ResponseStyleCaptureDecision =
@@ -798,7 +809,7 @@ type ResponseStyleCaptureDecision =
   | {
       action: "forget";
       confidence: "high";
-      detectionSource: "semantic";
+      detectionSource: ResponseStyleDetectionSource;
       evidence: string[];
       subject: string;
       subjectKey: string;
@@ -972,6 +983,38 @@ function hasSupportedRole(value: unknown): value is "user" {
   return typeof value === "string" && AUTO_CAPTURE_ALLOWED_ROLES.has(value);
 }
 
+function hasContextMessageRole(value: unknown): value is TranscriptMessageRole {
+  return value === "user" || value === "assistant" || value === "system" || value === "tool";
+}
+
+function extractTranscriptMessageText(message: unknown): string | null {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") {
+    const text = content.replace(/\r\n?/g, "\n").trim();
+    return text ? text : null;
+  }
+  if (!Array.isArray(content)) {
+    return null;
+  }
+  const parts = content
+    .map((block) => {
+      if (!block || typeof block !== "object") {
+        return undefined;
+      }
+      if ("text" in block && typeof block.text === "string") {
+        return block.text;
+      }
+      return undefined;
+    })
+    .filter((text): text is string => typeof text === "string")
+    .map((text) => text.replace(/\r\n?/g, "\n").trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
 function extractTranscriptUserText(message: unknown): string | null {
   if (!message || typeof message !== "object") {
     return null;
@@ -980,21 +1023,329 @@ function extractTranscriptUserText(message: unknown): string | null {
   if (!hasSupportedRole(entry.role)) {
     return null;
   }
-  if (typeof entry.content === "string") {
-    const text = entry.content.replace(/\r\n?/g, "\n").trim();
-    return text ? text : null;
-  }
-  if (!Array.isArray(entry.content)) {
+  return extractTranscriptMessageText(message);
+}
+
+function extractTranscriptContextEntry(value: unknown): TranscriptContextEntry | null {
+  if (!value || typeof value !== "object") {
     return null;
   }
-  const parts = entry.content
-    .map((block) =>
-      block && typeof block === "object" && "text" in block ? block.text : undefined,
-    )
-    .filter((text): text is string => typeof text === "string")
-    .map((text) => text.replace(/\r\n?/g, "\n").trim())
-    .filter(Boolean);
-  return parts.length > 0 ? parts.join("\n\n") : null;
+  const entry = value as {
+    type?: unknown;
+    tool?: unknown;
+    input?: unknown;
+    result?: unknown;
+    message?: unknown;
+  };
+  if (entry.message && typeof entry.message === "object") {
+    const role = (entry.message as { role?: unknown }).role;
+    if (!hasContextMessageRole(role)) {
+      return null;
+    }
+    const text = extractTranscriptMessageText(entry.message);
+    if (!text) {
+      return null;
+    }
+    return {
+      role,
+      text: normalizeText(text).slice(0, AUTO_CAPTURE_CONTEXT_ENTRY_MAX_CHARS),
+      timestamp:
+        typeof (entry.message as { timestamp?: unknown }).timestamp === "number"
+          ? (entry.message as { timestamp?: number }).timestamp
+          : undefined,
+    };
+  }
+
+  if (entry.type === "tool_result" && typeof entry.result === "string") {
+    const text = normalizeText(entry.result);
+    return text
+      ? {
+          role: "tool_result",
+          text: text.slice(0, AUTO_CAPTURE_CONTEXT_ENTRY_MAX_CHARS),
+        }
+      : null;
+  }
+
+  if (
+    entry.type === "tool_use" &&
+    typeof entry.tool === "string" &&
+    typeof entry.input === "string"
+  ) {
+    const text = normalizeText(`${entry.tool}: ${entry.input}`);
+    return text
+      ? {
+          role: "tool_use",
+          text: text.slice(0, AUTO_CAPTURE_CONTEXT_ENTRY_MAX_CHARS),
+        }
+      : null;
+  }
+
+  return null;
+}
+
+async function readRecentTranscriptContextEntries(params: {
+  transcriptFile: string;
+  currentMessage?: unknown;
+}): Promise<TranscriptContextEntry[]> {
+  try {
+    const raw = await readFile(params.transcriptFile, "utf8");
+    const currentText = params.currentMessage
+      ? normalizeText(extractTranscriptUserText(params.currentMessage) ?? "")
+      : "";
+    const entries = raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line) as unknown;
+        } catch {
+          return null;
+        }
+      })
+      .filter((entry): entry is unknown => entry !== null)
+      .map((entry) => extractTranscriptContextEntry(entry))
+      .filter((entry): entry is TranscriptContextEntry => entry !== null);
+
+    if (currentText) {
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const entry = entries[index];
+        if (!entry) {
+          continue;
+        }
+        if (entry.role === "user" && normalizeText(entry.text) === currentText) {
+          entries.splice(index, 1);
+          break;
+        }
+      }
+    }
+
+    return entries.slice(-AUTO_CAPTURE_CONTEXT_LOOKBACK_MESSAGES);
+  } catch {
+    return [];
+  }
+}
+
+function lowercaseFirstMeaningfulCharacter(value: string): string {
+  return value.replace(/^[A-Z]/, (match) => match.toLowerCase());
+}
+
+function extractContextualCorrectionPrefix(value: string): {
+  prefix: string;
+  body: string;
+} {
+  const trimmed = normalizeText(value);
+  if (!trimmed) {
+    return { prefix: "", body: "" };
+  }
+  if (/^actually[, ]/i.test(trimmed)) {
+    return {
+      prefix: "Actually, ",
+      body: normalizeText(trimmed.replace(/^actually[, ]+/i, "")),
+    };
+  }
+  if (/^i meant[, ]/i.test(trimmed)) {
+    return {
+      prefix: "I meant, ",
+      body: normalizeText(trimmed.replace(/^i meant[, ]+/i, "")),
+    };
+  }
+  if (/^no[, ]/i.test(trimmed)) {
+    return {
+      prefix: "No, ",
+      body: normalizeText(trimmed.replace(/^no[, ]+/i, "")),
+    };
+  }
+  return { prefix: "", body: trimmed };
+}
+
+function applyContextualPrefix(prefix: string, statement: string): string {
+  return prefix ? `${prefix}${lowercaseFirstMeaningfulCharacter(statement)}` : statement;
+}
+
+function inferProjectScopeFromContextText(value: string): string | null {
+  const projectFactMatch = value.match(/^Project (?:fact|correction) \[([^\]]+)\]:/i);
+  if (projectFactMatch?.[1]) {
+    return normalizeText(projectFactMatch[1]);
+  }
+  const docsMatch = value.match(/^For project ([a-z0-9][a-z0-9 /_-]{1,80}?) docs[,.:]/i);
+  if (docsMatch?.[1]) {
+    return normalizeText(docsMatch[1]);
+  }
+  const projectMatch = value.match(/^For project ([a-z0-9][a-z0-9 /_-]{1,80}?)[,:]/i);
+  if (projectMatch?.[1]) {
+    return normalizeText(projectMatch[1]).replace(/\s+docs$/i, "");
+  }
+  const scopedDocsMatch = value.match(/^For ([a-z0-9][a-z0-9 /_-]{1,80}?) docs[,.:]/i);
+  if (scopedDocsMatch?.[1]) {
+    return normalizeText(scopedDocsMatch[1]);
+  }
+  return null;
+}
+
+function inferProjectFieldStatement(
+  value: string,
+): { fieldLabel: string; fieldValue: string } | null {
+  const match = value.match(
+    /^(?:the )?(default branch|staging branch|repository url|deployment url|documentation url|runbook url|primary environment name|primary package manager|package manager)\s+(?:is|=)\s+(.+?)[.!?]?$/i,
+  );
+  if (!match?.[1] || !match[2]) {
+    return null;
+  }
+  return {
+    fieldLabel: normalizeText(match[1]),
+    fieldValue: normalizeText(match[2]).replace(/[.!?]+$/, ""),
+  };
+}
+
+function inferProjectFieldValueFromReply(
+  value: string,
+  fieldKey?: ProjectFactFieldKey,
+): string | null {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return null;
+  }
+  const urlMatch = normalized.match(/https?:\/\/\S+/i);
+  if (urlMatch?.[0]) {
+    return normalizeText(urlMatch[0]).replace(/[.)]+$/, "");
+  }
+  if (fieldKey === "primary_package_manager") {
+    const packageManagerMatch = normalized.match(/\b(pnpm|npm|yarn|bun)\b/i);
+    return packageManagerMatch?.[1] ? normalizeText(packageManagerMatch[1]) : null;
+  }
+  const branchLikeMatch = normalized.match(
+    /^(?:use |it(?:'s| is) |the correct one is |the right one is )?([a-z0-9][a-z0-9._/#:-]*)(?: there| instead)?[.!?]?$/i,
+  );
+  return branchLikeMatch?.[1] ? normalizeText(branchLikeMatch[1]) : null;
+}
+
+function inferContextualResponseStyleRawCandidate(
+  body: string,
+  prefix: string,
+  contextEntries: TranscriptContextEntry[],
+): string | null {
+  const normalized = normalizeLower(body);
+  if (!normalized) {
+    return null;
+  }
+  const responseContext = contextEntries.some((entry) =>
+    /\b(reply|response|format|style|bullet points|direct answer|plain english|jargon|concise|short)\b/i.test(
+      entry.text,
+    ),
+  );
+  if (!responseContext) {
+    return null;
+  }
+  if (/^bullets?[.!?]?$/i.test(body)) {
+    return applyContextualPrefix(prefix, "Use bullet points for me.");
+  }
+  if (/^(?:use )?bullet points(?: for me)?[.!?]?$/i.test(body)) {
+    return applyContextualPrefix(prefix, "Use bullet points for me.");
+  }
+  if (/^(?:start with )?(?:the )?direct answer first[.!?]?$/i.test(body)) {
+    return applyContextualPrefix(prefix, "Start with the direct answer first.");
+  }
+  if (/^plain english(?:,? not jargon)?[.!?]?$/i.test(body)) {
+    return applyContextualPrefix(prefix, "Use plain English, not jargon.");
+  }
+  if (/^(?:keep it )?(?:short|concise|brief)[.!?]?$/i.test(body)) {
+    return applyContextualPrefix(prefix, "Keep responses concise.");
+  }
+  return null;
+}
+
+async function buildOrdinaryTurnContextualRawCandidates(params: {
+  text: string;
+  profile: "user-preference-v1" | "user-preference-v2";
+  config: MemoryMiddlewareConfig;
+  contextEntries: TranscriptContextEntry[];
+}): Promise<string[]> {
+  if (params.profile !== "user-preference-v2") {
+    return [];
+  }
+
+  const normalized = normalizeText(params.text);
+  if (!normalized) {
+    return [];
+  }
+
+  const { prefix, body } = extractContextualCorrectionPrefix(normalized);
+  const rawCandidates = new Set<string>();
+  const directFieldStatement = inferProjectFieldStatement(body);
+
+  let anchoredProjectScope: string | null = null;
+  let anchoredFieldLabel: string | null = null;
+  let anchoredFieldKey: ProjectFactFieldKey | undefined;
+  let docsScopedProjectScope: string | null = null;
+
+  for (const entry of [...params.contextEntries].reverse()) {
+    const projectResolution = await resolveProjectFactIngestion({
+      content: entry.text,
+      primarySource: "transcript",
+      mode: "ordinary_turn",
+    });
+    if (!anchoredProjectScope) {
+      anchoredProjectScope =
+        projectResolution?.parsed.projectScope ?? inferProjectScopeFromContextText(entry.text);
+    }
+    if (!anchoredFieldLabel && projectResolution) {
+      anchoredFieldLabel = normalizeText(projectResolution.parsed.subject.split("/").pop() ?? "");
+      anchoredFieldKey = projectResolution.fieldKey;
+    }
+
+    if (!docsScopedProjectScope && /\b(docs|zh-cn|i18n|localization)\b/i.test(entry.text)) {
+      docsScopedProjectScope =
+        inferProjectScopeFromContextText(entry.text) ?? anchoredProjectScope ?? null;
+    }
+  }
+
+  if (anchoredProjectScope && directFieldStatement) {
+    rawCandidates.add(
+      applyContextualPrefix(
+        prefix,
+        `For project ${anchoredProjectScope}, the ${directFieldStatement.fieldLabel} is ${directFieldStatement.fieldValue}.`,
+      ),
+    );
+  }
+
+  if (anchoredProjectScope && anchoredFieldLabel && !directFieldStatement) {
+    const replacementValue = inferProjectFieldValueFromReply(body, anchoredFieldKey);
+    if (replacementValue) {
+      rawCandidates.add(
+        applyContextualPrefix(
+          prefix,
+          `For project ${anchoredProjectScope}, the ${anchoredFieldLabel} is ${replacementValue}.`,
+        ),
+      );
+    }
+  }
+
+  if (
+    docsScopedProjectScope &&
+    /^(?:update|use|trust|avoid|do not|don't|dont|not)\b/i.test(body) &&
+    /\b(docs|zh-cn|i18n|localization|english docs)\b/i.test(body)
+  ) {
+    rawCandidates.add(
+      applyContextualPrefix(
+        prefix,
+        `For ${docsScopedProjectScope} docs, ${lowercaseFirstMeaningfulCharacter(body)}.`,
+      ).replace(/\.\./g, "."),
+    );
+  }
+
+  const responseStyleRawCandidate = inferContextualResponseStyleRawCandidate(
+    body,
+    prefix,
+    params.contextEntries,
+  );
+  if (responseStyleRawCandidate) {
+    rawCandidates.add(responseStyleRawCandidate);
+  }
+
+  return [...rawCandidates].filter(
+    (candidate) => normalizeText(candidate) !== normalized && normalizeText(candidate).length > 0,
+  );
 }
 
 function shouldKeepAutoCaptureParagraphWhole(value: string): boolean {
@@ -1019,6 +1370,15 @@ function splitAutoCaptureParagraphIntoSegments(value: string): string[] {
     .split(/(?<=[.!?])\s+/)
     .map((segment) => normalizeText(segment))
     .filter(Boolean);
+}
+
+function normalizeStructuredAutoCaptureParagraph(value: string): string {
+  return value
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => normalizeText(line))
+    .filter(Boolean)
+    .join("\n");
 }
 
 function resolveInitialAutoCaptureSegmentLimit(messageText: string): number {
@@ -1056,7 +1416,7 @@ function extractOrdinaryTurnAutoCaptureSegments(
 
   for (const paragraph of rawParagraphs.length > 0 ? rawParagraphs : [cleaned]) {
     if (shouldKeepAutoCaptureParagraphWhole(paragraph)) {
-      const segment = normalizeText(paragraph);
+      const segment = normalizeStructuredAutoCaptureParagraph(paragraph);
       if (segment) {
         segments.push(segment);
       }
@@ -1735,6 +2095,7 @@ async function detectResponseStyleCaptureDecision(
   text: string,
   profile: "user-preference-v1" | "user-preference-v2",
   config: MemoryMiddlewareConfig,
+  rawCandidates?: string[],
 ): Promise<ResponseStyleCaptureDecision | null> {
   if (profile !== "user-preference-v2") {
     return null;
@@ -1745,6 +2106,7 @@ async function detectResponseStyleCaptureDecision(
     primarySource: "transcript",
     mode: "ordinary_turn",
     allowPhrasePatternMatch: false,
+    rawCandidates,
   });
   if (!resolution) {
     return null;
@@ -1779,6 +2141,7 @@ async function detectResponseStyleCaptureDecision(
 async function detectProjectFactCaptureDecision(
   text: string,
   profile: "user-preference-v1" | "user-preference-v2",
+  rawCandidates?: string[],
 ): Promise<ProjectFactCaptureDecision | null> {
   if (profile !== "user-preference-v2") {
     return null;
@@ -1787,6 +2150,7 @@ async function detectProjectFactCaptureDecision(
     content: text,
     primarySource: "transcript",
     mode: "ordinary_turn",
+    rawCandidates,
   });
   if (!resolution) {
     return null;
@@ -1812,6 +2176,7 @@ async function detectProjectFactCaptureDecision(
 async function detectRecurringProcedureCaptureDecision(
   text: string,
   profile: "user-preference-v1" | "user-preference-v2",
+  rawCandidates?: string[],
 ): Promise<RecurringProcedureCaptureDecision | null> {
   if (profile !== "user-preference-v2") {
     return null;
@@ -1819,6 +2184,7 @@ async function detectRecurringProcedureCaptureDecision(
   const resolution = await resolveRecurringProcedureIngestion({
     content: text,
     primarySource: "transcript",
+    rawCandidates,
   });
   if (!resolution) {
     return null;
@@ -1845,6 +2211,7 @@ async function detectWorkflowImprovementCaptureDecision(
   text: string,
   profile: "user-preference-v1" | "user-preference-v2",
   config: MemoryMiddlewareConfig,
+  rawCandidates?: string[],
 ): Promise<WorkflowImprovementCaptureDecision | null> {
   if (profile !== "user-preference-v2") {
     return null;
@@ -1855,6 +2222,7 @@ async function detectWorkflowImprovementCaptureDecision(
     content: text,
     primarySource: "transcript",
     allowPhrasePatternMatch: false,
+    rawCandidates,
   });
   if (!resolution) {
     return null;
@@ -3007,6 +3375,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
   logger: PluginLogger;
   candidateIngress: CandidateIngressPort;
   soakTelemetry?: MemorySoakTelemetryPort;
+  semanticInterpreter?: MemorySemanticInterpreterPort;
   deps?: Partial<OrdinaryTurnAutoCaptureHandlerDeps>;
 }): (update: SessionTranscriptUpdateLike) => Promise<void> {
   const autoCapture = params.config.autoCapture ?? DEFAULT_MEMORY_MIDDLEWARE_AUTO_CAPTURE_CONFIG;
@@ -5138,8 +5507,20 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     agentExternalKey: string;
     sessionKey: string;
     transcriptFile: string;
+    recentContextEntries: TranscriptContextEntry[];
     timestamp?: string;
   }): Promise<OrdinaryTurnAutoCapturePlan | null> {
+    const contextualRawCandidates = await buildOrdinaryTurnContextualRawCandidates({
+      text: paramsForPlan.text,
+      profile: paramsForPlan.autoCaptureProfile,
+      config: params.config,
+      contextEntries: paramsForPlan.recentContextEntries,
+    });
+    const contextualPreferenceMatch = contextualRawCandidates
+      .map((candidate) =>
+        parseOrdinaryTurnAutoCapturePreference(candidate, paramsForPlan.autoCaptureProfile),
+      )
+      .find((candidate): candidate is OrdinaryTurnAutoCaptureMatch => candidate !== null);
     const scorePlan = (input: {
       kind: OrdinaryTurnAutoCapturePlan["kind"];
       lane: OrdinaryTurnAutoCaptureLane;
@@ -5199,6 +5580,254 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       };
     };
 
+    if (params.semanticInterpreter) {
+      const normalizedBlock = normalizeTranscriptMemorySource({
+        source: {
+          kind: "transcript",
+          sourceId: `${paramsForPlan.sessionKey}:${paramsForPlan.segmentIndex}`,
+          sessionKey: paramsForPlan.sessionKey,
+          agentId: paramsForPlan.agentExternalKey,
+        },
+        text: paramsForPlan.text,
+        parentContext: paramsForPlan.recentContextEntries,
+        maxSegments: 1,
+        ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+      })[0];
+      if (normalizedBlock) {
+        const planned = await planNormalizedMemoryBlock({
+          config: params.config,
+          lane: "ordinary_turn_capture",
+          block: normalizedBlock,
+          interpreter: params.semanticInterpreter,
+        });
+        if (planned?.validation.action === "forget") {
+          const resolved = planned.validation.resolved;
+          const evidence = [
+            ...resolved.evidence,
+            "model_driven_interpretation",
+            `model:${planned.modelId}`,
+            `prompt:${planned.promptVersion}`,
+          ];
+          return scorePlan({
+            kind: "response_style_forget",
+            lane: "response_style",
+            key: resolved.subjectKey,
+            subjectKey: resolved.subjectKey,
+            supportsDeferredOverflow: false,
+            detectionSource: "semantic",
+            confidence: "high",
+            run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+              handleResponseStyleDecision({
+                decision: {
+                  action: "forget",
+                  confidence: "high",
+                  detectionSource: "semantic",
+                  evidence,
+                  subject: resolved.subject,
+                  subjectKey: resolved.subjectKey,
+                },
+                observedText: paramsForPlan.text,
+                agentExternalKey: paramsForPlan.agentExternalKey,
+                sessionKey: paramsForPlan.sessionKey,
+                transcriptFile: paramsForPlan.transcriptFile,
+                turnState,
+                submissionMode,
+                posture,
+                rank,
+                candidatePoolSize,
+                ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+              }),
+          });
+        }
+        if (planned?.validation.action === "capture") {
+          const evidence = [
+            ...planned.validation.resolved.evidence,
+            "model_driven_interpretation",
+            `model:${planned.modelId}`,
+            `prompt:${planned.promptVersion}`,
+          ];
+          const resolved = planned.validation.resolved;
+          if ("familyId" in resolved && resolved.familyId === "response_style") {
+            return scorePlan({
+              kind: "capture",
+              lane: "response_style",
+              key: resolved.parsed.key,
+              subjectKey: resolved.parsed.subjectKey,
+              supportsDeferredOverflow: true,
+              detectionSource: "semantic",
+              confidence: resolved.confidence,
+              reviewMode: resolved.reviewMode,
+              captureClass: resolved.parsed.captureClass,
+              candidateKind: resolved.parsed.candidateKind,
+              run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+                handleResponseStyleDecision({
+                  decision: {
+                    action: "capture",
+                    canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion(
+                      {
+                        ingestion: resolved,
+                        mode: "ordinary_turn",
+                        captureSeam: AUTO_CAPTURE_SOURCE,
+                        captureProfile: paramsForPlan.autoCaptureProfile,
+                      },
+                    ),
+                    confidence: resolved.confidence,
+                    detectionSource: "semantic",
+                    evidence,
+                    responseStyleFamily: resolved.responseStyleFamily,
+                    match: resolved.parsed,
+                    reviewMode: resolved.reviewMode,
+                  },
+                  observedText: paramsForPlan.text,
+                  agentExternalKey: paramsForPlan.agentExternalKey,
+                  sessionKey: paramsForPlan.sessionKey,
+                  transcriptFile: paramsForPlan.transcriptFile,
+                  turnState,
+                  submissionMode,
+                  posture,
+                  rank,
+                  candidatePoolSize,
+                  ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+                }),
+            });
+          }
+          if ("familyId" in resolved && resolved.familyId === "project_fact") {
+            return scorePlan({
+              kind: "capture",
+              lane: "project_fact",
+              key: resolved.parsed.key,
+              subjectKey: resolved.parsed.subjectKey,
+              supportsDeferredOverflow: true,
+              detectionSource: "semantic",
+              confidence: resolved.confidence,
+              reviewMode: resolved.reviewMode,
+              captureClass: resolved.parsed.captureClass,
+              candidateKind: resolved.parsed.candidateKind,
+              run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+                handleProjectFactDecision({
+                  decision: {
+                    action: "capture",
+                    canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion(
+                      {
+                        ingestion: resolved,
+                        mode: "ordinary_turn",
+                        captureSeam: AUTO_CAPTURE_SOURCE,
+                        captureProfile: paramsForPlan.autoCaptureProfile,
+                      },
+                    ),
+                    confidence: resolved.confidence,
+                    detectionSource: "semantic",
+                    evidence,
+                    reviewMode: resolved.reviewMode,
+                    factFamily: resolved.factFamily,
+                    ...(resolved.fieldKey ? { fieldKey: resolved.fieldKey } : {}),
+                    match: resolved.parsed,
+                  },
+                  agentExternalKey: paramsForPlan.agentExternalKey,
+                  sessionKey: paramsForPlan.sessionKey,
+                  transcriptFile: paramsForPlan.transcriptFile,
+                  turnState,
+                  submissionMode,
+                  posture,
+                  rank,
+                  candidatePoolSize,
+                  ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+                }),
+            });
+          }
+          if ("familyId" in resolved && resolved.familyId === "recurring_procedure") {
+            return scorePlan({
+              kind: "capture",
+              lane: "recurring_procedure",
+              key: resolved.parsed.key,
+              subjectKey: resolved.parsed.subjectKey,
+              supportsDeferredOverflow: true,
+              detectionSource: "semantic",
+              confidence: resolved.confidence,
+              reviewMode: resolved.reviewMode,
+              captureClass: resolved.parsed.captureClass,
+              candidateKind: resolved.parsed.candidateKind,
+              run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+                handleRecurringProcedureDecision({
+                  decision: {
+                    action: "capture",
+                    canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion(
+                      {
+                        ingestion: resolved,
+                        mode: "ordinary_turn",
+                        captureSeam: AUTO_CAPTURE_SOURCE,
+                        captureProfile: paramsForPlan.autoCaptureProfile,
+                      },
+                    ),
+                    confidence: resolved.confidence,
+                    detectionSource: "semantic",
+                    evidence,
+                    reviewMode: resolved.reviewMode,
+                    procedureFamily: resolved.procedureFamily,
+                    ...(resolved.procedureKey ? { procedureKey: resolved.procedureKey } : {}),
+                    match: resolved.parsed,
+                  },
+                  agentExternalKey: paramsForPlan.agentExternalKey,
+                  sessionKey: paramsForPlan.sessionKey,
+                  transcriptFile: paramsForPlan.transcriptFile,
+                  turnState,
+                  submissionMode,
+                  posture,
+                  rank,
+                  candidatePoolSize,
+                  ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+                }),
+            });
+          }
+          return scorePlan({
+            kind: "capture",
+            lane: "workflow_improvement",
+            key: resolved.parsed.key,
+            subjectKey: resolved.parsed.subjectKey,
+            supportsDeferredOverflow: true,
+            detectionSource: "semantic",
+            confidence: resolved.confidence,
+            reviewMode: resolved.reviewMode,
+            captureClass: resolved.parsed.captureClass,
+            candidateKind: resolved.parsed.candidateKind,
+            run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+              handleWorkflowImprovementDecision({
+                decision: {
+                  action: "capture",
+                  canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion({
+                    ingestion: resolved,
+                    mode: "ordinary_turn",
+                    captureSeam: AUTO_CAPTURE_SOURCE,
+                    captureProfile: paramsForPlan.autoCaptureProfile,
+                  }),
+                  confidence: resolved.confidence,
+                  detectionSource: "semantic",
+                  evidence,
+                  reviewMode: resolved.reviewMode,
+                  lessonFamily: resolved.lessonFamily,
+                  ...(resolved.guidancePattern
+                    ? { guidancePattern: resolved.guidancePattern }
+                    : {}),
+                  match: resolved.parsed,
+                },
+                text: paramsForPlan.text,
+                agentExternalKey: paramsForPlan.agentExternalKey,
+                sessionKey: paramsForPlan.sessionKey,
+                transcriptFile: paramsForPlan.transcriptFile,
+                turnState,
+                submissionMode,
+                posture,
+                rank,
+                candidatePoolSize,
+                ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+              }),
+          });
+        }
+      }
+    }
+
+    // Legacy detector fallback remains only for low-level diagnostic/test call sites.
+    // The normal runtime controller always injects the shared semantic interpreter.
     const deterministicResponseStylePhraseMatch = await findApprovedResponseStylePhrasePatternMatch(
       {
         config: params.config,
@@ -5264,6 +5893,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       paramsForPlan.text,
       paramsForPlan.autoCaptureProfile,
       params.config,
+      contextualRawCandidates,
     );
     if (responseStyleDecision) {
       if (responseStyleDecision.action === "forget") {
@@ -5322,6 +5952,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     const projectFactDecision = await detectProjectFactCaptureDecision(
       paramsForPlan.text,
       paramsForPlan.autoCaptureProfile,
+      contextualRawCandidates,
     );
     if (projectFactDecision) {
       return scorePlan({
@@ -5354,6 +5985,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     const recurringProcedureDecision = await detectRecurringProcedureCaptureDecision(
       paramsForPlan.text,
       paramsForPlan.autoCaptureProfile,
+      contextualRawCandidates,
     );
     if (recurringProcedureDecision) {
       return scorePlan({
@@ -5387,6 +6019,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       paramsForPlan.text,
       paramsForPlan.autoCaptureProfile,
       params.config,
+      contextualRawCandidates,
     );
     if (workflowImprovementDecision) {
       return scorePlan({
@@ -5417,10 +6050,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       });
     }
 
-    const match = parseOrdinaryTurnAutoCapturePreference(
-      paramsForPlan.text,
-      paramsForPlan.autoCaptureProfile,
-    );
+    const match =
+      parseOrdinaryTurnAutoCapturePreference(
+        paramsForPlan.text,
+        paramsForPlan.autoCaptureProfile,
+      ) ?? contextualPreferenceMatch;
     if (!match) {
       return null;
     }
@@ -5732,6 +6366,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       return;
     }
     const timestamp = extractTranscriptTimestamp(transcriptMessage);
+    const recentContextEntries = await readRecentTranscriptContextEntries({
+      transcriptFile,
+      currentMessage: transcriptMessage,
+    });
     const turnState = createOrdinaryTurnAutoCaptureTurnState();
     const captureSegments = extractOrdinaryTurnAutoCaptureSegments(text);
     const capturePlans: OrdinaryTurnAutoCapturePlan[] = [];
@@ -5743,6 +6381,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         agentExternalKey,
         sessionKey,
         transcriptFile,
+        recentContextEntries,
         ...(timestamp ? { timestamp } : {}),
       });
       if (capturePlan) {
@@ -5844,6 +6483,7 @@ export function createOrdinaryTurnAutoCaptureController(params: {
   logger: PluginLogger;
   candidateIngress: CandidateIngressPort;
   soakTelemetry?: MemorySoakTelemetryPort;
+  semanticInterpreter: MemorySemanticInterpreterPort;
   subscribe: (listener: (update: SessionTranscriptUpdateLike) => void) => () => void;
   deps?: Partial<OrdinaryTurnAutoCaptureHandlerDeps>;
 }): OrdinaryTurnAutoCaptureController {
@@ -5858,6 +6498,7 @@ export function createOrdinaryTurnAutoCaptureController(params: {
     logger: params.logger,
     candidateIngress: params.candidateIngress,
     soakTelemetry: params.soakTelemetry,
+    semanticInterpreter: params.semanticInterpreter,
     deps: params.deps,
   });
   const scanRecentTranscripts = async () => {

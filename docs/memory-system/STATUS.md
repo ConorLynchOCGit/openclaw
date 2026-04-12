@@ -167,6 +167,18 @@ duplicating normalization, resolver, detector, and scope logic.
 The current execution posture is now a soak period rather than another
 pre-scheduled feature tranche.
 
+The next future-architecture candidate beyond the current detector hardening is
+now explicitly captured in
+`/memory-system/specs/shared-source-normalization-and-block-typing`.
+That spec documents the next shared source-normalization and candidate
+block-typing layer ahead of the canonical resolver family so document ingestion
+and ordinary-turn capture can stop diverging so early.
+
+If the lane decides that heuristic first-pass semantic interpretation is still
+too brittle after that normalization work, the model-first follow-on is now
+captured separately in
+`/memory-system/specs/model-driven-semantic-interpretation`.
+
 The memory-to-context bridge tranche on 2026-04-12 is now also landed locally
 through:
 
@@ -238,15 +250,43 @@ locally through:
 
 No schema change was required for this measurement follow-through.
 
+The pre-soak hardening follow-through on 2026-04-12 is now also landed locally
+through:
+
+- stronger canonical directive shaping in `active-memory-slots` so supported
+  response-style memory enters packs as clearer behavioral constraints instead
+  of weaker paraphrase variants
+- tighter pack ranking and redundancy suppression so weaker duplicate-ish
+  directives lose to the stronger surviving constraint even when selection keys
+  differ
+- explicit application outcomes on top of attached memory, including:
+  - application aligned with attached approved memory
+  - application missed attached approved memory
+  - survival after explicit application
+  - contradiction after explicit application
+- soak summaries and daily-brief output that now separate:
+  - proxy-only response survival
+  - explicit application alignment and misses
+  - explicit-application survival
+  - contradiction after explicit application
+
+No schema change was required for this pre-soak hardening follow-through.
+
 During soak, the repo should prioritize:
 
 - observing how often the new capture/posture/overflow paths actually fire
 - measuring review burden and retrieval usefulness
-- measuring whether attached approved-memory packs survive later turns without
-  triggering matching corrections
+- measuring whether attached approved-memory packs are only present or are
+  explicitly applied
+- measuring whether explicitly applied memory survives later turns or gets
+  contradicted anyway
 - reviewing the durable soak summaries instead of relying on ad hoc logs
 - collecting enough evidence to choose the next memory build honestly
 - keeping remaining roadmap items unscheduled until that evidence exists
+
+The bounded conversational memory lane should now pause for soak after any
+required defect fixes. The next honest expansion decision should come from that
+soak evidence rather than another pre-scheduled conversational-memory tranche.
 
 If soak exits cleanly after any required defect fixes, the leading candidate
 for the next scheduled memory tranche should be a separate

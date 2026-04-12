@@ -52,6 +52,10 @@ import {
   createMemoryContextOutcomeProofPort,
   type MemoryContextOutcomeProofPort,
 } from "./memory-context-outcome-proof.js";
+import {
+  createModelDrivenMemorySemanticInterpreter,
+  type MemorySemanticInterpreterPort,
+} from "./memory-model-semantic-interpreter.js";
 import { createMemoryObjectQueryPort, type MemoryObjectQueryPort } from "./memory-object-query.js";
 import {
   observeCandidateIngressPort,
@@ -130,6 +134,7 @@ export type MemoryMiddlewareRuntime = {
   soakTelemetry: MemorySoakTelemetryPort;
   contextControl: MemoryContextControlPlanePort;
   outcomeProof: MemoryContextOutcomeProofPort;
+  semanticInterpreter: MemorySemanticInterpreterPort;
   db: MemoryMiddlewareDb;
   candidateIngress: CandidateIngressPort;
   selfImprovingCandidateCapture: SelfImprovingCandidateCapturePort;
@@ -190,6 +195,9 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
   });
   const soakTelemetry = createMemorySoakTelemetryPort({
     logger: api.logger,
+  });
+  const semanticInterpreter = createModelDrivenMemorySemanticInterpreter({
+    api,
   });
   const memoryContextOutcomeProof = createMemoryContextOutcomeProofPort({
     telemetry: soakTelemetry,
@@ -296,6 +304,7 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
     soakTelemetry,
     contextControl,
     outcomeProof: memoryContextOutcomeProof,
+    semanticInterpreter,
     db,
     candidateIngress,
     selfImprovingCandidateCapture: createSelfImprovingCandidateCapturePort({

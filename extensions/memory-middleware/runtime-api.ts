@@ -39,6 +39,70 @@ export {
   type ActiveMemorySlotCategory,
   type ActiveMemorySlotScopeKind,
 } from "./src/active-memory-slots.js";
+export {
+  createDocumentMemoryIngestionService,
+  type DocumentMemoryIngestionService,
+} from "./src/document-memory-ingestion-service.js";
+export {
+  createModelDrivenMemorySemanticInterpreter,
+  createModelDrivenMemorySemanticInterpreterFromRunner,
+  type MemorySemanticInterpreterPort,
+} from "./src/memory-model-semantic-interpreter.js";
+export {
+  buildModelSemanticInterpretationPrompt,
+  parseMemorySemanticInterpretationDecision,
+  type MemorySemanticCaptureCategoryHint,
+  type MemorySemanticClass,
+  type MemorySemanticInterpretationDecision,
+  type MemorySemanticInterpretationInput,
+  type MemorySemanticInterpretationLane,
+  type MemorySemanticInterpretationResult,
+  type MemorySemanticReviewModeHint,
+} from "./src/memory-semantic-interpretation.js";
+export {
+  planNormalizedMemoryBlock,
+  type PlannedNormalizedMemoryDecision,
+} from "./src/memory-semantic-planner.js";
+export {
+  normalizeDocumentMemorySource,
+  normalizeTranscriptMemorySource,
+  type MemoryBlockType,
+  type MemoryContextRole,
+  type MemoryProvenanceRegion,
+  type MemoryScopeEnvelope,
+  type NormalizedMemoryBlock,
+  type NormalizedMemorySource,
+  type NormalizedMemorySourceKind,
+  type NormalizedTranscriptContextEntry,
+} from "./src/memory-source-normalization.js";
+export {
+  DOCUMENT_MEMORY_BENCHMARK_CASES,
+  DOCUMENT_MEMORY_BENCHMARK_CRITERIA,
+  runDocumentMemoryIngestionBenchmark,
+  type DocumentMemoryBenchmarkCase,
+  type DocumentMemoryBenchmarkCaseResult,
+  type DocumentMemoryBenchmarkExpectedCandidate,
+  type DocumentMemoryBenchmarkForbiddenCandidate,
+  type DocumentMemoryBenchmarkIssue,
+  type DocumentMemoryBenchmarkIssueSeverity,
+  type DocumentMemoryBenchmarkReport,
+} from "./src/document-memory-ingestion-benchmark.js";
+export {
+  getDocumentMemoryIngestionProfile,
+  suggestDocumentMemoryIngestionProfile,
+  type DocumentMemoryIngestionProfile,
+} from "./src/document-memory-ingestion-profiles.js";
+export type {
+  DocumentMemoryBulkIngestionPlan,
+  DocumentMemoryIngestionCandidatePlan,
+  DocumentMemoryIngestionCategory,
+  DocumentMemoryIngestionPlan,
+  DocumentMemoryIngestionProfileId,
+  DocumentMemoryIngestionSegment,
+  DocumentMemoryIngestionSource,
+  DocumentMemoryLoadedSource,
+  DocumentMemorySourceClass,
+} from "./src/document-memory-ingestion-types.js";
 export { createMemoryMiddlewarePluginService } from "./src/plugin-service.js";
 export { registerMemoryMiddlewareTools } from "./src/tools/registry.js";
 export {

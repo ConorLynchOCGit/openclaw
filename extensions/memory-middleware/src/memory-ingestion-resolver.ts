@@ -86,7 +86,7 @@ export type ResolvedResponseStyleIngestion =
       action: "forget";
       familyId: "response_style";
       source: IngestionTextSource;
-      detectionSource: "semantic";
+      detectionSource: "semantic" | "deterministic";
       confidence: "high";
       evidence: string[];
       subject: string;
@@ -114,7 +114,7 @@ export type ResolvedRecurringProcedureIngestion = {
   procedureKey?: RecurringProcedureKey;
   reviewMode: "pending_confirmation" | "hold_for_more_evidence";
   source: IngestionTextSource;
-  detectionSource: "semantic";
+  detectionSource: "semantic" | "deterministic";
   confidence: "high" | RecurringProcedureSemanticConfidence;
   evidence: string[];
   observedText: string;

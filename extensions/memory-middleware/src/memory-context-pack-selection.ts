@@ -5,6 +5,9 @@ import type { ActiveMemorySlotCategory } from "./memory-slot-model.js";
 const DEFAULT_USER_PACK_MAX_CHARS = 600;
 const DEFAULT_PROJECT_PACK_MAX_CHARS = 1_000;
 const DEFAULT_PROCEDURE_PACK_MAX_CHARS = 1_000;
+const DEFAULT_USER_PACK_MAX_SLOTS = 4;
+const DEFAULT_PROJECT_PACK_MAX_SLOTS = 5;
+const DEFAULT_PROCEDURE_PACK_MAX_SLOTS = 2;
 
 function normalizeToken(value: string): string {
   return value
@@ -40,6 +43,88 @@ function slotVisibleToAgent(slot: ActiveMemorySlot, agentId: string | undefined)
   return slot.agentKey === agentId;
 }
 
+function directiveStrengthScore(slot: ActiveMemorySlot): number {
+  const promptTokens = tokenize(slot.promptText);
+  const tokenCount = promptTokens.size;
+  const fieldKeyBoost = typeof slot.facets.fieldKey === "string" ? 14 : 0;
+  const templateBoost = typeof slot.compatibilityTemplate === "string" ? 12 : 0;
+  const actionBoost =
+    typeof slot.facets.recommendedAction === "string"
+      ? typeof slot.facets.avoidAction === "string"
+        ? 26
+        : 16
+      : 0;
+  const conditionalBoost =
+    slot.promptText.includes(" instead of ") || slot.promptText.includes(" unless ")
+      ? 12
+      : slot.promptText.includes(" when ")
+        ? 8
+        : 0;
+  const tokenWindowBoost =
+    tokenCount <= 2
+      ? -24
+      : tokenCount <= 4
+        ? -8
+        : tokenCount <= 14
+          ? 10
+          : tokenCount <= 22
+            ? 2
+            : -8;
+  return fieldKeyBoost + templateBoost + actionBoost + conditionalBoost + tokenWindowBoost;
+}
+
+function selectionScopeKey(slot: ActiveMemorySlot): string {
+  return [
+    slot.category,
+    slot.scopeKind,
+    slot.projectSlug ?? "",
+    slot.agentKey ?? "",
+    slot.sessionKey ?? "",
+  ].join("|");
+}
+
+function countTokenOverlap(left: Set<string>, right: Set<string>): number {
+  let overlap = 0;
+  for (const token of left) {
+    if (right.has(token)) {
+      overlap += 1;
+    }
+  }
+  return overlap;
+}
+
+function isSemanticallyRedundant(params: {
+  candidate: ActiveMemorySlot;
+  selected: ActiveMemorySlot;
+}): boolean {
+  if (selectionScopeKey(params.candidate) !== selectionScopeKey(params.selected)) {
+    return false;
+  }
+  if (
+    params.candidate.subject &&
+    params.selected.subject &&
+    normalizeToken(params.candidate.subject) !== normalizeToken(params.selected.subject)
+  ) {
+    return false;
+  }
+  const candidateTokens = tokenize(params.candidate.promptText);
+  const selectedTokens = tokenize(params.selected.promptText);
+  if (candidateTokens.size === 0 || selectedTokens.size === 0) {
+    return false;
+  }
+  const overlap = countTokenOverlap(candidateTokens, selectedTokens);
+  const smallerTokenSet = Math.min(candidateTokens.size, selectedTokens.size);
+  if (overlap < 3 || smallerTokenSet === 0) {
+    return false;
+  }
+  const overlapRatio = overlap / smallerTokenSet;
+  const sharedTags = params.candidate.tags.some((tag) => params.selected.tags.includes(tag));
+  return (
+    overlapRatio >= 0.8 &&
+    (sharedTags || params.candidate.semanticKey === params.selected.semanticKey)
+  );
+}
+
 function scoreUserSlot(slot: ActiveMemorySlot): number {
   const categoryBoost =
     slot.category === "user_correction" ? 220 : slot.category === "user_preference" ? 180 : 0;
@@ -50,6 +135,7 @@ function scoreUserSlot(slot: ActiveMemorySlot): number {
     categoryBoost +
     conciseDirectiveBoost +
     styleBoost +
+    directiveStrengthScore(slot) +
     recencyBoost(slot.updatedAt, 18) +
     Math.round(slot.confidence * 100)
   );
@@ -88,6 +174,7 @@ function scoreProjectSlot(params: { slot: ActiveMemorySlot; promptTokens: Set<st
     scopeBoost +
     subjectBoost +
     conciseDirectiveBoost +
+    directiveStrengthScore(params.slot) +
     recencyBoost(params.slot.updatedAt, 14)
   );
 }
@@ -100,15 +187,19 @@ function scoreProcedureSlot(params: { slot: ActiveMemorySlot; promptTokens: Set<
       overlap += 1;
     }
   }
-  return overlap * 40 + recencyBoost(params.slot.updatedAt, 10);
+  return (
+    overlap * 40 + directiveStrengthScore(params.slot) + recencyBoost(params.slot.updatedAt, 10)
+  );
 }
 
 function selectSlotsForPack(params: {
   slots: ActiveMemorySlot[];
   score: (slot: ActiveMemorySlot) => number;
   minimumScore?: number;
+  maxSlots?: number;
 }): ActiveMemorySlot[] {
   const minimumScore = params.minimumScore ?? 0;
+  const maxSlots = params.maxSlots ?? Number.POSITIVE_INFINITY;
   const ranked = params.slots
     .map((slot) => ({ slot, score: params.score(slot) }))
     .filter((entry) => entry.score > minimumScore)
@@ -121,7 +212,17 @@ function selectSlotsForPack(params: {
   const seenSelectionKeys = new Set<string>();
   const selected: ActiveMemorySlot[] = [];
   for (const entry of ranked) {
+    if (selected.length >= maxSlots) {
+      break;
+    }
     if (seenSelectionKeys.has(entry.slot.selectionKey)) {
+      continue;
+    }
+    if (
+      selected.some((chosen) =>
+        isSemanticallyRedundant({ candidate: entry.slot, selected: chosen }),
+      )
+    ) {
       continue;
     }
     seenSelectionKeys.add(entry.slot.selectionKey);
@@ -169,6 +270,7 @@ export function selectCompiledMemoryPackPlans(params: {
             isUserPackCategory(slot.category),
         ),
         score: scoreUserSlot,
+        maxSlots: DEFAULT_USER_PACK_MAX_SLOTS,
       }),
     },
     {
@@ -187,6 +289,7 @@ export function selectCompiledMemoryPackPlans(params: {
             promptTokens,
           }),
         minimumScore: 34,
+        maxSlots: DEFAULT_PROJECT_PACK_MAX_SLOTS,
       }),
     },
   ];
@@ -204,6 +307,7 @@ export function selectCompiledMemoryPackPlans(params: {
             promptTokens,
           }),
         minimumScore: 70,
+        maxSlots: DEFAULT_PROCEDURE_PACK_MAX_SLOTS,
       }),
     });
   }

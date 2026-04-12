@@ -50,6 +50,16 @@ Latest structural runtime follow-through:
   - whether the stable prefix is still reusable for cache planning
 - extended soak summaries from attached-pack counts to attached-pack outcome
   rates so later soak analysis can judge effectiveness instead of raw volume
+- hardened active-memory slot phrasing so supported response-style memory lands
+  as stronger canonical directives instead of softer paraphrase variants
+- tightened pack selection so weaker paraphrases are suppressed in favor of the
+  stronger surviving constraint rather than only exact selection-key dedupe
+- upgraded attached-pack outcomes to distinguish:
+  - proxy next-turn survival without a clear application signal
+  - explicit application alignment with attached approved memory
+  - explicit application misses where a run used different guidance
+  - survival after explicit application
+  - contradiction after explicit application
 
 ## Objective
 
@@ -120,18 +130,25 @@ projection model.
 
 ## Current emphasis
 
-- continue extracting real runtime stages out of large orchestrator files
-- keep family-era compatibility and alias handling at the edges instead of in
-  runtime-critical paths
-- prefer shared canonical/profile helpers over repeated capture-class or
-  family-id branching
-- keep pack selection deterministic and compact so future cache work has a
-  stable shape to optimize
-- keep prompt-artifact hashes and segment sizes truthful so future cache
-  planning can explain why prefixes changed instead of guessing
-- the bridge now has a first truthful outcome-proof loop, so the next likely
-  step is improving pack quality and applying the same proof discipline to any
-  future wider memory classes rather than adding more substrate tables
+- pause the bounded conversational lane for soak instead of widening the
+  runtime again immediately
+- watch whether the sharpened packs are now specific enough to change behavior
+  instead of merely surviving as soft guidance
+- watch whether explicit application signals now track useful memory or expose
+  persistent misses and contradictions
+- keep prompt-artifact hashes and segment sizes truthful so soak conclusions
+  can still explain prompt churn instead of guessing
+- keep wider memory classes, corpus ingestion, and broader agent-scoped memory
+  deferred until this soak says the current bridge is genuinely earning them
+- keep the next architecture step visible in
+  `/memory-system/specs/shared-source-normalization-and-block-typing`:
+  shared source normalization and candidate block typing ahead of the canonical
+  resolver family, so document ingestion and ordinary-turn capture stop
+  diverging too early
+- keep the model-first semantic follow-on visible in
+  `/memory-system/specs/model-driven-semantic-interpretation` if the lane
+  chooses to replace heuristic first-pass semantic detectors instead of merely
+  reshaping their inputs
 
 ## What the soak period is for
 
@@ -155,8 +172,11 @@ projection model.
   - duplicate suppression behavior
   - observed starvation cases, if any
 - retrieval/application outcomes:
-  - when the right memory was used
-  - when a useful memory was missed
+  - when attached memory was only present versus explicitly applied
+  - when explicit application aligned with the attached approved memory
+  - when explicit application missed the attached memory
+  - when a run survived after explicit application
+  - when a run was contradicted after explicit application
   - when the wrong memory shape dominated
 - operator burden:
   - false-positive candidates
@@ -192,9 +212,12 @@ Directly instrumented today:
   - filtered-by-scope and suppressed-conflict counts from learned guidance
   - attached-pack outcomes:
     - response observation after attachment
-    - next-turn survival without repeat correction
+    - next-turn proxy survival without repeat correction
+    - explicit application alignment with attached approved sources
+    - explicit application misses against attached approved sources
+    - survival after explicit application
+    - contradiction after explicit application
     - repeated corrections after attached memory
-    - learned-guidance alignment with attached approved sources
 - review/promotion soak events now capture:
   - candidate review outcomes
   - deferred-overflow promotions
@@ -219,6 +242,8 @@ Still not fully automatic or not fully certain:
 
 - final answer use for generic hybrid retrieval remains proxy-only unless the
   application seam is explicit
+- user acceptance is still inferred through bounded proxies such as later
+  correction behavior rather than a dedicated acceptance event
 - “missed useful memory” is still measured through truthful proxies such as
   no-guidance-despite-retrieval and stronger-scope-below-top retrievals
 - alias/entity/relation problems are measured as demand signals, not through a

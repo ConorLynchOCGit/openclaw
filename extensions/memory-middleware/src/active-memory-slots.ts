@@ -20,6 +20,10 @@ import {
 } from "./memory-slot-model.js";
 import type { SharedBootstrapProjectionTarget } from "./native-memory-projection-eligibility.js";
 import { resolveNativeMemoryProjectionScope } from "./native-memory-projection-scope.js";
+import {
+  getResponseStyleTemplateSpec,
+  isSupportedResponseStyleTemplate,
+} from "./response-style-semantic.js";
 
 export type { ActiveMemorySlotCategory, ActiveMemorySlotScopeKind } from "./memory-slot-model.js";
 
@@ -38,6 +42,7 @@ export type ActiveMemorySlot = {
   sessionKey?: string;
   subject?: string;
   statement: string;
+  compatibilityTemplate?: string;
   displayText: string;
   promptText: string;
   searchText: string;
@@ -70,6 +75,32 @@ function sanitizeSlotText(value: string | undefined): string | null {
     .replace(/\s+/g, " ")
     .trim();
   return collapsed.length > 0 ? collapsed : null;
+}
+
+function ensureSentence(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return trimmed;
+  }
+  const capitalized = trimmed[0].toUpperCase() + trimmed.slice(1);
+  return /[.!?]$/u.test(capitalized) ? capitalized : `${capitalized}.`;
+}
+
+function stripManagedDirectivePrefixes(value: string): string {
+  return value
+    .replace(/^user (?:requirement|correction):\s*/i, "")
+    .replace(/^user corrected [^:]+:\s*/i, "")
+    .replace(/^for future (?:replies|responses|answers),\s*/i, "")
+    .replace(/^from now on,\s*/i, "")
+    .replace(/^by default,\s*/i, "")
+    .replace(/^default to\s+/i, "")
+    .replace(/^please\s+/i, "")
+    .trim();
+}
+
+function buildCanonicalDirectiveText(value: string): string {
+  const normalized = stripManagedDirectivePrefixes(value).replace(/\s+/g, " ").trim();
+  return ensureSentence(normalized);
 }
 
 function buildDisplayText(params: {
@@ -189,6 +220,7 @@ function buildPromptText(params: {
   statement?: string;
   facets: Record<string, unknown>;
   fallback: string;
+  compatibilityTemplate?: string;
 }): string | null {
   const subject = sanitizeSlotText(params.subject);
   const statement = sanitizeSlotText(params.statement);
@@ -197,6 +229,15 @@ function buildPromptText(params: {
   const guidancePattern = readStringFacet(params.facets, "guidancePattern");
   const recommendedAction = readStringFacet(params.facets, "recommendedAction");
   const avoidAction = readStringFacet(params.facets, "avoidAction");
+  const compatibilityTemplate =
+    typeof params.compatibilityTemplate === "string" &&
+    isSupportedResponseStyleTemplate(params.compatibilityTemplate)
+      ? params.compatibilityTemplate
+      : undefined;
+
+  if (compatibilityTemplate) {
+    return ensureSentence(getResponseStyleTemplateSpec(compatibilityTemplate).value);
+  }
 
   if (params.category === "workflow_guidance") {
     if (guidancePattern === "use_instead_of" && subject && recommendedAction && avoidAction) {
@@ -234,13 +275,18 @@ function buildPromptText(params: {
   }
 
   if (params.category === "user_preference" || params.category === "user_correction") {
-    if (subject === "response style" || subject === "response requirement") {
-      return statement ?? fallback;
+    if (
+      subject === "response style" ||
+      subject === "response requirement" ||
+      subject === "response format" ||
+      subject === "response language"
+    ) {
+      return statement ? buildCanonicalDirectiveText(statement) : fallback;
     }
     if (statement) {
-      return statement;
+      return buildCanonicalDirectiveText(statement);
     }
-    return fallback;
+    return fallback ? buildCanonicalDirectiveText(fallback) : fallback;
   }
 
   if (params.category === "tool_preference") {
@@ -274,6 +320,10 @@ function buildSlotFromRecord(record: RetrievedMemoryRecord): ActiveMemorySlot | 
     const projectionScope = resolveNativeMemoryProjectionScope(record);
     const category = resolveSlotCategory(record);
     const facets = asRecord(canonical?.facets);
+    const compatibilityTemplate =
+      candidate?.compatibility.template ??
+      readStringFacet(canonical?.compatibility ?? {}, "template") ??
+      undefined;
     const displayText = buildDisplayText({
       subject: canonical?.subject,
       statement: canonical?.statement,
@@ -294,6 +344,7 @@ function buildSlotFromRecord(record: RetrievedMemoryRecord): ActiveMemorySlot | 
         statement,
         facets,
         fallback: record.content,
+        compatibilityTemplate,
       }) ?? displayText;
     const subjectKey =
       readStringFacet(facets, "subjectKey") ?? candidate?.identity.subjectKey ?? undefined;
@@ -339,6 +390,7 @@ function buildSlotFromRecord(record: RetrievedMemoryRecord): ActiveMemorySlot | 
       ...(projectionScope.sessionKey ? { sessionKey: projectionScope.sessionKey } : {}),
       ...(subject ? { subject } : {}),
       statement,
+      ...(compatibilityTemplate ? { compatibilityTemplate } : {}),
       displayText,
       promptText,
       searchText: buildSearchText([

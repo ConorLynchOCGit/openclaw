@@ -196,6 +196,17 @@ function createProjectRuleMatch(params: {
   };
 }
 
+export function createProjectRuleCanonicalMatch(params: {
+  projectScope: string;
+  guidancePattern: WorkflowImprovementGuidancePattern;
+  subject: string;
+  recommendedAction?: string;
+  avoidAction?: string;
+  rationale?: string;
+}): ProjectRuleCanonicalMatch {
+  return createProjectRuleMatch(params);
+}
+
 export function detectProjectRuleSemanticDecision(
   text: string,
 ): ProjectRuleSemanticCaptureDecision {

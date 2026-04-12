@@ -178,9 +178,10 @@ export type MemorySoakMemoryContextOutcomeEvent = MemorySoakTelemetryBaseEvent &
     | "pack_attached"
     | "response_observed"
     | "survived_turn_boundary"
+    | "survived_after_application"
     | "repeated_correction"
-    | "guidance_aligned"
-    | "guidance_missed";
+    | "application_aligned"
+    | "application_missed";
   attribution?: "observational" | "proxy" | "causal";
   runId?: string;
   sessionId?: string;
@@ -195,6 +196,8 @@ export type MemorySoakMemoryContextOutcomeEvent = MemorySoakTelemetryBaseEvent &
   correctionKind?: "learning" | "correction" | "procedure" | "improvement";
   suggestionCount?: number;
   packHash?: string;
+  applicationMode?: string;
+  applicationAlignedBeforeFailure?: boolean;
 };
 
 export type MemorySoakReviewEvent = MemorySoakTelemetryBaseEvent & {
@@ -318,16 +321,21 @@ export type MemorySoakTelemetrySummary = {
     memoryContextAttachments: number;
     memoryContextResponses: number;
     survivedTurnBoundaryCount: number;
+    survivedAfterApplicationCount: number;
     repeatedCorrectionAfterAttachmentCount: number;
-    guidanceAlignedCount: number;
-    guidanceMissCount: number;
+    contradictedAfterExplicitApplicationCount: number;
+    explicitApplicationAlignedCount: number;
+    explicitApplicationMissCount: number;
+    proxyOnlyResponseCount: number;
     matchedRepeatedCorrectionSlots: number;
     memoryContextResponseRate: number | null;
     survivalAfterResponseRate: number | null;
+    survivalAfterExplicitApplicationRate: number | null;
     repeatedCorrectionAfterResponseRate: number | null;
     repeatedCorrectionAvoidanceRate: number | null;
-    guidanceAlignmentRate: number | null;
-    causalGuidanceUsefulnessRate: number | null;
+    explicitApplicationAlignmentRate: number | null;
+    causalApplicationUsefulnessRate: number | null;
+    explicitApplicationContradictionRate: number | null;
   };
   review: {
     candidateReviews: number;
@@ -495,8 +503,16 @@ function buildAttentionFlags(summary: MemorySoakTelemetrySummary): string[] {
   if (summary.application.filteredOutByScopeCount > 0) {
     flags.push("some learned-guidance records were filtered out by scope");
   }
+  if (summary.application.explicitApplicationMissCount > 0) {
+    flags.push(
+      "some runs attached approved memory but explicit application used different guidance",
+    );
+  }
   if (summary.application.repeatedCorrectionAfterAttachmentCount > 0) {
     flags.push("some runs attached approved memory but still received matching later corrections");
+  }
+  if (summary.application.contradictedAfterExplicitApplicationCount > 0) {
+    flags.push("some runs explicitly applied attached memory and were still contradicted later");
   }
   if (summary.retrieval.conflictingSubjectCount > 0) {
     flags.push(
@@ -564,16 +580,21 @@ export function buildMemorySoakTelemetrySummary(params: {
       memoryContextAttachments: 0,
       memoryContextResponses: 0,
       survivedTurnBoundaryCount: 0,
+      survivedAfterApplicationCount: 0,
       repeatedCorrectionAfterAttachmentCount: 0,
-      guidanceAlignedCount: 0,
-      guidanceMissCount: 0,
+      contradictedAfterExplicitApplicationCount: 0,
+      explicitApplicationAlignedCount: 0,
+      explicitApplicationMissCount: 0,
+      proxyOnlyResponseCount: 0,
       matchedRepeatedCorrectionSlots: 0,
       memoryContextResponseRate: null,
       survivalAfterResponseRate: null,
+      survivalAfterExplicitApplicationRate: null,
       repeatedCorrectionAfterResponseRate: null,
       repeatedCorrectionAvoidanceRate: null,
-      guidanceAlignmentRate: null,
-      causalGuidanceUsefulnessRate: null,
+      explicitApplicationAlignmentRate: null,
+      causalApplicationUsefulnessRate: null,
+      explicitApplicationContradictionRate: null,
     },
     review: {
       candidateReviews: 0,
@@ -712,15 +733,21 @@ export function buildMemorySoakTelemetrySummary(params: {
         if (event.outcome === "survived_turn_boundary") {
           summary.application.survivedTurnBoundaryCount += 1;
         }
+        if (event.outcome === "survived_after_application") {
+          summary.application.survivedAfterApplicationCount += 1;
+        }
         if (event.outcome === "repeated_correction") {
           summary.application.repeatedCorrectionAfterAttachmentCount += 1;
           summary.application.matchedRepeatedCorrectionSlots += event.matchedSlotCount ?? 0;
+          if (event.applicationAlignedBeforeFailure) {
+            summary.application.contradictedAfterExplicitApplicationCount += 1;
+          }
         }
-        if (event.outcome === "guidance_aligned") {
-          summary.application.guidanceAlignedCount += 1;
+        if (event.outcome === "application_aligned") {
+          summary.application.explicitApplicationAlignedCount += 1;
         }
-        if (event.outcome === "guidance_missed") {
-          summary.application.guidanceMissCount += 1;
+        if (event.outcome === "application_missed") {
+          summary.application.explicitApplicationMissCount += 1;
         }
         break;
       case "review":
@@ -805,6 +832,10 @@ export function buildMemorySoakTelemetrySummary(params: {
     summary.application.survivedTurnBoundaryCount,
     summary.application.memoryContextResponses,
   );
+  summary.application.survivalAfterExplicitApplicationRate = ratio(
+    summary.application.survivedAfterApplicationCount,
+    summary.application.explicitApplicationAlignedCount,
+  );
   summary.application.repeatedCorrectionAfterResponseRate = ratio(
     summary.application.repeatedCorrectionAfterAttachmentCount,
     summary.application.memoryContextResponses,
@@ -813,13 +844,24 @@ export function buildMemorySoakTelemetrySummary(params: {
     summary.application.repeatedCorrectionAfterResponseRate === null
       ? null
       : Math.max(0, 1 - summary.application.repeatedCorrectionAfterResponseRate);
-  summary.application.guidanceAlignmentRate = ratio(
-    summary.application.guidanceAlignedCount,
+  summary.application.proxyOnlyResponseCount = Math.max(
+    0,
+    summary.application.memoryContextResponses -
+      summary.application.explicitApplicationAlignedCount -
+      summary.application.explicitApplicationMissCount,
+  );
+  summary.application.explicitApplicationAlignmentRate = ratio(
+    summary.application.explicitApplicationAlignedCount,
     summary.application.guidancePlans,
   );
-  summary.application.causalGuidanceUsefulnessRate = ratio(
-    summary.application.guidanceAlignedCount,
-    summary.application.guidanceAlignedCount + summary.application.guidanceMissCount,
+  summary.application.causalApplicationUsefulnessRate = ratio(
+    summary.application.explicitApplicationAlignedCount,
+    summary.application.explicitApplicationAlignedCount +
+      summary.application.explicitApplicationMissCount,
+  );
+  summary.application.explicitApplicationContradictionRate = ratio(
+    summary.application.contradictedAfterExplicitApplicationCount,
+    summary.application.explicitApplicationAlignedCount,
   );
 
   summary.attentionFlags = buildAttentionFlags(summary);
@@ -842,16 +884,21 @@ export function renderMemorySoakTelemetryOperatorSummary(
     `- guidance_suggestions: ${String(summary.application.suggestionCount)}`,
     `- memory_context_attachments: ${String(summary.application.memoryContextAttachments)}`,
     `- memory_context_responses: ${String(summary.application.memoryContextResponses)}`,
+    `- responses_without_explicit_application_signal: ${String(summary.application.proxyOnlyResponseCount)}`,
     `- memory_context_response_rate: ${formatPercent(summary.application.memoryContextResponseRate)}`,
     `- proxy_survived_without_repeat_correction: ${String(summary.application.survivedTurnBoundaryCount)}`,
     `- proxy_survival_rate_after_response: ${formatPercent(summary.application.survivalAfterResponseRate)}`,
+    `- causal_survived_after_explicit_application: ${String(summary.application.survivedAfterApplicationCount)}`,
+    `- causal_survival_rate_after_explicit_application: ${formatPercent(summary.application.survivalAfterExplicitApplicationRate)}`,
     `- causal_repeated_corrections_after_attachment: ${String(summary.application.repeatedCorrectionAfterAttachmentCount)}`,
+    `- causal_contradicted_after_explicit_application: ${String(summary.application.contradictedAfterExplicitApplicationCount)}`,
+    `- causal_contradiction_rate_after_explicit_application: ${formatPercent(summary.application.explicitApplicationContradictionRate)}`,
     `- causal_repeated_correction_rate_after_response: ${formatPercent(summary.application.repeatedCorrectionAfterResponseRate)}`,
     `- causal_repeated_correction_avoidance_rate: ${formatPercent(summary.application.repeatedCorrectionAvoidanceRate)}`,
-    `- causal_guidance_aligned_with_attached_memory: ${String(summary.application.guidanceAlignedCount)}`,
-    `- causal_guidance_missed_with_attached_memory: ${String(summary.application.guidanceMissCount)}`,
-    `- guidance_alignment_rate: ${formatPercent(summary.application.guidanceAlignmentRate)}`,
-    `- causal_guidance_usefulness_rate: ${formatPercent(summary.application.causalGuidanceUsefulnessRate)}`,
+    `- causal_application_aligned_with_attached_memory: ${String(summary.application.explicitApplicationAlignedCount)}`,
+    `- causal_application_missed_with_attached_memory: ${String(summary.application.explicitApplicationMissCount)}`,
+    `- causal_application_alignment_rate: ${formatPercent(summary.application.explicitApplicationAlignmentRate)}`,
+    `- causal_application_usefulness_rate: ${formatPercent(summary.application.causalApplicationUsefulnessRate)}`,
     `- candidate_reviews: ${String(summary.review.candidateReviews)}`,
     `- memory_promotions: ${String(summary.review.memoryPromotions)}`,
     `- projection_runs: ${String(summary.projection.runs)}`,
@@ -898,6 +945,9 @@ export function renderMemorySoakTelemetryDailyBrief(summary: MemorySoakTelemetry
     `deferred=${String(summary.capture.deferredOverflowCount)}`,
     `retrievals=${String(summary.retrieval.hybridSearches)}`,
     `guidance=${String(summary.application.suggestionCount)}`,
+    `applied=${String(summary.application.explicitApplicationAlignedCount)}`,
+    `missed=${String(summary.application.explicitApplicationMissCount)}`,
+    `repeated=${String(summary.application.repeatedCorrectionAfterAttachmentCount)}`,
     `reviews=${String(summary.review.candidateReviews)}`,
     attention ? attention.slice(2) : "",
   ]

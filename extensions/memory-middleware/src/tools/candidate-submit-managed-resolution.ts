@@ -82,7 +82,7 @@ export type ManagedRecurringProcedureResolution = {
   procedureKey?: RecurringProcedureKey;
   reviewMode: "pending_confirmation" | "hold_for_more_evidence";
   source: "content" | "raw";
-  detectionSource: "semantic";
+  detectionSource: "semantic" | "deterministic";
   confidence: "high" | RecurringProcedureSemanticConfidence;
   evidence: string[];
   observedText: string;

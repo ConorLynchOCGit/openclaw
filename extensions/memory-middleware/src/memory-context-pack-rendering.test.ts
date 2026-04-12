@@ -54,6 +54,7 @@ describe("memory context pack rendering", () => {
 
     expect(pack).not.toBeNull();
     expect(pack?.text).toContain("## User Memory Pack");
+    expect(pack?.text).toContain("Lower-priority active entries omitted");
     expect(pack?.slotKeys).toEqual(["slot-1"]);
     expect(pack?.omittedSlotKeys).toEqual(["slot-2"]);
     expect(pack?.hash).toMatch(/^[a-f0-9]{16}$/u);

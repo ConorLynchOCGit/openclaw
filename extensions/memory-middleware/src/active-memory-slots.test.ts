@@ -140,4 +140,36 @@ describe("active memory slots", () => {
         'For commit flow, use scripts/committer "<msg>" <file...> instead of manual git add / git commit.',
     });
   });
+
+  it("canonicalizes response-style templates into stronger directive text", () => {
+    const responseStyle = createMemoryObjectRecord({
+      id: "response-style-1",
+      content: "Use bullet points.",
+      metadata: {
+        canonicalIngestionCandidate: {
+          record: {
+            subject: "response format",
+            statement: "Use bullet points.",
+            tags: ["response_style"],
+            facets: {},
+          },
+          identity: {
+            dedupeKey: "user.response.bullets",
+          },
+          compatibility: {
+            template: "responses_bullets",
+          },
+        },
+      },
+    });
+
+    const slots = buildActiveMemorySlots([responseStyle]);
+
+    expect(slots).toHaveLength(1);
+    expect(slots[0]).toMatchObject({
+      category: "user_preference",
+      compatibilityTemplate: "responses_bullets",
+      promptText: "Use bullet points when listing items.",
+    });
+  });
 });
