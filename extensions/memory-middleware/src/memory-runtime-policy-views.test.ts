@@ -34,7 +34,7 @@ describe("memory runtime policy views", () => {
       matchedFieldPrefix: "project_rule",
     });
     expect(getMemorySemanticRoutingRuntimePolicy("workflow_improvement")).toEqual({
-      mode: "family_gated_approved_only",
+      mode: "profile_gated_approved_only",
     });
   });
 

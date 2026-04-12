@@ -67,6 +67,19 @@ describe("buildBootstrapContextFiles", () => {
     expect(result?.content).not.toContain("[...truncated, read AGENTS.md for full content...]");
   });
 
+  it("keeps slight per-file overflows when total budget permits", () => {
+    const slightlyOver = "a".repeat(DEFAULT_BOOTSTRAP_MAX_CHARS + 500);
+    const files = [makeFile({ name: "MEMORY.md", path: "/tmp/MEMORY.md", content: slightlyOver })];
+    const warnings: string[] = [];
+    const [result] = buildBootstrapContextFiles(files, {
+      warn: (message) => warnings.push(message),
+    });
+
+    expect(result?.content).toBe(slightlyOver);
+    expect(result?.content).not.toContain("[...truncated, read MEMORY.md for full content...]");
+    expect(warnings).toEqual([]);
+  });
+
   it("keeps total injected bootstrap characters under the new default total cap", () => {
     const files = createLargeBootstrapFiles();
     const result = buildBootstrapContextFiles(files);

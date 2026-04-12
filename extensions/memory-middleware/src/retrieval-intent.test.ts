@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildCanonicalMemoryRetrievalPlan,
   inferGeneralizedWorkflowGuidancePatternHint,
-  inferProjectMemoryIntentFamily,
+  inferProjectMemoryIntentProfile,
   inferRecurringProcedureQueryHint,
   inferResponseStyleQueryHint,
   inferWorkflowImprovementQueryHint,
   normalizeRetrievalQuery,
-  resolveProjectMemoryIntentFamilyFromCanonicalPlan,
+  resolveProjectMemoryIntentProfileFromCanonicalPlan,
   resolveRecurringProcedureQueryHintFromCanonicalPlan,
   resolveWorkflowImprovementQueryHintFromCanonicalPlan,
 } from "./retrieval-intent.js";
@@ -19,18 +19,20 @@ describe("retrieval intent helpers", () => {
     );
   });
 
-  it("classifies direct project intent families from the query", () => {
-    expect(inferProjectMemoryIntentFamily("What are we still missing for Atlas rollout?")).toBe(
+  it("classifies direct project intent profiles from the query", () => {
+    expect(inferProjectMemoryIntentProfile("What are we still missing for Atlas rollout?")).toBe(
       "unmet_need",
     );
-    expect(inferProjectMemoryIntentFamily("Which source should we trust for Atlas deploys?")).toBe(
+    expect(inferProjectMemoryIntentProfile("Which source should we trust for Atlas deploys?")).toBe(
       "project_rule",
     );
-    expect(inferProjectMemoryIntentFamily("What is the Atlas staging branch?")).toBe(
+    expect(inferProjectMemoryIntentProfile("What is the Atlas staging branch?")).toBe(
       "project_fact",
     );
-    expect(inferProjectMemoryIntentFamily("What's the docs i18n rule again?")).toBe("project_rule");
-    expect(inferProjectMemoryIntentFamily("Where are the OpenClaw docs hosted?")).toBe(
+    expect(inferProjectMemoryIntentProfile("What's the docs i18n rule again?")).toBe(
+      "project_rule",
+    );
+    expect(inferProjectMemoryIntentProfile("Where are the OpenClaw docs hosted?")).toBe(
       "project_fact",
     );
   });
@@ -128,6 +130,6 @@ describe("retrieval intent helpers", () => {
         scope: "approved_only",
       },
     });
-    expect(resolveProjectMemoryIntentFamilyFromCanonicalPlan(projectPlan)).toBe("project_fact");
+    expect(resolveProjectMemoryIntentProfileFromCanonicalPlan(projectPlan)).toBe("project_fact");
   });
 });

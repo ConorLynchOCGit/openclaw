@@ -49,11 +49,40 @@ import {
   shouldSkipImmediateRecurringProcedureConfirmation as shouldSkipImmediateRecurringProcedureLifecycleConfirmation,
   shouldSkipImmediateWorkflowImprovementConfirmation as shouldSkipImmediateWorkflowImprovementLifecycleConfirmation,
 } from "./memory-lifecycle-metadata.js";
+import { resolveWorkflowCaptureCategoryFromCaptureClass } from "./memory-profile-routing.js";
 import {
   deriveCorpusDemandSignalsFromPrompt,
   type MemorySoakTelemetryPort,
   MEMORY_SOAK_TELEMETRY_SCHEMA_VERSION,
 } from "./memory-soak-telemetry.js";
+import {
+  buildDeferredOverflowMetadata,
+  readCandidateLifecycleState,
+  readCandidateObservedAt,
+  readCandidateOverflowMode,
+} from "./ordinary-turn-auto-capture-candidate-state.js";
+import {
+  applyCapturePlanDecisionScore,
+  createOrdinaryTurnAutoCaptureTurnState,
+  hasImmediateLaneCapacity,
+  hasReachedMultiCaptureTurnLimit,
+  markTurnAcceptedCaptureForLane,
+  markTurnDeferredOverflow,
+  resolveCapturePlanBaseScore,
+  resolveCapturePlanPosture,
+  resolveDeferredOverflowLimit,
+  resolveImmediateCaptureLimit,
+  type OrdinaryTurnAutoCaptureLane,
+  type OrdinaryTurnAutoCapturePlan,
+  type OrdinaryTurnAutoCapturePosture,
+  type OrdinaryTurnAutoCaptureSubmissionMode,
+  type OrdinaryTurnAutoCaptureTurnState,
+} from "./ordinary-turn-auto-capture-plan-policy.js";
+import {
+  buildWorkflowImprovementAutoPromotionMetadata,
+  buildWorkflowImprovementAutoReviewMetadata,
+  resolveGeneralizedWorkflowAutoReviewContext,
+} from "./ordinary-turn-auto-capture-workflow-auto-review.js";
 import {
   type ProjectFactLifecycleInspection,
   inspectProjectFactLifecycle,
@@ -614,15 +643,8 @@ const AUTO_CAPTURE_TRANSCRIPT_SCAN_LOOKBACK_MS = 15 * 60_000;
 const AUTO_CAPTURE_TRANSCRIPT_SCAN_LIMIT = 12;
 const AUTO_CAPTURE_DEFAULT_MULTI_SEGMENT_LIMIT = 24;
 const AUTO_CAPTURE_BULK_MULTI_SEGMENT_LIMIT = 48;
-const AUTO_CAPTURE_DEFAULT_IMMEDIATE_CAPTURE_LIMIT = 3;
-const AUTO_CAPTURE_BULK_IMMEDIATE_CAPTURE_LIMIT = 6;
-const AUTO_CAPTURE_DEFAULT_DEFERRED_OVERFLOW_LIMIT = 8;
-const AUTO_CAPTURE_BULK_DEFERRED_OVERFLOW_LIMIT = 24;
-const AUTO_CAPTURE_EXPLICIT_BULK_CANDIDATE_THRESHOLD = 6;
-const AUTO_CAPTURE_BULK_CANDIDATE_THRESHOLD = 8;
 const AUTO_CAPTURE_BULK_LIST_ITEM_THRESHOLD = 4;
 const AUTO_CAPTURE_BULK_SENTENCE_THRESHOLD = 16;
-const AUTO_CAPTURE_DEFAULT_MIN_SEGMENTS_FOR_BULK = 6;
 
 type SessionTranscriptUpdateLike = {
   sessionFile: string;
@@ -818,20 +840,26 @@ type WorkflowImprovementCaptureDecision = {
   match: OrdinaryTurnAutoCaptureMatch;
 };
 
-type OrdinaryTurnAutoCaptureFamily =
-  | "preference"
-  | "response_style"
-  | "project_fact"
-  | "recurring_procedure"
-  | "workflow_improvement";
+const CAPTURE_CLASS_TELEMETRY_LANE_OVERRIDES: Record<
+  string,
+  OrdinaryTurnAutoCaptureLane | "project_rule" | "unmet_need"
+> = {
+  explicit_requirement: "response_style",
+  requirement_correction: "response_style",
+  project_rule_guidance: "project_rule",
+  unmet_need_recommendation: "unmet_need",
+};
 
-type OrdinaryTurnAutoCapturePosture = "default" | "bulk";
-type OrdinaryTurnAutoCaptureSubmissionMode = "immediate" | "deferred_overflow";
-
-type OrdinaryTurnAutoCaptureTurnState = {
-  acceptedKeys: Set<string>;
-  deferredKeys: Set<string>;
-  immediateFamilyCounts: Map<OrdinaryTurnAutoCaptureFamily, number>;
+const CAPTURE_CATEGORY_TELEMETRY_FAMILY: Record<
+  Exclude<
+    NonNullable<ReturnType<typeof getCanonicalCaptureMetadataByCaptureClass>>["category"],
+    "project_rule" | "unmet_need"
+  >,
+  OrdinaryTurnAutoCaptureLane
+> = {
+  project_fact: "project_fact",
+  recurring_procedure: "recurring_procedure",
+  workflow_improvement: "workflow_improvement",
 };
 
 type FindExistingByKeyResult = {
@@ -840,42 +868,6 @@ type FindExistingByKeyResult = {
   metadata?: Record<string, unknown>;
   createdAt?: string;
 };
-
-type OrdinaryTurnAutoCapturePlan =
-  | {
-      kind: "response_style_forget";
-      key: string;
-      family: "response_style";
-      subjectKey: string;
-      segmentIndex: number;
-      score: number;
-      rankSignals: string[];
-      supportsDeferredOverflow: false;
-      run(params: {
-        submissionMode: OrdinaryTurnAutoCaptureSubmissionMode;
-        turnState: OrdinaryTurnAutoCaptureTurnState;
-        posture: OrdinaryTurnAutoCapturePosture;
-        rank: number;
-        candidatePoolSize: number;
-      }): Promise<boolean>;
-    }
-  | {
-      kind: "capture";
-      key: string;
-      family: OrdinaryTurnAutoCaptureFamily;
-      subjectKey: string;
-      segmentIndex: number;
-      score: number;
-      rankSignals: string[];
-      supportsDeferredOverflow: boolean;
-      run(params: {
-        submissionMode: OrdinaryTurnAutoCaptureSubmissionMode;
-        turnState: OrdinaryTurnAutoCaptureTurnState;
-        posture: OrdinaryTurnAutoCapturePosture;
-        rank: number;
-        candidatePoolSize: number;
-      }): Promise<boolean>;
-    };
 
 function quoteIdentifier(value: string): string {
   if (!SAFE_IDENTIFIER_PATTERN.test(value)) {
@@ -892,28 +884,29 @@ function normalizeLower(value: string): string {
   return normalizeText(value).toLowerCase();
 }
 
-function resolveTelemetryFamilyFromCaptureClass(
+function resolveTelemetryLaneFromCaptureClass(
   captureClass: string,
-): OrdinaryTurnAutoCaptureFamily | "project_rule" | "unmet_need" {
-  if (captureClass === "project_rule_guidance") {
-    return "project_rule";
+): OrdinaryTurnAutoCaptureLane | "project_rule" | "unmet_need" {
+  const override = CAPTURE_CLASS_TELEMETRY_LANE_OVERRIDES[captureClass];
+  if (override) {
+    return override;
   }
-  if (captureClass === "unmet_need_recommendation") {
-    return "unmet_need";
+  const captureCategory = getCanonicalCaptureMetadataByCaptureClass(captureClass)?.category;
+  if (captureCategory === "project_rule" || captureCategory === "unmet_need") {
+    return captureCategory;
   }
-  if (captureClass.includes("project_fact")) {
-    return "project_fact";
-  }
-  if (captureClass.includes("recurring_procedure")) {
-    return "recurring_procedure";
-  }
-  if (captureClass === "explicit_requirement" || captureClass === "requirement_correction") {
-    return "response_style";
-  }
-  if (captureClass.startsWith("workflow_")) {
-    return "workflow_improvement";
+  if (captureCategory) {
+    return CAPTURE_CATEGORY_TELEMETRY_FAMILY[captureCategory];
   }
   return "preference";
+}
+
+function resolvePreferencePlanLaneFromCaptureClass(
+  captureClass: string,
+): "preference" | "project_fact" {
+  return getCanonicalCaptureMetadataByCaptureClass(captureClass)?.category === "project_fact"
+    ? "project_fact"
+    : "preference";
 }
 
 function resolveTelemetryScopeFromMatch(params: {
@@ -1105,86 +1098,6 @@ function resolveSessionKeyFromTranscriptFile(sessionFile: string): string | null
   }
   const sessionKey = normalizeText(parsed.name);
   return sessionKey ? sessionKey : null;
-}
-
-function hasReachedMultiCaptureTurnLimit(params: {
-  turnState: OrdinaryTurnAutoCaptureTurnState;
-  posture?: OrdinaryTurnAutoCapturePosture;
-}): boolean {
-  return (
-    params.turnState.acceptedKeys.size >= resolveImmediateCaptureLimit(params.posture ?? "default")
-  );
-}
-
-function markTurnAcceptedCaptureForFamily(
-  turnState: OrdinaryTurnAutoCaptureTurnState,
-  key: string,
-  family: OrdinaryTurnAutoCaptureFamily,
-): void {
-  turnState.acceptedKeys.add(key);
-  turnState.immediateFamilyCounts.set(
-    family,
-    (turnState.immediateFamilyCounts.get(family) ?? 0) + 1,
-  );
-}
-
-function markTurnDeferredOverflow(turnState: OrdinaryTurnAutoCaptureTurnState, key: string): void {
-  turnState.deferredKeys.add(key);
-}
-
-function resolveImmediateCaptureLimit(posture: OrdinaryTurnAutoCapturePosture): number {
-  return posture === "bulk"
-    ? AUTO_CAPTURE_BULK_IMMEDIATE_CAPTURE_LIMIT
-    : AUTO_CAPTURE_DEFAULT_IMMEDIATE_CAPTURE_LIMIT;
-}
-
-function resolveDeferredOverflowLimit(posture: OrdinaryTurnAutoCapturePosture): number {
-  return posture === "bulk"
-    ? AUTO_CAPTURE_BULK_DEFERRED_OVERFLOW_LIMIT
-    : AUTO_CAPTURE_DEFAULT_DEFERRED_OVERFLOW_LIMIT;
-}
-
-function resolveImmediateFamilyLimit(params: {
-  posture: OrdinaryTurnAutoCapturePosture;
-  family: OrdinaryTurnAutoCaptureFamily;
-}): number {
-  if (params.posture === "bulk") {
-    switch (params.family) {
-      case "preference":
-        return 4;
-      case "response_style":
-        return 3;
-      case "project_fact":
-        return 4;
-      case "recurring_procedure":
-        return 2;
-      case "workflow_improvement":
-        return 2;
-    }
-  }
-  switch (params.family) {
-    case "preference":
-      return 2;
-    case "response_style":
-      return 2;
-    case "project_fact":
-      return 2;
-    case "recurring_procedure":
-      return 1;
-    case "workflow_improvement":
-      return 1;
-  }
-}
-
-function hasImmediateFamilyCapacity(params: {
-  turnState: OrdinaryTurnAutoCaptureTurnState;
-  posture: OrdinaryTurnAutoCapturePosture;
-  family: OrdinaryTurnAutoCaptureFamily;
-}): boolean {
-  return (
-    (params.turnState.immediateFamilyCounts.get(params.family) ?? 0) <
-    resolveImmediateFamilyLimit({ posture: params.posture, family: params.family })
-  );
 }
 
 async function readLatestTranscriptUserMessage(
@@ -1485,6 +1398,274 @@ function buildProjectFactMatch(params: {
   };
 }
 
+type OrdinaryTurnTextDetector = {
+  id: string;
+  detect(normalized: string): OrdinaryTurnAutoCaptureMatch | null;
+};
+
+function runOrdinaryTurnTextDetectors(
+  detectors: readonly OrdinaryTurnTextDetector[],
+  normalized: string,
+): OrdinaryTurnAutoCaptureMatch | null {
+  for (const detector of detectors) {
+    const match = detector.detect(normalized);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}
+
+function createPreferenceDetector(params: {
+  id: string;
+  profile: "user-preference-v1" | "user-preference-v2";
+  captureClass: "explicit_preference" | "preference_correction";
+  candidateKind: "learning" | "correction";
+  reasonCode: "explicit_preference_statement" | "explicit_preference_correction";
+  pattern: RegExp;
+  template: "my_preferred_is" | "my_favorite_is";
+  subjectPrefix: "preferred" | "favorite";
+}): OrdinaryTurnTextDetector {
+  return {
+    id: params.id,
+    detect: (normalized) =>
+      buildPreferenceMatch({
+        profile: params.profile,
+        captureClass: params.captureClass,
+        candidateKind: params.candidateKind,
+        reasonCode: params.reasonCode,
+        normalized,
+        pattern: params.pattern,
+        template: params.template,
+        subjectPrefix: params.subjectPrefix,
+      }),
+  };
+}
+
+function createRequirementDetector(params: {
+  id: string;
+  profile: "user-preference-v1" | "user-preference-v2";
+  captureClass: "explicit_requirement" | "requirement_correction";
+  candidateKind: "learning" | "correction";
+  reasonCode: "explicit_requirement_statement" | "explicit_requirement_correction";
+  pattern: RegExp;
+  template:
+    | "responses_concise"
+    | "responses_bullets"
+    | "responses_plain_english"
+    | "responses_no_tables"
+    | "responses_numbered_steps";
+  subject: string;
+  value: string;
+  content: string;
+}): OrdinaryTurnTextDetector {
+  return {
+    id: params.id,
+    detect: (normalized) =>
+      buildRequirementMatch({
+        profile: params.profile,
+        captureClass: params.captureClass,
+        candidateKind: params.candidateKind,
+        reasonCode: params.reasonCode,
+        normalized,
+        template: params.template,
+        pattern: params.pattern,
+        subject: params.subject,
+        value: params.value,
+        content: params.content,
+      }),
+  };
+}
+
+function createProjectFactDetector(params: {
+  id: string;
+  profile: "user-preference-v1" | "user-preference-v2";
+  captureClass: "explicit_project_fact" | "project_fact_correction";
+  candidateKind: "learning" | "correction";
+  reasonCode: "explicit_project_fact_statement" | "explicit_project_fact_correction";
+  pattern: RegExp;
+}): OrdinaryTurnTextDetector {
+  return {
+    id: params.id,
+    detect: (normalized) =>
+      buildProjectFactMatch({
+        profile: params.profile,
+        captureClass: params.captureClass,
+        candidateKind: params.candidateKind,
+        reasonCode: params.reasonCode,
+        normalized,
+        pattern: params.pattern,
+      }),
+  };
+}
+
+const ORDINARY_TURN_PROFILE_V1_DETECTORS: readonly OrdinaryTurnTextDetector[] =
+  PREFERENCE_PATTERNS.map((pattern, index) =>
+    createPreferenceDetector({
+      id: `turn-v1-preference-${index}`,
+      profile: "user-preference-v1",
+      captureClass: "explicit_preference",
+      candidateKind: "learning",
+      reasonCode: "explicit_preference_statement",
+      pattern: pattern.pattern,
+      template: pattern.template,
+      subjectPrefix: pattern.subjectPrefix,
+    }),
+  );
+
+const ORDINARY_TURN_PROFILE_V2_DETECTORS: readonly OrdinaryTurnTextDetector[] = [
+  ...PREFERENCE_CORRECTION_PATTERNS.map((pattern, index) =>
+    createPreferenceDetector({
+      id: `turn-v2-preference-correction-${index}`,
+      profile: "user-preference-v2",
+      captureClass: "preference_correction",
+      candidateKind: "correction",
+      reasonCode: "explicit_preference_correction",
+      pattern: pattern.pattern,
+      template: pattern.template,
+      subjectPrefix: pattern.subjectPrefix,
+    }),
+  ),
+  ...PROJECT_FACT_CORRECTION_PATTERNS.map((pattern, index) =>
+    createProjectFactDetector({
+      id: `turn-v2-project-fact-correction-${index}`,
+      profile: "user-preference-v2",
+      captureClass: "project_fact_correction",
+      candidateKind: "correction",
+      reasonCode: "explicit_project_fact_correction",
+      pattern: pattern.pattern,
+    }),
+  ),
+  ...REQUIREMENT_CORRECTION_PATTERNS.map((pattern, index) =>
+    createRequirementDetector({
+      id: `turn-v2-requirement-correction-${index}`,
+      profile: "user-preference-v2",
+      captureClass: "requirement_correction",
+      candidateKind: "correction",
+      reasonCode: "explicit_requirement_correction",
+      pattern: pattern.pattern,
+      template: pattern.template,
+      subject: pattern.subject,
+      value: pattern.value,
+      content: pattern.content,
+    }),
+  ),
+  ...REQUIREMENT_PATTERNS.map((pattern, index) =>
+    createRequirementDetector({
+      id: `turn-v2-requirement-${index}`,
+      profile: "user-preference-v2",
+      captureClass: "explicit_requirement",
+      candidateKind: "learning",
+      reasonCode: "explicit_requirement_statement",
+      pattern: pattern.pattern,
+      template: pattern.template,
+      subject: pattern.subject,
+      value: pattern.value,
+      content: pattern.content,
+    }),
+  ),
+  ...PROJECT_FACT_PATTERNS.map((pattern, index) =>
+    createProjectFactDetector({
+      id: `turn-v2-project-fact-${index}`,
+      profile: "user-preference-v2",
+      captureClass: "explicit_project_fact",
+      candidateKind: "learning",
+      reasonCode: "explicit_project_fact_statement",
+      pattern: pattern.pattern,
+    }),
+  ),
+  ...PREFERENCE_PATTERNS.map((pattern, index) =>
+    createPreferenceDetector({
+      id: `turn-v2-preference-${index}`,
+      profile: "user-preference-v2",
+      captureClass: "explicit_preference",
+      candidateKind: "learning",
+      reasonCode: "explicit_preference_statement",
+      pattern: pattern.pattern,
+      template: pattern.template,
+      subjectPrefix: pattern.subjectPrefix,
+    }),
+  ),
+];
+
+const MANAGED_LEARNING_DETECTORS: readonly OrdinaryTurnTextDetector[] = [
+  ...PREFERENCE_CANDIDATE_CONTENT_PATTERNS.map((pattern, index) =>
+    createPreferenceDetector({
+      id: `managed-learning-preference-${index}`,
+      profile: "user-preference-v2",
+      captureClass: "explicit_preference",
+      candidateKind: "learning",
+      reasonCode: "explicit_preference_statement",
+      pattern: pattern.pattern,
+      template: pattern.template,
+      subjectPrefix: pattern.subjectPrefix,
+    }),
+  ),
+  ...REQUIREMENT_CANDIDATE_CONTENT_PATTERNS.map((pattern, index) =>
+    createRequirementDetector({
+      id: `managed-learning-requirement-${index}`,
+      profile: "user-preference-v2",
+      captureClass: "explicit_requirement",
+      candidateKind: "learning",
+      reasonCode: "explicit_requirement_statement",
+      pattern: pattern.pattern,
+      template: pattern.template,
+      subject: pattern.subject,
+      value: pattern.value,
+      content: pattern.content,
+    }),
+  ),
+  ...PROJECT_FACT_CANDIDATE_CONTENT_PATTERNS.map((pattern, index) =>
+    createProjectFactDetector({
+      id: `managed-learning-project-fact-${index}`,
+      profile: "user-preference-v2",
+      captureClass: "explicit_project_fact",
+      candidateKind: "learning",
+      reasonCode: "explicit_project_fact_statement",
+      pattern: pattern.pattern,
+    }),
+  ),
+];
+
+const MANAGED_CORRECTION_DETECTORS: readonly OrdinaryTurnTextDetector[] = [
+  ...PREFERENCE_CORRECTION_CANDIDATE_CONTENT_PATTERNS.map((pattern, index) =>
+    createPreferenceDetector({
+      id: `managed-correction-preference-${index}`,
+      profile: "user-preference-v2",
+      captureClass: "preference_correction",
+      candidateKind: "correction",
+      reasonCode: "explicit_preference_correction",
+      pattern: pattern.pattern,
+      template: pattern.template,
+      subjectPrefix: pattern.subjectPrefix,
+    }),
+  ),
+  ...REQUIREMENT_CORRECTION_CANDIDATE_CONTENT_PATTERNS.map((pattern, index) =>
+    createRequirementDetector({
+      id: `managed-correction-requirement-${index}`,
+      profile: "user-preference-v2",
+      captureClass: "requirement_correction",
+      candidateKind: "correction",
+      reasonCode: "explicit_requirement_correction",
+      pattern: pattern.pattern,
+      template: pattern.template,
+      subject: pattern.subject,
+      value: pattern.value,
+      content: pattern.content,
+    }),
+  ),
+  ...PROJECT_FACT_CORRECTION_CANDIDATE_CONTENT_PATTERNS.map((pattern, index) =>
+    createProjectFactDetector({
+      id: `managed-correction-project-fact-${index}`,
+      profile: "user-preference-v2",
+      captureClass: "project_fact_correction",
+      candidateKind: "correction",
+      reasonCode: "explicit_project_fact_correction",
+      pattern: pattern.pattern,
+    }),
+  ),
+];
+
 export function parseOrdinaryTurnAutoCapturePreference(
   messageText: string,
   profile: "user-preference-v1" | "user-preference-v2" = "user-preference-v1",
@@ -1505,108 +1686,12 @@ export function parseOrdinaryTurnAutoCapturePreference(
   if (containsSensitiveTerm(normalized)) {
     return null;
   }
-
-  if (profile === "user-preference-v2") {
-    for (const { pattern, template, subjectPrefix } of PREFERENCE_CORRECTION_PATTERNS) {
-      const match = buildPreferenceMatch({
-        profile,
-        captureClass: "preference_correction",
-        candidateKind: "correction",
-        reasonCode: "explicit_preference_correction",
-        normalized,
-        pattern,
-        template,
-        subjectPrefix,
-      });
-      if (match) {
-        return match;
-      }
-    }
-
-    for (const { pattern } of PROJECT_FACT_CORRECTION_PATTERNS) {
-      const match = buildProjectFactMatch({
-        profile,
-        captureClass: "project_fact_correction",
-        candidateKind: "correction",
-        reasonCode: "explicit_project_fact_correction",
-        normalized,
-        pattern,
-      });
-      if (match) {
-        return match;
-      }
-    }
-
-    for (const { pattern, template, subject, value, content } of REQUIREMENT_CORRECTION_PATTERNS) {
-      const match = buildRequirementMatch({
-        profile,
-        captureClass: "requirement_correction",
-        candidateKind: "correction",
-        reasonCode: "explicit_requirement_correction",
-        normalized,
-        pattern,
-        template,
-        subject,
-        value,
-        content,
-      });
-      if (match) {
-        return match;
-      }
-    }
-
-    for (const { pattern, template, subject, value, content } of REQUIREMENT_PATTERNS) {
-      const match = buildRequirementMatch({
-        profile,
-        captureClass: "explicit_requirement",
-        candidateKind: "learning",
-        reasonCode: "explicit_requirement_statement",
-        normalized,
-        pattern,
-        template,
-        subject,
-        value,
-        content,
-      });
-      if (match) {
-        return match;
-      }
-    }
-  }
-
-  if (profile === "user-preference-v2") {
-    for (const { pattern } of PROJECT_FACT_PATTERNS) {
-      const match = buildProjectFactMatch({
-        profile,
-        captureClass: "explicit_project_fact",
-        candidateKind: "learning",
-        reasonCode: "explicit_project_fact_statement",
-        normalized,
-        pattern,
-      });
-      if (match) {
-        return match;
-      }
-    }
-  }
-
-  for (const { pattern, template, subjectPrefix } of PREFERENCE_PATTERNS) {
-    const match = buildPreferenceMatch({
-      profile,
-      captureClass: "explicit_preference",
-      candidateKind: "learning",
-      reasonCode: "explicit_preference_statement",
-      normalized,
-      pattern,
-      template,
-      subjectPrefix,
-    });
-    if (match) {
-      return match;
-    }
-  }
-
-  return null;
+  return runOrdinaryTurnTextDetectors(
+    profile === "user-preference-v2"
+      ? ORDINARY_TURN_PROFILE_V2_DETECTORS
+      : ORDINARY_TURN_PROFILE_V1_DETECTORS,
+    normalized,
+  );
 }
 
 export function parseAutoCaptureManagedCandidateContent(
@@ -1616,62 +1701,7 @@ export function parseAutoCaptureManagedCandidateContent(
   if (!normalized || normalized.length < 12 || normalized.length > 140) {
     return null;
   }
-
-  for (const { pattern, template, subjectPrefix } of PREFERENCE_CANDIDATE_CONTENT_PATTERNS) {
-    const match = buildPreferenceMatch({
-      profile: "user-preference-v2",
-      captureClass: "explicit_preference",
-      candidateKind: "learning",
-      reasonCode: "explicit_preference_statement",
-      normalized,
-      pattern,
-      template,
-      subjectPrefix,
-    });
-    if (match) {
-      return match;
-    }
-  }
-
-  for (const {
-    pattern,
-    template,
-    subject,
-    value,
-    content: requirementContent,
-  } of REQUIREMENT_CANDIDATE_CONTENT_PATTERNS) {
-    const match = buildRequirementMatch({
-      profile: "user-preference-v2",
-      captureClass: "explicit_requirement",
-      candidateKind: "learning",
-      reasonCode: "explicit_requirement_statement",
-      normalized,
-      pattern,
-      template,
-      subject,
-      value,
-      content: requirementContent,
-    });
-    if (match) {
-      return match;
-    }
-  }
-
-  for (const { pattern } of PROJECT_FACT_CANDIDATE_CONTENT_PATTERNS) {
-    const match = buildProjectFactMatch({
-      profile: "user-preference-v2",
-      captureClass: "explicit_project_fact",
-      candidateKind: "learning",
-      reasonCode: "explicit_project_fact_statement",
-      normalized,
-      pattern,
-    });
-    if (match) {
-      return match;
-    }
-  }
-
-  return null;
+  return runOrdinaryTurnTextDetectors(MANAGED_LEARNING_DETECTORS, normalized);
 }
 
 export function parseManagedCorrectionCandidateContent(
@@ -1681,66 +1711,7 @@ export function parseManagedCorrectionCandidateContent(
   if (!normalized || normalized.length < 12 || normalized.length > 140) {
     return null;
   }
-
-  for (const {
-    pattern,
-    template,
-    subjectPrefix,
-  } of PREFERENCE_CORRECTION_CANDIDATE_CONTENT_PATTERNS) {
-    const match = buildPreferenceMatch({
-      profile: "user-preference-v2",
-      captureClass: "preference_correction",
-      candidateKind: "correction",
-      reasonCode: "explicit_preference_correction",
-      normalized,
-      pattern,
-      template,
-      subjectPrefix,
-    });
-    if (match) {
-      return match;
-    }
-  }
-
-  for (const {
-    pattern,
-    template,
-    subject,
-    value,
-    content: requirementContent,
-  } of REQUIREMENT_CORRECTION_CANDIDATE_CONTENT_PATTERNS) {
-    const match = buildRequirementMatch({
-      profile: "user-preference-v2",
-      captureClass: "requirement_correction",
-      candidateKind: "correction",
-      reasonCode: "explicit_requirement_correction",
-      normalized,
-      pattern,
-      template,
-      subject,
-      value,
-      content: requirementContent,
-    });
-    if (match) {
-      return match;
-    }
-  }
-
-  for (const { pattern } of PROJECT_FACT_CORRECTION_CANDIDATE_CONTENT_PATTERNS) {
-    const match = buildProjectFactMatch({
-      profile: "user-preference-v2",
-      captureClass: "project_fact_correction",
-      candidateKind: "correction",
-      reasonCode: "explicit_project_fact_correction",
-      normalized,
-      pattern,
-    });
-    if (match) {
-      return match;
-    }
-  }
-
-  return null;
+  return runOrdinaryTurnTextDetectors(MANAGED_CORRECTION_DETECTORS, normalized);
 }
 
 function inferSupportedProjectFactFieldKey(
@@ -2191,83 +2162,6 @@ function buildWorkflowImprovementPendingConfirmationMetadata(params: {
   return buildWorkflowImprovementPendingConfirmationLifecycleMetadata(params);
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function readNestedMetadataString(
-  metadata: Record<string, unknown> | undefined,
-  path: readonly string[],
-): string | undefined {
-  let current: unknown = metadata;
-  for (const segment of path) {
-    current = asRecord(current)[segment];
-    if (current === undefined) {
-      return undefined;
-    }
-  }
-  return typeof current === "string" && current.trim().length > 0 ? current.trim() : undefined;
-}
-
-function readCandidateLifecycleState(
-  metadata: Record<string, unknown> | undefined,
-): "pending_confirmation" | "hold_for_more_evidence" | undefined {
-  const state = readNestedMetadataString(metadata, ["candidateLifecycle", "state"]);
-  return state === "pending_confirmation" || state === "hold_for_more_evidence" ? state : undefined;
-}
-
-function readCandidateOverflowMode(
-  metadata: Record<string, unknown> | undefined,
-): string | undefined {
-  return readNestedMetadataString(metadata, ["candidateOverflow", "mode"]);
-}
-
-function readCandidateObservedAt(
-  metadata: Record<string, unknown> | undefined,
-): string | undefined {
-  return (
-    readNestedMetadataString(metadata, ["candidateLifecycle", "observedAt"]) ??
-    readNestedMetadataString(metadata, ["candidateLifecycle", "firstObservedAt"])
-  );
-}
-
-function buildDeferredOverflowMetadata(params: {
-  family: OrdinaryTurnAutoCaptureFamily;
-  posture: OrdinaryTurnAutoCapturePosture;
-  state: "pending_confirmation" | "hold_for_more_evidence";
-  rank: number;
-  candidatePoolSize: number;
-  observedAt?: string;
-  evidence: string[];
-  extraLifecycle?: Record<string, unknown>;
-}): Record<string, unknown> {
-  const observedAt = params.observedAt ?? new Date().toISOString();
-  const expiresAt = new Date(
-    Date.parse(observedAt) + CANDIDATE_CONFIRMATION_WINDOW_MS,
-  ).toISOString();
-  return {
-    candidateLifecycle: {
-      family: params.family,
-      state: params.state,
-      evidenceCount: 1,
-      firstObservedAt: observedAt,
-      observedAt,
-      expiresAt,
-      evidence: params.evidence,
-      ...(params.extraLifecycle ?? {}),
-    },
-    candidateOverflow: {
-      mode: "deferred_overflow",
-      posture: params.posture,
-      rank: params.rank,
-      candidatePoolSize: params.candidatePoolSize,
-      firstObservedAt: observedAt,
-    },
-  };
-}
-
 function resolveDeferredReviewMode(
   reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence",
 ): "pending_confirmation" | "hold_for_more_evidence" {
@@ -2298,100 +2192,6 @@ function shouldSkipImmediateWorkflowImprovementConfirmation(
   return shouldSkipImmediateWorkflowImprovementLifecycleConfirmation(createdAt, now);
 }
 
-function resolveCapturePlanPosture(params: {
-  text: string;
-  captureSegments: readonly string[];
-  candidatePlanCount: number;
-  explicitCandidateCount: number;
-}): OrdinaryTurnAutoCapturePosture {
-  if (hasExplicitMemoryRequest(params.text)) {
-    return "bulk";
-  }
-  if (params.explicitCandidateCount >= AUTO_CAPTURE_EXPLICIT_BULK_CANDIDATE_THRESHOLD) {
-    return "bulk";
-  }
-  if (
-    params.candidatePlanCount >= AUTO_CAPTURE_BULK_CANDIDATE_THRESHOLD &&
-    params.captureSegments.length >= AUTO_CAPTURE_DEFAULT_MIN_SEGMENTS_FOR_BULK
-  ) {
-    return "bulk";
-  }
-  return "default";
-}
-
-function resolveCapturePlanBaseScore(plan: OrdinaryTurnAutoCapturePlan): {
-  score: number;
-  signals: string[];
-} {
-  if (plan.kind === "response_style_forget") {
-    return {
-      score: 10_000,
-      signals: ["response_style_forget"],
-    };
-  }
-  switch (plan.family) {
-    case "preference":
-      return { score: 400, signals: ["family:preference"] };
-    case "project_fact":
-      return { score: 360, signals: ["family:project_fact"] };
-    case "response_style":
-      return { score: 320, signals: ["family:response_style"] };
-    case "recurring_procedure":
-      return { score: 280, signals: ["family:recurring_procedure"] };
-    case "workflow_improvement":
-      return { score: 240, signals: ["family:workflow_improvement"] };
-  }
-}
-
-function applyCapturePlanDecisionScore(params: {
-  score: number;
-  signals: string[];
-  detectionSource?: "deterministic" | "semantic";
-  confidence?: "high" | "medium" | "low";
-  reviewMode?: "direct" | "pending_confirmation" | "hold_for_more_evidence";
-  captureClass?: string;
-  candidateKind?: OrdinaryTurnAutoCaptureMatch["candidateKind"];
-}): { score: number; signals: string[] } {
-  const signals = [...params.signals];
-  let score = params.score;
-  if (params.detectionSource === "deterministic") {
-    score += 70;
-    signals.push("detection:deterministic");
-  } else if (params.detectionSource === "semantic") {
-    score += 35;
-    signals.push("detection:semantic");
-  }
-  if (params.confidence === "high") {
-    score += 45;
-    signals.push("confidence:high");
-  } else if (params.confidence === "medium") {
-    score += 20;
-    signals.push("confidence:medium");
-  }
-  if (params.reviewMode === "direct") {
-    score += 35;
-    signals.push("review:direct");
-  } else if (params.reviewMode === "pending_confirmation") {
-    score += 15;
-    signals.push("review:pending_confirmation");
-  } else if (params.reviewMode === "hold_for_more_evidence") {
-    signals.push("review:hold_for_more_evidence");
-  }
-  if (params.candidateKind === "correction") {
-    score += 25;
-    signals.push("candidate:correction");
-  }
-  if (params.captureClass?.startsWith("explicit_")) {
-    score += 25;
-    signals.push("capture:explicit");
-  }
-  if (params.captureClass?.includes("correction")) {
-    score += 20;
-    signals.push("capture:correction");
-  }
-  return { score, signals };
-}
-
 function rankOrdinaryTurnAutoCapturePlans(
   plans: readonly OrdinaryTurnAutoCapturePlan[],
 ): OrdinaryTurnAutoCapturePlan[] {
@@ -2405,6 +2205,48 @@ function rankOrdinaryTurnAutoCapturePlans(
     return left.key.localeCompare(right.key);
   });
 }
+
+const SUBSCRIBER_CAPTURE_METADATA_OVERRIDES: Partial<
+  Record<
+    OrdinaryTurnAutoCaptureMatch["captureClass"],
+    {
+      category?: string;
+      source?: string;
+      subjectKey?: boolean;
+      preferenceKey?: boolean;
+    }
+  >
+> = {
+  explicit_preference: {
+    category: "user_preference",
+    source: "explicit_user_statement",
+  },
+  preference_correction: {
+    category: "user_preference_correction",
+    source: "conversational_user_correction",
+    subjectKey: true,
+    preferenceKey: true,
+  },
+  explicit_requirement: {
+    category: "user_requirement",
+    source: "explicit_user_requirement",
+  },
+  requirement_correction: {
+    category: "user_requirement_correction",
+    source: "conversational_user_requirement_correction",
+    subjectKey: true,
+  },
+  project_fact_correction: {
+    category: "project_fact_correction",
+    source: "conversational_project_fact_correction",
+    subjectKey: true,
+  },
+  recurring_procedure_correction: {
+    category: "recurring_procedure_correction",
+    source: "conversational_recurring_procedure_correction",
+    subjectKey: true,
+  },
+};
 
 function buildSubscriberCaptureMetadata(params: {
   match: OrdinaryTurnAutoCaptureMatch;
@@ -2462,48 +2304,18 @@ function buildSubscriberCaptureMetadata(params: {
       metadata.subject_key = match.subjectKey;
     }
   }
-
-  switch (match.captureClass) {
-    case "explicit_preference":
-      metadata.category = "user_preference";
-      metadata.source = "explicit_user_statement";
-      break;
-    case "preference_correction":
-      metadata.category = "user_preference_correction";
-      metadata.source = "conversational_user_correction";
-      metadata.subject_key = match.subjectKey;
-      metadata.preference_key = match.subjectKey;
-      break;
-    case "explicit_requirement":
-      metadata.category = "user_requirement";
-      metadata.source = "explicit_user_requirement";
-      break;
-    case "requirement_correction":
-      metadata.category = "user_requirement_correction";
-      metadata.source = "conversational_user_requirement_correction";
-      metadata.subject_key = match.subjectKey;
-      break;
-    case "explicit_project_fact":
-      break;
-    case "project_fact_correction":
-      metadata.category = "project_fact_correction";
-      metadata.source = "conversational_project_fact_correction";
-      metadata.subject_key = match.subjectKey;
-      break;
-    case "explicit_recurring_procedure":
-      break;
-    case "recurring_procedure_correction":
-      metadata.category = "recurring_procedure_correction";
-      metadata.source = "conversational_recurring_procedure_correction";
-      metadata.subject_key = match.subjectKey;
-      break;
-    case "workflow_tool_gotcha":
-    case "workflow_environment_constraint":
-    case "workflow_api_workaround":
-    case "workflow_generalized_guidance":
-    case "project_rule_guidance":
-    case "unmet_need_recommendation":
-      break;
+  const override = SUBSCRIBER_CAPTURE_METADATA_OVERRIDES[match.captureClass];
+  if (override?.category) {
+    metadata.category = override.category;
+  }
+  if (override?.source) {
+    metadata.source = override.source;
+  }
+  if (override?.subjectKey) {
+    metadata.subject_key = match.subjectKey;
+  }
+  if (override?.preferenceKey) {
+    metadata.preference_key = match.subjectKey;
   }
 
   return params.extraMetadata ? { ...metadata, ...params.extraMetadata } : metadata;
@@ -2527,7 +2339,7 @@ function buildPreferenceDeferredOverflowMetadata(params: {
     transcriptFile: params.transcriptFile,
     timestamp: observedAt,
     extraMetadata: buildDeferredOverflowMetadata({
-      family: "preference",
+      lane: "preference",
       posture: params.posture,
       state: "pending_confirmation",
       rank: params.rank,
@@ -3164,73 +2976,6 @@ async function autoPromoteWorkflowImprovementCandidate(params: {
   return promotionResult.promotedMemoryObjectId ?? null;
 }
 
-function buildWorkflowImprovementAutoPromotionMetadata(params: {
-  match: OrdinaryTurnAutoCaptureMatch;
-  lessonFamily: WorkflowImprovementLessonFamily;
-  agentExternalKey: string;
-  sessionKey: string;
-  transcriptFile: string;
-  autoPromotionProfile: string;
-  timestamp?: string;
-  semanticMetadata?: Record<string, unknown>;
-  candidateConfirmation?: Record<string, unknown>;
-}): Record<string, unknown> {
-  return {
-    autoPromotion: {
-      source: AUTO_PROMOTION_SOURCE,
-      captureSeam: "transcript_subscriber_fallback",
-      profile: params.autoPromotionProfile,
-      captureProfile: params.match.profile,
-      captureClass: params.match.captureClass,
-      reasonCode: params.match.reasonCode,
-      lessonFamily: params.lessonFamily,
-      key: params.match.key,
-      subjectKey: params.match.subjectKey,
-      subject: params.match.subject,
-      value: params.match.value,
-      ...(params.match.projectScope ? { projectScope: params.match.projectScope } : {}),
-      ...(params.match.normalizedProjectScope
-        ? { normalizedProjectScope: params.match.normalizedProjectScope }
-        : {}),
-      ...(params.match.guidancePattern ? { guidancePattern: params.match.guidancePattern } : {}),
-      ...(params.match.needCategory ? { needCategory: params.match.needCategory } : {}),
-      ...(params.match.neededCapability ? { neededCapability: params.match.neededCapability } : {}),
-      ...(params.match.normalizedNeededCapability
-        ? { normalizedNeededCapability: params.match.normalizedNeededCapability }
-        : {}),
-      ...(params.match.recommendedAction
-        ? { recommendedAction: params.match.recommendedAction }
-        : {}),
-      ...(params.match.avoidAction ? { avoidAction: params.match.avoidAction } : {}),
-      ...(params.match.rationale ? { rationale: params.match.rationale } : {}),
-      ...(params.lessonFamily === "generalized_unmet_need"
-        ? { recommendationMode: "recommendation_only" }
-        : { guidanceMode: "guidance_only" }),
-      agentExternalKey: params.agentExternalKey,
-      sessionKey: params.sessionKey,
-      transcriptFile: params.transcriptFile,
-      ...(params.timestamp ? { transcriptTimestamp: params.timestamp } : {}),
-    },
-    ...(params.semanticMetadata ?? {}),
-    ...(params.candidateConfirmation
-      ? { candidateConfirmation: params.candidateConfirmation }
-      : {}),
-  };
-}
-
-function isAutoReviewedManagedImprovementDecision(
-  decision: WorkflowImprovementCaptureDecision,
-): boolean {
-  // All active workflow-improvement lesson families are canonicalized now.
-  // Keep auto-review available for the generalized workflow, project-rule,
-  // and unmet-need lanes instead of keying on a retired legacy family name.
-  return (
-    decision.lessonFamily === "generalized_workflow_lesson" ||
-    decision.lessonFamily === "generalized_project_rule" ||
-    decision.lessonFamily === "generalized_unmet_need"
-  );
-}
-
 function findConflictingApprovedGeneralizedGuidanceEntries(params: {
   inspection: WorkflowImprovementLifecycleInspection | null | undefined;
   key: string;
@@ -3254,89 +2999,6 @@ function findConflictingPendingGeneralizedGuidanceEntries(params: {
       entry.key !== params.key &&
       entry.id !== params.pendingCandidateId,
   );
-}
-
-function buildWorkflowImprovementAutoReviewMetadata(params: {
-  match: OrdinaryTurnAutoCaptureMatch;
-  lessonFamily: WorkflowImprovementLessonFamily;
-  agentExternalKey: string;
-  sessionKey: string;
-  transcriptFile: string;
-  autoPromotionProfile: string;
-  outcome: "approve" | "supersede_existing";
-  evidenceCount: number;
-  contradictionCount: number;
-  supersedeTargetIds: string[];
-  rejectedCandidateIds: string[];
-  timestamp?: string;
-  semanticMetadata?: Record<string, unknown>;
-}): Record<string, unknown> {
-  return {
-    autoPromotion: {
-      source: AUTO_PROMOTION_SOURCE,
-      captureSeam: "transcript_subscriber_fallback",
-      profile: params.autoPromotionProfile,
-      captureProfile: params.match.profile,
-      captureClass: params.match.captureClass,
-      reasonCode: params.match.reasonCode,
-      lessonFamily: params.lessonFamily,
-      key: params.match.key,
-      subjectKey: params.match.subjectKey,
-      subject: params.match.subject,
-      normalizedSubject: params.match.normalizedSubject,
-      value: params.match.value,
-      normalizedValue: params.match.normalizedValue,
-      ...(params.match.projectScope ? { projectScope: params.match.projectScope } : {}),
-      ...(params.match.normalizedProjectScope
-        ? { normalizedProjectScope: params.match.normalizedProjectScope }
-        : {}),
-      ...(params.match.guidancePattern ? { guidancePattern: params.match.guidancePattern } : {}),
-      ...(params.match.needCategory ? { needCategory: params.match.needCategory } : {}),
-      ...(params.match.neededCapability ? { neededCapability: params.match.neededCapability } : {}),
-      ...(params.match.normalizedNeededCapability
-        ? { normalizedNeededCapability: params.match.normalizedNeededCapability }
-        : {}),
-      ...(params.match.recommendedAction
-        ? { recommendedAction: params.match.recommendedAction }
-        : {}),
-      ...(params.match.normalizedRecommendedAction
-        ? { normalizedRecommendedAction: params.match.normalizedRecommendedAction }
-        : {}),
-      ...(params.match.avoidAction ? { avoidAction: params.match.avoidAction } : {}),
-      ...(params.match.normalizedAvoidAction
-        ? { normalizedAvoidAction: params.match.normalizedAvoidAction }
-        : {}),
-      ...(params.match.rationale ? { rationale: params.match.rationale } : {}),
-      ...(params.match.normalizedRationale
-        ? { normalizedRationale: params.match.normalizedRationale }
-        : {}),
-      ...(params.lessonFamily === "generalized_unmet_need"
-        ? { recommendationMode: "recommendation_only" }
-        : { guidanceMode: "guidance_only" }),
-      agentExternalKey: params.agentExternalKey,
-      sessionKey: params.sessionKey,
-      transcriptFile: params.transcriptFile,
-      ...(params.timestamp ? { transcriptTimestamp: params.timestamp } : {}),
-    },
-    ...(params.semanticMetadata ?? {}),
-    candidateConfirmation: {
-      state: "confirmed",
-      method: "generalized_cluster_auto_review",
-      confirmationEvidenceCount: params.evidenceCount,
-      contradictionCount: params.contradictionCount,
-      clusterKey: params.match.key,
-    },
-    workflowAutoReview: {
-      family: "workflow_improvement",
-      lessonFamily: params.lessonFamily,
-      clusterKey: params.match.key,
-      outcome: params.outcome,
-      evidenceCount: params.evidenceCount,
-      contradictionCount: params.contradictionCount,
-      supersedeTargetIds: params.supersedeTargetIds,
-      rejectedCandidateIds: params.rejectedCandidateIds,
-    },
-  };
 }
 
 export function createOrdinaryTurnAutoCaptureHandler(params: {
@@ -3377,7 +3039,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     candidatePoolSize?: number;
   }) {
     return {
-      family: resolveTelemetryFamilyFromCaptureClass(input.captureClass),
+      family: resolveTelemetryLaneFromCaptureClass(input.captureClass),
       scope: resolveTelemetryScopeFromMatch({
         projectScope: input.projectScope,
         agentExternalKey: input.agentExternalKey,
@@ -3699,7 +3361,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     const overflowMetadata =
       decisionParams.submissionMode === "deferred_overflow"
         ? buildDeferredOverflowMetadata({
-            family: "response_style",
+            lane: "response_style",
             posture: decisionParams.posture ?? "default",
             state: overflowReviewMode,
             rank: decisionParams.rank ?? 0,
@@ -3767,7 +3429,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         },
       });
       if (promoted) {
-        markTurnAcceptedCaptureForFamily(decisionParams.turnState, match.key, "response_style");
+        markTurnAcceptedCaptureForLane(decisionParams.turnState, match.key, "response_style");
         markRecent(match.key);
       }
       return true;
@@ -3822,7 +3484,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     if (decisionParams.submissionMode === "deferred_overflow") {
       markTurnDeferredOverflow(decisionParams.turnState, match.key);
     } else {
-      markTurnAcceptedCaptureForFamily(decisionParams.turnState, match.key, "response_style");
+      markTurnAcceptedCaptureForLane(decisionParams.turnState, match.key, "response_style");
     }
 
     const shouldDirectPromote =
@@ -4165,7 +3827,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     const overflowMetadata =
       decisionParams.submissionMode === "deferred_overflow"
         ? buildDeferredOverflowMetadata({
-            family: "project_fact",
+            lane: "project_fact",
             posture: decisionParams.posture ?? "default",
             state: effectiveReviewMode,
             rank: decisionParams.rank ?? 0,
@@ -4281,7 +3943,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         },
       });
       if (promoted) {
-        markTurnAcceptedCaptureForFamily(decisionParams.turnState, match.key, "project_fact");
+        markTurnAcceptedCaptureForLane(decisionParams.turnState, match.key, "project_fact");
         markRecent(match.key);
       }
       return true;
@@ -4338,7 +4000,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     if (decisionParams.submissionMode === "deferred_overflow") {
       markTurnDeferredOverflow(decisionParams.turnState, match.key);
     } else {
-      markTurnAcceptedCaptureForFamily(decisionParams.turnState, match.key, "project_fact");
+      markTurnAcceptedCaptureForLane(decisionParams.turnState, match.key, "project_fact");
     }
 
     const projectFactCorrectionPlan =
@@ -4621,7 +4283,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     const overflowMetadata =
       decisionParams.submissionMode === "deferred_overflow"
         ? buildDeferredOverflowMetadata({
-            family: "recurring_procedure",
+            lane: "recurring_procedure",
             posture: decisionParams.posture ?? "default",
             state: effectiveReviewMode,
             rank: decisionParams.rank ?? 0,
@@ -4741,11 +4403,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         },
       });
       if (promoted) {
-        markTurnAcceptedCaptureForFamily(
-          decisionParams.turnState,
-          match.key,
-          "recurring_procedure",
-        );
+        markTurnAcceptedCaptureForLane(decisionParams.turnState, match.key, "recurring_procedure");
         markRecent(match.key);
       }
       return true;
@@ -4799,7 +4457,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     if (decisionParams.submissionMode === "deferred_overflow") {
       markTurnDeferredOverflow(decisionParams.turnState, match.key);
     } else {
-      markTurnAcceptedCaptureForFamily(decisionParams.turnState, match.key, "recurring_procedure");
+      markTurnAcceptedCaptureForLane(decisionParams.turnState, match.key, "recurring_procedure");
     }
 
     const shouldDirectPromote =
@@ -4948,7 +4606,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         effectiveDecision = {
           action: "capture",
           canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch({
-            familyId: resolveWorkflowCaptureFamilyId(deterministicPattern.match.captureClass),
+            profileId: resolveWorkflowCaptureProfileId(deterministicPattern.match.captureClass),
             match: deterministicMatch,
             reviewMode: "hold_for_more_evidence",
             detectionSource: "deterministic",
@@ -4987,7 +4645,12 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
       logger: params.logger,
     });
-    const isGeneralized = isAutoReviewedManagedImprovementDecision(effectiveDecision);
+    const workflowAutoReviewContext = resolveGeneralizedWorkflowAutoReviewContext({
+      lessonFamily: effectiveDecision.lessonFamily,
+      captureClass: effectiveDecision.match.captureClass,
+    });
+    const isGeneralized = workflowAutoReviewContext.isAutoReviewed;
+    const generalizedWorkflowProfile = workflowAutoReviewContext.profile;
     const supportsPhraseInduction =
       effectiveDecision.lessonFamily === "generalized_workflow_lesson";
     const canonicalMatchForPhraseInduction: WorkflowImprovementCanonicalMatch | null =
@@ -5022,7 +4685,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     const overflowMetadata =
       decisionParams.submissionMode === "deferred_overflow"
         ? buildDeferredOverflowMetadata({
-            family: "workflow_improvement",
+            lane: "workflow_improvement",
             posture: decisionParams.posture ?? "default",
             state: effectiveReviewMode,
             rank: decisionParams.rank ?? 0,
@@ -5051,21 +4714,13 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           ? { guidancePattern: effectiveDecision.guidancePattern }
           : {}),
         rationale: isGeneralized
-          ? effectiveDecision.lessonFamily === "generalized_project_rule"
-            ? "project-rule cluster expired without enough compatible evidence"
-            : effectiveDecision.lessonFamily === "generalized_unmet_need"
-              ? "unmet-need cluster expired without enough compatible evidence"
-              : "generalized workflow lesson cluster expired without enough compatible evidence"
+          ? `${workflowAutoReviewContext.clusterLabel} expired without enough compatible evidence`
           : "workflow-improvement candidate confirmation window expired without later confirming evidence",
         reviewerAgentId: attribution.agentId,
         logger: params.logger,
         reviewCandidate: deps.reviewCandidate,
         source: isGeneralized
-          ? effectiveDecision.lessonFamily === "generalized_project_rule"
-            ? "project_rule_generic_auto_review"
-            : effectiveDecision.lessonFamily === "generalized_unmet_need"
-              ? "unmet_need_generic_auto_review"
-              : "workflow_improvement_generic_auto_review"
+          ? workflowAutoReviewContext.autoReviewSource
           : "workflow_improvement_candidate_confirmation",
       });
     }
@@ -5080,21 +4735,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             ...(effectiveDecision.guidancePattern
               ? { guidancePattern: effectiveDecision.guidancePattern }
               : {}),
-            rationale:
-              effectiveDecision.lessonFamily === "generalized_project_rule"
-                ? "older project-rule cluster expired without enough compatible evidence"
-                : effectiveDecision.lessonFamily === "generalized_unmet_need"
-                  ? "older unmet-need cluster expired without enough compatible evidence"
-                  : "older generalized workflow lesson cluster expired without enough compatible evidence",
+            rationale: `older ${workflowAutoReviewContext.clusterLabel} expired without enough compatible evidence`,
             reviewerAgentId: attribution.agentId,
             logger: params.logger,
             reviewCandidate: deps.reviewCandidate,
-            source:
-              effectiveDecision.lessonFamily === "generalized_project_rule"
-                ? "project_rule_generic_auto_review"
-                : effectiveDecision.lessonFamily === "generalized_unmet_need"
-                  ? "unmet_need_generic_auto_review"
-                  : "workflow_improvement_generic_auto_review",
+            source: workflowAutoReviewContext.autoReviewSource,
           });
         }
       }
@@ -5203,9 +4848,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         ...(match.normalizedNeededCapability
           ? { normalizedNeededCapability: match.normalizedNeededCapability }
           : {}),
-        ...(effectiveDecision.lessonFamily === "generalized_unmet_need"
-          ? { recommendationMode: "recommendation_only" }
-          : { guidanceMode: "guidance_only" }),
+        ...(generalizedWorkflowProfile?.modeMetadata ?? { guidanceMode: "guidance_only" }),
       },
       extraMetadata: {
         ...semanticMetadata,
@@ -5250,26 +4893,16 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           ...(effectiveDecision.guidancePattern
             ? { guidancePattern: effectiveDecision.guidancePattern }
             : {}),
-          rationale:
-            effectiveDecision.lessonFamily === "generalized_project_rule"
-              ? "older project-rule cluster was replaced by stronger newer conflicting evidence for the same scoped subject"
-              : effectiveDecision.lessonFamily === "generalized_unmet_need"
-                ? "older unmet-need cluster was replaced by stronger newer conflicting evidence for the same scoped subject"
-                : "older generalized workflow lesson cluster was replaced by stronger newer conflicting evidence for the same scoped subject",
+          rationale: `older ${workflowAutoReviewContext.clusterLabel} was replaced by stronger newer conflicting evidence for the same scoped subject`,
           reviewerAgentId: attribution.agentId,
           logger: params.logger,
           reviewCandidate: deps.reviewCandidate,
-          source:
-            effectiveDecision.lessonFamily === "generalized_project_rule"
-              ? "project_rule_generic_auto_review"
-              : effectiveDecision.lessonFamily === "generalized_unmet_need"
-                ? "unmet_need_generic_auto_review"
-                : "workflow_improvement_generic_auto_review",
+          source: workflowAutoReviewContext.autoReviewSource,
         });
       }
 
       const workflowCorrectionPlan = resolveMemoryCorrectionPlan({
-        familyId: resolveWorkflowCaptureFamilyId(effectiveDecision.match.captureClass),
+        familyId: resolveWorkflowCaptureProfileId(effectiveDecision.match.captureClass),
         trigger: "cluster_auto_review",
         conflictingApprovedObjectIds: conflictingApprovedGeneralizedEntries.map(
           (entry) => entry.id,
@@ -5291,17 +4924,14 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         semanticProfileId: effectiveDecision.match.semanticProfileId,
         lessonFamily: effectiveDecision.lessonFamily,
         metadata: buildWorkflowImprovementAutoReviewMetadata({
+          source: AUTO_PROMOTION_SOURCE,
           match,
           lessonFamily: effectiveDecision.lessonFamily,
           agentExternalKey: decisionParams.agentExternalKey,
           sessionKey: decisionParams.sessionKey,
           transcriptFile: decisionParams.transcriptFile,
           autoPromotionProfile:
-            effectiveDecision.lessonFamily === "generalized_project_rule"
-              ? "project_rule_auto_review_v1"
-              : effectiveDecision.lessonFamily === "generalized_unmet_need"
-                ? "unmet_need_auto_review_v1"
-                : "workflow_generalized_auto_review_v1",
+            generalizedWorkflowProfile?.autoReviewProfile ?? "workflow_generalized_auto_review_v1",
           outcome: supersedeTargetIds.length > 0 ? "supersede_existing" : "approve",
           evidenceCount: 2,
           contradictionCount: supersedeTargetIds.length + contradictoryPendingCandidateIds.length,
@@ -5335,27 +4965,16 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         });
         if (!supersedeResult.accepted) {
           params.logger.warn(
-            formatLog(
-              effectiveDecision.lessonFamily === "generalized_project_rule"
-                ? "memory-middleware project-rule supersede failed"
-                : effectiveDecision.lessonFamily === "generalized_unmet_need"
-                  ? "memory-middleware unmet-need supersede failed"
-                  : "memory-middleware generalized workflow supersede failed",
-              {
-                key: match.key,
-                promotedMemoryObjectId,
-                reason: supersedeResult.reason ?? "unknown",
-              },
-            ),
+            formatLog(workflowAutoReviewContext.supersedeFailureLabel, {
+              key: match.key,
+              promotedMemoryObjectId,
+              reason: supersedeResult.reason ?? "unknown",
+            }),
           );
         }
       }
       if (promotedMemoryObjectId) {
-        markTurnAcceptedCaptureForFamily(
-          decisionParams.turnState,
-          match.key,
-          "workflow_improvement",
-        );
+        markTurnAcceptedCaptureForLane(decisionParams.turnState, match.key, "workflow_improvement");
         if (supportsPhraseInduction && attribution.projectId && canonicalMatchForPhraseInduction) {
           await maybeInduceWorkflowPhrasePattern({
             config: params.config,
@@ -5405,6 +5024,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         semanticProfileId: effectiveDecision.match.semanticProfileId,
         lessonFamily: effectiveDecision.lessonFamily,
         metadata: buildWorkflowImprovementAutoPromotionMetadata({
+          source: AUTO_PROMOTION_SOURCE,
           match,
           lessonFamily: effectiveDecision.lessonFamily,
           agentExternalKey: decisionParams.agentExternalKey,
@@ -5428,11 +5048,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         },
       });
       if (promotedMemoryObjectId) {
-        markTurnAcceptedCaptureForFamily(
-          decisionParams.turnState,
-          match.key,
-          "workflow_improvement",
-        );
+        markTurnAcceptedCaptureForLane(decisionParams.turnState, match.key, "workflow_improvement");
         markRecent(match.key);
       }
       return true;
@@ -5497,7 +5113,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     if (decisionParams.submissionMode === "deferred_overflow") {
       markTurnDeferredOverflow(decisionParams.turnState, match.key);
     } else {
-      markTurnAcceptedCaptureForFamily(decisionParams.turnState, match.key, "workflow_improvement");
+      markTurnAcceptedCaptureForLane(decisionParams.turnState, match.key, "workflow_improvement");
     }
     params.logger.info(
       formatLog("memory-middleware ordinary-turn workflow-improvement capture accepted", {
@@ -5526,7 +5142,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
   }): Promise<OrdinaryTurnAutoCapturePlan | null> {
     const scorePlan = (input: {
       kind: OrdinaryTurnAutoCapturePlan["kind"];
-      family: OrdinaryTurnAutoCaptureFamily;
+      lane: OrdinaryTurnAutoCaptureLane;
       key: string;
       subjectKey: string;
       supportsDeferredOverflow: boolean;
@@ -5539,7 +5155,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     }): OrdinaryTurnAutoCapturePlan => {
       const base = resolveCapturePlanBaseScore({
         kind: input.kind,
-        family: input.family,
+        lane: input.lane,
         key: input.key,
         subjectKey: input.subjectKey,
         segmentIndex: paramsForPlan.segmentIndex,
@@ -5560,7 +5176,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       if (input.kind === "response_style_forget") {
         return {
           kind: "response_style_forget",
-          family: "response_style",
+          lane: "response_style",
           key: input.key,
           subjectKey: input.subjectKey,
           segmentIndex: paramsForPlan.segmentIndex,
@@ -5572,7 +5188,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       }
       return {
         kind: "capture",
-        family: input.family,
+        lane: input.lane,
         key: input.key,
         subjectKey: input.subjectKey,
         segmentIndex: paramsForPlan.segmentIndex,
@@ -5600,7 +5216,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           : "direct";
       return scorePlan({
         kind: "capture",
-        family: "response_style",
+        lane: "response_style",
         key: deterministicMatch.key,
         subjectKey: deterministicMatch.subjectKey,
         supportsDeferredOverflow: true,
@@ -5614,7 +5230,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             decision: {
               action: "capture",
               canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch({
-                familyId: "response_style",
+                profileId: "response_style",
                 match: deterministicMatch,
                 reviewMode,
                 detectionSource: "deterministic",
@@ -5653,7 +5269,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       if (responseStyleDecision.action === "forget") {
         return scorePlan({
           kind: "response_style_forget",
-          family: "response_style",
+          lane: "response_style",
           key: responseStyleDecision.subjectKey,
           subjectKey: responseStyleDecision.subjectKey,
           supportsDeferredOverflow: false,
@@ -5677,7 +5293,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       }
       return scorePlan({
         kind: "capture",
-        family: "response_style",
+        lane: "response_style",
         key: responseStyleDecision.match.key,
         subjectKey: responseStyleDecision.match.subjectKey,
         supportsDeferredOverflow: true,
@@ -5710,7 +5326,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     if (projectFactDecision) {
       return scorePlan({
         kind: "capture",
-        family: "project_fact",
+        lane: "project_fact",
         key: projectFactDecision.match.key,
         subjectKey: projectFactDecision.match.subjectKey,
         supportsDeferredOverflow: true,
@@ -5742,7 +5358,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     if (recurringProcedureDecision) {
       return scorePlan({
         kind: "capture",
-        family: "recurring_procedure",
+        lane: "recurring_procedure",
         key: recurringProcedureDecision.match.key,
         subjectKey: recurringProcedureDecision.match.subjectKey,
         supportsDeferredOverflow: true,
@@ -5775,7 +5391,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     if (workflowImprovementDecision) {
       return scorePlan({
         kind: "capture",
-        family: "workflow_improvement",
+        lane: "workflow_improvement",
         key: workflowImprovementDecision.match.key,
         subjectKey: workflowImprovementDecision.match.subjectKey,
         supportsDeferredOverflow: true,
@@ -5810,7 +5426,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     }
     return scorePlan({
       kind: "capture",
-      family: match.captureClass.includes("project_fact") ? "project_fact" : "preference",
+      lane: resolvePreferencePlanLaneFromCaptureClass(match.captureClass),
       key: match.key,
       subjectKey: match.subjectKey,
       supportsDeferredOverflow: true,
@@ -5882,7 +5498,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
                 },
               });
               if (promoted) {
-                markTurnAcceptedCaptureForFamily(turnState, match.key, "preference");
+                markTurnAcceptedCaptureForLane(turnState, match.key, "preference");
                 markRecent(match.key);
               }
             } else {
@@ -6006,7 +5622,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           if (submissionMode === "deferred_overflow") {
             markTurnDeferredOverflow(turnState, match.key);
           } else {
-            markTurnAcceptedCaptureForFamily(turnState, match.key, "preference");
+            markTurnAcceptedCaptureForLane(turnState, match.key, "preference");
           }
           if (
             submissionMode !== "deferred_overflow" &&
@@ -6116,11 +5732,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       return;
     }
     const timestamp = extractTranscriptTimestamp(transcriptMessage);
-    const turnState: OrdinaryTurnAutoCaptureTurnState = {
-      acceptedKeys: new Set<string>(),
-      deferredKeys: new Set<string>(),
-      immediateFamilyCounts: new Map<OrdinaryTurnAutoCaptureFamily, number>(),
-    };
+    const turnState = createOrdinaryTurnAutoCaptureTurnState();
     const captureSegments = extractOrdinaryTurnAutoCaptureSegments(text);
     const capturePlans: OrdinaryTurnAutoCapturePlan[] = [];
     for (const [segmentIndex, segment] of captureSegments.entries()) {
@@ -6141,7 +5753,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     const explicitCandidateCount = capturePlans.filter(
       (plan) =>
         plan.kind === "capture" &&
-        (plan.rankSignals.includes("capture:explicit") || plan.family === "preference"),
+        (plan.rankSignals.includes("capture:explicit") || plan.lane === "preference"),
     ).length;
     const demandSignals = deriveCorpusDemandSignalsFromPrompt({
       text,
@@ -6153,6 +5765,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       captureSegments,
       candidatePlanCount: capturePlans.length,
       explicitCandidateCount,
+      hasExplicitMemoryRequest,
     });
     const rankedPlans = rankOrdinaryTurnAutoCapturePlans(capturePlans);
 
@@ -6160,10 +5773,10 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       const immediateAllowed =
         capturePlan.kind === "response_style_forget" ||
         (turnState.acceptedKeys.size < resolveImmediateCaptureLimit(capturePosture) &&
-          hasImmediateFamilyCapacity({
+          hasImmediateLaneCapacity({
             turnState,
             posture: capturePosture,
-            family: capturePlan.family,
+            lane: capturePlan.lane,
           }));
       const submissionMode: OrdinaryTurnAutoCaptureSubmissionMode | null = immediateAllowed
         ? "immediate"
@@ -6296,15 +5909,4 @@ export function createOrdinaryTurnAutoCaptureController(params: {
     },
   };
 }
-function resolveWorkflowCaptureFamilyId(
-  captureClass: string,
-): "workflow_improvement" | "project_rule" | "unmet_need" {
-  const captureCategory = getCanonicalCaptureMetadataByCaptureClass(captureClass)?.category;
-  if (captureCategory === "project_rule") {
-    return "project_rule";
-  }
-  if (captureCategory === "unmet_need") {
-    return "unmet_need";
-  }
-  return "workflow_improvement";
-}
+const resolveWorkflowCaptureProfileId = resolveWorkflowCaptureCategoryFromCaptureClass;

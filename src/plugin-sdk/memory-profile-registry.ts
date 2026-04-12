@@ -114,7 +114,7 @@ export type MemoryProfileDefinition = {
     promptSection: MemoryProfilePromptSection;
   };
   semanticRouting: {
-    mode: "disabled" | "family_gated_approved_only" | "validated_procedure_only";
+    mode: "disabled" | "profile_gated_approved_only" | "validated_procedure_only";
     enabledQueryClasses: readonly string[];
   };
   proof: {
@@ -423,7 +423,7 @@ const MEMORY_PROFILE_DEFINITIONS: Record<MemoryProfileId, MemoryProfileDefinitio
       promptSection: "behavior",
     },
     semanticRouting: {
-      mode: "family_gated_approved_only",
+      mode: "profile_gated_approved_only",
       enabledQueryClasses: ["nearby_workflow_guidance_ask"],
     },
     proof: {

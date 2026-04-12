@@ -133,10 +133,77 @@ describe("retrieval control plane", () => {
         },
       }),
       records,
-      classifyProjectFamily: (record) => (record.id === "fact-1" ? "project_fact" : "project_rule"),
+      classifyProjectProfile: (record) =>
+        record.id === "fact-1" ? "project_fact" : "project_rule",
     });
 
     expect(shaped.map((record) => record.id)).toEqual(["fact-1"]);
+  });
+
+  it("suppresses adjacent direct-intent families when an unmet-need ask resolves clearly", () => {
+    const records: RankedRetrievedMemoryRecord[] = [
+      {
+        objectType: "memory_object",
+        readSurface: "approved_memory_view",
+        id: "need-1",
+        memoryKind: "project",
+        reviewState: "approved",
+        content: "Atlas rollout audits still need a release evidence template.",
+        metadata: {},
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-02T00:00:00.000Z",
+        score: 95,
+        matchedFields: ["unmet_need_subject_match"],
+      },
+      {
+        objectType: "memory_object",
+        readSurface: "approved_memory_view",
+        id: "rule-1",
+        memoryKind: "feedback",
+        reviewState: "approved",
+        content: "For Atlas rollout audits, use generated audit IDs instead of client timestamps.",
+        metadata: {},
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+        score: 90,
+        matchedFields: ["project_rule_subject_match"],
+      },
+      {
+        objectType: "memory_object",
+        readSurface: "approved_memory_view",
+        id: "workflow-1",
+        memoryKind: "feedback",
+        reviewState: "approved",
+        content: "Use bulletized proof IDs instead of paraphrased rollout summaries.",
+        metadata: {},
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+        score: 70,
+        matchedFields: ["workflow_guidance_subject_match"],
+      },
+    ];
+
+    const shaped = shapeRankedRetrievedRecordsForControlPlane({
+      decision: buildMemoryObjectRetrievalControlDecision({
+        input: {
+          query: "for atlas rollout audits what do we still need",
+          kind: "project",
+          scope: "approved_only",
+        },
+      }),
+      records,
+      classifyProjectProfile: (record) => {
+        if (record.id === "need-1") {
+          return "unmet_need";
+        }
+        if (record.id === "rule-1") {
+          return "project_rule";
+        }
+        return "workflow_guidance";
+      },
+    });
+
+    expect(shaped.map((record) => record.id)).toEqual(["need-1", "workflow-1"]);
   });
 
   it("keeps approved memory ahead of reviewable candidates within the same bounded subject cluster", () => {
@@ -190,7 +257,7 @@ describe("retrieval control plane", () => {
         },
       }),
       records,
-      classifyProjectFamily: () => "other",
+      classifyProjectProfile: () => "other",
     });
 
     expect(shaped.map((record) => record.id)).toEqual(["approved-style-1", "candidate-style-1"]);

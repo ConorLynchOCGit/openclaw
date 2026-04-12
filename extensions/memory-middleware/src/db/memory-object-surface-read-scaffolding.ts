@@ -7,7 +7,7 @@ export type MemoryObjectSurfaceReadScaffolding = {
   baseConditions: string[];
 };
 
-function buildApprovedMemoryArtifactVisibilityCondition(params: {
+export function buildApprovedMemoryArtifactVisibilityCondition(params: {
   alias: string;
   hiddenArtifactFamilies: readonly string[];
 }): string {

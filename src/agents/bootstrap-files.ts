@@ -1,4 +1,5 @@
 import type { OpenClawConfig } from "../config/config.js";
+import { resolveBootstrapPriorityTier, type BootstrapPriorityTier } from "./bootstrap-budget.js";
 import { getOrLoadBootstrapFiles } from "./bootstrap-cache.js";
 import { applyBootstrapHookOverrides } from "./bootstrap-hooks.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
@@ -15,6 +16,12 @@ import {
 
 export type BootstrapContextMode = "full" | "lightweight";
 export type BootstrapContextRunKind = "default" | "heartbeat" | "cron";
+
+const BOOTSTRAP_PRIORITY_ORDER: Record<BootstrapPriorityTier, number> = {
+  must_survive: 0,
+  useful: 1,
+  bulk: 2,
+};
 
 export function makeBootstrapWarn(params: {
   sessionLabel: string;
@@ -59,6 +66,20 @@ function applyContextModeFilter(params: {
   }
   // cron/default lightweight mode keeps bootstrap context empty on purpose.
   return [];
+}
+
+export function prioritizeBootstrapFilesForInjection(
+  files: WorkspaceBootstrapFile[],
+): WorkspaceBootstrapFile[] {
+  return files.toSorted((left, right) => {
+    const tierDelta =
+      BOOTSTRAP_PRIORITY_ORDER[resolveBootstrapPriorityTier(left.name)] -
+      BOOTSTRAP_PRIORITY_ORDER[resolveBootstrapPriorityTier(right.name)];
+    if (tierDelta !== 0) {
+      return tierDelta;
+    }
+    return left.name.localeCompare(right.name);
+  });
 }
 
 export async function resolveBootstrapFilesForRun(params: {
@@ -109,10 +130,11 @@ export async function resolveBootstrapContextForRun(params: {
   contextFiles: EmbeddedContextFile[];
 }> {
   const bootstrapFiles = await resolveBootstrapFilesForRun(params);
-  const contextFiles = buildBootstrapContextFiles(bootstrapFiles, {
+  const prioritizedBootstrapFiles = prioritizeBootstrapFilesForInjection(bootstrapFiles);
+  const prioritizedContextFiles = buildBootstrapContextFiles(prioritizedBootstrapFiles, {
     maxChars: resolveBootstrapMaxChars(params.config),
     totalMaxChars: resolveBootstrapTotalMaxChars(params.config),
     warn: params.warn,
   });
-  return { bootstrapFiles, contextFiles };
+  return { bootstrapFiles: prioritizedBootstrapFiles, contextFiles: prioritizedContextFiles };
 }

@@ -140,6 +140,18 @@ describe("buildSystemPromptReport", () => {
           memorySearch: true,
         },
         promptClass: "workflow_preflight",
+        sourceResolution: {
+          questionKind: "continuity",
+          domain: "none",
+          candidates: ["workspace_continuity", "workspace_project"],
+          authoritativeSource: "workspace_continuity",
+          supportingSources: ["workspace_project"],
+          workspaceEntrypoints: ["MEMORY.md"],
+          canonicalEntrypoints: [],
+          coverageRequirement: "not_required",
+          coverageState: "not_required",
+          escalationReasons: [],
+        },
         canonicalPlan: {
           requestedKinds: ["feedback", "project"],
           derivedViews: ["workflow_guidance", "project_rule"],
@@ -169,10 +181,12 @@ describe("buildSystemPromptReport", () => {
     });
     expect(report.mainMemoryRouting?.selectedTarget).toBe("memory_object_search_hybrid");
     expect(report.mainMemoryRouting?.reasonCode).toBe("learned_guidance_unavailable");
+    expect(report.mainMemoryRouting?.sourceResolution.questionKind).toBe("continuity");
     expect(report.mainMemoryRouting?.canonicalPlan.requestedKinds).toEqual(["feedback", "project"]);
     expect(report.mainMemoryRouting?.finalToolChoice).toEqual({
       type: "function",
       name: "memory_object_search_hybrid",
     });
+    expect(report.injectedWorkspaceFiles[0]?.priorityTier).toBe("must_survive");
   });
 });

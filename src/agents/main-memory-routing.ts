@@ -9,6 +9,7 @@ import type {
   SessionMainMemoryRoutingSelectedTarget,
 } from "../config/sessions/types.js";
 import { extractTextFromChatContent } from "../shared/chat-content.js";
+import { resolveSourceResolutionReport } from "./source-resolution.js";
 
 type MainMemoryIntentFeature = {
   id: SessionMainMemoryRoutingIntentSignal;
@@ -27,6 +28,15 @@ const MAIN_MEMORY_TOOL_CHOICE_APIS = new Set([
 ]);
 
 const MAIN_MEMORY_INTENT_FEATURES: readonly MainMemoryIntentFeature[] = [
+  {
+    id: "source_truth_lookup",
+    weight: 6,
+    promptClass: "source_truth_lookup",
+    pattern:
+      /\b(?:mounted (?:repo|project|memory) files?|curated import|imports\/|source[- ]of[- ]truth|repo-canonical|canonical memory classes?|memory-system (?:architecture|spec|roadmap)|read the mounted files)\b/i,
+    requestedKinds: ["reference", "project"],
+    derivedViews: ["reference_lookup", "project_rule"],
+  },
   {
     id: "preflight_check",
     weight: 4,
@@ -242,9 +252,19 @@ function classifyPromptFromFeatures(
   if (features.length === 0) {
     return "none";
   }
+  const sourceTruthScore = features
+    .filter((feature) => feature.promptClass === "source_truth_lookup")
+    .reduce((total, feature) => total + feature.weight, 0);
+  if (sourceTruthScore > 0) {
+    return "source_truth_lookup";
+  }
   const scores = features.reduce(
     (totals, feature) => {
-      totals[feature.promptClass] += feature.weight;
+      if (feature.promptClass === "workflow_preflight") {
+        totals.workflow_preflight += feature.weight;
+      } else if (feature.promptClass === "direct_lookup") {
+        totals.direct_lookup += feature.weight;
+      }
       return totals;
     },
     { workflow_preflight: 0, direct_lookup: 0 },
@@ -280,11 +300,22 @@ function finalizeMainMemoryRoutingDecision(
 
 function selectPreferredToolTarget(
   promptClass: SessionMainMemoryRoutingPromptClass,
+  sourceResolution: SessionMainMemoryRoutingReport["sourceResolution"],
   availableTools: SessionMainMemoryRoutingReport["availableTools"],
 ): {
   selectedTarget: SessionMainMemoryRoutingSelectedTarget;
   reasonCode: SessionMainMemoryRoutingReasonCode;
 } {
+  if (
+    sourceResolution.questionKind === "implementation" ||
+    sourceResolution.questionKind === "mixed" ||
+    promptClass === "source_truth_lookup"
+  ) {
+    return {
+      selectedTarget: "none",
+      reasonCode: "source_truth_lookup_no_memory_pin",
+    };
+  }
   if (promptClass === "workflow_preflight") {
     if (availableTools.memoryLearnedGuidancePlan) {
       return {
@@ -327,6 +358,10 @@ export function resolveMainMemoryRoutingDecision(params: {
   provider?: unknown;
   model: { api?: unknown };
   context: { messages?: unknown; tools?: unknown };
+  sourceContext?: {
+    bootstrapTruncated?: boolean;
+    workspaceContextMissing?: boolean;
+  };
   version?: string;
   commit?: string | null;
 }): SessionMainMemoryRoutingReport {
@@ -339,6 +374,7 @@ export function resolveMainMemoryRoutingDecision(params: {
     agentId: params.agentId?.trim(),
     availableTools,
     promptClass: "none" as SessionMainMemoryRoutingPromptClass,
+    sourceResolution: resolveSourceResolutionReport({ text: "" }),
     canonicalPlan: {
       requestedKinds: [] as SessionMainMemoryRoutingCanonicalKind[],
       derivedViews: [] as SessionMainMemoryRoutingDerivedView[],
@@ -363,17 +399,27 @@ export function resolveMainMemoryRoutingDecision(params: {
   }
 
   const matchedFeatures = collectMatchedIntentFeatures(latestUserMessage.text);
-  const promptClass = classifyPromptFromFeatures(matchedFeatures);
+  const sourceResolution = resolveSourceResolutionReport({
+    text: latestUserMessage.text,
+    bootstrapTruncated: params.sourceContext?.bootstrapTruncated,
+    workspaceContextMissing: params.sourceContext?.workspaceContextMissing,
+  });
+  const featurePromptClass = classifyPromptFromFeatures(matchedFeatures);
+  const promptClass =
+    sourceResolution.questionKind === "implementation" || sourceResolution.questionKind === "mixed"
+      ? "source_truth_lookup"
+      : featurePromptClass;
   const withPlan = {
     ...base,
     promptClass,
+    sourceResolution,
     canonicalPlan: buildCanonicalPlanFromFeatures(matchedFeatures),
   };
   if (promptClass === "none") {
     return finalizeMainMemoryRoutingDecision(withPlan, "none", "classifier_no_match");
   }
 
-  const selection = selectPreferredToolTarget(promptClass, availableTools);
+  const selection = selectPreferredToolTarget(promptClass, sourceResolution, availableTools);
   return finalizeMainMemoryRoutingDecision(
     withPlan,
     selection.selectedTarget,

@@ -1,10 +1,21 @@
 import path from "node:path";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
-import type { WorkspaceBootstrapFile } from "./workspace.js";
+import {
+  DEFAULT_AGENTS_FILENAME,
+  DEFAULT_BOOTSTRAP_FILENAME,
+  DEFAULT_IDENTITY_FILENAME,
+  DEFAULT_MEMORY_ALT_FILENAME,
+  DEFAULT_MEMORY_FILENAME,
+  DEFAULT_SOUL_FILENAME,
+  DEFAULT_TOOLS_FILENAME,
+  DEFAULT_USER_FILENAME,
+  type WorkspaceBootstrapFile,
+} from "./workspace.js";
 
 export const DEFAULT_BOOTSTRAP_NEAR_LIMIT_RATIO = 0.85;
 export const DEFAULT_BOOTSTRAP_PROMPT_WARNING_MAX_FILES = 3;
 export const DEFAULT_BOOTSTRAP_PROMPT_WARNING_SIGNATURE_HISTORY_MAX = 32;
+export type BootstrapPriorityTier = "must_survive" | "useful" | "bulk";
 
 export type BootstrapTruncationCause = "per-file-limit" | "total-limit";
 export type BootstrapPromptWarningMode = "off" | "once" | "always";
@@ -12,6 +23,7 @@ export type BootstrapPromptWarningMode = "off" | "once" | "always";
 export type BootstrapInjectionStat = {
   name: string;
   path: string;
+  priorityTier?: BootstrapPriorityTier;
   missing: boolean;
   rawChars: number;
   injectedChars: number;
@@ -84,6 +96,24 @@ function normalizeSeenSignatures(signatures?: string[]): string[] {
   return result;
 }
 
+export function resolveBootstrapPriorityTier(name: string): BootstrapPriorityTier {
+  if (
+    name === DEFAULT_AGENTS_FILENAME ||
+    name === DEFAULT_BOOTSTRAP_FILENAME ||
+    name === DEFAULT_SOUL_FILENAME ||
+    name === DEFAULT_USER_FILENAME
+  ) {
+    return "must_survive";
+  }
+  if (name === DEFAULT_MEMORY_FILENAME || name === DEFAULT_MEMORY_ALT_FILENAME) {
+    return "bulk";
+  }
+  if (name === DEFAULT_TOOLS_FILENAME || name === DEFAULT_IDENTITY_FILENAME) {
+    return "useful";
+  }
+  return "useful";
+}
+
 function appendSeenSignature(signatures: string[], signature: string): string[] {
   if (!signature.trim()) {
     return signatures;
@@ -153,6 +183,7 @@ export function buildBootstrapInjectionStats(params: {
     return {
       name: file.name,
       path: pathValue || file.name,
+      priorityTier: resolveBootstrapPriorityTier(file.name),
       missing: file.missing,
       rawChars,
       injectedChars,

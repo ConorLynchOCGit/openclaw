@@ -111,7 +111,7 @@ export type MemoryFamilyApplicationMode =
 
 export type MemoryFamilySemanticRoutingMode =
   | "disabled"
-  | "family_gated_approved_only"
+  | "profile_gated_approved_only"
   | "validated_procedure_only";
 
 export type MemoryFamilyProofInspectionMode =
@@ -299,44 +299,45 @@ function toFamilyDefinition(profile: MemoryProfileDefinition): MemoryFamilyDefin
   };
 }
 
-const FAMILY_DEFINITIONS: Record<MemoryFamilyId, MemoryFamilyDefinition> = Object.fromEntries(
-  listMemoryProfiles().map((profile) => [profile.id, toFamilyDefinition(profile)]),
-) as Record<MemoryFamilyId, MemoryFamilyDefinition>;
-
-const PHRASE_PATTERN_PROOF_FAMILY_TO_DEFINITION = new Map<
-  MemoryPhrasePatternProofFamilyId,
-  MemoryProofDefinition
->();
-const APPROVED_MEMORY_RETRIEVAL_POLICY_VIEWS: ApprovedMemoryRetrievalPolicyView[] = [];
-
-for (const profile of listMemoryProfiles()) {
-  if (profile.proof.phrasePattern) {
-    PHRASE_PATTERN_PROOF_FAMILY_TO_DEFINITION.set(profile.proof.phrasePattern.familyId, {
-      id: profile.proof.phrasePattern.familyId,
-      inspectionMode: profile.proof.phrasePattern.inspectionMode,
-      artifactMode: "phrase_pattern",
-    });
-  }
+function buildApprovedMemoryRetrievalPolicyView(
+  profile: MemoryProfileDefinition,
+): ApprovedMemoryRetrievalPolicyView | null {
   if (
-    profile.storageKinds.includes("memory_object") &&
-    profile.id !== "recurring_procedure" &&
-    Object.keys(profile.retrieval.featureWeights).length > 0
+    !profile.storageKinds.includes("memory_object") ||
+    profile.id === "recurring_procedure" ||
+    Object.keys(profile.retrieval.featureWeights).length === 0
   ) {
-    APPROVED_MEMORY_RETRIEVAL_POLICY_VIEWS.push({
-      id: profile.id,
-      storageKinds: profile.storageKinds,
-      derivedViews: profile.derivedViews,
-      retrievalPolicy: {
-        featureWeights: profile.retrieval.featureWeights,
-        ...(profile.retrieval.directIntentClass
-          ? { directIntentClass: profile.retrieval.directIntentClass }
-          : {}),
-        ...(profile.retrieval.matchedFieldPrefix
-          ? { matchedFieldPrefix: profile.retrieval.matchedFieldPrefix }
-          : {}),
-      },
-    });
+    return null;
   }
+  return {
+    id: profile.id,
+    storageKinds: profile.storageKinds,
+    derivedViews: profile.derivedViews,
+    retrievalPolicy: {
+      featureWeights: profile.retrieval.featureWeights,
+      ...(profile.retrieval.directIntentClass
+        ? { directIntentClass: profile.retrieval.directIntentClass }
+        : {}),
+      ...(profile.retrieval.matchedFieldPrefix
+        ? { matchedFieldPrefix: profile.retrieval.matchedFieldPrefix }
+        : {}),
+    },
+  };
+}
+
+function getPhrasePatternProofDefinition(
+  familyId: MemoryPhrasePatternProofFamilyId,
+): MemoryProofDefinition | null {
+  for (const profile of listMemoryProfiles()) {
+    if (profile.proof.phrasePattern?.familyId === familyId) {
+      return {
+        id: familyId,
+        inspectionMode: profile.proof.phrasePattern.inspectionMode,
+        artifactMode: "phrase_pattern",
+      };
+    }
+  }
+  return null;
 }
 
 /**
@@ -344,7 +345,7 @@ for (const profile of listMemoryProfiles()) {
  * views or canonical metadata in active code.
  */
 export function listMemoryFamilyDefinitions(): MemoryFamilyDefinition[] {
-  return MEMORY_FAMILY_IDS.map((id) => FAMILY_DEFINITIONS[id]);
+  return listMemoryProfiles().map(toFamilyDefinition);
 }
 
 /**
@@ -352,7 +353,7 @@ export function listMemoryFamilyDefinitions(): MemoryFamilyDefinition[] {
  * metadata or canonical runtime policy views in active runtime code.
  */
 export function getMemoryFamilyDefinition(familyId: MemoryFamilyId): MemoryFamilyDefinition {
-  return FAMILY_DEFINITIONS[familyId];
+  return toFamilyDefinition(getMemoryProfile(familyId));
 }
 
 /**
@@ -406,7 +407,9 @@ export function getMemorySemanticRoutingPolicyView(
 }
 
 export function listApprovedMemoryRetrievalPolicyViews(): ApprovedMemoryRetrievalPolicyView[] {
-  return APPROVED_MEMORY_RETRIEVAL_POLICY_VIEWS;
+  return listMemoryProfiles()
+    .map(buildApprovedMemoryRetrievalPolicyView)
+    .filter((view): view is ApprovedMemoryRetrievalPolicyView => Boolean(view));
 }
 
 export function memoryFamilyProjectsToDerivedView(
@@ -456,7 +459,7 @@ export function getMemoryProofDefinition(familyId: MemoryProofFamilyId): MemoryP
       artifactMode: definition.proofPolicy.artifactMode,
     };
   }
-  const phrasePatternDefinition = PHRASE_PATTERN_PROOF_FAMILY_TO_DEFINITION.get(
+  const phrasePatternDefinition = getPhrasePatternProofDefinition(
     familyId as MemoryPhrasePatternProofFamilyId,
   );
   if (!phrasePatternDefinition) {

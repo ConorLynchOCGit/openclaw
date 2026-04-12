@@ -7,19 +7,25 @@ import type {
   RankedRetrievedMemoryRecord,
 } from "./db/runtime.js";
 import { readCanonicalFirstMetadataString } from "./memory-canonical-compat.js";
+import {
+  normalizeMemoryObjectScope,
+  scopeIncludesCandidates,
+  scopeIncludesValidatedProcedures,
+} from "./memory-object-retrieval-scope.js";
 import { getMemorySemanticRoutingRuntimePolicy } from "./memory-runtime-policy-views.js";
 import {
   buildCanonicalMemoryRetrievalPlan,
   normalizeRetrievalQuery,
   resolveGeneralizedWorkflowGuidancePatternHintFromCanonicalPlan,
   resolveProjectFactQueryHintFromCanonicalPlan,
-  resolveProjectMemoryIntentFamilyFromCanonicalPlan,
+  resolveProjectMemoryIntentProfileFromCanonicalPlan,
   resolveRecurringProcedureQueryHintFromCanonicalPlan,
   resolveResponseStyleQueryHintFromCanonicalPlan,
+  resolveWorkflowSemanticFallbackStrategies,
   resolveWorkflowImprovementQueryHintFromCanonicalPlan,
   type GeneralizedWorkflowGuidancePatternHint,
   type ProjectFactQueryHint,
-  type ProjectMemoryIntentFamily,
+  type ProjectMemoryIntentProfile,
   type RecurringProcedureQueryHint,
   type ResponseStyleQueryHint,
   type WorkflowImprovementQueryHint,
@@ -35,7 +41,7 @@ import {
   type SemanticFallbackSharedState,
 } from "./semantic-retrieval-routing.js";
 
-type ProjectRecordFamily =
+type ProjectRetrievedProfile =
   | "project_fact"
   | "project_rule"
   | "unmet_need"
@@ -50,11 +56,17 @@ export type MemoryObjectRetrievalControlDecision = {
   responseStyleHint: ResponseStyleQueryHint | null;
   projectFactHint: ProjectFactQueryHint | null;
   workflowImprovementHint: WorkflowImprovementQueryHint | null;
-  projectMemoryIntentFamily: ProjectMemoryIntentFamily;
+  projectMemoryIntentProfile: ProjectMemoryIntentProfile;
   generalizedWorkflowPatternHint: GeneralizedWorkflowGuidancePatternHint;
   procedureHint: RecurringProcedureQueryHint | null;
   semanticFallbackFamilies: SemanticFallbackFamily[];
 };
+
+const DIRECT_PROJECT_INTENT_PROFILES = new Set<ProjectRetrievedProfile>([
+  "project_fact",
+  "project_rule",
+  "unmet_need",
+]);
 
 type HybridSemanticFallbackApplyParams = {
   runtime: MemoryMiddlewareRuntime;
@@ -69,23 +81,6 @@ type HybridSemanticFallbackApplyParams = {
 type HybridSemanticFallbackApply = (
   input: HybridSemanticFallbackApplyParams,
 ) => Promise<MemoryObjectSearchHybridResult>;
-
-function normalizeMemoryObjectScope(
-  scope: MemoryObjectSearchScope | undefined,
-): MemoryObjectSearchScope {
-  return scope ?? "approved_only";
-}
-
-function scopeIncludesCandidates(scope: MemoryObjectSearchScope): boolean {
-  return scope === "include_candidates" || scope === "include_candidates_and_validated_procedures";
-}
-
-function scopeIncludesValidatedProcedures(scope: MemoryObjectSearchScope): boolean {
-  return (
-    scope === "include_validated_procedures" ||
-    scope === "include_candidates_and_validated_procedures"
-  );
-}
 
 function readRecordMetadataString(value: unknown, path: readonly string[]): string | null {
   const resolved =
@@ -137,21 +132,6 @@ function preferApprovedRecordsWithinSubjectClusters(
   });
 }
 
-function resolveWorkflowSemanticFallbackFamilies(
-  hint: WorkflowImprovementQueryHint | null,
-): SemanticFallbackFamily[] {
-  switch (hint?.captureClass) {
-    case "workflow_environment_constraint":
-      return ["environment_constraint"];
-    case "workflow_tool_gotcha":
-      return ["workflow_tool_gotcha"];
-    case "workflow_api_workaround":
-      return ["api_workaround"];
-    default:
-      return ["environment_constraint", "workflow_tool_gotcha", "api_workaround"];
-  }
-}
-
 export function buildMemoryObjectRetrievalControlDecision(params: {
   input: MemoryObjectSearchHybridInput;
 }): MemoryObjectRetrievalControlDecision {
@@ -171,8 +151,8 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
   const projectFactHint = resolveProjectFactQueryHintFromCanonicalPlan(canonicalPlan);
   const workflowImprovementHint =
     resolveWorkflowImprovementQueryHintFromCanonicalPlan(canonicalPlan);
-  const projectMemoryIntentFamily =
-    resolveProjectMemoryIntentFamilyFromCanonicalPlan(canonicalPlan);
+  const projectMemoryIntentProfile =
+    resolveProjectMemoryIntentProfileFromCanonicalPlan(canonicalPlan);
   const generalizedWorkflowPatternHint =
     resolveGeneralizedWorkflowGuidancePatternHintFromCanonicalPlan(canonicalPlan);
   const procedureHint = resolveRecurringProcedureQueryHintFromCanonicalPlan(canonicalPlan);
@@ -189,7 +169,7 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
     semanticFallbackFamilies.push("procedure");
   }
   if (
-    workflowImprovementSemanticRouting.mode === "family_gated_approved_only" &&
+    workflowImprovementSemanticRouting.mode === "profile_gated_approved_only" &&
     params.input.kind === "project" &&
     !scopeIncludesCandidates(scope) &&
     !scopeIncludesValidatedProcedures(scope)
@@ -198,7 +178,7 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
     semanticFallbackFamilies.push(
       ...(workflowStrategies.length > 0
         ? workflowStrategies
-        : resolveWorkflowSemanticFallbackFamilies(workflowImprovementHint)),
+        : resolveWorkflowSemanticFallbackStrategies(workflowImprovementHint)),
     );
   }
 
@@ -210,7 +190,7 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
     responseStyleHint,
     projectFactHint,
     workflowImprovementHint,
-    projectMemoryIntentFamily,
+    projectMemoryIntentProfile,
     generalizedWorkflowPatternHint,
     procedureHint,
     semanticFallbackFamilies,
@@ -220,7 +200,7 @@ export function buildMemoryObjectRetrievalControlDecision(params: {
 export function shapeRankedRetrievedRecordsForControlPlane(params: {
   decision: MemoryObjectRetrievalControlDecision;
   records: RankedRetrievedMemoryRecord[];
-  classifyProjectFamily: (record: RankedRetrievedMemoryRecord) => ProjectRecordFamily;
+  classifyProjectProfile: (record: RankedRetrievedMemoryRecord) => ProjectRetrievedProfile;
 }): RankedRetrievedMemoryRecord[] {
   const records = scopeIncludesCandidates(params.decision.scope)
     ? preferApprovedRecordsWithinSubjectClusters(params.records)
@@ -229,40 +209,36 @@ export function shapeRankedRetrievedRecordsForControlPlane(params: {
   if (
     params.decision.kind !== "project" ||
     scopeIncludesCandidates(params.decision.scope) ||
-    !params.decision.projectMemoryIntentFamily
+    !params.decision.projectMemoryIntentProfile
   ) {
     return records;
   }
 
-  const targetFamily = params.decision.projectMemoryIntentFamily;
-  const targetFamilyRecords = records.filter(
+  const targetProfile = params.decision.projectMemoryIntentProfile;
+  const targetProfileRecords = records.filter(
     (record) =>
       record.objectType === "memory_object" &&
-      record.memoryKind === "project" &&
-      params.classifyProjectFamily(record) === targetFamily,
+      params.classifyProjectProfile(record) === targetProfile,
   );
-  if (targetFamilyRecords.length === 0) {
+  if (targetProfileRecords.length === 0) {
     return records;
   }
 
-  const nonProjectOrSameFamilyRecords = records.filter((record) => {
-    if (record.objectType !== "memory_object" || record.memoryKind !== "project") {
-      return true;
+  const remainingRecords = records.filter((record) => {
+    const profile = params.classifyProjectProfile(record);
+    if (profile === targetProfile) {
+      return false;
     }
-    return params.classifyProjectFamily(record) === targetFamily;
+    if (
+      DIRECT_PROJECT_INTENT_PROFILES.has(targetProfile) &&
+      DIRECT_PROJECT_INTENT_PROFILES.has(profile)
+    ) {
+      return false;
+    }
+    return true;
   });
 
-  return [
-    ...targetFamilyRecords,
-    ...nonProjectOrSameFamilyRecords.filter(
-      (record) =>
-        !(
-          record.objectType === "memory_object" &&
-          record.memoryKind === "project" &&
-          params.classifyProjectFamily(record) === targetFamily
-        ),
-    ),
-  ];
+  return [...targetProfileRecords, ...remainingRecords];
 }
 
 async function applySemanticFallbackSafely(params: {

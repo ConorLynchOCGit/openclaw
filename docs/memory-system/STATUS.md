@@ -142,6 +142,28 @@ highest-value runtime-core extraction targets, but the registry/routing/helper
 duplication that kept reintroducing family-era architecture is materially
 smaller than before.
 
+The deeper runtime-core follow-through tranche on 2026-04-11 is now also
+landed locally through:
+
+- managed normalization extracted from `candidate-submit.ts` into a dedicated
+  stage module
+- managed ingest-resolution and transcript-context recovery extracted from
+  `candidate-submit.ts` into a dedicated stage module
+- front-end ordinary-turn detection rewritten around explicit detector
+  registries plus a shared runner instead of loop forests in the coordinator
+- candidate-submission persistence planning extracted from `db/queries.ts`
+- shared retrieval scope semantics and project-family classification moved into
+  reusable helpers instead of living as private query/control-plane copies
+- remaining inline response-style, recurring-procedure, and workflow literal
+  policy branches reduced into closed helper tables where they were already
+  shared runtime rules
+
+The biggest remaining hotspot is still `db/queries.ts`, but the next obvious
+step there is now largely a search/read subsystem split rather than another
+clear family-era runtime-policy collapse. At this point the current local tree
+is materially less transitional in the runtime-critical paths that were still
+duplicating normalization, resolver, detector, and scope logic.
+
 The current execution posture is now a soak period rather than another
 pre-scheduled feature tranche.
 

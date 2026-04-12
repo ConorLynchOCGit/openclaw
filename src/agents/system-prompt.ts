@@ -211,6 +211,22 @@ function buildWebPageReadSection(params: { availableTools: Set<string>; isMinima
   return lines;
 }
 
+function buildSourceOfTruthSection(params: { isMinimal: boolean }) {
+  if (params.isMinimal) {
+    return [];
+  }
+  return [
+    "## Source of Truth",
+    "Resolve source authority explicitly before answering.",
+    "- Continuity questions: prefer workspace continuity surfaces such as `MEMORY.md`, `memory/*.md`, and workspace project indexes.",
+    "- Implementation questions: prefer canonical mounted sources under `imports/*/content/...` and treat workspace memory as supporting context only.",
+    "- Mixed questions: use canonical mounted docs for implementation facts and workspace memory/project surfaces only for continuity or coordination context.",
+    "If the user asks about mounted files, imported project files, canonical classes, architecture, specs, roadmaps, or another implementation source of truth, read the authoritative files directly first instead of relying on workspace memory summaries alone.",
+    "If the turn warns that Project Context was truncated, or if a relevant workspace file is missing, treat the loaded context as partial and escalate to the authoritative files before answering.",
+    "",
+  ];
+}
+
 function buildLongFileReadSection(params: { availableTools: Set<string>; isMinimal: boolean }) {
   if (params.isMinimal) {
     return [];
@@ -226,6 +242,8 @@ function buildLongFileReadSection(params: { availableTools: Set<string>; isMinim
       "Use `document_read` when a workspace-visible file exceeds the adaptive `read` ceiling, when `read` returns capped/truncated output and full coverage matters, or when proof-grade verification is required.",
       "Golden rule: a long document is not fully ingested until `document_read(action=verify)` reports complete coverage.",
       "If `document_read` reports incomplete coverage, stale file fingerprint, or missing chunks, do not claim the file was fully read.",
+      "When a long canonical or mounted source document is the basis for an exact answer, keep reading until `document_read(action=verify)` confirms complete coverage before you answer.",
+      "If canonical coverage is still unread or partial, do not give a confident exact answer. Continue reading or explicitly say coverage is incomplete.",
     );
   }
   if (hasRead) {
@@ -233,6 +251,7 @@ function buildLongFileReadSection(params: { availableTools: Set<string>; isMinim
       "Use `read` by default for workspace-visible files that fit under the adaptive ceiling, and for short files or targeted sections.",
       "If `read` says the result was capped or truncated, continue with offset/limit or switch to `document_read` when deterministic coverage is required.",
       "Do not rely on one oversized read call, terminal preview, or UI scrolling to prove full coverage.",
+      "If a mounted or canonical file answer depends on exact classes, requirements, or wording, treat a capped `read` as incomplete and continue until coverage is complete.",
     );
   }
   lines.push("");
@@ -475,6 +494,7 @@ export function buildAgentSystemPrompt(params: {
     isMinimal,
     readToolName,
   });
+  const sourceOfTruthSection = buildSourceOfTruthSection({ isMinimal });
   const webPageReadSection = buildWebPageReadSection({
     availableTools,
     isMinimal,
@@ -542,6 +562,7 @@ export function buildAgentSystemPrompt(params: {
     "When approvals are required, preserve and show the full command/script exactly as provided (including chained operators like &&, ||, |, ;, or multiline shells) so the user can approve what will actually run.",
     "",
     ...webPageReadSection,
+    ...sourceOfTruthSection,
     ...longFileReadSection,
     ...taskExecutionSection,
     ...safetySection,

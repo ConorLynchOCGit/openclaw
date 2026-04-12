@@ -9,6 +9,11 @@ import {
   type CanonicalMemorySemanticFallbackStrategy,
 } from "openclaw/plugin-sdk/memory-canonical-retrieval";
 import type { MemoryObjectSearchHybridInput, MemoryObjectSearchScope } from "./db/runtime.js";
+import {
+  normalizeMemoryObjectScope,
+  scopeIncludesCandidates,
+  scopeIncludesValidatedProcedures,
+} from "./memory-object-retrieval-scope.js";
 
 export type ResponseStyleQueryHint = {
   template:
@@ -55,7 +60,7 @@ export type GeneralizedWorkflowGuidancePatternHint =
   | "trust_for_scope"
   | "avoid_only";
 
-export type ProjectMemoryIntentFamily = "" | "project_fact" | "project_rule" | "unmet_need";
+export type ProjectMemoryIntentProfile = "" | "project_fact" | "project_rule" | "unmet_need";
 
 function readCanonicalStringFacetFilter(
   plan: CanonicalMemoryRetrievalPlan,
@@ -73,23 +78,6 @@ function hasCanonicalDerivedView(plan: CanonicalMemoryRetrievalPlan, view: strin
 
 export function normalizeRetrievalQuery(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function normalizeMemoryObjectScope(
-  scope: MemoryObjectSearchScope | undefined,
-): MemoryObjectSearchScope {
-  return scope ?? "approved_only";
-}
-
-function scopeIncludesCandidates(scope: MemoryObjectSearchScope): boolean {
-  return scope === "include_candidates" || scope === "include_candidates_and_validated_procedures";
-}
-
-function scopeIncludesValidatedProcedures(scope: MemoryObjectSearchScope): boolean {
-  return (
-    scope === "include_validated_procedures" ||
-    scope === "include_candidates_and_validated_procedures"
-  );
 }
 
 function mapHybridKindToCanonicalKinds(
@@ -117,7 +105,7 @@ function buildCanonicalFacetFilters(params: {
   responseStyleHint: ResponseStyleQueryHint | null;
   projectFactHint: ProjectFactQueryHint | null;
   workflowImprovementHint: WorkflowImprovementQueryHint | null;
-  projectMemoryIntentFamily: ProjectMemoryIntentFamily;
+  projectMemoryIntentProfile: ProjectMemoryIntentProfile;
   generalizedWorkflowPatternHint: GeneralizedWorkflowGuidancePatternHint;
   procedureHint: RecurringProcedureQueryHint | null;
 }): CanonicalMemoryRetrievalFacetFilter[] {
@@ -157,11 +145,11 @@ function buildCanonicalFacetFilters(params: {
       value: params.generalizedWorkflowPatternHint,
     });
   }
-  if (params.projectMemoryIntentFamily) {
+  if (params.projectMemoryIntentProfile) {
     filters.push({
-      key: "projectIntentFamily",
+      key: "projectIntentProfile",
       operator: "equals",
-      value: params.projectMemoryIntentFamily,
+      value: params.projectMemoryIntentProfile,
     });
   }
   if (params.procedureHint?.procedureKey) {
@@ -186,23 +174,23 @@ function buildCanonicalDerivedViews(params: {
   responseStyleHint: ResponseStyleQueryHint | null;
   projectFactHint: ProjectFactQueryHint | null;
   workflowImprovementHint: WorkflowImprovementQueryHint | null;
-  projectMemoryIntentFamily: ProjectMemoryIntentFamily;
+  projectMemoryIntentProfile: ProjectMemoryIntentProfile;
   procedureHint: RecurringProcedureQueryHint | null;
 }): string[] {
   const views: string[] = [];
   if (params.responseStyleHint) {
     views.push("response_style");
   }
-  if (params.projectFactHint || params.projectMemoryIntentFamily === "project_fact") {
+  if (params.projectFactHint || params.projectMemoryIntentProfile === "project_fact") {
     views.push("project_fact");
   }
   if (params.workflowImprovementHint) {
     views.push("workflow_guidance");
   }
-  if (params.projectMemoryIntentFamily === "project_rule") {
+  if (params.projectMemoryIntentProfile === "project_rule") {
     views.push("project_rule");
   }
-  if (params.projectMemoryIntentFamily === "unmet_need") {
+  if (params.projectMemoryIntentProfile === "unmet_need") {
     views.push("unmet_need");
   }
   if (params.procedureHint) {
@@ -225,7 +213,13 @@ function buildCanonicalSemanticFallbackStrategies(params: {
   if (params.kind !== "project" || scopeIncludesCandidates(params.scope)) {
     return [];
   }
-  switch (params.workflowImprovementHint?.captureClass) {
+  return resolveWorkflowSemanticFallbackStrategies(params.workflowImprovementHint);
+}
+
+export function resolveWorkflowSemanticFallbackStrategies(
+  hint: WorkflowImprovementQueryHint | null,
+): readonly CanonicalMemorySemanticFallbackStrategy[] {
+  switch (hint?.captureClass) {
     case "workflow_environment_constraint":
       return ["environment_constraint"];
     case "workflow_tool_gotcha":
@@ -299,7 +293,7 @@ export function inferGeneralizedWorkflowGuidancePatternHint(
   return "";
 }
 
-export function inferProjectMemoryIntentFamily(query: string): ProjectMemoryIntentFamily {
+export function inferProjectMemoryIntentProfile(query: string): ProjectMemoryIntentProfile {
   const normalized = normalizeRetrievalQuery(query);
   if (!normalized) {
     return "";
@@ -652,8 +646,8 @@ export function buildCanonicalMemoryRetrievalPlan(params: {
     params.input.kind === "project" ? inferProjectFactQueryHint(params.input.query) : null;
   const workflowImprovementHint =
     params.input.kind === "project" ? inferWorkflowImprovementQueryHint(params.input.query) : null;
-  const projectMemoryIntentFamily =
-    params.input.kind === "project" ? inferProjectMemoryIntentFamily(params.input.query) : "";
+  const projectMemoryIntentProfile =
+    params.input.kind === "project" ? inferProjectMemoryIntentProfile(params.input.query) : "";
   const generalizedWorkflowPatternHint =
     params.input.kind === "project"
       ? inferGeneralizedWorkflowGuidancePatternHint(params.input.query)
@@ -663,7 +657,7 @@ export function buildCanonicalMemoryRetrievalPlan(params: {
     responseStyleHint,
     projectFactHint,
     workflowImprovementHint,
-    projectMemoryIntentFamily,
+    projectMemoryIntentProfile,
     generalizedWorkflowPatternHint,
     procedureHint,
   });
@@ -672,7 +666,7 @@ export function buildCanonicalMemoryRetrievalPlan(params: {
     responseStyleHint,
     projectFactHint,
     workflowImprovementHint,
-    projectMemoryIntentFamily,
+    projectMemoryIntentProfile,
     procedureHint,
   });
 
@@ -698,7 +692,7 @@ export function buildCanonicalMemoryRetrievalPlan(params: {
           ...(workflowImprovementHint?.captureClass
             ? { workflowCaptureClass: workflowImprovementHint.captureClass }
             : {}),
-          ...(projectMemoryIntentFamily ? { projectMemoryIntentFamily } : {}),
+          ...(projectMemoryIntentProfile ? { projectMemoryIntentProfile } : {}),
           ...(generalizedWorkflowPatternHint ? { generalizedWorkflowPatternHint } : {}),
           ...(procedureHint?.procedureKey ? { procedureKey: procedureHint.procedureKey } : {}),
           ...(procedureHint?.normalizedSubject
@@ -777,16 +771,16 @@ export function resolveWorkflowImprovementQueryHintFromCanonicalPlan(
   return { captureClass };
 }
 
-export function resolveProjectMemoryIntentFamilyFromCanonicalPlan(
+export function resolveProjectMemoryIntentProfileFromCanonicalPlan(
   plan: CanonicalMemoryRetrievalPlan,
-): ProjectMemoryIntentFamily {
-  const projectIntentFamily = readCanonicalStringFacetFilter(plan, "projectIntentFamily");
+): ProjectMemoryIntentProfile {
+  const projectIntentProfile = readCanonicalStringFacetFilter(plan, "projectIntentProfile");
   if (
-    projectIntentFamily === "project_fact" ||
-    projectIntentFamily === "project_rule" ||
-    projectIntentFamily === "unmet_need"
+    projectIntentProfile === "project_fact" ||
+    projectIntentProfile === "project_rule" ||
+    projectIntentProfile === "unmet_need"
   ) {
-    return projectIntentFamily;
+    return projectIntentProfile;
   }
   if (hasCanonicalDerivedView(plan, "project_fact")) {
     return "project_fact";

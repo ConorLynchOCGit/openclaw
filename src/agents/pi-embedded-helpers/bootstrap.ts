@@ -85,6 +85,7 @@ export function stripThoughtSignatures<T>(
 export const DEFAULT_BOOTSTRAP_MAX_CHARS = 20_000;
 export const DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS = 150_000;
 export const DEFAULT_BOOTSTRAP_PROMPT_TRUNCATION_WARNING_MODE = "once";
+const DEFAULT_BOOTSTRAP_SOFT_OVERFLOW_RATIO = 1.1;
 const MIN_BOOTSTRAP_FILE_BUDGET_CHARS = 64;
 const BOOTSTRAP_HEAD_RATIO = 0.7;
 const BOOTSTRAP_TAIL_RATIO = 0.2;
@@ -237,7 +238,23 @@ export function buildBootstrapContextFiles(
       break;
     }
     const fileMaxChars = Math.max(1, Math.min(maxChars, remainingTotalChars));
-    const trimmed = trimBootstrapContent(file.content ?? "", file.name, fileMaxChars);
+    const normalizedContent = (file.content ?? "").trimEnd();
+    const softOverflowCap = Math.max(
+      fileMaxChars,
+      Math.floor(fileMaxChars * DEFAULT_BOOTSTRAP_SOFT_OVERFLOW_RATIO),
+    );
+    const allowSoftOverflow =
+      normalizedContent.length > fileMaxChars &&
+      normalizedContent.length <= softOverflowCap &&
+      normalizedContent.length <= remainingTotalChars;
+    const trimmed = allowSoftOverflow
+      ? {
+          content: normalizedContent,
+          truncated: false,
+          maxChars: fileMaxChars,
+          originalLength: normalizedContent.length,
+        }
+      : trimBootstrapContent(normalizedContent, file.name, fileMaxChars);
     const contentWithinBudget = clampToBudget(trimmed.content, remainingTotalChars);
     if (!contentWithinBudget) {
       continue;

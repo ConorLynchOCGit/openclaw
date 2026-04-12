@@ -7,6 +7,7 @@ import {
   buildBootstrapTruncationReportMeta,
   buildBootstrapTruncationSignature,
   formatBootstrapTruncationWarningLines,
+  resolveBootstrapPriorityTier,
   resolveBootstrapWarningSignaturesSeen,
 } from "./bootstrap-budget.js";
 import { buildAgentSystemPrompt } from "./system-prompt.js";
@@ -45,10 +46,20 @@ describe("buildBootstrapInjectionStats", () => {
     });
     expect(stats[1]).toMatchObject({
       name: "SOUL.md",
+      priorityTier: "must_survive",
       rawChars: 50,
       injectedChars: 20,
       truncated: true,
     });
+  });
+});
+
+describe("resolveBootstrapPriorityTier", () => {
+  it("classifies routing-critical files ahead of bulk continuity files", () => {
+    expect(resolveBootstrapPriorityTier("AGENTS.md")).toBe("must_survive");
+    expect(resolveBootstrapPriorityTier("BOOTSTRAP.md")).toBe("must_survive");
+    expect(resolveBootstrapPriorityTier("TOOLS.md")).toBe("useful");
+    expect(resolveBootstrapPriorityTier("MEMORY.md")).toBe("bulk");
   });
 });
 

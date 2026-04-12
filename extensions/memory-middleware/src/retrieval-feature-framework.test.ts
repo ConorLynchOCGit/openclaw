@@ -24,7 +24,7 @@ describe("retrieval-feature-framework", () => {
       paramRefs: {
         responseStyleNormalizedSubjectHintRef: "$4::text",
         normalizedQueryRef: "$7::text",
-        projectMemoryIntentFamilyRef: "$8::text",
+        projectMemoryIntentProfileRef: "$8::text",
         generalizedWorkflowPatternHintRef: "$9::text",
       },
     });
@@ -67,7 +67,7 @@ describe("retrieval-feature-framework", () => {
       paramRefs: {
         responseStyleNormalizedSubjectHintRef: "$4::text",
         normalizedQueryRef: "$7::text",
-        projectMemoryIntentFamilyRef: "$8::text",
+        projectMemoryIntentProfileRef: "$8::text",
         generalizedWorkflowPatternHintRef: "$9::text",
       },
     });
@@ -88,7 +88,7 @@ describe("retrieval-feature-framework", () => {
       paramRefs: {
         responseStyleNormalizedSubjectHintRef: "$4::text",
         normalizedQueryRef: "$7::text",
-        projectMemoryIntentFamilyRef: "$8::text",
+        projectMemoryIntentProfileRef: "$8::text",
         generalizedWorkflowPatternHintRef: "$9::text",
       },
     });

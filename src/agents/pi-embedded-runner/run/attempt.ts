@@ -99,7 +99,11 @@ import { buildSystemPromptParams } from "../../system-prompt-params.js";
 import { buildSystemPromptReport } from "../../system-prompt-report.js";
 import { sanitizeToolCallIdsForCloudCodeAssist } from "../../tool-call-id.js";
 import { resolveTranscriptPolicy } from "../../transcript-policy.js";
-import { DEFAULT_BOOTSTRAP_FILENAME } from "../../workspace.js";
+import {
+  DEFAULT_BOOTSTRAP_FILENAME,
+  DEFAULT_MEMORY_ALT_FILENAME,
+  DEFAULT_MEMORY_FILENAME,
+} from "../../workspace.js";
 import { isRunnerAbortError } from "../abort.js";
 import { isCacheTtlEligibleProvider } from "../cache-ttl.js";
 import { resolveCompactionTimeoutMs } from "../compaction-safety-timeout.js";
@@ -142,6 +146,7 @@ import {
 } from "./attempt.context-engine-helpers.js";
 import {
   buildAfterTurnRuntimeContext,
+  buildWorkspaceNotesForAttempt,
   prependSystemPromptAddition,
   resolveAttemptFsWorkspaceOnly,
   resolvePromptBuildHookResult,
@@ -392,11 +397,16 @@ export async function runEmbeddedAttempt(
       seenSignatures: params.bootstrapPromptWarningSignaturesSeen,
       previousSignature: params.bootstrapPromptWarningSignature,
     });
-    const workspaceNotes = hookAdjustedBootstrapFiles.some(
+    const hasWorkspaceBootstrapFile = hookAdjustedBootstrapFiles.some(
       (file) => file.name === DEFAULT_BOOTSTRAP_FILENAME && !file.missing,
-    )
-      ? ["Reminder: commit your changes in this workspace after edits."]
-      : undefined;
+    );
+    const workspaceContextMissing = hookAdjustedBootstrapFiles.some(
+      (file) =>
+        file.missing &&
+        (file.name === DEFAULT_BOOTSTRAP_FILENAME ||
+          file.name === DEFAULT_MEMORY_FILENAME ||
+          file.name === DEFAULT_MEMORY_ALT_FILENAME),
+    );
 
     const agentDir = params.agentDir ?? resolveOpenClawAgentDir();
 
@@ -640,8 +650,17 @@ export async function runEmbeddedAttempt(
         messages: [{ role: "user", content: params.prompt }],
         tools: effectiveTools,
       },
+      sourceContext: {
+        bootstrapTruncated: bootstrapAnalysis.hasTruncation,
+        workspaceContextMissing,
+      },
       version: runtimeBuild.version,
       commit: runtimeBuild.commit,
+    });
+    const workspaceNotes = buildWorkspaceNotesForAttempt({
+      hasWorkspaceBootstrapFile,
+      bootstrapAnalysis,
+      mainMemoryRouting,
     });
     const effectiveSkillsPrompt = mainMemoryRouting.skillSuppressionRequested ? "" : skillsPrompt;
 

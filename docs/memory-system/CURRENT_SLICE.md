@@ -2,7 +2,7 @@
 
 ## Active slice
 
-Memory soak period and evidence collection
+Broad runtime-core refactor follow-through
 
 Latest structural runtime follow-through:
 
@@ -10,16 +10,25 @@ Latest structural runtime follow-through:
 - shared submission/profile routing helpers for canonical and legacy metadata
 - shared lifecycle/semantic metadata builders across tool-submit and
   ordinary-turn capture
-- the next high-value structural target is stage extraction from
-  `candidate-submit.ts` and detector-registry extraction from
-  `ordinary-turn-auto-capture.ts`, but those are now separate follow-on
-  surgeries rather than this pass
+- extracted managed normalization from `candidate-submit.ts` into a dedicated
+  stage module
+- extracted managed ingest-resolution and transcript-context recovery from
+  `candidate-submit.ts` into a dedicated stage module
+- replaced the front-end ordinary-turn detector forests with explicit detector
+  registries plus a shared runner
+- moved candidate-submission persistence planning out of `db/queries.ts`
+- centralized retrieval scope semantics and project-family classification into
+  shared helpers instead of letting query and retrieval seams carry private
+  copies
+- reduced remaining inline literal policy branching in
+  `candidate-submit.ts` and `ordinary-turn-auto-capture.ts` into closed helper
+  tables where the runtime behavior was already shared
 
 ## Objective
 
-Hold new scheduled memory feature expansion for the next few days while
-collecting enough operational evidence to decide what the next memory tranche
-should actually be.
+Keep collapsing transitional family-era runtime structure into explicit
+canonical/profile stages while preserving current behavior under fast-lane
+proof.
 
 ## What is now landed
 
@@ -70,6 +79,16 @@ should actually be.
 - explicit multi-preference and multi-fact packets can enter a stronger bulk
   posture while ordinary shorter prompts stay on the tighter default posture
 - no schema change was required for the deferred-overflow tranche
+
+## Current emphasis
+
+- continue extracting real runtime stages out of large orchestrator files
+- keep family-era compatibility and alias handling at the edges instead of in
+  runtime-critical paths
+- prefer shared canonical/profile helpers over repeated capture-class or
+  family-id branching
+- stop when additional work would mostly reshuffle large behavior-heavy seams
+  instead of removing architectural duplication
 
 ## What the soak period is for
 

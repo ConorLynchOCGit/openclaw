@@ -204,7 +204,7 @@ describe("memory-canonical-compat", () => {
 
   it("wraps ordinary-turn matches as canonical ingestion candidates", () => {
     const candidate = buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch({
-      familyId: "workflow_improvement",
+      profileId: "workflow_improvement",
       match: {
         profile: "user-preference-v2",
         captureClass: "project_rule_guidance",

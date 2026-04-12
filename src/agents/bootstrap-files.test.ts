@@ -7,7 +7,11 @@ import {
   type AgentBootstrapHookContext,
 } from "../hooks/internal-hooks.js";
 import { makeTempWorkspace } from "../test-helpers/workspace.js";
-import { resolveBootstrapContextForRun, resolveBootstrapFilesForRun } from "./bootstrap-files.js";
+import {
+  prioritizeBootstrapFilesForInjection,
+  resolveBootstrapContextForRun,
+  resolveBootstrapFilesForRun,
+} from "./bootstrap-files.js";
 import type { WorkspaceBootstrapFile } from "./workspace.js";
 
 function registerExtraBootstrapFileHook() {
@@ -83,6 +87,33 @@ describe("resolveBootstrapFilesForRun", () => {
   });
 });
 
+describe("prioritizeBootstrapFilesForInjection", () => {
+  it("orders must-survive files before useful and bulk files", () => {
+    const prioritized = prioritizeBootstrapFilesForInjection([
+      {
+        name: "MEMORY.md",
+        path: "/tmp/MEMORY.md",
+        content: "memory",
+        missing: false,
+      },
+      {
+        name: "AGENTS.md",
+        path: "/tmp/AGENTS.md",
+        content: "agents",
+        missing: false,
+      },
+      {
+        name: "TOOLS.md",
+        path: "/tmp/TOOLS.md",
+        content: "tools",
+        missing: false,
+      },
+    ]);
+
+    expect(prioritized.map((file) => file.name)).toEqual(["AGENTS.md", "TOOLS.md", "MEMORY.md"]);
+  });
+});
+
 describe("resolveBootstrapContextForRun", () => {
   beforeEach(() => clearInternalHooks());
   afterEach(() => clearInternalHooks());
@@ -125,5 +156,24 @@ describe("resolveBootstrapContextForRun", () => {
     });
 
     expect(files).toEqual([]);
+  });
+
+  it("preserves must-survive files ahead of bulk continuity files under tight total budgets", async () => {
+    const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    await fs.writeFile(path.join(workspaceDir, "AGENTS.md"), "a".repeat(800), "utf8");
+    await fs.writeFile(path.join(workspaceDir, "MEMORY.md"), "m".repeat(800), "utf8");
+
+    const result = await resolveBootstrapContextForRun({
+      workspaceDir,
+      config: {
+        agents: { defaults: { bootstrapMaxChars: 1_000, bootstrapTotalMaxChars: 850 } },
+      } as never,
+    });
+
+    expect(result.bootstrapFiles.map((file) => file.name).slice(0, 2)).toContain("AGENTS.md");
+    const agents = result.contextFiles.find((file) => file.path.endsWith("/AGENTS.md"));
+    const memory = result.contextFiles.find((file) => file.path.endsWith("/MEMORY.md"));
+    expect(agents?.content.length ?? 0).toBeGreaterThan(0);
+    expect(memory?.content.length ?? 0).toBeLessThan(agents?.content.length ?? 0);
   });
 });

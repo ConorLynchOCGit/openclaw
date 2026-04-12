@@ -1,5 +1,6 @@
 import {
   getMemoryProfile,
+  listMemoryProfiles,
   MEMORY_PROFILE_IDS,
   type MemoryProfileId,
   type MemoryProfileRetrievalFeature,
@@ -32,7 +33,7 @@ export type MemoryRetrievalRuntimePolicy = {
 };
 
 export type MemorySemanticRoutingRuntimePolicy = {
-  mode: "disabled" | "family_gated_approved_only" | "validated_procedure_only";
+  mode: "disabled" | "profile_gated_approved_only" | "validated_procedure_only";
 };
 
 export type ApprovedMemoryRetrievalRuntimeDefinition = {
@@ -80,45 +81,52 @@ function buildSemanticRoutingPolicy(
   };
 }
 
-const APPROVED_MEMORY_RETRIEVAL_RUNTIME_POLICIES: ApprovedMemoryRetrievalRuntimeDefinition[] = (
-  ["response_style", "project_fact", "workflow_improvement", "project_rule", "unmet_need"] as const
-).map((id) => {
-  const profile = getMemoryProfile(id);
-  return {
-    id,
-    storageKinds: profile.storageKinds.filter(
+const APPROVED_MEMORY_RETRIEVAL_RUNTIME_POLICIES: ApprovedMemoryRetrievalRuntimeDefinition[] =
+  listMemoryProfiles()
+    .filter(
       (
-        storageKind,
-      ): storageKind is ApprovedMemoryRetrievalRuntimeDefinition["storageKinds"][number] =>
-        storageKind === "memory_object" || storageKind === "phrase_pattern",
-    ),
-    derivedViews: profile.derivedViews,
-    retrievalPolicy: buildRetrievalPolicy(id),
-  };
-});
+        profile,
+      ): profile is ReturnType<typeof getMemoryProfile> & {
+        id: ApprovedMemoryRetrievalRuntimeDefinition["id"];
+      } =>
+        profile.id !== "recurring_procedure" &&
+        profile.storageKinds.includes("memory_object") &&
+        Object.keys(profile.retrieval.featureWeights).length > 0,
+    )
+    .map((profile) => ({
+      id: profile.id,
+      storageKinds: profile.storageKinds.filter(
+        (
+          storageKind,
+        ): storageKind is ApprovedMemoryRetrievalRuntimeDefinition["storageKinds"][number] =>
+          storageKind === "memory_object" || storageKind === "phrase_pattern",
+      ),
+      derivedViews: profile.derivedViews,
+      retrievalPolicy: buildRetrievalPolicy(profile.id),
+    }));
 
 export function getMemoryLifecycleRuntimePolicy(
-  familyId: MemoryRuntimePolicyKey,
+  profileId: MemoryRuntimePolicyKey,
 ): MemoryLifecycleRuntimePolicy {
-  return buildLifecyclePolicy(familyId);
+  return buildLifecyclePolicy(profileId);
 }
 
 export function getMemoryCorrectionRuntimePolicy(
-  familyId: MemoryRuntimePolicyKey,
+  profileId: MemoryRuntimePolicyKey,
 ): MemoryCorrectionRuntimePolicy {
-  return buildCorrectionPolicy(familyId);
+  return buildCorrectionPolicy(profileId);
 }
 
 export function getMemoryRetrievalRuntimePolicy(
-  familyId: MemoryRuntimePolicyKey,
+  profileId: MemoryRuntimePolicyKey,
 ): MemoryRetrievalRuntimePolicy {
-  return buildRetrievalPolicy(familyId);
+  return buildRetrievalPolicy(profileId);
 }
 
 export function getMemorySemanticRoutingRuntimePolicy(
-  familyId: MemoryRuntimePolicyKey,
+  profileId: MemoryRuntimePolicyKey,
 ): MemorySemanticRoutingRuntimePolicy {
-  return buildSemanticRoutingPolicy(familyId);
+  return buildSemanticRoutingPolicy(profileId);
 }
 
 export function listApprovedMemoryRetrievalRuntimeDefinitions(): ApprovedMemoryRetrievalRuntimeDefinition[] {

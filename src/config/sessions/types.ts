@@ -363,8 +363,56 @@ export type SessionToolChoiceSnapshot =
 export type SessionMainMemoryRoutingPromptClass =
   | "workflow_preflight"
   | "direct_lookup"
+  | "source_truth_lookup"
   | "boundary"
   | "none";
+
+export type SessionSourceResolutionQuestionKind =
+  | "continuity"
+  | "implementation"
+  | "mixed"
+  | "unclassified";
+
+export type SessionSourceResolutionDomain =
+  | "memory_system"
+  | "plugin_sdk"
+  | "gateway_protocol"
+  | "none";
+
+export type SessionSourceResolutionSourceCandidate =
+  | "workspace_continuity"
+  | "workspace_project"
+  | "mounted_curated_import"
+  | "repo_canonical_doc";
+
+export type SessionSourceResolutionCoverageRequirement =
+  | "not_required"
+  | "verify_before_exact_answer";
+
+export type SessionSourceResolutionCoverageState =
+  | "not_required"
+  | "unread"
+  | "partial"
+  | "verified";
+
+export type SessionSourceResolutionEscalationReason =
+  | "explicit_mounted_request"
+  | "repo_coupled_domain"
+  | "bootstrap_truncated"
+  | "workspace_context_missing";
+
+export type SessionSourceResolutionReport = {
+  questionKind: SessionSourceResolutionQuestionKind;
+  domain: SessionSourceResolutionDomain;
+  candidates: SessionSourceResolutionSourceCandidate[];
+  authoritativeSource: SessionSourceResolutionSourceCandidate;
+  supportingSources: SessionSourceResolutionSourceCandidate[];
+  workspaceEntrypoints: string[];
+  canonicalEntrypoints: string[];
+  coverageRequirement: SessionSourceResolutionCoverageRequirement;
+  coverageState: SessionSourceResolutionCoverageState;
+  escalationReasons: SessionSourceResolutionEscalationReason[];
+};
 
 export type SessionMainMemoryRoutingCanonicalKind = "user" | "feedback" | "project" | "reference";
 
@@ -385,7 +433,8 @@ export type SessionMainMemoryRoutingIntentSignal =
   | "command_lookup"
   | "artifact_lookup"
   | "terminology_lookup"
-  | "boundary_lookup";
+  | "boundary_lookup"
+  | "source_truth_lookup";
 
 export type SessionMainMemoryRoutingCanonicalFacetFilter = {
   key: string;
@@ -402,6 +451,7 @@ export type SessionMainMemoryRoutingReasonCode =
   | "selected_learned_guidance"
   | "selected_hybrid"
   | "selected_search_fallback"
+  | "source_truth_lookup_no_memory_pin"
   | "learned_guidance_unavailable"
   | "hybrid_unavailable"
   | "search_unavailable"
@@ -428,6 +478,7 @@ export type SessionMainMemoryRoutingReport = {
     memorySearch: boolean;
   };
   promptClass: SessionMainMemoryRoutingPromptClass;
+  sourceResolution: SessionSourceResolutionReport;
   canonicalPlan: {
     requestedKinds: SessionMainMemoryRoutingCanonicalKind[];
     derivedViews: SessionMainMemoryRoutingDerivedView[];
@@ -482,6 +533,7 @@ export type SessionSystemPromptReport = {
   injectedWorkspaceFiles: Array<{
     name: string;
     path: string;
+    priorityTier?: "must_survive" | "useful" | "bulk";
     missing: boolean;
     rawChars: number;
     injectedChars: number;

@@ -1,5 +1,6 @@
 import type { CandidateSubmissionInput, CandidateSubmissionResult } from "./db/runtime.js";
 import { readCanonicalMemoryIngestionCandidateFromMetadata } from "./memory-canonical-compat.js";
+import { readSubmissionProfileId } from "./memory-profile-routing.js";
 import type { MemoryMiddlewareRuntime } from "./runtime.js";
 
 export type WriteResolutionStage<TContext, TResult> = {
@@ -99,6 +100,16 @@ export type CandidateWriteLane =
   | "project_rule"
   | "unmet_need";
 
+const CANDIDATE_WRITE_LANE_BY_PROFILE_ID: Partial<Record<string, CandidateWriteLane>> =
+  Object.freeze({
+    response_style: "user_preference",
+    project_fact: "project_fact",
+    recurring_procedure: "recurring_procedure",
+    workflow_improvement: "workflow_guidance",
+    project_rule: "project_rule",
+    unmet_need: "unmet_need",
+  });
+
 export type CandidateWriteOperation = {
   id: string;
   input: CandidateSubmissionInput;
@@ -110,12 +121,18 @@ export type CandidateWritePlan = {
 };
 
 function resolveCandidateWriteLanes(params: {
+  profileId?: string;
   canonicalKind?: string;
-  captureCategory?: string;
   captureClass?: string;
   derivedViews: readonly string[];
 }): readonly CandidateWriteLane[] {
   const lanes = new Set<CandidateWriteLane>();
+  if (params.profileId) {
+    const profileLane = CANDIDATE_WRITE_LANE_BY_PROFILE_ID[params.profileId];
+    if (profileLane) {
+      lanes.add(profileLane);
+    }
+  }
   if (
     params.derivedViews.includes("response_style") ||
     params.canonicalKind === "user" ||
@@ -126,23 +143,8 @@ function resolveCandidateWriteLanes(params: {
   ) {
     lanes.add("user_preference");
   }
-  if (params.captureCategory === "project_fact") {
-    lanes.add("project_fact");
-  }
-  if (params.captureCategory === "recurring_procedure") {
-    lanes.add("recurring_procedure");
-  }
-  if (
-    params.captureCategory === "workflow_improvement" ||
-    params.derivedViews.includes("workflow_guidance")
-  ) {
+  if (params.derivedViews.includes("workflow_guidance")) {
     lanes.add("workflow_guidance");
-  }
-  if (params.captureCategory === "project_rule") {
-    lanes.add("project_rule");
-  }
-  if (params.captureCategory === "unmet_need") {
-    lanes.add("unmet_need");
   }
   return [...lanes];
 }
@@ -169,10 +171,11 @@ export function resolveCandidateWriteClassification(
       : undefined;
   const captureClass = canonicalCandidate?.compatibility.captureClass;
   const canonicalKind = canonicalCandidate?.record.kind;
+  const profileId = readSubmissionProfileId(input.metadata) ?? undefined;
   return {
     lanes: resolveCandidateWriteLanes({
+      profileId,
       canonicalKind,
-      captureCategory,
       captureClass,
       derivedViews,
     }),

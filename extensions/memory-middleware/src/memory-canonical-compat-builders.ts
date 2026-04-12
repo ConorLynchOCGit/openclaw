@@ -8,10 +8,10 @@ import {
   type CanonicalMemoryIngestionMode,
 } from "openclaw/plugin-sdk/memory-canonical-ingestion";
 import {
-  buildCanonicalMemoryRecordForCompatibilityFamily,
-  type BuildCanonicalMemoryRecordForCompatibilityFamilyParams,
-  type CompatibilityMemoryFamilyId,
-} from "./memory-compatibility-family.js";
+  buildCanonicalMemoryRecordForCompatibilityProfile,
+  type BuildCanonicalMemoryRecordForCompatibilityProfileParams,
+  type CompatibilityMemoryProfileId,
+} from "./memory-compatibility-profile.js";
 import type {
   ResolvedCanonicalizableIngestion,
   ResolvedProjectFactIngestion,
@@ -38,7 +38,7 @@ export type BuildCanonicalMemoryIngestionCandidateFromResolvedIngestionParams =
   };
 
 export type BuildCanonicalMemoryIngestionCandidateFromAutoCaptureMatchParams = {
-  familyId: CompatibilityMemoryFamilyId;
+  profileId: CompatibilityMemoryProfileId;
   match: OrdinaryTurnAutoCaptureMatch;
   reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
   detectionSource: "deterministic" | "semantic";
@@ -61,24 +61,24 @@ function mapIngestionConfidence(confidence: string): CanonicalMemoryConfidence {
 
 function mapValidationStatus(
   reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence",
-): BuildCanonicalMemoryRecordForCompatibilityFamilyParams["validationStatus"] {
+): BuildCanonicalMemoryRecordForCompatibilityProfileParams["validationStatus"] {
   if (reviewMode === "direct") {
     return "approved";
   }
   return reviewMode === "pending_confirmation" ? "pending_confirmation" : "hold_for_more_evidence";
 }
 
-function resolveWorkflowCompatibilityFamilyId(
+function resolveWorkflowCompatibilityProfileId(
   captureCategory: WorkflowCaptureCategory,
-): Extract<CompatibilityMemoryFamilyId, "workflow_improvement" | "project_rule" | "unmet_need"> {
+): Extract<CompatibilityMemoryProfileId, "workflow_improvement" | "project_rule" | "unmet_need"> {
   return captureCategory;
 }
 
-function resolveResolvedIngestionCompatibilityFamilyId(
+function resolveResolvedIngestionCompatibilityProfileId(
   ingestion: ResolvedCanonicalizableIngestion,
-): CompatibilityMemoryFamilyId {
+): CompatibilityMemoryProfileId {
   return "captureCategory" in ingestion
-    ? resolveWorkflowCompatibilityFamilyId(ingestion.captureCategory)
+    ? resolveWorkflowCompatibilityProfileId(ingestion.captureCategory)
     : ingestion.familyId;
 }
 
@@ -110,10 +110,10 @@ export function buildCanonicalMemoryRecordFromResolvedIngestion(
   params: BuildCanonicalMemoryRecordFromIngestionParams,
 ): CanonicalMemoryRecord {
   const { ingestion } = params;
-  const compatibilityFamilyId = resolveResolvedIngestionCompatibilityFamilyId(ingestion);
-  const projectId = compatibilityFamilyId === "response_style" ? undefined : params.projectId;
-  const baseParams: BuildCanonicalMemoryRecordForCompatibilityFamilyParams = {
-    familyId: compatibilityFamilyId,
+  const compatibilityProfileId = resolveResolvedIngestionCompatibilityProfileId(ingestion);
+  const projectId = compatibilityProfileId === "response_style" ? undefined : params.projectId;
+  const baseParams: BuildCanonicalMemoryRecordForCompatibilityProfileParams = {
+    profileId: compatibilityProfileId,
     subject: ingestion.parsed.subject,
     statement: ingestion.parsed.value,
     projectId,
@@ -175,14 +175,14 @@ export function buildCanonicalMemoryRecordFromResolvedIngestion(
         : {}),
     },
     tags: [
-      compatibilityFamilyId,
+      compatibilityProfileId,
       ...(ingestion.source === "raw" ? ["raw_ingestion"] : []),
       ...(ingestion.detectionSource === "semantic"
         ? ["semantic_ingestion"]
         : ["deterministic_ingestion"]),
     ],
   };
-  return buildCanonicalMemoryRecordForCompatibilityFamily(baseParams);
+  return buildCanonicalMemoryRecordForCompatibilityProfile(baseParams);
 }
 
 export function buildCanonicalMemoryIngestionCandidateFromResolvedIngestion(
@@ -242,9 +242,9 @@ export function buildCanonicalMemoryIngestionCandidateFromResolvedIngestion(
 export function buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch(
   params: BuildCanonicalMemoryIngestionCandidateFromAutoCaptureMatchParams,
 ): CanonicalMemoryIngestionCandidate {
-  const projectId = params.familyId === "response_style" ? undefined : params.projectId;
-  const record = buildCanonicalMemoryRecordForCompatibilityFamily({
-    familyId: params.familyId,
+  const projectId = params.profileId === "response_style" ? undefined : params.projectId;
+  const record = buildCanonicalMemoryRecordForCompatibilityProfile({
+    profileId: params.profileId,
     subject: params.match.subject,
     statement: params.match.value,
     projectId,
@@ -282,7 +282,7 @@ export function buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch(
       ...(params.match.neededCapability ? { neededCapability: params.match.neededCapability } : {}),
     },
     tags: [
-      params.familyId,
+      params.profileId,
       params.detectionSource === "semantic" ? "semantic_ingestion" : "deterministic_ingestion",
     ],
   });

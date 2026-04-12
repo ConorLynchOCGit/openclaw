@@ -38,16 +38,21 @@ export const buildPromptSection: MemoryPromptSectionBuilder = ({
     let toolGuidance: string;
     if (hasMemorySearch && hasMemoryGet) {
       toolGuidance =
-        "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_search on MEMORY.md + memory/*.md; then use memory_get to pull only the needed lines. If low confidence after search, say you checked.";
+        "Before answering anything about prior work, decisions, dates, people, preferences, or todos that are expected to live in workspace continuity: run memory_search on MEMORY.md + memory/*.md; then use memory_get to pull only the needed lines. If low confidence after search, say you checked.";
     } else if (hasMemorySearch) {
       toolGuidance =
-        "Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_search on MEMORY.md + memory/*.md and answer from the matching results. If low confidence after search, say you checked.";
+        "Before answering anything about prior work, decisions, dates, people, preferences, or todos that are expected to live in workspace continuity: run memory_search on MEMORY.md + memory/*.md and answer from the matching results. If low confidence after search, say you checked.";
     } else {
       toolGuidance =
         "Before answering anything about prior work, decisions, dates, people, preferences, or todos that already point to a specific memory file or note: run memory_get to pull only the needed lines. If low confidence after reading them, say you checked.";
     }
 
-    lines.push("## Memory Recall", toolGuidance);
+    lines.push(
+      "## Memory Recall",
+      toolGuidance,
+      "Exception: if the turn is mainly about implementation truth or mixed continuity-plus-implementation truth, read the authoritative files directly first (for example `imports/*/content/...`) and do not treat memory_search as final authority.",
+      "If memory_search returns nothing or a workspace daily-memory file is missing, do not answer from stale memory alone; escalate to the authoritative files.",
+    );
     if (citationsMode === "off") {
       lines.push(
         "Citations are disabled: do not mention file paths or line numbers in replies unless the user explicitly asks.",

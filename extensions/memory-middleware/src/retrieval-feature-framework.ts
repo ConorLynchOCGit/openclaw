@@ -23,7 +23,7 @@ type RetrievalSqlExpressions = {
 type RetrievalParamRefs = {
   responseStyleNormalizedSubjectHintRef: string;
   normalizedQueryRef: string;
-  projectMemoryIntentFamilyRef: string;
+  projectMemoryIntentProfileRef: string;
   generalizedWorkflowPatternHintRef: string;
 };
 
@@ -140,7 +140,7 @@ function buildApprovedMemoryFeatureClause(params: {
     if (!intentGuard || !definition.retrievalPolicy.directIntentClass) {
       return null;
     }
-    const whenClause = `${paramRefs.projectMemoryIntentFamilyRef} = '${definition.id}' and ${intentGuard}`;
+    const whenClause = `${paramRefs.projectMemoryIntentProfileRef} = '${definition.id}' and ${intentGuard}`;
     return {
       scoreClause: `case when ${whenClause} then ${weight} else 0 end`,
       matchedFieldClause: `case when ${whenClause} then '${label}' end`,

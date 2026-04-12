@@ -9,7 +9,7 @@ export {
   buildCanonicalMemoryRecordFromResolvedIngestion,
   isCanonicalizableResolvedResponseStyleIngestion,
 } from "./memory-canonical-compat-builders.js";
-import type { CompatibilityMemoryFamilyId } from "./memory-compatibility-family.js";
+import type { CompatibilityMemoryProfileId } from "./memory-compatibility-profile.js";
 
 export type CanonicalMemoryRecordMetadataView = {
   kind?: string;
@@ -173,7 +173,7 @@ function readCanonicalAliasString(
     case "value":
       return candidate.record.statement;
     case "family":
-      return resolveCanonicalRecordFamilyId(candidate);
+      return resolveCanonicalRecordProfileId(candidate);
     case "candidateKind":
       return candidate.compatibility.candidateKind;
     case "captureClass":
@@ -195,9 +195,9 @@ function readCanonicalAliasString(
   }
 }
 
-function resolveCanonicalRecordFamilyId(
+function resolveCanonicalRecordProfileId(
   candidate: CanonicalMemoryIngestionCandidateMetadataView,
-): CompatibilityMemoryFamilyId | undefined {
+): CompatibilityMemoryProfileId | undefined {
   const captureCategory = candidate.record.compatibility.captureCategory;
   if (
     captureCategory === "project_fact" ||

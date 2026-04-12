@@ -167,9 +167,16 @@ describe("buildAgentSystemPrompt", () => {
       toolNames: ["read", "document_read"],
     });
 
+    expect(prompt).toContain("## Source of Truth");
+    expect(prompt).toContain("imports/*/content");
+    expect(prompt).toContain("Continuity questions");
+    expect(prompt).toContain("Mixed questions");
+    expect(prompt).toContain("Project Context was truncated");
     expect(prompt).toContain("## Long File Reading");
     expect(prompt).toContain("document_read");
     expect(prompt).toContain("action=verify");
+    expect(prompt).toContain("long canonical or mounted source document");
+    expect(prompt).toContain("do not give a confident exact answer");
     expect(prompt).toContain("fit under the adaptive ceiling");
     expect(prompt).toContain("capped or truncated");
   });

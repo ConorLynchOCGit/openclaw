@@ -1,6 +1,8 @@
 import {
+  getMemoryProfile,
   getMemoryProfileByCaptureClass,
   getMemoryProfileIdByWorkflowLessonFamily,
+  listMemoryProfiles,
   type MemoryProfileCaptureCategory,
   type MemoryProfileId,
 } from "openclaw/plugin-sdk/memory-profile-registry";
@@ -13,14 +15,49 @@ const RESPONSE_STYLE_CAPTURE_CLASSES = new Set([
   "requirement_correction",
 ]);
 
-const RESPONSE_STYLE_TEMPLATES = new Set([
-  "responses_concise",
-  "responses_bullets",
-  "responses_plain_english",
-  "responses_no_tables",
-  "responses_numbered_steps",
-  "response_style_generalized_guidance",
-]);
+const PROFILE_ID_BY_DERIVED_VIEW_OR_TAG = new Map<string, MemoryProfileId>();
+const SUBMISSION_CAPTURE_CATEGORIES = new Set<MemoryProfileCaptureCategory>();
+const WORKFLOW_CAPTURE_CATEGORIES = new Set<
+  Extract<MemoryProfileCaptureCategory, "workflow_improvement" | "project_rule" | "unmet_need">
+>();
+for (const profile of listMemoryProfiles()) {
+  PROFILE_ID_BY_DERIVED_VIEW_OR_TAG.set(profile.id, profile.id);
+  for (const derivedView of profile.derivedViews) {
+    PROFILE_ID_BY_DERIVED_VIEW_OR_TAG.set(derivedView, profile.id);
+  }
+  if (profile.capture?.category) {
+    SUBMISSION_CAPTURE_CATEGORIES.add(profile.capture.category);
+    if (
+      profile.capture.category === "workflow_improvement" ||
+      profile.capture.category === "project_rule" ||
+      profile.capture.category === "unmet_need"
+    ) {
+      WORKFLOW_CAPTURE_CATEGORIES.add(profile.capture.category);
+    }
+  }
+}
+
+function isSubmissionCaptureCategory(
+  value: string | undefined,
+): value is MemoryProfileCaptureCategory {
+  return value ? SUBMISSION_CAPTURE_CATEGORIES.has(value as MemoryProfileCaptureCategory) : false;
+}
+
+function isWorkflowSubmissionCaptureCategory(
+  value: MemoryProfileCaptureCategory | null,
+): value is Extract<
+  MemoryProfileCaptureCategory,
+  "workflow_improvement" | "project_rule" | "unmet_need"
+> {
+  return value
+    ? WORKFLOW_CAPTURE_CATEGORIES.has(
+        value as Extract<
+          MemoryProfileCaptureCategory,
+          "workflow_improvement" | "project_rule" | "unmet_need"
+        >,
+      )
+    : false;
+}
 
 function readCanonicalCandidateProfileId(
   metadata: Record<string, unknown> | undefined,
@@ -30,14 +67,11 @@ function readCanonicalCandidateProfileId(
     return null;
   }
 
-  const captureCategory = canonicalCandidate.record.compatibility.captureCategory;
-  if (
-    captureCategory === "project_fact" ||
-    captureCategory === "recurring_procedure" ||
-    captureCategory === "workflow_improvement" ||
-    captureCategory === "project_rule" ||
-    captureCategory === "unmet_need"
-  ) {
+  const captureCategory =
+    typeof canonicalCandidate.record.compatibility.captureCategory === "string"
+      ? canonicalCandidate.record.compatibility.captureCategory
+      : undefined;
+  if (isSubmissionCaptureCategory(captureCategory)) {
     return captureCategory;
   }
 
@@ -60,24 +94,11 @@ function readCanonicalCandidateProfileId(
     }
   }
 
-  const tags = new Set(canonicalCandidate.record.tags);
-  for (const profileId of [
-    "response_style",
-    "project_fact",
-    "recurring_procedure",
-    "workflow_improvement",
-    "project_rule",
-    "unmet_need",
-  ] as const) {
-    if (tags.has(profileId)) {
+  for (const tag of canonicalCandidate.record.tags) {
+    const profileId = PROFILE_ID_BY_DERIVED_VIEW_OR_TAG.get(tag);
+    if (profileId) {
       return profileId;
     }
-  }
-  if (tags.has("workflow_guidance")) {
-    return "workflow_improvement";
-  }
-  if (tags.has("procedure")) {
-    return "recurring_procedure";
   }
   return canonicalCandidate.record.kind === "user" ? "response_style" : null;
 }
@@ -116,11 +137,6 @@ function readLegacySubmissionProfileId(
     }
   }
 
-  const template = readOptionalAutoCaptureString(metadata, "template");
-  if (template && RESPONSE_STYLE_TEMPLATES.has(template)) {
-    return "response_style";
-  }
-
   if (readOptionalAutoCaptureString(metadata, "fieldKey")) {
     return "project_fact";
   }
@@ -143,16 +159,7 @@ export function readSubmissionCaptureCategory(
   metadata: Record<string, unknown> | undefined,
 ): MemoryProfileCaptureCategory | null {
   const profileId = readSubmissionProfileId(metadata);
-  if (
-    profileId === "project_fact" ||
-    profileId === "recurring_procedure" ||
-    profileId === "workflow_improvement" ||
-    profileId === "project_rule" ||
-    profileId === "unmet_need"
-  ) {
-    return profileId;
-  }
-  return null;
+  return profileId ? (getMemoryProfile(profileId).capture?.category ?? null) : null;
 }
 
 export function readWorkflowSubmissionCaptureCategory(
@@ -162,11 +169,7 @@ export function readWorkflowSubmissionCaptureCategory(
   "workflow_improvement" | "project_rule" | "unmet_need"
 > | null {
   const captureCategory = readSubmissionCaptureCategory(metadata);
-  return captureCategory === "workflow_improvement" ||
-    captureCategory === "project_rule" ||
-    captureCategory === "unmet_need"
-    ? captureCategory
-    : null;
+  return isWorkflowSubmissionCaptureCategory(captureCategory) ? captureCategory : null;
 }
 
 export function matchesSubmissionRoutingTarget(
@@ -180,7 +183,9 @@ export function resolveWorkflowCaptureCategoryFromCaptureClass(
   captureClass: string,
 ): Extract<MemoryProfileCaptureCategory, "workflow_improvement" | "project_rule" | "unmet_need"> {
   const captureCategory = getMemoryProfileByCaptureClass(captureClass)?.capture?.category;
-  return captureCategory === "project_rule" || captureCategory === "unmet_need"
+  return captureCategory === "project_rule" ||
+    captureCategory === "unmet_need" ||
+    captureCategory === "workflow_improvement"
     ? captureCategory
     : "workflow_improvement";
 }
