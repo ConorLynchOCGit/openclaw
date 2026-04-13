@@ -6,7 +6,7 @@ import {
   typeNormalizedMemoryBlockHeuristically,
 } from "./memory-heuristic-block-typing.js";
 import {
-  type ResolvedCanonicalizableIngestion,
+  type ResolvedCompatibilityCanonicalizableIngestion,
   resolveProjectFactIngestion,
   resolveRecurringProcedureIngestion,
   resolveResponseStyleIngestion,
@@ -25,7 +25,7 @@ import { type NormalizedMemoryBlock } from "./memory-source-normalization.js";
 export type MemorySemanticPlanSummary = {
   planner: "heuristic" | "model";
   blockType?: HeuristicMemoryBlockType;
-  category: DocumentMemoryIngestionCategory;
+  compatibilityCategory: DocumentMemoryIngestionCategory;
   subject: string;
   statement: string;
   confidence: string;
@@ -48,7 +48,7 @@ function readComparisonCaptureSeam(
 }
 
 function resolveComparisonCategory(
-  ingestion: ResolvedCanonicalizableIngestion,
+  ingestion: ResolvedCompatibilityCanonicalizableIngestion,
 ): DocumentMemoryIngestionCategory {
   return "captureCategory" in ingestion ? ingestion.captureCategory : ingestion.familyId;
 }
@@ -57,7 +57,7 @@ function buildSummary(params: {
   planner: "heuristic" | "model";
   blockType?: HeuristicMemoryBlockType;
   lane: MemorySemanticInterpretationLane;
-  ingestion: ResolvedCanonicalizableIngestion;
+  ingestion: ResolvedCompatibilityCanonicalizableIngestion;
   projectId?: string;
 }): MemorySemanticPlanSummary {
   const canonicalCandidate = buildCanonicalMemoryIngestionCandidateFromResolvedIngestion({
@@ -71,7 +71,7 @@ function buildSummary(params: {
   return {
     planner: params.planner,
     blockType: params.blockType,
-    category: resolveComparisonCategory(params.ingestion),
+    compatibilityCategory: resolveComparisonCategory(params.ingestion),
     subject: canonicalCandidate.record.subject,
     statement: canonicalCandidate.record.statement,
     confidence: params.ingestion.confidence,
@@ -212,7 +212,7 @@ export function summarizePlannedModelDecision(params: {
   const projection = primaryCapture.materialized.projection;
   return {
     planner: "model",
-    category: projection.category,
+    compatibilityCategory: projection.compatibilityCategory,
     subject: projection.canonicalCandidate.record.subject,
     statement: projection.canonicalCandidate.record.statement,
     confidence: primaryCapture.validated.confidence,

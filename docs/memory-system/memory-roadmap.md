@@ -145,6 +145,14 @@ Current Pass 1 closure evidence:
 The next roadmap phase is now Pass 2 runtime semantic cutover, not more Phase
 1 closure work.
 
+The active critical-audit sprint also tightened the quality bar for Pass 2:
+
+- compatibility buckets must stay visibly secondary to the four canonical
+  classes
+- semantic proof must assert structured objects, not exact canonical wording
+- branch-line convergence onto `origin/main` remains required before the memory
+  architecture can be claimed as one landed system
+
 The concrete runtime rewrite contract for the current semantic tranche is now
 also captured in
 `/memory-system/specs/source-window-model-native-semantic-boundary`.
@@ -158,6 +166,33 @@ That spec makes the Pass 1 end-state more concrete:
 - live proof remains an explicit stored-model-evidence lane
 - sibling-heading overmerge is treated as a provenance bug, not an acceptable
   batching shortcut
+
+The active local Pass 2 implementation sprint now also has dedicated slice
+specs and local landed code for:
+
+- lane-agnostic semantic planning
+- canonical memory-object unification
+- review-policy redesign
+- dedupe and supersession identity redesign
+- model-native procedure extraction parity
+- model-native preference and correction capture on the shared seam
+- routing/reference object-native packaging
+- capture-service convergence
+- heuristic semantic retirement in normal runtime
+- cross-lane replay proof
+
+Those local slice specs live in:
+
+- `/memory-system/specs/pass-2-slice-15-lane-agnostic-semantic-planner`
+- `/memory-system/specs/pass-2-slice-16-canonical-memory-object-unification`
+- `/memory-system/specs/pass-2-slice-17-review-policy-redesign`
+- `/memory-system/specs/pass-2-slice-18-dedupe-and-supersession-redesign`
+- `/memory-system/specs/pass-2-slice-19-model-native-procedure-extraction`
+- `/memory-system/specs/pass-2-slice-20-model-native-preference-and-correction-capture`
+- `/memory-system/specs/pass-2-slice-21-model-native-routing-reference-interpretation`
+- `/memory-system/specs/pass-2-slice-22-capture-service-convergence`
+- `/memory-system/specs/pass-2-slice-27-full-heuristic-semantic-retirement`
+- `/memory-system/specs/pass-2-slice-28-cross-lane-replay-harness`
 
 ## Phase A — existing-family parity
 

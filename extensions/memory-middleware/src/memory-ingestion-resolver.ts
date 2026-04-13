@@ -53,6 +53,14 @@ import {
 } from "./workflow-improvement-semantic.js";
 import { findApprovedWorkflowPhrasePatternMatch } from "./workflow-phrase-induction.js";
 
+// Legacy compatibility resolver only.
+// Normal runtime semantic ownership lives on the source-window model seam.
+// This module survives only for quarantined compatibility paths and comparison tools.
+
+function isLegacySemanticFallbackEnabled(): boolean {
+  return process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK === "1";
+}
+
 export type IngestionTextSource = "content" | "raw" | "transcript";
 
 export type ResponseStyleIngestionMode =
@@ -99,7 +107,7 @@ export type ResolvedProjectFactIngestion = {
   parsed: OrdinaryTurnAutoCaptureMatch;
   factFamily: ProjectFactFamily;
   fieldKey?: ProjectFactFieldKey;
-  reviewMode: "pending_confirmation" | "hold_for_more_evidence";
+  reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
   source: IngestionTextSource;
   detectionSource: "deterministic" | "semantic";
   confidence: "high" | ProjectFactSemanticConfidence;
@@ -164,7 +172,11 @@ type WorkflowSemanticDetectorProfile = {
   acceptedCaptureCategories: readonly ("workflow_improvement" | "project_rule" | "unmet_need")[];
 };
 
-export type WorkflowCaptureCategory = "workflow_improvement" | "project_rule" | "unmet_need";
+export type CompatibilityWorkflowCaptureCategory =
+  | "workflow_improvement"
+  | "project_rule"
+  | "unmet_need";
+export type WorkflowCaptureCategory = CompatibilityWorkflowCaptureCategory;
 
 type ProjectFactSemanticCaptureDecision = Extract<
   | ReturnType<typeof detectProjectFactSemanticDecision>
@@ -670,7 +682,7 @@ export async function resolveResponseStyleIngestion(params: {
         };
       }
 
-      if (params.allowPhrasePatternMatch) {
+      if (params.allowPhrasePatternMatch && isLegacySemanticFallbackEnabled()) {
         const phraseMatch = await findApprovedResponseStylePhrasePatternMatch({
           config: params.config,
           text,
@@ -692,6 +704,9 @@ export async function resolveResponseStyleIngestion(params: {
         }
       }
 
+      if (!isLegacySemanticFallbackEnabled()) {
+        return null;
+      }
       const semanticResolution = resolveResponseStyleSemanticDecision({
         text,
         profile,
@@ -772,6 +787,9 @@ export function resolveProjectFactIngestion(params: {
         };
       }
 
+      if (!isLegacySemanticFallbackEnabled()) {
+        return null;
+      }
       const semanticResolution = resolveProjectFactSemanticDecision({
         text,
         expectedCaptureClass: profile.expectedCaptureClass,
@@ -805,6 +823,9 @@ export function resolveRecurringProcedureIngestion(params: {
     primarySource: params.primarySource,
     rawCandidates: params.rawCandidates,
     tryResolve: async (text) => {
+      if (!isLegacySemanticFallbackEnabled()) {
+        return null;
+      }
       const semanticResolution = resolveRecurringProcedureSemanticDecision(text);
       if (!semanticResolution) {
         return null;
@@ -847,6 +868,8 @@ export type ResolvedCanonicalizableIngestion =
   | ResolvedRecurringProcedureIngestion
   | ResolvedWorkflowIngestion
   | Extract<ResolvedResponseStyleIngestion, { action: "capture" }>;
+
+export type ResolvedCompatibilityCanonicalizableIngestion = ResolvedCanonicalizableIngestion;
 
 function resolveWorkflowSemanticDecision(text: string): {
   profileId: WorkflowSemanticDetectorProfile["id"];
@@ -935,7 +958,7 @@ async function resolveWorkflowImprovementText(params: {
   allowPhrasePatternMatch: boolean;
   source: IngestionTextSource;
 }): Promise<Omit<ResolvedWorkflowIngestion, "source" | "observedText"> | null> {
-  if (params.allowPhrasePatternMatch && params.projectId) {
+  if (params.allowPhrasePatternMatch && params.projectId && isLegacySemanticFallbackEnabled()) {
     const deterministicPattern = await findApprovedWorkflowPhrasePatternMatch({
       config: params.config,
       text: params.text,
@@ -959,6 +982,9 @@ async function resolveWorkflowImprovementText(params: {
     }
   }
 
+  if (!isLegacySemanticFallbackEnabled()) {
+    return null;
+  }
   const semanticResolution = resolveWorkflowSemanticDecision(params.text);
   if (semanticResolution) {
     const { decision } = semanticResolution;

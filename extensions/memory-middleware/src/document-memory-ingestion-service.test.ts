@@ -4,10 +4,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveMemoryMiddlewareConfig } from "./config.js";
 import { createDocumentMemoryIngestionService } from "./document-memory-ingestion-service.js";
-import { createLegacySemanticTestScaffoldInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
+import { createHeuristicReplayScaffoldInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
 
 const config = resolveMemoryMiddlewareConfig({});
-const semanticInterpreter = createLegacySemanticTestScaffoldInterpreter();
+const semanticInterpreter = createHeuristicReplayScaffoldInterpreter();
 
 describe("document memory ingestion service", () => {
   const tempDirs: string[] = [];
@@ -46,9 +46,13 @@ describe("document memory ingestion service", () => {
     expect(plan.counts.byCategory.response_style).toBe(3);
 
     const conciseCandidate = plan.candidates.find(
-      (candidate) => candidate.canonicalCandidate.record.statement === "keep responses concise",
+      (candidate) =>
+        candidate.semanticObject.kind === "preference" &&
+        candidate.semanticObject.preferenceProfile === "concise" &&
+        candidate.semanticObject.instruction === "keep responses concise",
     );
     expect(conciseCandidate).toBeDefined();
+    expect(conciseCandidate?.canonicalCandidate.record.kind).toBe("user");
     expect(conciseCandidate?.duplicateCount).toBe(1);
     expect(conciseCandidate?.suppressedDuplicates).toHaveLength(1);
     expect(conciseCandidate?.submission.metadata.documentIngestion).toMatchObject({
@@ -57,8 +61,11 @@ describe("document memory ingestion service", () => {
       headingPath: ["User profile", "Response defaults"],
     });
 
-    const repoRelativeCandidate = plan.candidates.find((candidate) =>
-      candidate.canonicalCandidate.record.statement.includes("use repo-root relative paths"),
+    const repoRelativeCandidate = plan.candidates.find(
+      (candidate) =>
+        candidate.semanticObject.kind === "preference" &&
+        candidate.semanticObject.subject === "file references" &&
+        candidate.semanticObject.instruction === "use repo-root relative paths",
     );
     expect(repoRelativeCandidate).toMatchObject({
       lineStart: 9,
@@ -114,10 +121,21 @@ describe("document memory ingestion service", () => {
     expect(plan.counts.byCategory.project_rule).toBe(1);
 
     const recurringProcedure = plan.candidates.find(
-      (candidate) => candidate.category === "recurring_procedure",
+      (candidate) =>
+        candidate.semanticObject.kind === "procedure" &&
+        candidate.semanticObject.steps.some((step) => step.includes("signed evidence bundle")),
     );
-    expect(recurringProcedure?.canonicalCandidate.record.statement).toContain(
-      "Capture the signed evidence bundle",
+    expect(recurringProcedure?.canonicalCandidate.record.kind).toBe("feedback");
+    expect(recurringProcedure?.semanticObject.kind).toBe("procedure");
+    expect(
+      recurringProcedure?.semanticObject.kind === "procedure"
+        ? recurringProcedure.semanticObject.steps
+        : [],
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("signed evidence bundle"),
+        expect.stringContaining("audit channel"),
+      ]),
     );
     expect(recurringProcedure?.submission.metadata.documentIngestion).toMatchObject({
       profileId: "project_operating",
@@ -125,17 +143,29 @@ describe("document memory ingestion service", () => {
       headingPath: ["Atlas Forge Operating Notes", "Release Evidence Handoff Checklist"],
     });
 
-    const unmetNeed = plan.candidates.find((candidate) => candidate.category === "unmet_need");
-    expect(unmetNeed?.canonicalCandidate.record.statement).toContain("release evidence template");
-
-    const projectRule = plan.candidates.find((candidate) => candidate.category === "project_rule");
-    expect(projectRule?.canonicalCandidate.record.statement.toLowerCase()).toContain(
-      "update the english docs first and rerun docs i18n",
+    const unmetNeed = plan.candidates.find(
+      (candidate) =>
+        candidate.semanticObject.kind === "correction" &&
+        candidate.semanticObject.correctionKind === "missing_capability" &&
+        candidate.semanticObject.neededCapability === "a release evidence template",
     );
+    expect(unmetNeed?.canonicalCandidate.record.kind).toBe("project");
+
+    const projectRule = plan.candidates.find(
+      (candidate) =>
+        candidate.semanticObject.kind === "correction" &&
+        candidate.semanticObject.correctionKind === "project_rule" &&
+        candidate.semanticObject.recommendedAction ===
+          "update the English docs first and rerun docs i18n" &&
+        candidate.semanticObject.avoidAction === "edit docs/zh-CN directly",
+    );
+    expect(projectRule?.canonicalCandidate.record.kind).toBe("feedback");
 
     expect(
-      plan.candidates.some((candidate) =>
-        candidate.canonicalCandidate.record.statement.includes("rollout plan is still messy"),
+      plan.candidates.some(
+        (candidate) =>
+          candidate.semanticObject.kind === "project_fact" &&
+          candidate.semanticObject.value.includes("rollout plan is still messy"),
       ),
     ).toBe(false);
   });
@@ -193,35 +223,43 @@ describe("document memory ingestion service", () => {
     expect(plan.counts.byCategory.workflow_improvement).toBe(4);
 
     expect(
-      plan.candidates.some((candidate) =>
-        candidate.canonicalCandidate.record.statement.includes("pnpm runtime:proof:fast"),
-      ),
-    ).toBe(true);
-    expect(
-      plan.candidates.some((candidate) =>
-        candidate.canonicalCandidate.record.statement.includes("scripts/committer"),
-      ),
-    ).toBe(true);
-    expect(
-      plan.candidates.some((candidate) =>
-        candidate.canonicalCandidate.record.statement.includes(
-          "use pnpm check:fast instead of full pnpm check or pnpm build",
-        ),
+      plan.candidates.some(
+        (candidate) =>
+          candidate.semanticObject.kind === "correction" &&
+          candidate.semanticObject.recommendedAction === "pnpm runtime:proof:fast",
       ),
     ).toBe(true);
     expect(
       plan.candidates.some(
         (candidate) =>
-          candidate.canonicalCandidate.record.statement.includes("trust /readyz") &&
-          candidate.canonicalCandidate.record.statement.includes("/healthz"),
+          candidate.semanticObject.kind === "correction" &&
+          candidate.semanticObject.recommendedAction?.includes("scripts/committer"),
+      ),
+    ).toBe(true);
+    expect(
+      plan.candidates.some(
+        (candidate) =>
+          candidate.semanticObject.kind === "correction" &&
+          candidate.semanticObject.subject === "docs-only work" &&
+          candidate.semanticObject.recommendedAction === "pnpm check:fast" &&
+          candidate.semanticObject.avoidAction === "full pnpm check or pnpm build",
+      ),
+    ).toBe(true);
+    expect(
+      plan.candidates.some(
+        (candidate) =>
+          candidate.semanticObject.kind === "correction" &&
+          candidate.semanticObject.recommendedAction === "/readyz" &&
+          candidate.semanticObject.avoidAction === "/healthz",
       ),
     ).toBe(true);
     expect(
       plan.candidates.some(
         (candidate) =>
           candidate.category === "workflow_improvement" &&
-          candidate.canonicalCandidate.record.statement.includes("trust /readyz") &&
-          candidate.canonicalCandidate.record.statement.includes("/healthz"),
+          candidate.semanticObject.kind === "correction" &&
+          candidate.semanticObject.recommendedAction === "/readyz" &&
+          candidate.semanticObject.avoidAction === "/healthz",
       ),
     ).toBe(true);
   });
@@ -251,23 +289,27 @@ describe("document memory ingestion service", () => {
       plan.candidates.some(
         (candidate) =>
           candidate.category === "reference_routing" &&
-          candidate.canonicalCandidate.record.statement.includes(
-            "For slice landing workflow, use Testing and Release Policy.",
-          ),
+          candidate.semanticObject.kind === "routing" &&
+          candidate.semanticObject.task === "slice landing workflow" &&
+          candidate.semanticObject.primaryResource === "Testing" &&
+          candidate.semanticObject.companionResources?.includes("Release Policy"),
       ),
     ).toBe(true);
     expect(
       plan.candidates.some(
         (candidate) =>
           candidate.category === "reference_routing" &&
-          candidate.canonicalCandidate.record.statement.includes(
-            "For the repo's default feature, integration, or production bar, use Landing Gate Tiers.",
-          ),
+          candidate.semanticObject.kind === "routing" &&
+          candidate.semanticObject.task ===
+            "the repo's default feature, integration, or production bar" &&
+          candidate.semanticObject.primaryResource === "Landing Gate Tiers",
       ),
     ).toBe(true);
     expect(
-      plan.candidates.some((candidate) =>
-        candidate.canonicalCandidate.record.statement.includes("decides when to pay them"),
+      plan.candidates.some(
+        (candidate) =>
+          candidate.semanticObject.kind === "routing" &&
+          candidate.semanticObject.task.includes("decides when to pay them"),
       ),
     ).toBe(false);
   });
@@ -310,7 +352,9 @@ describe("document memory ingestion service", () => {
       plan.candidates.some(
         (candidate) =>
           candidate.category === "recurring_procedure" &&
-          candidate.canonicalCandidate.record.statement.includes("Default local loop") &&
+          candidate.semanticObject.kind === "procedure" &&
+          candidate.semanticObject.title.includes("Quick start") &&
+          candidate.semanticObject.steps.some((step) => step.includes("Default local loop")) &&
           candidate.headingPath.join(" > ").includes("Quick start"),
       ),
     ).toBe(true);
@@ -318,8 +362,9 @@ describe("document memory ingestion service", () => {
       plan.candidates.some(
         (candidate) =>
           candidate.category === "recurring_procedure" &&
-          candidate.canonicalCandidate.record.statement.includes(
-            "Do not start those commands in parallel on the same checkout",
+          candidate.semanticObject.kind === "procedure" &&
+          candidate.semanticObject.steps.some((step) =>
+            step.includes("Do not start those commands in parallel on the same checkout"),
           ),
       ),
     ).toBe(true);
@@ -327,14 +372,16 @@ describe("document memory ingestion service", () => {
       plan.candidates.some(
         (candidate) =>
           candidate.category === "reference_routing" &&
-          candidate.canonicalCandidate.record.statement.includes("Slice Landing Workflow"),
+          candidate.semanticObject.kind === "routing" &&
+          candidate.semanticObject.primaryResource === "Slice Landing Workflow",
       ),
     ).toBe(true);
     expect(
       plan.candidates.some(
         (candidate) =>
           candidate.category === "reference_routing" &&
-          candidate.canonicalCandidate.record.statement.includes("Landing Gate Tiers"),
+          candidate.semanticObject.kind === "routing" &&
+          candidate.semanticObject.primaryResource === "Landing Gate Tiers",
       ),
     ).toBe(true);
   });

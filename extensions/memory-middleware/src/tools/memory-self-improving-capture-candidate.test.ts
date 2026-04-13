@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { OpenClawPluginToolContext } from "../../api.js";
 import type { CandidateIngressPort } from "../candidate-ingress.js";
 import type { CandidateSubmissionInput, CandidateSubmissionResult } from "../db/runtime.js";
+import { createHeuristicReplayScaffoldInterpreter } from "../memory-semantic-interpreter.test-helpers.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import {
   createSelfImprovingCandidateCapturePort,
@@ -139,6 +140,7 @@ function createRuntime(params?: {
           defaultMaxSuggestions: 3,
         },
       },
+      interpreter: createHeuristicReplayScaffoldInterpreter(),
       candidateIngress: candidateIngress as unknown as CandidateIngressPort,
       candidateReview: {
         review: vi.fn(async () => ({
@@ -224,10 +226,15 @@ describe("memory_self_improving_capture_candidate tool", () => {
         semanticDetection: {
           source: "workflow_improvement_semantic_v2",
           detectionSource: "semantic",
-          confidence: "high",
+          confidence: "medium",
           lessonFamily: "generalized_workflow_lesson",
           guidancePattern: "use_instead_of",
-          evidence: ["tool_scripts_committer", "commit_guidance", "replacement_phrase"],
+          evidence: [
+            "model_semantic_output",
+            "canonical_class:feedback",
+            "object_kind:correction",
+            "model_rationale:test helper mapped scripts/committer scoped-staging guidance",
+          ],
         },
         candidateLifecycle: expect.objectContaining({
           family: "workflow_improvement",

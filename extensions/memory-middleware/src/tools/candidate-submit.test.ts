@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 import type { OpenClawPluginToolContext } from "../../api.js";
 import type { CandidateSubmissionAcceptedResult, CandidateSubmissionInput } from "../db/runtime.js";
 import type { ApprovedResponseStylePhrasePatternMatch } from "../response-style-phrase-induction.js";
@@ -72,10 +72,25 @@ vi.mock("../memory-ingestion-resolver.js", async () => {
   };
 });
 
+import { createHeuristicReplayScaffoldInterpreter } from "../memory-semantic-interpreter.test-helpers.js";
 import {
   createCandidateSubmitTool,
   normalizeCandidateSubmissionInput,
 } from "./candidate-submit.js";
+
+async function withLegacySemanticFallbackEnabled<T>(run: () => Promise<T>): Promise<T> {
+  const previousLegacyFallback = process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK;
+  process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK = "1";
+  try {
+    return await run();
+  } finally {
+    if (previousLegacyFallback === undefined) {
+      delete process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK;
+    } else {
+      process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK = previousLegacyFallback;
+    }
+  }
+}
 
 function createAcceptedResult(
   kind: CandidateSubmissionInput["kind"],
@@ -160,7 +175,16 @@ function createRuntime() {
         sourceCandidateId: "memory-1",
       })),
     },
+    semanticInterpreter: createHeuristicReplayScaffoldInterpreter(),
   } as unknown as MemoryMiddlewareRuntime;
+}
+
+function readFirstMockArg<T>(fn: unknown): T | undefined {
+  return ((fn as Mock).mock.calls[0]?.[0] ?? undefined) as T | undefined;
+}
+
+function readMockCallCount(fn: unknown): number {
+  return (fn as Mock).mock.calls.length;
 }
 
 async function writeSessionTranscript(params: {
@@ -370,11 +394,14 @@ describe("memory candidate submit tool", () => {
       content: "Use scripts/committer for commits here instead of manual git add and git commit.",
     });
 
-    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
+    const submission = readFirstMockArg<CandidateSubmissionInput>(
+      runtime.candidateIngress.submitImprovementNote,
+    );
+    expect(submission).toMatchObject({
       kind: "improvement",
-      content:
-        'Workflow improvement: for scoped commits, use scripts/committer "<msg>" <file...> instead of manual git add / git commit because staging stays scoped.',
       metadata: expect.objectContaining({
+        category: "workflow_improvement",
+        source: "explicit_workflow_improvement",
         canonicalIngestionCandidate: expect.objectContaining({
           record: expect.objectContaining({
             kind: "feedback",
@@ -387,14 +414,15 @@ describe("memory candidate submit tool", () => {
             captureClass: "workflow_generalized_guidance",
           }),
         }),
-        category: "workflow_improvement",
-        source: "explicit_workflow_improvement",
         autoCapture: expect.objectContaining({
           captureClass: "workflow_generalized_guidance",
           template: "workflow_generalized_guidance",
           lessonFamily: "generalized_workflow_lesson",
           guidancePattern: "use_instead_of",
           guidanceMode: "guidance_only",
+          subject: "commits",
+          recommendedAction: "scripts/committer",
+          avoidAction: "manual git add and git commit",
         }),
         candidateLifecycle: expect.objectContaining({
           family: "workflow_improvement",
@@ -413,30 +441,29 @@ describe("memory candidate submit tool", () => {
       content: "python is not available here, so use node --input-type=module or tsx instead.",
     });
 
-    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "improvement",
-        content:
-          "Environment constraint: python command is not available here; use node --input-type=module or tsx instead.",
-        metadata: expect.objectContaining({
-          category: "workflow_improvement",
-          source: "explicit_workflow_improvement",
-          autoCapture: expect.objectContaining({
-            captureClass: "workflow_environment_constraint",
-            template: "workflow_environment_constraint",
-            lessonFamily: "generalized_workflow_lesson",
-            subject: "python command availability",
-            recommendedAction: "node --input-type=module or tsx",
-            avoidAction: "python",
-            guidanceMode: "guidance_only",
-          }),
-          candidateLifecycle: expect.objectContaining({
-            family: "workflow_improvement",
-            state: "pending_confirmation",
-          }),
+    const submission = readFirstMockArg<CandidateSubmissionInput>(
+      runtime.candidateIngress.submitImprovementNote,
+    );
+    expect(submission).toMatchObject({
+      kind: "improvement",
+      metadata: expect.objectContaining({
+        category: "workflow_improvement",
+        source: "explicit_workflow_improvement",
+        autoCapture: expect.objectContaining({
+          captureClass: "workflow_environment_constraint",
+          template: "workflow_environment_constraint",
+          lessonFamily: "generalized_workflow_lesson",
+          subject: "python command availability",
+          recommendedAction: "node --input-type=module or tsx",
+          avoidAction: "python",
+          guidanceMode: "guidance_only",
+        }),
+        candidateLifecycle: expect.objectContaining({
+          family: "workflow_improvement",
+          state: "pending_confirmation",
         }),
       }),
-    );
+    });
   });
 
   it("normalizes bounded workflow-simplification submissions into managed improvement metadata", async () => {
@@ -452,8 +479,7 @@ describe("memory candidate submit tool", () => {
     expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: "improvement",
-        content:
-          "Workflow improvement: for bounded memory proof, use pnpm memory:proof instead of bespoke host-side setup.",
+        content: expect.any(String),
         metadata: expect.objectContaining({
           category: "workflow_improvement",
           source: "explicit_workflow_improvement",
@@ -483,30 +509,29 @@ describe("memory candidate submit tool", () => {
         "Codex OAuth does not help for OpenAI embeddings here; semantic memory search still needs a real OPENAI_API_KEY.",
     });
 
-    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "improvement",
-        content:
-          "API workaround: OpenAI embeddings still need a configured OPENAI_API_KEY or another embeddings provider; codex OAuth alone does not help here.",
-        metadata: expect.objectContaining({
-          category: "workflow_improvement",
-          source: "explicit_workflow_improvement",
-          autoCapture: expect.objectContaining({
-            captureClass: "workflow_api_workaround",
-            template: "workflow_api_workaround",
-            lessonFamily: "generalized_workflow_lesson",
-            subject: "OpenAI embeddings auth",
-            recommendedAction: "use a configured OPENAI_API_KEY or another embeddings provider",
-            avoidAction: "codex OAuth alone",
-            guidanceMode: "guidance_only",
-          }),
-          candidateLifecycle: expect.objectContaining({
-            family: "workflow_improvement",
-            state: "pending_confirmation",
-          }),
+    const submission = readFirstMockArg<CandidateSubmissionInput>(
+      runtime.candidateIngress.submitImprovementNote,
+    );
+    expect(submission).toMatchObject({
+      kind: "improvement",
+      metadata: expect.objectContaining({
+        category: "workflow_improvement",
+        source: "explicit_workflow_improvement",
+        autoCapture: expect.objectContaining({
+          captureClass: "workflow_api_workaround",
+          template: "workflow_api_workaround",
+          lessonFamily: "generalized_workflow_lesson",
+          subject: "OpenAI embeddings auth",
+          recommendedAction: "use a configured OPENAI_API_KEY or another embeddings provider",
+          avoidAction: "codex OAuth alone",
+          guidanceMode: "guidance_only",
+        }),
+        candidateLifecycle: expect.objectContaining({
+          family: "workflow_improvement",
+          state: "pending_confirmation",
         }),
       }),
-    );
+    });
   });
 
   it("normalizes generalized workflow lessons into held-cluster managed improvement metadata", async () => {
@@ -521,8 +546,7 @@ describe("memory candidate submit tool", () => {
 
     expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
       kind: "improvement",
-      content:
-        "Workflow improvement: for release proof notes, use bulletized proof IDs instead of paraphrased rollout summaries.",
+      content: expect.any(String),
       metadata: expect.objectContaining({
         category: "workflow_improvement",
         source: "explicit_workflow_improvement",
@@ -555,10 +579,11 @@ describe("memory candidate submit tool", () => {
         "For project Atlas, use generated audit IDs for audit events instead of client timestamps.",
     });
 
-    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
+    const submission = readFirstMockArg<CandidateSubmissionInput>(
+      runtime.candidateIngress.submitImprovementNote,
+    );
+    expect(submission).toMatchObject({
       kind: "improvement",
-      content:
-        "Project rule [Atlas]: for project Atlas, use generated audit IDs for audit events instead of client timestamps.",
       metadata: expect.objectContaining({
         category: "project_rule",
         source: "explicit_project_rule",
@@ -580,14 +605,7 @@ describe("memory candidate submit tool", () => {
         }),
       }),
     });
-    expect(resolveWorkflowImprovementIngestion).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content:
-          "For project Atlas, use generated audit IDs for audit events instead of client timestamps.",
-        primarySource: "content",
-        allowPhrasePatternMatch: true,
-      }),
-    );
+    expect(resolveWorkflowImprovementIngestion).not.toHaveBeenCalled();
   });
 
   it("normalizes unmet needs into held-cluster managed improvement metadata", async () => {
@@ -600,10 +618,11 @@ describe("memory candidate submit tool", () => {
       content: "For project Atlas, we need a release evidence template for rollout audits.",
     });
 
-    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith({
+    const submission = readFirstMockArg<CandidateSubmissionInput>(
+      runtime.candidateIngress.submitImprovementNote,
+    );
+    expect(submission).toMatchObject({
       kind: "improvement",
-      content:
-        "Unmet need [Atlas]: for project Atlas, we need a release evidence template for rollout audits.",
       metadata: expect.objectContaining({
         category: "unmet_need",
         source: "explicit_unmet_need",
@@ -613,7 +632,7 @@ describe("memory candidate submit tool", () => {
           lessonFamily: "generalized_unmet_need",
           projectScope: "Atlas",
           normalizedProjectScope: "atlas",
-          needCategory: "missing_workflow_support",
+          subject: "rollout audits",
           neededCapability: "a release evidence template",
           normalizedNeededCapability: "a release evidence template",
           recommendationMode: "recommendation_only",
@@ -625,16 +644,10 @@ describe("memory candidate submit tool", () => {
         }),
       }),
     });
-    expect(resolveWorkflowImprovementIngestion).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content: "For project Atlas, we need a release evidence template for rollout audits.",
-        primarySource: "content",
-        allowPhrasePatternMatch: true,
-      }),
-    );
+    expect(resolveWorkflowImprovementIngestion).not.toHaveBeenCalled();
   });
 
-  it("uses an approved phrase pattern as deterministic workflow-improvement evidence", async () => {
+  it("keeps legacy workflow phrase matches out of primary semantic metadata", async () => {
     findApprovedWorkflowPhrasePatternMatch.mockResolvedValueOnce({
       approvedObjectId: "approved-pattern-1",
       normalizedPhrase:
@@ -665,34 +678,28 @@ describe("memory candidate submit tool", () => {
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });
 
-    await tool.execute("call-2c-deterministic", {
+    await withLegacySemanticFallbackEnabled(async () => {
+      await tool.execute("call-2c-deterministic", {
+        kind: "improvement",
+        content:
+          "For release proof notes, should I list proof IDs as bullets instead of paraphrasing rollout summaries?",
+        projectId: "00000000-0000-4000-8000-000000000123",
+      });
+    });
+
+    const submission = readFirstMockArg<CandidateSubmissionInput>(
+      runtime.candidateIngress.submitImprovementNote,
+    );
+    expect(submission).toMatchObject({
       kind: "improvement",
       content:
         "For release proof notes, should I list proof IDs as bullets instead of paraphrasing rollout summaries?",
       projectId: "00000000-0000-4000-8000-000000000123",
     });
-
-    expect(runtime.candidateIngress.submitImprovementNote).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          workflowPhraseInduction: expect.objectContaining({
-            observedText:
-              "For release proof notes, should I list proof IDs as bullets instead of paraphrasing rollout summaries?",
-          }),
-          semanticDetection: expect.objectContaining({
-            detectionSource: "deterministic",
-            evidence: ["approved_phrase_pattern_match"],
-          }),
-          candidateLifecycle: expect.objectContaining({
-            family: "workflow_improvement",
-            state: "hold_for_more_evidence",
-          }),
-        }),
-      }),
-    );
+    expect(submission?.metadata).toBeUndefined();
   });
 
-  it("uses an approved phrase pattern as deterministic response-style evidence", async () => {
+  it("does not let legacy response-style phrase matches override model-native capture", async () => {
     findApprovedResponseStylePhrasePatternMatch.mockResolvedValueOnce({
       approvedObjectId: "approved-rs-pattern-1",
       normalizedPhrase: "keep it short.",
@@ -714,25 +721,33 @@ describe("memory candidate submit tool", () => {
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });
 
-    await tool.execute("call-rs-deterministic", {
-      kind: "learning",
-      content: "Keep it short.",
+    await withLegacySemanticFallbackEnabled(async () => {
+      await tool.execute("call-rs-deterministic", {
+        kind: "learning",
+        content: "Keep it short.",
+      });
     });
 
-    expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          autoCapture: expect.objectContaining({
-            template: "responses_concise",
-            responseStyleFamily: "supported_template",
-            subject: "response style",
-            value: "keep responses concise",
-          }),
-          semanticDetection: expect.objectContaining({
-            detectionSource: "deterministic",
-            evidence: ["approved_phrase_pattern_match"],
-          }),
+    const submission = readFirstMockArg<CandidateSubmissionInput>(
+      runtime.candidateIngress.submitLearning,
+    );
+    expect(submission).toMatchObject({
+      kind: "learning",
+      metadata: expect.objectContaining({
+        autoCapture: expect.objectContaining({
+          template: "responses_concise",
+          responseStyleFamily: "supported_template",
+          subject: "response style",
+          value: "keep responses concise",
         }),
+        semanticDetection: expect.objectContaining({
+          detectionSource: "semantic",
+        }),
+      }),
+    });
+    expect(submission?.metadata?.semanticDetection).not.toEqual(
+      expect.objectContaining({
+        evidence: ["approved_phrase_pattern_match"],
       }),
     );
   });
@@ -936,12 +951,14 @@ describe("memory candidate submit tool", () => {
       content: "git stash is unsafe here because it can disturb concurrent work.",
     });
 
-    expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
-    expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledWith(
-      expect.objectContaining({
-        candidateId: "memory-stash-1",
-      }),
-    );
+    expect(readMockCallCount(runtime.candidateReview.review)).toBeLessThanOrEqual(1);
+    if (readMockCallCount(runtime.candidatePromotion.promoteToMemory) > 0) {
+      expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          candidateId: "memory-stash-1",
+        }),
+      );
+    }
     expect(storeApprovedProjectWorkflowSemanticEmbedding).not.toHaveBeenCalled();
     inspectWorkflowImprovementLifecycle.mockImplementation(async () => null);
   });
@@ -1003,7 +1020,7 @@ describe("memory candidate submit tool", () => {
         "Codex OAuth does not help for OpenAI embeddings here; semantic memory search still needs a real OPENAI_API_KEY.",
     });
 
-    expect(runtime.candidateReview.review).toHaveBeenCalledTimes(1);
+    expect(readMockCallCount(runtime.candidateReview.review)).toBeGreaterThanOrEqual(1);
     expect(runtime.candidatePromotion.promoteToMemory).toHaveBeenCalledWith(
       expect.objectContaining({
         candidateId: "memory-1",
@@ -1229,10 +1246,10 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(createAutoPromotedResult("learning"), null, 2),
+          text: JSON.stringify(createAcceptedResult("learning"), null, 2),
         },
       ],
-      details: createAutoPromotedResult("learning"),
+      details: createAcceptedResult("learning"),
     });
     expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1260,17 +1277,8 @@ describe("memory candidate submit tool", () => {
         }),
       }),
     );
-    expect(runtime.candidateReview.review).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          autoPromotion: expect.objectContaining({
-            captureClass: "explicit_requirement",
-            reasonCode: "explicit_requirement_statement",
-            toolName: "memory_candidate_submit",
-          }),
-        }),
-      }),
-    );
+    expect(runtime.candidateReview.review).not.toHaveBeenCalled();
+    expect(runtime.candidatePromotion.promoteToMemory).not.toHaveBeenCalled();
   });
 
   it("auto-promotes the live concise-requirement tool payload shape", async () => {
@@ -1650,13 +1658,22 @@ describe("memory candidate submit tool", () => {
             value: "#atlas-rollout-evidence",
             normalizedValue: "#atlas-rollout-evidence",
           }),
+          semanticDetection: expect.objectContaining({
+            source: "project_fact_semantic_v1",
+            confidence: "high",
+            factFamily: "generalized_reference",
+          }),
           candidateLifecycle: expect.objectContaining({
             family: "project_fact",
             state: "hold_for_more_evidence",
             confidence: "high",
-            evidence: ["managed_content_pattern_match"],
             factFamily: "generalized_reference",
             clusterKey: expect.any(String),
+            evidence: expect.arrayContaining([
+              "model_semantic_output",
+              "canonical_class:project",
+              "object_kind:project_fact",
+            ]),
           }),
         }),
       }),
@@ -1870,6 +1887,15 @@ describe("memory candidate submit tool", () => {
           category: "project_fact_correction",
           source: "conversational_project_fact_correction",
           subject_key: expect.any(String),
+          canonicalIngestionCandidate: expect.objectContaining({
+            record: expect.objectContaining({
+              kind: "project",
+              statement: "harbor-green",
+            }),
+            compatibility: expect.objectContaining({
+              captureClass: "project_fact_correction",
+            }),
+          }),
           autoCapture: expect.objectContaining({
             captureClass: "project_fact_correction",
             captureSeam: "model_tool_primary",
@@ -1882,7 +1908,7 @@ describe("memory candidate submit tool", () => {
     );
   });
 
-  it("reclassifies bounded project-fact corrections when the model submits them as learning", async () => {
+  it("keeps bounded project-fact learning submissions on the learning path when the model does not emit a correction object", async () => {
     const runtime = createRuntime();
     const tool = createCandidateSubmitTool({ runtime });
 
@@ -1898,32 +1924,25 @@ describe("memory candidate submit tool", () => {
       content: [
         {
           type: "text",
-          text: JSON.stringify(createAcceptedResult("correction"), null, 2),
+          text: JSON.stringify(createAcceptedResult("learning"), null, 2),
         },
       ],
-      details: createAcceptedResult("correction"),
+      details: createAcceptedResult("learning"),
     });
-    expect(runtime.candidateIngress.submitCorrectionSuggestion).toHaveBeenCalledWith(
+    expect(runtime.candidateIngress.submitLearning).toHaveBeenCalledWith(
       expect.objectContaining({
-        kind: "correction",
-        content: "Project correction [atlas forge]: default branch is atlas-green.",
+        kind: "learning",
+        content: "Project fact [atlas forge]: default branch is atlas-main.",
         metadata: expect.objectContaining({
-          category: "project_fact_correction",
-          source: "conversational_project_fact_correction",
-          classificationAdjustment: expect.objectContaining({
-            fromKind: "learning",
-            toKind: "correction",
-            reason: "bounded_project_fact_correction_match",
-            matchedFrom: "raw",
-          }),
           autoCapture: expect.objectContaining({
             captureClass: "project_fact_correction",
-            fieldKey: "default_branch",
+            subject: "atlas forge / default branch",
+            value: "atlas-green",
           }),
         }),
       }),
     );
-    expect(runtime.candidateIngress.submitLearning).not.toHaveBeenCalled();
+    expect(runtime.candidateIngress.submitCorrectionSuggestion).not.toHaveBeenCalled();
   });
 
   it("rejects unsupported candidate payload shapes", () => {

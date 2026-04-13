@@ -336,7 +336,7 @@ function dedupeSemanticObjects(objects: MemorySemanticObject[]): MemorySemanticO
  * proof surfaces move to replayed or stored model outputs. Do not use this as
  * semantic evidence for model-native correctness.
  */
-export function createLegacySemanticTestScaffoldInterpreter(): MemorySemanticInterpreterPort {
+export function createHeuristicReplayScaffoldInterpreter(): MemorySemanticInterpreterPort {
   function decideWindow(
     input: MemorySemanticInterpretationInput,
     allowBlockExpansion: boolean,
@@ -419,6 +419,70 @@ export function createLegacySemanticTestScaffoldInterpreter(): MemorySemanticInt
         action: "ignore",
         confidence: "weak",
         rationale: ["test helper ignored low-signal filler"],
+      };
+    }
+
+    if (/^forget the table preference[.!?]?$/i.test(singleLine)) {
+      return {
+        action: "capture",
+        objects: [
+          withSpan({
+            kind: "preference",
+            operation: "forget",
+            subject: "response format",
+            instruction: "forget the table preference",
+            preferenceProfile: "no_tables",
+            durability: "durable",
+            confidence: "strong",
+            rationale: ["test helper mapped response-style forget request"],
+          }),
+        ],
+      };
+    }
+
+    if (/^actually,\s*keep replies short[.!?]?$/i.test(singleLine)) {
+      return {
+        action: "capture",
+        objects: [
+          withSpan({
+            kind: "correction",
+            correctionKind: "response_preference",
+            subject: "response style",
+            recommendedAction: "keep responses concise",
+            durability: "durable",
+            confidence: "strong",
+            rationale: ["test helper mapped concise response correction"],
+          }),
+        ],
+      };
+    }
+
+    if (/^actually,\s*start with the direct answer first[.!?]?$/i.test(singleLine)) {
+      return {
+        action: "capture",
+        objects: [
+          withSpan({
+            kind: "correction",
+            correctionKind: "response_preference",
+            subject: "response opening",
+            recommendedAction: "start with the direct answer first",
+            durability: "durable",
+            confidence: "medium",
+            rationale: ["test helper mapped generalized response-opening correction"],
+          }),
+        ],
+      };
+    }
+
+    if (
+      /^actually,\s*for project [a-z0-9][a-z0-9 /_-]{1,80}?,\s+(?:the\s+)?(.+?)\s+is\s+(.+?)[.]?$/i.test(
+        singleLine,
+      )
+    ) {
+      return {
+        action: "ignore",
+        confidence: "weak",
+        rationale: ["test helper deferred explicit project-fact correction to parser fallback"],
       };
     }
 
@@ -988,6 +1052,31 @@ export function createLegacySemanticTestScaffoldInterpreter(): MemorySemanticInt
 
     if (
       /scripts\/committer/i.test(singleLine) &&
+      /\bscoped\b/i.test(singleLine) &&
+      /\bstaging\b/i.test(singleLine)
+    ) {
+      return {
+        action: "capture",
+        objects: [
+          withSpan({
+            kind: "correction",
+            correctionKind: "workflow_guidance",
+            workflowProfile: "general_guidance",
+            subject: "scoped commits",
+            recommendedAction: 'scripts/committer "<msg>" <file...>',
+            avoidAction: "manual git add / git commit",
+            guidancePattern: "use_instead_of",
+            rationaleText: "staging stays scoped",
+            durability: "durable",
+            confidence: "medium",
+            rationale: ["test helper mapped scripts/committer scoped-staging guidance"],
+          }),
+        ],
+      };
+    }
+
+    if (
+      /scripts\/committer/i.test(singleLine) &&
       (/\bgit add\b/i.test(singleLine) ||
         /\bgit commit\b/i.test(singleLine) ||
         /\bscoped commits?\b/i.test(singleLine))
@@ -1240,9 +1329,17 @@ export function createLegacySemanticTestScaffoldInterpreter(): MemorySemanticInt
 }
 
 /**
- * Deprecated compatibility alias. Prefer createLegacySemanticTestScaffoldInterpreter()
+ * Deprecated compatibility alias. Prefer createHeuristicReplayScaffoldInterpreter()
+ * so tests cannot mistake this helper for semantic proof.
+ */
+export function createLegacySemanticTestScaffoldInterpreter(): MemorySemanticInterpreterPort {
+  return createHeuristicReplayScaffoldInterpreter();
+}
+
+/**
+ * Deprecated compatibility alias. Prefer createHeuristicReplayScaffoldInterpreter()
  * so tests cannot mistake this helper for semantic proof.
  */
 export function createRuleBasedTestMemorySemanticInterpreter(): MemorySemanticInterpreterPort {
-  return createLegacySemanticTestScaffoldInterpreter();
+  return createHeuristicReplayScaffoldInterpreter();
 }

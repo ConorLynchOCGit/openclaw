@@ -1,3 +1,6 @@
+// Legacy compatibility sidecar only.
+// Phrase induction must never outrank model-owned semantic objects as the source of truth.
+
 import type { PluginLogger } from "../api.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
 import { getPhrasePatternProofFamilyId } from "./memory-proof-policy.js";
@@ -263,6 +266,10 @@ export async function inspectResponseStylePhrasePatternLifecycle(params: {
   });
 }
 
+/**
+ * Legacy compatibility matcher retained for explicit degraded-mode fallback and
+ * proof tooling. Phrase patterns are not the primary semantic truth surface.
+ */
 export async function findApprovedResponseStylePhrasePatternMatch(params: {
   config: MemoryMiddlewareConfig;
   text: string;
@@ -354,6 +361,10 @@ export async function findApprovedResponseStylePhrasePatternMatch(params: {
   });
 }
 
+/**
+ * Legacy compatibility induction path retained for degraded-mode fallback and
+ * proof tooling. Phrase patterns are not the primary semantic truth surface.
+ */
 export async function maybeInduceResponseStylePhrasePattern(params: {
   config: MemoryMiddlewareConfig;
   candidateIngress: CandidateIngressLike;

@@ -13,16 +13,16 @@ import {
   type CompatibilityMemoryProfileId,
 } from "./memory-compatibility-profile.js";
 import type {
-  ResolvedCanonicalizableIngestion,
+  CompatibilityWorkflowCaptureCategory,
+  ResolvedCompatibilityCanonicalizableIngestion,
   ResolvedProjectFactIngestion,
   ResolvedRecurringProcedureIngestion,
   ResolvedResponseStyleIngestion,
-  WorkflowCaptureCategory,
 } from "./memory-ingestion-resolver.js";
 import type { OrdinaryTurnAutoCaptureMatch } from "./memory-ingestion-types.js";
 
 export type BuildCanonicalMemoryRecordFromIngestionParams = {
-  ingestion: ResolvedCanonicalizableIngestion;
+  ingestion: ResolvedCompatibilityCanonicalizableIngestion;
   projectId?: string;
   captureSeam: string;
   captureProfile?: string;
@@ -69,13 +69,13 @@ function mapValidationStatus(
 }
 
 function resolveWorkflowCompatibilityProfileId(
-  captureCategory: WorkflowCaptureCategory,
+  captureCategory: CompatibilityWorkflowCaptureCategory,
 ): Extract<CompatibilityMemoryProfileId, "workflow_improvement" | "project_rule" | "unmet_need"> {
   return captureCategory;
 }
 
 function resolveResolvedIngestionCompatibilityProfileId(
-  ingestion: ResolvedCanonicalizableIngestion,
+  ingestion: ResolvedCompatibilityCanonicalizableIngestion,
 ): CompatibilityMemoryProfileId {
   return "captureCategory" in ingestion
     ? resolveWorkflowCompatibilityProfileId(ingestion.captureCategory)
@@ -83,19 +83,19 @@ function resolveResolvedIngestionCompatibilityProfileId(
 }
 
 function isResolvedResponseStyleCaptureIngestion(
-  ingestion: ResolvedCanonicalizableIngestion,
+  ingestion: ResolvedCompatibilityCanonicalizableIngestion,
 ): ingestion is Extract<ResolvedResponseStyleIngestion, { action: "capture" }> {
   return "responseStyleFamily" in ingestion;
 }
 
 function isResolvedProjectFactIngestion(
-  ingestion: ResolvedCanonicalizableIngestion,
+  ingestion: ResolvedCompatibilityCanonicalizableIngestion,
 ): ingestion is ResolvedProjectFactIngestion {
   return "factFamily" in ingestion;
 }
 
 function isResolvedRecurringProcedureIngestion(
-  ingestion: ResolvedCanonicalizableIngestion,
+  ingestion: ResolvedCompatibilityCanonicalizableIngestion,
 ): ingestion is ResolvedRecurringProcedureIngestion {
   return "procedureFamily" in ingestion;
 }

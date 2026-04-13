@@ -47,11 +47,7 @@ import {
   isExpiredPendingProjectFactCandidate,
 } from "../project-fact-lifecycle.js";
 import {
-  detectGenericProjectFactSemanticDecision,
-  detectProjectFactSemanticDecision,
-  isBoundedGenericProjectFactReference,
   isSupportedProjectFactField,
-  normalizeGenericProjectFactSubjectLabel,
   type ProjectFactFamily,
   type ProjectFactFieldKey,
   type ProjectFactSemanticConfidence,
@@ -62,10 +58,7 @@ import {
   supersedeValidatedProceduresBySubjectKey,
 } from "../recurring-procedure-lifecycle.js";
 import {
-  detectRecurringProcedureSemanticDecision,
-  getRecurringProcedureTitle,
   type RecurringProcedureFamily,
-  isSupportedRecurringProcedureKey,
   type RecurringProcedureKey,
   type RecurringProcedureSemanticConfidence,
 } from "../recurring-procedure-semantic.js";
@@ -77,16 +70,7 @@ import {
   inspectResponseStyleLifecycle,
   isExpiredPendingResponseStyleCandidate,
 } from "../response-style-lifecycle.js";
-import {
-  findApprovedResponseStylePhrasePatternMatch,
-  maybeInduceResponseStylePhrasePattern,
-} from "../response-style-phrase-induction.js";
-import {
-  createResponseStyleCanonicalMatch,
-  isResponseStyleCorrectionMatch,
-  isResponseStyleLearningMatch,
-  type ResponseStyleFamily,
-} from "../response-style-semantic.js";
+import { type ResponseStyleFamily } from "../response-style-semantic.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import { storeApprovedProjectWorkflowSemanticEmbedding } from "../semantic-retrieval-routing.js";
 import { resolveCanonicalWorkflowAutoReviewProfile } from "../workflow-canonical-policy.js";
@@ -103,7 +87,6 @@ import {
   type WorkflowImprovementNeedCategory,
   type WorkflowImprovementSemanticConfidence,
 } from "../workflow-improvement-semantic.js";
-import { maybeInduceWorkflowPhrasePattern } from "../workflow-phrase-induction.js";
 import {
   buildCandidateWriteExecutionContext,
   runCandidateWriteResolutionStages,
@@ -398,6 +381,7 @@ function buildFallbackResponseStyleResolution(params: {
   return {
     action: "capture",
     familyId: "response_style",
+    compatibilityProfileId: "response_style",
     parsed: params.parsed,
     responseStyleFamily:
       params.parsed.template === "response_style_generalized_guidance"

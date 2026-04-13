@@ -6,6 +6,7 @@ import type {
   MemorySemanticObject,
   MemorySemanticProvenanceSpan,
 } from "./memory-semantic-interpretation.js";
+import { resolveCanonicalMemoryClassForSemanticObject } from "./memory-semantic-interpretation.js";
 import type { NormalizedMemoryBlock } from "./memory-source-normalization.js";
 import type { NormalizedMemorySourceWindow } from "./memory-source-windowing.js";
 
@@ -82,21 +83,54 @@ function resolveSupportingBlocks(
 }
 
 function buildEvidence(object: MemorySemanticObject): string[] {
+  const canonicalClass = resolveCanonicalMemoryClassForSemanticObject(object);
   return [
     "model_semantic_output",
+    `canonical_class:${canonicalClass}`,
     `object_kind:${object.kind}`,
     ...object.rationale.map((entry) => `model_rationale:${entry}`),
   ];
+}
+
+function hasScopedContext(object: MemorySemanticObject): boolean {
+  return Boolean(
+    object.scope?.projectId || object.scope?.projectScope || object.scope?.workflowScope,
+  );
 }
 
 function resolveReviewMode(
   object: MemorySemanticObject,
   confidence: "high" | "medium",
 ): "direct" | "pending_confirmation" | "hold_for_more_evidence" {
-  if (object.kind === "preference" && confidence === "high" && object.operation === "capture") {
-    return "direct";
+  if (confidence !== "high") {
+    return "hold_for_more_evidence";
   }
-  return confidence === "high" ? "pending_confirmation" : "hold_for_more_evidence";
+
+  switch (object.kind) {
+    case "preference":
+      if (object.operation === "forget") {
+        return "pending_confirmation";
+      }
+      return object.preferenceProfile &&
+        object.preferenceProfile !== "generalized_guidance" &&
+        !hasScopedContext(object)
+        ? "direct"
+        : "pending_confirmation";
+    case "correction":
+      return object.correctionKind === "workflow_guidance" &&
+        object.workflowProfile !== "environment_constraint" &&
+        object.workflowProfile !== "api_workaround"
+        ? "hold_for_more_evidence"
+        : "pending_confirmation";
+    case "procedure":
+      return object.procedureKey ? "pending_confirmation" : "hold_for_more_evidence";
+    case "project_fact":
+      return object.factFieldKey && hasScopedContext(object)
+        ? "pending_confirmation"
+        : "hold_for_more_evidence";
+    case "routing":
+      return "hold_for_more_evidence";
+  }
 }
 
 function validateSemanticObject(params: {

@@ -309,6 +309,7 @@ export function createMemoryMiddlewareRuntime(api: OpenClawPluginApi): MemoryMid
     candidateIngress,
     selfImprovingCandidateCapture: createSelfImprovingCandidateCapturePort({
       config,
+      interpreter: semanticInterpreter,
       candidateIngress,
       candidateReview,
       mode: selfImprovingCaptureMode,

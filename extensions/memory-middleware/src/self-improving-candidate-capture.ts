@@ -1,3 +1,4 @@
+import type { CanonicalMemoryIngestionCandidate } from "openclaw/plugin-sdk/memory-canonical-ingestion";
 import { Client } from "pg";
 import type { CandidateIngressPort } from "./candidate-ingress.js";
 import type { CandidateReviewPort } from "./candidate-review.js";
@@ -12,9 +13,18 @@ import type {
   CandidateSubmissionKind,
   CandidateSubmissionRejectedResult,
 } from "./db/runtime.js";
-import { buildCanonicalMemoryIngestionCandidateFromResolvedIngestion } from "./memory-canonical-compat.js";
-import { resolveWorkflowImprovementIngestion } from "./memory-ingestion-resolver.js";
 import { getMemoryLifecycleRuntimePolicy } from "./memory-runtime-policy-views.js";
+import {
+  collectPlannedMemorySemanticCaptures,
+  pickBestPlannedMemorySemanticCapture,
+  type PlannedWindowSemanticCapture,
+} from "./memory-semantic-capture-service.js";
+import type { MemorySemanticInterpreterPort } from "./memory-semantic-interpretation.js";
+import {
+  normalizeDocumentMemorySource,
+  normalizeTranscriptMemorySource,
+} from "./memory-source-normalization.js";
+import { buildMemorySourceWindows } from "./memory-source-windowing.js";
 import {
   inspectWorkflowImprovementLifecycle,
   isExpiredPendingWorkflowImprovementCandidate,
@@ -112,9 +122,17 @@ const SELF_IMPROVING_CAPTURE_SOURCE = "memory_self_improving_capture_candidate";
 const SELF_IMPROVING_CAPTURE_MODE_DISABLED_REASON =
   "self-improving candidate capture mode is not enabled";
 
-type ResolvedSelfImprovingWorkflowImprovement = Awaited<
-  ReturnType<typeof resolveWorkflowImprovementIngestion>
->;
+type ResolvedSelfImprovingWorkflowImprovement = {
+  parsed: import("./memory-ingestion-types.js").OrdinaryTurnAutoCaptureMatch;
+  lessonFamily: WorkflowImprovementLessonFamily;
+  reviewMode: "pending_confirmation" | "hold_for_more_evidence";
+  guidancePattern?: WorkflowImprovementGuidancePattern;
+  detectionSource: "semantic";
+  confidence: WorkflowImprovementSemanticConfidence;
+  evidence: string[];
+  observedText: string;
+  canonicalCandidate: CanonicalMemoryIngestionCandidate;
+};
 
 function buildRolloutScope(
   allowedCaptureClasses: ReadonlyArray<BoundedWorkflowGuidanceCaptureClass>,
@@ -212,6 +230,139 @@ function asBoundedWorkflowGuidanceCaptureClass(
     BOUNDED_WORKFLOW_GUIDANCE_CAPTURE_CLASSES.includes(value as BoundedWorkflowGuidanceCaptureClass)
     ? (value as BoundedWorkflowGuidanceCaptureClass)
     : null;
+}
+
+type SelfImprovingSemanticCapture = {
+  source: "content" | "raw";
+  capture: PlannedWindowSemanticCapture;
+};
+
+function buildSelfImprovingSourceWindows(params: {
+  input: SelfImprovingCandidateCaptureInput;
+  source: "content" | "raw";
+  text: string;
+}) {
+  const sourceId = `self-improving:${params.input.kind}:${params.source}:${params.input.projectId ?? "global"}`;
+  const blocks =
+    params.source === "content"
+      ? normalizeDocumentMemorySource({
+          source: {
+            kind: "tool_result",
+            sourceId,
+            ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+            ...(params.input.agentId ? { agentId: params.input.agentId } : {}),
+            toolName: "memory_self_improving_capture_candidate",
+            sourceClass: "self_improving_candidate_submission",
+          },
+          content: params.text,
+          maxBlockChars: 2_000,
+        })
+      : normalizeTranscriptMemorySource({
+          source: {
+            kind: "transcript",
+            sourceId,
+            sessionKey: params.input.sessionId ?? "self-improving-raw",
+            ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+            ...(params.input.agentId ? { agentId: params.input.agentId } : {}),
+            sourceClass: "self_improving_candidate_raw",
+          },
+          text: params.text,
+          parentContext: [],
+          maxSegments: 4,
+        });
+  return buildMemorySourceWindows({
+    blocks,
+    maxWindowChars: params.source === "content" ? 3_200 : 2_400,
+    maxBlocksPerWindow: 6,
+  });
+}
+
+async function collectSelfImprovingSemanticCaptures(params: {
+  config: MemoryMiddlewareConfig;
+  interpreter: MemorySemanticInterpreterPort;
+  input: SelfImprovingCandidateCaptureInput;
+}): Promise<SelfImprovingSemanticCapture[]> {
+  const rawCandidates =
+    typeof params.input.metadata?.raw === "string" && params.input.metadata.raw.trim().length > 0
+      ? [{ source: "raw" as const, text: params.input.metadata.raw }]
+      : [];
+  const candidates: Array<{ source: "content" | "raw"; text: string }> = [
+    { source: "content", text: params.input.content },
+    ...rawCandidates,
+  ];
+  const captures: SelfImprovingSemanticCapture[] = [];
+  for (const candidate of candidates) {
+    const windows = buildSelfImprovingSourceWindows({
+      input: params.input,
+      source: candidate.source,
+      text: candidate.text,
+    });
+    const plannedCaptures = await collectPlannedMemorySemanticCaptures({
+      config: params.config,
+      lane: "document_ingestion",
+      windows,
+      interpreter: params.interpreter,
+      ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+    });
+    for (const capture of plannedCaptures.captures) {
+      if (capture.materialized.action !== "capture") {
+        continue;
+      }
+      captures.push({
+        source: candidate.source,
+        capture,
+      });
+    }
+  }
+  return captures;
+}
+
+function pickSelfImprovingWorkflowCapture(
+  captures: SelfImprovingSemanticCapture[],
+): SelfImprovingSemanticCapture | null {
+  const best = pickBestPlannedMemorySemanticCapture(
+    captures.map((entry) => entry.capture),
+    (capture) => {
+      if (capture.materialized.action !== "capture") {
+        return false;
+      }
+      return (
+        capture.materialized.projection.compatibilityCategory === "workflow_improvement" ||
+        capture.materialized.projection.compatibilityCategory === "project_rule" ||
+        capture.materialized.projection.compatibilityCategory === "unmet_need"
+      );
+    },
+  );
+  return best ? (captures.find((entry) => entry.capture === best) ?? null) : null;
+}
+
+async function resolveSelfImprovingWorkflowImprovement(params: {
+  config: MemoryMiddlewareConfig;
+  interpreter: MemorySemanticInterpreterPort;
+  input: SelfImprovingCandidateCaptureInput;
+}): Promise<ResolvedSelfImprovingWorkflowImprovement | null> {
+  const capture = pickSelfImprovingWorkflowCapture(
+    await collectSelfImprovingSemanticCaptures(params),
+  );
+  if (!capture || capture.capture.materialized.action !== "capture") {
+    return null;
+  }
+  const projection = capture.capture.materialized.projection;
+  return {
+    parsed: projection.compatibilityMatch,
+    lessonFamily: projection.lessonFamily ?? "generalized_workflow_lesson",
+    reviewMode:
+      projection.compatibilityMatch.captureClass === "workflow_environment_constraint" ||
+      projection.compatibilityMatch.captureClass === "workflow_api_workaround"
+        ? "pending_confirmation"
+        : "hold_for_more_evidence",
+    ...(projection.guidancePattern ? { guidancePattern: projection.guidancePattern } : {}),
+    detectionSource: "semantic",
+    confidence: projection.confidence,
+    evidence: projection.evidence,
+    observedText: projection.observedText,
+    canonicalCandidate: projection.canonicalCandidate,
+  };
 }
 
 function buildWorkflowImprovementSemanticMetadata(params: {
@@ -385,15 +536,7 @@ function buildCandidateMetadata(params: {
       duplicateOutcome: "new_candidate_cluster",
       replayBlocked: false,
     },
-    canonicalIngestionCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion({
-      ingestion: params.resolution,
-      mode: "candidate_improvement",
-      ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
-      captureSeam: "self_improving_reduced_profile",
-      captureProfile: "reduced_profile_candidate_only",
-      ...(params.input.agentId ? { sourceAgent: params.input.agentId } : {}),
-      ...(params.input.sessionId ? { sourceSession: params.input.sessionId } : {}),
-    }),
+    canonicalIngestionCandidate: params.resolution.canonicalCandidate,
   };
 }
 
@@ -449,6 +592,7 @@ async function findRecentRejectedWorkflowImprovementCandidate(params: {
 
 async function submitWorkflowImprovementCandidate(params: {
   config: MemoryMiddlewareConfig;
+  interpreter: MemorySemanticInterpreterPort;
   candidateIngress: CandidateIngressPort;
   candidateReview: CandidateReviewPort;
   input: SelfImprovingCandidateCaptureInput;
@@ -472,17 +616,10 @@ async function submitWorkflowImprovementCandidate(params: {
     };
   }
 
-  const rawCandidates =
-    typeof params.input.metadata?.raw === "string" && params.input.metadata.raw.trim().length > 0
-      ? [params.input.metadata.raw]
-      : [];
-  const resolution = await resolveWorkflowImprovementIngestion({
+  const resolution = await resolveSelfImprovingWorkflowImprovement({
     config: params.config,
-    content: params.input.content,
-    primarySource: "content",
-    rawCandidates,
-    projectId: params.input.projectId,
-    allowPhrasePatternMatch: true,
+    interpreter: params.interpreter,
+    input: params.input,
   });
 
   if (!resolution) {
@@ -648,6 +785,7 @@ async function submitWorkflowImprovementCandidate(params: {
 
 export function createSelfImprovingCandidateCapturePort(params: {
   config: MemoryMiddlewareConfig;
+  interpreter: MemorySemanticInterpreterPort;
   candidateIngress: CandidateIngressPort;
   candidateReview: CandidateReviewPort;
   mode: "disabled" | "candidate-only";
@@ -728,6 +866,7 @@ export function createSelfImprovingCandidateCapturePort(params: {
 
       return submitWorkflowImprovementCandidate({
         config: params.config,
+        interpreter: params.interpreter,
         candidateIngress: params.candidateIngress,
         candidateReview: params.candidateReview,
         input,

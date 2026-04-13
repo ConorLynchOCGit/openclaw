@@ -19,12 +19,10 @@ import {
   type DocumentMemoryLoadedSource,
   type DocumentMemoryIngestionSubmissionPlan,
 } from "./document-memory-ingestion-types.js";
+import { collectPlannedMemorySemanticCaptures } from "./memory-semantic-capture-service.js";
 import type { MemorySemanticObject } from "./memory-semantic-interpretation.js";
 import type { MemorySemanticInterpreterPort } from "./memory-semantic-interpretation.js";
-import {
-  planNormalizedMemorySourceWindow,
-  type PlannedMemorySemanticCapture,
-} from "./memory-semantic-planner.js";
+import type { PlannedMemorySemanticCapture } from "./memory-semantic-planner.js";
 import {
   normalizeDocumentMemorySource,
   normalizeMemoryText,
@@ -277,7 +275,7 @@ function maybePushExtractedCandidate(
   if (params.capture.materialized.action !== "capture") {
     return;
   }
-  const category = params.capture.materialized.projection.category;
+  const category = params.capture.materialized.projection.compatibilityCategory;
   if (!profile.categories.includes(category)) {
     return;
   }
@@ -404,29 +402,27 @@ async function extractCandidatesFromSource(params: {
     profile: params.profile,
   });
   const extracted: DocumentMemoryExtractedCandidate[] = [];
+  const plannedCaptures = await collectPlannedMemorySemanticCaptures({
+    config: params.config,
+    lane: "document_ingestion",
+    windows,
+    interpreter: params.semanticInterpreter,
+    ...(params.source.projectId ? { projectId: params.source.projectId } : {}),
+  });
 
-  for (const [index, window] of windows.entries()) {
-    const planned = await planNormalizedMemorySourceWindow({
-      config: params.config,
-      lane: "document_ingestion",
-      window,
-      interpreter: params.semanticInterpreter,
-      ...(params.source.projectId ? { projectId: params.source.projectId } : {}),
-    });
-    const segment = segments[index];
+  for (const capture of plannedCaptures.captures) {
+    if (capture.materialized.action !== "capture") {
+      continue;
+    }
+    const segment = segments[capture.windowIndex];
     if (!segment) {
       continue;
     }
-    for (const capture of planned?.captures ?? []) {
-      if (capture.materialized.action !== "capture") {
-        continue;
-      }
-      maybePushExtractedCandidate(extracted, params.profile, {
-        source: params.source,
-        segment,
-        capture,
-      });
-    }
+    maybePushExtractedCandidate(extracted, params.profile, {
+      source: params.source,
+      segment,
+      capture,
+    });
   }
 
   return {

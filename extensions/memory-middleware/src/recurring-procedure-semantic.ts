@@ -1,3 +1,5 @@
+// Legacy compatibility detector only.
+
 import { createHash } from "node:crypto";
 
 export const RECURRING_PROCEDURE_KEYS = [
@@ -442,6 +444,10 @@ export function getRecurringProcedureTitle(procedureKey: RecurringProcedureKey):
   return PROCEDURE_KEY_SPECS[procedureKey].title;
 }
 
+/**
+ * Legacy compatibility detector retained for degraded-mode fallback, comparison,
+ * and migration tooling. Normal runtime semantic ownership is model-native.
+ */
 export function detectRecurringProcedureSemanticDecision(
   text: string,
 ): RecurringProcedureSemanticCaptureDecision {

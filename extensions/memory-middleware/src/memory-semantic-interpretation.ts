@@ -70,6 +70,7 @@ export type MemorySemanticPreferenceObject = {
   operation: "capture" | "forget";
   subject: string;
   instruction: string;
+  value?: string;
   preferenceProfile?:
     | "concise"
     | "bullets"

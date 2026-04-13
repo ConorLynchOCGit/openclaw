@@ -8,6 +8,10 @@ import {
   type MaterializedMemorySemanticResult,
 } from "./memory-semantic-materialization.js";
 import {
+  buildMemorySemanticObjectIdentity,
+  type MemorySemanticObjectIdentity,
+} from "./memory-semantic-object-identity.js";
+import {
   validateMemorySemanticDecision,
   type ValidatedMemorySemanticDecision,
   type ValidatedMemorySemanticObject,
@@ -19,6 +23,7 @@ import { buildMemorySourceWindows } from "./memory-source-windowing.js";
 export type PlannedMemorySemanticCapture = {
   validated: ValidatedMemorySemanticObject;
   materialized: MaterializedMemorySemanticResult;
+  identity: MemorySemanticObjectIdentity;
   modelId: string;
   promptVersion: string;
 };
@@ -63,6 +68,7 @@ export async function planNormalizedMemorySourceWindow(params: {
               ? {
                   validated,
                   materialized,
+                  identity: buildMemorySemanticObjectIdentity(materialized.object),
                   modelId: interpreted.modelId,
                   promptVersion: interpreted.promptVersion,
                 }

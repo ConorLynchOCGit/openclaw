@@ -19,6 +19,8 @@ The current roadmap state is:
    planner/runtime cutover and family-heavy retirement are not
 7. Phase 1 closure is now landed locally, so Pass 2 runtime semantic cutover
    is the next active execution target
+8. critical audit follow-through now requires proof and benchmark surfaces to
+   keep compatibility buckets explicitly secondary to canonical-class truth
 
 ## Read order for a fresh session
 
@@ -81,6 +83,16 @@ These remain important, but several now describe partial bridges rather than
 - `/memory-system/specs/source-window-model-native-semantic-boundary`
 - `/memory-system/specs/phase-1-architecture-closure-before-phase-2`
 - `/memory-system/specs/model-native-pass-2-runtime-semantic-cutover`
+- `/memory-system/specs/pass-2-slice-15-lane-agnostic-semantic-planner`
+- `/memory-system/specs/pass-2-slice-16-canonical-memory-object-unification`
+- `/memory-system/specs/pass-2-slice-17-review-policy-redesign`
+- `/memory-system/specs/pass-2-slice-18-dedupe-and-supersession-redesign`
+- `/memory-system/specs/pass-2-slice-19-model-native-procedure-extraction`
+- `/memory-system/specs/pass-2-slice-20-model-native-preference-and-correction-capture`
+- `/memory-system/specs/pass-2-slice-21-model-native-routing-reference-interpretation`
+- `/memory-system/specs/pass-2-slice-22-capture-service-convergence`
+- `/memory-system/specs/pass-2-slice-27-full-heuristic-semantic-retirement`
+- `/memory-system/specs/pass-2-slice-28-cross-lane-replay-harness`
 - `/memory-system/specs/model-native-pass-3-context-prompt-operational-convergence`
 - `/memory-system/archive/specs/canonical-four-kind-memory-migration`
 - `/memory-system/specs/native-openclaw-memory-integration`
@@ -119,8 +131,11 @@ These remain important, but several now describe partial bridges rather than
   retrieval, or planner migration is already done
 - do not treat a shared helper as proof that the duplicated system is gone
 - do not treat prompt text as the lasting source of application policy
+- do not treat exact rendered statements as semantic proof
 - do not let semantic routing remain a hidden sidecar if the slice claims to
   flatten retrieval/routing
+- do not treat compatibility categories as if they were the canonical top-level
+  ontology
 - do not let future family work re-implement local capture, retrieval,
   application, or proof stacks when a shared spec covers the seam already
 - use `/memory-system/specs/cross-domain-memory-families` only after the
@@ -216,6 +231,20 @@ Use the Pass 2 runtime-semantic-cutover prompt now that Pass 1 is complete and
 the lane is ready to unify semantic planning, canonical object handling,
 review policy, dedupe/supersession, model-native capture behavior, runtime
 heuristic retirement, and cross-lane replay proof.
+
+Use the dedicated Pass 2 slice specs when implementing or validating the
+runtime cutover on the current memory branch line:
+
+- `/memory-system/specs/pass-2-slice-15-lane-agnostic-semantic-planner`
+- `/memory-system/specs/pass-2-slice-16-canonical-memory-object-unification`
+- `/memory-system/specs/pass-2-slice-17-review-policy-redesign`
+- `/memory-system/specs/pass-2-slice-18-dedupe-and-supersession-redesign`
+- `/memory-system/specs/pass-2-slice-19-model-native-procedure-extraction`
+- `/memory-system/specs/pass-2-slice-20-model-native-preference-and-correction-capture`
+- `/memory-system/specs/pass-2-slice-21-model-native-routing-reference-interpretation`
+- `/memory-system/specs/pass-2-slice-22-capture-service-convergence`
+- `/memory-system/specs/pass-2-slice-27-full-heuristic-semantic-retirement`
+- `/memory-system/specs/pass-2-slice-28-cross-lane-replay-harness`
 
 Use the Pass 3 context/prompt/operational convergence prompt when Pass 2 is
 complete and the lane is ready to finish context-planner ownership, prompt

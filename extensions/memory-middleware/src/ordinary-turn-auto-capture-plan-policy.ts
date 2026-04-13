@@ -1,11 +1,17 @@
 import type { OrdinaryTurnAutoCaptureMatch } from "./memory-ingestion-types.js";
 
-export type OrdinaryTurnAutoCaptureLane =
+export type OrdinaryTurnAutoCaptureCompatibilityLane =
   | "preference"
   | "response_style"
   | "project_fact"
   | "recurring_procedure"
   | "workflow_improvement";
+
+/**
+ * Deprecated alias while downstream runtime wiring migrates away from lane-shaped naming.
+ * These values are compatibility routing labels, not canonical memory classes.
+ */
+export type OrdinaryTurnAutoCaptureLane = OrdinaryTurnAutoCaptureCompatibilityLane;
 
 export type OrdinaryTurnAutoCapturePosture = "default" | "bulk";
 
@@ -14,14 +20,14 @@ export type OrdinaryTurnAutoCaptureSubmissionMode = "immediate" | "deferred_over
 export type OrdinaryTurnAutoCaptureTurnState = {
   acceptedKeys: Set<string>;
   deferredKeys: Set<string>;
-  immediateLaneCounts: Map<OrdinaryTurnAutoCaptureLane, number>;
+  immediateLaneCounts: Map<OrdinaryTurnAutoCaptureCompatibilityLane, number>;
 };
 
 export type OrdinaryTurnAutoCapturePlan =
   | {
       kind: "response_style_forget";
       key: string;
-      lane: "response_style";
+      compatibilityLane: "response_style";
       subjectKey: string;
       segmentIndex: number;
       score: number;
@@ -38,7 +44,7 @@ export type OrdinaryTurnAutoCapturePlan =
   | {
       kind: "capture";
       key: string;
-      lane: OrdinaryTurnAutoCaptureLane;
+      compatibilityLane: OrdinaryTurnAutoCaptureCompatibilityLane;
       subjectKey: string;
       segmentIndex: number;
       score: number;
@@ -55,7 +61,7 @@ export type OrdinaryTurnAutoCapturePlan =
 
 export const AUTO_CAPTURE_LANE_LIMITS: Record<
   OrdinaryTurnAutoCapturePosture,
-  Record<OrdinaryTurnAutoCaptureLane, number>
+  Record<OrdinaryTurnAutoCaptureCompatibilityLane, number>
 > = {
   default: {
     preference: 2,
@@ -74,7 +80,7 @@ export const AUTO_CAPTURE_LANE_LIMITS: Record<
 };
 
 export const AUTO_CAPTURE_LANE_BASE_SCORES: Record<
-  OrdinaryTurnAutoCaptureLane,
+  OrdinaryTurnAutoCaptureCompatibilityLane,
   { score: number; signal: string }
 > = {
   preference: { score: 400, signal: "profile:preference" },
@@ -88,7 +94,7 @@ export function createOrdinaryTurnAutoCaptureTurnState(): OrdinaryTurnAutoCaptur
   return {
     acceptedKeys: new Set<string>(),
     deferredKeys: new Set<string>(),
-    immediateLaneCounts: new Map<OrdinaryTurnAutoCaptureLane, number>(),
+    immediateLaneCounts: new Map<OrdinaryTurnAutoCaptureCompatibilityLane, number>(),
   };
 }
 
@@ -104,10 +110,13 @@ export function hasReachedMultiCaptureTurnLimit(params: {
 export function markTurnAcceptedCaptureForLane(
   turnState: OrdinaryTurnAutoCaptureTurnState,
   key: string,
-  lane: OrdinaryTurnAutoCaptureLane,
+  compatibilityLane: OrdinaryTurnAutoCaptureCompatibilityLane,
 ): void {
   turnState.acceptedKeys.add(key);
-  turnState.immediateLaneCounts.set(lane, (turnState.immediateLaneCounts.get(lane) ?? 0) + 1);
+  turnState.immediateLaneCounts.set(
+    compatibilityLane,
+    (turnState.immediateLaneCounts.get(compatibilityLane) ?? 0) + 1,
+  );
 }
 
 export function markTurnDeferredOverflow(
@@ -128,11 +137,11 @@ export function resolveDeferredOverflowLimit(posture: OrdinaryTurnAutoCapturePos
 export function hasImmediateLaneCapacity(params: {
   turnState: OrdinaryTurnAutoCaptureTurnState;
   posture: OrdinaryTurnAutoCapturePosture;
-  lane: OrdinaryTurnAutoCaptureLane;
+  compatibilityLane: OrdinaryTurnAutoCaptureCompatibilityLane;
 }): boolean {
   return (
-    (params.turnState.immediateLaneCounts.get(params.lane) ?? 0) <
-    AUTO_CAPTURE_LANE_LIMITS[params.posture][params.lane]
+    (params.turnState.immediateLaneCounts.get(params.compatibilityLane) ?? 0) <
+    AUTO_CAPTURE_LANE_LIMITS[params.posture][params.compatibilityLane]
   );
 }
 
@@ -165,7 +174,7 @@ export function resolveCapturePlanBaseScore(plan: OrdinaryTurnAutoCapturePlan): 
       signals: ["response_style_forget"],
     };
   }
-  const laneScore = AUTO_CAPTURE_LANE_BASE_SCORES[plan.lane];
+  const laneScore = AUTO_CAPTURE_LANE_BASE_SCORES[plan.compatibilityLane];
   return { score: laneScore.score, signals: [laneScore.signal] };
 }
 

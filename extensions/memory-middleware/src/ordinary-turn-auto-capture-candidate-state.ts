@@ -1,5 +1,5 @@
 import type {
-  OrdinaryTurnAutoCaptureLane,
+  OrdinaryTurnAutoCaptureCompatibilityLane,
   OrdinaryTurnAutoCapturePosture,
 } from "./ordinary-turn-auto-capture-plan-policy.js";
 
@@ -46,7 +46,7 @@ export function readCandidateObservedAt(
 }
 
 export function buildDeferredOverflowMetadata(params: {
-  lane: OrdinaryTurnAutoCaptureLane;
+  compatibilityLane: OrdinaryTurnAutoCaptureCompatibilityLane;
   posture: OrdinaryTurnAutoCapturePosture;
   state: "pending_confirmation" | "hold_for_more_evidence";
   rank: number;
@@ -62,7 +62,7 @@ export function buildDeferredOverflowMetadata(params: {
   ).toISOString();
   return {
     candidateLifecycle: {
-      family: params.lane,
+      family: params.compatibilityLane,
       state: params.state,
       evidenceCount: 1,
       firstObservedAt: observedAt,

@@ -36,6 +36,20 @@ import {
   resolveWorkflowImprovementIngestion,
 } from "./memory-ingestion-resolver.js";
 
+async function withLegacySemanticFallbackEnabled<T>(run: () => Promise<T>): Promise<T> {
+  const previousLegacyFallback = process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK;
+  process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK = "1";
+  try {
+    return await run();
+  } finally {
+    if (previousLegacyFallback === undefined) {
+      delete process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK;
+    } else {
+      process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK = previousLegacyFallback;
+    }
+  }
+}
+
 function createConfig(): MemoryMiddlewareConfig {
   return {
     database: {
@@ -131,129 +145,139 @@ describe("resolveWorkflowImprovementIngestion", () => {
   });
 
   it("resolves recurring procedures from raw fallback through the shared control plane", async () => {
-    await expect(
-      resolveRecurringProcedureIngestion({
-        content: "Store this checklist.",
-        primarySource: "content",
-        rawCandidates: [
-          [
-            "My deploy checklist:",
-            "1. Open the canary lane.",
-            "2. Verify health.",
-            "3. Watch the error budget.",
-          ].join("\n"),
-        ],
-      }),
-    ).resolves.toMatchObject({
-      familyId: "recurring_procedure",
-      source: "raw",
-      detectionSource: "semantic",
-      parsed: {
-        captureClass: "explicit_recurring_procedure",
-        procedureKey: "deploy_checklist",
-      },
+    await withLegacySemanticFallbackEnabled(async () => {
+      await expect(
+        resolveRecurringProcedureIngestion({
+          content: "Store this checklist.",
+          primarySource: "content",
+          rawCandidates: [
+            [
+              "My deploy checklist:",
+              "1. Open the canary lane.",
+              "2. Verify health.",
+              "3. Watch the error budget.",
+            ].join("\n"),
+          ],
+        }),
+      ).resolves.toMatchObject({
+        familyId: "recurring_procedure",
+        source: "raw",
+        detectionSource: "semantic",
+        parsed: {
+          captureClass: "explicit_recurring_procedure",
+          procedureKey: "deploy_checklist",
+        },
+      });
     });
   });
 
   it("resolves project-rule guidance from transcript content", async () => {
-    await expect(
-      resolveWorkflowImprovementIngestion({
-        config: createConfig(),
-        content:
-          "For project Atlas, use generated audit IDs for audit events instead of client timestamps.",
-        primarySource: "transcript",
-        allowPhrasePatternMatch: false,
-      }),
-    ).resolves.toMatchObject({
-      captureCategory: "project_rule",
-      lessonFamily: "generalized_project_rule",
-      source: "transcript",
-      detectionSource: "semantic",
-      reviewMode: "hold_for_more_evidence",
-      parsed: {
-        captureClass: "project_rule_guidance",
-        projectScope: "Atlas",
-        guidancePattern: "use_instead_of",
-        recommendedAction: "generated audit IDs",
-        avoidAction: "client timestamps",
-      },
+    await withLegacySemanticFallbackEnabled(async () => {
+      await expect(
+        resolveWorkflowImprovementIngestion({
+          config: createConfig(),
+          content:
+            "For project Atlas, use generated audit IDs for audit events instead of client timestamps.",
+          primarySource: "transcript",
+          allowPhrasePatternMatch: false,
+        }),
+      ).resolves.toMatchObject({
+        captureCategory: "project_rule",
+        lessonFamily: "generalized_project_rule",
+        source: "transcript",
+        detectionSource: "semantic",
+        reviewMode: "hold_for_more_evidence",
+        parsed: {
+          captureClass: "project_rule_guidance",
+          projectScope: "Atlas",
+          guidancePattern: "use_instead_of",
+          recommendedAction: "generated audit IDs",
+          avoidAction: "client timestamps",
+        },
+      });
     });
     expect(findApprovedWorkflowPhrasePatternMatch).not.toHaveBeenCalled();
   });
 
   it("resolves docs localization policy as a project rule from transcript content", async () => {
-    await expect(
-      resolveWorkflowImprovementIngestion({
-        config: createConfig(),
-        content:
-          "For OpenClaw docs, update English docs first and rerun docs i18n instead of editing docs/zh-CN directly.",
-        primarySource: "transcript",
-        allowPhrasePatternMatch: false,
-      }),
-    ).resolves.toMatchObject({
-      captureCategory: "project_rule",
-      lessonFamily: "generalized_project_rule",
-      source: "transcript",
-      detectionSource: "semantic",
-      reviewMode: "hold_for_more_evidence",
-      parsed: {
-        captureClass: "project_rule_guidance",
-        projectScope: "OpenClaw",
-        guidancePattern: "use_instead_of",
-        subject: "docs localization changes",
-        recommendedAction: "update English docs first and rerun docs i18n",
-        avoidAction: "edit docs/zh-CN directly",
-      },
+    await withLegacySemanticFallbackEnabled(async () => {
+      await expect(
+        resolveWorkflowImprovementIngestion({
+          config: createConfig(),
+          content:
+            "For OpenClaw docs, update English docs first and rerun docs i18n instead of editing docs/zh-CN directly.",
+          primarySource: "transcript",
+          allowPhrasePatternMatch: false,
+        }),
+      ).resolves.toMatchObject({
+        captureCategory: "project_rule",
+        lessonFamily: "generalized_project_rule",
+        source: "transcript",
+        detectionSource: "semantic",
+        reviewMode: "hold_for_more_evidence",
+        parsed: {
+          captureClass: "project_rule_guidance",
+          projectScope: "OpenClaw",
+          guidancePattern: "use_instead_of",
+          subject: "docs localization changes",
+          recommendedAction: "update English docs first and rerun docs i18n",
+          avoidAction: "edit docs/zh-CN directly",
+        },
+      });
     });
   });
 
   it("resolves file-reference response-style guidance through the shared control plane", async () => {
-    await expect(
-      resolveResponseStyleIngestion({
-        config: createConfig(),
-        content: "When referencing files in chat, use repo-root relative paths.",
-        primarySource: "content",
-        mode: "candidate_learning",
-        allowPhrasePatternMatch: true,
-      }),
-    ).resolves.toMatchObject({
-      action: "capture",
-      familyId: "response_style",
-      source: "content",
-      detectionSource: "semantic",
-      reviewMode: "hold_for_more_evidence",
-      parsed: {
-        captureClass: "explicit_requirement",
-        template: "response_style_generalized_guidance",
-        subject: "file references",
-        value: "When referencing files in chat, use repo-root relative paths",
-      },
+    await withLegacySemanticFallbackEnabled(async () => {
+      await expect(
+        resolveResponseStyleIngestion({
+          config: createConfig(),
+          content: "When referencing files in chat, use repo-root relative paths.",
+          primarySource: "content",
+          mode: "candidate_learning",
+          allowPhrasePatternMatch: true,
+        }),
+      ).resolves.toMatchObject({
+        action: "capture",
+        familyId: "response_style",
+        source: "content",
+        detectionSource: "semantic",
+        reviewMode: "hold_for_more_evidence",
+        parsed: {
+          captureClass: "explicit_requirement",
+          template: "response_style_generalized_guidance",
+          subject: "file references",
+          value: "When referencing files in chat, use repo-root relative paths",
+        },
+      });
     });
   });
 
   it("falls back to raw unmet-need text when content does not resolve", async () => {
-    await expect(
-      resolveWorkflowImprovementIngestion({
-        config: createConfig(),
-        content: "Please store this note.",
-        primarySource: "content",
-        rawCandidates: [
-          "For project Atlas, we need a release evidence template for rollout audits.",
-        ],
-        allowPhrasePatternMatch: false,
-      }),
-    ).resolves.toMatchObject({
-      captureCategory: "unmet_need",
-      lessonFamily: "generalized_unmet_need",
-      source: "raw",
-      detectionSource: "semantic",
-      reviewMode: "hold_for_more_evidence",
-      observedText: "For project Atlas, we need a release evidence template for rollout audits.",
-      parsed: {
-        captureClass: "unmet_need_recommendation",
-        projectScope: "Atlas",
-        neededCapability: "a release evidence template",
-      },
+    await withLegacySemanticFallbackEnabled(async () => {
+      await expect(
+        resolveWorkflowImprovementIngestion({
+          config: createConfig(),
+          content: "Please store this note.",
+          primarySource: "content",
+          rawCandidates: [
+            "For project Atlas, we need a release evidence template for rollout audits.",
+          ],
+          allowPhrasePatternMatch: false,
+        }),
+      ).resolves.toMatchObject({
+        captureCategory: "unmet_need",
+        lessonFamily: "generalized_unmet_need",
+        source: "raw",
+        detectionSource: "semantic",
+        reviewMode: "hold_for_more_evidence",
+        observedText: "For project Atlas, we need a release evidence template for rollout audits.",
+        parsed: {
+          captureClass: "unmet_need_recommendation",
+          projectScope: "Atlas",
+          neededCapability: "a release evidence template",
+        },
+      });
     });
   });
 
@@ -297,24 +321,26 @@ describe("resolveWorkflowImprovementIngestion", () => {
       },
     } satisfies ApprovedWorkflowPhrasePatternMatch);
 
-    await expect(
-      resolveWorkflowImprovementIngestion({
-        config: createConfig(),
-        content:
-          "For release proof notes, should I list proof IDs as bullets instead of paraphrasing rollout summaries?",
-        primarySource: "content",
-        projectId: "00000000-0000-4000-8000-000000000123",
-        allowPhrasePatternMatch: true,
-      }),
-    ).resolves.toMatchObject({
-      captureCategory: "workflow_improvement",
-      detectionSource: "deterministic",
-      source: "content",
-      evidence: ["approved_phrase_pattern_match"],
-      parsed: {
-        captureClass: "workflow_generalized_guidance",
-        guidancePattern: "use_instead_of",
-      },
+    await withLegacySemanticFallbackEnabled(async () => {
+      await expect(
+        resolveWorkflowImprovementIngestion({
+          config: createConfig(),
+          content:
+            "For release proof notes, should I list proof IDs as bullets instead of paraphrasing rollout summaries?",
+          primarySource: "content",
+          projectId: "00000000-0000-4000-8000-000000000123",
+          allowPhrasePatternMatch: true,
+        }),
+      ).resolves.toMatchObject({
+        captureCategory: "workflow_improvement",
+        detectionSource: "deterministic",
+        source: "content",
+        evidence: ["approved_phrase_pattern_match"],
+        parsed: {
+          captureClass: "workflow_generalized_guidance",
+          guidancePattern: "use_instead_of",
+        },
+      });
     });
 
     expect(findApprovedWorkflowPhrasePatternMatch).toHaveBeenCalledWith(

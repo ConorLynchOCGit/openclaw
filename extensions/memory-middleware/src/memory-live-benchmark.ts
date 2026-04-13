@@ -17,6 +17,7 @@ import type {
 } from "./memory-semantic-interpretation.js";
 import { resolveCanonicalMemoryClassForSemanticObject } from "./memory-semantic-interpretation.js";
 import type { MemorySemanticInterpreterPort } from "./memory-semantic-interpretation.js";
+import { buildMemorySemanticObjectIdentity } from "./memory-semantic-object-identity.js";
 import {
   planNormalizedMemorySourceWindow,
   type PlannedMemorySemanticCapture,
@@ -51,7 +52,10 @@ export type MemorySemanticBenchmarkIssue = {
 export type MemorySemanticBenchmarkObjectSummary = {
   canonicalClass: MemoryCanonicalClass;
   kind: MemorySemanticObject["kind"];
-  category: DocumentMemoryIngestionCategory;
+  compatibilityCategory: DocumentMemoryIngestionCategory;
+  subjectKey: string;
+  clusterKey: string;
+  dedupeKey: string;
   object: MemorySemanticObject;
   evidence: string[];
   reviewMode: string;
@@ -67,7 +71,7 @@ export type MemorySemanticBenchmarkCaseResult = {
   actual: {
     objectCount: number;
     classCounts: CanonicalMemoryClassCountMap;
-    categoryCounts: Partial<Record<DocumentMemoryIngestionCategory, number>>;
+    compatibilityCategoryCounts: Partial<Record<DocumentMemoryIngestionCategory, number>>;
     objects: MemorySemanticBenchmarkObjectSummary[];
   };
   matchedObjectIds: string[];
@@ -98,7 +102,7 @@ export const MEMORY_SEMANTIC_BENCHMARK_CRITERIA = [
   "Every required durable memory object must be present with the right kind, structured payload, and scope.",
   "Forbidden filler or reference-only material must not be emitted as a durable semantic object.",
   "Where counts are specified, object totals must stay within the expected exact or bounded range.",
-  "Where category counts or minimums are specified, the planner must satisfy them without noisy overflow.",
+  "Where compatibility projection counts or minimums are specified, the planner must satisfy them without noisy overflow.",
   "Structured procedures should match on reusable procedure shape, not only loose rendered text.",
   "Expected scope, routing, and validator-evidence constraints must match the semantic object that survives validation.",
   "Where provenance is expected, heading path and source line must still point to a useful source region.",
@@ -153,12 +157,12 @@ function describeError(error: unknown): string {
   return String(error);
 }
 
-function buildCategoryCounts(
+function buildCompatibilityCategoryCounts(
   objects: MemorySemanticBenchmarkObjectSummary[],
 ): Partial<Record<DocumentMemoryIngestionCategory, number>> {
   const counts: Partial<Record<DocumentMemoryIngestionCategory, number>> = {};
   for (const object of objects) {
-    counts[object.category] = (counts[object.category] ?? 0) + 1;
+    counts[object.compatibilityCategory] = (counts[object.compatibilityCategory] ?? 0) + 1;
   }
   return counts;
 }
@@ -235,10 +239,16 @@ function summarizePlannedDecision(
   if (!provenance) {
     return null;
   }
+  const identity = buildMemorySemanticObjectIdentity(capture.materialized.object);
   return {
     canonicalClass: resolveCanonicalMemoryClassForSemanticObject(capture.materialized.object),
     kind: capture.materialized.object.kind,
-    category: resolveDocumentMemoryIngestionCategoryForSemanticObject(capture.materialized.object),
+    compatibilityCategory: resolveDocumentMemoryIngestionCategoryForSemanticObject(
+      capture.materialized.object,
+    ),
+    subjectKey: identity.subjectKey,
+    clusterKey: identity.clusterKey,
+    dedupeKey: identity.dedupeKey,
     object: capture.materialized.object,
     evidence: [...capture.validated.evidence],
     reviewMode: capture.validated.reviewMode,
@@ -251,50 +261,7 @@ function summarizePlannedDecision(
 }
 
 function buildObjectDedupeKey(summary: MemorySemanticBenchmarkObjectSummary): string {
-  const object = summary.object;
-  switch (object.kind) {
-    case "preference":
-      return JSON.stringify([
-        object.kind,
-        object.operation,
-        object.subject,
-        object.instruction,
-        object.scope?.projectScope ?? "",
-      ]);
-    case "correction":
-      return JSON.stringify([
-        object.kind,
-        object.correctionKind,
-        object.subject,
-        object.recommendedAction ?? "",
-        object.avoidAction ?? "",
-        object.neededCapability ?? "",
-        object.scope?.projectScope ?? "",
-      ]);
-    case "procedure":
-      return JSON.stringify([
-        object.kind,
-        object.title,
-        object.steps,
-        object.scope?.projectScope ?? "",
-      ]);
-    case "project_fact":
-      return JSON.stringify([
-        object.kind,
-        object.subject,
-        object.value,
-        object.factFieldKey ?? "",
-        object.scope?.projectScope ?? "",
-      ]);
-    case "routing":
-      return JSON.stringify([
-        object.kind,
-        object.task,
-        object.primaryResource,
-        object.companionResources ?? [],
-        object.scope?.projectScope ?? "",
-      ]);
-  }
+  return summary.dedupeKey;
 }
 
 function dedupeObjectSummaries(
@@ -354,8 +321,13 @@ function buildObjectMismatchReasons(
   if (expected.canonicalClass && summary.canonicalClass !== expected.canonicalClass) {
     reasons.push(`canonicalClass ${summary.canonicalClass} != ${expected.canonicalClass}`);
   }
-  if (expected.category && summary.category !== expected.category) {
-    reasons.push(`category ${summary.category} != ${expected.category}`);
+  if (
+    expected.compatibilityCategory &&
+    summary.compatibilityCategory !== expected.compatibilityCategory
+  ) {
+    reasons.push(
+      `compatibilityCategory ${summary.compatibilityCategory} != ${expected.compatibilityCategory}`,
+    );
   }
   const object = summary.object;
   const subjectText =
@@ -543,7 +515,10 @@ function forbiddenObjectMatched(
   if (forbidden.canonicalClass && summary.canonicalClass !== forbidden.canonicalClass) {
     return false;
   }
-  if (forbidden.category && summary.category !== forbidden.category) {
+  if (
+    forbidden.compatibilityCategory &&
+    summary.compatibilityCategory !== forbidden.compatibilityCategory
+  ) {
     return false;
   }
   const object = summary.object;
@@ -638,7 +613,7 @@ function validateCounts(
     });
   }
 
-  const categoryCounts = buildCategoryCounts(objects);
+  const compatibilityCategoryCounts = buildCompatibilityCategoryCounts(objects);
   const classCounts = buildClassCounts(objects);
   for (const [canonicalClass, count] of Object.entries(expected.classCounts ?? {})) {
     if ((classCounts[canonicalClass as MemoryCanonicalClass] ?? 0) !== count) {
@@ -662,24 +637,24 @@ function validateCounts(
       });
     }
   }
-  for (const [category, count] of Object.entries(expected.categoryCounts ?? {})) {
-    if ((categoryCounts[category as DocumentMemoryIngestionCategory] ?? 0) !== count) {
+  for (const [category, count] of Object.entries(expected.compatibilityCategoryCounts ?? {})) {
+    if ((compatibilityCategoryCounts[category as DocumentMemoryIngestionCategory] ?? 0) !== count) {
       issues.push({
         severity: "blocking",
         code: "category_mismatch",
         message: `expected ${category} count ${count} but found ${
-          categoryCounts[category as DocumentMemoryIngestionCategory] ?? 0
+          compatibilityCategoryCounts[category as DocumentMemoryIngestionCategory] ?? 0
         }`,
       });
     }
   }
-  for (const [category, count] of Object.entries(expected.categoryMinimums ?? {})) {
-    if ((categoryCounts[category as DocumentMemoryIngestionCategory] ?? 0) < count) {
+  for (const [category, count] of Object.entries(expected.compatibilityCategoryMinimums ?? {})) {
+    if ((compatibilityCategoryCounts[category as DocumentMemoryIngestionCategory] ?? 0) < count) {
       issues.push({
         severity: "blocking",
         code: "category_mismatch",
         message: `expected at least ${count} ${category} objects but found ${
-          categoryCounts[category as DocumentMemoryIngestionCategory] ?? 0
+          compatibilityCategoryCounts[category as DocumentMemoryIngestionCategory] ?? 0
         }`,
       });
     }
@@ -837,7 +812,7 @@ export async function runMemorySemanticGoldCorpusBenchmark(params: {
       actual: {
         objectCount: objects.length,
         classCounts: buildClassCounts(objects),
-        categoryCounts: buildCategoryCounts(objects),
+        compatibilityCategoryCounts: buildCompatibilityCategoryCounts(objects),
         objects,
       },
       matchedObjectIds,

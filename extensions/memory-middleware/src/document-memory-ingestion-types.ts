@@ -1,10 +1,16 @@
 import type { CanonicalMemoryIngestionCandidate } from "openclaw/plugin-sdk/memory-canonical-ingestion";
 import type { CandidateSubmissionKind, JsonValue } from "./db/runtime.js";
-import type { WorkflowCaptureCategory } from "./memory-ingestion-resolver.js";
+import type { CompatibilityWorkflowCaptureCategory } from "./memory-ingestion-resolver.js";
 import type {
   MemoryCanonicalClass,
   MemorySemanticObject,
 } from "./memory-semantic-interpretation.js";
+import type { MemoryProjectionCategory } from "./memory-semantic-object-identity.js";
+
+export {
+  resolveMemoryProjectionCategory as resolveSemanticProjectionCategoryForObject,
+  resolveMemoryProjectionCategory as resolveDocumentMemoryIngestionCategoryForSemanticObject,
+} from "./memory-semantic-object-identity.js";
 
 export const DOCUMENT_MEMORY_INGESTION_PROFILE_IDS = [
   "identity",
@@ -27,38 +33,20 @@ export const DOCUMENT_MEMORY_SOURCE_CLASSES = [
 
 export type DocumentMemorySourceClass = (typeof DOCUMENT_MEMORY_SOURCE_CLASSES)[number];
 
-export type DocumentMemoryIngestionCategory =
+export type DocumentMemoryProjectionCategory = Extract<
+  MemoryProjectionCategory,
   | "response_style"
   | "project_fact"
   | "recurring_procedure"
   | "reference_routing"
-  | WorkflowCaptureCategory;
+  | CompatibilityWorkflowCaptureCategory
+>;
 
-export function resolveDocumentMemoryIngestionCategoryForSemanticObject(
-  object: MemorySemanticObject,
-): DocumentMemoryIngestionCategory {
-  switch (object.kind) {
-    case "preference":
-      return "response_style";
-    case "correction":
-      switch (object.correctionKind) {
-        case "response_preference":
-          return "response_style";
-        case "project_rule":
-          return "project_rule";
-        case "missing_capability":
-          return "unmet_need";
-        case "workflow_guidance":
-          return "workflow_improvement";
-      }
-    case "procedure":
-      return "recurring_procedure";
-    case "project_fact":
-      return "project_fact";
-    case "routing":
-      return "reference_routing";
-  }
-}
+/**
+ * Deprecated document-lane alias. Use `DocumentMemoryProjectionCategory` for
+ * reporting-only projection labels.
+ */
+export type DocumentMemoryIngestionCategory = DocumentMemoryProjectionCategory;
 
 export type CanonicalMemoryClassCountMap = Partial<Record<MemoryCanonicalClass, number>>;
 

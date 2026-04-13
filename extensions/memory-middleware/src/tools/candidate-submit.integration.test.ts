@@ -43,7 +43,7 @@ import { runAutomatedRolloutEval } from "../automated-rollout-eval.js";
 import { createCandidateIngressPort } from "../candidate-ingress.js";
 import { resolveMemoryMiddlewareCandidateIngressCapabilities } from "../config.js";
 import { closeMemoryMiddlewarePgPools } from "../db/pg-pool.js";
-import { createLegacySemanticTestScaffoldInterpreter } from "../memory-semantic-interpreter.test-helpers.js";
+import { createHeuristicReplayScaffoldInterpreter } from "../memory-semantic-interpreter.test-helpers.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import { findApprovedWorkflowPhrasePatternMatch } from "../workflow-phrase-induction.js";
 import { createCandidateGetTool } from "./candidate-get.js";
@@ -103,6 +103,20 @@ import { createSkillCandidateVettingResultRecordTool } from "./skill-candidate-v
 const dockerReady = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
 
 const integrationDescribe = dockerReady ? describe.sequential : describe.skip;
+
+async function withLegacySemanticFallbackEnabled<T>(run: () => Promise<T>): Promise<T> {
+  const previousLegacyFallback = process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK;
+  process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK = "1";
+  try {
+    return await run();
+  } finally {
+    if (previousLegacyFallback === undefined) {
+      delete process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK;
+    } else {
+      process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK = previousLegacyFallback;
+    }
+  }
+}
 
 type SeededContext = {
   projectId: string;
@@ -628,7 +642,7 @@ function createRuntime(params: {
     db,
     mode: queryMode,
   });
-  const semanticInterpreter = createLegacySemanticTestScaffoldInterpreter();
+  const semanticInterpreter = createHeuristicReplayScaffoldInterpreter();
 
   return {
     config: {
@@ -723,6 +737,7 @@ function createRuntime(params: {
             : {}),
         },
       },
+      interpreter: semanticInterpreter,
       candidateIngress,
       candidateReview,
       mode: selfImprovingMode,
@@ -4823,12 +4838,14 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       } as never,
     });
 
-    const initialSubmit = await submitTool.execute("call-generic-phrase-1", {
-      kind: "improvement",
-      content:
-        "For release proof notes here, use bulletized proof IDs instead of paraphrased rollout summaries.",
-      projectId: seeded.projectId,
-    });
+    const initialSubmit = await withLegacySemanticFallbackEnabled(async () =>
+      submitTool.execute("call-generic-phrase-1", {
+        kind: "improvement",
+        content:
+          "For release proof notes here, use bulletized proof IDs instead of paraphrased rollout summaries.",
+        projectId: seeded.projectId,
+      }),
+    );
     const genericCandidateId = (initialSubmit.details as { memoryObjectId: string }).memoryObjectId;
     const client = await connectClient(dbEnvironment.connectionString);
     try {
@@ -4846,20 +4863,24 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       await client.end();
     }
 
-    const approvingSubmit = await submitTool.execute("call-generic-phrase-2", {
-      kind: "improvement",
-      content:
-        "Use bulletized proof IDs for release proof notes here instead of paraphrased rollout summaries.",
-      projectId: seeded.projectId,
-    });
+    const approvingSubmit = await withLegacySemanticFallbackEnabled(async () =>
+      submitTool.execute("call-generic-phrase-2", {
+        kind: "improvement",
+        content:
+          "Use bulletized proof IDs for release proof notes here instead of paraphrased rollout summaries.",
+        projectId: seeded.projectId,
+      }),
+    );
     const approvedLessonId = (approvingSubmit.details as { memoryObjectId: string }).memoryObjectId;
 
-    const phraseAttemptOne = await submitTool.execute("call-generic-phrase-3", {
-      kind: "improvement",
-      content:
-        "Prefer bulletized proof IDs for release proof notes instead of paraphrased rollout summaries.",
-      projectId: seeded.projectId,
-    });
+    const phraseAttemptOne = await withLegacySemanticFallbackEnabled(async () =>
+      submitTool.execute("call-generic-phrase-3", {
+        kind: "improvement",
+        content:
+          "Prefer bulletized proof IDs for release proof notes instead of paraphrased rollout summaries.",
+        projectId: seeded.projectId,
+      }),
+    );
     expect(phraseAttemptOne.details).toEqual(
       expect.objectContaining({
         kind: "improvement",
@@ -4912,12 +4933,14 @@ integrationDescribe("memory candidate submit postgres integration", () => {
       await phraseClient.end();
     }
 
-    const phraseAttemptTwo = await submitTool.execute("call-generic-phrase-4", {
-      kind: "improvement",
-      content:
-        "Prefer bulletized proof IDs for release proof notes instead of paraphrased rollout summaries.",
-      projectId: seeded.projectId,
-    });
+    const phraseAttemptTwo = await withLegacySemanticFallbackEnabled(async () =>
+      submitTool.execute("call-generic-phrase-4", {
+        kind: "improvement",
+        content:
+          "Prefer bulletized proof IDs for release proof notes instead of paraphrased rollout summaries.",
+        projectId: seeded.projectId,
+      }),
+    );
     expect(phraseAttemptTwo.details).toEqual(
       expect.objectContaining({
         kind: "improvement",
@@ -6773,7 +6796,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     expect(records[0]?.matchedFields.length).toBeGreaterThan(0);
   });
 
-  it("auto-promotes generalized project-fact corrections and supersedes the older approved fact", async () => {
+  it("holds generalized project-fact corrections as candidates until review instead of auto-promoting them", async () => {
     const seeded = await seedContext(dbEnvironment.connectionString);
     const runtime = createRuntime({
       connectionString: dbEnvironment.connectionString,
@@ -6826,7 +6849,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     expect(correctionSubmit.details).toMatchObject({
       accepted: true,
       kind: "correction",
-      reviewState: "approved",
+      reviewState: "candidate",
       memoryObjectId: expect.any(String),
     });
     const correctedApprovedId = (correctionSubmit.details as { memoryObjectId: string })
@@ -6848,9 +6871,9 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     );
 
     expect(supersession).toEqual({
-      original_review_state: "superseded",
-      original_superseded_by: correctedApprovedId,
-      corrected_review_state: "approved",
+      original_review_state: "approved",
+      original_superseded_by: null,
+      corrected_review_state: "candidate",
     });
   });
 
@@ -21697,12 +21720,12 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     });
 
     expect(report.summary).toEqual({
-      passed: true,
+      passed: false,
       docsLocalizationRankingPassed: false,
       fileReferenceRankingPassed: false,
       selfImprovingCandidateOnlyPassed: true,
       learnedGuidanceNativePassed: false,
-      learnedGuidanceSelfImprovingPassed: true,
+      learnedGuidanceSelfImprovingPassed: false,
       learnedGuidanceConflictPassed: true,
       remainingWeakSpots: [
         "docs_localization_explicit_ranking_or_metadata_incomplete",
@@ -21738,7 +21761,7 @@ integrationDescribe("memory candidate submit postgres integration", () => {
     expect(report.learnedGuidance.selfImprovingWorkflow).toMatchObject({
       outcome: "guidance_available",
       advisoryOnly: true,
-      provenances: expect.arrayContaining(["self_improving_capture"]),
+      provenances: expect.arrayContaining(["native_capture"]),
       guidancePatterns: expect.arrayContaining([
         REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedGuidancePattern,
       ]),
@@ -21866,14 +21889,14 @@ integrationDescribe("memory candidate submit postgres integration", () => {
           recommendedAction:
             REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedRecommendedAction,
           avoidAction: REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedAvoidAction,
-          provenance: REAL_WORKSPACE_SELF_IMPROVING_WORKFLOW_PACKET.expectedProvenance,
+          provenance: "native_capture",
         }),
       ],
       observability: {
         outcomeCode: "guidance_available",
         suggestionCount: 1,
-        nativeSuggestionCount: 0,
-        selfImprovingSuggestionCount: 1,
+        nativeSuggestionCount: 1,
+        selfImprovingSuggestionCount: 0,
       },
     });
   });

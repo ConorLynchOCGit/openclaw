@@ -7,7 +7,10 @@ import {
   isCanonicalizableResolvedResponseStyleIngestion,
 } from "../memory-canonical-compat.js";
 import type { ResolvedCanonicalizableIngestion } from "../memory-ingestion-resolver.js";
-import type { OrdinaryTurnAutoCaptureMatch } from "../memory-ingestion-types.js";
+import {
+  toOrdinaryTurnProjectFactMatch,
+  type OrdinaryTurnAutoCaptureMatch,
+} from "../memory-ingestion-types.js";
 import {
   buildPendingConfirmationMetadata,
   buildProjectFactPendingConfirmationMetadata,
@@ -23,6 +26,7 @@ import {
   parseOrdinaryTurnAutoCapturePreference,
 } from "../ordinary-turn-auto-capture.js";
 import {
+  createProjectFactCanonicalMatch,
   isSupportedProjectFactField,
   type ProjectFactFamily,
   type ProjectFactFieldKey,
@@ -47,6 +51,7 @@ import type {
 type ManagedResponseStyleResolution = {
   action: "capture";
   familyId: "response_style";
+  compatibilityProfileId: "response_style";
   parsed: OrdinaryTurnAutoCaptureMatch;
   responseStyleFamily: ResponseStyleFamily;
   reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
@@ -59,10 +64,11 @@ type ManagedResponseStyleResolution = {
 
 type ManagedProjectFactResolution = {
   familyId: "project_fact";
+  compatibilityProfileId: "project_fact";
   parsed: OrdinaryTurnAutoCaptureMatch;
   factFamily: ProjectFactFamily;
   fieldKey?: ProjectFactFieldKey;
-  reviewMode: "pending_confirmation" | "hold_for_more_evidence";
+  reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
   source: "content" | "raw";
   detectionSource: "deterministic" | "semantic";
   confidence: "high" | "medium";
@@ -72,6 +78,7 @@ type ManagedProjectFactResolution = {
 
 type ManagedRecurringProcedureResolution = {
   familyId: "recurring_procedure";
+  compatibilityProfileId: "recurring_procedure";
   parsed: OrdinaryTurnAutoCaptureMatch;
   procedureFamily: RecurringProcedureFamily;
   procedureKey?: RecurringProcedureKey;
@@ -85,7 +92,9 @@ type ManagedRecurringProcedureResolution = {
 
 type ManagedWorkflowImprovementResolution = {
   familyId: "workflow_improvement";
+  compatibilityProfileId: "workflow_improvement";
   captureCategory: "workflow_improvement" | "project_rule" | "unmet_need";
+  compatibilityCategory: "workflow_improvement" | "project_rule" | "unmet_need";
   parsed: OrdinaryTurnAutoCaptureMatch;
   lessonFamily: WorkflowImprovementLessonFamily;
   reviewMode: "pending_confirmation" | "hold_for_more_evidence";
@@ -270,6 +279,69 @@ function normalizeCorrectionPreferenceKey(raw: unknown): string | null {
   }
   const normalized = raw.trim().toLowerCase().replace(/\s+/g, " ");
   return normalized ? normalized : null;
+}
+
+function readManagedMetadataString(
+  input: CandidateSubmissionInput,
+  key: string,
+): string | undefined {
+  const value = input.metadata?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function extractManagedProjectFactCorrectionValue(params: {
+  content: string;
+  fieldLabel: string;
+}): string | null {
+  const trimmed = params.content.trim();
+  const escapedFieldLabel = params.fieldLabel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const specificPattern = new RegExp(
+    `\\b${escapedFieldLabel}\\s+is\\s+(.+?)(?:\\s*\\(not\\b|[.!?]|$)`,
+    "i",
+  );
+  const specificMatch = trimmed.match(specificPattern);
+  if (specificMatch?.[1]) {
+    const value = specificMatch[1].trim().replace(/^["']+|["']+$/g, "");
+    return value.length > 0 ? value : null;
+  }
+  const fallbackMatch = trimmed.match(/\bis\s+(.+?)(?:\s*\(not\b|[.!?]|$)/i);
+  if (!fallbackMatch?.[1]) {
+    return null;
+  }
+  const value = fallbackMatch[1].trim().replace(/^["']+|["']+$/g, "");
+  return value.length > 0 ? value : null;
+}
+
+function buildManagedProjectFactCorrectionMatch(
+  input: CandidateSubmissionInput,
+): OrdinaryTurnAutoCaptureMatch | null {
+  const projectScope = readManagedMetadataString(input, "projectName");
+  const rawFieldKey = readManagedMetadataString(input, "factType");
+  const fieldKey =
+    rawFieldKey && isSupportedProjectFactField(rawFieldKey) ? rawFieldKey : undefined;
+  if (!projectScope || !fieldKey) {
+    return null;
+  }
+  const fieldLabel = fieldKey.replace(/_/g, " ");
+  const value =
+    readManagedMetadataString(input, "value") ??
+    extractManagedProjectFactCorrectionValue({
+      content: input.content,
+      fieldLabel,
+    });
+  if (!value) {
+    return null;
+  }
+  return toOrdinaryTurnProjectFactMatch(
+    createProjectFactCanonicalMatch({
+      projectScope,
+      subjectLabel: fieldLabel,
+      value,
+      factFamily: "supported_field",
+      fieldKey,
+      correction: true,
+    }),
+  );
 }
 
 async function normalizeManagedLearningInput(params: {
@@ -763,7 +835,7 @@ async function normalizeManagedImprovementInput(params: {
           captureClass: workflowImprovementResolution.parsed.captureClass,
           lessonFamily: workflowImprovementResolution.lessonFamily,
           template: workflowImprovementResolution.parsed.template,
-          captureCategory: workflowImprovementResolution.captureCategory,
+          captureCategory: workflowImprovementResolution.compatibilityCategory,
         })?.modeMetadata ?? { guidanceMode: "guidance_only" }),
         toolName: "memory_candidate_submit",
       },
@@ -915,6 +987,52 @@ async function normalizeManagedCorrectionInput(params: {
             })
           : {}),
       },
+    });
+  }
+
+  const managedProjectFactCorrectionMatch = buildManagedProjectFactCorrectionMatch(params.input);
+  if (managedProjectFactCorrectionMatch) {
+    const evidence = ["structured_tool_payload"];
+    return params.deps.mergeCandidateMetadata(params.input, {
+      category: "project_fact_correction",
+      source: "conversational_project_fact_correction",
+      subject_key: managedProjectFactCorrectionMatch.subjectKey,
+      autoCapture: {
+        source: "model_tool_candidate_submit",
+        captureSeam: "model_tool_primary",
+        profile: managedProjectFactCorrectionMatch.profile,
+        captureClass: managedProjectFactCorrectionMatch.captureClass,
+        reasonCode: managedProjectFactCorrectionMatch.reasonCode,
+        template: managedProjectFactCorrectionMatch.template,
+        factFamily: managedProjectFactCorrectionMatch.factFamily,
+        ...(managedProjectFactCorrectionMatch.fieldKey
+          ? { fieldKey: managedProjectFactCorrectionMatch.fieldKey }
+          : {}),
+        key: managedProjectFactCorrectionMatch.key,
+        subjectKey: managedProjectFactCorrectionMatch.subjectKey,
+        subject: managedProjectFactCorrectionMatch.subject,
+        normalizedSubject: managedProjectFactCorrectionMatch.normalizedSubject,
+        value: managedProjectFactCorrectionMatch.value,
+        normalizedValue: managedProjectFactCorrectionMatch.normalizedValue,
+        ...(managedProjectFactCorrectionMatch.projectScope
+          ? { projectScope: managedProjectFactCorrectionMatch.projectScope }
+          : {}),
+        ...(managedProjectFactCorrectionMatch.normalizedProjectScope
+          ? { normalizedProjectScope: managedProjectFactCorrectionMatch.normalizedProjectScope }
+          : {}),
+        toolName: "memory_candidate_submit",
+      },
+      canonicalIngestionCandidate: buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch({
+        profileId: "project_fact",
+        match: managedProjectFactCorrectionMatch,
+        reviewMode: "direct",
+        detectionSource: "deterministic",
+        evidence,
+        observedText: params.input.content,
+        ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+        captureSeam: "model_tool_primary",
+        captureProfile: "tool-submitted",
+      }),
     });
   }
 

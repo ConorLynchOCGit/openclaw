@@ -1,3 +1,5 @@
+// Legacy compatibility detector only.
+
 import { createHash } from "node:crypto";
 
 export type WorkflowImprovementSemanticConfidence = "high" | "medium";
@@ -932,6 +934,10 @@ function detectGeneralizedWorkflowLesson(text: string): {
   return null;
 }
 
+/**
+ * Legacy compatibility detector retained for degraded-mode fallback, comparison,
+ * and migration tooling. Normal runtime semantic ownership is model-native.
+ */
 export function detectWorkflowImprovementSemanticDecision(
   text: string,
 ): WorkflowImprovementSemanticCaptureDecision {

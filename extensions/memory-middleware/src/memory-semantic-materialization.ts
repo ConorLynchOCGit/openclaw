@@ -5,9 +5,10 @@ import {
 } from "openclaw/plugin-sdk/memory-canonical-core";
 import type { CanonicalMemoryIngestionCandidate } from "openclaw/plugin-sdk/memory-canonical-ingestion";
 import { createCanonicalMemoryIngestionCandidate } from "openclaw/plugin-sdk/memory-canonical-ingestion";
-import type { DocumentMemoryIngestionCategory } from "./document-memory-ingestion-types.js";
-import { buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch } from "./memory-canonical-compat-builders.js";
-import type { CompatibilityMemoryProfileId } from "./memory-compatibility-profile.js";
+import {
+  buildCanonicalMemoryRecordForCompatibilityProfile,
+  type CompatibilityMemoryProfileId,
+} from "./memory-compatibility-profile.js";
 import {
   toOrdinaryTurnProjectFactMatch,
   toOrdinaryTurnRecurringProcedureMatch,
@@ -16,11 +17,16 @@ import {
   type OrdinaryTurnAutoCaptureMatch,
 } from "./memory-ingestion-types.js";
 import type {
+  MemoryCanonicalClass,
   MemorySemanticObject,
   MemorySemanticPreferenceObject,
   MemorySemanticProjectFactObject,
   MemorySemanticRoutingObject,
 } from "./memory-semantic-interpretation.js";
+import {
+  buildMemorySemanticObjectIdentity,
+  type MemoryCompatibilityProjectionCategory,
+} from "./memory-semantic-object-identity.js";
 import type { ValidatedMemorySemanticObject } from "./memory-semantic-validation.js";
 import {
   createProjectFactCanonicalMatch,
@@ -51,9 +57,10 @@ export type MaterializedMemorySemanticForgetProjection = {
   confidence: "high" | "medium";
 };
 
-export type MaterializedMemorySemanticCaptureProjection = {
-  category: DocumentMemoryIngestionCategory;
-  match: OrdinaryTurnAutoCaptureMatch;
+export type MaterializedMemorySemanticCompatibilityProjection = {
+  canonicalClass: MemoryCanonicalClass;
+  compatibilityCategory: MemoryCompatibilityProjectionCategory;
+  compatibilityMatch: OrdinaryTurnAutoCaptureMatch;
   canonicalCandidate: CanonicalMemoryIngestionCandidate;
   evidence: string[];
   observedText: string;
@@ -76,7 +83,7 @@ export type MaterializedMemorySemanticResult =
   | {
       action: "capture";
       object: MemorySemanticObject;
-      projection: MaterializedMemorySemanticCaptureProjection;
+      projection: MaterializedMemorySemanticCompatibilityProjection;
     };
 
 function normalizeLower(value: string): string {
@@ -166,7 +173,8 @@ function resolveScopeProjectId(
 
 function buildCanonicalCandidate(params: {
   profileId: CompatibilityMemoryProfileId;
-  match: OrdinaryTurnAutoCaptureMatch;
+  object: MemorySemanticObject;
+  compatibilityMatch: OrdinaryTurnAutoCaptureMatch;
   reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
   evidence: string[];
   observedText: string;
@@ -174,16 +182,94 @@ function buildCanonicalCandidate(params: {
   captureSeam: string;
   captureProfile: string;
 }): CanonicalMemoryIngestionCandidate {
-  return buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch({
-    profileId: params.profileId,
-    match: params.match,
-    reviewMode: params.reviewMode,
-    detectionSource: "semantic",
-    evidence: params.evidence,
-    observedText: params.observedText,
-    ...(params.projectId ? { projectId: params.projectId } : {}),
-    captureSeam: params.captureSeam,
-    captureProfile: params.captureProfile,
+  const identity = buildMemorySemanticObjectIdentity(params.object);
+  return createCanonicalMemoryIngestionCandidate({
+    record: buildCanonicalMemoryRecordForCompatibilityProfile({
+      profileId: params.profileId,
+      subject: identity.subject,
+      statement: identity.statement,
+      projectId: params.profileId === "response_style" ? undefined : params.projectId,
+      confidence: { level: params.reviewMode === "hold_for_more_evidence" ? "medium" : "high" },
+      validationStatus: params.reviewMode === "direct" ? "approved" : params.reviewMode,
+      provenance: {
+        captureSeam: params.captureSeam,
+        captureProfile: params.captureProfile,
+        reviewState: params.reviewMode,
+      },
+      facets: {
+        canonicalClass: identity.canonicalClass,
+        canonicalKind: identity.canonicalKind,
+        internalKind: params.object.kind,
+        subjectKey: identity.subjectKey,
+        clusterKey: identity.clusterKey,
+        captureClass: params.compatibilityMatch.captureClass,
+        reasonCode: params.compatibilityMatch.reasonCode,
+        template: params.compatibilityMatch.template,
+        ...(params.compatibilityMatch.projectScope
+          ? { projectScope: params.compatibilityMatch.projectScope }
+          : {}),
+        ...(params.compatibilityMatch.responseStyleFamily
+          ? { responseStyleFamily: params.compatibilityMatch.responseStyleFamily }
+          : {}),
+        ...(params.compatibilityMatch.factFamily
+          ? { factFamily: params.compatibilityMatch.factFamily }
+          : {}),
+        ...(params.compatibilityMatch.fieldKey
+          ? { fieldKey: params.compatibilityMatch.fieldKey }
+          : {}),
+        ...(params.compatibilityMatch.procedureFamily
+          ? { procedureFamily: params.compatibilityMatch.procedureFamily }
+          : {}),
+        ...(params.compatibilityMatch.procedureKey
+          ? { procedureKey: params.compatibilityMatch.procedureKey }
+          : {}),
+        ...(params.compatibilityMatch.lessonFamily
+          ? { lessonFamily: params.compatibilityMatch.lessonFamily }
+          : {}),
+        ...(typeof params.compatibilityMatch.semanticProfileId === "string"
+          ? { semanticProfileId: params.compatibilityMatch.semanticProfileId }
+          : {}),
+        ...(params.compatibilityMatch.guidancePattern
+          ? { guidancePattern: params.compatibilityMatch.guidancePattern }
+          : {}),
+        ...(params.compatibilityMatch.recommendedAction
+          ? { recommendedAction: params.compatibilityMatch.recommendedAction }
+          : {}),
+        ...(params.compatibilityMatch.avoidAction
+          ? { avoidAction: params.compatibilityMatch.avoidAction }
+          : {}),
+        ...(params.compatibilityMatch.neededCapability
+          ? { neededCapability: params.compatibilityMatch.neededCapability }
+          : {}),
+      },
+      tags: [identity.canonicalClass, params.profileId, params.object.kind, "semantic_ingestion"],
+    }),
+    identity: {
+      dedupeKey: identity.dedupeKey,
+      clusterKey: identity.clusterKey,
+      subjectKey: identity.subjectKey,
+    },
+    capture: {
+      mode: "ordinary_turn",
+      source: "transcript",
+      observedText: params.observedText,
+      evidence: params.evidence,
+      detectionSource: "semantic",
+      reviewMode: params.reviewMode,
+    },
+    compatibility: {
+      candidateKind: params.compatibilityMatch.candidateKind,
+      captureClass: params.compatibilityMatch.captureClass,
+      reasonCode: params.compatibilityMatch.reasonCode,
+      template: params.compatibilityMatch.template,
+      metadata: {
+        canonicalClass: identity.canonicalClass,
+        internalKind: params.object.kind,
+        ...(typeof params.compatibilityMatch.semanticProfileId === "string"
+          ? { semanticProfileId: params.compatibilityMatch.semanticProfileId }
+          : {}),
+      },
+    },
   });
 }
 
@@ -203,7 +289,7 @@ function resolveRoutingCanonicalScope(params: {
 
 function buildRoutingCanonicalCandidate(params: {
   object: MemorySemanticRoutingObject;
-  match: OrdinaryTurnAutoCaptureMatch;
+  compatibilityMatch: OrdinaryTurnAutoCaptureMatch;
   reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
   evidence: string[];
   observedText: string;
@@ -211,11 +297,12 @@ function buildRoutingCanonicalCandidate(params: {
   captureSeam: string;
   captureProfile: string;
 }): CanonicalMemoryIngestionCandidate {
+  const identity = buildMemorySemanticObjectIdentity(params.object);
   return createCanonicalMemoryIngestionCandidate({
     record: createCanonicalMemoryRecord({
-      kind: "reference",
-      subject: params.object.task,
-      statement: renderRoutingStatement(params.object),
+      kind: identity.canonicalClass,
+      subject: identity.subject,
+      statement: identity.statement,
       scope: resolveRoutingCanonicalScope({
         object: params.object,
         projectId: params.projectId,
@@ -228,22 +315,32 @@ function buildRoutingCanonicalCandidate(params: {
         reviewState: params.reviewMode,
       },
       facets: {
-        subjectKey: params.match.subjectKey,
-        captureClass: params.match.captureClass,
-        reasonCode: params.match.reasonCode,
-        template: params.match.template,
-        ...(params.match.projectScope ? { projectScope: params.match.projectScope } : {}),
+        canonicalClass: identity.canonicalClass,
+        internalKind: params.object.kind,
+        subjectKey: identity.subjectKey,
+        clusterKey: identity.clusterKey,
+        captureClass: params.compatibilityMatch.captureClass,
+        reasonCode: params.compatibilityMatch.reasonCode,
+        template: params.compatibilityMatch.template,
+        ...(params.compatibilityMatch.projectScope
+          ? { projectScope: params.compatibilityMatch.projectScope }
+          : {}),
         ...(params.object.rationaleText ? { rationale: params.object.rationaleText } : {}),
       },
-      tags: ["reference", "reference_routing", "semantic_ingestion"],
+      tags: [
+        identity.canonicalClass,
+        "reference_routing",
+        params.object.kind,
+        "semantic_ingestion",
+      ],
       compatibility: {
         captureCategory: "reference_routing",
       },
     }),
     identity: {
-      dedupeKey: params.match.key,
-      clusterKey: params.match.key,
-      subjectKey: params.match.subjectKey,
+      dedupeKey: identity.dedupeKey,
+      clusterKey: identity.clusterKey,
+      subjectKey: identity.subjectKey,
     },
     capture: {
       mode: "ordinary_turn",
@@ -254,10 +351,10 @@ function buildRoutingCanonicalCandidate(params: {
       reviewMode: params.reviewMode,
     },
     compatibility: {
-      candidateKind: params.match.candidateKind,
-      captureClass: params.match.captureClass,
-      reasonCode: params.match.reasonCode,
-      template: params.match.template,
+      candidateKind: params.compatibilityMatch.candidateKind,
+      captureClass: params.compatibilityMatch.captureClass,
+      reasonCode: params.compatibilityMatch.reasonCode,
+      template: params.compatibilityMatch.template,
       metadata: {
         resourceType: "reference_routing",
       },
@@ -283,6 +380,50 @@ function buildResponseStyleProjection(params: {
       projection: {
         subject: object.subject,
         subjectKey,
+        evidence: params.validated.evidence,
+        observedText: params.validated.observedText,
+        reviewMode: params.validated.reviewMode,
+        confidence: params.validated.confidence,
+      },
+    };
+  }
+  if (object.value && !object.preferenceProfile) {
+    const normalizedValue = normalizeLower(object.value);
+    const match = {
+      profile: "user-preference-v2",
+      captureClass: "explicit_preference",
+      candidateKind: "learning",
+      reasonCode: "explicit_preference_statement",
+      template: "my_preferred_is",
+      subject: object.subject,
+      value: object.value,
+      normalizedSubject,
+      normalizedValue,
+      content: `User preference: preferred ${object.subject} is ${object.value}.`,
+      subjectKey,
+      key: buildMatchKey({
+        captureClass: "explicit_preference",
+        normalizedSubject,
+        normalizedValue,
+      }),
+    } satisfies OrdinaryTurnAutoCaptureMatch;
+    return {
+      action: "capture",
+      object,
+      projection: {
+        canonicalClass: "user",
+        compatibilityCategory: "response_style",
+        compatibilityMatch: match,
+        canonicalCandidate: buildCanonicalCandidate({
+          profileId: "response_style",
+          object,
+          compatibilityMatch: match,
+          reviewMode: params.validated.reviewMode,
+          evidence: params.validated.evidence,
+          observedText: params.validated.observedText,
+          captureSeam: params.captureSeam,
+          captureProfile: params.captureProfile,
+        }),
         evidence: params.validated.evidence,
         observedText: params.validated.observedText,
         reviewMode: params.validated.reviewMode,
@@ -323,11 +464,13 @@ function buildResponseStyleProjection(params: {
     action: "capture",
     object,
     projection: {
-      category: "response_style",
-      match,
+      canonicalClass: "user",
+      compatibilityCategory: "response_style",
+      compatibilityMatch: match,
       canonicalCandidate: buildCanonicalCandidate({
         profileId: "response_style",
-        match,
+        object,
+        compatibilityMatch: match,
         reviewMode: params.validated.reviewMode,
         evidence: params.validated.evidence,
         observedText: params.validated.observedText,
@@ -374,11 +517,13 @@ function buildCorrectionProjection(params: {
       action: "capture",
       object,
       projection: {
-        category: "response_style",
-        match,
+        canonicalClass: "user",
+        compatibilityCategory: "response_style",
+        compatibilityMatch: match,
         canonicalCandidate: buildCanonicalCandidate({
           profileId: "response_style",
-          match,
+          object,
+          compatibilityMatch: match,
           reviewMode: params.validated.reviewMode,
           evidence: params.validated.evidence,
           observedText: params.validated.observedText,
@@ -438,11 +583,13 @@ function buildCorrectionProjection(params: {
       action: "capture",
       object,
       projection: {
-        category: "project_rule",
-        match,
+        canonicalClass: "feedback",
+        compatibilityCategory: "project_rule",
+        compatibilityMatch: match,
         canonicalCandidate: buildCanonicalCandidate({
           profileId: "project_rule",
-          match,
+          object,
+          compatibilityMatch: match,
           reviewMode:
             params.validated.reviewMode === "direct"
               ? "pending_confirmation"
@@ -502,11 +649,13 @@ function buildCorrectionProjection(params: {
       action: "capture",
       object,
       projection: {
-        category: "unmet_need",
-        match,
+        canonicalClass: "project",
+        compatibilityCategory: "unmet_need",
+        compatibilityMatch: match,
         canonicalCandidate: buildCanonicalCandidate({
           profileId: "unmet_need",
-          match,
+          object,
+          compatibilityMatch: match,
           reviewMode:
             params.validated.reviewMode === "direct"
               ? "pending_confirmation"
@@ -572,11 +721,13 @@ function buildCorrectionProjection(params: {
     action: "capture",
     object,
     projection: {
-      category: "workflow_improvement",
-      match,
+      canonicalClass: "feedback",
+      compatibilityCategory: "workflow_improvement",
+      compatibilityMatch: match,
       canonicalCandidate: buildCanonicalCandidate({
         profileId: "workflow_improvement",
-        match,
+        object,
+        compatibilityMatch: match,
         reviewMode:
           params.validated.reviewMode === "direct"
             ? "pending_confirmation"
@@ -623,11 +774,13 @@ function buildProcedureProjection(params: {
     action: "capture",
     object,
     projection: {
-      category: "recurring_procedure",
-      match,
+      canonicalClass: "feedback",
+      compatibilityCategory: "recurring_procedure",
+      compatibilityMatch: match,
       canonicalCandidate: buildCanonicalCandidate({
         profileId: "recurring_procedure",
-        match,
+        object,
+        compatibilityMatch: match,
         reviewMode:
           params.validated.reviewMode === "direct"
             ? "pending_confirmation"
@@ -680,11 +833,13 @@ function buildProjectFactProjection(params: {
     action: "capture",
     object,
     projection: {
-      category: "project_fact",
-      match,
+      canonicalClass: "project",
+      compatibilityCategory: "project_fact",
+      compatibilityMatch: match,
       canonicalCandidate: buildCanonicalCandidate({
         profileId: "project_fact",
-        match,
+        object,
+        compatibilityMatch: match,
         reviewMode:
           params.validated.reviewMode === "direct"
             ? "pending_confirmation"
@@ -756,11 +911,12 @@ function buildRoutingProjection(params: {
     action: "capture",
     object,
     projection: {
-      category: "reference_routing",
-      match,
+      canonicalClass: "reference",
+      compatibilityCategory: "reference_routing",
+      compatibilityMatch: match,
       canonicalCandidate: buildRoutingCanonicalCandidate({
         object,
-        match,
+        compatibilityMatch: match,
         reviewMode:
           params.validated.reviewMode === "direct"
             ? "pending_confirmation"

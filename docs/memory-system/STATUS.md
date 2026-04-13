@@ -4,6 +4,40 @@
 
 The Phase 1 model-native closure bar is now landed locally.
 
+The current local sprint has also landed the main Pass 2 runtime-semantic
+cutover seams:
+
+- one shared semantic capture collector now fronts document ingestion,
+  ordinary-turn semantic collection, and managed submission semantic
+  collection
+- planner captures now carry object-native identity
+- canonical candidate identity now derives from semantic objects rather than
+  compatibility match keys
+- ordinary-turn semantic scoring now uses object-native identity
+- review posture is now class- and object-risk-aware governance
+- benchmark summaries dedupe and report by object-native identity
+- a cross-lane replay harness now proves document vs ordinary-turn parity on
+  object-native outcomes
+- benchmark proof surfaces now call legacy buckets
+  `compatibilityCategory` instead of `category`
+- touched fast lanes are green locally on the current memory branch line
+
+Pass 2 is now materially further along than the Phase 1 closure state, but the
+current branch remains an implementation sprint rather than a final landing
+state.
+
+The critical audit during this sprint also tightened the honest status bar:
+
+- exact rendered statements are no longer used as the primary semantic proof
+  surface in the touched document-ingestion and benchmark tests
+- compatibility projection buckets are explicitly treated as downstream
+  compatibility metadata rather than canonical semantic classes
+- managed project-fact direct approval now exists in the typed contract where
+  the runtime already relied on it
+- `origin/main` still does not appear to contain the memory subsystem tree, so
+  branch-line convergence remains a real blocker to claiming one unified
+  landing target
+
 That closure includes:
 
 - ordinary-turn normal runtime is model-native only by default
@@ -26,6 +60,8 @@ That closure includes:
   - `audits/memory_live_model_benchmark_2026-04-13T01-34Z.md`
 
 Pass 2 is now unblocked at the architecture level.
+
+Pass 2 is not yet fully landed on the repo's primary branch line.
 
 The memory system has now completed:
 

@@ -26,13 +26,13 @@ describe("memory live benchmark", () => {
         expected: {
           exactCount: 1,
           classCounts: { user: 1 },
-          categoryCounts: { response_style: 1 },
+          compatibilityCategoryCounts: { response_style: 1 },
           requiredObjects: [
             {
               id: "plain",
               canonicalClass: "user",
               kind: "preference",
-              category: "response_style",
+              compatibilityCategory: "response_style",
               subjectIncludes: ["response language"],
               instructionIncludes: ["plain english"],
               lineStart: 1,
@@ -65,13 +65,13 @@ describe("memory live benchmark", () => {
         expected: {
           exactCount: 1,
           classCounts: { feedback: 1 },
-          categoryCounts: { recurring_procedure: 1 },
+          compatibilityCategoryCounts: { recurring_procedure: 1 },
           requiredObjects: [
             {
               id: "procedure",
               canonicalClass: "feedback",
               kind: "procedure",
-              category: "recurring_procedure",
+              compatibilityCategory: "recurring_procedure",
               procedure: {
                 titleIncludes: ["release evidence handoff checklist"],
                 stepIncludes: ["signed evidence bundle", "audit channel"],
@@ -159,13 +159,13 @@ describe("memory live benchmark", () => {
         expected: {
           exactCount: 1,
           classCounts: { project: 1 },
-          categoryCounts: { project_fact: 1 },
+          compatibilityCategoryCounts: { project_fact: 1 },
           requiredObjects: [
             {
               id: "default_branch",
               canonicalClass: "project",
               kind: "project_fact",
-              category: "project_fact",
+              compatibilityCategory: "project_fact",
               subjectIncludes: ["default branch"],
               valueIncludes: ["atlas-main"],
               forbidEvidencePrefixes: ["deterministic_"],
@@ -229,14 +229,24 @@ describe("memory live benchmark", () => {
       caseResults: [
         {
           benchmarkCase: {} as never,
-          actual: { objectCount: 1, classCounts: {}, categoryCounts: {}, objects: [] },
+          actual: {
+            objectCount: 1,
+            classCounts: {},
+            compatibilityCategoryCounts: {},
+            objects: [],
+          },
           matchedObjectIds: ["one"],
           issues: [],
           pass: true,
         },
         {
           benchmarkCase: {} as never,
-          actual: { objectCount: 1, classCounts: {}, categoryCounts: {}, objects: [] },
+          actual: {
+            objectCount: 1,
+            classCounts: {},
+            compatibilityCategoryCounts: {},
+            objects: [],
+          },
           matchedObjectIds: [],
           issues: [
             {

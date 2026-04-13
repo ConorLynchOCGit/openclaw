@@ -2,8 +2,38 @@
 
 ## Active slice
 
-Phase 1 closure is now landed locally. The next active slice is Pass 2 runtime
-semantic cutover.
+Phase 1 closure is now landed locally. The active local slice is the Pass 2
+runtime semantic cutover implementation sprint.
+
+Latest Pass 2 local progress:
+
+- one shared semantic capture collector now serves document ingestion,
+  ordinary-turn semantic collection, and managed submission semantic
+  collection
+- planner captures now carry object-native identity:
+  - subject key
+  - cluster key
+  - dedupe key
+- ordinary-turn semantic plan keys now come from object identity instead of
+  compatibility match identity
+- canonical candidate identity is now derived from semantic objects during
+  materialization instead of using compatibility match keys as the primary
+  authority
+- review posture now uses object-risk-aware governance instead of one narrow
+  direct-path special case
+- benchmark summaries now carry object-native identity and dedupe directly on
+  semantic objects
+- benchmark and gold-corpus expectations now name compatibility projection
+  buckets explicitly as `compatibilityCategory` rather than bare `category`
+  so proof reporting stops implying those legacy buckets are canonical truth
+- cross-lane replay now exists for document vs ordinary-turn parity under the
+  shared model-native seam
+- touched fast lanes are green locally:
+  - `pnpm check:types`
+  - `pnpm test -- extensions/memory-middleware/src/memory-live-benchmark.test.ts extensions/memory-middleware/src/memory-semantic-cross-lane-replay.test.ts`
+  - `pnpm test -- extensions/memory-middleware/src/document-memory-ingestion-service.test.ts`
+  - `pnpm test -- extensions/memory-middleware/src/ordinary-turn-auto-capture.test.ts`
+  - `pnpm test -- extensions/memory-middleware/src/tools/candidate-submit.integration.test.ts`
 
 Latest closure follow-through:
 
@@ -32,6 +62,7 @@ Latest closure follow-through:
   reusing a workflow profile as semantic authority
 - local semantic proof uses object-native replay and the live proof lane now
   uses a direct simple-completion path rather than the embedded Pi runner
+- heuristic replay helpers are now explicitly named as scaffolding, not proof
 - audited live proof now exists under `audits/` for both unstable mini-model
   runs and the passing `gpt-5.4` closure artifact:
   - `audits/memory_live_model_benchmark_2026-04-13T01-34Z.json`
@@ -96,8 +127,30 @@ Earlier structural runtime follow-through that still matters:
 
 ## Objective
 
-Hold the Phase 1 closure line honestly and start Pass 2 from a runtime that is
-already model-native in its normal semantic seam.
+Hold the Phase 1 closure line honestly and finish the Pass 2 runtime cutover so
+document, ordinary-turn, and managed submission use one shared model-native
+semantic service boundary.
+
+## Critical audit findings still governing this sprint
+
+- the four canonical memory classes remain the business contract:
+  - user
+  - feedback
+  - project
+  - reference
+- legacy names such as `response_style`, `project_fact`,
+  `recurring_procedure`, `workflow_improvement`, `project_rule`,
+  `unmet_need`, and `reference_routing` still survive in downstream runtime
+  and reporting, but the touched benchmark/materialization paths now mark them
+  as compatibility-only labels instead of canonical semantic truth
+- proof surfaces in the touched benchmark and document-ingestion tests now
+  assert structured semantic objects and canonical classes instead of exact
+  rendered statements
+- the memory subsystem is still not honestly landed on `origin/main` in this
+  sprint because `origin/main` does not currently appear to own
+  `extensions/memory-middleware/**` or `docs/memory-system/**`
+- this sprint is therefore an implementation-and-audit pass, not the final
+  landing pass
 
 ## What is now landed
 
@@ -172,6 +225,17 @@ already model-native in its normal semantic seam.
   in `/memory-system/specs/model-native-memory-architecture-program`
 - Pass 2 should now land the runtime-semantic-cutover pack directly:
   - `/memory-system/specs/model-native-pass-2-runtime-semantic-cutover`
+- implement and validate the dedicated Pass 2 slice specs:
+  - `/memory-system/specs/pass-2-slice-15-lane-agnostic-semantic-planner`
+  - `/memory-system/specs/pass-2-slice-16-canonical-memory-object-unification`
+  - `/memory-system/specs/pass-2-slice-17-review-policy-redesign`
+  - `/memory-system/specs/pass-2-slice-18-dedupe-and-supersession-redesign`
+  - `/memory-system/specs/pass-2-slice-19-model-native-procedure-extraction`
+  - `/memory-system/specs/pass-2-slice-20-model-native-preference-and-correction-capture`
+  - `/memory-system/specs/pass-2-slice-21-model-native-routing-reference-interpretation`
+  - `/memory-system/specs/pass-2-slice-22-capture-service-convergence`
+  - `/memory-system/specs/pass-2-slice-27-full-heuristic-semantic-retirement`
+  - `/memory-system/specs/pass-2-slice-28-cross-lane-replay-harness`
 - keep the governing Pass 1 closure record visible:
   - `/memory-system/specs/structural-normalization-cleanup`
   - `/memory-system/specs/unified-source-envelope-contract`

@@ -16,7 +16,7 @@ export type MemorySemanticGoldExpectedObject = {
   id: string;
   canonicalClass?: MemoryCanonicalClass;
   kind: MemorySemanticObjectKind;
-  category?: DocumentMemoryIngestionCategory;
+  compatibilityCategory?: DocumentMemoryIngestionCategory;
   correctionKind?: MemorySemanticCorrectionObject["correctionKind"];
   preferenceProfile?: MemorySemanticPreferenceObject["preferenceProfile"];
   workflowProfile?: MemorySemanticCorrectionObject["workflowProfile"];
@@ -51,7 +51,7 @@ export type MemorySemanticGoldForbiddenObject = {
   reason: string;
   canonicalClass?: MemoryCanonicalClass;
   kind?: MemorySemanticObjectKind;
-  category?: DocumentMemoryIngestionCategory;
+  compatibilityCategory?: DocumentMemoryIngestionCategory;
   subjectIncludes?: string[];
   instructionIncludes?: string[];
   valueIncludes?: string[];
@@ -77,8 +77,8 @@ export type MemorySemanticGoldCase = {
     maxCount?: number;
     classCounts?: Partial<Record<MemoryCanonicalClass, number>>;
     classMinimums?: Partial<Record<MemoryCanonicalClass, number>>;
-    categoryCounts?: Partial<Record<DocumentMemoryIngestionCategory, number>>;
-    categoryMinimums?: Partial<Record<DocumentMemoryIngestionCategory, number>>;
+    compatibilityCategoryCounts?: Partial<Record<DocumentMemoryIngestionCategory, number>>;
+    compatibilityCategoryMinimums?: Partial<Record<DocumentMemoryIngestionCategory, number>>;
     requiredObjects: MemorySemanticGoldExpectedObject[];
     forbiddenObjects: MemorySemanticGoldForbiddenObject[];
     notes: string[];
@@ -111,13 +111,13 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
     ].join("\n"),
     expected: {
       exactCount: 3,
-      categoryCounts: { response_style: 3 },
+      compatibilityCategoryCounts: { response_style: 3 },
       requiredObjects: [
         {
           id: "plain_english",
           canonicalClass: "user",
           kind: "preference",
-          category: "response_style",
+          compatibilityCategory: "response_style",
           preferenceProfile: "plain_english",
           instructionIncludes: ["plain english"],
           lineStart: 4,
@@ -126,7 +126,7 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
           id: "concise",
           canonicalClass: "user",
           kind: "preference",
-          category: "response_style",
+          compatibilityCategory: "response_style",
           preferenceProfile: "concise",
           instructionIncludes: ["short"],
           lineStart: 5,
@@ -135,7 +135,7 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
           id: "repo_relative",
           canonicalClass: "user",
           kind: "preference",
-          category: "response_style",
+          compatibilityCategory: "response_style",
           instructionIncludes: ["repo-root relative paths"],
           lineStart: 8,
         },
@@ -173,13 +173,13 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
     projectScope: "atlas forge",
     expected: {
       exactCount: 3,
-      categoryCounts: { project_fact: 2, project_rule: 1 },
+      compatibilityCategoryCounts: { project_fact: 2, project_rule: 1 },
       requiredObjects: [
         {
           id: "default_branch",
           canonicalClass: "project",
           kind: "project_fact",
-          category: "project_fact",
+          compatibilityCategory: "project_fact",
           subjectIncludes: ["default branch"],
           valueIncludes: ["atlas-main"],
           projectScope: "atlas forge",
@@ -189,7 +189,7 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
           id: "staging_branch",
           canonicalClass: "project",
           kind: "project_fact",
-          category: "project_fact",
+          compatibilityCategory: "project_fact",
           subjectIncludes: ["staging branch"],
           valueIncludes: ["atlas-staging"],
           projectScope: "atlas forge",
@@ -199,7 +199,7 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
           id: "docs_rule",
           canonicalClass: "feedback",
           kind: "correction",
-          category: "project_rule",
+          compatibilityCategory: "project_rule",
           correctionKind: "project_rule",
           subjectIncludes: ["docs"],
           recommendedActionIncludes: ["english docs first"],
@@ -236,13 +236,13 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
     ].join("\n"),
     expected: {
       exactCount: 2,
-      categoryCounts: { recurring_procedure: 1, workflow_improvement: 1 },
+      compatibilityCategoryCounts: { recurring_procedure: 1, workflow_improvement: 1 },
       requiredObjects: [
         {
           id: "rollback_checklist",
           canonicalClass: "feedback",
           kind: "procedure",
-          category: "recurring_procedure",
+          compatibilityCategory: "recurring_procedure",
           procedure: {
             titleIncludes: ["rollback verification checklist"],
             stepIncludes: ["rollback version", "key health checks"],
@@ -255,7 +255,7 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
           id: "readiness_rule",
           canonicalClass: "feedback",
           kind: "correction",
-          category: "workflow_improvement",
+          compatibilityCategory: "workflow_improvement",
           correctionKind: "workflow_guidance",
           subjectIncludes: ["rollout readiness"],
           recommendedActionIncludes: ["/readyz"],
@@ -288,13 +288,13 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
     ],
     expected: {
       exactCount: 1,
-      categoryCounts: { response_style: 1 },
+      compatibilityCategoryCounts: { response_style: 1 },
       requiredObjects: [
         {
           id: "plain_english_preference",
           canonicalClass: "user",
           kind: "correction",
-          category: "response_style",
+          compatibilityCategory: "response_style",
           correctionKind: "response_preference",
           subjectIncludes: ["response language"],
           recommendedActionIncludes: ["plain english"],
@@ -325,13 +325,13 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
     ],
     expected: {
       exactCount: 1,
-      categoryCounts: { project_fact: 1 },
+      compatibilityCategoryCounts: { project_fact: 1 },
       requiredObjects: [
         {
           id: "project_fact_branch",
           canonicalClass: "project",
           kind: "project_fact",
-          category: "project_fact",
+          compatibilityCategory: "project_fact",
           subjectIncludes: ["default branch"],
           valueIncludes: ["atlas-main"],
           projectScope: "atlas forge",
@@ -375,7 +375,7 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
     ].join("\n"),
     expected: {
       minCount: 4,
-      categoryMinimums: {
+      compatibilityCategoryMinimums: {
         recurring_procedure: 1,
         workflow_improvement: 1,
         reference_routing: 2,
@@ -385,7 +385,7 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
           id: "companion_docs",
           canonicalClass: "reference",
           kind: "routing",
-          category: "reference_routing",
+          compatibilityCategory: "reference_routing",
           primaryResourceIncludes: ["testing"],
           companionResourceIncludes: ["release policy"],
         },
@@ -393,7 +393,7 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
           id: "default_phase_order",
           canonicalClass: "feedback",
           kind: "procedure",
-          category: "recurring_procedure",
+          compatibilityCategory: "recurring_procedure",
           procedure: {
             titleIncludes: ["default phase order"],
             stepIncludes: ["implementation loop", "pre-proof gate", "post-push verification"],
@@ -403,7 +403,7 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
           id: "readyz_rule",
           canonicalClass: "feedback",
           kind: "correction",
-          category: "workflow_improvement",
+          compatibilityCategory: "workflow_improvement",
           correctionKind: "workflow_guidance",
           recommendedActionIncludes: ["/readyz"],
           avoidActionIncludes: ["/healthz"],
@@ -440,13 +440,13 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
     projectScope: "atlas forge",
     expected: {
       exactCount: 1,
-      categoryCounts: { project_rule: 1 },
+      compatibilityCategoryCounts: { project_rule: 1 },
       requiredObjects: [
         {
           id: "deduped_docs_rule",
           canonicalClass: "feedback",
           kind: "correction",
-          category: "project_rule",
+          compatibilityCategory: "project_rule",
           correctionKind: "project_rule",
           subjectIncludes: ["docs"],
           recommendedActionIncludes: ["english docs first"],
@@ -477,13 +477,13 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
     ].join("\n"),
     expected: {
       exactCount: 2,
-      categoryCounts: { reference_routing: 2 },
+      compatibilityCategoryCounts: { reference_routing: 2 },
       requiredObjects: [
         {
           id: "testing_release_policy_routing",
           canonicalClass: "reference",
           kind: "routing",
-          category: "reference_routing",
+          compatibilityCategory: "reference_routing",
           taskIncludes: ["validation bar"],
           primaryResourceIncludes: ["testing"],
           companionResourceIncludes: ["release policy"],
@@ -492,7 +492,7 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
           id: "landing_gate_tiers_routing",
           canonicalClass: "reference",
           kind: "routing",
-          category: "reference_routing",
+          compatibilityCategory: "reference_routing",
           primaryResourceIncludes: ["landing gate tiers"],
         },
       ],
@@ -524,13 +524,13 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
     ],
     expected: {
       exactCount: 1,
-      categoryCounts: { project_rule: 1 },
+      compatibilityCategoryCounts: { project_rule: 1 },
       requiredObjects: [
         {
           id: "docs_correction_scope",
           canonicalClass: "feedback",
           kind: "correction",
-          category: "project_rule",
+          compatibilityCategory: "project_rule",
           correctionKind: "project_rule",
           subjectIncludes: ["docs"],
           avoidActionIncludes: ["zh-cn"],
@@ -557,12 +557,12 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
     content: ["# Defaults", "", "Use plain English.", "Keep responses concise."].join("\n"),
     expected: {
       exactCount: 2,
-      categoryCounts: { response_style: 2 },
+      compatibilityCategoryCounts: { response_style: 2 },
       requiredObjects: [
         {
           id: "response_language_plain_english",
           kind: "preference",
-          category: "response_style",
+          compatibilityCategory: "response_style",
           subjectIncludes: ["response language"],
           instructionIncludes: ["plain english"],
           forbidEvidencePrefixes: ["deterministic_"],
@@ -570,7 +570,7 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
         {
           id: "response_style_concise",
           kind: "preference",
-          category: "response_style",
+          compatibilityCategory: "response_style",
           subjectIncludes: ["response style"],
           instructionIncludes: ["concise"],
           forbidEvidencePrefixes: ["deterministic_"],
@@ -602,12 +602,12 @@ export const MEMORY_SEMANTIC_GOLD_CORPUS: MemorySemanticGoldCase[] = [
     ].join("\n"),
     expected: {
       exactCount: 1,
-      categoryCounts: { recurring_procedure: 1 },
+      compatibilityCategoryCounts: { recurring_procedure: 1 },
       requiredObjects: [
         {
           id: "finalize_procedure",
           kind: "procedure",
-          category: "recurring_procedure",
+          compatibilityCategory: "recurring_procedure",
           procedure: {
             titleIncludes: ["finalize checklist"],
             stepIncludes: ["proof plan", "rollback reference", "proofed code"],

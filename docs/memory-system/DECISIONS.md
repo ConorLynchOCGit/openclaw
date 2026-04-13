@@ -6,6 +6,81 @@ This file records the currently active architecture decisions that govern the
 memory roadmap after flattening batch v6, substrate support batch v1, and the
 accepted post-v3 architecture review.
 
+## 2026-04 — live capture uses one shared semantic capture service boundary
+
+Current accepted framing:
+
+- document ingestion, ordinary-turn, and managed submission may differ in
+  source assembly and post-capture orchestration
+- they may not each own a separate semantic planner loop
+- planner collection should run through one shared capture service boundary
+
+## 2026-04 — object-native identity is the canonical overlap authority
+
+Current accepted framing:
+
+- semantic objects own subject, cluster, and dedupe identity
+- canonical candidate identity should derive from those semantic-object keys
+- compatibility match keys may survive as output metadata, not authority
+
+## 2026-04 — compatibility categories are reporting metadata, not semantic truth
+
+Current accepted framing:
+
+- compatibility labels such as `response_style`, `project_fact`,
+  `recurring_procedure`, `workflow_improvement`, `project_rule`,
+  `unmet_need`, and `reference_routing` may survive for downstream packaging,
+  retrieval, and legacy-facing reporting
+- those labels are not the canonical top-level memory contract
+- the canonical top-level memory contract remains:
+  - `user`
+  - `feedback`
+  - `project`
+  - `reference`
+- proof and benchmark surfaces should name those labels as compatibility
+  categories when they are still needed, rather than implying they are the
+  primary ontology
+
+## 2026-04 — semantic proof must assert objects, not exact rendered statements
+
+Current accepted framing:
+
+- rendered statements are acceptable output artifacts
+- exact rendered wording is not an acceptable semantic proof surface
+- proof should assert canonical class, semantic object kind, structured payload,
+  scope, provenance, and dedupe behavior first
+- compatibility rendering or prose checks should remain secondary and
+  output-oriented only
+
+## 2026-04 — branch-local memory architecture is not an acceptable steady state
+
+Current accepted framing:
+
+- the memory subsystem may be implemented on a dedicated branch line during an
+  active rewrite sprint
+- it may not remain indefinitely split away from the repo's real landing line
+- if `origin/main` does not own the memory subsystem tree, that is a blocker to
+  claiming the architecture is actually landed
+
+## 2026-04 — review posture is governance over model-native evidence
+
+Current accepted framing:
+
+- review posture should use canonical class, object kind, scope, and
+  confidence
+- review posture should not depend on detector-family quirks
+- validator governance still must not reconstruct semantics
+
+## 2026-04 — lane parity claims require cross-lane object-native replay
+
+Current accepted framing:
+
+- it is not enough for document and turn lanes to share types
+- parity claims must be backed by replaying equivalent meaning through both
+  lanes
+- parity should be judged on object-native outcomes and canonical classes,
+  not on compatibility prose
+
 ## 2026-04 — multi-memory capture is now required baseline behavior
 
 Current accepted framing:

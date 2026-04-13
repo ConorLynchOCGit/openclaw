@@ -5,9 +5,10 @@ import type { CandidateSubmissionInput } from "../db/runtime.js";
 import type { OrdinaryTurnAutoCaptureMatch } from "../memory-ingestion-types.js";
 import { toOrdinaryTurnRecurringProcedureMatch } from "../memory-ingestion-types.js";
 import {
-  planNormalizedMemorySourceWindow,
-  type PlannedMemorySemanticCapture,
-} from "../memory-semantic-planner.js";
+  collectPlannedMemorySemanticCaptures,
+  pickBestPlannedMemorySemanticCapture,
+  type PlannedWindowSemanticCapture,
+} from "../memory-semantic-capture-service.js";
 import {
   normalizeDocumentMemorySource,
   normalizeTranscriptMemorySource,
@@ -53,6 +54,7 @@ type SessionStoreEntry = {
 export type ManagedResponseStyleResolution = {
   action: "capture";
   familyId: "response_style";
+  compatibilityProfileId: "response_style";
   parsed: OrdinaryTurnAutoCaptureMatch;
   responseStyleFamily: ResponseStyleFamily;
   reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
@@ -65,10 +67,11 @@ export type ManagedResponseStyleResolution = {
 
 export type ManagedProjectFactResolution = {
   familyId: "project_fact";
+  compatibilityProfileId: "project_fact";
   parsed: OrdinaryTurnAutoCaptureMatch;
   factFamily: ProjectFactFamily;
   fieldKey?: ProjectFactFieldKey;
-  reviewMode: "pending_confirmation" | "hold_for_more_evidence";
+  reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
   source: "content" | "raw";
   detectionSource: "deterministic" | "semantic";
   confidence: "high" | ProjectFactSemanticConfidence;
@@ -78,6 +81,7 @@ export type ManagedProjectFactResolution = {
 
 export type ManagedRecurringProcedureResolution = {
   familyId: "recurring_procedure";
+  compatibilityProfileId: "recurring_procedure";
   parsed: OrdinaryTurnAutoCaptureMatch;
   procedureFamily: RecurringProcedureFamily;
   procedureKey?: RecurringProcedureKey;
@@ -91,7 +95,9 @@ export type ManagedRecurringProcedureResolution = {
 
 export type ManagedWorkflowImprovementResolution = {
   familyId: "workflow_improvement";
+  compatibilityProfileId: "workflow_improvement";
   captureCategory: "workflow_improvement" | "project_rule" | "unmet_need";
+  compatibilityCategory: "workflow_improvement" | "project_rule" | "unmet_need";
   parsed: OrdinaryTurnAutoCaptureMatch;
   lessonFamily: WorkflowImprovementLessonFamily;
   reviewMode: "pending_confirmation" | "hold_for_more_evidence";
@@ -283,7 +289,7 @@ async function collectManagedRawCandidates(params: {
 
 type ManagedSemanticCapture = {
   source: "content" | "raw";
-  capture: PlannedMemorySemanticCapture;
+  capture: PlannedWindowSemanticCapture;
 };
 
 function buildManagedSourceWindows(params: {
@@ -345,23 +351,21 @@ async function collectManagedSemanticCaptures(params: {
       source: candidate.source,
       text: candidate.text,
     });
-    for (const window of windows) {
-      const planned = await planNormalizedMemorySourceWindow({
-        config: params.runtime.config,
-        lane: "document_ingestion",
-        window,
-        interpreter: params.runtime.semanticInterpreter,
-        ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
-      });
-      for (const capture of planned?.captures ?? []) {
-        if (capture.materialized.action !== "capture") {
-          continue;
-        }
-        captures.push({
-          source: candidate.source,
-          capture,
-        });
+    const plannedCaptures = await collectPlannedMemorySemanticCaptures({
+      config: params.runtime.config,
+      lane: "document_ingestion",
+      windows,
+      interpreter: params.runtime.semanticInterpreter,
+      ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+    });
+    for (const capture of plannedCaptures.captures) {
+      if (capture.materialized.action !== "capture") {
+        continue;
       }
+      captures.push({
+        source: candidate.source,
+        capture,
+      });
     }
   }
   return captures;
@@ -371,17 +375,17 @@ function pickManagedCapture(
   captures: ManagedSemanticCapture[],
   predicate: (capture: ManagedSemanticCapture) => boolean,
 ): ManagedSemanticCapture | null {
-  return (
-    [...captures].filter(predicate).sort((left, right) => {
-      const leftScore =
-        (left.capture.validated.confidence === "high" ? 2 : 1) * 100 +
-        left.capture.validated.supportingBlocks.length;
-      const rightScore =
-        (right.capture.validated.confidence === "high" ? 2 : 1) * 100 +
-        right.capture.validated.supportingBlocks.length;
-      return rightScore - leftScore;
-    })[0] ?? null
+  const best = pickBestPlannedMemorySemanticCapture(
+    captures.map((capture) => capture.capture),
+    (capture) => {
+      const wrapped = captures.find((entry) => entry.capture === capture);
+      return wrapped ? predicate(wrapped) : false;
+    },
   );
+  if (!best) {
+    return null;
+  }
+  return captures.find((capture) => capture.capture === best) ?? null;
 }
 
 function isManagedCorrectionMatch(
@@ -415,7 +419,7 @@ export async function resolveManagedResponseStyleLearning(params: {
     }),
     (entry) =>
       entry.capture.materialized.action === "capture" &&
-      entry.capture.materialized.projection.category === "response_style",
+      entry.capture.materialized.projection.compatibilityCategory === "response_style",
   );
   if (!capture) {
     return null;
@@ -427,7 +431,8 @@ export async function resolveManagedResponseStyleLearning(params: {
   return {
     action: "capture",
     familyId: "response_style",
-    parsed: projection.match,
+    compatibilityProfileId: "response_style",
+    parsed: projection.compatibilityMatch,
     responseStyleFamily: projection.responseStyleFamily ?? "generalized_guidance",
     reviewMode:
       (projection.responseStyleFamily ?? "generalized_guidance") === "generalized_guidance"
@@ -463,7 +468,8 @@ export async function resolveManagedResponseStyleCorrection(params: {
   return {
     action: "capture",
     familyId: "response_style",
-    parsed: projection.match,
+    compatibilityProfileId: "response_style",
+    parsed: projection.compatibilityMatch,
     responseStyleFamily: projection.responseStyleFamily ?? "generalized_guidance",
     reviewMode: projection.reviewMode,
     source: capture.source,
@@ -482,7 +488,7 @@ export async function resolveManagedProjectFactLearning(params: {
     await collectManagedSemanticCaptures(params),
     (entry) =>
       entry.capture.materialized.action === "capture" &&
-      entry.capture.materialized.projection.category === "project_fact",
+      entry.capture.materialized.projection.compatibilityCategory === "project_fact",
   );
   if (!capture) {
     return null;
@@ -493,7 +499,8 @@ export async function resolveManagedProjectFactLearning(params: {
   const projection = capture.capture.materialized.projection;
   return {
     familyId: "project_fact",
-    parsed: projection.match,
+    compatibilityProfileId: "project_fact",
+    parsed: projection.compatibilityMatch,
     factFamily: projection.factFamily ?? "generalized_reference",
     ...(projection.fieldKey ? { fieldKey: projection.fieldKey } : {}),
     reviewMode:
@@ -541,7 +548,7 @@ export async function resolveManagedProjectFactCorrection(params: {
     await collectManagedSemanticCaptures(params),
     (entry) =>
       entry.capture.materialized.action === "capture" &&
-      entry.capture.materialized.projection.category === "project_fact",
+      entry.capture.materialized.projection.compatibilityCategory === "project_fact",
   );
   if (!capture) {
     return null;
@@ -557,17 +564,16 @@ export async function resolveManagedProjectFactCorrection(params: {
   }
   return {
     familyId: "project_fact",
+    compatibilityProfileId: "project_fact",
     parsed: {
       ...correctionParse.parsed,
-      key: projection.match.key,
-      subjectKey: projection.match.subjectKey,
+      // Project-fact lifecycle lookup still clusters on stored compatibility keys.
+      key: projection.compatibilityMatch.key,
+      subjectKey: projection.compatibilityMatch.subjectKey,
     },
     factFamily: projection.factFamily ?? "generalized_reference",
     ...(projection.fieldKey ? { fieldKey: projection.fieldKey } : {}),
-    reviewMode:
-      (projection.factFamily ?? "generalized_reference") === "supported_field"
-        ? "pending_confirmation"
-        : "hold_for_more_evidence",
+    reviewMode: "direct",
     source: correctionParse.source,
     detectionSource: "semantic",
     confidence: projection.confidence,
@@ -585,7 +591,7 @@ export async function resolveManagedRecurringProcedureSubmission(params: {
     await collectManagedSemanticCaptures(params),
     (entry) =>
       entry.capture.materialized.action === "capture" &&
-      entry.capture.materialized.projection.category === "recurring_procedure",
+      entry.capture.materialized.projection.compatibilityCategory === "recurring_procedure",
   );
   if (!capture) {
     return null;
@@ -621,7 +627,8 @@ export async function resolveManagedRecurringProcedureSubmission(params: {
       : null;
   return {
     familyId: "recurring_procedure",
-    parsed: correctionMatch ?? projection.match,
+    compatibilityProfileId: "recurring_procedure",
+    parsed: correctionMatch ?? projection.compatibilityMatch,
     procedureFamily,
     ...(object?.procedureKey ? { procedureKey: object.procedureKey } : {}),
     reviewMode:
@@ -647,9 +654,9 @@ export async function resolveManagedWorkflowImprovementSubmission(params: {
     await collectManagedSemanticCaptures(params),
     (entry) =>
       entry.capture.materialized.action === "capture" &&
-      (entry.capture.materialized.projection.category === "workflow_improvement" ||
-        entry.capture.materialized.projection.category === "project_rule" ||
-        entry.capture.materialized.projection.category === "unmet_need"),
+      (entry.capture.materialized.projection.compatibilityCategory === "workflow_improvement" ||
+        entry.capture.materialized.projection.compatibilityCategory === "project_rule" ||
+        entry.capture.materialized.projection.compatibilityCategory === "unmet_need"),
   );
   if (!capture) {
     return null;
@@ -658,20 +665,22 @@ export async function resolveManagedWorkflowImprovementSubmission(params: {
     return null;
   }
   const projection = capture.capture.materialized.projection;
-  const captureCategory =
-    projection.category === "workflow_improvement" ||
-    projection.category === "project_rule" ||
-    projection.category === "unmet_need"
-      ? projection.category
+  const compatibilityCategory =
+    projection.compatibilityCategory === "workflow_improvement" ||
+    projection.compatibilityCategory === "project_rule" ||
+    projection.compatibilityCategory === "unmet_need"
+      ? projection.compatibilityCategory
       : null;
-  if (!captureCategory) {
+  if (!compatibilityCategory) {
     return null;
   }
-  const captureClass = projection.match.captureClass;
+  const captureClass = projection.compatibilityMatch.captureClass;
   return {
     familyId: "workflow_improvement",
-    captureCategory,
-    parsed: projection.match,
+    compatibilityProfileId: "workflow_improvement",
+    captureCategory: compatibilityCategory,
+    compatibilityCategory,
+    parsed: projection.compatibilityMatch,
     lessonFamily: projection.lessonFamily ?? "generalized_workflow_lesson",
     reviewMode:
       captureClass === "workflow_environment_constraint" ||
@@ -724,7 +733,7 @@ export async function resolveManagedCorrectionSubmission(params: {
     }
     const projection = capture.capture.materialized.projection;
     return {
-      parsed: projection.match as NonNullable<
+      parsed: projection.compatibilityMatch as NonNullable<
         ReturnType<typeof parseManagedCorrectionCandidateContent>
       >,
       source: capture.source,
@@ -778,7 +787,7 @@ export async function resolveManagedAutoCaptureKey(params: {
   const preferredCapture = pickManagedCapture(captures, () => true);
   if (preferredCapture?.capture.materialized.action === "capture") {
     return {
-      parsed: preferredCapture.capture.materialized.projection.match,
+      parsed: preferredCapture.capture.materialized.projection.compatibilityMatch,
       source: preferredCapture.source,
       detectionSource: "semantic",
       confidence: preferredCapture.capture.materialized.projection.confidence,

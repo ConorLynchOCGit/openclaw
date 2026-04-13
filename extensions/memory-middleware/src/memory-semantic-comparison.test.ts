@@ -4,7 +4,7 @@ import {
   summarizeHeuristicMemoryBlock,
   summarizeModelDrivenMemoryBlock,
 } from "./memory-semantic-comparison.js";
-import { createLegacySemanticTestScaffoldInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
+import { createHeuristicReplayScaffoldInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
 import {
   normalizeDocumentMemorySource,
   normalizeTranscriptMemorySource,
@@ -13,7 +13,7 @@ import {
 } from "./memory-source-normalization.js";
 
 const config = resolveMemoryMiddlewareConfig({});
-const interpreter = createLegacySemanticTestScaffoldInterpreter();
+const interpreter = createHeuristicReplayScaffoldInterpreter();
 
 function selectPrimaryBlock(blocks: NormalizedMemoryBlock[]): NormalizedMemoryBlock {
   expect(blocks.length).toBeGreaterThan(0);
@@ -179,32 +179,32 @@ describe("memory semantic comparison", () => {
     ]);
 
     expect(documentProjectFactSummary).toMatchObject({
-      category: "project_fact",
+      compatibilityCategory: "project_fact",
       statement: expect.stringContaining("atlas-main"),
     });
     expect(transcriptProjectFactSummary).toMatchObject({
-      category: "project_fact",
+      compatibilityCategory: "project_fact",
       statement: expect.stringContaining("atlas-main"),
     });
     expect(documentProjectFactSummary?.statement).toBe(transcriptProjectFactSummary?.statement);
 
     expect(documentPreferenceSummary).toMatchObject({
-      category: "response_style",
+      compatibilityCategory: "response_style",
       statement: expect.stringContaining("plain English"),
     });
     expect(transcriptPreferenceSummary).toMatchObject({
-      category: "response_style",
+      compatibilityCategory: "response_style",
       statement: expect.stringContaining("plain English"),
     });
     expect(documentPreferenceSummary?.statement).toBe(transcriptPreferenceSummary?.statement);
 
     expect(documentProcedureSummary).toMatchObject({
-      category: "recurring_procedure",
+      compatibilityCategory: "recurring_procedure",
       subject: "Release Evidence Handoff Checklist",
       statement: expect.stringContaining("Capture the signed evidence bundle"),
     });
     expect(transcriptProcedureSummary).toMatchObject({
-      category: "recurring_procedure",
+      compatibilityCategory: "recurring_procedure",
       subject: "Release Evidence Handoff Checklist",
       statement: expect.stringContaining("Capture the signed evidence bundle"),
     });
@@ -297,7 +297,7 @@ describe("memory semantic comparison", () => {
         }),
       ]);
 
-      expect(modelSummary?.category).toBe(benchmarkCase.expectedCategory);
+      expect(modelSummary?.compatibilityCategory).toBe(benchmarkCase.expectedCategory);
       for (const part of benchmarkCase.expectedStatementIncludes) {
         expect(modelSummary?.statement.toLowerCase()).toContain(part.toLowerCase());
       }
@@ -308,7 +308,7 @@ describe("memory semantic comparison", () => {
       }
 
       const heuristicMatchedExpected =
-        heuristicSummary.category === benchmarkCase.expectedCategory &&
+        heuristicSummary.compatibilityCategory === benchmarkCase.expectedCategory &&
         benchmarkCase.expectedStatementIncludes.every((part) =>
           heuristicSummary.statement.includes(part),
         );

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CandidateIngressPort } from "./candidate-ingress.js";
 import type { CandidateReviewPort } from "./candidate-review.js";
 import type { MemoryMiddlewareConfig } from "./config.js";
+import { createHeuristicReplayScaffoldInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
 import { createSelfImprovingCandidateCapturePort } from "./self-improving-candidate-capture.js";
 
 function createConfig(): MemoryMiddlewareConfig {
@@ -58,6 +59,7 @@ describe("self-improving candidate capture", () => {
     };
     const port = createSelfImprovingCandidateCapturePort({
       config: createConfig(),
+      interpreter: createHeuristicReplayScaffoldInterpreter(),
       candidateIngress,
       candidateReview: {
         review: vi.fn(),

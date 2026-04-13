@@ -1,3 +1,5 @@
+// Legacy compatibility detector only.
+
 import { createHash } from "node:crypto";
 
 export const SUPPORTED_RESPONSE_STYLE_TEMPLATES = [
@@ -912,6 +914,10 @@ function detectGenericResponseStyleCapture(text: string): {
   };
 }
 
+/**
+ * Legacy compatibility detector retained for degraded-mode fallback, comparison,
+ * and migration tooling. Normal runtime semantic ownership is model-native.
+ */
 export function detectResponseStyleSemanticDecision(
   text: string,
 ): ResponseStyleSemanticCaptureDecision {

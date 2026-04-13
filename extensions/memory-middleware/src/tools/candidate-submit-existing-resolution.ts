@@ -19,14 +19,9 @@ import {
   isExpiredPendingProjectFactCandidate,
 } from "../project-fact-lifecycle.js";
 import {
-  detectGenericProjectFactSemanticDecision,
-  detectProjectFactSemanticDecision,
-  isBoundedGenericProjectFactReference,
   isSupportedProjectFactField,
-  normalizeGenericProjectFactSubjectLabel,
   type ProjectFactFamily,
   type ProjectFactFieldKey,
-  type ProjectFactSemanticConfidence,
 } from "../project-fact-semantic.js";
 import {
   inspectRecurringProcedureLifecycle,
@@ -34,24 +29,17 @@ import {
   supersedeValidatedProceduresBySubjectKey,
 } from "../recurring-procedure-lifecycle.js";
 import {
-  detectRecurringProcedureSemanticDecision,
   getRecurringProcedureTitle,
   isSupportedRecurringProcedureKey,
   type RecurringProcedureFamily,
   type RecurringProcedureKey,
-  type RecurringProcedureSemanticConfidence,
 } from "../recurring-procedure-semantic.js";
 import {
   inspectResponseStyleLifecycle,
   isExpiredPendingResponseStyleCandidate,
 } from "../response-style-lifecycle.js";
 import { maybeInduceResponseStylePhrasePattern } from "../response-style-phrase-induction.js";
-import {
-  createResponseStyleCanonicalMatch,
-  isResponseStyleCorrectionMatch,
-  isResponseStyleLearningMatch,
-  type ResponseStyleFamily,
-} from "../response-style-semantic.js";
+import { type ResponseStyleFamily } from "../response-style-semantic.js";
 import type { MemoryMiddlewareRuntime } from "../runtime.js";
 import { storeApprovedProjectWorkflowSemanticEmbedding } from "../semantic-retrieval-routing.js";
 import { resolveCanonicalWorkflowAutoReviewProfile } from "../workflow-canonical-policy.js";
@@ -62,11 +50,9 @@ import {
 } from "../workflow-improvement-lifecycle.js";
 import {
   type WorkflowImprovementCanonicalMatch,
-  type WorkflowImprovementCaptureClass,
   type WorkflowImprovementGuidancePattern,
   type WorkflowImprovementLessonFamily,
   type WorkflowImprovementNeedCategory,
-  type WorkflowImprovementSemanticConfidence,
 } from "../workflow-improvement-semantic.js";
 import { maybeInduceWorkflowPhrasePattern } from "../workflow-phrase-induction.js";
 import {
@@ -85,6 +71,10 @@ import {
   autoPromoteRecurringProcedureCandidateFromTool,
   inspectStagedRecurringProcedureLifecycle as inspectRecurringProcedureStagedLifecycle,
 } from "./candidate-submit-tool-auto-promotion.js";
+
+function isLegacySemanticFallbackEnabled(): boolean {
+  return process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK === "1";
+}
 
 export async function maybeResolveExistingResponseStyleCandidate(params: {
   runtime: MemoryMiddlewareRuntime;
@@ -157,7 +147,7 @@ export async function maybeResolveExistingResponseStyleCandidate(params: {
   const canonicalMatch = buildResponseStyleCanonicalMatchFromInput(params.input);
 
   if (inspection.matchingApprovedObjectId) {
-    if (observedText && canonicalMatch) {
+    if (isLegacySemanticFallbackEnabled() && observedText && canonicalMatch) {
       await maybeInduceResponseStylePhrasePattern({
         config: params.runtime.config,
         candidateIngress: params.runtime.candidateIngress,
@@ -276,7 +266,12 @@ export async function maybeResolveExistingResponseStyleCandidate(params: {
         reason: promotionResult.reason,
       };
     }
-    if (observedText && canonicalMatch && promotionResult.promotedMemoryObjectId) {
+    if (
+      isLegacySemanticFallbackEnabled() &&
+      observedText &&
+      canonicalMatch &&
+      promotionResult.promotedMemoryObjectId
+    ) {
       await maybeInduceResponseStylePhrasePattern({
         config: params.runtime.config,
         candidateIngress: params.runtime.candidateIngress,
@@ -841,7 +836,12 @@ export async function maybeResolveExistingWorkflowImprovementCandidate(params: {
   }
 
   if (inspection.matchingApprovedObjectId) {
-    if (params.input.projectId && supportsPhraseInduction && canonicalMatchForPhraseInduction) {
+    if (
+      isLegacySemanticFallbackEnabled() &&
+      params.input.projectId &&
+      supportsPhraseInduction &&
+      canonicalMatchForPhraseInduction
+    ) {
       await maybeInduceWorkflowPhrasePattern({
         config: params.runtime.config,
         candidateIngress: params.runtime.candidateIngress,
@@ -1074,7 +1074,12 @@ export async function maybeResolveExistingWorkflowImprovementCandidate(params: {
         memoryObjectId: promotedMemoryObjectId,
       });
     }
-    if (params.input.projectId && supportsPhraseInduction && canonicalMatchForPhraseInduction) {
+    if (
+      isLegacySemanticFallbackEnabled() &&
+      params.input.projectId &&
+      supportsPhraseInduction &&
+      canonicalMatchForPhraseInduction
+    ) {
       await maybeInduceWorkflowPhrasePattern({
         config: params.runtime.config,
         candidateIngress: params.runtime.candidateIngress,

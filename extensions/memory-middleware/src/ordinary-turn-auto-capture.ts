@@ -51,7 +51,7 @@ import {
 } from "./memory-lifecycle-metadata.js";
 import { type MemorySemanticInterpreterPort } from "./memory-model-semantic-interpreter.js";
 import { resolveWorkflowCaptureCategoryFromCaptureClass } from "./memory-profile-routing.js";
-import { planNormalizedMemorySourceWindow } from "./memory-semantic-planner.js";
+import { collectPlannedMemorySemanticCaptures } from "./memory-semantic-capture-service.js";
 import {
   deriveCorpusDemandSignalsFromPrompt,
   type MemorySoakTelemetryPort,
@@ -79,7 +79,7 @@ import {
   resolveCapturePlanPosture,
   resolveDeferredOverflowLimit,
   resolveImmediateCaptureLimit,
-  type OrdinaryTurnAutoCaptureLane,
+  type OrdinaryTurnAutoCaptureCompatibilityLane,
   type OrdinaryTurnAutoCapturePlan,
   type OrdinaryTurnAutoCapturePosture,
   type OrdinaryTurnAutoCaptureSubmissionMode,
@@ -97,8 +97,6 @@ import {
 } from "./project-fact-lifecycle.js";
 import {
   containsHedgedProjectFactLanguage,
-  detectGenericProjectFactSemanticDecision,
-  detectProjectFactSemanticDecision,
   isBoundedGenericProjectFactReference,
   type ProjectFactCanonicalMatch,
   type ProjectFactFamily,
@@ -112,7 +110,6 @@ import {
   supersedeValidatedProceduresBySubjectKey,
 } from "./recurring-procedure-lifecycle.js";
 import {
-  detectRecurringProcedureSemanticDecision,
   type RecurringProcedureFamily,
   getRecurringProcedureTitle,
   type RecurringProcedureCanonicalMatch,
@@ -136,7 +133,6 @@ import {
 } from "./response-style-phrase-induction.js";
 import {
   createResponseStyleCanonicalMatch,
-  detectResponseStyleSemanticDecision,
   isSupportedResponseStyleTemplate,
   isResponseStyleCorrectionMatch,
   isResponseStyleLearningMatch,
@@ -170,6 +166,10 @@ import {
   findApprovedWorkflowPhrasePatternMatch,
   maybeInduceWorkflowPhrasePattern,
 } from "./workflow-phrase-induction.js";
+
+function isLegacySemanticFallbackEnabled(): boolean {
+  return process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK === "1";
+}
 
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const AUTO_CAPTURE_SOURCE = "ordinary_turn_auto_capture";
@@ -822,7 +822,7 @@ type ProjectFactCaptureDecision = {
   confidence: "high" | "medium";
   detectionSource: ProjectFactDetectionSource;
   evidence: string[];
-  reviewMode: "pending_confirmation" | "hold_for_more_evidence";
+  reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
   factFamily: ProjectFactFamily;
   fieldKey?: ProjectFactFieldKey;
   match: OrdinaryTurnAutoCaptureMatch;
@@ -854,7 +854,7 @@ type WorkflowImprovementCaptureDecision = {
 
 const CAPTURE_CLASS_TELEMETRY_LANE_OVERRIDES: Record<
   string,
-  OrdinaryTurnAutoCaptureLane | "project_rule" | "unmet_need"
+  OrdinaryTurnAutoCaptureCompatibilityLane | "project_rule" | "unmet_need"
 > = {
   explicit_requirement: "response_style",
   requirement_correction: "response_style",
@@ -867,7 +867,7 @@ const CAPTURE_CATEGORY_TELEMETRY_FAMILY: Record<
     NonNullable<ReturnType<typeof getCanonicalCaptureMetadataByCaptureClass>>["category"],
     "project_rule" | "unmet_need"
   >,
-  OrdinaryTurnAutoCaptureLane
+  OrdinaryTurnAutoCaptureCompatibilityLane
 > = {
   project_fact: "project_fact",
   recurring_procedure: "recurring_procedure",
@@ -898,7 +898,7 @@ function normalizeLower(value: string): string {
 
 function resolveTelemetryLaneFromCaptureClass(
   captureClass: string,
-): OrdinaryTurnAutoCaptureLane | "project_rule" | "unmet_need" {
+): OrdinaryTurnAutoCaptureCompatibilityLane | "project_rule" | "unmet_need" {
   const override = CAPTURE_CLASS_TELEMETRY_LANE_OVERRIDES[captureClass];
   if (override) {
     return override;
@@ -1256,7 +1256,9 @@ function inferContextualResponseStyleRawCandidate(
   return null;
 }
 
-async function buildOrdinaryTurnContextualRawCandidates(params: {
+// Legacy degraded-mode helper only.
+// Normal runtime should not synthesize semantic raw candidates before the model seam.
+async function buildLegacyOrdinaryTurnContextualRawCandidates(params: {
   text: string;
   profile: "user-preference-v1" | "user-preference-v2";
   config: MemoryMiddlewareConfig;
@@ -2027,6 +2029,11 @@ const MANAGED_CORRECTION_DETECTORS: readonly OrdinaryTurnTextDetector[] = [
   ),
 ];
 
+/**
+ * Legacy bounded plain-text preference parser retained for degraded-mode compatibility
+ * and managed tool normalization. Normal runtime semantic ownership lives on the
+ * source-window interpreter seam.
+ */
 export function parseOrdinaryTurnAutoCapturePreference(
   messageText: string,
   profile: "user-preference-v1" | "user-preference-v2" = "user-preference-v1",
@@ -2092,7 +2099,8 @@ function isGeneralizedProjectFactMatch(match: OrdinaryTurnAutoCaptureMatch): boo
   );
 }
 
-async function detectResponseStyleCaptureDecision(
+// Legacy degraded-mode helper only.
+async function detectLegacyResponseStyleCaptureDecision(
   text: string,
   profile: "user-preference-v1" | "user-preference-v2",
   config: MemoryMiddlewareConfig,
@@ -2139,7 +2147,8 @@ async function detectResponseStyleCaptureDecision(
   };
 }
 
-async function detectProjectFactCaptureDecision(
+// Legacy degraded-mode helper only.
+async function detectLegacyProjectFactCaptureDecision(
   text: string,
   profile: "user-preference-v1" | "user-preference-v2",
   rawCandidates?: string[],
@@ -2174,7 +2183,8 @@ async function detectProjectFactCaptureDecision(
   };
 }
 
-async function detectRecurringProcedureCaptureDecision(
+// Legacy degraded-mode helper only.
+async function detectLegacyRecurringProcedureCaptureDecision(
   text: string,
   profile: "user-preference-v1" | "user-preference-v2",
   rawCandidates?: string[],
@@ -2208,7 +2218,8 @@ async function detectRecurringProcedureCaptureDecision(
   };
 }
 
-async function detectWorkflowImprovementCaptureDecision(
+// Legacy degraded-mode helper only.
+async function detectLegacyWorkflowImprovementCaptureDecision(
   text: string,
   profile: "user-preference-v1" | "user-preference-v2",
   config: MemoryMiddlewareConfig,
@@ -2708,7 +2719,7 @@ function buildPreferenceDeferredOverflowMetadata(params: {
     transcriptFile: params.transcriptFile,
     timestamp: observedAt,
     extraMetadata: buildDeferredOverflowMetadata({
-      lane: "preference",
+      compatibilityLane: "preference",
       posture: params.posture,
       state: "pending_confirmation",
       rank: params.rank,
@@ -3639,30 +3650,32 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         subject: match.subject,
         value: match.value,
       });
-      await maybeInduceResponseStylePhrasePattern({
-        config: params.config,
-        candidateIngress: {
-          submitImprovementNote: async (input) =>
-            deps.submitImprovementNote({
-              content: input.content,
-              projectId: input.projectId ?? attribution.projectId,
-              agentId: input.agentId ?? attribution.agentId,
-              sessionId: input.sessionId ?? attribution.sessionId,
-              metadata: input.metadata ?? {},
-            }),
-        },
-        candidateReview: { review: deps.reviewCandidate },
-        candidatePromotion: { promoteToMemory: deps.promoteToMemory },
-        text: decisionParams.observedText,
-        ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
-        sessionId: attribution.sessionId,
-        agentId: attribution.agentId,
-        detectionSource: decisionParams.decision.detectionSource,
-        targetMatch,
-        logger: params.logger,
-        source: "response_style_phrase_induction_transcript_auto_capture",
-        ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
-      });
+      if (isLegacySemanticFallbackEnabled()) {
+        await maybeInduceResponseStylePhrasePattern({
+          config: params.config,
+          candidateIngress: {
+            submitImprovementNote: async (input) =>
+              deps.submitImprovementNote({
+                content: input.content,
+                projectId: input.projectId ?? attribution.projectId,
+                agentId: input.agentId ?? attribution.agentId,
+                sessionId: input.sessionId ?? attribution.sessionId,
+                metadata: input.metadata ?? {},
+              }),
+          },
+          candidateReview: { review: deps.reviewCandidate },
+          candidatePromotion: { promoteToMemory: deps.promoteToMemory },
+          text: decisionParams.observedText,
+          ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
+          sessionId: attribution.sessionId,
+          agentId: attribution.agentId,
+          detectionSource: decisionParams.decision.detectionSource,
+          targetMatch,
+          logger: params.logger,
+          source: "response_style_phrase_induction_transcript_auto_capture",
+          ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
+        });
+      }
       params.logger.debug?.(
         formatLog("memory-middleware response-style capture skipped existing approved key", {
           key: match.key,
@@ -3723,15 +3736,16 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       }
     }
 
-    const effectiveReviewMode =
+    const deferredReviewMode =
       decisionParams.submissionMode === "deferred_overflow"
         ? resolveDeferredReviewMode(decisionParams.decision.reviewMode)
-        : decisionParams.decision.reviewMode;
+        : undefined;
+    const effectiveReviewMode = deferredReviewMode ?? decisionParams.decision.reviewMode;
     const overflowReviewMode = resolveDeferredReviewMode(decisionParams.decision.reviewMode);
     const overflowMetadata =
       decisionParams.submissionMode === "deferred_overflow"
         ? buildDeferredOverflowMetadata({
-            lane: "response_style",
+            compatibilityLane: "response_style",
             posture: decisionParams.posture ?? "default",
             state: overflowReviewMode,
             rank: decisionParams.rank ?? 0,
@@ -3898,39 +3912,41 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         },
       });
       if (promoted) {
-        await maybeInduceResponseStylePhrasePattern({
-          config: params.config,
-          candidateIngress: {
-            submitImprovementNote: async (input) =>
-              deps.submitImprovementNote({
-                content: input.content,
-                projectId: input.projectId ?? attribution.projectId,
-                agentId: input.agentId ?? attribution.agentId,
-                sessionId: input.sessionId ?? attribution.sessionId,
-                metadata: input.metadata ?? {},
-              }),
-          },
-          candidateReview: { review: deps.reviewCandidate },
-          candidatePromotion: { promoteToMemory: deps.promoteToMemory },
-          text: decisionParams.observedText,
-          ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
-          sessionId: attribution.sessionId,
-          agentId: attribution.agentId,
-          detectionSource: decisionParams.decision.detectionSource,
-          targetMatch: createResponseStyleCanonicalMatch({
-            template:
-              match.template === "response_style_generalized_guidance" ||
-              isSupportedResponseStyleTemplate(match.template)
-                ? match.template
-                : "response_style_generalized_guidance",
-            family: match.responseStyleFamily ?? "supported_template",
-            subject: match.subject,
-            value: match.value,
-          }),
-          logger: params.logger,
-          source: "response_style_phrase_induction_transcript_auto_capture",
-          ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
-        });
+        if (isLegacySemanticFallbackEnabled()) {
+          await maybeInduceResponseStylePhrasePattern({
+            config: params.config,
+            candidateIngress: {
+              submitImprovementNote: async (input) =>
+                deps.submitImprovementNote({
+                  content: input.content,
+                  projectId: input.projectId ?? attribution.projectId,
+                  agentId: input.agentId ?? attribution.agentId,
+                  sessionId: input.sessionId ?? attribution.sessionId,
+                  metadata: input.metadata ?? {},
+                }),
+            },
+            candidateReview: { review: deps.reviewCandidate },
+            candidatePromotion: { promoteToMemory: deps.promoteToMemory },
+            text: decisionParams.observedText,
+            ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
+            sessionId: attribution.sessionId,
+            agentId: attribution.agentId,
+            detectionSource: decisionParams.decision.detectionSource,
+            targetMatch: createResponseStyleCanonicalMatch({
+              template:
+                match.template === "response_style_generalized_guidance" ||
+                isSupportedResponseStyleTemplate(match.template)
+                  ? match.template
+                  : "response_style_generalized_guidance",
+              family: match.responseStyleFamily ?? "supported_template",
+              subject: match.subject,
+              value: match.value,
+            }),
+            logger: params.logger,
+            source: "response_style_phrase_induction_transcript_auto_capture",
+            ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
+          });
+        }
       }
     }
 
@@ -3975,39 +3991,41 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         },
       });
       if (promoted.accepted) {
-        await maybeInduceResponseStylePhrasePattern({
-          config: params.config,
-          candidateIngress: {
-            submitImprovementNote: async (input) =>
-              deps.submitImprovementNote({
-                content: input.content,
-                projectId: input.projectId ?? attribution.projectId,
-                agentId: input.agentId ?? attribution.agentId,
-                sessionId: input.sessionId ?? attribution.sessionId,
-                metadata: input.metadata ?? {},
-              }),
-          },
-          candidateReview: { review: deps.reviewCandidate },
-          candidatePromotion: { promoteToMemory: deps.promoteToMemory },
-          text: decisionParams.observedText,
-          ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
-          sessionId: attribution.sessionId,
-          agentId: attribution.agentId,
-          detectionSource: decisionParams.decision.detectionSource,
-          targetMatch: createResponseStyleCanonicalMatch({
-            template:
-              match.template === "response_style_generalized_guidance" ||
-              isSupportedResponseStyleTemplate(match.template)
-                ? match.template
-                : "response_style_generalized_guidance",
-            family: match.responseStyleFamily ?? "supported_template",
-            subject: match.subject,
-            value: match.value,
-          }),
-          logger: params.logger,
-          source: "response_style_phrase_induction_transcript_auto_capture",
-          ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
-        });
+        if (isLegacySemanticFallbackEnabled()) {
+          await maybeInduceResponseStylePhrasePattern({
+            config: params.config,
+            candidateIngress: {
+              submitImprovementNote: async (input) =>
+                deps.submitImprovementNote({
+                  content: input.content,
+                  projectId: input.projectId ?? attribution.projectId,
+                  agentId: input.agentId ?? attribution.agentId,
+                  sessionId: input.sessionId ?? attribution.sessionId,
+                  metadata: input.metadata ?? {},
+                }),
+            },
+            candidateReview: { review: deps.reviewCandidate },
+            candidatePromotion: { promoteToMemory: deps.promoteToMemory },
+            text: decisionParams.observedText,
+            ...(attribution.projectId ? { projectId: attribution.projectId } : {}),
+            sessionId: attribution.sessionId,
+            agentId: attribution.agentId,
+            detectionSource: decisionParams.decision.detectionSource,
+            targetMatch: createResponseStyleCanonicalMatch({
+              template:
+                match.template === "response_style_generalized_guidance" ||
+                isSupportedResponseStyleTemplate(match.template)
+                  ? match.template
+                  : "response_style_generalized_guidance",
+              family: match.responseStyleFamily ?? "supported_template",
+              subject: match.subject,
+              value: match.value,
+            }),
+            logger: params.logger,
+            source: "response_style_phrase_induction_transcript_auto_capture",
+            ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
+          });
+        }
       }
     }
 
@@ -4190,16 +4208,17 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       }
     }
 
-    const effectiveReviewMode =
+    const deferredReviewMode =
       decisionParams.submissionMode === "deferred_overflow"
         ? resolveDeferredReviewMode(decisionParams.decision.reviewMode)
-        : decisionParams.decision.reviewMode;
+        : undefined;
+    const effectiveReviewMode = deferredReviewMode ?? decisionParams.decision.reviewMode;
     const overflowMetadata =
       decisionParams.submissionMode === "deferred_overflow"
         ? buildDeferredOverflowMetadata({
-            lane: "project_fact",
+            compatibilityLane: "project_fact",
             posture: decisionParams.posture ?? "default",
-            state: effectiveReviewMode,
+            state: resolveDeferredReviewMode(decisionParams.decision.reviewMode),
             rank: decisionParams.rank ?? 0,
             candidatePoolSize: decisionParams.candidatePoolSize ?? 0,
             observedAt: decisionParams.timestamp,
@@ -4227,7 +4246,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       },
       extraMetadata: {
         ...(semanticMetadata ?? {}),
-        ...(match.captureClass === "explicit_project_fact"
+        ...(match.captureClass === "explicit_project_fact" && effectiveReviewMode !== "direct"
           ? buildProjectFactPendingConfirmationMetadata({
               confidence: decisionParams.decision.confidence,
               evidence: decisionParams.decision.evidence,
@@ -4653,7 +4672,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     const overflowMetadata =
       decisionParams.submissionMode === "deferred_overflow"
         ? buildDeferredOverflowMetadata({
-            lane: "recurring_procedure",
+            compatibilityLane: "recurring_procedure",
             posture: decisionParams.posture ?? "default",
             state: effectiveReviewMode,
             rank: decisionParams.rank ?? 0,
@@ -4962,7 +4981,11 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       });
       return true;
     }
-    if (effectiveDecision.lessonFamily === "generalized_workflow_lesson" && attribution.projectId) {
+    if (
+      isLegacySemanticFallbackEnabled() &&
+      effectiveDecision.lessonFamily === "generalized_workflow_lesson" &&
+      attribution.projectId
+    ) {
       const deterministicPattern = await findApprovedWorkflowPhrasePatternMatch({
         config: params.config,
         text: decisionParams.text,
@@ -5055,7 +5078,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     const overflowMetadata =
       decisionParams.submissionMode === "deferred_overflow"
         ? buildDeferredOverflowMetadata({
-            lane: "workflow_improvement",
+            compatibilityLane: "workflow_improvement",
             posture: decisionParams.posture ?? "default",
             state: effectiveReviewMode,
             rank: decisionParams.rank ?? 0,
@@ -5117,30 +5140,32 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
 
     if (inspection?.matchingApprovedObjectId) {
       if (supportsPhraseInduction && attribution.projectId && canonicalMatchForPhraseInduction) {
-        await maybeInduceWorkflowPhrasePattern({
-          config: params.config,
-          candidateIngress: {
-            submitImprovementNote: async (input) =>
-              deps.submitImprovementNote({
-                content: input.content,
-                projectId: input.projectId ?? attribution.projectId,
-                agentId: input.agentId ?? attribution.agentId,
-                sessionId: input.sessionId ?? attribution.sessionId,
-                metadata: input.metadata ?? {},
-              }),
-          },
-          candidateReview: { review: deps.reviewCandidate },
-          candidatePromotion: { promoteToMemory: deps.promoteToMemory },
-          text: decisionParams.text,
-          projectId: attribution.projectId,
-          sessionId: attribution.sessionId,
-          agentId: attribution.agentId,
-          detectionSource: effectiveDecision.detectionSource,
-          targetMatch: canonicalMatchForPhraseInduction,
-          logger: params.logger,
-          source: "workflow_phrase_induction_transcript_auto_capture",
-          ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
-        });
+        if (isLegacySemanticFallbackEnabled()) {
+          await maybeInduceWorkflowPhrasePattern({
+            config: params.config,
+            candidateIngress: {
+              submitImprovementNote: async (input) =>
+                deps.submitImprovementNote({
+                  content: input.content,
+                  projectId: input.projectId ?? attribution.projectId,
+                  agentId: input.agentId ?? attribution.agentId,
+                  sessionId: input.sessionId ?? attribution.sessionId,
+                  metadata: input.metadata ?? {},
+                }),
+            },
+            candidateReview: { review: deps.reviewCandidate },
+            candidatePromotion: { promoteToMemory: deps.promoteToMemory },
+            text: decisionParams.text,
+            projectId: attribution.projectId,
+            sessionId: attribution.sessionId,
+            agentId: attribution.agentId,
+            detectionSource: effectiveDecision.detectionSource,
+            targetMatch: canonicalMatchForPhraseInduction,
+            logger: params.logger,
+            source: "workflow_phrase_induction_transcript_auto_capture",
+            ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
+          });
+        }
       }
       params.logger.debug?.(
         formatLog("memory-middleware workflow-improvement capture skipped existing approved key", {
@@ -5346,30 +5371,32 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       if (promotedMemoryObjectId) {
         markTurnAcceptedCaptureForLane(decisionParams.turnState, match.key, "workflow_improvement");
         if (supportsPhraseInduction && attribution.projectId && canonicalMatchForPhraseInduction) {
-          await maybeInduceWorkflowPhrasePattern({
-            config: params.config,
-            candidateIngress: {
-              submitImprovementNote: async (input) =>
-                deps.submitImprovementNote({
-                  content: input.content,
-                  projectId: input.projectId ?? attribution.projectId,
-                  agentId: input.agentId ?? attribution.agentId,
-                  sessionId: input.sessionId ?? attribution.sessionId,
-                  metadata: input.metadata ?? {},
-                }),
-            },
-            candidateReview: { review: deps.reviewCandidate },
-            candidatePromotion: { promoteToMemory: deps.promoteToMemory },
-            text: decisionParams.text,
-            projectId: attribution.projectId,
-            sessionId: attribution.sessionId,
-            agentId: attribution.agentId,
-            detectionSource: effectiveDecision.detectionSource,
-            targetMatch: canonicalMatchForPhraseInduction,
-            logger: params.logger,
-            source: "workflow_phrase_induction_transcript_auto_capture",
-            ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
-          });
+          if (isLegacySemanticFallbackEnabled()) {
+            await maybeInduceWorkflowPhrasePattern({
+              config: params.config,
+              candidateIngress: {
+                submitImprovementNote: async (input) =>
+                  deps.submitImprovementNote({
+                    content: input.content,
+                    projectId: input.projectId ?? attribution.projectId,
+                    agentId: input.agentId ?? attribution.agentId,
+                    sessionId: input.sessionId ?? attribution.sessionId,
+                    metadata: input.metadata ?? {},
+                  }),
+              },
+              candidateReview: { review: deps.reviewCandidate },
+              candidatePromotion: { promoteToMemory: deps.promoteToMemory },
+              text: decisionParams.text,
+              projectId: attribution.projectId,
+              sessionId: attribution.sessionId,
+              agentId: attribution.agentId,
+              detectionSource: effectiveDecision.detectionSource,
+              targetMatch: canonicalMatchForPhraseInduction,
+              logger: params.logger,
+              source: "workflow_phrase_induction_transcript_auto_capture",
+              ...(decisionParams.timestamp ? { observedAt: decisionParams.timestamp } : {}),
+            });
+          }
         }
         markRecent(match.key);
       }
@@ -5511,20 +5538,26 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     recentContextEntries: TranscriptContextEntry[];
     timestamp?: string;
   }): Promise<OrdinaryTurnAutoCapturePlan | null> {
-    const contextualRawCandidates = await buildOrdinaryTurnContextualRawCandidates({
-      text: paramsForPlan.text,
-      profile: paramsForPlan.autoCaptureProfile,
-      config: params.config,
-      contextEntries: paramsForPlan.recentContextEntries,
-    });
-    const contextualPreferenceMatch = contextualRawCandidates
-      .map((candidate) =>
-        parseOrdinaryTurnAutoCapturePreference(candidate, paramsForPlan.autoCaptureProfile),
-      )
-      .find((candidate): candidate is OrdinaryTurnAutoCaptureMatch => candidate !== null);
+    const legacySemanticFallbackEnabled = isLegacySemanticFallbackEnabled();
+    const contextualRawCandidates = legacySemanticFallbackEnabled
+      ? await buildLegacyOrdinaryTurnContextualRawCandidates({
+          text: paramsForPlan.text,
+          profile: paramsForPlan.autoCaptureProfile,
+          config: params.config,
+          contextEntries: paramsForPlan.recentContextEntries,
+        })
+      : [];
+    const contextualPreferenceMatch = legacySemanticFallbackEnabled
+      ? (contextualRawCandidates
+          .map((candidate) =>
+            parseOrdinaryTurnAutoCapturePreference(candidate, paramsForPlan.autoCaptureProfile),
+          )
+          .find((candidate): candidate is OrdinaryTurnAutoCaptureMatch => candidate !== null) ??
+        null)
+      : null;
     const scorePlan = (input: {
       kind: OrdinaryTurnAutoCapturePlan["kind"];
-      lane: OrdinaryTurnAutoCaptureLane;
+      compatibilityLane: OrdinaryTurnAutoCaptureCompatibilityLane;
       key: string;
       subjectKey: string;
       supportsDeferredOverflow: boolean;
@@ -5537,7 +5570,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     }): OrdinaryTurnAutoCapturePlan => {
       const base = resolveCapturePlanBaseScore({
         kind: input.kind,
-        lane: input.lane,
+        compatibilityLane: input.compatibilityLane,
         key: input.key,
         subjectKey: input.subjectKey,
         segmentIndex: paramsForPlan.segmentIndex,
@@ -5558,7 +5591,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       if (input.kind === "response_style_forget") {
         return {
           kind: "response_style_forget",
-          lane: "response_style",
+          compatibilityLane: "response_style",
           key: input.key,
           subjectKey: input.subjectKey,
           segmentIndex: paramsForPlan.segmentIndex,
@@ -5570,7 +5603,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       }
       return {
         kind: "capture",
-        lane: input.lane,
+        compatibilityLane: input.compatibilityLane,
         key: input.key,
         subjectKey: input.subjectKey,
         segmentIndex: paramsForPlan.segmentIndex,
@@ -5600,14 +5633,14 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         maxBlocksPerWindow: 4,
       })[0];
       if (semanticWindow) {
-        const planned = await planNormalizedMemorySourceWindow({
+        const planned = await collectPlannedMemorySemanticCaptures({
           config: params.config,
           lane: "ordinary_turn_capture",
-          window: semanticWindow,
+          windows: [semanticWindow],
           interpreter: params.semanticInterpreter,
         });
         const semanticPlans: OrdinaryTurnAutoCapturePlan[] = [];
-        for (const capture of planned?.captures ?? []) {
+        for (const capture of planned.captures) {
           const evidence = [
             ...capture.validated.evidence,
             "model_driven_interpretation",
@@ -5619,7 +5652,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             semanticPlans.push(
               scorePlan({
                 kind: "response_style_forget",
-                lane: "response_style",
+                compatibilityLane: "response_style",
                 key: projection.subjectKey,
                 subjectKey: projection.subjectKey,
                 supportsDeferredOverflow: false,
@@ -5651,19 +5684,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             continue;
           }
           const projection = capture.materialized.projection;
-          if (projection.category === "response_style") {
+          if (projection.compatibilityCategory === "response_style") {
             semanticPlans.push(
               scorePlan({
                 kind: "capture",
-                lane: "response_style",
-                key: projection.match.key,
-                subjectKey: projection.match.subjectKey,
+                compatibilityLane: "response_style",
+                key: capture.identity.dedupeKey,
+                subjectKey: capture.identity.subjectKey,
                 supportsDeferredOverflow: true,
                 detectionSource: "semantic",
                 confidence: projection.confidence,
                 reviewMode: projection.reviewMode,
-                captureClass: projection.match.captureClass,
-                candidateKind: projection.match.candidateKind,
+                captureClass: projection.compatibilityMatch.captureClass,
+                candidateKind: projection.compatibilityMatch.candidateKind,
                 run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
                   handleResponseStyleDecision({
                     decision: {
@@ -5673,7 +5706,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
                       detectionSource: "semantic",
                       evidence,
                       responseStyleFamily: projection.responseStyleFamily ?? "generalized_guidance",
-                      match: projection.match,
+                      match: projection.compatibilityMatch,
                       reviewMode: projection.reviewMode,
                     },
                     observedText: paramsForPlan.text,
@@ -5691,19 +5724,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             );
             continue;
           }
-          if (projection.category === "project_fact") {
+          if (projection.compatibilityCategory === "project_fact") {
             semanticPlans.push(
               scorePlan({
                 kind: "capture",
-                lane: "project_fact",
-                key: projection.match.key,
-                subjectKey: projection.match.subjectKey,
+                compatibilityLane: "project_fact",
+                key: capture.identity.dedupeKey,
+                subjectKey: capture.identity.subjectKey,
                 supportsDeferredOverflow: true,
                 detectionSource: "semantic",
                 confidence: projection.confidence,
                 reviewMode: projection.reviewMode,
-                captureClass: projection.match.captureClass,
-                candidateKind: projection.match.candidateKind,
+                captureClass: projection.compatibilityMatch.captureClass,
+                candidateKind: projection.compatibilityMatch.candidateKind,
                 run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
                   handleProjectFactDecision({
                     decision: {
@@ -5718,7 +5751,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
                           : projection.reviewMode,
                       factFamily: projection.factFamily ?? "generalized_reference",
                       ...(projection.fieldKey ? { fieldKey: projection.fieldKey } : {}),
-                      match: projection.match,
+                      match: projection.compatibilityMatch,
                     },
                     agentExternalKey: paramsForPlan.agentExternalKey,
                     sessionKey: paramsForPlan.sessionKey,
@@ -5734,19 +5767,19 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             );
             continue;
           }
-          if (projection.category === "recurring_procedure") {
+          if (projection.compatibilityCategory === "recurring_procedure") {
             semanticPlans.push(
               scorePlan({
                 kind: "capture",
-                lane: "recurring_procedure",
-                key: projection.match.key,
-                subjectKey: projection.match.subjectKey,
+                compatibilityLane: "recurring_procedure",
+                key: capture.identity.dedupeKey,
+                subjectKey: capture.identity.subjectKey,
                 supportsDeferredOverflow: true,
                 detectionSource: "semantic",
                 confidence: projection.confidence,
                 reviewMode: projection.reviewMode,
-                captureClass: projection.match.captureClass,
-                candidateKind: projection.match.candidateKind,
+                captureClass: projection.compatibilityMatch.captureClass,
+                candidateKind: projection.compatibilityMatch.candidateKind,
                 run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
                   handleRecurringProcedureDecision({
                     decision: {
@@ -5760,7 +5793,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
                           ? "pending_confirmation"
                           : projection.reviewMode,
                       procedureFamily: projection.procedureFamily ?? "generalized_named_checklist",
-                      match: projection.match,
+                      match: projection.compatibilityMatch,
                     },
                     agentExternalKey: paramsForPlan.agentExternalKey,
                     sessionKey: paramsForPlan.sessionKey,
@@ -5779,15 +5812,15 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           semanticPlans.push(
             scorePlan({
               kind: "capture",
-              lane: "workflow_improvement",
-              key: projection.match.key,
-              subjectKey: projection.match.subjectKey,
+              compatibilityLane: "workflow_improvement",
+              key: capture.identity.dedupeKey,
+              subjectKey: capture.identity.subjectKey,
               supportsDeferredOverflow: true,
               detectionSource: "semantic",
               confidence: projection.confidence,
               reviewMode: projection.reviewMode,
-              captureClass: projection.match.captureClass,
-              candidateKind: projection.match.candidateKind,
+              captureClass: projection.compatibilityMatch.captureClass,
+              candidateKind: projection.compatibilityMatch.candidateKind,
               run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
                 handleWorkflowImprovementDecision({
                   decision: {
@@ -5804,7 +5837,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
                     ...(projection.guidancePattern
                       ? { guidancePattern: projection.guidancePattern }
                       : {}),
-                    match: projection.match,
+                    match: projection.compatibilityMatch,
                   },
                   text: paramsForPlan.text,
                   agentExternalKey: paramsForPlan.agentExternalKey,
@@ -5825,15 +5858,9 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           return semanticPlans[0];
         }
       }
-
-      if (process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK !== "1") {
-        // Normal runtime is model-native only. A semantic miss stays a miss unless
-        // degraded mode is explicitly enabled.
-        return null;
-      }
     }
 
-    if (process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK === "1") {
+    if (legacySemanticFallbackEnabled) {
       // Explicit degraded-mode only. Normal runtime must stay on the model-native seam.
       const deterministicResponseStylePhraseMatch =
         await findApprovedResponseStylePhrasePatternMatch({
@@ -5851,7 +5878,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             : "direct";
         return scorePlan({
           kind: "capture",
-          lane: "response_style",
+          compatibilityLane: "response_style",
           key: deterministicMatch.key,
           subjectKey: deterministicMatch.subjectKey,
           supportsDeferredOverflow: true,
@@ -5896,22 +5923,50 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
       }
     }
 
-    const responseStyleDecision = await detectResponseStyleCaptureDecision(
-      paramsForPlan.text,
-      paramsForPlan.autoCaptureProfile,
-      params.config,
-      contextualRawCandidates,
-    );
-    if (responseStyleDecision) {
-      if (responseStyleDecision.action === "forget") {
+    if (legacySemanticFallbackEnabled) {
+      const responseStyleDecision = await detectLegacyResponseStyleCaptureDecision(
+        paramsForPlan.text,
+        paramsForPlan.autoCaptureProfile,
+        params.config,
+        contextualRawCandidates,
+      );
+      if (responseStyleDecision) {
+        if (responseStyleDecision.action === "forget") {
+          return scorePlan({
+            kind: "response_style_forget",
+            compatibilityLane: "response_style",
+            key: responseStyleDecision.subjectKey,
+            subjectKey: responseStyleDecision.subjectKey,
+            supportsDeferredOverflow: false,
+            detectionSource: responseStyleDecision.detectionSource,
+            confidence: "high",
+            run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+              handleResponseStyleDecision({
+                decision: responseStyleDecision,
+                observedText: paramsForPlan.text,
+                agentExternalKey: paramsForPlan.agentExternalKey,
+                sessionKey: paramsForPlan.sessionKey,
+                transcriptFile: paramsForPlan.transcriptFile,
+                turnState,
+                submissionMode,
+                posture,
+                rank,
+                candidatePoolSize,
+                ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+              }),
+          });
+        }
         return scorePlan({
-          kind: "response_style_forget",
-          lane: "response_style",
-          key: responseStyleDecision.subjectKey,
-          subjectKey: responseStyleDecision.subjectKey,
-          supportsDeferredOverflow: false,
+          kind: "capture",
+          compatibilityLane: "response_style",
+          key: responseStyleDecision.match.key,
+          subjectKey: responseStyleDecision.match.subjectKey,
+          supportsDeferredOverflow: true,
           detectionSource: responseStyleDecision.detectionSource,
-          confidence: "high",
+          confidence: responseStyleDecision.confidence,
+          reviewMode: responseStyleDecision.reviewMode,
+          captureClass: responseStyleDecision.match.captureClass,
+          candidateKind: responseStyleDecision.match.candidateKind,
           run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
             handleResponseStyleDecision({
               decision: responseStyleDecision,
@@ -5928,133 +5983,107 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
             }),
         });
       }
-      return scorePlan({
-        kind: "capture",
-        lane: "response_style",
-        key: responseStyleDecision.match.key,
-        subjectKey: responseStyleDecision.match.subjectKey,
-        supportsDeferredOverflow: true,
-        detectionSource: responseStyleDecision.detectionSource,
-        confidence: responseStyleDecision.confidence,
-        reviewMode: responseStyleDecision.reviewMode,
-        captureClass: responseStyleDecision.match.captureClass,
-        candidateKind: responseStyleDecision.match.candidateKind,
-        run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
-          handleResponseStyleDecision({
-            decision: responseStyleDecision,
-            observedText: paramsForPlan.text,
-            agentExternalKey: paramsForPlan.agentExternalKey,
-            sessionKey: paramsForPlan.sessionKey,
-            transcriptFile: paramsForPlan.transcriptFile,
-            turnState,
-            submissionMode,
-            posture,
-            rank,
-            candidatePoolSize,
-            ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
-          }),
-      });
-    }
 
-    const projectFactDecision = await detectProjectFactCaptureDecision(
-      paramsForPlan.text,
-      paramsForPlan.autoCaptureProfile,
-      contextualRawCandidates,
-    );
-    if (projectFactDecision) {
-      return scorePlan({
-        kind: "capture",
-        lane: "project_fact",
-        key: projectFactDecision.match.key,
-        subjectKey: projectFactDecision.match.subjectKey,
-        supportsDeferredOverflow: true,
-        detectionSource: projectFactDecision.detectionSource,
-        confidence: projectFactDecision.confidence,
-        reviewMode: projectFactDecision.reviewMode,
-        captureClass: projectFactDecision.match.captureClass,
-        candidateKind: projectFactDecision.match.candidateKind,
-        run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
-          handleProjectFactDecision({
-            decision: projectFactDecision,
-            agentExternalKey: paramsForPlan.agentExternalKey,
-            sessionKey: paramsForPlan.sessionKey,
-            transcriptFile: paramsForPlan.transcriptFile,
-            turnState,
-            submissionMode,
-            posture,
-            rank,
-            candidatePoolSize,
-            ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
-          }),
-      });
-    }
+      const projectFactDecision = await detectLegacyProjectFactCaptureDecision(
+        paramsForPlan.text,
+        paramsForPlan.autoCaptureProfile,
+        contextualRawCandidates,
+      );
+      if (projectFactDecision) {
+        return scorePlan({
+          kind: "capture",
+          compatibilityLane: "project_fact",
+          key: projectFactDecision.match.key,
+          subjectKey: projectFactDecision.match.subjectKey,
+          supportsDeferredOverflow: true,
+          detectionSource: projectFactDecision.detectionSource,
+          confidence: projectFactDecision.confidence,
+          reviewMode: projectFactDecision.reviewMode,
+          captureClass: projectFactDecision.match.captureClass,
+          candidateKind: projectFactDecision.match.candidateKind,
+          run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+            handleProjectFactDecision({
+              decision: projectFactDecision,
+              agentExternalKey: paramsForPlan.agentExternalKey,
+              sessionKey: paramsForPlan.sessionKey,
+              transcriptFile: paramsForPlan.transcriptFile,
+              turnState,
+              submissionMode,
+              posture,
+              rank,
+              candidatePoolSize,
+              ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+            }),
+        });
+      }
 
-    const recurringProcedureDecision = await detectRecurringProcedureCaptureDecision(
-      paramsForPlan.text,
-      paramsForPlan.autoCaptureProfile,
-      contextualRawCandidates,
-    );
-    if (recurringProcedureDecision) {
-      return scorePlan({
-        kind: "capture",
-        lane: "recurring_procedure",
-        key: recurringProcedureDecision.match.key,
-        subjectKey: recurringProcedureDecision.match.subjectKey,
-        supportsDeferredOverflow: true,
-        detectionSource: recurringProcedureDecision.detectionSource,
-        confidence: recurringProcedureDecision.confidence,
-        reviewMode: recurringProcedureDecision.reviewMode,
-        captureClass: recurringProcedureDecision.match.captureClass,
-        candidateKind: recurringProcedureDecision.match.candidateKind,
-        run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
-          handleRecurringProcedureDecision({
-            decision: recurringProcedureDecision,
-            agentExternalKey: paramsForPlan.agentExternalKey,
-            sessionKey: paramsForPlan.sessionKey,
-            transcriptFile: paramsForPlan.transcriptFile,
-            turnState,
-            submissionMode,
-            posture,
-            rank,
-            candidatePoolSize,
-            ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
-          }),
-      });
-    }
+      const recurringProcedureDecision = await detectLegacyRecurringProcedureCaptureDecision(
+        paramsForPlan.text,
+        paramsForPlan.autoCaptureProfile,
+        contextualRawCandidates,
+      );
+      if (recurringProcedureDecision) {
+        return scorePlan({
+          kind: "capture",
+          compatibilityLane: "recurring_procedure",
+          key: recurringProcedureDecision.match.key,
+          subjectKey: recurringProcedureDecision.match.subjectKey,
+          supportsDeferredOverflow: true,
+          detectionSource: recurringProcedureDecision.detectionSource,
+          confidence: recurringProcedureDecision.confidence,
+          reviewMode: recurringProcedureDecision.reviewMode,
+          captureClass: recurringProcedureDecision.match.captureClass,
+          candidateKind: recurringProcedureDecision.match.candidateKind,
+          run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+            handleRecurringProcedureDecision({
+              decision: recurringProcedureDecision,
+              agentExternalKey: paramsForPlan.agentExternalKey,
+              sessionKey: paramsForPlan.sessionKey,
+              transcriptFile: paramsForPlan.transcriptFile,
+              turnState,
+              submissionMode,
+              posture,
+              rank,
+              candidatePoolSize,
+              ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+            }),
+        });
+      }
 
-    const workflowImprovementDecision = await detectWorkflowImprovementCaptureDecision(
-      paramsForPlan.text,
-      paramsForPlan.autoCaptureProfile,
-      params.config,
-      contextualRawCandidates,
-    );
-    if (workflowImprovementDecision) {
-      return scorePlan({
-        kind: "capture",
-        lane: "workflow_improvement",
-        key: workflowImprovementDecision.match.key,
-        subjectKey: workflowImprovementDecision.match.subjectKey,
-        supportsDeferredOverflow: true,
-        detectionSource: workflowImprovementDecision.detectionSource,
-        confidence: workflowImprovementDecision.confidence,
-        reviewMode: workflowImprovementDecision.reviewMode,
-        captureClass: workflowImprovementDecision.match.captureClass,
-        candidateKind: workflowImprovementDecision.match.candidateKind,
-        run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
-          handleWorkflowImprovementDecision({
-            decision: workflowImprovementDecision,
-            text: paramsForPlan.text,
-            agentExternalKey: paramsForPlan.agentExternalKey,
-            sessionKey: paramsForPlan.sessionKey,
-            transcriptFile: paramsForPlan.transcriptFile,
-            turnState,
-            submissionMode,
-            posture,
-            rank,
-            candidatePoolSize,
-            ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
-          }),
-      });
+      const workflowImprovementDecision = await detectLegacyWorkflowImprovementCaptureDecision(
+        paramsForPlan.text,
+        paramsForPlan.autoCaptureProfile,
+        params.config,
+        contextualRawCandidates,
+      );
+      if (workflowImprovementDecision) {
+        return scorePlan({
+          kind: "capture",
+          compatibilityLane: "workflow_improvement",
+          key: workflowImprovementDecision.match.key,
+          subjectKey: workflowImprovementDecision.match.subjectKey,
+          supportsDeferredOverflow: true,
+          detectionSource: workflowImprovementDecision.detectionSource,
+          confidence: workflowImprovementDecision.confidence,
+          reviewMode: workflowImprovementDecision.reviewMode,
+          captureClass: workflowImprovementDecision.match.captureClass,
+          candidateKind: workflowImprovementDecision.match.candidateKind,
+          run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+            handleWorkflowImprovementDecision({
+              decision: workflowImprovementDecision,
+              text: paramsForPlan.text,
+              agentExternalKey: paramsForPlan.agentExternalKey,
+              sessionKey: paramsForPlan.sessionKey,
+              transcriptFile: paramsForPlan.transcriptFile,
+              turnState,
+              submissionMode,
+              posture,
+              rank,
+              candidatePoolSize,
+              ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+            }),
+        });
+      }
     }
 
     const match =
@@ -6067,7 +6096,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     }
     return scorePlan({
       kind: "capture",
-      lane: resolvePreferencePlanLaneFromCaptureClass(match.captureClass),
+      compatibilityLane: resolvePreferencePlanLaneFromCaptureClass(match.captureClass),
       key: match.key,
       subjectKey: match.subjectKey,
       supportsDeferredOverflow: true,
@@ -6399,7 +6428,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     const explicitCandidateCount = capturePlans.filter(
       (plan) =>
         plan.kind === "capture" &&
-        (plan.rankSignals.includes("capture:explicit") || plan.lane === "preference"),
+        (plan.rankSignals.includes("capture:explicit") || plan.compatibilityLane === "preference"),
     ).length;
     const demandSignals = deriveCorpusDemandSignalsFromPrompt({
       text,
@@ -6422,7 +6451,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
           hasImmediateLaneCapacity({
             turnState,
             posture: capturePosture,
-            lane: capturePlan.lane,
+            compatibilityLane: capturePlan.compatibilityLane,
           }));
       const submissionMode: OrdinaryTurnAutoCaptureSubmissionMode | null = immediateAllowed
         ? "immediate"

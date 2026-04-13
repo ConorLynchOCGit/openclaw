@@ -1,3 +1,5 @@
+// Legacy compatibility detector only.
+
 import { createHash } from "node:crypto";
 
 export const PROJECT_FACT_FIELD_KEYS = [
@@ -485,6 +487,10 @@ export function getProjectFactFieldSpec(fieldKey: ProjectFactFieldKey): ProjectF
   return PROJECT_FACT_FIELD_SPECS[fieldKey];
 }
 
+/**
+ * Legacy compatibility detector retained for degraded-mode fallback, comparison,
+ * and migration tooling. Normal runtime semantic ownership is model-native.
+ */
 export function detectProjectFactSemanticDecision(
   text: string,
 ): ProjectFactSemanticCaptureDecision {

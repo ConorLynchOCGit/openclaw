@@ -1,3 +1,5 @@
+// Legacy compatibility detector only.
+
 import { createHash } from "node:crypto";
 import type { WorkflowImprovementNeedCategory } from "./workflow-improvement-semantic.js";
 
