@@ -19,20 +19,22 @@ import {
   type DocumentMemoryLoadedSource,
   type DocumentMemoryIngestionSubmissionPlan,
 } from "./document-memory-ingestion-types.js";
-import { buildCanonicalMemoryIngestionCandidateFromResolvedIngestion } from "./memory-canonical-compat-builders.js";
-import type { ResolvedCanonicalizableIngestion } from "./memory-ingestion-resolver.js";
+import type { MemorySemanticObject } from "./memory-semantic-interpretation.js";
 import type { MemorySemanticInterpreterPort } from "./memory-semantic-interpretation.js";
 import {
-  planNormalizedMemoryBlock,
-  type PlannedNormalizedMemoryDecision,
+  planNormalizedMemorySourceWindow,
+  type PlannedMemorySemanticCapture,
 } from "./memory-semantic-planner.js";
 import {
   normalizeDocumentMemorySource,
   normalizeMemoryText,
   type MemoryBlockListKind,
-  type NormalizedMemoryBlock,
   type NormalizedMemorySource,
 } from "./memory-source-normalization.js";
+import {
+  buildMemorySourceWindows,
+  type NormalizedMemorySourceWindow,
+} from "./memory-source-windowing.js";
 
 type DocumentMemoryIngestionServiceDeps = {
   readFile: typeof fs.readFile;
@@ -40,8 +42,10 @@ type DocumentMemoryIngestionServiceDeps = {
 
 type DocumentMemoryExtractedCandidate = {
   category: DocumentMemoryIngestionCategory;
-  resolved: ResolvedCanonicalizableIngestion;
+  semanticObject: MemorySemanticObject;
   canonicalCandidate: CanonicalMemoryIngestionCandidate;
+  observedText: string;
+  evidence: string[];
   segment: DocumentMemoryIngestionSegment;
   submission: DocumentMemoryIngestionSubmissionPlan;
   why: string[];
@@ -99,40 +103,36 @@ function buildNormalizedSource(source: DocumentMemoryLoadedSource): NormalizedMe
   };
 }
 
-function inferSegmentStrategy(block: NormalizedMemoryBlock): "paragraph" | "checklist" | "chunk" {
+function inferSegmentStrategy(
+  window: NormalizedMemorySourceWindow,
+): "paragraph" | "checklist" | "chunk" {
   if (
-    block.listKind === "ordered" ||
-    block.listKind === "unordered" ||
-    block.listKind === "checklist"
+    window.listKinds.includes("ordered") ||
+    window.listKinds.includes("unordered") ||
+    window.listKinds.includes("checklist")
   ) {
     return "checklist";
   }
   if (
-    typeof block.provenance.charStart === "number" ||
-    typeof block.provenance.charEnd === "number"
+    typeof window.provenance.charStart === "number" ||
+    typeof window.provenance.charEnd === "number"
   ) {
     return "chunk";
   }
   return "paragraph";
 }
 
-function toDocumentSegment(block: NormalizedMemoryBlock): DocumentMemoryIngestionSegment {
+function toDocumentSegment(window: NormalizedMemorySourceWindow): DocumentMemoryIngestionSegment {
   return {
-    id: block.id,
-    segmentIndex: block.provenance.segmentIndex ?? 0,
-    strategy: inferSegmentStrategy(block),
-    headingPath: [...block.headingPath],
-    lineStart: block.provenance.lineStart ?? 0,
-    lineEnd: block.provenance.lineEnd ?? block.provenance.lineStart ?? 0,
-    text: block.blockText,
-    charCount: block.blockText.length,
+    id: window.id,
+    segmentIndex: window.provenance.segmentIndex ?? 0,
+    strategy: inferSegmentStrategy(window),
+    headingPath: [...window.headingPath],
+    lineStart: window.provenance.lineStart ?? 0,
+    lineEnd: window.provenance.lineEnd ?? window.provenance.lineStart ?? 0,
+    text: window.windowText,
+    charCount: window.windowText.length,
   };
-}
-
-function resolveCategory(
-  ingestion: ResolvedCanonicalizableIngestion,
-): DocumentMemoryIngestionCategory {
-  return "captureCategory" in ingestion ? ingestion.captureCategory : ingestion.familyId;
 }
 
 function confidenceRank(value: string): number {
@@ -171,11 +171,12 @@ function buildCandidateMetadata(params: {
   source: DocumentMemoryLoadedSource;
   segment: DocumentMemoryIngestionSegment;
   category: DocumentMemoryIngestionCategory;
-  resolved: ResolvedCanonicalizableIngestion;
+  observedText: string;
+  evidence: string[];
   canonicalCandidate: CanonicalMemoryIngestionCandidate;
   profile: DocumentMemoryIngestionProfile;
 }): Record<string, JsonValue> {
-  const { source, segment, category, resolved, canonicalCandidate, profile } = params;
+  const { source, segment, category, observedText, evidence, canonicalCandidate, profile } = params;
   return {
     canonicalIngestionCandidate: toJsonValue(canonicalCandidate),
     documentIngestion: {
@@ -189,8 +190,8 @@ function buildCandidateMetadata(params: {
       lineEnd: segment.lineEnd,
       headingPath: segment.headingPath,
       charCount: segment.charCount,
-      observedText: resolved.observedText,
-      evidence: resolved.evidence,
+      observedText,
+      evidence,
       category,
     } satisfies Record<string, JsonValue>,
   };
@@ -200,14 +201,15 @@ function buildSubmissionPlan(params: {
   source: DocumentMemoryLoadedSource;
   segment: DocumentMemoryIngestionSegment;
   category: DocumentMemoryIngestionCategory;
-  resolved: ResolvedCanonicalizableIngestion;
+  observedText: string;
+  evidence: string[];
   canonicalCandidate: CanonicalMemoryIngestionCandidate;
   profile: DocumentMemoryIngestionProfile;
 }): DocumentMemoryIngestionSubmissionPlan {
   const kind = readSubmissionKind(params.canonicalCandidate);
   return {
     kind,
-    content: params.resolved.observedText,
+    content: params.observedText,
     metadata: buildCandidateMetadata(params),
     ...(params.source.projectId ? { projectId: params.source.projectId } : {}),
     ...(params.source.agentId ? { agentId: params.source.agentId } : {}),
@@ -255,7 +257,7 @@ function createCandidatePlan(params: {
     lineEnd: segment.lineEnd,
     segmentId: segment.id,
     canonicalCandidate: extracted.canonicalCandidate,
-    resolved: extracted.resolved,
+    semanticObject: extracted.semanticObject,
     why: extracted.why,
     submission: extracted.submission,
     duplicateCount: 0,
@@ -269,50 +271,43 @@ function maybePushExtractedCandidate(
   params: {
     source: DocumentMemoryLoadedSource;
     segment: DocumentMemoryIngestionSegment;
-    planned: PlannedNormalizedMemoryDecision | null;
+    capture: PlannedMemorySemanticCapture;
   },
 ) {
-  if (!params.planned || params.planned.validation.action !== "capture") {
+  if (params.capture.materialized.action !== "capture") {
     return;
   }
-  const resolved = params.planned.validation.resolved;
-  const category =
-    params.planned.validation.categoryOverride === "reference_routing"
-      ? "reference_routing"
-      : resolveCategory(resolved);
+  const category = params.capture.materialized.projection.category;
   if (!profile.categories.includes(category)) {
     return;
   }
-  const canonicalCandidate = buildCanonicalMemoryIngestionCandidateFromResolvedIngestion({
-    ingestion: resolved,
-    mode: "candidate_learning",
-    captureSeam: "document_memory_ingestion",
-    captureProfile: profile.id,
-    ...(params.source.projectId ? { projectId: params.source.projectId } : {}),
-  });
+  const canonicalCandidate = params.capture.materialized.projection.canonicalCandidate;
   const submission = buildSubmissionPlan({
     source: params.source,
     segment: params.segment,
     category,
-    resolved,
+    observedText: params.capture.validated.observedText,
+    evidence: params.capture.validated.evidence,
     canonicalCandidate,
     profile,
   });
   collection.push({
     category,
-    resolved,
+    semanticObject: params.capture.materialized.object,
     canonicalCandidate,
+    observedText: params.capture.validated.observedText,
+    evidence: params.capture.validated.evidence,
     segment: params.segment,
     submission,
     why: [
-      ...resolved.evidence,
-      `model:${params.planned.modelId}`,
-      `prompt:${params.planned.promptVersion}`,
+      ...params.capture.validated.evidence,
+      `model:${params.capture.modelId}`,
+      `prompt:${params.capture.promptVersion}`,
     ],
     rank:
-      confidenceRank(resolved.confidence) * 100 +
+      confidenceRank(params.capture.validated.confidence) * 100 +
       params.segment.text.length +
-      resolved.evidence.length,
+      params.capture.validated.evidence.length,
   });
 }
 
@@ -374,7 +369,7 @@ async function normalizeSourceIntoSegments(params: {
   source: DocumentMemoryLoadedSource;
   profile: DocumentMemoryIngestionProfile;
 }): Promise<{
-  blocks: NormalizedMemoryBlock[];
+  windows: NormalizedMemorySourceWindow[];
   segments: DocumentMemoryIngestionSegment[];
 }> {
   const blocks = normalizeDocumentMemorySource({
@@ -385,9 +380,13 @@ async function normalizeSourceIntoSegments(params: {
       ? { projectScope: inferDocumentProjectScopeLabel(params.source) ?? undefined }
       : {}),
   });
-  return {
+  const windows = buildMemorySourceWindows({
     blocks,
-    segments: blocks.map(toDocumentSegment),
+    maxWindowChars: Math.max(params.profile.maxSegmentChars * 2, 2_400),
+  });
+  return {
+    windows,
+    segments: windows.map(toDocumentSegment),
   };
 }
 
@@ -400,17 +399,17 @@ async function extractCandidatesFromSource(params: {
   segments: DocumentMemoryIngestionSegment[];
   candidates: DocumentMemoryIngestionCandidatePlan[];
 }> {
-  const { blocks, segments } = await normalizeSourceIntoSegments({
+  const { windows, segments } = await normalizeSourceIntoSegments({
     source: params.source,
     profile: params.profile,
   });
   const extracted: DocumentMemoryExtractedCandidate[] = [];
 
-  for (const [index, block] of blocks.entries()) {
-    const planned = await planNormalizedMemoryBlock({
+  for (const [index, window] of windows.entries()) {
+    const planned = await planNormalizedMemorySourceWindow({
       config: params.config,
       lane: "document_ingestion",
-      block,
+      window,
       interpreter: params.semanticInterpreter,
       ...(params.source.projectId ? { projectId: params.source.projectId } : {}),
     });
@@ -418,11 +417,16 @@ async function extractCandidatesFromSource(params: {
     if (!segment) {
       continue;
     }
-    maybePushExtractedCandidate(extracted, params.profile, {
-      source: params.source,
-      segment,
-      planned,
-    });
+    for (const capture of planned?.captures ?? []) {
+      if (capture.materialized.action !== "capture") {
+        continue;
+      }
+      maybePushExtractedCandidate(extracted, params.profile, {
+        source: params.source,
+        segment,
+        capture,
+      });
+    }
   }
 
   return {

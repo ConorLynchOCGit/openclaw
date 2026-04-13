@@ -109,8 +109,9 @@ Its concrete deliverables are now tracked through:
 - `/memory-system/specs/gold-judgment-corpus`
 - `/memory-system/specs/model-calibration-lane`
 - `/memory-system/specs/heuristic-block-typing-retirement`
+- `/memory-system/specs/phase-1-architecture-closure-before-phase-2`
 
-Pass 1 is only complete when:
+Pass 1 was only complete when:
 
 - normalization is structural-only
 - shared source-envelope and provenance contracts exist for the touched
@@ -120,6 +121,43 @@ Pass 1 is only complete when:
 - the gold corpus includes expected captures and expected omissions
 - calibration produces an explicit acceptance bar
 - heuristic block typing no longer acts as a semantic planner in normal runtime
+- detector-shaped ontology is gone from the core model contract
+- validator semantic reconstruction is gone from the post-model boundary
+- live-model benchmark artifacts exist for the strengthened corpus
+- remaining legacy semantic paths are fenced explicitly before Phase 2 begins
+
+That bar is now satisfied locally.
+
+Current Pass 1 closure evidence:
+
+- ordinary-turn default runtime no longer falls through to legacy semantic
+  detectors
+- the semantic contract now carries explicit canonical classes and
+  object-native payloads
+- validator ownership is governance-only
+- benchmark scoring is object-native and canonical-class-aware
+- compatibility projection is no longer the semantic authority
+- the live proof lane now runs through the direct completion path
+- audited closure artifacts now exist, including the passing `gpt-5.4` proof:
+  - `audits/memory_live_model_benchmark_2026-04-13T01-34Z.json`
+  - `audits/memory_live_model_benchmark_2026-04-13T01-34Z.md`
+
+The next roadmap phase is now Pass 2 runtime semantic cutover, not more Phase
+1 closure work.
+
+The concrete runtime rewrite contract for the current semantic tranche is now
+also captured in
+`/memory-system/specs/source-window-model-native-semantic-boundary`.
+
+That spec makes the Pass 1 end-state more concrete:
+
+- source windows, not tiny blocks, are the normal model unit
+- semantic objects are primary and candidate/rendered forms are materialized
+  afterward
+- local benchmark replay is cheap and deterministic
+- live proof remains an explicit stored-model-evidence lane
+- sibling-heading overmerge is treated as a provenance bug, not an acceptable
+  batching shortcut
 
 ## Phase A — existing-family parity
 

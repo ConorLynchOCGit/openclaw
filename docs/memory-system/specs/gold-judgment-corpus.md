@@ -12,6 +12,8 @@ captures and durable expected omissions.
 - cover documents and turns
 - cover stable preferences, operator corrections, procedures, project or
   workflow facts, routing cases, and explicit omissions
+- include duplicate/paraphrase cases, mixed-signal docs, and validator-overreach
+  sentinel cases
 
 ## Non-goals
 
@@ -43,7 +45,9 @@ allowed to emit.
 1. create the structured gold corpus
 2. seed it with both synthetic and real cases
 3. include omission and borderline negatives
-4. grow it in later passes when new lanes are added
+4. add duplicate, scope-carrying, and validator-overreach cases so the corpus
+   can fail intermediate architecture honestly
+5. grow it in later passes when new lanes are added
 
 ## Validation strategy
 
@@ -57,6 +61,8 @@ allowed to emit.
   it
 - overly narrow statements can make the corpus brittle, while overly vague
   statements can make it ceremonial
+- the corpus is not strong enough if it cannot catch validator-owned semantic
+  reconstruction
 
 ## Rewrite targets
 

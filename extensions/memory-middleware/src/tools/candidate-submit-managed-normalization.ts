@@ -2,6 +2,7 @@ import type { OpenClawPluginToolContext } from "../../api.js";
 import { getCanonicalCaptureMetadataByCaptureClass } from "../capture-class-metadata.js";
 import type { CandidateSubmissionInput } from "../db/runtime.js";
 import {
+  buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch,
   buildCanonicalMemoryIngestionCandidateFromResolvedIngestion,
   isCanonicalizableResolvedResponseStyleIngestion,
 } from "../memory-canonical-compat.js";
@@ -21,7 +22,11 @@ import {
   parseManagedCorrectionCandidateContent,
   parseOrdinaryTurnAutoCapturePreference,
 } from "../ordinary-turn-auto-capture.js";
-import type { ProjectFactFamily, ProjectFactFieldKey } from "../project-fact-semantic.js";
+import {
+  isSupportedProjectFactField,
+  type ProjectFactFamily,
+  type ProjectFactFieldKey,
+} from "../project-fact-semantic.js";
 import type {
   RecurringProcedureFamily,
   RecurringProcedureKey,
@@ -70,7 +75,7 @@ type ManagedRecurringProcedureResolution = {
   parsed: OrdinaryTurnAutoCaptureMatch;
   procedureFamily: RecurringProcedureFamily;
   procedureKey?: RecurringProcedureKey;
-  reviewMode: "pending_confirmation" | "hold_for_more_evidence";
+  reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
   source: "content" | "raw";
   detectionSource: "semantic" | "deterministic";
   confidence: "high" | "medium";
@@ -100,6 +105,83 @@ type ManagedCorrectionOverride = {
   evidence?: string[];
 };
 
+function readManagedAutoCaptureRecord(
+  input: CandidateSubmissionInput,
+): Record<string, unknown> | null {
+  const autoCapture = input.metadata?.autoCapture;
+  return autoCapture && typeof autoCapture === "object" && !Array.isArray(autoCapture)
+    ? (autoCapture as Record<string, unknown>)
+    : null;
+}
+
+function readManagedAutoCaptureString(
+  input: CandidateSubmissionInput,
+  key: string,
+): string | undefined {
+  const autoCapture = readManagedAutoCaptureRecord(input);
+  const value = autoCapture?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function buildManagedExplicitProjectFactMatch(
+  input: CandidateSubmissionInput,
+): OrdinaryTurnAutoCaptureMatch | null {
+  const captureClass = readManagedAutoCaptureString(input, "captureClass");
+  const template = readManagedAutoCaptureString(input, "template");
+  const subject = readManagedAutoCaptureString(input, "subject");
+  const value = readManagedAutoCaptureString(input, "value");
+  const subjectKey = readManagedAutoCaptureString(input, "subjectKey");
+  const key = readManagedAutoCaptureString(input, "key");
+  if (
+    captureClass !== "explicit_project_fact" ||
+    (template !== "project_fact_named_scope" &&
+      template !== "project_fact_generalized_named_scope") ||
+    !subject ||
+    !value ||
+    !subjectKey ||
+    !key
+  ) {
+    return null;
+  }
+
+  const profile = readManagedAutoCaptureString(input, "profile") ?? "user-preference-v2";
+  const normalizedSubject =
+    readManagedAutoCaptureString(input, "normalizedSubject") ?? subject.trim().toLowerCase();
+  const normalizedValue =
+    readManagedAutoCaptureString(input, "normalizedValue") ?? value.trim().toLowerCase();
+  const projectScope = readManagedAutoCaptureString(input, "projectScope");
+  const normalizedProjectScope =
+    readManagedAutoCaptureString(input, "normalizedProjectScope") ??
+    (projectScope ? projectScope.trim().toLowerCase() : undefined);
+  const rawFieldKey = readManagedAutoCaptureString(input, "fieldKey");
+  const fieldKey =
+    rawFieldKey && isSupportedProjectFactField(rawFieldKey) ? rawFieldKey : undefined;
+  const factFamily =
+    readManagedAutoCaptureString(input, "factFamily") ??
+    (fieldKey ? "supported_field" : "generalized_reference");
+
+  return {
+    profile: profile === "user-preference-v1" ? "user-preference-v1" : "user-preference-v2",
+    captureClass: "explicit_project_fact",
+    candidateKind: "learning",
+    reasonCode: "explicit_project_fact_statement",
+    template,
+    subject,
+    value,
+    normalizedSubject,
+    normalizedValue,
+    content: input.content,
+    subjectKey,
+    key,
+    ...(projectScope ? { projectScope } : {}),
+    ...(normalizedProjectScope ? { normalizedProjectScope } : {}),
+    ...(factFamily === "supported_field" || factFamily === "generalized_reference"
+      ? { factFamily }
+      : {}),
+    ...(fieldKey ? { fieldKey } : {}),
+  };
+}
+
 export type CandidateSubmitManagedNormalizationDeps = {
   mergeCandidateMetadata: (
     input: CandidateSubmissionInput,
@@ -110,10 +192,12 @@ export type CandidateSubmitManagedNormalizationDeps = {
     source: "content" | "raw";
   }) => ManagedResponseStyleResolution | null;
   resolveManagedCorrectionSubmission: (params: {
+    runtime: MemoryMiddlewareRuntime;
     input: CandidateSubmissionInput;
     context?: OpenClawPluginToolContext;
   }) => Promise<ManagedCorrectionOverride | null>;
   resolveManagedProjectFactCorrection: (params: {
+    runtime: MemoryMiddlewareRuntime;
     input: CandidateSubmissionInput;
     context?: OpenClawPluginToolContext;
   }) => Promise<ManagedProjectFactResolution | null>;
@@ -121,10 +205,12 @@ export type CandidateSubmitManagedNormalizationDeps = {
     runtime: MemoryMiddlewareRuntime;
     input: CandidateSubmissionInput;
   }) => Promise<ManagedResponseStyleResolution | null>;
-  resolveManagedProjectFactLearning: (
-    input: CandidateSubmissionInput,
-  ) => Promise<ManagedProjectFactResolution | null>;
+  resolveManagedProjectFactLearning: (params: {
+    runtime: MemoryMiddlewareRuntime;
+    input: CandidateSubmissionInput;
+  }) => Promise<ManagedProjectFactResolution | null>;
   resolveManagedRecurringProcedureSubmission: (params: {
+    runtime: MemoryMiddlewareRuntime;
     input: CandidateSubmissionInput;
     context?: OpenClawPluginToolContext;
   }) => Promise<ManagedRecurringProcedureResolution | null>;
@@ -221,6 +307,7 @@ async function normalizeManagedLearningInput(params: {
   }
 
   const projectFactCorrectionOverride = await deps.resolveManagedProjectFactCorrection({
+    runtime: params.runtime,
     input,
     context,
   });
@@ -297,7 +384,10 @@ async function normalizeManagedLearningInput(params: {
       : deps.mergeCandidateMetadata(input, patch);
   }
 
-  const projectFactResolution = await deps.resolveManagedProjectFactLearning(input);
+  const projectFactResolution = await deps.resolveManagedProjectFactLearning({
+    runtime: params.runtime,
+    input,
+  });
   if (projectFactResolution) {
     return mergeCanonicalResolvedIngestionMetadata({
       deps,
@@ -358,6 +448,83 @@ async function normalizeManagedLearningInput(params: {
     });
   }
 
+  const explicitProjectFactMatch = buildManagedExplicitProjectFactMatch(input);
+  if (explicitProjectFactMatch) {
+    const factFamily =
+      explicitProjectFactMatch.factFamily === "supported_field" ||
+      explicitProjectFactMatch.factFamily === "generalized_reference"
+        ? explicitProjectFactMatch.factFamily
+        : explicitProjectFactMatch.fieldKey
+          ? "supported_field"
+          : "generalized_reference";
+    const reviewMode =
+      factFamily === "supported_field" ? "pending_confirmation" : "hold_for_more_evidence";
+    const evidence = ["managed_submission_metadata_projection"];
+    return deps.mergeCandidateMetadata(input, {
+      category: "project_fact",
+      source: "explicit_project_fact",
+      subject_key: explicitProjectFactMatch.subjectKey,
+      autoCapture: {
+        ...(readManagedAutoCaptureRecord(input) ?? {}),
+        source: "model_tool_candidate_submit",
+        captureSeam: "model_tool_primary",
+        profile: explicitProjectFactMatch.profile,
+        captureClass: explicitProjectFactMatch.captureClass,
+        reasonCode: explicitProjectFactMatch.reasonCode,
+        template: explicitProjectFactMatch.template,
+        key: explicitProjectFactMatch.key,
+        subjectKey: explicitProjectFactMatch.subjectKey,
+        subject: explicitProjectFactMatch.subject,
+        normalizedSubject: explicitProjectFactMatch.normalizedSubject,
+        value: explicitProjectFactMatch.value,
+        normalizedValue: explicitProjectFactMatch.normalizedValue,
+        ...(explicitProjectFactMatch.projectScope
+          ? { projectScope: explicitProjectFactMatch.projectScope }
+          : {}),
+        ...(explicitProjectFactMatch.normalizedProjectScope
+          ? { normalizedProjectScope: explicitProjectFactMatch.normalizedProjectScope }
+          : {}),
+        ...(factFamily ? { factFamily } : {}),
+        ...(explicitProjectFactMatch.fieldKey
+          ? { fieldKey: explicitProjectFactMatch.fieldKey }
+          : {}),
+        toolName: "memory_candidate_submit",
+      },
+      ...buildProjectFactSemanticMetadata({
+        detectionSource: "deterministic",
+        confidence: "high",
+        evidence,
+        factFamily,
+        ...(explicitProjectFactMatch.fieldKey
+          ? { fieldKey: explicitProjectFactMatch.fieldKey }
+          : {}),
+      }),
+      ...buildProjectFactPendingConfirmationMetadata({
+        confidence: "high",
+        evidence,
+        factFamily,
+        ...(explicitProjectFactMatch.fieldKey
+          ? { fieldKey: explicitProjectFactMatch.fieldKey }
+          : {}),
+        ...(factFamily === "generalized_reference"
+          ? { clusterKey: explicitProjectFactMatch.key }
+          : {}),
+        state: reviewMode,
+      }),
+      canonicalIngestionCandidate: buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch({
+        profileId: "project_fact",
+        match: explicitProjectFactMatch,
+        reviewMode,
+        detectionSource: "deterministic",
+        evidence,
+        observedText: input.content,
+        ...(input.projectId ? { projectId: input.projectId } : {}),
+        captureSeam: "model_tool_primary",
+        captureProfile: "tool-submitted",
+      }),
+    });
+  }
+
   const parsedFromContent = deps.resolveAutoPromotableFeedbackSubmission(input);
   const parsedFromRaw =
     !parsedFromContent && typeof input.metadata?.raw === "string"
@@ -413,23 +580,32 @@ async function normalizeManagedLearningInput(params: {
 
 async function normalizeManagedProcedureInput(params: {
   deps: CandidateSubmitManagedNormalizationDeps;
+  runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
   context?: OpenClawPluginToolContext;
 }): Promise<CandidateSubmissionInput> {
   const procedureResolution = await params.deps.resolveManagedRecurringProcedureSubmission({
+    runtime: params.runtime,
     input: params.input,
     context: params.context,
   });
   if (!procedureResolution) {
     return params.input;
   }
+  const candidateReviewMode =
+    procedureResolution.reviewMode === "direct"
+      ? "pending_confirmation"
+      : procedureResolution.reviewMode;
   return mergeCanonicalResolvedIngestionMetadata({
     deps: params.deps,
     input: {
       ...params.input,
       content: procedureResolution.parsed.content,
     },
-    resolution: procedureResolution,
+    resolution: {
+      ...procedureResolution,
+      reviewMode: candidateReviewMode,
+    },
     patch: {
       category:
         procedureResolution.parsed.captureClass === "recurring_procedure_correction"
@@ -480,7 +656,7 @@ async function normalizeManagedProcedureInput(params: {
             ...(procedureResolution.procedureKey
               ? { procedureKey: procedureResolution.procedureKey }
               : {}),
-            state: procedureResolution.reviewMode,
+            state: candidateReviewMode,
           })
         : {}),
     },
@@ -691,6 +867,7 @@ async function normalizeManagedCorrectionInput(params: {
   }
 
   const projectFactCorrection = await params.deps.resolveManagedProjectFactCorrection({
+    runtime: params.runtime,
     input: params.input,
     context: params.context,
   });
@@ -707,8 +884,8 @@ async function normalizeManagedCorrectionInput(params: {
           source: "model_tool_candidate_submit",
           captureSeam: "model_tool_primary",
           profile: projectFactCorrection.parsed.profile,
-          captureClass: projectFactCorrection.parsed.captureClass,
-          reasonCode: projectFactCorrection.parsed.reasonCode,
+          captureClass: "project_fact_correction",
+          reasonCode: "explicit_project_fact_correction",
           template: projectFactCorrection.parsed.template,
           factFamily: projectFactCorrection.factFamily,
           ...(projectFactCorrection.fieldKey ? { fieldKey: projectFactCorrection.fieldKey } : {}),
@@ -833,6 +1010,7 @@ export async function normalizeManagedToolCandidateInput(params: {
   context?: OpenClawPluginToolContext;
 }): Promise<CandidateSubmissionInput> {
   const correctionOverride = await params.deps.resolveManagedCorrectionSubmission({
+    runtime: params.runtime,
     input: params.input,
     context: params.context,
   });
@@ -849,6 +1027,7 @@ export async function normalizeManagedToolCandidateInput(params: {
     case "procedure":
       return normalizeManagedProcedureInput({
         deps: params.deps,
+        runtime: params.runtime,
         input: params.input,
         context: params.context,
       });

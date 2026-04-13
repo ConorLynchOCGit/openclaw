@@ -17,6 +17,8 @@ The current roadmap state is:
 6. the canonical-core tranche of that canonicalization work is now landed in
    code, and the generic ingestion/retrieval contracts are now landed too, but
    planner/runtime cutover and family-heavy retirement are not
+7. Phase 1 closure is now landed locally, so Pass 2 runtime semantic cutover
+   is the next active execution target
 
 ## Read order for a fresh session
 
@@ -76,6 +78,8 @@ These remain important, but several now describe partial bridges rather than
 - `/memory-system/specs/gold-judgment-corpus`
 - `/memory-system/specs/model-calibration-lane`
 - `/memory-system/specs/heuristic-block-typing-retirement`
+- `/memory-system/specs/source-window-model-native-semantic-boundary`
+- `/memory-system/specs/phase-1-architecture-closure-before-phase-2`
 - `/memory-system/specs/model-native-pass-2-runtime-semantic-cutover`
 - `/memory-system/specs/model-native-pass-3-context-prompt-operational-convergence`
 - `/memory-system/archive/specs/canonical-four-kind-memory-migration`
@@ -187,11 +191,31 @@ evaluation-truth work instead of only reading the higher-level program:
 - `/memory-system/specs/gold-judgment-corpus`
 - `/memory-system/specs/model-calibration-lane`
 - `/memory-system/specs/heuristic-block-typing-retirement`
+- `/memory-system/specs/source-window-model-native-semantic-boundary`
+- `/memory-system/specs/phase-1-architecture-closure-before-phase-2`
 
-Use the Pass 2 runtime-semantic-cutover prompt when Pass 1 is complete and the
-lane is ready to unify semantic planning, canonical object handling, review
-policy, dedupe/supersession, model-native capture behavior, runtime heuristic
-retirement, and cross-lane replay proof.
+Use the Phase 1 architecture-closure spec when the lane needs the now-satisfied
+hard gate that separated Pass 1 from Pass 2:
+
+- detector-shaped ontology had to be removed from the core model contract
+- validator-owned semantic reconstruction had to be deleted
+- live-model benchmark evidence had to be stored against the strengthened corpus
+- remaining legacy semantic paths had to be fenced before broader runtime cutover
+
+Use the source-window model-native boundary spec when the lane needs the
+concrete runtime seam for this rewrite tranche:
+
+- semantic interpretation should read source windows, not tiny blocks
+- semantic objects should be primary and renderings should be materialized
+  later
+- local benchmark replay should stay cheap while live proof stays explicit
+- remaining legacy semantic fallback should be treated as fenced residue, not
+  target architecture
+
+Use the Pass 2 runtime-semantic-cutover prompt now that Pass 1 is complete and
+the lane is ready to unify semantic planning, canonical object handling,
+review policy, dedupe/supersession, model-native capture behavior, runtime
+heuristic retirement, and cross-lane replay proof.
 
 Use the Pass 3 context/prompt/operational convergence prompt when Pass 2 is
 complete and the lane is ready to finish context-planner ownership, prompt

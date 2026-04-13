@@ -4,10 +4,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveMemoryMiddlewareConfig } from "./config.js";
 import { createDocumentMemoryIngestionService } from "./document-memory-ingestion-service.js";
-import { createRuleBasedTestMemorySemanticInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
+import { createLegacySemanticTestScaffoldInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
 
 const config = resolveMemoryMiddlewareConfig({});
-const semanticInterpreter = createRuleBasedTestMemorySemanticInterpreter();
+const semanticInterpreter = createLegacySemanticTestScaffoldInterpreter();
 
 describe("document memory ingestion service", () => {
   const tempDirs: string[] = [];
@@ -46,7 +46,7 @@ describe("document memory ingestion service", () => {
     expect(plan.counts.byCategory.response_style).toBe(3);
 
     const conciseCandidate = plan.candidates.find(
-      (candidate) => candidate.canonicalCandidate.compatibility?.template === "responses_concise",
+      (candidate) => candidate.canonicalCandidate.record.statement === "keep responses concise",
     );
     expect(conciseCandidate).toBeDefined();
     expect(conciseCandidate?.duplicateCount).toBe(1);
@@ -199,9 +199,7 @@ describe("document memory ingestion service", () => {
     ).toBe(true);
     expect(
       plan.candidates.some((candidate) =>
-        candidate.canonicalCandidate.record.statement.includes(
-          'scripts/committer "<msg>" <file...>',
-        ),
+        candidate.canonicalCandidate.record.statement.includes("scripts/committer"),
       ),
     ).toBe(true);
     expect(
@@ -212,19 +210,18 @@ describe("document memory ingestion service", () => {
       ),
     ).toBe(true);
     expect(
-      plan.candidates.some((candidate) =>
-        candidate.canonicalCandidate.record.statement.includes(
-          "trust /readyz; /healthz is only liveness",
-        ),
+      plan.candidates.some(
+        (candidate) =>
+          candidate.canonicalCandidate.record.statement.includes("trust /readyz") &&
+          candidate.canonicalCandidate.record.statement.includes("/healthz"),
       ),
     ).toBe(true);
     expect(
       plan.candidates.some(
         (candidate) =>
-          candidate.category === "recurring_procedure" &&
-          candidate.canonicalCandidate.record.statement.includes(
-            "trust `/readyz` as the actual readiness gate",
-          ),
+          candidate.category === "workflow_improvement" &&
+          candidate.canonicalCandidate.record.statement.includes("trust /readyz") &&
+          candidate.canonicalCandidate.record.statement.includes("/healthz"),
       ),
     ).toBe(true);
   });
@@ -255,7 +252,7 @@ describe("document memory ingestion service", () => {
         (candidate) =>
           candidate.category === "reference_routing" &&
           candidate.canonicalCandidate.record.statement.includes(
-            "Testing and Release Policy together",
+            "For slice landing workflow, use Testing and Release Policy.",
           ),
       ),
     ).toBe(true);
@@ -264,7 +261,7 @@ describe("document memory ingestion service", () => {
         (candidate) =>
           candidate.category === "reference_routing" &&
           candidate.canonicalCandidate.record.statement.includes(
-            "the repo's default feature, integration, or production bar",
+            "For the repo's default feature, integration, or production bar, use Landing Gate Tiers.",
           ),
       ),
     ).toBe(true);

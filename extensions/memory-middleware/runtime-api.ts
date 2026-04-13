@@ -50,10 +50,13 @@ export {
 } from "./src/memory-model-semantic-interpreter.js";
 export {
   buildModelSemanticInterpretationPrompt,
+  MEMORY_SEMANTIC_INTERPRETATION_PROMPT_VERSION,
   defaultDecisionProvenance,
   parseMemorySemanticInterpretationDecision,
   renderMemorySemanticDecisionText,
+  resolveCanonicalMemoryClassForSemanticObject,
   type MemorySemanticCaptureCategoryHint,
+  type MemoryCanonicalClass,
   type MemorySemanticCanonicalProcedure,
   type MemorySemanticClass,
   type MemorySemanticInterpretationDecision,
@@ -88,14 +91,14 @@ export {
 export {
   MEMORY_SEMANTIC_GOLD_CORPUS,
   type MemorySemanticGoldCase,
-  type MemorySemanticGoldExpectedCandidate,
-  type MemorySemanticGoldForbiddenCandidate,
+  type MemorySemanticGoldExpectedObject,
+  type MemorySemanticGoldForbiddenObject,
 } from "./src/memory-semantic-gold-corpus.js";
 export {
   MEMORY_SEMANTIC_BENCHMARK_CRITERIA,
   runMemorySemanticGoldCorpusBenchmark,
   type MemorySemanticBenchmarkCaseResult,
-  type MemorySemanticBenchmarkCandidateSummary,
+  type MemorySemanticBenchmarkObjectSummary,
   type MemorySemanticBenchmarkIssue,
   type MemorySemanticBenchmarkIssueSeverity,
   type MemorySemanticBenchmarkReport,

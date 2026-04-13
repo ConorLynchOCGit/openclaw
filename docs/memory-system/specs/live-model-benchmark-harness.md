@@ -11,6 +11,9 @@ is not a truthful benchmark for a model-native architecture.
 - make the primary benchmark path exercise the real model interpretation seam
 - support replayable evaluation over frozen fixtures and audited real documents
 - report class-aware expected-versus-actual results
+- compare richer canonical objects, not only statement substrings
+- surface validator-owned semantic reconstruction explicitly when it appears in
+  post-model evidence
 
 ## Non-goals
 
@@ -49,14 +52,33 @@ judges the result against hand-authored expectations.
 
 - targeted harness tests with scripted interpreters for plumbing
 - targeted live dry-run executions through the real interpreter
-- explicit report criteria for counts, categories, omissions, provenance, and
-  dedupe
+- explicit report criteria for counts, categories, subject and statement
+  quality, structured procedures, scope, provenance, dedupe, and validation
+  evidence
+
+## Current landed state
+
+- local semantic proof uses object-native replay
+- live proof uses the direct provider completion path
+- benchmark scoring now compares:
+  - canonical class
+  - internal object kind
+  - structured payload
+  - scope
+  - provenance
+  - omission and dedupe behavior
+- compatibility projection is no longer the benchmark scoring authority
+- the current closure artifact for the Phase 1 bar is:
+  - `audits/memory_live_model_benchmark_2026-04-13T01-34Z.json`
+  - `audits/memory_live_model_benchmark_2026-04-13T01-34Z.md`
 
 ## Risks and open questions
 
 - live-model benchmarks need stable fixture handling and careful reporting to
   stay reviewable
 - cost and latency controls are deferred to later passes
+- a weak matcher can still create false confidence even when the benchmark uses
+  the real model path
 
 ## Rewrite targets
 

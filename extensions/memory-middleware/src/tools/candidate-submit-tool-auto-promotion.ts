@@ -1,3 +1,4 @@
+import { Client } from "pg";
 import { DEFAULT_MEMORY_MIDDLEWARE_AUTO_PROMOTION_CONFIG } from "../config.js";
 import type { CandidateSubmissionInput, CandidateSubmissionResult } from "../db/runtime.js";
 import { readCanonicalMemoryIngestionCandidateFromMetadata } from "../memory-canonical-compat.js";
@@ -353,15 +354,20 @@ export async function maybeAutoPromoteToolSubmittedProjectFact(params: {
     subjectKey,
     ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
   });
-  if (!inspection) {
-    return params.result;
-  }
+  const fallbackApprovedSubjectObjectIds = await selectApprovedProjectFactSubjectObjectIds({
+    runtime: params.runtime,
+    subjectKey,
+    ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+  });
+  const activeApprovedSubjectObjectIds = inspection?.activeApprovedSubjectObjectIds.length
+    ? inspection.activeApprovedSubjectObjectIds
+    : fallbackApprovedSubjectObjectIds;
 
   const correctionAttempt = await attemptApprovedMemoryObjectCorrectionPromotion({
     familyId: "project_fact",
     trigger: "explicit_correction",
     promotionPolicy: resolveMemoryCorrectionPromotionPolicy(autoPromotion.profile),
-    activeApprovedSubjectObjectIds: inspection.activeApprovedSubjectObjectIds,
+    activeApprovedSubjectObjectIds,
     candidateId: params.result.memoryObjectId,
     reviewCandidate: params.runtime.candidateReview.review,
     promoteToMemory: params.runtime.candidatePromotion.promoteToMemory,
@@ -402,6 +408,45 @@ export async function maybeAutoPromoteToolSubmittedProjectFact(params: {
     memoryObjectId: correctionAttempt.promotedMemoryObjectId,
     reviewState: "approved",
   };
+}
+
+async function selectApprovedProjectFactSubjectObjectIds(params: {
+  runtime: MemoryMiddlewareRuntime;
+  subjectKey: string;
+  projectId?: string;
+}): Promise<string[]> {
+  const databaseUrl = params.runtime.config.database?.url;
+  if (!databaseUrl) {
+    return [];
+  }
+
+  const schema = params.runtime.config.database?.schema ?? "memory_middleware";
+  const client = new Client({ connectionString: databaseUrl });
+  try {
+    await client.connect();
+    const result = await client.query<{ id: string }>(
+      `
+        select id::text as id
+        from ${schema}.memory_objects
+        where review_state = 'approved'
+          and (
+            metadata->'candidateMetadata'->'autoCapture'->>'subjectKey' = $1::text
+            or metadata->'candidateMetadata'->'canonicalIngestionCandidate'->'identity'->>'subjectKey' = $1::text
+            or metadata->'promotionMetadata'->'autoPromotion'->>'subjectKey' = $1::text
+            or metadata->'promotionMetadata'->'canonicalIngestionCandidate'->'identity'->>'subjectKey' = $1::text
+            or metadata->'autoPromotion'->>'subjectKey' = $1::text
+          )
+          and ($2::uuid is null or project_id = $2::uuid)
+        order by created_at desc, id desc
+      `,
+      [params.subjectKey, params.projectId ?? null],
+    );
+    return result.rows.map((row) => row.id);
+  } catch {
+    return [];
+  } finally {
+    await client.end().catch(() => {});
+  }
 }
 
 export async function maybeAutoPromoteToolSubmittedRecurringProcedure(params: {

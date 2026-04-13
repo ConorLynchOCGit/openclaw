@@ -258,6 +258,61 @@ Current accepted framing:
   classification in normal runtime where that pass was meant to remove it, the
   pass is not complete
 
+## 2026-04 — the four canonical classes are the top-level memory contract
+
+Current accepted framing:
+
+- the durable business contract stays:
+  - `user`
+  - `feedback`
+  - `project`
+  - `reference`
+- internal semantic kinds may be richer than those four classes, but they
+  must remain an explicit decomposition under that contract rather than a
+  replacement for it
+- benchmark reporting, live proof, and docs should surface both:
+  - canonical class
+  - internal object kind
+
+## 2026-04 — optional typed qualifiers are not the proof-critical ontology
+
+Current accepted framing:
+
+- fields such as `preferenceProfile`, `workflowProfile`, `procedureKey`,
+  `factFieldKey`, and `guidancePattern` may survive as typed qualifiers when
+  they are useful
+- those qualifiers are not allowed to replace the primary semantic truth of:
+  - canonical class
+  - object kind
+  - scope
+  - durability
+  - payload
+  - provenance
+- benchmark acceptance should block on those qualifiers only when a specific
+  case genuinely depends on them semantically
+
+## 2026-04 — ordinary-turn default runtime may not silently fall back
+
+Current accepted framing:
+
+- normal ordinary-turn runtime ends at:
+  - structural normalization
+  - source-window interpretation
+  - governance / review / ignore
+- legacy detector-era fallback may exist only as explicit degraded mode
+- degraded mode must be off by default and must not be mistaken for the
+  target runtime seam
+
+## 2026-04 — live proof must use real model calls but may not define local iteration cost
+
+Current accepted framing:
+
+- local semantic proof should use cheap replay
+- live proof should use real model execution with stored artifacts under
+  `audits/`
+- the live-proof lane must be light enough to run intentionally, but it is
+  not the default local loop
+
 ## 2026-04 — Pass 1 owns substrate and evaluation truth, not runtime cutover theater
 
 Current accepted framing:
@@ -272,6 +327,51 @@ Current accepted framing:
 - calibration must turn benchmark results into an explicit acceptance bar
 - heuristic block typing may survive as a baseline or diagnostic helper only,
   not as a normal runtime semantic decision point
+
+## 2026-04 — Phase 2 is blocked until Pass 1 loses detector-shaped ontology and validator-owned semantics
+
+Current accepted framing:
+
+- Pass 1 is not complete merely because the planner entry seam is model-first
+- detector-shaped contract fields such as legacy category hints still count as
+  intermediate architecture
+- validator semantic reconstruction still counts as unfinished detector-era
+  ownership even when it runs after the model
+- stored live-model benchmark evidence over the strengthened gold corpus is part
+  of the Pass 1 acceptance bar, not optional reporting
+- remaining legacy semantic paths outside the planner seam must be categorized
+  and fenced explicitly before Phase 2 claims one shared semantic architecture
+- the closure requirements are tracked in
+  `/memory-system/specs/phase-1-architecture-closure-before-phase-2`
+
+## 2026-04 — model-native semantics read source windows and materialize later
+
+Current accepted framing:
+
+- the normal semantic unit is a structurally normalized source window, not one
+  tiny block
+- one source window may emit multiple durable semantic objects
+- semantic objects are the primary truth surface
+- candidate strings, retrieval units, and review tasks are downstream
+  materializations, not the semantic object itself
+- validation is governance-only and may not recover meaning the model failed to
+  express
+- window assembly may not merge across sibling headings merely to reduce model
+  call count
+- the concrete rewrite contract is tracked in
+  `/memory-system/specs/source-window-model-native-semantic-boundary`
+
+## 2026-04 — cheap replay and explicit live proof are separate benchmark lanes
+
+Current accepted framing:
+
+- local benchmark iteration must be deterministic and cheap
+- benchmark tests should replay object-native outputs rather than depending on
+  heuristic semantic callbacks as the main oracle
+- real-model evaluation still matters, but it belongs in an explicit live-proof
+  lane with stored artifacts
+- local targeted tests should not require one embedded-agent model call per
+  tiny block just to validate matcher/runtime behavior
 
 ## 2026-04 — project-local projections target real project index docs first
 

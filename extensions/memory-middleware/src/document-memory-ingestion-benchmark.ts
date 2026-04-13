@@ -9,7 +9,7 @@ import type {
   DocumentMemoryIngestionProfileId,
   DocumentMemoryIngestionSource,
 } from "./document-memory-ingestion-types.js";
-import { createRuleBasedTestMemorySemanticInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
+import { createLegacySemanticTestScaffoldInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
 
 export type DocumentMemoryBenchmarkExpectedCandidate = {
   id: string;
@@ -595,7 +595,7 @@ export async function runDocumentMemoryIngestionBenchmark(params?: {
     params?.service ??
     createDocumentMemoryIngestionService({
       config: resolveMemoryMiddlewareConfig({}),
-      semanticInterpreter: createRuleBasedTestMemorySemanticInterpreter(),
+      semanticInterpreter: createLegacySemanticTestScaffoldInterpreter(),
     });
   const cases = params?.cases ?? DOCUMENT_MEMORY_BENCHMARK_CASES;
   const caseResults: DocumentMemoryBenchmarkCaseResult[] = [];

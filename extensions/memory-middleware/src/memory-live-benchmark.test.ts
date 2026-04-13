@@ -6,12 +6,12 @@ import {
 } from "./memory-live-benchmark.js";
 import { evaluateMemorySemanticCalibration } from "./memory-semantic-calibration.js";
 import type { MemorySemanticGoldCase } from "./memory-semantic-gold-corpus.js";
-import { createScriptedMemorySemanticInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
+import { createReplayMemorySemanticInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
 
 const config = resolveMemoryMiddlewareConfig({});
 
 describe("memory live benchmark", () => {
-  it("evaluates inline gold cases with a scripted interpreter", async () => {
+  it("evaluates inline gold cases through the cheap replay lane", async () => {
     const cases: MemorySemanticGoldCase[] = [
       {
         id: "inline-identity",
@@ -25,19 +25,23 @@ describe("memory live benchmark", () => {
         content: "plain english please\n\nremember this later maybe\n",
         expected: {
           exactCount: 1,
+          classCounts: { user: 1 },
           categoryCounts: { response_style: 1 },
-          requiredCandidates: [
+          requiredObjects: [
             {
               id: "plain",
+              canonicalClass: "user",
+              kind: "preference",
               category: "response_style",
-              statementIncludes: ["plain english"],
+              subjectIncludes: ["response language"],
+              instructionIncludes: ["plain english"],
               lineStart: 1,
             },
           ],
-          forbiddenCandidates: [
+          forbiddenObjects: [
             {
               reason: "filler should be omitted",
-              statementIncludes: ["remember this later maybe"],
+              instructionIncludes: ["remember this later maybe"],
             },
           ],
           notes: [],
@@ -60,54 +64,69 @@ describe("memory live benchmark", () => {
         parentContext: [],
         expected: {
           exactCount: 1,
+          classCounts: { feedback: 1 },
           categoryCounts: { recurring_procedure: 1 },
-          requiredCandidates: [
+          requiredObjects: [
             {
               id: "procedure",
+              canonicalClass: "feedback",
+              kind: "procedure",
               category: "recurring_procedure",
-              statementIncludes: ["signed evidence bundle", "audit channel"],
+              procedure: {
+                titleIncludes: ["release evidence handoff checklist"],
+                stepIncludes: ["signed evidence bundle", "audit channel"],
+                exactStepCount: 2,
+              },
             },
           ],
-          forbiddenCandidates: [],
+          forbiddenObjects: [],
           notes: [],
         },
       },
     ];
 
-    const interpreter = createScriptedMemorySemanticInterpreter((input) => {
-      if (input.block.blockText.toLowerCase().includes("plain english")) {
-        return {
-          action: "candidate",
-          semanticClass: "stable_user_preference",
-          captureCategoryHint: "response_style",
-          canonicalStatement: "Use plain English.",
-          confidence: "strong",
-          rationale: ["scripted test match"],
-        };
-      }
-      if (input.block.headingPath.at(-1) === "Release Evidence Handoff Checklist") {
-        return {
-          action: "candidate",
-          semanticClass: "reusable_procedure",
-          captureCategoryHint: "recurring_procedure",
-          canonicalProcedure: {
-            name: "Release Evidence Handoff Checklist",
-            steps: [
-              "Capture the signed evidence bundle.",
-              "Post the handoff note in the audit channel.",
-            ],
-          },
-          confidence: "strong",
-          rationale: ["scripted test match"],
-        };
-      }
-      return {
-        action: "ignore",
-        semanticClass: "ignore",
-        confidence: "weak",
-        rationale: ["scripted test ignore"],
-      };
-    });
+    const interpreter = createReplayMemorySemanticInterpreter([
+      {
+        sourceId: "inline:identity",
+        windowTextIncludes: ["plain english please"],
+        result: (input) => ({
+          action: "capture",
+          objects: [
+            {
+              kind: "preference",
+              operation: "capture",
+              subject: "response language",
+              instruction: "use plain English",
+              durability: "durable",
+              confidence: "strong",
+              rationale: ["replayed preference capture"],
+              provenanceSpans: [{ blockIds: input.window.blocks.map((block) => block.id) }],
+            },
+          ],
+        }),
+      },
+      {
+        sourceId: "inline:procedure",
+        headingPath: ["Release Evidence Handoff Checklist"],
+        result: (input) => ({
+          action: "capture",
+          objects: [
+            {
+              kind: "procedure",
+              title: "Release Evidence Handoff Checklist",
+              steps: [
+                "Capture the signed evidence bundle.",
+                "Post the handoff note in the audit channel.",
+              ],
+              durability: "durable",
+              confidence: "strong",
+              rationale: ["replayed procedure capture"],
+              provenanceSpans: [{ blockIds: input.window.blocks.map((block) => block.id) }],
+            },
+          ],
+        }),
+      },
+    ]);
 
     const report = await runMemorySemanticGoldCorpusBenchmark({
       config,
@@ -116,30 +135,114 @@ describe("memory live benchmark", () => {
     });
 
     expect(report.readiness.blockingIssueCount).toBe(0);
+    expect(report.execution.caseCount).toBe(2);
+    expect(report.execution.durationMs).toBeGreaterThanOrEqual(0);
+    expect(report.execution.promptVersions.length).toBeGreaterThan(0);
     expect(report.caseResults).toHaveLength(2);
     expect(report.caseResults.every((result) => result.pass)).toBe(true);
+  });
+
+  it("surfaces benchmark mismatches from model-owned project-fact outputs", async () => {
+    const cases: MemorySemanticGoldCase[] = [
+      {
+        id: "inline-validator-overreach",
+        title: "inline validator overreach",
+        lane: "document_ingestion",
+        source: {
+          kind: "document",
+          sourceId: "inline:validator-overreach",
+          path: "benchmarks/inline-validator-overreach.md",
+          projectId: "atlas-forge",
+        },
+        content: "# Branches\n\nDefault branch is atlas-main.\n",
+        projectScope: "atlas forge",
+        expected: {
+          exactCount: 1,
+          classCounts: { project: 1 },
+          categoryCounts: { project_fact: 1 },
+          requiredObjects: [
+            {
+              id: "default_branch",
+              canonicalClass: "project",
+              kind: "project_fact",
+              category: "project_fact",
+              subjectIncludes: ["default branch"],
+              valueIncludes: ["atlas-main"],
+              forbidEvidencePrefixes: ["deterministic_"],
+            },
+          ],
+          forbiddenObjects: [],
+          notes: [],
+        },
+      },
+    ];
+
+    const interpreter = createReplayMemorySemanticInterpreter([
+      {
+        sourceId: "inline:validator-overreach",
+        result: (input) => ({
+          action: "capture",
+          objects: [
+            {
+              kind: "project_fact",
+              subject: "default branch",
+              value: "atlas-main",
+              factFieldKey: "default_branch",
+              scope: {
+                projectScope: "atlas forge",
+                contextualDependencies: [],
+              },
+              durability: "durable",
+              confidence: "strong",
+              rationale: ["replayed project fact"],
+              provenanceSpans: [{ blockIds: input.window.blocks.map((block) => block.id) }],
+            },
+          ],
+        }),
+      },
+    ]);
+
+    const report = await runMemorySemanticGoldCorpusBenchmark({
+      config,
+      interpreter,
+      cases,
+    });
+
+    expect(report.readiness.blockingIssueCount).toBe(0);
+    expect(report.caseResults[0]?.issues).toEqual([]);
+    expect(report.caseResults[0]?.matchedObjectIds).toEqual(["default_branch"]);
+    expect(report.caseResults[0]?.pass).toBe(true);
   });
 
   it("calibrates readiness from a benchmark report", () => {
     const report: MemorySemanticBenchmarkReport = {
       benchmarkCriteria: [],
+      execution: {
+        startedAt: "2026-04-12T00:00:00.000Z",
+        finishedAt: "2026-04-12T00:00:01.000Z",
+        durationMs: 1_000,
+        generatedAt: "2026-04-12T00:00:00.000Z",
+        caseCount: 2,
+        modelIds: ["test/model"],
+        promptVersions: ["memory-semantic-v5"],
+      },
       caseResults: [
         {
           benchmarkCase: {} as never,
-          actual: { candidateCount: 1, categoryCounts: {}, candidates: [] },
-          matchedCandidateIds: ["one"],
+          actual: { objectCount: 1, classCounts: {}, categoryCounts: {}, objects: [] },
+          matchedObjectIds: ["one"],
           issues: [],
           pass: true,
         },
         {
           benchmarkCase: {} as never,
-          actual: { candidateCount: 1, categoryCounts: {}, candidates: [] },
-          matchedCandidateIds: [],
+          actual: { objectCount: 1, classCounts: {}, categoryCounts: {}, objects: [] },
+          matchedObjectIds: [],
           issues: [
             {
               severity: "blocking",
               code: "missing_candidate",
-              message: "missing required candidate",
+              message: "missing required object",
             },
           ],
           pass: false,

@@ -1,0 +1,21 @@
+[memory-benchmark] case identity_response_defaults: loading
+[memory-benchmark] case identity_response_defaults: loaded 3 windows
+[memory-benchmark] case identity_response_defaults: planning window 1/3
+[memory-benchmark] case identity_response_defaults: planning window 1/3
+[memory-benchmark] case identity_response_defaults: planning window 1/3
+[memory-benchmark] case identity_response_defaults: deduping 3 raw objects
+[memory-benchmark] case identity_response_defaults: done pass=true issues=0
+[memory-benchmark] case project_operating_implicit_scope: loading
+[memory-benchmark] case project_operating_implicit_scope: loaded 2 windows
+[memory-benchmark] case project_operating_implicit_scope: planning window 1/2
+[memory-benchmark] case project_operating_implicit_scope: planning window 1/2
+[memory-benchmark] case project_operating_implicit_scope: deduping 3 raw objects
+[memory-benchmark] case project_operating_implicit_scope: done pass=true issues=0
+[memory-benchmark] case real_slice_workflow_doc: loading
+[memory-benchmark] case real_slice_workflow_doc: loaded 4 windows
+[memory-benchmark] case real_slice_workflow_doc: planning window 1/4
+[memory-benchmark] case real_slice_workflow_doc: planning window 1/4
+[memory-benchmark] case real_slice_workflow_doc: planning window 7/4
+[memory-benchmark] case real_slice_workflow_doc: planning window 1/4
+[memory-benchmark] case real_slice_workflow_doc: deduping 5 raw objects
+[memory-benchmark] case real_slice_workflow_doc: done pass=true issues=0

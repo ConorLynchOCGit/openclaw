@@ -11,6 +11,8 @@ decisions for prompt, schema, confidence, and rationale policy.
 - define a measurable acceptance bar
 - summarize benchmark quality in a reusable calibration result
 - make prompt and validation policy evidence-based instead of anecdotal
+- make it impossible to claim readiness while ontology or validator seams still
+  fail the strengthened corpus
 
 ## Non-goals
 
@@ -49,10 +51,22 @@ It is not the model runtime itself and it is not a heuristic semantic fallback.
 - targeted calibration tests
 - targeted benchmark reruns that prove pass and fail behavior
 
+## Current landed state
+
+- calibration now reads the object-native benchmark report directly
+- closure acceptance uses the stored live-proof artifact instead of narrative
+  claims
+- the current closure proof satisfied the bar on:
+  - model: `openrouter/openai/gpt-5.4`
+  - prompt: `memory-semantic-v5`
+  - artifact: `audits/memory_live_model_benchmark_2026-04-13T01-34Z.json`
+
 ## Risks and open questions
 
 - initial thresholds are necessarily conservative and may need later tuning
 - calibration can become cosmetic if the gold corpus is weak
+- calibration is not enough by itself; Phase 2 still stays blocked if the model
+  contract or validator boundary remain detector-shaped
 
 ## Rewrite targets
 

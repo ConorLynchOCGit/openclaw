@@ -2,9 +2,42 @@
 
 ## Active slice
 
-Broad runtime-core refactor follow-through
+Phase 1 closure is now landed locally. The next active slice is Pass 2 runtime
+semantic cutover.
 
-Latest structural runtime follow-through:
+Latest closure follow-through:
+
+- ordinary-turn default runtime now stops after the model-native source-window
+  seam unless explicit degraded mode is enabled
+- the semantic contract now carries explicit canonical classes:
+  - user
+  - feedback
+  - project
+  - reference
+- internal object kinds remain the semantic decomposition under those four
+  classes:
+  - preference
+  - correction
+  - procedure
+  - project_fact
+  - routing
+- auxiliary typed qualifiers such as `preferenceProfile`,
+  `workflowProfile`, `procedureKey`, `factFieldKey`, and `guidancePattern`
+  survive only as optional object-local qualifiers, not as proof-critical top
+  level ontology
+- validation is now governance-only and no longer reconstructs semantic
+  meaning after the model
+- `memory-semantic-compatibility.ts` is gone and reference-routing
+  packaging now builds a direct reference canonical candidate instead of
+  reusing a workflow profile as semantic authority
+- local semantic proof uses object-native replay and the live proof lane now
+  uses a direct simple-completion path rather than the embedded Pi runner
+- audited live proof now exists under `audits/` for both unstable mini-model
+  runs and the passing `gpt-5.4` closure artifact:
+  - `audits/memory_live_model_benchmark_2026-04-13T01-34Z.json`
+  - `audits/memory_live_model_benchmark_2026-04-13T01-34Z.md`
+
+Earlier structural runtime follow-through that still matters:
 
 - canonical profile-registry consolidation for family-era runtime tables
 - shared submission/profile routing helpers for canonical and legacy metadata
@@ -63,9 +96,8 @@ Latest structural runtime follow-through:
 
 ## Objective
 
-Bridge durable memory into normal turn assembly through normalized slots and
-compiled packs while preserving the existing Postgres-ledger and native-file
-projection model.
+Hold the Phase 1 closure line honestly and start Pass 2 from a runtime that is
+already model-native in its normal semantic seam.
 
 ## What is now landed
 
@@ -130,9 +162,17 @@ projection model.
 
 ## Current emphasis
 
-- the current execution slice is Pass 1 of the model-native completion program
+- Pass 1 is now complete enough to hand off to Pass 2:
+  - structural normalization is the shared substrate
+  - normal runtime semantic ownership is model-native
+  - canonical-class reporting is explicit
+  - benchmark truth is object-native
+  - live proof is stored and reviewable
+- the next execution slice is Pass 2 of the model-native completion program
   in `/memory-system/specs/model-native-memory-architecture-program`
-- land the Pass 1 slice pack directly:
+- Pass 2 should now land the runtime-semantic-cutover pack directly:
+  - `/memory-system/specs/model-native-pass-2-runtime-semantic-cutover`
+- keep the governing Pass 1 closure record visible:
   - `/memory-system/specs/structural-normalization-cleanup`
   - `/memory-system/specs/unified-source-envelope-contract`
   - `/memory-system/specs/shared-provenance-model`
@@ -141,13 +181,12 @@ projection model.
   - `/memory-system/specs/gold-judgment-corpus`
   - `/memory-system/specs/model-calibration-lane`
   - `/memory-system/specs/heuristic-block-typing-retirement`
-- treat normalization as structural-only and push semantic class ownership to
-  the model interpretation seam
-- treat live-model benchmarking plus the maintained gold corpus as the primary
-  truth surface for Pass 1 acceptance, not rule-based semantic surrogate tests
-- keep runtime semantic cutover, broader heuristic retirement, context-planner
-  convergence, prompt/cache/compaction redesign, DB-native ingestion, and soak
-  proof deferred to Pass 2 and Pass 3
+- treat `/memory-system/specs/phase-1-architecture-closure-before-phase-2` as
+  satisfied and use it as the historical gate that justified Phase 2 entry
+- treat `/memory-system/specs/source-window-model-native-semantic-boundary`
+  as the current seam that Pass 2 must build on rather than reopen
+- keep context-planner convergence, prompt/cache/compaction redesign,
+  DB-native ingestion, and soak proof deferred to Pass 2 and Pass 3
 - pause the bounded conversational lane for soak instead of widening the
   runtime again immediately
 - watch whether the sharpened packs are now specific enough to change behavior

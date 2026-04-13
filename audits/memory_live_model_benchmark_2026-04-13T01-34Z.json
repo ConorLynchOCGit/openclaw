@@ -1,0 +1,872 @@
+{
+  "configSnapshot": {
+    "path": "/root/.openclaw/openclaw.json",
+    "valid": false
+  },
+  "command": "/root/services/openclaw-roles/dev/scripts/memory-live-benchmark.ts --model openrouter/openai/gpt-5.4 --case=identity_response_defaults,project_operating_implicit_scope,real_slice_workflow_doc",
+  "requestedCaseIds": [
+    "identity_response_defaults",
+    "project_operating_implicit_scope",
+    "real_slice_workflow_doc"
+  ],
+  "modelOverride": "openrouter/openai/gpt-5.4",
+  "readiness": {
+    "blockingIssueCount": 0,
+    "minorIssueCount": 0,
+    "readyForRuntimeCutover": true
+  },
+  "execution": {
+    "startedAt": "2026-04-13T01:34:35.273Z",
+    "finishedAt": "2026-04-13T01:35:35.654Z",
+    "durationMs": 60381,
+    "generatedAt": "2026-04-13T01:35:35.654Z",
+    "caseCount": 3,
+    "modelIds": ["openrouter/openai/gpt-5.4"],
+    "promptVersions": ["memory-semantic-v5"]
+  },
+  "calibration": {
+    "thresholds": {
+      "minPassingCaseRate": 0.9,
+      "maxBlockingIssues": 0,
+      "maxMinorIssues": 4
+    },
+    "passRate": 1,
+    "blockingIssueCount": 0,
+    "minorIssueCount": 0,
+    "ready": true,
+    "reasons": []
+  },
+  "caseResults": [
+    {
+      "id": "identity_response_defaults",
+      "pass": true,
+      "matchedObjectIds": ["plain_english", "concise", "repo_relative"],
+      "issues": [],
+      "actual": {
+        "objectCount": 3,
+        "classCounts": {
+          "user": 3
+        },
+        "categoryCounts": {
+          "response_style": 3
+        },
+        "objects": [
+          {
+            "canonicalClass": "user",
+            "kind": "preference",
+            "category": "response_style",
+            "object": {
+              "id": "mem-user-pref-plain-english",
+              "durability": "durable",
+              "confidence": "strong",
+              "rationale": [
+                "Located in an identity/defaults document under Response defaults.",
+                "Phrase directly requests a stable language/style preference."
+              ],
+              "provenanceSpans": [
+                {
+                  "blockIds": ["a7d5e7ca03842820"],
+                  "segmentIndexes": [1],
+                  "lineStart": 4,
+                  "lineEnd": 4,
+                  "headingPath": ["User profile", "Response defaults"]
+                }
+              ],
+              "scope": {
+                "userScope": "default",
+                "contextualDependencies": ["User profile", "Response defaults"]
+              },
+              "canonicalClass": "user",
+              "kind": "preference",
+              "operation": "capture",
+              "subject": "response style",
+              "instruction": "Use plain English in responses.",
+              "preferenceProfile": "plain_english"
+            },
+            "evidence": [
+              "model_semantic_output",
+              "object_kind:preference",
+              "model_rationale:Located in an identity/defaults document under Response defaults.",
+              "model_rationale:Phrase directly requests a stable language/style preference."
+            ],
+            "reviewMode": "direct",
+            "provenance": {
+              "source": {
+                "kind": "document",
+                "sourceId": "gold:identity-defaults",
+                "path": "benchmarks/identity-defaults.md",
+                "sourceClass": "identity"
+              },
+              "headingPath": ["User profile", "Response defaults"],
+              "anchors": [
+                {
+                  "kind": "segment",
+                  "segmentIndex": 1
+                },
+                {
+                  "kind": "line_range",
+                  "lineStart": 4,
+                  "lineEnd": 4
+                }
+              ],
+              "lineStart": 4,
+              "lineEnd": 4,
+              "segmentIndex": 1
+            },
+            "headingPath": ["User profile", "Response defaults"],
+            "lineStart": 4,
+            "lineEnd": 4,
+            "duplicateCount": 0
+          },
+          {
+            "canonicalClass": "user",
+            "kind": "preference",
+            "category": "response_style",
+            "object": {
+              "id": "mem-user-pref-concise",
+              "durability": "durable",
+              "confidence": "strong",
+              "rationale": [
+                "Located in an identity/defaults document under Response defaults.",
+                "Phrase directly requests a stable brevity preference."
+              ],
+              "provenanceSpans": [
+                {
+                  "blockIds": ["5385378218ea8a39"],
+                  "segmentIndexes": [2],
+                  "lineStart": 5,
+                  "lineEnd": 5,
+                  "headingPath": ["User profile", "Response defaults"]
+                }
+              ],
+              "scope": {
+                "userScope": "default",
+                "contextualDependencies": ["User profile", "Response defaults"]
+              },
+              "canonicalClass": "user",
+              "kind": "preference",
+              "operation": "capture",
+              "subject": "response length",
+              "instruction": "Keep responses short.",
+              "preferenceProfile": "concise"
+            },
+            "evidence": [
+              "model_semantic_output",
+              "object_kind:preference",
+              "model_rationale:Located in an identity/defaults document under Response defaults.",
+              "model_rationale:Phrase directly requests a stable brevity preference."
+            ],
+            "reviewMode": "direct",
+            "provenance": {
+              "source": {
+                "kind": "document",
+                "sourceId": "gold:identity-defaults",
+                "path": "benchmarks/identity-defaults.md",
+                "sourceClass": "identity"
+              },
+              "headingPath": ["User profile", "Response defaults"],
+              "anchors": [
+                {
+                  "kind": "segment",
+                  "segmentIndex": 2
+                },
+                {
+                  "kind": "line_range",
+                  "lineStart": 5,
+                  "lineEnd": 5
+                }
+              ],
+              "lineStart": 5,
+              "lineEnd": 5,
+              "segmentIndex": 2
+            },
+            "headingPath": ["User profile", "Response defaults"],
+            "lineStart": 5,
+            "lineEnd": 5,
+            "duplicateCount": 0
+          },
+          {
+            "canonicalClass": "user",
+            "kind": "preference",
+            "category": "response_style",
+            "object": {
+              "id": "mem-1",
+              "durability": "durable",
+              "confidence": "strong",
+              "rationale": [
+                "The statement is phrased as an ongoing default for chat behavior.",
+                "It defines a consistent formatting preference rather than a one-off task instruction."
+              ],
+              "provenanceSpans": [
+                {
+                  "blockIds": ["ce2c14301251fe56"],
+                  "segmentIndexes": [1],
+                  "lineStart": 8,
+                  "lineEnd": 8,
+                  "headingPath": ["User profile", "File references"]
+                }
+              ],
+              "scope": {
+                "userScope": "default",
+                "contextualDependencies": ["User profile", "File references"]
+              },
+              "canonicalClass": "user",
+              "kind": "preference",
+              "operation": "capture",
+              "subject": "file path references in chat",
+              "instruction": "Use repo-root relative paths when referencing files in chat."
+            },
+            "evidence": [
+              "model_semantic_output",
+              "object_kind:preference",
+              "model_rationale:The statement is phrased as an ongoing default for chat behavior.",
+              "model_rationale:It defines a consistent formatting preference rather than a one-off task instruction."
+            ],
+            "reviewMode": "direct",
+            "provenance": {
+              "source": {
+                "kind": "document",
+                "sourceId": "gold:identity-defaults",
+                "path": "benchmarks/identity-defaults.md",
+                "sourceClass": "identity"
+              },
+              "headingPath": ["User profile", "File references"],
+              "anchors": [
+                {
+                  "kind": "segment",
+                  "segmentIndex": 1
+                },
+                {
+                  "kind": "line_range",
+                  "lineStart": 8,
+                  "lineEnd": 8
+                },
+                {
+                  "kind": "char_range",
+                  "charStart": 0,
+                  "charEnd": 61
+                }
+              ],
+              "lineStart": 8,
+              "lineEnd": 8,
+              "charStart": 0,
+              "charEnd": 61,
+              "segmentIndex": 1
+            },
+            "headingPath": ["User profile", "File references"],
+            "lineStart": 8,
+            "lineEnd": 8,
+            "duplicateCount": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "project_operating_implicit_scope",
+      "pass": true,
+      "matchedObjectIds": ["default_branch", "staging_branch", "docs_rule"],
+      "issues": [],
+      "actual": {
+        "objectCount": 3,
+        "classCounts": {
+          "project": 2,
+          "feedback": 1
+        },
+        "categoryCounts": {
+          "project_fact": 2,
+          "project_rule": 1
+        },
+        "objects": [
+          {
+            "canonicalClass": "project",
+            "kind": "project_fact",
+            "category": "project_fact",
+            "object": {
+              "id": "projfact-atlas-forge-default-branch",
+              "durability": "durable",
+              "confidence": "strong",
+              "rationale": ["Explicitly states the default branch for the Atlas Forge project."],
+              "provenanceSpans": [
+                {
+                  "blockIds": ["a0c3322ff1985687"],
+                  "segmentIndexes": [1],
+                  "lineStart": 4,
+                  "lineEnd": 4,
+                  "headingPath": ["Atlas Forge Operating Notes", "Branches"]
+                }
+              ],
+              "scope": {
+                "projectId": "atlas-forge",
+                "projectScope": "atlas forge",
+                "contextualDependencies": ["Atlas Forge Operating Notes", "Branches"]
+              },
+              "canonicalClass": "project",
+              "kind": "project_fact",
+              "subject": "default branch",
+              "value": "atlas-main",
+              "factFieldKey": "default_branch"
+            },
+            "evidence": [
+              "model_semantic_output",
+              "object_kind:project_fact",
+              "model_rationale:Explicitly states the default branch for the Atlas Forge project."
+            ],
+            "reviewMode": "pending_confirmation",
+            "provenance": {
+              "source": {
+                "kind": "document",
+                "sourceId": "gold:project-operating",
+                "path": "benchmarks/project-operating-implicit-scope.md",
+                "projectId": "atlas-forge",
+                "sourceClass": "project_operating"
+              },
+              "headingPath": ["Atlas Forge Operating Notes", "Branches"],
+              "anchors": [
+                {
+                  "kind": "segment",
+                  "segmentIndex": 1
+                },
+                {
+                  "kind": "line_range",
+                  "lineStart": 4,
+                  "lineEnd": 4
+                }
+              ],
+              "lineStart": 4,
+              "lineEnd": 4,
+              "segmentIndex": 1
+            },
+            "headingPath": ["Atlas Forge Operating Notes", "Branches"],
+            "lineStart": 4,
+            "lineEnd": 4,
+            "duplicateCount": 0
+          },
+          {
+            "canonicalClass": "project",
+            "kind": "project_fact",
+            "category": "project_fact",
+            "object": {
+              "id": "projfact-atlas-forge-staging-branch",
+              "durability": "durable",
+              "confidence": "strong",
+              "rationale": ["Explicitly states the staging branch for the Atlas Forge project."],
+              "provenanceSpans": [
+                {
+                  "blockIds": ["01175b570c9527ff"],
+                  "segmentIndexes": [2],
+                  "lineStart": 5,
+                  "lineEnd": 5,
+                  "headingPath": ["Atlas Forge Operating Notes", "Branches"]
+                }
+              ],
+              "scope": {
+                "projectId": "atlas-forge",
+                "projectScope": "atlas forge",
+                "contextualDependencies": ["Atlas Forge Operating Notes", "Branches"]
+              },
+              "canonicalClass": "project",
+              "kind": "project_fact",
+              "subject": "staging branch",
+              "value": "atlas-staging"
+            },
+            "evidence": [
+              "model_semantic_output",
+              "object_kind:project_fact",
+              "model_rationale:Explicitly states the staging branch for the Atlas Forge project."
+            ],
+            "reviewMode": "pending_confirmation",
+            "provenance": {
+              "source": {
+                "kind": "document",
+                "sourceId": "gold:project-operating",
+                "path": "benchmarks/project-operating-implicit-scope.md",
+                "projectId": "atlas-forge",
+                "sourceClass": "project_operating"
+              },
+              "headingPath": ["Atlas Forge Operating Notes", "Branches"],
+              "anchors": [
+                {
+                  "kind": "segment",
+                  "segmentIndex": 2
+                },
+                {
+                  "kind": "line_range",
+                  "lineStart": 5,
+                  "lineEnd": 5
+                }
+              ],
+              "lineStart": 5,
+              "lineEnd": 5,
+              "segmentIndex": 2
+            },
+            "headingPath": ["Atlas Forge Operating Notes", "Branches"],
+            "lineStart": 5,
+            "lineEnd": 5,
+            "duplicateCount": 0
+          },
+          {
+            "canonicalClass": "feedback",
+            "kind": "correction",
+            "category": "project_rule",
+            "object": {
+              "id": "obj-atlas-forge-docs-i18n-rule",
+              "durability": "durable",
+              "confidence": "strong",
+              "rationale": [
+                "The statement is phrased as an explicit preferred workflow for documentation changes.",
+                "The heading and source metadata scope it to the Atlas Forge project's docs workflow."
+              ],
+              "provenanceSpans": [
+                {
+                  "blockIds": ["1e019d7d5290b20b"],
+                  "segmentIndexes": [1],
+                  "lineStart": 8,
+                  "lineEnd": 8,
+                  "headingPath": ["Atlas Forge Operating Notes", "Docs"]
+                }
+              ],
+              "scope": {
+                "projectId": "atlas-forge",
+                "projectScope": "atlas forge",
+                "workflowScope": "docs",
+                "contextualDependencies": ["Atlas Forge Operating Notes", "Docs"]
+              },
+              "canonicalClass": "feedback",
+              "kind": "correction",
+              "correctionKind": "project_rule",
+              "subject": "docs workflow",
+              "recommendedAction": "Update the English docs first and rerun docs i18n.",
+              "avoidAction": "Do not edit docs/zh-CN directly.",
+              "guidancePattern": "use_instead_of"
+            },
+            "evidence": [
+              "model_semantic_output",
+              "object_kind:correction",
+              "model_rationale:The statement is phrased as an explicit preferred workflow for documentation changes.",
+              "model_rationale:The heading and source metadata scope it to the Atlas Forge project's docs workflow."
+            ],
+            "reviewMode": "pending_confirmation",
+            "provenance": {
+              "source": {
+                "kind": "document",
+                "sourceId": "gold:project-operating",
+                "path": "benchmarks/project-operating-implicit-scope.md",
+                "projectId": "atlas-forge",
+                "sourceClass": "project_operating"
+              },
+              "headingPath": ["Atlas Forge Operating Notes", "Docs"],
+              "anchors": [
+                {
+                  "kind": "segment",
+                  "segmentIndex": 1
+                },
+                {
+                  "kind": "line_range",
+                  "lineStart": 8,
+                  "lineEnd": 8
+                },
+                {
+                  "kind": "char_range",
+                  "charStart": 0,
+                  "charEnd": 89
+                }
+              ],
+              "lineStart": 8,
+              "lineEnd": 8,
+              "charStart": 0,
+              "charEnd": 89,
+              "segmentIndex": 1
+            },
+            "headingPath": ["Atlas Forge Operating Notes", "Docs"],
+            "lineStart": 8,
+            "lineEnd": 8,
+            "duplicateCount": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "real_slice_workflow_doc",
+      "pass": true,
+      "matchedObjectIds": ["companion_docs", "default_phase_order", "readyz_rule"],
+      "issues": [],
+      "actual": {
+        "objectCount": 5,
+        "classCounts": {
+          "reference": 2,
+          "feedback": 3
+        },
+        "categoryCounts": {
+          "reference_routing": 2,
+          "recurring_procedure": 2,
+          "workflow_improvement": 1
+        },
+        "objects": [
+          {
+            "canonicalClass": "reference",
+            "kind": "routing",
+            "category": "reference_routing",
+            "object": {
+              "id": "routing-slice-workflow-release-testing",
+              "durability": "durable",
+              "confidence": "medium",
+              "rationale": [
+                "This is durable context-routing guidance for the Slice workflow.",
+                "It directs future work to consult Testing together with Release Policy."
+              ],
+              "provenanceSpans": [
+                {
+                  "blockIds": ["a2fe2bebd9bd6d2a"],
+                  "segmentIndexes": [1],
+                  "lineStart": 3,
+                  "lineEnd": 3,
+                  "headingPath": ["Slice workflow"]
+                }
+              ],
+              "scope": {
+                "projectScope": "Slice workflow",
+                "contextualDependencies": ["Slice workflow"]
+              },
+              "canonicalClass": "reference",
+              "kind": "routing",
+              "task": "When using the Slice workflow",
+              "primaryResource": "Testing",
+              "companionResources": ["Release Policy"]
+            },
+            "evidence": [
+              "model_semantic_output",
+              "object_kind:routing",
+              "model_rationale:This is durable context-routing guidance for the Slice workflow.",
+              "model_rationale:It directs future work to consult Testing together with Release Policy."
+            ],
+            "reviewMode": "hold_for_more_evidence",
+            "provenance": {
+              "source": {
+                "kind": "document",
+                "sourceId": "gold:real-slice-workflow",
+                "path": "docs/help/slice-workflow.md",
+                "sourceClass": "workflow_runbook"
+              },
+              "headingPath": ["Slice workflow"],
+              "anchors": [
+                {
+                  "kind": "segment",
+                  "segmentIndex": 1
+                },
+                {
+                  "kind": "line_range",
+                  "lineStart": 3,
+                  "lineEnd": 3
+                }
+              ],
+              "lineStart": 3,
+              "lineEnd": 3,
+              "segmentIndex": 1
+            },
+            "headingPath": ["Slice workflow"],
+            "lineStart": 3,
+            "lineEnd": 3,
+            "duplicateCount": 0
+          },
+          {
+            "canonicalClass": "reference",
+            "kind": "routing",
+            "category": "reference_routing",
+            "object": {
+              "id": "routing-default-landing-bar",
+              "durability": "durable",
+              "confidence": "strong",
+              "rationale": [
+                "The source explicitly routes this decision task to the Landing Gate Tiers document.",
+                "This is a stable resource pointer for future workflow use."
+              ],
+              "provenanceSpans": [
+                {
+                  "blockIds": ["9c8fb52504a3ab80"],
+                  "segmentIndexes": [2],
+                  "lineStart": 4,
+                  "lineEnd": 4,
+                  "headingPath": ["Slice workflow"]
+                }
+              ],
+              "scope": {
+                "projectScope": "Slice workflow",
+                "contextualDependencies": ["Slice workflow"]
+              },
+              "canonicalClass": "reference",
+              "kind": "routing",
+              "task": "When deciding the repo's default feature, integration, or production bar",
+              "primaryResource": "Landing Gate Tiers"
+            },
+            "evidence": [
+              "model_semantic_output",
+              "object_kind:routing",
+              "model_rationale:The source explicitly routes this decision task to the Landing Gate Tiers document.",
+              "model_rationale:This is a stable resource pointer for future workflow use."
+            ],
+            "reviewMode": "pending_confirmation",
+            "provenance": {
+              "source": {
+                "kind": "document",
+                "sourceId": "gold:real-slice-workflow",
+                "path": "docs/help/slice-workflow.md",
+                "sourceClass": "workflow_runbook"
+              },
+              "headingPath": ["Slice workflow"],
+              "anchors": [
+                {
+                  "kind": "segment",
+                  "segmentIndex": 2
+                },
+                {
+                  "kind": "line_range",
+                  "lineStart": 4,
+                  "lineEnd": 4
+                }
+              ],
+              "lineStart": 4,
+              "lineEnd": 4,
+              "segmentIndex": 2
+            },
+            "headingPath": ["Slice workflow"],
+            "lineStart": 4,
+            "lineEnd": 4,
+            "duplicateCount": 0
+          },
+          {
+            "canonicalClass": "feedback",
+            "kind": "procedure",
+            "category": "recurring_procedure",
+            "object": {
+              "id": "proc-slice-workflow-default-phase-order",
+              "durability": "durable",
+              "confidence": "strong",
+              "rationale": [
+                "The ordered list explicitly enumerates the default sequence of workflow phases.",
+                "The heading and source class indicate a runbook-style reusable workflow definition."
+              ],
+              "provenanceSpans": [
+                {
+                  "blockIds": ["fddf52cfc688fc3c"],
+                  "segmentIndexes": [1],
+                  "lineStart": 7,
+                  "lineEnd": 15,
+                  "headingPath": ["Slice workflow", "Default phase order"]
+                }
+              ],
+              "scope": {
+                "projectScope": "Slice workflow",
+                "workflowScope": "Default phase order",
+                "contextualDependencies": ["Slice workflow", "Default phase order"]
+              },
+              "canonicalClass": "feedback",
+              "kind": "procedure",
+              "title": "Default phase order for slice workflow",
+              "steps": [
+                "Implementation loop",
+                "Pre-proof gate",
+                "Isolated proof, when required",
+                "Pre-production gate, when required",
+                "Production proof, when required",
+                "Finalize docs and closeout evidence",
+                "Pre-landing gate",
+                "Commit and push",
+                "Post-push verification"
+              ],
+              "procedureKey": "release_checklist",
+              "successShape": "Work proceeds through the default slice workflow phases in the documented order, including conditional proof and gate steps when required."
+            },
+            "evidence": [
+              "model_semantic_output",
+              "object_kind:procedure",
+              "model_rationale:The ordered list explicitly enumerates the default sequence of workflow phases.",
+              "model_rationale:The heading and source class indicate a runbook-style reusable workflow definition."
+            ],
+            "reviewMode": "pending_confirmation",
+            "provenance": {
+              "source": {
+                "kind": "document",
+                "sourceId": "gold:real-slice-workflow",
+                "path": "docs/help/slice-workflow.md",
+                "sourceClass": "workflow_runbook"
+              },
+              "headingPath": ["Slice workflow", "Default phase order"],
+              "anchors": [
+                {
+                  "kind": "segment",
+                  "segmentIndex": 1
+                },
+                {
+                  "kind": "line_range",
+                  "lineStart": 7,
+                  "lineEnd": 15
+                }
+              ],
+              "lineStart": 7,
+              "lineEnd": 15,
+              "segmentIndex": 1
+            },
+            "headingPath": ["Slice workflow", "Default phase order"],
+            "lineStart": 7,
+            "lineEnd": 15,
+            "duplicateCount": 0
+          },
+          {
+            "canonicalClass": "feedback",
+            "kind": "procedure",
+            "category": "recurring_procedure",
+            "object": {
+              "id": "proc-slice-workflow-default-phase-order",
+              "durability": "durable",
+              "confidence": "medium",
+              "rationale": [
+                "The heading explicitly says 'Default phase order', indicating an ordered reusable workflow sequence.",
+                "The listed items are concise phase names that together form a checklist-like procedure for the Slice workflow."
+              ],
+              "provenanceSpans": [
+                {
+                  "blockIds": [
+                    "320eb662af830982",
+                    "50199ed517bed974",
+                    "def773217f101fb0",
+                    "2eec8b5d01efcfc4"
+                  ],
+                  "segmentIndexes": [7, 8, 9, 10],
+                  "lineStart": 12,
+                  "lineEnd": 15,
+                  "headingPath": ["Slice workflow", "Default phase order"]
+                }
+              ],
+              "scope": {
+                "projectScope": "Slice workflow",
+                "workflowScope": "Default phase order",
+                "contextualDependencies": ["Slice workflow", "Default phase order"]
+              },
+              "canonicalClass": "feedback",
+              "kind": "procedure",
+              "title": "Slice workflow default phase order",
+              "steps": [
+                "Finalize docs and closeout evidence",
+                "Pre-landing gate",
+                "Commit and push",
+                "Post-push verification"
+              ],
+              "procedureKey": "release_checklist"
+            },
+            "evidence": [
+              "model_semantic_output",
+              "object_kind:procedure",
+              "model_rationale:The heading explicitly says 'Default phase order', indicating an ordered reusable workflow sequence.",
+              "model_rationale:The listed items are concise phase names that together form a checklist-like procedure for the Slice workflow."
+            ],
+            "reviewMode": "hold_for_more_evidence",
+            "provenance": {
+              "source": {
+                "kind": "document",
+                "sourceId": "gold:real-slice-workflow",
+                "path": "docs/help/slice-workflow.md",
+                "sourceClass": "workflow_runbook"
+              },
+              "headingPath": ["Slice workflow", "Default phase order"],
+              "anchors": [
+                {
+                  "kind": "segment",
+                  "segmentIndex": 7
+                },
+                {
+                  "kind": "line_range",
+                  "lineStart": 12,
+                  "lineEnd": 12
+                }
+              ],
+              "lineStart": 12,
+              "lineEnd": 12,
+              "segmentIndex": 7
+            },
+            "headingPath": ["Slice workflow", "Default phase order"],
+            "lineStart": 12,
+            "lineEnd": 12,
+            "duplicateCount": 0
+          },
+          {
+            "canonicalClass": "feedback",
+            "kind": "correction",
+            "category": "workflow_improvement",
+            "object": {
+              "id": "obj-readiness-gate-readyz-vs-healthz",
+              "durability": "durable",
+              "confidence": "strong",
+              "rationale": [
+                "The statement gives persistent guidance for future readiness checks in the Slice workflow.",
+                "It explicitly contrasts the correct endpoint with the incorrect one."
+              ],
+              "provenanceSpans": [
+                {
+                  "blockIds": ["f5c71b5feef6a7f0"],
+                  "segmentIndexes": [1],
+                  "lineStart": 18,
+                  "lineEnd": 18,
+                  "headingPath": ["Slice workflow", "Readiness"]
+                }
+              ],
+              "scope": {
+                "projectScope": "Slice workflow",
+                "workflowScope": "Readiness",
+                "contextualDependencies": ["Slice workflow", "Readiness"]
+              },
+              "canonicalClass": "feedback",
+              "kind": "correction",
+              "correctionKind": "workflow_guidance",
+              "subject": "readiness gate",
+              "recommendedAction": "Trust /readyz as the actual readiness gate.",
+              "avoidAction": "Do not use /healthz as the readiness gate; it is shallow liveness only.",
+              "guidancePattern": "use_instead_of",
+              "workflowProfile": "general_guidance"
+            },
+            "evidence": [
+              "model_semantic_output",
+              "object_kind:correction",
+              "model_rationale:The statement gives persistent guidance for future readiness checks in the Slice workflow.",
+              "model_rationale:It explicitly contrasts the correct endpoint with the incorrect one."
+            ],
+            "reviewMode": "pending_confirmation",
+            "provenance": {
+              "source": {
+                "kind": "document",
+                "sourceId": "gold:real-slice-workflow",
+                "path": "docs/help/slice-workflow.md",
+                "sourceClass": "workflow_runbook"
+              },
+              "headingPath": ["Slice workflow", "Readiness"],
+              "anchors": [
+                {
+                  "kind": "segment",
+                  "segmentIndex": 1
+                },
+                {
+                  "kind": "line_range",
+                  "lineStart": 18,
+                  "lineEnd": 18
+                },
+                {
+                  "kind": "char_range",
+                  "charStart": 0,
+                  "charEnd": 78
+                }
+              ],
+              "lineStart": 18,
+              "lineEnd": 18,
+              "charStart": 0,
+              "charEnd": 78,
+              "segmentIndex": 1
+            },
+            "headingPath": ["Slice workflow", "Readiness"],
+            "lineStart": 18,
+            "lineEnd": 18,
+            "duplicateCount": 0
+          }
+        ]
+      }
+    }
+  ]
+}

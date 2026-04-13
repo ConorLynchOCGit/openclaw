@@ -1,32 +1,32 @@
 import type {
   MemoryProvenanceRegion,
   MemorySourceEnvelope,
-  NormalizedMemoryBlock,
 } from "./memory-source-normalization.js";
+import type { NormalizedMemorySourceWindow } from "./memory-source-windowing.js";
+import {
+  isSupportedRecurringProcedureKey,
+  type RecurringProcedureKey,
+} from "./recurring-procedure-semantic.js";
 
 export type MemorySemanticInterpretationLane = "document_ingestion" | "ordinary_turn_capture";
-
-export type MemorySemanticClass =
-  | "stable_user_preference"
-  | "durable_operator_correction"
-  | "reusable_procedure"
-  | "recurring_project_or_workflow_fact"
-  | "durable_routing_or_context_memory"
-  | "ignore";
-
-export type MemorySemanticCaptureCategoryHint =
-  | "response_style"
-  | "project_fact"
-  | "recurring_procedure"
-  | "workflow_improvement"
-  | "project_rule"
-  | "unmet_need"
-  | "reference_routing";
+export type MemorySemanticClass = MemorySemanticObjectKind | "ignore";
 
 export type MemorySemanticReviewModeHint =
   | "direct"
   | "pending_confirmation"
   | "hold_for_more_evidence";
+
+export type MemorySemanticConfidence = "strong" | "medium" | "weak";
+export type MemoryCanonicalClass = "user" | "feedback" | "project" | "reference";
+
+export type MemorySemanticObjectKind =
+  | "preference"
+  | "correction"
+  | "procedure"
+  | "project_fact"
+  | "routing";
+
+export type MemorySemanticDurability = "durable" | "conditional";
 
 export type MemorySemanticScopeInterpretation = {
   projectId?: string;
@@ -36,6 +36,24 @@ export type MemorySemanticScopeInterpretation = {
   contextualDependencies: string[];
 };
 
+export type MemorySemanticProvenanceSpan = {
+  blockIds?: string[];
+  segmentIndexes?: number[];
+  lineStart?: number;
+  lineEnd?: number;
+  headingPath?: string[];
+};
+
+// Compatibility aliases retained for runtime-api consumers while the runtime moves to object-native semantics.
+export type MemorySemanticCaptureCategoryHint =
+  | "response_style"
+  | "project_fact"
+  | "recurring_procedure"
+  | "workflow_improvement"
+  | "project_rule"
+  | "unmet_need"
+  | "reference_routing";
+
 export type MemorySemanticCanonicalProcedure = {
   name: string;
   steps: string[];
@@ -43,52 +61,129 @@ export type MemorySemanticCanonicalProcedure = {
   failureShape?: string;
 };
 
-export type MemorySemanticProvenanceReference = {
-  segmentIndex?: number;
-  lineStart?: number;
-  lineEnd?: number;
-  headingPath?: string[];
+export type MemorySemanticProvenanceReference = MemorySemanticProvenanceSpan;
+
+export type MemorySemanticPreferenceObject = {
+  id?: string;
+  canonicalClass?: MemoryCanonicalClass;
+  kind: "preference";
+  operation: "capture" | "forget";
+  subject: string;
+  instruction: string;
+  preferenceProfile?:
+    | "concise"
+    | "bullets"
+    | "plain_english"
+    | "no_tables"
+    | "numbered_steps"
+    | "generalized_guidance";
+  scope?: MemorySemanticScopeInterpretation;
+  durability: MemorySemanticDurability;
+  confidence: MemorySemanticConfidence;
+  rationale: string[];
+  provenanceSpans: MemorySemanticProvenanceSpan[];
 };
+
+export type MemorySemanticCorrectionObject = {
+  id?: string;
+  canonicalClass?: MemoryCanonicalClass;
+  kind: "correction";
+  correctionKind:
+    | "response_preference"
+    | "workflow_guidance"
+    | "project_rule"
+    | "missing_capability";
+  subject: string;
+  recommendedAction?: string;
+  avoidAction?: string;
+  guidancePattern?: "use_instead_of" | "trust_for_scope" | "avoid_only";
+  workflowProfile?: "general_guidance" | "environment_constraint" | "api_workaround";
+  rationaleText?: string;
+  neededCapability?: string;
+  scope?: MemorySemanticScopeInterpretation;
+  durability: MemorySemanticDurability;
+  confidence: MemorySemanticConfidence;
+  rationale: string[];
+  provenanceSpans: MemorySemanticProvenanceSpan[];
+};
+
+export type MemorySemanticProcedureObject = {
+  id?: string;
+  canonicalClass?: MemoryCanonicalClass;
+  kind: "procedure";
+  title: string;
+  steps: string[];
+  procedureKey?: RecurringProcedureKey;
+  successShape?: string;
+  failureShape?: string;
+  scope?: MemorySemanticScopeInterpretation;
+  durability: MemorySemanticDurability;
+  confidence: MemorySemanticConfidence;
+  rationale: string[];
+  provenanceSpans: MemorySemanticProvenanceSpan[];
+};
+
+export type MemorySemanticProjectFactObject = {
+  id?: string;
+  canonicalClass?: MemoryCanonicalClass;
+  kind: "project_fact";
+  subject: string;
+  value: string;
+  scope?: MemorySemanticScopeInterpretation;
+  factFieldKey?:
+    | "default_branch"
+    | "staging_branch"
+    | "repository_url"
+    | "deployment_url"
+    | "documentation_url"
+    | "runbook_url"
+    | "primary_package_manager"
+    | "primary_environment_name";
+  durability: MemorySemanticDurability;
+  confidence: MemorySemanticConfidence;
+  rationale: string[];
+  provenanceSpans: MemorySemanticProvenanceSpan[];
+};
+
+export type MemorySemanticRoutingObject = {
+  id?: string;
+  canonicalClass?: MemoryCanonicalClass;
+  kind: "routing";
+  task: string;
+  primaryResource: string;
+  companionResources?: string[];
+  rationaleText?: string;
+  scope?: MemorySemanticScopeInterpretation;
+  durability: MemorySemanticDurability;
+  confidence: MemorySemanticConfidence;
+  rationale: string[];
+  provenanceSpans: MemorySemanticProvenanceSpan[];
+};
+
+export type MemorySemanticObject =
+  | MemorySemanticPreferenceObject
+  | MemorySemanticCorrectionObject
+  | MemorySemanticProcedureObject
+  | MemorySemanticProjectFactObject
+  | MemorySemanticRoutingObject;
 
 export type MemorySemanticInterpretationDecision =
   | {
       action: "ignore";
-      semanticClass: "ignore";
-      confidence: "strong" | "medium" | "weak";
+      confidence: MemorySemanticConfidence;
       rationale: string[];
       ignoreRationale?: string[];
-      provenance?: MemorySemanticProvenanceReference[];
+      provenance?: MemorySemanticProvenanceSpan[];
     }
   | {
-      action: "candidate";
-      semanticClass: Exclude<MemorySemanticClass, "ignore">;
-      captureCategoryHint: MemorySemanticCaptureCategoryHint;
-      candidateText?: string;
-      canonicalStatement?: string;
-      canonicalProcedure?: MemorySemanticCanonicalProcedure;
-      confidence: "strong" | "medium" | "weak";
-      reviewModeHint?: MemorySemanticReviewModeHint;
-      rationale: string[];
-      durabilityRationale?: string[];
-      scopeInterpretation?: MemorySemanticScopeInterpretation;
-      provenance?: MemorySemanticProvenanceReference[];
-    }
-  | {
-      action: "forget";
-      semanticClass: "stable_user_preference";
-      captureCategoryHint: "response_style";
-      candidateText?: string;
-      canonicalStatement: string;
-      confidence: "strong" | "medium" | "weak";
-      rationale: string[];
-      scopeInterpretation?: MemorySemanticScopeInterpretation;
-      provenance?: MemorySemanticProvenanceReference[];
+      action: "capture";
+      objects: MemorySemanticObject[];
     };
 
 export type MemorySemanticInterpretationInput = {
   lane: MemorySemanticInterpretationLane;
   source: MemorySourceEnvelope;
-  block: NormalizedMemoryBlock;
+  window: NormalizedMemorySourceWindow;
 };
 
 export type MemorySemanticInterpretationResult = {
@@ -98,23 +193,60 @@ export type MemorySemanticInterpretationResult = {
 };
 
 export type MemorySemanticInterpreterPort = {
-  interpretBlock(
+  interpretSourceWindow(
     input: MemorySemanticInterpretationInput,
   ): Promise<MemorySemanticInterpretationResult>;
 };
 
-export const MEMORY_SEMANTIC_INTERPRETATION_PROMPT_VERSION = "memory-semantic-v2";
+export const MEMORY_SEMANTIC_INTERPRETATION_PROMPT_VERSION = "memory-semantic-v5";
+
+function isCanonicalClass(value: unknown): value is MemoryCanonicalClass {
+  return value === "user" || value === "feedback" || value === "project" || value === "reference";
+}
+
+function resolveCanonicalClassForCorrectionKind(
+  correctionKind: MemorySemanticCorrectionObject["correctionKind"],
+): MemoryCanonicalClass {
+  switch (correctionKind) {
+    case "response_preference":
+      return "user";
+    case "workflow_guidance":
+    case "project_rule":
+      return "feedback";
+    case "missing_capability":
+      return "project";
+  }
+}
+
+export function resolveCanonicalMemoryClassForSemanticObject(
+  object: MemorySemanticObject,
+): MemoryCanonicalClass {
+  switch (object.kind) {
+    case "preference":
+      return "user";
+    case "correction":
+      return resolveCanonicalClassForCorrectionKind(object.correctionKind);
+    case "procedure":
+      return "feedback";
+    case "project_fact":
+      return "project";
+    case "routing":
+      return "reference";
+  }
+}
 
 function quoteJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-function toSemanticProvenanceReference(
+function toSemanticProvenanceSpan(
   provenance: MemoryProvenanceRegion,
-): MemorySemanticProvenanceReference {
+  blockIds?: string[],
+): MemorySemanticProvenanceSpan {
   return {
+    ...(blockIds && blockIds.length > 0 ? { blockIds } : {}),
     ...(typeof provenance.segmentIndex === "number"
-      ? { segmentIndex: provenance.segmentIndex }
+      ? { segmentIndexes: [provenance.segmentIndex] }
       : {}),
     ...(typeof provenance.lineStart === "number" ? { lineStart: provenance.lineStart } : {}),
     ...(typeof provenance.lineEnd === "number" ? { lineEnd: provenance.lineEnd } : {}),
@@ -127,13 +259,15 @@ function buildDefaultScopeInterpretation(
 ): MemorySemanticScopeInterpretation {
   return {
     ...(input.source.projectId ? { projectId: input.source.projectId } : {}),
-    ...(input.block.scope.projectScope ? { projectScope: input.block.scope.projectScope } : {}),
-    ...(input.block.scope.workflowScope ? { workflowScope: input.block.scope.workflowScope } : {}),
+    ...(input.window.scope.projectScope ? { projectScope: input.window.scope.projectScope } : {}),
+    ...(input.window.scope.workflowScope
+      ? { workflowScope: input.window.scope.workflowScope }
+      : {}),
     contextualDependencies: [
-      ...input.block.scope.explicitScopeMarkers,
-      ...input.block.scope.contextualScopeMarkers,
-      ...input.block.scope.parentContext.map((entry) => entry.text).filter(Boolean),
-    ].slice(0, 8),
+      ...input.window.scope.explicitScopeMarkers,
+      ...input.window.scope.contextualScopeMarkers,
+      ...input.window.scope.parentContext.map((entry) => entry.text).filter(Boolean),
+    ].slice(0, 12),
   };
 }
 
@@ -142,56 +276,126 @@ export function buildModelSemanticInterpretationPrompt(
 ): string {
   const instructions = [
     "You are a memory semantic interpreter.",
-    "Decide whether a normalized block contains durable reusable memory.",
+    "Read the structurally normalized source window and extract durable memory objects.",
     "Return JSON only.",
     "Do not include markdown fences.",
-    "Do not invent facts outside the block and context.",
+    "Do not invent facts outside the source window and its explicit structural context.",
     "Prefer ignore over speculative capture.",
-    "Normalization is structural only. You own the semantic decision.",
-    "If scope is implied through headings, source metadata, or parent context, make it explicit in the canonical output.",
-    "Available semantic classes: stable_user_preference, durable_operator_correction, reusable_procedure, recurring_project_or_workflow_fact, durable_routing_or_context_memory, ignore.",
-    "Available captureCategoryHint values: response_style, project_fact, recurring_procedure, workflow_improvement, project_rule, unmet_need, reference_routing.",
-    "Use canonicalStatement for statement-like outputs.",
-    "Use canonicalProcedure for reusable procedure outputs.",
-    "Use action=forget only for durable response-style removals.",
-    "Reject filler, narrative glue, and one-off historical commentary.",
-    "Only emit durable routing/context guidance when it is action-shaping and likely to matter later.",
-    "Ground the decision in the provided provenance and scope.",
+    "Normalization is structural only. You own semantic interpretation.",
+    "Your job is to decide what durable memory objects exist, not which old detector bucket they fit.",
+    "Output either action=ignore or action=capture with objects=[...].",
+    "The top-level canonical memory classes are user, feedback, project, and reference.",
+    "Use internal object kinds only as the semantic decomposition under those canonical classes.",
+    "Canonical class mapping: preference => user; correction(response_preference) => user; correction(workflow_guidance | project_rule) => feedback; correction(missing_capability) => project; procedure => feedback; project_fact => project; routing => reference.",
+    "Each object must include canonicalClass, kind, scope when needed, durability, provenanceSpans, confidence, and rationale.",
+    "Treat canonicalClass as the top-level business contract and kind as the internal semantic decomposition under it.",
+    "Allowed object kinds: preference, correction, procedure, project_fact, routing.",
+    "Use preference objects for stable user/output preferences. Use operation=forget only when the source clearly revokes a durable preference.",
+    "Use correction objects for durable operator guidance, workflow corrections, project-rule corrections, or missing-capability corrections.",
+    "Use correctionKind=project_rule for durable normative rules or constraints that should be followed consistently inside a project workflow.",
+    "Use correctionKind=workflow_guidance for durable tactical guidance or better ways to work that are helpful but not the project's rulebook.",
+    "A single instruction that says what to trust, use, or avoid in future work is a correction, not a procedure.",
+    "Use procedure objects for reusable ordered procedures or checklists.",
+    "Do not emit procedure objects for single references to another document or for unordered reference pointers.",
+    "Use project_fact objects for durable factual project or workflow facts that matter later.",
+    "For project_fact objects, keep subject as the field label and value as the factual value. Do not collapse both into one sentence.",
+    "Use routing objects for durable document-routing or context-routing guidance.",
+    "Use routing objects when the durable meaning is 'for task X, consult resource Y'; do not emit routing when the source is actually teaching a procedure or rule.",
+    "Reject filler, narration, one-off commentary, and generic references that do not shape future action.",
+    "Ground every object in one or more provenance spans that point into the source window.",
   ].join("\n");
 
   const schemaHint = {
-    action: "ignore | candidate | forget",
-    semanticClass:
-      "stable_user_preference | durable_operator_correction | reusable_procedure | recurring_project_or_workflow_fact | durable_routing_or_context_memory | ignore",
-    captureCategoryHint:
-      "response_style | project_fact | recurring_procedure | workflow_improvement | project_rule | unmet_need | reference_routing",
-    canonicalStatement: "string",
-    canonicalProcedure: {
-      name: "string",
-      steps: ["string"],
-      successShape: "string",
-      failureShape: "string",
-    },
+    action: "ignore | capture",
     confidence: "strong | medium | weak",
-    reviewModeHint: "direct | pending_confirmation | hold_for_more_evidence",
     rationale: ["string"],
-    durabilityRationale: ["string"],
-    scopeInterpretation: {
-      projectId: "string",
-      projectScope: "string",
-      workflowScope: "string",
-      userScope: "string",
-      contextualDependencies: ["string"],
-    },
-    provenance: [
+    ignoreRationale: ["string"],
+    objects: [
       {
-        segmentIndex: "number",
-        lineStart: "number",
-        lineEnd: "number",
-        headingPath: ["string"],
+        id: "string",
+        canonicalClass: "user | feedback | project | reference",
+        kind: "preference | correction | procedure | project_fact | routing",
+        operation: "capture | forget",
+        subject: "string",
+        instruction: "string",
+        preferenceProfile:
+          "concise | bullets | plain_english | no_tables | numbered_steps | generalized_guidance",
+        correctionKind:
+          "response_preference | workflow_guidance | project_rule | missing_capability",
+        recommendedAction: "string",
+        avoidAction: "string",
+        guidancePattern: "use_instead_of | trust_for_scope | avoid_only",
+        workflowProfile: "general_guidance | environment_constraint | api_workaround",
+        rationaleText: "string",
+        neededCapability: "string",
+        title: "string",
+        steps: ["string"],
+        procedureKey: "deploy_checklist | release_checklist | ...",
+        successShape: "string",
+        failureShape: "string",
+        value: "string",
+        factFieldKey:
+          "default_branch | staging_branch | repository_url | deployment_url | documentation_url | runbook_url | primary_package_manager | primary_environment_name",
+        task: "string",
+        primaryResource: "string",
+        companionResources: ["string"],
+        scope: {
+          projectId: "string",
+          projectScope: "string",
+          workflowScope: "string",
+          userScope: "string",
+          contextualDependencies: ["string"],
+        },
+        durability: "durable | conditional",
+        confidence: "strong | medium | weak",
+        rationale: ["string"],
+        provenanceSpans: [
+          {
+            blockIds: ["string"],
+            segmentIndexes: ["number"],
+            lineStart: "number",
+            lineEnd: "number",
+            headingPath: ["string"],
+          },
+        ],
       },
     ],
   };
+
+  const examples = [
+    {
+      canonicalClass: "project",
+      kind: "project_fact",
+      subject: "default branch",
+      value: "atlas-main",
+      factFieldKey: "default_branch",
+    },
+    {
+      canonicalClass: "feedback",
+      kind: "correction",
+      correctionKind: "project_rule",
+      subject: "docs workflow",
+      recommendedAction: "Update the English docs first, then rerun docs i18n.",
+      avoidAction: "Do not edit docs/zh-CN directly.",
+      guidancePattern: "use_instead_of",
+    },
+    {
+      canonicalClass: "reference",
+      kind: "routing",
+      task: "When deciding the repo's default landing bar",
+      primaryResource: "Landing Gate Tiers",
+      companionResources: ["Testing", "Release Policy"],
+    },
+    {
+      canonicalClass: "feedback",
+      kind: "correction",
+      correctionKind: "workflow_guidance",
+      subject: "readiness gate",
+      recommendedAction: "Use /readyz as the readiness gate.",
+      avoidAction: "Do not treat /healthz as the readiness gate.",
+      guidancePattern: "use_instead_of",
+    },
+  ];
 
   return [
     instructions,
@@ -199,54 +403,87 @@ export function buildModelSemanticInterpretationPrompt(
     "OUTPUT_SCHEMA:",
     quoteJson(schemaHint),
     "",
+    "SEMANTIC_EXAMPLES:",
+    quoteJson(examples),
+    "",
     "NORMALIZED_INPUT:",
     quoteJson({
       lane: input.lane,
       source: input.source,
       scopeDefaults: buildDefaultScopeInterpretation(input),
-      block: {
-        blockText: input.block.blockText,
-        headingPath: input.block.headingPath,
-        listKind: input.block.listKind,
-        structuredChildren: input.block.structuredChildren,
-        scope: input.block.scope,
-        provenance: input.block.provenance,
+      window: {
+        id: input.window.id,
+        headingPath: input.window.headingPath,
+        listKinds: input.window.listKinds,
+        provenance: input.window.provenance,
+        scope: input.window.scope,
+        text: input.window.windowText,
+        blocks: input.window.blocks.map((block) => ({
+          id: block.id,
+          text: block.blockText,
+          headingPath: block.headingPath,
+          listKind: block.listKind,
+          structuredChildren: block.structuredChildren,
+          scope: block.scope,
+          provenance: block.provenance,
+        })),
       },
     }),
   ].join("\n");
 }
 
-function isConfidence(value: unknown): value is "strong" | "medium" | "weak" {
+function isConfidence(value: unknown): value is MemorySemanticConfidence {
   return value === "strong" || value === "medium" || value === "weak";
 }
 
-function isReviewModeHint(value: unknown): value is MemorySemanticReviewModeHint {
+function isDurability(value: unknown): value is MemorySemanticDurability {
+  return value === "durable" || value === "conditional";
+}
+
+function isGuidancePattern(
+  value: unknown,
+): value is Extract<MemorySemanticCorrectionObject["guidancePattern"], string> {
+  return value === "use_instead_of" || value === "trust_for_scope" || value === "avoid_only";
+}
+
+function isPreferenceProfile(
+  value: unknown,
+): value is Extract<MemorySemanticPreferenceObject["preferenceProfile"], string> {
   return (
-    value === "direct" || value === "pending_confirmation" || value === "hold_for_more_evidence"
+    value === "concise" ||
+    value === "bullets" ||
+    value === "plain_english" ||
+    value === "no_tables" ||
+    value === "numbered_steps" ||
+    value === "generalized_guidance"
   );
 }
 
-function isCategoryHint(value: unknown): value is MemorySemanticCaptureCategoryHint {
+function isWorkflowProfile(
+  value: unknown,
+): value is Extract<MemorySemanticCorrectionObject["workflowProfile"], string> {
   return (
-    value === "response_style" ||
-    value === "project_fact" ||
-    value === "recurring_procedure" ||
-    value === "workflow_improvement" ||
-    value === "project_rule" ||
-    value === "unmet_need" ||
-    value === "reference_routing"
+    value === "general_guidance" || value === "environment_constraint" || value === "api_workaround"
   );
 }
 
-function isSemanticClass(value: unknown): value is MemorySemanticClass {
+function isProjectFactFieldKey(
+  value: unknown,
+): value is Extract<MemorySemanticProjectFactObject["factFieldKey"], string> {
   return (
-    value === "stable_user_preference" ||
-    value === "durable_operator_correction" ||
-    value === "reusable_procedure" ||
-    value === "recurring_project_or_workflow_fact" ||
-    value === "durable_routing_or_context_memory" ||
-    value === "ignore"
+    value === "default_branch" ||
+    value === "staging_branch" ||
+    value === "repository_url" ||
+    value === "deployment_url" ||
+    value === "documentation_url" ||
+    value === "runbook_url" ||
+    value === "primary_package_manager" ||
+    value === "primary_environment_name"
   );
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function readStringArray(value: unknown): string[] {
@@ -262,98 +499,291 @@ function parseScopeInterpretation(value: unknown): MemorySemanticScopeInterpreta
   const candidate = value as Record<string, unknown>;
   const contextualDependencies = readStringArray(candidate.contextualDependencies);
   return {
-    ...(typeof candidate.projectId === "string" && candidate.projectId.trim()
-      ? { projectId: candidate.projectId.trim() }
+    ...(readString(candidate.projectId) ? { projectId: readString(candidate.projectId) } : {}),
+    ...(readString(candidate.projectScope)
+      ? { projectScope: readString(candidate.projectScope) }
       : {}),
-    ...(typeof candidate.projectScope === "string" && candidate.projectScope.trim()
-      ? { projectScope: candidate.projectScope.trim() }
+    ...(readString(candidate.workflowScope)
+      ? { workflowScope: readString(candidate.workflowScope) }
       : {}),
-    ...(typeof candidate.workflowScope === "string" && candidate.workflowScope.trim()
-      ? { workflowScope: candidate.workflowScope.trim() }
-      : {}),
-    ...(typeof candidate.userScope === "string" && candidate.userScope.trim()
-      ? { userScope: candidate.userScope.trim() }
-      : {}),
+    ...(readString(candidate.userScope) ? { userScope: readString(candidate.userScope) } : {}),
     contextualDependencies,
   };
 }
 
-function parseProvenanceReferences(
-  value: unknown,
-): MemorySemanticProvenanceReference[] | undefined {
+function parseProvenanceSpans(value: unknown): MemorySemanticProvenanceSpan[] {
   if (!Array.isArray(value)) {
-    return undefined;
+    return [];
   }
-  const references = value
+  return value
     .map((entry) => {
       if (!entry || typeof entry !== "object") {
         return null;
       }
       const candidate = entry as Record<string, unknown>;
+      const blockIds = readStringArray(candidate.blockIds);
+      const segmentIndexes = Array.isArray(candidate.segmentIndexes)
+        ? candidate.segmentIndexes.filter(
+            (segmentIndex): segmentIndex is number => typeof segmentIndex === "number",
+          )
+        : [];
       return {
-        ...(typeof candidate.segmentIndex === "number"
-          ? { segmentIndex: candidate.segmentIndex }
-          : {}),
+        ...(blockIds.length > 0 ? { blockIds } : {}),
+        ...(segmentIndexes.length > 0 ? { segmentIndexes } : {}),
         ...(typeof candidate.lineStart === "number" ? { lineStart: candidate.lineStart } : {}),
         ...(typeof candidate.lineEnd === "number" ? { lineEnd: candidate.lineEnd } : {}),
         ...(Array.isArray(candidate.headingPath)
           ? {
               headingPath: candidate.headingPath.filter(
-                (pathEntry): pathEntry is string =>
-                  typeof pathEntry === "string" && pathEntry.trim().length > 0,
+                (segment): segment is string =>
+                  typeof segment === "string" && segment.trim().length > 0,
               ),
             }
           : {}),
       };
     })
-    .filter((entry): entry is MemorySemanticProvenanceReference => entry !== null);
-  return references.length > 0 ? references : undefined;
+    .filter((entry): entry is MemorySemanticProvenanceSpan => entry !== null);
 }
 
-function parseCanonicalProcedure(value: unknown): MemorySemanticCanonicalProcedure | undefined {
+function parseSemanticObject(value: unknown): MemorySemanticObject {
   if (!value || typeof value !== "object") {
-    return undefined;
+    throw new Error("semantic object must be an object");
   }
   const candidate = value as Record<string, unknown>;
-  const steps = readStringArray(candidate.steps);
-  if (typeof candidate.name !== "string" || !candidate.name.trim() || steps.length < 2) {
-    return undefined;
+  const kind = candidate.kind;
+  const durability = candidate.durability;
+  const confidence = candidate.confidence;
+  const rationale = readStringArray(candidate.rationale);
+  const provenanceSpans = parseProvenanceSpans(candidate.provenanceSpans);
+
+  if (
+    (kind !== "preference" &&
+      kind !== "correction" &&
+      kind !== "procedure" &&
+      kind !== "project_fact" &&
+      kind !== "routing") ||
+    !isDurability(durability) ||
+    !isConfidence(confidence) ||
+    rationale.length === 0 ||
+    provenanceSpans.length === 0
+  ) {
+    throw new Error("semantic object payload is missing required fields");
+  }
+
+  const base = {
+    ...(readString(candidate.id) ? { id: readString(candidate.id) } : {}),
+    durability,
+    confidence,
+    rationale,
+    provenanceSpans,
+    ...(parseScopeInterpretation(candidate.scope)
+      ? { scope: parseScopeInterpretation(candidate.scope) }
+      : {}),
+  };
+
+  if (kind === "preference") {
+    const canonicalClass = "user" satisfies MemoryCanonicalClass;
+    if (
+      candidate.canonicalClass !== undefined &&
+      (!isCanonicalClass(candidate.canonicalClass) || candidate.canonicalClass !== canonicalClass)
+    ) {
+      throw new Error("preference object canonicalClass must be user");
+    }
+    const operation = candidate.operation;
+    const subject = readString(candidate.subject);
+    const instruction = readString(candidate.instruction);
+    if ((operation !== "capture" && operation !== "forget") || !subject || !instruction) {
+      throw new Error("preference object is missing operation, subject, or instruction");
+    }
+    return {
+      ...base,
+      canonicalClass,
+      kind,
+      operation,
+      subject,
+      instruction,
+      ...(isPreferenceProfile(candidate.preferenceProfile)
+        ? { preferenceProfile: candidate.preferenceProfile }
+        : {}),
+    };
+  }
+
+  if (kind === "correction") {
+    const correctionKind = candidate.correctionKind;
+    const subject = readString(candidate.subject);
+    if (
+      (correctionKind !== "response_preference" &&
+        correctionKind !== "workflow_guidance" &&
+        correctionKind !== "project_rule" &&
+        correctionKind !== "missing_capability") ||
+      !subject
+    ) {
+      throw new Error("correction object is missing correctionKind or subject");
+    }
+    const canonicalClass = resolveCanonicalClassForCorrectionKind(correctionKind);
+    if (
+      candidate.canonicalClass !== undefined &&
+      (!isCanonicalClass(candidate.canonicalClass) || candidate.canonicalClass !== canonicalClass)
+    ) {
+      throw new Error("correction object canonicalClass does not match correctionKind");
+    }
+    return {
+      ...base,
+      canonicalClass,
+      kind,
+      correctionKind,
+      subject,
+      ...(readString(candidate.recommendedAction)
+        ? { recommendedAction: readString(candidate.recommendedAction) }
+        : {}),
+      ...(readString(candidate.avoidAction)
+        ? { avoidAction: readString(candidate.avoidAction) }
+        : {}),
+      ...(isGuidancePattern(candidate.guidancePattern)
+        ? { guidancePattern: candidate.guidancePattern }
+        : {}),
+      ...(isWorkflowProfile(candidate.workflowProfile)
+        ? { workflowProfile: candidate.workflowProfile }
+        : {}),
+      ...(readString(candidate.rationaleText)
+        ? { rationaleText: readString(candidate.rationaleText) }
+        : {}),
+      ...(readString(candidate.neededCapability)
+        ? { neededCapability: readString(candidate.neededCapability) }
+        : {}),
+    };
+  }
+
+  if (kind === "procedure") {
+    const canonicalClass = "feedback" satisfies MemoryCanonicalClass;
+    if (
+      candidate.canonicalClass !== undefined &&
+      (!isCanonicalClass(candidate.canonicalClass) || candidate.canonicalClass !== canonicalClass)
+    ) {
+      throw new Error("procedure object canonicalClass must be feedback");
+    }
+    const title = readString(candidate.title);
+    const steps = readStringArray(candidate.steps);
+    if (!title || steps.length < 2) {
+      throw new Error("procedure object is missing title or steps");
+    }
+    return {
+      ...base,
+      canonicalClass,
+      kind,
+      title,
+      steps,
+      ...(readString(candidate.procedureKey) &&
+      isSupportedRecurringProcedureKey(readString(candidate.procedureKey)!)
+        ? { procedureKey: readString(candidate.procedureKey) as RecurringProcedureKey }
+        : {}),
+      ...(readString(candidate.successShape)
+        ? { successShape: readString(candidate.successShape) }
+        : {}),
+      ...(readString(candidate.failureShape)
+        ? { failureShape: readString(candidate.failureShape) }
+        : {}),
+    };
+  }
+
+  if (kind === "project_fact") {
+    const canonicalClass = "project" satisfies MemoryCanonicalClass;
+    if (
+      candidate.canonicalClass !== undefined &&
+      (!isCanonicalClass(candidate.canonicalClass) || candidate.canonicalClass !== canonicalClass)
+    ) {
+      throw new Error("project_fact object canonicalClass must be project");
+    }
+    const subject = readString(candidate.subject);
+    const valueText = readString(candidate.value);
+    if (!subject || !valueText) {
+      throw new Error("project_fact object is missing subject or value");
+    }
+    return {
+      ...base,
+      canonicalClass,
+      kind,
+      subject,
+      value: valueText,
+      ...(isProjectFactFieldKey(candidate.factFieldKey)
+        ? {
+            factFieldKey: candidate.factFieldKey,
+          }
+        : {}),
+    };
+  }
+
+  const task = readString(candidate.task);
+  const primaryResource = readString(candidate.primaryResource);
+  if (!task || !primaryResource) {
+    throw new Error("routing object is missing task or primaryResource");
+  }
+  const canonicalClass = "reference" satisfies MemoryCanonicalClass;
+  if (
+    candidate.canonicalClass !== undefined &&
+    (!isCanonicalClass(candidate.canonicalClass) || candidate.canonicalClass !== canonicalClass)
+  ) {
+    throw new Error("routing object canonicalClass must be reference");
   }
   return {
-    name: candidate.name.trim(),
-    steps: steps.map((step) => step.trim()),
-    ...(typeof candidate.successShape === "string" && candidate.successShape.trim()
-      ? { successShape: candidate.successShape.trim() }
+    ...base,
+    canonicalClass,
+    kind: "routing",
+    task,
+    primaryResource,
+    ...(readStringArray(candidate.companionResources).length > 0
+      ? { companionResources: readStringArray(candidate.companionResources) }
       : {}),
-    ...(typeof candidate.failureShape === "string" && candidate.failureShape.trim()
-      ? { failureShape: candidate.failureShape.trim() }
+    ...(readString(candidate.rationaleText)
+      ? { rationaleText: readString(candidate.rationaleText) }
       : {}),
   };
 }
 
-export function renderMemorySemanticDecisionText(
-  decision: Extract<MemorySemanticInterpretationDecision, { action: "candidate" | "forget" }>,
-): string | null {
-  const procedure = "canonicalProcedure" in decision ? decision.canonicalProcedure : undefined;
-  if (procedure) {
-    return `${procedure.name}:\n${procedure.steps
-      .map((step: string, index: number) => `${index + 1}. ${step}`)
-      .join("\n")}`;
-  }
-  const canonicalStatement =
-    "canonicalStatement" in decision ? decision.canonicalStatement?.trim() : undefined;
-  if (canonicalStatement) {
-    return canonicalStatement;
-  }
-  return typeof decision.candidateText === "string" && decision.candidateText.trim()
-    ? decision.candidateText.trim()
-    : null;
-}
-
 export function defaultDecisionProvenance(
   input: MemorySemanticInterpretationInput,
-): MemorySemanticProvenanceReference[] {
-  return [toSemanticProvenanceReference(input.block.provenance)];
+): MemorySemanticProvenanceSpan[] {
+  return [
+    toSemanticProvenanceSpan(
+      input.window.provenance,
+      input.window.blocks.map((block) => block.id),
+    ),
+  ];
+}
+
+export function renderMemorySemanticDecisionText(
+  decision:
+    | Extract<MemorySemanticInterpretationDecision, { action: "capture" }>
+    | MemorySemanticObject,
+): string | null {
+  if ("action" in decision) {
+    const primaryObject = decision.objects[0];
+    return primaryObject ? renderMemorySemanticDecisionText(primaryObject) : null;
+  }
+  switch (decision.kind) {
+    case "preference":
+      return `For ${decision.subject}, ${decision.instruction}.`;
+    case "correction":
+      if (decision.neededCapability) {
+        return `For ${decision.subject}, we need ${decision.neededCapability}.`;
+      }
+      if (decision.recommendedAction && decision.avoidAction) {
+        return `For ${decision.subject}, use ${decision.recommendedAction} instead of ${decision.avoidAction}.`;
+      }
+      if (decision.recommendedAction) {
+        return `For ${decision.subject}, use ${decision.recommendedAction}.`;
+      }
+      if (decision.avoidAction) {
+        return `For ${decision.subject}, avoid ${decision.avoidAction}.`;
+      }
+      return decision.subject;
+    case "procedure":
+      return `${decision.title}:\n${decision.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`;
+    case "project_fact":
+      return `For project ${decision.scope?.projectScope ?? "current project"}, ${decision.subject} is ${decision.value}.`;
+    case "routing":
+      return `For ${decision.task}, use ${[decision.primaryResource, ...(decision.companionResources ?? [])].join(" with ")}.`;
+  }
 }
 
 export function parseMemorySemanticInterpretationDecision(
@@ -364,92 +794,35 @@ export function parseMemorySemanticInterpretationDecision(
   }
   const candidate = value as Record<string, unknown>;
   const action = candidate.action;
-  const semanticClass = candidate.semanticClass;
-  const confidence = candidate.confidence;
-  const rationale = readStringArray(candidate.rationale);
-
-  if (
-    (action !== "ignore" && action !== "candidate" && action !== "forget") ||
-    !isSemanticClass(semanticClass) ||
-    !isConfidence(confidence) ||
-    rationale.length === 0
-  ) {
-    throw new Error("semantic interpretation payload is missing required fields");
+  if (action !== "ignore" && action !== "capture") {
+    throw new Error("semantic interpretation payload is missing action");
   }
 
   if (action === "ignore") {
+    const confidence = candidate.confidence;
+    const rationale = readStringArray(candidate.rationale);
+    if (!isConfidence(confidence) || rationale.length === 0) {
+      throw new Error("ignore payload is missing confidence or rationale");
+    }
     return {
       action,
-      semanticClass: "ignore",
       confidence,
       rationale,
       ...(readStringArray(candidate.ignoreRationale).length > 0
         ? { ignoreRationale: readStringArray(candidate.ignoreRationale) }
         : {}),
-      ...(parseProvenanceReferences(candidate.provenance)
-        ? { provenance: parseProvenanceReferences(candidate.provenance) }
+      ...(parseProvenanceSpans(candidate.provenance).length > 0
+        ? { provenance: parseProvenanceSpans(candidate.provenance) }
         : {}),
     };
   }
 
-  const captureCategoryHint = candidate.captureCategoryHint;
-  if (!isCategoryHint(captureCategoryHint)) {
-    throw new Error("semantic interpretation candidate payload is missing captureCategoryHint");
-  }
-
-  const canonicalProcedure = parseCanonicalProcedure(candidate.canonicalProcedure);
-  const legacyCandidateText =
-    typeof candidate.candidateText === "string" && candidate.candidateText.trim()
-      ? candidate.candidateText.trim()
-      : undefined;
-  const canonicalStatement =
-    typeof candidate.canonicalStatement === "string" && candidate.canonicalStatement.trim()
-      ? candidate.canonicalStatement.trim()
-      : legacyCandidateText;
-
-  const scopeInterpretation = parseScopeInterpretation(candidate.scopeInterpretation);
-  const provenance = parseProvenanceReferences(candidate.provenance);
-
-  if (action === "forget") {
-    if (!canonicalStatement) {
-      throw new Error("forget decision is missing canonicalStatement");
-    }
-    return {
-      action,
-      semanticClass: "stable_user_preference",
-      captureCategoryHint: "response_style",
-      canonicalStatement,
-      confidence,
-      rationale,
-      ...(scopeInterpretation ? { scopeInterpretation } : {}),
-      ...(provenance ? { provenance } : {}),
-    };
-  }
-
-  if (semanticClass === "ignore") {
-    throw new Error("capture decisions cannot use semanticClass=ignore");
-  }
-  if (!canonicalStatement && !canonicalProcedure) {
-    throw new Error(
-      "semantic interpretation candidate payload is missing canonicalStatement or canonicalProcedure",
-    );
+  if (!Array.isArray(candidate.objects) || candidate.objects.length === 0) {
+    throw new Error("capture payload is missing semantic objects");
   }
 
   return {
     action,
-    semanticClass,
-    captureCategoryHint,
-    ...(canonicalStatement ? { canonicalStatement } : {}),
-    ...(canonicalProcedure ? { canonicalProcedure } : {}),
-    confidence,
-    ...(isReviewModeHint(candidate.reviewModeHint)
-      ? { reviewModeHint: candidate.reviewModeHint }
-      : {}),
-    rationale,
-    ...(readStringArray(candidate.durabilityRationale).length > 0
-      ? { durabilityRationale: readStringArray(candidate.durabilityRationale) }
-      : {}),
-    ...(scopeInterpretation ? { scopeInterpretation } : {}),
-    ...(provenance ? { provenance } : {}),
+    objects: candidate.objects.map((object) => parseSemanticObject(object)),
   };
 }

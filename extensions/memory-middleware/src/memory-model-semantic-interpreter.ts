@@ -106,7 +106,7 @@ export function createModelDrivenMemorySemanticInterpreterFromRunner(params: {
     params.workspaceDir ?? params.config?.agents?.defaults?.workspace ?? process.cwd();
 
   return {
-    async interpretBlock(
+    async interpretSourceWindow(
       input: MemorySemanticInterpretationInput,
     ): Promise<MemorySemanticInterpretationResult> {
       const prompt = buildModelSemanticInterpretationPrompt(input);

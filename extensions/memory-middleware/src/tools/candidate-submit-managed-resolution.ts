@@ -2,16 +2,17 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import type { OpenClawPluginToolContext } from "../../api.js";
 import type { CandidateSubmissionInput } from "../db/runtime.js";
+import type { OrdinaryTurnAutoCaptureMatch } from "../memory-ingestion-types.js";
+import { toOrdinaryTurnRecurringProcedureMatch } from "../memory-ingestion-types.js";
 import {
-  resolveProjectFactIngestion,
-  resolveRecurringProcedureIngestion,
-  resolveResponseStyleIngestion,
-  resolveWorkflowImprovementIngestion,
-} from "../memory-ingestion-resolver.js";
+  planNormalizedMemorySourceWindow,
+  type PlannedMemorySemanticCapture,
+} from "../memory-semantic-planner.js";
 import {
-  type OrdinaryTurnAutoCaptureMatch,
-  toOrdinaryTurnResponseStyleMatch,
-} from "../memory-ingestion-types.js";
+  normalizeDocumentMemorySource,
+  normalizeTranscriptMemorySource,
+} from "../memory-source-normalization.js";
+import { buildMemorySourceWindows } from "../memory-source-windowing.js";
 import {
   parseAutoCaptureManagedCandidateContent,
   parseManagedCorrectionCandidateContent,
@@ -23,12 +24,12 @@ import {
   type ProjectFactSemanticConfidence,
 } from "../project-fact-semantic.js";
 import {
+  createRecurringProcedureCanonicalMatch,
   type RecurringProcedureFamily,
   type RecurringProcedureKey,
   type RecurringProcedureSemanticConfidence,
 } from "../recurring-procedure-semantic.js";
 import {
-  detectResponseStyleSemanticDecision,
   type ResponseStyleFamily,
   type ResponseStyleSemanticConfidence,
 } from "../response-style-semantic.js";
@@ -80,7 +81,7 @@ export type ManagedRecurringProcedureResolution = {
   parsed: OrdinaryTurnAutoCaptureMatch;
   procedureFamily: RecurringProcedureFamily;
   procedureKey?: RecurringProcedureKey;
-  reviewMode: "pending_confirmation" | "hold_for_more_evidence";
+  reviewMode: "direct" | "pending_confirmation" | "hold_for_more_evidence";
   source: "content" | "raw";
   detectionSource: "semantic" | "deterministic";
   confidence: "high" | RecurringProcedureSemanticConfidence;
@@ -280,10 +281,107 @@ async function collectManagedRawCandidates(params: {
   return rawCandidates;
 }
 
-function normalizeManagedResolutionSource(
-  source: "content" | "raw" | "transcript",
-): "content" | "raw" {
-  return source === "transcript" ? "content" : source;
+type ManagedSemanticCapture = {
+  source: "content" | "raw";
+  capture: PlannedMemorySemanticCapture;
+};
+
+function buildManagedSourceWindows(params: {
+  input: CandidateSubmissionInput;
+  source: "content" | "raw";
+  text: string;
+}): ReturnType<typeof buildMemorySourceWindows> {
+  const sourceId = `managed:${params.input.kind}:${params.source}:${params.input.projectId ?? "global"}`;
+  const blocks =
+    params.source === "content"
+      ? normalizeDocumentMemorySource({
+          source: {
+            kind: "tool_result",
+            sourceId,
+            ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+            ...(params.input.agentId ? { agentId: params.input.agentId } : {}),
+            toolName: "candidate_submit",
+            sourceClass: "managed_candidate_submission",
+          },
+          content: params.text,
+          maxBlockChars: 2_000,
+        })
+      : normalizeTranscriptMemorySource({
+          source: {
+            kind: "transcript",
+            sourceId,
+            sessionKey: params.input.sessionId ?? "managed-candidate-raw",
+            ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+            ...(params.input.agentId ? { agentId: params.input.agentId } : {}),
+            sourceClass: "managed_candidate_raw",
+          },
+          text: params.text,
+          parentContext: [],
+          maxSegments: 4,
+        });
+  return buildMemorySourceWindows({
+    blocks,
+    maxWindowChars: params.source === "content" ? 3_200 : 2_400,
+    maxBlocksPerWindow: 6,
+  });
+}
+
+async function collectManagedSemanticCaptures(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: CandidateSubmissionInput;
+  context?: OpenClawPluginToolContext;
+}): Promise<ManagedSemanticCapture[]> {
+  const candidates: Array<{ source: "content" | "raw"; text: string }> = [
+    { source: "content", text: params.input.content },
+    ...(await collectManagedRawCandidates(params)).map((text) => ({
+      source: "raw" as const,
+      text,
+    })),
+  ];
+  const captures: ManagedSemanticCapture[] = [];
+  for (const candidate of candidates) {
+    const windows = buildManagedSourceWindows({
+      input: params.input,
+      source: candidate.source,
+      text: candidate.text,
+    });
+    for (const window of windows) {
+      const planned = await planNormalizedMemorySourceWindow({
+        config: params.runtime.config,
+        lane: "document_ingestion",
+        window,
+        interpreter: params.runtime.semanticInterpreter,
+        ...(params.input.projectId ? { projectId: params.input.projectId } : {}),
+      });
+      for (const capture of planned?.captures ?? []) {
+        if (capture.materialized.action !== "capture") {
+          continue;
+        }
+        captures.push({
+          source: candidate.source,
+          capture,
+        });
+      }
+    }
+  }
+  return captures;
+}
+
+function pickManagedCapture(
+  captures: ManagedSemanticCapture[],
+  predicate: (capture: ManagedSemanticCapture) => boolean,
+): ManagedSemanticCapture | null {
+  return (
+    [...captures].filter(predicate).sort((left, right) => {
+      const leftScore =
+        (left.capture.validated.confidence === "high" ? 2 : 1) * 100 +
+        left.capture.validated.supportingBlocks.length;
+      const rightScore =
+        (right.capture.validated.confidence === "high" ? 2 : 1) * 100 +
+        right.capture.validated.supportingBlocks.length;
+      return rightScore - leftScore;
+    })[0] ?? null
+  );
 }
 
 function isManagedCorrectionMatch(
@@ -296,28 +394,51 @@ function isManagedCorrectionMatch(
   );
 }
 
+function isManagedProjectFactCorrectionMatch(
+  parsed: ReturnType<typeof parseManagedCorrectionCandidateContent> | null,
+): parsed is NonNullable<ReturnType<typeof parseManagedCorrectionCandidateContent>> {
+  return Boolean(parsed && parsed.captureClass === "project_fact_correction");
+}
+
+function looksLikeManagedProcedureCorrection(text: string): boolean {
+  return /^\s*actually\b/i.test(text.trim());
+}
+
 export async function resolveManagedResponseStyleLearning(params: {
   runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
 }): Promise<ManagedResponseStyleResolution | null> {
-  const rawCandidates =
-    typeof params.input.metadata?.raw === "string" && params.input.metadata.raw.trim().length > 0
-      ? [params.input.metadata.raw]
-      : [];
-  const resolution = await resolveResponseStyleIngestion({
-    config: params.runtime.config,
-    content: params.input.content,
-    primarySource: "content",
-    rawCandidates,
-    mode: "candidate_learning",
-    allowPhrasePatternMatch: true,
-  });
-  return resolution?.action === "capture"
-    ? {
-        ...resolution,
-        source: normalizeManagedResolutionSource(resolution.source),
-      }
-    : null;
+  const capture = pickManagedCapture(
+    await collectManagedSemanticCaptures({
+      runtime: params.runtime,
+      input: params.input,
+    }),
+    (entry) =>
+      entry.capture.materialized.action === "capture" &&
+      entry.capture.materialized.projection.category === "response_style",
+  );
+  if (!capture) {
+    return null;
+  }
+  if (capture.capture.materialized.action !== "capture") {
+    return null;
+  }
+  const projection = capture.capture.materialized.projection;
+  return {
+    action: "capture",
+    familyId: "response_style",
+    parsed: projection.match,
+    responseStyleFamily: projection.responseStyleFamily ?? "generalized_guidance",
+    reviewMode:
+      (projection.responseStyleFamily ?? "generalized_guidance") === "generalized_guidance"
+        ? "hold_for_more_evidence"
+        : "pending_confirmation",
+    source: capture.source,
+    detectionSource: "semantic",
+    confidence: projection.confidence,
+    evidence: projection.evidence,
+    observedText: projection.observedText,
+  };
 }
 
 export async function resolveManagedResponseStyleCorrection(params: {
@@ -325,76 +446,196 @@ export async function resolveManagedResponseStyleCorrection(params: {
   input: CandidateSubmissionInput;
   context?: OpenClawPluginToolContext;
 }): Promise<ManagedResponseStyleResolution | null> {
-  const resolution = await resolveResponseStyleIngestion({
-    config: params.runtime.config,
-    content: params.input.content,
-    primarySource: "content",
-    rawCandidates: await collectManagedRawCandidates(params),
-    mode: "candidate_correction",
-    allowPhrasePatternMatch: false,
-  });
-  return resolution?.action === "capture"
-    ? {
-        ...resolution,
-        source: normalizeManagedResolutionSource(resolution.source),
-      }
-    : null;
+  const capture = pickManagedCapture(
+    await collectManagedSemanticCaptures(params),
+    (entry) =>
+      entry.capture.materialized.action === "capture" &&
+      entry.capture.materialized.object.kind === "correction" &&
+      entry.capture.materialized.object.correctionKind === "response_preference",
+  );
+  if (!capture) {
+    return null;
+  }
+  if (capture.capture.materialized.action !== "capture") {
+    return null;
+  }
+  const projection = capture.capture.materialized.projection;
+  return {
+    action: "capture",
+    familyId: "response_style",
+    parsed: projection.match,
+    responseStyleFamily: projection.responseStyleFamily ?? "generalized_guidance",
+    reviewMode: projection.reviewMode,
+    source: capture.source,
+    detectionSource: "semantic",
+    confidence: projection.confidence,
+    evidence: projection.evidence,
+    observedText: projection.observedText,
+  };
 }
 
-export async function resolveManagedProjectFactLearning(
-  input: CandidateSubmissionInput,
-): Promise<ManagedProjectFactResolution | null> {
-  const rawCandidates =
-    typeof input.metadata?.raw === "string" && input.metadata.raw.trim().length > 0
-      ? [input.metadata.raw]
-      : [];
-  const resolution = await resolveProjectFactIngestion({
-    content: input.content,
-    primarySource: "content",
-    rawCandidates,
-    mode: "candidate_learning",
-  });
-  return resolution
-    ? {
-        ...resolution,
-        source: normalizeManagedResolutionSource(resolution.source),
-      }
-    : null;
+export async function resolveManagedProjectFactLearning(params: {
+  runtime: MemoryMiddlewareRuntime;
+  input: CandidateSubmissionInput;
+}): Promise<ManagedProjectFactResolution | null> {
+  const capture = pickManagedCapture(
+    await collectManagedSemanticCaptures(params),
+    (entry) =>
+      entry.capture.materialized.action === "capture" &&
+      entry.capture.materialized.projection.category === "project_fact",
+  );
+  if (!capture) {
+    return null;
+  }
+  if (capture.capture.materialized.action !== "capture") {
+    return null;
+  }
+  const projection = capture.capture.materialized.projection;
+  return {
+    familyId: "project_fact",
+    parsed: projection.match,
+    factFamily: projection.factFamily ?? "generalized_reference",
+    ...(projection.fieldKey ? { fieldKey: projection.fieldKey } : {}),
+    reviewMode:
+      (projection.factFamily ?? "generalized_reference") === "supported_field"
+        ? "pending_confirmation"
+        : "hold_for_more_evidence",
+    source: capture.source,
+    detectionSource: "semantic",
+    confidence: projection.confidence,
+    evidence: projection.evidence,
+    observedText: projection.observedText,
+  };
 }
 
 export async function resolveManagedProjectFactCorrection(params: {
+  runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
   context?: OpenClawPluginToolContext;
 }): Promise<ManagedProjectFactResolution | null> {
-  const resolution = await resolveProjectFactIngestion({
-    content: params.input.content,
-    primarySource: "content",
-    rawCandidates: await collectManagedRawCandidates(params),
-    mode: "candidate_correction",
-  });
-  return resolution
-    ? {
-        ...resolution,
-        source: normalizeManagedResolutionSource(resolution.source),
-      }
-    : null;
+  const correctionParses: Array<{
+    source: "content" | "raw";
+    parsed: NonNullable<ReturnType<typeof parseManagedCorrectionCandidateContent>>;
+  }> = [];
+  const parsedContentCorrection = parseManagedCorrectionCandidateContent(params.input.content);
+  if (isManagedProjectFactCorrectionMatch(parsedContentCorrection)) {
+    correctionParses.push({
+      source: "content",
+      parsed: parsedContentCorrection,
+    });
+  }
+  for (const rawCandidate of await collectManagedRawCandidates(params)) {
+    const parsedRawCorrection = parseManagedCorrectionCandidateContent(rawCandidate);
+    if (isManagedProjectFactCorrectionMatch(parsedRawCorrection)) {
+      correctionParses.push({
+        source: "raw",
+        parsed: parsedRawCorrection,
+      });
+    }
+  }
+  if (correctionParses.length === 0) {
+    return null;
+  }
+
+  const capture = pickManagedCapture(
+    await collectManagedSemanticCaptures(params),
+    (entry) =>
+      entry.capture.materialized.action === "capture" &&
+      entry.capture.materialized.projection.category === "project_fact",
+  );
+  if (!capture) {
+    return null;
+  }
+  if (capture.capture.materialized.action !== "capture") {
+    return null;
+  }
+  const projection = capture.capture.materialized.projection;
+  const correctionParse =
+    correctionParses.find((entry) => entry.source === capture.source) ?? correctionParses[0];
+  if (!correctionParse) {
+    return null;
+  }
+  return {
+    familyId: "project_fact",
+    parsed: {
+      ...correctionParse.parsed,
+      key: projection.match.key,
+      subjectKey: projection.match.subjectKey,
+    },
+    factFamily: projection.factFamily ?? "generalized_reference",
+    ...(projection.fieldKey ? { fieldKey: projection.fieldKey } : {}),
+    reviewMode:
+      (projection.factFamily ?? "generalized_reference") === "supported_field"
+        ? "pending_confirmation"
+        : "hold_for_more_evidence",
+    source: correctionParse.source,
+    detectionSource: "semantic",
+    confidence: projection.confidence,
+    evidence: projection.evidence,
+    observedText: projection.observedText,
+  };
 }
 
 export async function resolveManagedRecurringProcedureSubmission(params: {
+  runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
   context?: OpenClawPluginToolContext;
 }): Promise<ManagedRecurringProcedureResolution | null> {
-  const resolution = await resolveRecurringProcedureIngestion({
-    content: params.input.content,
-    primarySource: "content",
-    rawCandidates: await collectManagedRawCandidates(params),
-  });
-  return resolution
-    ? {
-        ...resolution,
-        source: normalizeManagedResolutionSource(resolution.source),
-      }
-    : null;
+  const capture = pickManagedCapture(
+    await collectManagedSemanticCaptures(params),
+    (entry) =>
+      entry.capture.materialized.action === "capture" &&
+      entry.capture.materialized.projection.category === "recurring_procedure",
+  );
+  if (!capture) {
+    return null;
+  }
+  if (capture.capture.materialized.action !== "capture") {
+    return null;
+  }
+  const projection = capture.capture.materialized.projection;
+  const object =
+    capture.capture.materialized.object.kind === "procedure"
+      ? capture.capture.materialized.object
+      : null;
+  const procedureFamily = projection.procedureFamily ?? "generalized_named_checklist";
+  const correctionMatch =
+    object &&
+    looksLikeManagedProcedureCorrection(
+      capture.source === "content"
+        ? params.input.content
+        : ((await collectManagedRawCandidates(params)).find(Boolean) ?? ""),
+    )
+      ? {
+          ...toOrdinaryTurnRecurringProcedureMatch(
+            createRecurringProcedureCanonicalMatch({
+              title: object.title,
+              steps: object.steps,
+              procedureFamily,
+              ...(object.procedureKey ? { procedureKey: object.procedureKey } : {}),
+              correction: true,
+            }),
+          ),
+          profile: "user-preference-v2" as const,
+        }
+      : null;
+  return {
+    familyId: "recurring_procedure",
+    parsed: correctionMatch ?? projection.match,
+    procedureFamily,
+    ...(object?.procedureKey ? { procedureKey: object.procedureKey } : {}),
+    reviewMode:
+      procedureFamily === "supported_key"
+        ? projection.confidence === "high"
+          ? "direct"
+          : "pending_confirmation"
+        : "hold_for_more_evidence",
+    source: capture.source,
+    detectionSource: "semantic",
+    confidence: projection.confidence,
+    evidence: projection.evidence,
+    observedText: projection.observedText,
+  };
 }
 
 export async function resolveManagedWorkflowImprovementSubmission(params: {
@@ -402,34 +643,52 @@ export async function resolveManagedWorkflowImprovementSubmission(params: {
   input: CandidateSubmissionInput;
   context?: OpenClawPluginToolContext;
 }): Promise<ManagedWorkflowImprovementResolution | null> {
-  const resolution = await resolveWorkflowImprovementIngestion({
-    config: params.runtime.config,
-    content: params.input.content,
-    primarySource: "content",
-    rawCandidates: await collectManagedRawCandidates(params),
-    projectId: params.input.projectId,
-    allowPhrasePatternMatch: true,
-  });
-  if (!resolution) {
+  const capture = pickManagedCapture(
+    await collectManagedSemanticCaptures(params),
+    (entry) =>
+      entry.capture.materialized.action === "capture" &&
+      (entry.capture.materialized.projection.category === "workflow_improvement" ||
+        entry.capture.materialized.projection.category === "project_rule" ||
+        entry.capture.materialized.projection.category === "unmet_need"),
+  );
+  if (!capture) {
     return null;
   }
-
+  if (capture.capture.materialized.action !== "capture") {
+    return null;
+  }
+  const projection = capture.capture.materialized.projection;
+  const captureCategory =
+    projection.category === "workflow_improvement" ||
+    projection.category === "project_rule" ||
+    projection.category === "unmet_need"
+      ? projection.category
+      : null;
+  if (!captureCategory) {
+    return null;
+  }
+  const captureClass = projection.match.captureClass;
   return {
     familyId: "workflow_improvement",
-    captureCategory: resolution.captureCategory,
-    parsed: resolution.parsed,
-    lessonFamily: resolution.lessonFamily,
-    reviewMode: resolution.reviewMode,
-    ...(resolution.guidancePattern ? { guidancePattern: resolution.guidancePattern } : {}),
-    source: normalizeManagedResolutionSource(resolution.source),
-    detectionSource: resolution.detectionSource,
-    confidence: resolution.confidence,
-    evidence: resolution.evidence,
-    observedText: resolution.observedText,
+    captureCategory,
+    parsed: projection.match,
+    lessonFamily: projection.lessonFamily ?? "generalized_workflow_lesson",
+    reviewMode:
+      captureClass === "workflow_environment_constraint" ||
+      captureClass === "workflow_api_workaround"
+        ? "pending_confirmation"
+        : "hold_for_more_evidence",
+    ...(projection.guidancePattern ? { guidancePattern: projection.guidancePattern } : {}),
+    source: capture.source,
+    detectionSource: "semantic",
+    confidence: projection.confidence,
+    evidence: projection.evidence,
+    observedText: projection.observedText,
   };
 }
 
 export async function resolveManagedCorrectionSubmission(params: {
+  runtime: MemoryMiddlewareRuntime;
   input: CandidateSubmissionInput;
   context?: OpenClawPluginToolContext;
 }): Promise<ManagedCorrectionSubmissionResolution | null> {
@@ -452,40 +711,28 @@ export async function resolveManagedCorrectionSubmission(params: {
     if (isManagedCorrectionMatch(parsedFromRawTurn)) {
       return { parsed: parsedFromRawTurn, source: "raw" };
     }
-
-    const semanticFromRaw = detectResponseStyleSemanticDecision(rawCandidate);
-    if (
-      semanticFromRaw.action === "capture" &&
-      semanticFromRaw.match.captureClass === "requirement_correction"
-    ) {
-      return {
-        parsed: toOrdinaryTurnResponseStyleMatch(semanticFromRaw.match) as NonNullable<
-          ReturnType<typeof parseManagedCorrectionCandidateContent>
-        >,
-        source: "raw",
-        detectionSource: "semantic",
-        confidence: semanticFromRaw.confidence,
-        evidence: semanticFromRaw.evidence,
-      };
-    }
   }
-
-  const semanticFromContent = detectResponseStyleSemanticDecision(params.input.content);
-  if (
-    semanticFromContent.action === "capture" &&
-    semanticFromContent.match.captureClass === "requirement_correction"
-  ) {
+  const capture = pickManagedCapture(
+    await collectManagedSemanticCaptures(params),
+    (entry) =>
+      entry.capture.materialized.object.kind === "correction" &&
+      entry.capture.materialized.object.correctionKind === "response_preference",
+  );
+  if (capture) {
+    if (capture.capture.materialized.action !== "capture") {
+      return null;
+    }
+    const projection = capture.capture.materialized.projection;
     return {
-      parsed: toOrdinaryTurnResponseStyleMatch(semanticFromContent.match) as NonNullable<
+      parsed: projection.match as NonNullable<
         ReturnType<typeof parseManagedCorrectionCandidateContent>
       >,
-      source: "content",
+      source: capture.source,
       detectionSource: "semantic",
-      confidence: semanticFromContent.confidence,
-      evidence: semanticFromContent.evidence,
+      confidence: projection.confidence,
+      evidence: projection.evidence,
     };
   }
-
   return null;
 }
 
@@ -507,7 +754,9 @@ export async function resolveManagedAutoCaptureKey(params: {
       (typeof metadata?.raw === "string"
         ? parseOrdinaryTurnAutoCapturePreference(metadata.raw, "user-preference-v2")
         : null);
-    return parsed?.key ?? null;
+    if (parsed?.key) {
+      return parsed.key;
+    }
   }
 
   if (input.kind === "correction") {
@@ -516,20 +765,25 @@ export async function resolveManagedAutoCaptureKey(params: {
       (typeof metadata?.raw === "string"
         ? parseOrdinaryTurnAutoCapturePreference(metadata.raw, "user-preference-v2")
         : null);
-    return parsed?.key ?? null;
+    if (parsed?.key) {
+      return parsed.key;
+    }
   }
 
-  if (input.kind === "improvement") {
-    const resolution = await resolveWorkflowImprovementIngestion({
-      config: params.runtime.config,
-      content: input.content,
-      primarySource: "content",
-      rawCandidates: await collectManagedRawCandidates({ input, context }),
-      projectId: input.projectId,
-      allowPhrasePatternMatch: true,
-    });
-    return resolution?.parsed.key ?? null;
+  const captures = await collectManagedSemanticCaptures({
+    runtime: params.runtime,
+    input,
+    context,
+  });
+  const preferredCapture = pickManagedCapture(captures, () => true);
+  if (preferredCapture?.capture.materialized.action === "capture") {
+    return {
+      parsed: preferredCapture.capture.materialized.projection.match,
+      source: preferredCapture.source,
+      detectionSource: "semantic",
+      confidence: preferredCapture.capture.materialized.projection.confidence,
+      evidence: preferredCapture.capture.materialized.projection.evidence,
+    }.parsed.key;
   }
-
   return null;
 }

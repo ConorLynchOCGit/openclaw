@@ -203,13 +203,20 @@ export function summarizePlannedModelDecision(params: {
   lane: MemorySemanticInterpretationLane;
   projectId?: string;
 }): MemorySemanticPlanSummary | null {
-  if (params.planned.validation.action !== "capture") {
+  const primaryCapture = params.planned.captures.find(
+    (capture) => capture.materialized.action === "capture",
+  );
+  if (!primaryCapture || primaryCapture.materialized.action !== "capture") {
     return null;
   }
-  return buildSummary({
+  const projection = primaryCapture.materialized.projection;
+  return {
     planner: "model",
-    lane: params.lane,
-    ingestion: params.planned.validation.resolved,
-    ...(params.projectId ? { projectId: params.projectId } : {}),
-  });
+    category: projection.category,
+    subject: projection.canonicalCandidate.record.subject,
+    statement: projection.canonicalCandidate.record.statement,
+    confidence: primaryCapture.validated.confidence,
+    detectionSource: "semantic",
+    reviewMode: projection.reviewMode,
+  };
 }

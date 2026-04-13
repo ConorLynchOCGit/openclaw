@@ -57,7 +57,10 @@ vi.mock("./memory-ingestion-resolver.js", async () => {
   };
 });
 
-import { createRuleBasedTestMemorySemanticInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
+import {
+  createLegacySemanticTestScaffoldInterpreter,
+  createScriptedMemorySemanticInterpreter,
+} from "./memory-semantic-interpreter.test-helpers.js";
 import {
   createOrdinaryTurnAutoCaptureController,
   createOrdinaryTurnAutoCaptureHandler,
@@ -1512,6 +1515,8 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
   });
 
   it("routes approved response-style phrase patterns back into deterministic transcript capture", async () => {
+    const previousLegacyFallback = process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK;
+    process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK = "1";
     findApprovedResponseStylePhrasePatternMatch.mockResolvedValueOnce({
       approvedObjectId: "approved-rs-phrase-1",
       normalizedPhrase: "topline first then details",
@@ -1557,32 +1562,87 @@ describe("createOrdinaryTurnAutoCaptureHandler", () => {
       },
     });
 
+    try {
+      await handler({
+        sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
+        sessionKey: "agent:chief:main",
+        message: {
+          role: "user",
+          content: "Topline first, then details.",
+          timestamp: Date.parse("2026-04-07T18:06:00Z"),
+        },
+      });
+
+      expect(submitLearning).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: "User requirement: start with the direct answer first.",
+          metadata: expect.objectContaining({
+            autoCapture: expect.objectContaining({
+              template: "response_style_generalized_guidance",
+              responseStyleFamily: "generalized_guidance",
+              subject: "response opening",
+              value: "start with the direct answer first",
+            }),
+            candidateLifecycle: expect.objectContaining({
+              evidence: ["approved_phrase_pattern_match"],
+            }),
+          }),
+        }),
+      );
+    } finally {
+      if (previousLegacyFallback === undefined) {
+        delete process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK;
+      } else {
+        process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK = previousLegacyFallback;
+      }
+    }
+  });
+
+  it("does not fall back to legacy semantic detectors after a model-native miss in normal runtime", async () => {
+    const submitLearning = vi.fn(async () => ({
+      accepted: true as const,
+      status: "accepted" as const,
+      kind: "learning" as const,
+      storage: "database" as const,
+      reviewState: "candidate" as const,
+      eventId: "event-normal-runtime-no-fallback",
+      memoryObjectId: "memory-normal-runtime-no-fallback",
+    }));
+    const submitCorrectionSuggestion = vi.fn();
+    const handler = createOrdinaryTurnAutoCaptureHandler({
+      config: createConfig(),
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      candidateIngress: createUnusedCandidateIngress(),
+      semanticInterpreter: createScriptedMemorySemanticInterpreter(() => ({
+        action: "ignore",
+        confidence: "weak",
+        rationale: ["no durable memory present"],
+      })),
+      deps: {
+        findExistingByKey: vi.fn(async () => null),
+        resolveAttribution: vi.fn(async () => ({
+          agentId: "agent-uuid-1",
+          sessionId: "session-uuid-1",
+        })),
+        submitLearning,
+        submitCorrectionSuggestion,
+        reviewCandidate: vi.fn(),
+        promoteToMemory: vi.fn(),
+      },
+    });
+
     await handler({
       sessionFile: "/root/.openclaw/agents/chief/sessions/example.jsonl",
       sessionKey: "agent:chief:main",
       message: {
         role: "user",
-        content: "Topline first, then details.",
+        content: "Actually, start with the direct answer first.",
         timestamp: Date.parse("2026-04-07T18:06:00Z"),
       },
     });
 
-    expect(submitLearning).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content: "User requirement: start with the direct answer first.",
-        metadata: expect.objectContaining({
-          autoCapture: expect.objectContaining({
-            template: "response_style_generalized_guidance",
-            responseStyleFamily: "generalized_guidance",
-            subject: "response opening",
-            value: "start with the direct answer first",
-          }),
-          candidateLifecycle: expect.objectContaining({
-            evidence: ["approved_phrase_pattern_match"],
-          }),
-        }),
-      }),
-    );
+    expect(submitLearning).not.toHaveBeenCalled();
+    expect(submitCorrectionSuggestion).not.toHaveBeenCalled();
   });
 
   it("induces a reviewed response-style phrase pattern when an approved bounded preference sees later repeated phrasing", async () => {
@@ -4535,7 +4595,7 @@ describe("createOrdinaryTurnAutoCaptureController", () => {
       config: createConfig(),
       logger: { info() {}, warn() {}, error() {}, debug() {} },
       candidateIngress: createUnusedCandidateIngress(),
-      semanticInterpreter: createRuleBasedTestMemorySemanticInterpreter(),
+      semanticInterpreter: createLegacySemanticTestScaffoldInterpreter(),
       subscribe,
       deps: {
         findExistingByKey: vi.fn(async () => null),

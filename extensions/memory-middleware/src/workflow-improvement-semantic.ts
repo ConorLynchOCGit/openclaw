@@ -224,7 +224,7 @@ function buildSpecificWorkflowImprovementSubjectKey(params: {
     .digest("hex");
 }
 
-function createSpecificWorkflowImprovementMatch(params: {
+export function createSpecificWorkflowImprovementCanonicalMatch(params: {
   captureClass: Extract<
     WorkflowImprovementCaptureClass,
     "workflow_environment_constraint" | "workflow_api_workaround"
@@ -587,7 +587,7 @@ function detectPythonUnavailableLesson(normalized: string): {
       return {
         confidence: "high",
         evidence: ["system_python", "availability_constraint", "replacement_runtime"],
-        match: createSpecificWorkflowImprovementMatch({
+        match: createSpecificWorkflowImprovementCanonicalMatch({
           captureClass: "workflow_environment_constraint",
           reasonCode: "workflow_environment_constraint_statement",
           template: "workflow_environment_constraint",
@@ -604,7 +604,7 @@ function detectPythonUnavailableLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["system_python", "availability_constraint", "runtime_reference"],
-      match: createSpecificWorkflowImprovementMatch({
+      match: createSpecificWorkflowImprovementCanonicalMatch({
         captureClass: "workflow_environment_constraint",
         reasonCode: "workflow_environment_constraint_statement",
         template: "workflow_environment_constraint",
@@ -628,7 +628,7 @@ function detectPythonUnavailableLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["system_python", "availability_constraint", "environment_reference"],
-      match: createSpecificWorkflowImprovementMatch({
+      match: createSpecificWorkflowImprovementCanonicalMatch({
         captureClass: "workflow_environment_constraint",
         reasonCode: "workflow_environment_constraint_statement",
         template: "workflow_environment_constraint",
@@ -667,7 +667,7 @@ function detectGatewayToolsInvokeLesson(normalized: string): {
     return {
       confidence: "high",
       evidence: ["gateway_tools_invoke", "forbidden_phrase", "runtime_replacement"],
-      match: createSpecificWorkflowImprovementMatch({
+      match: createSpecificWorkflowImprovementCanonicalMatch({
         captureClass: "workflow_environment_constraint",
         reasonCode: "workflow_environment_constraint_statement",
         template: "workflow_environment_constraint",
@@ -685,7 +685,7 @@ function detectGatewayToolsInvokeLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["gateway_tools_invoke", "forbidden_phrase"],
-      match: createSpecificWorkflowImprovementMatch({
+      match: createSpecificWorkflowImprovementCanonicalMatch({
         captureClass: "workflow_environment_constraint",
         reasonCode: "workflow_environment_constraint_statement",
         template: "workflow_environment_constraint",
@@ -726,7 +726,7 @@ function detectOpenAIEmbeddingsApiKeyLesson(normalized: string): {
     return {
       confidence: "high",
       evidence: ["openai_embeddings", "codex_oauth", "api_key_requirement"],
-      match: createSpecificWorkflowImprovementMatch({
+      match: createSpecificWorkflowImprovementCanonicalMatch({
         captureClass: "workflow_api_workaround",
         reasonCode: "workflow_api_workaround_statement",
         template: "workflow_api_workaround",
@@ -745,7 +745,7 @@ function detectOpenAIEmbeddingsApiKeyLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["openai_embeddings", "codex_oauth", "api_key_reference"],
-      match: createSpecificWorkflowImprovementMatch({
+      match: createSpecificWorkflowImprovementCanonicalMatch({
         captureClass: "workflow_api_workaround",
         reasonCode: "workflow_api_workaround_statement",
         template: "workflow_api_workaround",
@@ -787,7 +787,7 @@ function detectAnthropicContext1mLesson(normalized: string): {
     return {
       confidence: "high",
       evidence: ["anthropic_context1m", "specific_429_error", "workaround_reference"],
-      match: createSpecificWorkflowImprovementMatch({
+      match: createSpecificWorkflowImprovementCanonicalMatch({
         captureClass: "workflow_api_workaround",
         reasonCode: "workflow_api_workaround_statement",
         template: "workflow_api_workaround",
@@ -807,7 +807,7 @@ function detectAnthropicContext1mLesson(normalized: string): {
     return {
       confidence: "medium",
       evidence: ["anthropic_context1m", "specific_429_error"],
-      match: createSpecificWorkflowImprovementMatch({
+      match: createSpecificWorkflowImprovementCanonicalMatch({
         captureClass: "workflow_api_workaround",
         reasonCode: "workflow_api_workaround_statement",
         template: "workflow_api_workaround",

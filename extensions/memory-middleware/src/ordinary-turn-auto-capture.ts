@@ -51,7 +51,7 @@ import {
 } from "./memory-lifecycle-metadata.js";
 import { type MemorySemanticInterpreterPort } from "./memory-model-semantic-interpreter.js";
 import { resolveWorkflowCaptureCategoryFromCaptureClass } from "./memory-profile-routing.js";
-import { planNormalizedMemoryBlock } from "./memory-semantic-planner.js";
+import { planNormalizedMemorySourceWindow } from "./memory-semantic-planner.js";
 import {
   deriveCorpusDemandSignalsFromPrompt,
   type MemorySoakTelemetryPort,
@@ -61,6 +61,7 @@ import {
   normalizeTranscriptMemorySource,
   type NormalizedTranscriptContextEntry,
 } from "./memory-source-normalization.js";
+import { buildMemorySourceWindows } from "./memory-source-windowing.js";
 import {
   buildDeferredOverflowMetadata,
   readCandidateLifecycleState,
@@ -5581,7 +5582,7 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
     };
 
     if (params.semanticInterpreter) {
-      const normalizedBlock = normalizeTranscriptMemorySource({
+      const normalizedBlocks = normalizeTranscriptMemorySource({
         source: {
           kind: "transcript",
           sourceId: `${paramsForPlan.sessionKey}:${paramsForPlan.segmentIndex}`,
@@ -5590,303 +5591,309 @@ export function createOrdinaryTurnAutoCaptureHandler(params: {
         },
         text: paramsForPlan.text,
         parentContext: paramsForPlan.recentContextEntries,
-        maxSegments: 1,
+        maxSegments: 4,
         ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+      });
+      const semanticWindow = buildMemorySourceWindows({
+        blocks: normalizedBlocks,
+        maxWindowChars: 2_400,
+        maxBlocksPerWindow: 4,
       })[0];
-      if (normalizedBlock) {
-        const planned = await planNormalizedMemoryBlock({
+      if (semanticWindow) {
+        const planned = await planNormalizedMemorySourceWindow({
           config: params.config,
           lane: "ordinary_turn_capture",
-          block: normalizedBlock,
+          window: semanticWindow,
           interpreter: params.semanticInterpreter,
         });
-        if (planned?.validation.action === "forget") {
-          const resolved = planned.validation.resolved;
+        const semanticPlans: OrdinaryTurnAutoCapturePlan[] = [];
+        for (const capture of planned?.captures ?? []) {
           const evidence = [
-            ...resolved.evidence,
+            ...capture.validated.evidence,
             "model_driven_interpretation",
-            `model:${planned.modelId}`,
-            `prompt:${planned.promptVersion}`,
+            `model:${capture.modelId}`,
+            `prompt:${capture.promptVersion}`,
           ];
-          return scorePlan({
-            kind: "response_style_forget",
-            lane: "response_style",
-            key: resolved.subjectKey,
-            subjectKey: resolved.subjectKey,
-            supportsDeferredOverflow: false,
-            detectionSource: "semantic",
-            confidence: "high",
-            run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
-              handleResponseStyleDecision({
-                decision: {
-                  action: "forget",
-                  confidence: "high",
-                  detectionSource: "semantic",
-                  evidence,
-                  subject: resolved.subject,
-                  subjectKey: resolved.subjectKey,
-                },
-                observedText: paramsForPlan.text,
-                agentExternalKey: paramsForPlan.agentExternalKey,
-                sessionKey: paramsForPlan.sessionKey,
-                transcriptFile: paramsForPlan.transcriptFile,
-                turnState,
-                submissionMode,
-                posture,
-                rank,
-                candidatePoolSize,
-                ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
-              }),
-          });
-        }
-        if (planned?.validation.action === "capture") {
-          const evidence = [
-            ...planned.validation.resolved.evidence,
-            "model_driven_interpretation",
-            `model:${planned.modelId}`,
-            `prompt:${planned.promptVersion}`,
-          ];
-          const resolved = planned.validation.resolved;
-          if ("familyId" in resolved && resolved.familyId === "response_style") {
-            return scorePlan({
-              kind: "capture",
-              lane: "response_style",
-              key: resolved.parsed.key,
-              subjectKey: resolved.parsed.subjectKey,
-              supportsDeferredOverflow: true,
-              detectionSource: "semantic",
-              confidence: resolved.confidence,
-              reviewMode: resolved.reviewMode,
-              captureClass: resolved.parsed.captureClass,
-              candidateKind: resolved.parsed.candidateKind,
-              run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
-                handleResponseStyleDecision({
-                  decision: {
-                    action: "capture",
-                    canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion(
-                      {
-                        ingestion: resolved,
-                        mode: "ordinary_turn",
-                        captureSeam: AUTO_CAPTURE_SOURCE,
-                        captureProfile: paramsForPlan.autoCaptureProfile,
-                      },
-                    ),
-                    confidence: resolved.confidence,
-                    detectionSource: "semantic",
-                    evidence,
-                    responseStyleFamily: resolved.responseStyleFamily,
-                    match: resolved.parsed,
-                    reviewMode: resolved.reviewMode,
-                  },
-                  observedText: paramsForPlan.text,
-                  agentExternalKey: paramsForPlan.agentExternalKey,
-                  sessionKey: paramsForPlan.sessionKey,
-                  transcriptFile: paramsForPlan.transcriptFile,
-                  turnState,
-                  submissionMode,
-                  posture,
-                  rank,
-                  candidatePoolSize,
-                  ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
-                }),
-            });
-          }
-          if ("familyId" in resolved && resolved.familyId === "project_fact") {
-            return scorePlan({
-              kind: "capture",
-              lane: "project_fact",
-              key: resolved.parsed.key,
-              subjectKey: resolved.parsed.subjectKey,
-              supportsDeferredOverflow: true,
-              detectionSource: "semantic",
-              confidence: resolved.confidence,
-              reviewMode: resolved.reviewMode,
-              captureClass: resolved.parsed.captureClass,
-              candidateKind: resolved.parsed.candidateKind,
-              run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
-                handleProjectFactDecision({
-                  decision: {
-                    action: "capture",
-                    canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion(
-                      {
-                        ingestion: resolved,
-                        mode: "ordinary_turn",
-                        captureSeam: AUTO_CAPTURE_SOURCE,
-                        captureProfile: paramsForPlan.autoCaptureProfile,
-                      },
-                    ),
-                    confidence: resolved.confidence,
-                    detectionSource: "semantic",
-                    evidence,
-                    reviewMode: resolved.reviewMode,
-                    factFamily: resolved.factFamily,
-                    ...(resolved.fieldKey ? { fieldKey: resolved.fieldKey } : {}),
-                    match: resolved.parsed,
-                  },
-                  agentExternalKey: paramsForPlan.agentExternalKey,
-                  sessionKey: paramsForPlan.sessionKey,
-                  transcriptFile: paramsForPlan.transcriptFile,
-                  turnState,
-                  submissionMode,
-                  posture,
-                  rank,
-                  candidatePoolSize,
-                  ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
-                }),
-            });
-          }
-          if ("familyId" in resolved && resolved.familyId === "recurring_procedure") {
-            return scorePlan({
-              kind: "capture",
-              lane: "recurring_procedure",
-              key: resolved.parsed.key,
-              subjectKey: resolved.parsed.subjectKey,
-              supportsDeferredOverflow: true,
-              detectionSource: "semantic",
-              confidence: resolved.confidence,
-              reviewMode: resolved.reviewMode,
-              captureClass: resolved.parsed.captureClass,
-              candidateKind: resolved.parsed.candidateKind,
-              run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
-                handleRecurringProcedureDecision({
-                  decision: {
-                    action: "capture",
-                    canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion(
-                      {
-                        ingestion: resolved,
-                        mode: "ordinary_turn",
-                        captureSeam: AUTO_CAPTURE_SOURCE,
-                        captureProfile: paramsForPlan.autoCaptureProfile,
-                      },
-                    ),
-                    confidence: resolved.confidence,
-                    detectionSource: "semantic",
-                    evidence,
-                    reviewMode: resolved.reviewMode,
-                    procedureFamily: resolved.procedureFamily,
-                    ...(resolved.procedureKey ? { procedureKey: resolved.procedureKey } : {}),
-                    match: resolved.parsed,
-                  },
-                  agentExternalKey: paramsForPlan.agentExternalKey,
-                  sessionKey: paramsForPlan.sessionKey,
-                  transcriptFile: paramsForPlan.transcriptFile,
-                  turnState,
-                  submissionMode,
-                  posture,
-                  rank,
-                  candidatePoolSize,
-                  ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
-                }),
-            });
-          }
-          return scorePlan({
-            kind: "capture",
-            lane: "workflow_improvement",
-            key: resolved.parsed.key,
-            subjectKey: resolved.parsed.subjectKey,
-            supportsDeferredOverflow: true,
-            detectionSource: "semantic",
-            confidence: resolved.confidence,
-            reviewMode: resolved.reviewMode,
-            captureClass: resolved.parsed.captureClass,
-            candidateKind: resolved.parsed.candidateKind,
-            run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
-              handleWorkflowImprovementDecision({
-                decision: {
-                  action: "capture",
-                  canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromResolvedIngestion({
-                    ingestion: resolved,
-                    mode: "ordinary_turn",
-                    captureSeam: AUTO_CAPTURE_SOURCE,
-                    captureProfile: paramsForPlan.autoCaptureProfile,
+          if (capture.materialized.action === "forget") {
+            const projection = capture.materialized.projection;
+            semanticPlans.push(
+              scorePlan({
+                kind: "response_style_forget",
+                lane: "response_style",
+                key: projection.subjectKey,
+                subjectKey: projection.subjectKey,
+                supportsDeferredOverflow: false,
+                detectionSource: "semantic",
+                confidence: "high",
+                run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+                  handleResponseStyleDecision({
+                    decision: {
+                      action: "forget",
+                      confidence: "high",
+                      detectionSource: "semantic",
+                      evidence,
+                      subject: projection.subject,
+                      subjectKey: projection.subjectKey,
+                    },
+                    observedText: paramsForPlan.text,
+                    agentExternalKey: paramsForPlan.agentExternalKey,
+                    sessionKey: paramsForPlan.sessionKey,
+                    transcriptFile: paramsForPlan.transcriptFile,
+                    turnState,
+                    submissionMode,
+                    posture,
+                    rank,
+                    candidatePoolSize,
+                    ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
                   }),
-                  confidence: resolved.confidence,
-                  detectionSource: "semantic",
-                  evidence,
-                  reviewMode: resolved.reviewMode,
-                  lessonFamily: resolved.lessonFamily,
-                  ...(resolved.guidancePattern
-                    ? { guidancePattern: resolved.guidancePattern }
-                    : {}),
-                  match: resolved.parsed,
-                },
-                text: paramsForPlan.text,
-                agentExternalKey: paramsForPlan.agentExternalKey,
-                sessionKey: paramsForPlan.sessionKey,
-                transcriptFile: paramsForPlan.transcriptFile,
-                turnState,
-                submissionMode,
-                posture,
-                rank,
-                candidatePoolSize,
-                ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
               }),
-          });
+            );
+            continue;
+          }
+          const projection = capture.materialized.projection;
+          if (projection.category === "response_style") {
+            semanticPlans.push(
+              scorePlan({
+                kind: "capture",
+                lane: "response_style",
+                key: projection.match.key,
+                subjectKey: projection.match.subjectKey,
+                supportsDeferredOverflow: true,
+                detectionSource: "semantic",
+                confidence: projection.confidence,
+                reviewMode: projection.reviewMode,
+                captureClass: projection.match.captureClass,
+                candidateKind: projection.match.candidateKind,
+                run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+                  handleResponseStyleDecision({
+                    decision: {
+                      action: "capture",
+                      canonicalCandidate: projection.canonicalCandidate,
+                      confidence: projection.confidence,
+                      detectionSource: "semantic",
+                      evidence,
+                      responseStyleFamily: projection.responseStyleFamily ?? "generalized_guidance",
+                      match: projection.match,
+                      reviewMode: projection.reviewMode,
+                    },
+                    observedText: paramsForPlan.text,
+                    agentExternalKey: paramsForPlan.agentExternalKey,
+                    sessionKey: paramsForPlan.sessionKey,
+                    transcriptFile: paramsForPlan.transcriptFile,
+                    turnState,
+                    submissionMode,
+                    posture,
+                    rank,
+                    candidatePoolSize,
+                    ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+                  }),
+              }),
+            );
+            continue;
+          }
+          if (projection.category === "project_fact") {
+            semanticPlans.push(
+              scorePlan({
+                kind: "capture",
+                lane: "project_fact",
+                key: projection.match.key,
+                subjectKey: projection.match.subjectKey,
+                supportsDeferredOverflow: true,
+                detectionSource: "semantic",
+                confidence: projection.confidence,
+                reviewMode: projection.reviewMode,
+                captureClass: projection.match.captureClass,
+                candidateKind: projection.match.candidateKind,
+                run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+                  handleProjectFactDecision({
+                    decision: {
+                      action: "capture",
+                      canonicalCandidate: projection.canonicalCandidate,
+                      confidence: projection.confidence,
+                      detectionSource: "semantic",
+                      evidence,
+                      reviewMode:
+                        projection.reviewMode === "direct"
+                          ? "pending_confirmation"
+                          : projection.reviewMode,
+                      factFamily: projection.factFamily ?? "generalized_reference",
+                      ...(projection.fieldKey ? { fieldKey: projection.fieldKey } : {}),
+                      match: projection.match,
+                    },
+                    agentExternalKey: paramsForPlan.agentExternalKey,
+                    sessionKey: paramsForPlan.sessionKey,
+                    transcriptFile: paramsForPlan.transcriptFile,
+                    turnState,
+                    submissionMode,
+                    posture,
+                    rank,
+                    candidatePoolSize,
+                    ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+                  }),
+              }),
+            );
+            continue;
+          }
+          if (projection.category === "recurring_procedure") {
+            semanticPlans.push(
+              scorePlan({
+                kind: "capture",
+                lane: "recurring_procedure",
+                key: projection.match.key,
+                subjectKey: projection.match.subjectKey,
+                supportsDeferredOverflow: true,
+                detectionSource: "semantic",
+                confidence: projection.confidence,
+                reviewMode: projection.reviewMode,
+                captureClass: projection.match.captureClass,
+                candidateKind: projection.match.candidateKind,
+                run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+                  handleRecurringProcedureDecision({
+                    decision: {
+                      action: "capture",
+                      canonicalCandidate: projection.canonicalCandidate,
+                      confidence: projection.confidence,
+                      detectionSource: "semantic",
+                      evidence,
+                      reviewMode:
+                        projection.reviewMode === "direct"
+                          ? "pending_confirmation"
+                          : projection.reviewMode,
+                      procedureFamily: projection.procedureFamily ?? "generalized_named_checklist",
+                      match: projection.match,
+                    },
+                    agentExternalKey: paramsForPlan.agentExternalKey,
+                    sessionKey: paramsForPlan.sessionKey,
+                    transcriptFile: paramsForPlan.transcriptFile,
+                    turnState,
+                    submissionMode,
+                    posture,
+                    rank,
+                    candidatePoolSize,
+                    ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+                  }),
+              }),
+            );
+            continue;
+          }
+          semanticPlans.push(
+            scorePlan({
+              kind: "capture",
+              lane: "workflow_improvement",
+              key: projection.match.key,
+              subjectKey: projection.match.subjectKey,
+              supportsDeferredOverflow: true,
+              detectionSource: "semantic",
+              confidence: projection.confidence,
+              reviewMode: projection.reviewMode,
+              captureClass: projection.match.captureClass,
+              candidateKind: projection.match.candidateKind,
+              run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+                handleWorkflowImprovementDecision({
+                  decision: {
+                    action: "capture",
+                    canonicalCandidate: projection.canonicalCandidate,
+                    confidence: projection.confidence,
+                    detectionSource: "semantic",
+                    evidence,
+                    reviewMode:
+                      projection.reviewMode === "direct"
+                        ? "pending_confirmation"
+                        : projection.reviewMode,
+                    lessonFamily: projection.lessonFamily ?? "generalized_workflow_lesson",
+                    ...(projection.guidancePattern
+                      ? { guidancePattern: projection.guidancePattern }
+                      : {}),
+                    match: projection.match,
+                  },
+                  text: paramsForPlan.text,
+                  agentExternalKey: paramsForPlan.agentExternalKey,
+                  sessionKey: paramsForPlan.sessionKey,
+                  transcriptFile: paramsForPlan.transcriptFile,
+                  turnState,
+                  submissionMode,
+                  posture,
+                  rank,
+                  candidatePoolSize,
+                  ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+                }),
+            }),
+          );
         }
+        semanticPlans.sort((left, right) => right.score - left.score);
+        if (semanticPlans[0]) {
+          return semanticPlans[0];
+        }
+      }
+
+      if (process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK !== "1") {
+        // Normal runtime is model-native only. A semantic miss stays a miss unless
+        // degraded mode is explicitly enabled.
+        return null;
       }
     }
 
-    // Legacy detector fallback remains only for low-level diagnostic/test call sites.
-    // The normal runtime controller always injects the shared semantic interpreter.
-    const deterministicResponseStylePhraseMatch = await findApprovedResponseStylePhrasePatternMatch(
-      {
-        config: params.config,
-        text: paramsForPlan.text,
-        logger: params.logger,
-      },
-    );
-    if (deterministicResponseStylePhraseMatch) {
-      const deterministicMatch = toOrdinaryTurnResponseStyleMatch(
-        deterministicResponseStylePhraseMatch.match,
-      );
-      const reviewMode =
-        deterministicResponseStylePhraseMatch.match.family === "generalized_guidance"
-          ? "hold_for_more_evidence"
-          : "direct";
-      return scorePlan({
-        kind: "capture",
-        lane: "response_style",
-        key: deterministicMatch.key,
-        subjectKey: deterministicMatch.subjectKey,
-        supportsDeferredOverflow: true,
-        detectionSource: "deterministic",
-        confidence: "high",
-        reviewMode,
-        captureClass: deterministicMatch.captureClass,
-        candidateKind: deterministicMatch.candidateKind,
-        run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
-          handleResponseStyleDecision({
-            decision: {
-              action: "capture",
-              canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch({
-                profileId: "response_style",
-                match: deterministicMatch,
-                reviewMode,
+    if (process.env.OPENCLAW_ENABLE_LEGACY_SEMANTIC_FALLBACK === "1") {
+      // Explicit degraded-mode only. Normal runtime must stay on the model-native seam.
+      const deterministicResponseStylePhraseMatch =
+        await findApprovedResponseStylePhrasePatternMatch({
+          config: params.config,
+          text: paramsForPlan.text,
+          logger: params.logger,
+        });
+      if (deterministicResponseStylePhraseMatch) {
+        const deterministicMatch = toOrdinaryTurnResponseStyleMatch(
+          deterministicResponseStylePhraseMatch.match,
+        );
+        const reviewMode =
+          deterministicResponseStylePhraseMatch.match.family === "generalized_guidance"
+            ? "hold_for_more_evidence"
+            : "direct";
+        return scorePlan({
+          kind: "capture",
+          lane: "response_style",
+          key: deterministicMatch.key,
+          subjectKey: deterministicMatch.subjectKey,
+          supportsDeferredOverflow: true,
+          detectionSource: "deterministic",
+          confidence: "high",
+          reviewMode,
+          captureClass: deterministicMatch.captureClass,
+          candidateKind: deterministicMatch.candidateKind,
+          run: async ({ submissionMode, turnState, posture, rank, candidatePoolSize }) =>
+            handleResponseStyleDecision({
+              decision: {
+                action: "capture",
+                canonicalCandidate: buildCanonicalMemoryIngestionCandidateFromAutoCaptureMatch({
+                  profileId: "response_style",
+                  match: deterministicMatch,
+                  reviewMode,
+                  detectionSource: "deterministic",
+                  evidence: ["approved_phrase_pattern_match"],
+                  observedText: paramsForPlan.text,
+                  captureSeam: AUTO_CAPTURE_SOURCE,
+                  captureProfile: paramsForPlan.autoCaptureProfile,
+                }),
+                confidence: "high",
                 detectionSource: "deterministic",
                 evidence: ["approved_phrase_pattern_match"],
-                observedText: paramsForPlan.text,
-                captureSeam: AUTO_CAPTURE_SOURCE,
-                captureProfile: paramsForPlan.autoCaptureProfile,
-              }),
-              confidence: "high",
-              detectionSource: "deterministic",
-              evidence: ["approved_phrase_pattern_match"],
-              responseStyleFamily: deterministicResponseStylePhraseMatch.match.family,
-              match: deterministicMatch,
-              reviewMode,
-            },
-            observedText: paramsForPlan.text,
-            agentExternalKey: paramsForPlan.agentExternalKey,
-            sessionKey: paramsForPlan.sessionKey,
-            transcriptFile: paramsForPlan.transcriptFile,
-            turnState,
-            submissionMode,
-            posture,
-            rank,
-            candidatePoolSize,
-            ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
-          }),
-      });
+                responseStyleFamily: deterministicResponseStylePhraseMatch.match.family,
+                match: deterministicMatch,
+                reviewMode,
+              },
+              observedText: paramsForPlan.text,
+              agentExternalKey: paramsForPlan.agentExternalKey,
+              sessionKey: paramsForPlan.sessionKey,
+              transcriptFile: paramsForPlan.transcriptFile,
+              turnState,
+              submissionMode,
+              posture,
+              rank,
+              candidatePoolSize,
+              ...(paramsForPlan.timestamp ? { timestamp: paramsForPlan.timestamp } : {}),
+            }),
+        });
+      }
     }
 
     const responseStyleDecision = await detectResponseStyleCaptureDecision(

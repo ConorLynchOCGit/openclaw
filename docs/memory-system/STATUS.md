@@ -2,6 +2,31 @@
 
 ## Current status snapshot
 
+The Phase 1 model-native closure bar is now landed locally.
+
+That closure includes:
+
+- ordinary-turn normal runtime is model-native only by default
+- the four canonical memory classes are now explicit in the semantic contract:
+  - user
+  - feedback
+  - project
+  - reference
+- the internal object model is now explicitly treated as the decomposition
+  under those canonical classes rather than as a replacement for them
+- validator ownership is now admissibility, governance, and review posture
+  only
+- compatibility back-projection is no longer the semantic authority
+- heuristic semantic test helpers are demoted to replay scaffolding only
+- benchmark scoring is object-native and canonical-class-aware
+- live proof now runs through a direct provider completion path
+- audited live proof for the closure bar now exists and passes on
+  `openrouter/openai/gpt-5.4`:
+  - `audits/memory_live_model_benchmark_2026-04-13T01-34Z.json`
+  - `audits/memory_live_model_benchmark_2026-04-13T01-34Z.md`
+
+Pass 2 is now unblocked at the architecture level.
+
 The memory system has now completed:
 
 - practical family parity across the six current families
@@ -218,6 +243,35 @@ The dedicated Pass 1 slice specs now live in:
 - `/memory-system/specs/gold-judgment-corpus`
 - `/memory-system/specs/model-calibration-lane`
 - `/memory-system/specs/heuristic-block-typing-retirement`
+
+The closure gate that previously blocked Pass 2 is recorded explicitly in:
+
+- `/memory-system/specs/phase-1-architecture-closure-before-phase-2`
+
+That closure spec now records the blockers that were closed:
+
+- detector-era contract fields in the model boundary
+- validator-owned semantic reconstruction
+- benchmark truth coupled to compatibility-shaped scoring
+- hidden ordinary-turn semantic fallback in default runtime
+- lack of stored, auditable live-model proof
+
+The current rewrite tranche inside that closure work is now captured in:
+
+- `/memory-system/specs/source-window-model-native-semantic-boundary`
+
+That tranche records the concrete runtime moves now landed locally and now
+serves as Pass 2's starting seam:
+
+- source-window interpretation instead of block-level model calls as the normal
+  semantic path
+- object-native semantic outputs at the primary model boundary
+- governance-only validation plus downstream materialization
+- tighter window assembly that no longer merges across sibling headings just to
+  reduce call count
+- cheap replay-based local benchmark tests alongside explicit live-proof runs
+- ordinary-turn degraded fallback reduced to an explicit off-by-default
+  compatibility path rather than part of normal runtime
 
 The memory-to-context bridge tranche on 2026-04-12 is now also landed locally
 through:

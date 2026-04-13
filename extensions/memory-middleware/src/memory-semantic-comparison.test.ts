@@ -4,7 +4,7 @@ import {
   summarizeHeuristicMemoryBlock,
   summarizeModelDrivenMemoryBlock,
 } from "./memory-semantic-comparison.js";
-import { createRuleBasedTestMemorySemanticInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
+import { createLegacySemanticTestScaffoldInterpreter } from "./memory-semantic-interpreter.test-helpers.js";
 import {
   normalizeDocumentMemorySource,
   normalizeTranscriptMemorySource,
@@ -13,7 +13,7 @@ import {
 } from "./memory-source-normalization.js";
 
 const config = resolveMemoryMiddlewareConfig({});
-const interpreter = createRuleBasedTestMemorySemanticInterpreter();
+const interpreter = createLegacySemanticTestScaffoldInterpreter();
 
 function selectPrimaryBlock(blocks: NormalizedMemoryBlock[]): NormalizedMemoryBlock {
   expect(blocks.length).toBeGreaterThan(0);

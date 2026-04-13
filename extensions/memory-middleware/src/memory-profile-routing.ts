@@ -81,6 +81,9 @@ function readCanonicalCandidateProfileId(
     if (captureClassProfileId) {
       return captureClassProfileId;
     }
+    if (captureClass === "explicit_project_fact" || captureClass === "project_fact_correction") {
+      return "project_fact";
+    }
     if (RESPONSE_STYLE_CAPTURE_CLASSES.has(captureClass)) {
       return "response_style";
     }
