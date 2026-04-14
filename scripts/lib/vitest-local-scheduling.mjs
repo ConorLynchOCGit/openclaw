@@ -20,6 +20,10 @@ function isSystemThrottleDisabled(env) {
   return normalized === "1" || normalized === "true";
 }
 
+export function isSerialTestProfile(env = process.env) {
+  return env.OPENCLAW_TEST_PROFILE?.trim().toLowerCase() === "serial";
+}
+
 export function isCiLikeEnv(env = process.env) {
   return env.CI === "true" || env.GITHUB_ACTIONS === "true";
 }
@@ -52,6 +56,14 @@ export function resolveLocalVitestScheduling(
   system = detectVitestHostInfo(),
   pool = "threads",
 ) {
+  if (isSerialTestProfile(env)) {
+    return {
+      maxWorkers: 1,
+      fileParallelism: false,
+      throttledBySystem: false,
+    };
+  }
+
   const override = parsePositiveInt(env.OPENCLAW_VITEST_MAX_WORKERS ?? env.OPENCLAW_TEST_WORKERS);
   if (override !== null) {
     const maxWorkers = clamp(override, 1, 16);
@@ -149,6 +161,13 @@ export function shouldUseLargeLocalFullSuiteProfile(
 }
 
 export function resolveLocalFullSuiteProfile(env = process.env, system = detectVitestHostInfo()) {
+  if (isSerialTestProfile(env)) {
+    return {
+      shardParallelism: 1,
+      vitestMaxWorkers: 1,
+    };
+  }
+
   if (shouldUseLargeLocalFullSuiteProfile(env, system)) {
     return {
       shardParallelism: LARGE_LOCAL_FULL_SUITE_PARALLELISM,

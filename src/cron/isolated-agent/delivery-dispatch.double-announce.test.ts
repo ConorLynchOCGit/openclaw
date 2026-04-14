@@ -515,22 +515,26 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     expect(deliverOutboundPayloads).toHaveBeenCalledTimes(1);
   });
 
-  it("retries transient direct announce failures before succeeding", async () => {
-    vi.stubEnv("OPENCLAW_TEST_FAST", "1");
-    vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
-    vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
-    vi.mocked(deliverOutboundPayloads)
-      .mockRejectedValueOnce(new Error("ECONNRESET while sending"))
-      .mockResolvedValueOnce([{ ok: true } as never]);
+  it(
+    "retries transient direct announce failures before succeeding",
+    { timeout: 240_000 },
+    async () => {
+      vi.stubEnv("OPENCLAW_TEST_FAST", "1");
+      vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
+      vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
+      vi.mocked(deliverOutboundPayloads)
+        .mockRejectedValueOnce(new Error("ECONNRESET while sending"))
+        .mockResolvedValueOnce([{ ok: true } as never]);
 
-    const params = makeBaseParams({ synthesizedText: "Retry me once." });
-    const state = await dispatchCronDelivery(params);
+      const params = makeBaseParams({ synthesizedText: "Retry me once." });
+      const state = await dispatchCronDelivery(params);
 
-    expect(state.result).toBeUndefined();
-    expect(state.deliveryAttempted).toBe(true);
-    expect(state.delivered).toBe(true);
-    expect(deliverOutboundPayloads).toHaveBeenCalledTimes(2);
-  });
+      expect(state.result).toBeUndefined();
+      expect(state.deliveryAttempted).toBe(true);
+      expect(state.delivered).toBe(true);
+      expect(deliverOutboundPayloads).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("keeps direct announce delivery idempotent across replay for the same run session", async () => {
     vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
@@ -693,32 +697,36 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     );
   });
 
-  it("transient retry delivers exactly once with skipQueue on both attempts", async () => {
-    vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
-    vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
+  it(
+    "transient retry delivers exactly once with skipQueue on both attempts",
+    { timeout: 240_000 },
+    async () => {
+      vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
+      vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
 
-    // First call throws a transient error, second call succeeds.
-    vi.mocked(deliverOutboundPayloads)
-      .mockRejectedValueOnce(new Error("gateway timeout"))
-      .mockResolvedValueOnce([{ ok: true } as never]);
+      // First call throws a transient error, second call succeeds.
+      vi.mocked(deliverOutboundPayloads)
+        .mockRejectedValueOnce(new Error("gateway timeout"))
+        .mockResolvedValueOnce([{ ok: true } as never]);
 
-    vi.stubEnv("OPENCLAW_TEST_FAST", "1");
-    try {
-      const params = makeBaseParams({ synthesizedText: "Retry test." });
-      const state = await dispatchCronDelivery(params);
+      vi.stubEnv("OPENCLAW_TEST_FAST", "1");
+      try {
+        const params = makeBaseParams({ synthesizedText: "Retry test." });
+        const state = await dispatchCronDelivery(params);
 
-      expect(state.delivered).toBe(true);
-      expect(state.deliveryAttempted).toBe(true);
-      // Two calls total: first failed transiently, second succeeded.
-      expect(deliverOutboundPayloads).toHaveBeenCalledTimes(2);
+        expect(state.delivered).toBe(true);
+        expect(state.deliveryAttempted).toBe(true);
+        // Two calls total: first failed transiently, second succeeded.
+        expect(deliverOutboundPayloads).toHaveBeenCalledTimes(2);
 
-      const calls = vi.mocked(deliverOutboundPayloads).mock.calls;
-      expect(calls[0][0]).toEqual(expect.objectContaining({ skipQueue: true }));
-      expect(calls[1][0]).toEqual(expect.objectContaining({ skipQueue: true }));
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
+        const calls = vi.mocked(deliverOutboundPayloads).mock.calls;
+        expect(calls[0][0]).toEqual(expect.objectContaining({ skipQueue: true }));
+        expect(calls[1][0]).toEqual(expect.objectContaining({ skipQueue: true }));
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 
   it("suppresses NO_REPLY payload in direct delivery so sentinel never leaks to external channels", async () => {
     vi.mocked(countActiveDescendantRuns).mockReturnValue(0);

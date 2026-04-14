@@ -92,6 +92,7 @@ function assertNoAptGetFallbackCalls() {
 
 describe("skills-install fallback edge cases", () => {
   let workspaceDir: string;
+  const runningAsRoot = typeof process.getuid === "function" && process.getuid() === 0;
 
   beforeAll(async () => {
     workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-fallback-test-"));
@@ -130,7 +131,9 @@ describe("skills-install fallback edge cases", () => {
             stderr: "sudo: a password is required",
           }),
         assert: (result: { message: string; stderr: string }) => {
-          expect(result.message).toContain("sudo");
+          expect(result.message).toContain(
+            runningAsRoot ? "automatic install via apt failed" : "sudo",
+          );
           expect(result.message).toContain("https://go.dev/doc/install");
         },
       },
@@ -141,8 +144,12 @@ describe("skills-install fallback edge cases", () => {
             new Error('Executable not found in $PATH: "sudo"'),
           ),
         assert: (result: { message: string; stderr: string }) => {
-          expect(result.message).toContain("sudo is not usable");
-          expect(result.stderr).toContain("Executable not found");
+          expect(result.message).toContain(
+            runningAsRoot ? "automatic install via apt failed" : "sudo is not usable",
+          );
+          if (!runningAsRoot) {
+            expect(result.stderr).toContain("Executable not found");
+          }
         },
       },
     ]) {
@@ -158,11 +165,22 @@ describe("skills-install fallback edge cases", () => {
 
       expect(result.ok, testCase.label).toBe(false);
       testCase.assert(result);
-      expect(runCommandWithTimeoutMock, testCase.label).toHaveBeenCalledWith(
-        ["sudo", "-n", "true"],
-        expect.objectContaining({ timeoutMs: 5_000 }),
-      );
-      assertNoAptGetFallbackCalls();
+      if (runningAsRoot) {
+        expect(runCommandWithTimeoutMock, testCase.label).toHaveBeenCalledWith(
+          ["apt-get", "update", "-qq"],
+          expect.objectContaining({ timeoutMs: 300_000 }),
+        );
+        expect(runCommandWithTimeoutMock, testCase.label).toHaveBeenCalledWith(
+          ["apt-get", "install", "-y", "golang-go"],
+          expect.objectContaining({ timeoutMs: 300_000 }),
+        );
+      } else {
+        expect(runCommandWithTimeoutMock, testCase.label).toHaveBeenCalledWith(
+          ["sudo", "-n", "true"],
+          expect.objectContaining({ timeoutMs: 5_000 }),
+        );
+        assertNoAptGetFallbackCalls();
+      }
     }
   });
 
@@ -186,7 +204,9 @@ describe("skills-install fallback edge cases", () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.message).toContain("sudo is not usable");
+    expect(result.message).toContain(
+      runningAsRoot ? "automatic install via apt failed" : "sudo is not usable",
+    );
   });
 
   it("uv not installed and no brew returns helpful error without curl auto-install", async () => {

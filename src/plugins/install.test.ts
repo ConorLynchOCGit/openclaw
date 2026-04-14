@@ -1355,9 +1355,16 @@ describe("installPluginFromArchive", () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.code).toBe(PLUGIN_INSTALL_ERROR_CODE.SECURITY_SCAN_FAILED);
-          expect(result.error).toContain("manifest dependency scan could not read");
-          expect(result.error).toContain("vendor/sealed");
+          if (typeof process.getuid === "function" && process.getuid() === 0) {
+            // Root can still traverse the sealed directory, so the blocked
+            // dependency is discovered instead of surfacing a read failure.
+            expect(result.code).toBe(PLUGIN_INSTALL_ERROR_CODE.SECURITY_SCAN_BLOCKED);
+            expect(result.error).toContain("plain-crypto-js");
+          } else {
+            expect(result.code).toBe(PLUGIN_INSTALL_ERROR_CODE.SECURITY_SCAN_FAILED);
+            expect(result.error).toContain("manifest dependency scan could not read");
+            expect(result.error).toContain("vendor/sealed");
+          }
         }
       } finally {
         fs.chmodSync(blockedDir, 0o755);

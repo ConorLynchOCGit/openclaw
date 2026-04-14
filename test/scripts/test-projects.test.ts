@@ -278,6 +278,22 @@ describe("scripts/test-projects full-suite sharding", () => {
     ).toBe(1);
   });
 
+  it("treats the serial test profile as a true serial full-suite run", () => {
+    expect(
+      resolveParallelFullSuiteConcurrency(
+        61,
+        {
+          OPENCLAW_TEST_PROFILE: "serial",
+        },
+        {
+          cpuCount: 14,
+          loadAverage1m: 0,
+          totalMemoryBytes: 48 * 1024 ** 3,
+        },
+      ),
+    ).toBe(1);
+  });
+
   it("keeps explicit parallel overrides ahead of the host-aware profile", () => {
     expect(
       resolveParallelFullSuiteConcurrency(
@@ -352,6 +368,7 @@ describe("scripts/test-projects full-suite sharding", () => {
   it("expands untargeted local runs to leaf project configs by default", () => {
     const previousLeafShards = process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS;
     const previousParallel = process.env.OPENCLAW_TEST_PROJECTS_PARALLEL;
+    const previousProfile = process.env.OPENCLAW_TEST_PROFILE;
     const previousSerial = process.env.OPENCLAW_TEST_PROJECTS_SERIAL;
     const previousCi = process.env.CI;
     const previousActions = process.env.GITHUB_ACTIONS;
@@ -359,6 +376,7 @@ describe("scripts/test-projects full-suite sharding", () => {
     const previousTestWorkers = process.env.OPENCLAW_TEST_WORKERS;
     delete process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS;
     delete process.env.OPENCLAW_TEST_PROJECTS_PARALLEL;
+    delete process.env.OPENCLAW_TEST_PROFILE;
     delete process.env.OPENCLAW_TEST_PROJECTS_SERIAL;
     delete process.env.CI;
     delete process.env.GITHUB_ACTIONS;
@@ -381,6 +399,11 @@ describe("scripts/test-projects full-suite sharding", () => {
         delete process.env.OPENCLAW_TEST_PROJECTS_PARALLEL;
       } else {
         process.env.OPENCLAW_TEST_PROJECTS_PARALLEL = previousParallel;
+      }
+      if (previousProfile === undefined) {
+        delete process.env.OPENCLAW_TEST_PROFILE;
+      } else {
+        process.env.OPENCLAW_TEST_PROFILE = previousProfile;
       }
       if (previousSerial === undefined) {
         delete process.env.OPENCLAW_TEST_PROJECTS_SERIAL;

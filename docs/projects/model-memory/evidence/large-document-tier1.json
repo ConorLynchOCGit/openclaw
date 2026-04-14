@@ -1,0 +1,490 @@
+{
+  "generatedAt": "2026-04-14T03:55:35.720Z",
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelRef": "openrouter/openai/gpt-5-mini",
+  "requestSeed": 7,
+  "requestTimeoutMs": 180000,
+  "databaseName": "model_memory",
+  "maxWordsPerWindow": 1500,
+  "rerunMode": "first_run_only",
+  "cases": [
+    {
+      "id": "tier1-gateway-protocol",
+      "relativePath": "docs/gateway/protocol.md",
+      "sourceKind": "document",
+      "lineCount": 257,
+      "purposes": ["reference_extraction", "architecture_fact_extraction"],
+      "classification": "primary_large_source_proof_input",
+      "omissionFindings": [],
+      "provenanceFindings": ["all_captured_objects_have_structured_provenance"],
+      "duplicateFindings": [
+        "rerun_skipped_after_no_persisted_objects",
+        "rerun_created_new_objects"
+      ],
+      "rebuildFindings": [
+        "projection_hashes_stable_on_rerun",
+        "artifact_hashes_stable_on_rerun",
+        "derived_materialization_counts_stable_on_rerun",
+        "rebuild_rerun_skipped_after_no_persisted_objects"
+      ],
+      "firstRun": {
+        "sourceId": "3c8147dd-aac9-50f4-8912-3b0879be854a",
+        "windowCount": 1,
+        "elapsedMs": 91476,
+        "requestSeed": 7,
+        "requestTimeoutMs": 180000,
+        "executionRequestCount": 3,
+        "executionContractVersionCounts": {
+          "v2-candidate": 1,
+          "v2-candidate-repair": 1,
+          "v2-canonicalization": 1
+        },
+        "executionResolvedModelIds": [
+          "openai/gpt-5-mini-2025-08-07",
+          "openai/gpt-5.4-nano-20260317"
+        ],
+        "executionResolvedModelIdsByContractVersion": {
+          "v2-candidate": ["openai/gpt-5-mini-2025-08-07"],
+          "v2-candidate-repair": ["openai/gpt-5-mini-2025-08-07"],
+          "v2-canonicalization": ["openai/gpt-5.4-nano-20260317"]
+        },
+        "executionTracesByContractVersion": {
+          "v2-candidate": [
+            {
+              "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+              "action": "capture",
+              "objectCount": 9,
+              "summaries": [
+                "rule:Gateway WebSocket transport uses text frames with JSON payloads and the first frame must be a 'connect' request.",
+                "rule:Clients must wait for the server 'connect.challenge', sign the challenge, and send a 'connect' request including the signed nonce in connect.params.device.nonce (preferred v3 signature binds platform/deviceFamily).",
+                "rule:Framing shapes: Request = {type:'req', id, method, params}; Response = {type:'res', id, ok, payload|error}; Event = {type:'event', event, payload, seq?, stateVersion?}; side-effecting methods require idempotency keys.",
+                "fact:Role 'operator' is the control plane client and role 'node' is the capability host.",
+                "fact:Common operator scopes include operator.read, operator.write, operator.admin, operator.approvals, and operator.pairing.",
+                "reference:PROTOCOL_VERSION is defined in src/gateway/protocol/schema.ts; clients send minProtocol and maxProtocol (server rejects mismatches); schemas/models are generated with pnpm protocol:gen, pnpm protocol:gen:swift, and pnpm protocol:check.",
+                "rule:If OPENCLAW_GATEWAY_TOKEN (or --token) is set, connect.params.auth.token must match or the socket is closed; after pairing the gateway returns hello-ok.auth.deviceToken which clients should persist; device tokens can be rotated or revoked via device.token.rotate and device.token.revoke (requires operator.pairing).",
+                "rule:All WS clients must include a stable device identity (device.id derived from a keypair fingerprint); gateways issue tokens per device+role; pairing approvals are required for new device IDs unless local auto-approval is enabled; control UI may omit device identity only when gateway.controlUi.dangerouslyDisableDeviceAuth is enabled; all connections must sign the server-provided connect.challenge.",
+                "rule:When an exec request needs approval the gateway broadcasts exec.approval.requested; operator clients resolve via exec.approval.resolve (requires operator.approvals scope); for host=node, exec.approval.request must include systemRunPlan or the request is rejected."
+              ]
+            }
+          ],
+          "v2-candidate-repair": [
+            {
+              "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+              "action": "capture",
+              "objectCount": 9,
+              "summaries": [
+                "rule:Gateway WebSocket transport uses text frames with JSON payloads and the first frame must be a 'connect' request.",
+                "rule:Clients must wait for the server 'connect.challenge', sign the challenge, and send a 'connect' request including the signed nonce in connect.params.device.nonce (preferred v3 signature binds platform/deviceFamily).",
+                "rule:Framing shapes: Request = {type:'req', id, method, params}; Response = {type:'res', id, ok, payload|error}; Event = {type:'event', event, payload, seq?, stateVersion?}; side-effecting methods require idempotency keys.",
+                "fact:Role 'operator' is the control plane client and role 'node' is the capability host.",
+                "fact:Common operator scopes include operator.read, operator.write, operator.admin, operator.approvals, and operator.pairing.",
+                "reference:PROTOCOL_VERSION is defined in src/gateway/protocol/schema.ts; clients send minProtocol and maxProtocol (server rejects mismatches); schemas/models are generated with pnpm protocol:gen, pnpm protocol:gen:swift, and pnpm protocol:check.",
+                "rule:If OPENCLAW_GATEWAY_TOKEN (or --token) is set, connect.params.auth.token must match or the socket is closed; after pairing the gateway returns hello-ok.auth.deviceToken which clients should persist; device tokens can be rotated or revoked via device.token.rotate and device.token.revoke (requires operator.pairing).",
+                "rule:All WS clients must include a stable device identity (device.id derived from a keypair fingerprint); gateways issue tokens per device+role; pairing approvals are required for new device IDs unless local auto-approval is enabled; control UI may omit device identity only when gateway.controlUi.dangerouslyDisableDeviceAuth is enabled; all connections must sign the server-provided connect.challenge.",
+                "rule:When an exec request needs approval the gateway broadcasts exec.approval.requested; operator clients resolve via exec.approval.resolve (requires operator.approvals scope); for host=node, exec.approval.request must include systemRunPlan or the request is rejected."
+              ]
+            }
+          ],
+          "v2-canonicalization": [
+            {
+              "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+              "action": "capture",
+              "objectCount": 9,
+              "summaries": [
+                "user/preference payload={\"instruction\":\"Use WebSocket text frames carrying JSON payloads; ensure the first frame is a connect request.\",\"operation\":\"connect\",\"subject\":\"gateway websocket transport framing\"} scope={}",
+                "user/rule payload={\"avoidAction\":\"Do not send connect without first receiving connect.challenge.\",\"neededCapability\":\"Ability to generate the v2/v3 signature over the server nonce and include connect.params.device.nonce in the connect request.\",\"recommendedAction\":\"Wait for connect.challenge, sign the server-provided nonce, and send a connect request including the signed nonce at connect.params.device.nonce.\",\"subject\":\"connect handshake challenge signing\"} scope={}",
+                "user/rule payload={\"avoidAction\":\"Do not use framing shapes other than Request {type:'req', id, method, params}, Response {type:'res', id, ok, payload|error}, and Event {type:'event', event, payload, seq?, stateVersion?} or omit idempotency keys for side-effecting methods.\",\"neededCapability\":\"Ability to construct messages using the required envelope fields and idempotency keys.\",\"recommendedAction\":\"Use Request/Response/Event envelopes as specified and include idempotency keys for side-effecting methods.\",\"subject\":\"ws framing envelope shapes and idempotency\"} scope={}",
+                "project/fact payload={\"subject\":\"operator and node roles\",\"value\":\"Role operator is the control plane client; role node is the capability host.\"} scope={}",
+                "project/fact payload={\"subject\":\"common operator scopes\",\"value\":\"Common operator scopes are operator.read, operator.write, operator.admin, operator.approvals, and operator.pairing.\"} scope={}",
+                "project/reference payload={\"companionResources\":[\"pnpm protocol:gen\",\"pnpm protocol:gen:swift\",\"pnpm protocol:check\"],\"primaryResource\":\"src/gateway/protocol/schema.ts\",\"task\":\"PROTOCOL_VERSION and protocol version negotiation\"} scope={}",
+                "user/rule payload={\"avoidAction\":\"Do not connect with a connect.params.auth.token that does not match OPENCLAW_GATEWAY_TOKEN (or --token), or the socket will be closed.\",\"neededCapability\":\"Ability to persist the issued device token and call device.token.rotate/revoke when permitted.\",\"recommendedAction\":\"If OPENCLAW_GATEWAY_TOKEN (or --token) is set, set connect.params.auth.token to match; after pairing, persist hello-ok.auth.deviceToken for future connects; for rotation/revocation use device.token.rotate and device.token.revoke with operator.pairing scope.\",\"subject\":\"gateway token authentication and device token persistence/rotation\"} scope={}",
+                "user/rule payload={\"avoidAction\":\"Do not omit device identity during connect except when gateway.controlUi.dangerouslyDisableDeviceAuth is enabled for break-glass use.\",\"neededCapability\":\"Ability to derive stable device.id from a keypair fingerprint and sign the connect.challenge nonce; ability to handle pairing approvals when introducing new device IDs.\",\"recommendedAction\":\"Include stable device identity (device.id from a keypair fingerprint) in connect for operator and node; ensure all connections sign the server-provided connect.challenge nonce; expect pairing approvals for new device IDs unless local auto-approval is enabled.\",\"subject\":\"device identity, pairing approvals, and connect.challenge signing\"} scope={}",
+                "user/rule payload={\"avoidAction\":\"Do not submit an exec approval request for host=node without systemRunPlan; such requests are rejected.\",\"neededCapability\":\"Ability to resolve exec approvals and supply systemRunPlan (canonical argv/cwd/rawCommand/session metadata) when host=node.\",\"recommendedAction\":\"When exec requires approval, handle exec.approval.requested by calling exec.approval.resolve (requires operator.approvals scope); for host=node include systemRunPlan in exec.approval.request.\",\"subject\":\"exec approval flow and systemRunPlan requirement for host=node\"} scope={}"
+              ]
+            }
+          ]
+        },
+        "capturedObjectCount": 8,
+        "ignoredWindowCount": 0,
+        "rejectedWindowCount": 0,
+        "writeDecisionCounts": {
+          "write": 8
+        },
+        "objectSummaries": [
+          {
+            "identityKey": "preference_5f1fc190aa92ac6cc3dada3e",
+            "canonicalClass": "user",
+            "kind": "preference",
+            "payload": {
+              "subject": "gateway websocket transport framing",
+              "operation": "connect",
+              "instruction": "Use WebSocket text frames carrying JSON payloads; ensure the first frame is a connect request."
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Transport"],
+            "lineStart": 19,
+            "lineEnd": 21
+          },
+          {
+            "identityKey": "rule_bfa51d6cbcb33b2d6dbfa2ab",
+            "canonicalClass": "user",
+            "kind": "rule",
+            "payload": {
+              "subject": "connect handshake challenge signing",
+              "avoidAction": "Do not send connect without first receiving connect.challenge.",
+              "neededCapability": "Ability to generate the v2/v3 signature over the server nonce and include connect.params.device.nonce in the connect request.",
+              "recommendedAction": "Wait for connect.challenge, sign the server-provided nonce, and send a connect request including the signed nonce at connect.params.device.nonce."
+            },
+            "scope": {},
+            "provenanceCount": 3,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Handshake (connect)"],
+            "lineStart": 24,
+            "lineEnd": 32
+          },
+          {
+            "identityKey": "rule_48c58d8adfc59ccf9ee83a2e",
+            "canonicalClass": "user",
+            "kind": "rule",
+            "payload": {
+              "subject": "ws framing envelope shapes and idempotency",
+              "avoidAction": "Do not use framing shapes other than Request {type:'req', id, method, params}, Response {type:'res', id, ok, payload|error}, and Event {type:'event', event, payload, seq?, stateVersion?} or omit idempotency keys for side-effecting methods.",
+              "neededCapability": "Ability to construct messages using the required envelope fields and idempotency keys.",
+              "recommendedAction": "Use Request/Response/Event envelopes as specified and include idempotency keys for side-effecting methods."
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Framing"],
+            "lineStart": 127,
+            "lineEnd": 135
+          },
+          {
+            "identityKey": "fact_74f07c5b49e496182ee45e05",
+            "canonicalClass": "project",
+            "kind": "fact",
+            "payload": {
+              "value": "Role operator is the control plane client; role node is the capability host.",
+              "subject": "operator and node roles"
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Roles + scopes", "Roles"],
+            "lineStart": 137,
+            "lineEnd": 141
+          },
+          {
+            "identityKey": "fact_e97d9679adb256ab65aefcc8",
+            "canonicalClass": "project",
+            "kind": "fact",
+            "payload": {
+              "value": "Common operator scopes are operator.read, operator.write, operator.admin, operator.approvals, and operator.pairing.",
+              "subject": "common operator scopes"
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": [
+              "Gateway protocol (WebSocket)",
+              "Roles + scopes",
+              "Scopes (operator)"
+            ],
+            "lineStart": 142,
+            "lineEnd": 151
+          },
+          {
+            "identityKey": "rule_06a9aba36fc9934b86801a6d",
+            "canonicalClass": "user",
+            "kind": "rule",
+            "payload": {
+              "subject": "gateway token authentication and device token persistence/rotation",
+              "avoidAction": "Do not connect with a connect.params.auth.token that does not match OPENCLAW_GATEWAY_TOKEN (or --token), or the socket will be closed.",
+              "neededCapability": "Ability to persist the issued device token and call device.token.rotate/revoke when permitted.",
+              "recommendedAction": "If OPENCLAW_GATEWAY_TOKEN (or --token) is set, set connect.params.auth.token to match; after pairing, persist hello-ok.auth.deviceToken for future connects; for rotation/revocation use device.token.rotate and device.token.revoke with operator.pairing scope."
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Auth"],
+            "lineStart": 198,
+            "lineEnd": 204
+          },
+          {
+            "identityKey": "rule_e117dd4aae28df4b78e03623",
+            "canonicalClass": "user",
+            "kind": "rule",
+            "payload": {
+              "subject": "device identity, pairing approvals, and connect.challenge signing",
+              "avoidAction": "Do not omit device identity during connect except when gateway.controlUi.dangerouslyDisableDeviceAuth is enabled for break-glass use.",
+              "neededCapability": "Ability to derive stable device.id from a keypair fingerprint and sign the connect.challenge nonce; ability to handle pairing approvals when introducing new device IDs.",
+              "recommendedAction": "Include stable device identity (device.id from a keypair fingerprint) in connect for operator and node; ensure all connections sign the server-provided connect.challenge nonce; expect pairing approvals for new device IDs unless local auto-approval is enabled."
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Device identity + pairing"],
+            "lineStart": 206,
+            "lineEnd": 219
+          },
+          {
+            "identityKey": "rule_7a285eaff21b50c77baba84f",
+            "canonicalClass": "user",
+            "kind": "rule",
+            "payload": {
+              "subject": "exec approval flow and systemRunPlan requirement for host=node",
+              "avoidAction": "Do not submit an exec approval request for host=node without systemRunPlan; such requests are rejected.",
+              "neededCapability": "Ability to resolve exec approvals and supply systemRunPlan (canonical argv/cwd/rawCommand/session metadata) when host=node.",
+              "recommendedAction": "When exec requires approval, handle exec.approval.requested by calling exec.approval.resolve (requires operator.approvals scope); for host=node include systemRunPlan in exec.approval.request."
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Exec approvals"],
+            "lineStart": 181,
+            "lineEnd": 186
+          }
+        ],
+        "projectionContentHashes": {
+          "memory-md": "2459e94bb19105c1a0bfc9dada6608fe7d2fff5e3984529d16c2f92e2d4bf60a",
+          "user-md": "d862288e12c545f53eb8a0ead9fc6efa01a5f16b135b7dc4d2cddb87cb5a1564",
+          "agents-md": "6b7bfc5b85e7215bcf8a326dbd2c60cce495665c6b0043f204039ae8d7c85076"
+        },
+        "contextArtifactHashes": {
+          "user_memory_pack:global": "eeae5bf29b489cc5f6045f0a5954be664fac64ac4e23c34f199a620669232bd0",
+          "project_memory_pack:scope_44136fa355b3678a": "0ef8bc1e98af45e3d75ada97502f2aaed2d6a3d74eec57453b8a5e6df2857f01"
+        },
+        "activeMemorySlotCount": 3,
+        "activeMemorySetCount": 8,
+        "projectionVersionCount": 3,
+        "contextArtifactCount": 2,
+        "provenanceValid": true,
+        "rejectReasons": [],
+        "executed": true
+      },
+      "secondRun": {
+        "sourceId": "3c8147dd-aac9-50f4-8912-3b0879be854a",
+        "windowCount": 1,
+        "elapsedMs": 91476,
+        "requestSeed": 7,
+        "requestTimeoutMs": 180000,
+        "executionRequestCount": 3,
+        "executionContractVersionCounts": {
+          "v2-candidate": 1,
+          "v2-candidate-repair": 1,
+          "v2-canonicalization": 1
+        },
+        "executionResolvedModelIds": [
+          "openai/gpt-5-mini-2025-08-07",
+          "openai/gpt-5.4-nano-20260317"
+        ],
+        "executionResolvedModelIdsByContractVersion": {
+          "v2-candidate": ["openai/gpt-5-mini-2025-08-07"],
+          "v2-candidate-repair": ["openai/gpt-5-mini-2025-08-07"],
+          "v2-canonicalization": ["openai/gpt-5.4-nano-20260317"]
+        },
+        "executionTracesByContractVersion": {
+          "v2-candidate": [
+            {
+              "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+              "action": "capture",
+              "objectCount": 9,
+              "summaries": [
+                "rule:Gateway WebSocket transport uses text frames with JSON payloads and the first frame must be a 'connect' request.",
+                "rule:Clients must wait for the server 'connect.challenge', sign the challenge, and send a 'connect' request including the signed nonce in connect.params.device.nonce (preferred v3 signature binds platform/deviceFamily).",
+                "rule:Framing shapes: Request = {type:'req', id, method, params}; Response = {type:'res', id, ok, payload|error}; Event = {type:'event', event, payload, seq?, stateVersion?}; side-effecting methods require idempotency keys.",
+                "fact:Role 'operator' is the control plane client and role 'node' is the capability host.",
+                "fact:Common operator scopes include operator.read, operator.write, operator.admin, operator.approvals, and operator.pairing.",
+                "reference:PROTOCOL_VERSION is defined in src/gateway/protocol/schema.ts; clients send minProtocol and maxProtocol (server rejects mismatches); schemas/models are generated with pnpm protocol:gen, pnpm protocol:gen:swift, and pnpm protocol:check.",
+                "rule:If OPENCLAW_GATEWAY_TOKEN (or --token) is set, connect.params.auth.token must match or the socket is closed; after pairing the gateway returns hello-ok.auth.deviceToken which clients should persist; device tokens can be rotated or revoked via device.token.rotate and device.token.revoke (requires operator.pairing).",
+                "rule:All WS clients must include a stable device identity (device.id derived from a keypair fingerprint); gateways issue tokens per device+role; pairing approvals are required for new device IDs unless local auto-approval is enabled; control UI may omit device identity only when gateway.controlUi.dangerouslyDisableDeviceAuth is enabled; all connections must sign the server-provided connect.challenge.",
+                "rule:When an exec request needs approval the gateway broadcasts exec.approval.requested; operator clients resolve via exec.approval.resolve (requires operator.approvals scope); for host=node, exec.approval.request must include systemRunPlan or the request is rejected."
+              ]
+            }
+          ],
+          "v2-candidate-repair": [
+            {
+              "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+              "action": "capture",
+              "objectCount": 9,
+              "summaries": [
+                "rule:Gateway WebSocket transport uses text frames with JSON payloads and the first frame must be a 'connect' request.",
+                "rule:Clients must wait for the server 'connect.challenge', sign the challenge, and send a 'connect' request including the signed nonce in connect.params.device.nonce (preferred v3 signature binds platform/deviceFamily).",
+                "rule:Framing shapes: Request = {type:'req', id, method, params}; Response = {type:'res', id, ok, payload|error}; Event = {type:'event', event, payload, seq?, stateVersion?}; side-effecting methods require idempotency keys.",
+                "fact:Role 'operator' is the control plane client and role 'node' is the capability host.",
+                "fact:Common operator scopes include operator.read, operator.write, operator.admin, operator.approvals, and operator.pairing.",
+                "reference:PROTOCOL_VERSION is defined in src/gateway/protocol/schema.ts; clients send minProtocol and maxProtocol (server rejects mismatches); schemas/models are generated with pnpm protocol:gen, pnpm protocol:gen:swift, and pnpm protocol:check.",
+                "rule:If OPENCLAW_GATEWAY_TOKEN (or --token) is set, connect.params.auth.token must match or the socket is closed; after pairing the gateway returns hello-ok.auth.deviceToken which clients should persist; device tokens can be rotated or revoked via device.token.rotate and device.token.revoke (requires operator.pairing).",
+                "rule:All WS clients must include a stable device identity (device.id derived from a keypair fingerprint); gateways issue tokens per device+role; pairing approvals are required for new device IDs unless local auto-approval is enabled; control UI may omit device identity only when gateway.controlUi.dangerouslyDisableDeviceAuth is enabled; all connections must sign the server-provided connect.challenge.",
+                "rule:When an exec request needs approval the gateway broadcasts exec.approval.requested; operator clients resolve via exec.approval.resolve (requires operator.approvals scope); for host=node, exec.approval.request must include systemRunPlan or the request is rejected."
+              ]
+            }
+          ],
+          "v2-canonicalization": [
+            {
+              "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+              "action": "capture",
+              "objectCount": 9,
+              "summaries": [
+                "user/preference payload={\"instruction\":\"Use WebSocket text frames carrying JSON payloads; ensure the first frame is a connect request.\",\"operation\":\"connect\",\"subject\":\"gateway websocket transport framing\"} scope={}",
+                "user/rule payload={\"avoidAction\":\"Do not send connect without first receiving connect.challenge.\",\"neededCapability\":\"Ability to generate the v2/v3 signature over the server nonce and include connect.params.device.nonce in the connect request.\",\"recommendedAction\":\"Wait for connect.challenge, sign the server-provided nonce, and send a connect request including the signed nonce at connect.params.device.nonce.\",\"subject\":\"connect handshake challenge signing\"} scope={}",
+                "user/rule payload={\"avoidAction\":\"Do not use framing shapes other than Request {type:'req', id, method, params}, Response {type:'res', id, ok, payload|error}, and Event {type:'event', event, payload, seq?, stateVersion?} or omit idempotency keys for side-effecting methods.\",\"neededCapability\":\"Ability to construct messages using the required envelope fields and idempotency keys.\",\"recommendedAction\":\"Use Request/Response/Event envelopes as specified and include idempotency keys for side-effecting methods.\",\"subject\":\"ws framing envelope shapes and idempotency\"} scope={}",
+                "project/fact payload={\"subject\":\"operator and node roles\",\"value\":\"Role operator is the control plane client; role node is the capability host.\"} scope={}",
+                "project/fact payload={\"subject\":\"common operator scopes\",\"value\":\"Common operator scopes are operator.read, operator.write, operator.admin, operator.approvals, and operator.pairing.\"} scope={}",
+                "project/reference payload={\"companionResources\":[\"pnpm protocol:gen\",\"pnpm protocol:gen:swift\",\"pnpm protocol:check\"],\"primaryResource\":\"src/gateway/protocol/schema.ts\",\"task\":\"PROTOCOL_VERSION and protocol version negotiation\"} scope={}",
+                "user/rule payload={\"avoidAction\":\"Do not connect with a connect.params.auth.token that does not match OPENCLAW_GATEWAY_TOKEN (or --token), or the socket will be closed.\",\"neededCapability\":\"Ability to persist the issued device token and call device.token.rotate/revoke when permitted.\",\"recommendedAction\":\"If OPENCLAW_GATEWAY_TOKEN (or --token) is set, set connect.params.auth.token to match; after pairing, persist hello-ok.auth.deviceToken for future connects; for rotation/revocation use device.token.rotate and device.token.revoke with operator.pairing scope.\",\"subject\":\"gateway token authentication and device token persistence/rotation\"} scope={}",
+                "user/rule payload={\"avoidAction\":\"Do not omit device identity during connect except when gateway.controlUi.dangerouslyDisableDeviceAuth is enabled for break-glass use.\",\"neededCapability\":\"Ability to derive stable device.id from a keypair fingerprint and sign the connect.challenge nonce; ability to handle pairing approvals when introducing new device IDs.\",\"recommendedAction\":\"Include stable device identity (device.id from a keypair fingerprint) in connect for operator and node; ensure all connections sign the server-provided connect.challenge nonce; expect pairing approvals for new device IDs unless local auto-approval is enabled.\",\"subject\":\"device identity, pairing approvals, and connect.challenge signing\"} scope={}",
+                "user/rule payload={\"avoidAction\":\"Do not submit an exec approval request for host=node without systemRunPlan; such requests are rejected.\",\"neededCapability\":\"Ability to resolve exec approvals and supply systemRunPlan (canonical argv/cwd/rawCommand/session metadata) when host=node.\",\"recommendedAction\":\"When exec requires approval, handle exec.approval.requested by calling exec.approval.resolve (requires operator.approvals scope); for host=node include systemRunPlan in exec.approval.request.\",\"subject\":\"exec approval flow and systemRunPlan requirement for host=node\"} scope={}"
+              ]
+            }
+          ]
+        },
+        "capturedObjectCount": 8,
+        "ignoredWindowCount": 0,
+        "rejectedWindowCount": 0,
+        "writeDecisionCounts": {
+          "write": 8
+        },
+        "objectSummaries": [
+          {
+            "identityKey": "preference_5f1fc190aa92ac6cc3dada3e",
+            "canonicalClass": "user",
+            "kind": "preference",
+            "payload": {
+              "subject": "gateway websocket transport framing",
+              "operation": "connect",
+              "instruction": "Use WebSocket text frames carrying JSON payloads; ensure the first frame is a connect request."
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Transport"],
+            "lineStart": 19,
+            "lineEnd": 21
+          },
+          {
+            "identityKey": "rule_bfa51d6cbcb33b2d6dbfa2ab",
+            "canonicalClass": "user",
+            "kind": "rule",
+            "payload": {
+              "subject": "connect handshake challenge signing",
+              "avoidAction": "Do not send connect without first receiving connect.challenge.",
+              "neededCapability": "Ability to generate the v2/v3 signature over the server nonce and include connect.params.device.nonce in the connect request.",
+              "recommendedAction": "Wait for connect.challenge, sign the server-provided nonce, and send a connect request including the signed nonce at connect.params.device.nonce."
+            },
+            "scope": {},
+            "provenanceCount": 3,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Handshake (connect)"],
+            "lineStart": 24,
+            "lineEnd": 32
+          },
+          {
+            "identityKey": "rule_48c58d8adfc59ccf9ee83a2e",
+            "canonicalClass": "user",
+            "kind": "rule",
+            "payload": {
+              "subject": "ws framing envelope shapes and idempotency",
+              "avoidAction": "Do not use framing shapes other than Request {type:'req', id, method, params}, Response {type:'res', id, ok, payload|error}, and Event {type:'event', event, payload, seq?, stateVersion?} or omit idempotency keys for side-effecting methods.",
+              "neededCapability": "Ability to construct messages using the required envelope fields and idempotency keys.",
+              "recommendedAction": "Use Request/Response/Event envelopes as specified and include idempotency keys for side-effecting methods."
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Framing"],
+            "lineStart": 127,
+            "lineEnd": 135
+          },
+          {
+            "identityKey": "fact_74f07c5b49e496182ee45e05",
+            "canonicalClass": "project",
+            "kind": "fact",
+            "payload": {
+              "value": "Role operator is the control plane client; role node is the capability host.",
+              "subject": "operator and node roles"
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Roles + scopes", "Roles"],
+            "lineStart": 137,
+            "lineEnd": 141
+          },
+          {
+            "identityKey": "fact_e97d9679adb256ab65aefcc8",
+            "canonicalClass": "project",
+            "kind": "fact",
+            "payload": {
+              "value": "Common operator scopes are operator.read, operator.write, operator.admin, operator.approvals, and operator.pairing.",
+              "subject": "common operator scopes"
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": [
+              "Gateway protocol (WebSocket)",
+              "Roles + scopes",
+              "Scopes (operator)"
+            ],
+            "lineStart": 142,
+            "lineEnd": 151
+          },
+          {
+            "identityKey": "rule_06a9aba36fc9934b86801a6d",
+            "canonicalClass": "user",
+            "kind": "rule",
+            "payload": {
+              "subject": "gateway token authentication and device token persistence/rotation",
+              "avoidAction": "Do not connect with a connect.params.auth.token that does not match OPENCLAW_GATEWAY_TOKEN (or --token), or the socket will be closed.",
+              "neededCapability": "Ability to persist the issued device token and call device.token.rotate/revoke when permitted.",
+              "recommendedAction": "If OPENCLAW_GATEWAY_TOKEN (or --token) is set, set connect.params.auth.token to match; after pairing, persist hello-ok.auth.deviceToken for future connects; for rotation/revocation use device.token.rotate and device.token.revoke with operator.pairing scope."
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Auth"],
+            "lineStart": 198,
+            "lineEnd": 204
+          },
+          {
+            "identityKey": "rule_e117dd4aae28df4b78e03623",
+            "canonicalClass": "user",
+            "kind": "rule",
+            "payload": {
+              "subject": "device identity, pairing approvals, and connect.challenge signing",
+              "avoidAction": "Do not omit device identity during connect except when gateway.controlUi.dangerouslyDisableDeviceAuth is enabled for break-glass use.",
+              "neededCapability": "Ability to derive stable device.id from a keypair fingerprint and sign the connect.challenge nonce; ability to handle pairing approvals when introducing new device IDs.",
+              "recommendedAction": "Include stable device identity (device.id from a keypair fingerprint) in connect for operator and node; ensure all connections sign the server-provided connect.challenge nonce; expect pairing approvals for new device IDs unless local auto-approval is enabled."
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Device identity + pairing"],
+            "lineStart": 206,
+            "lineEnd": 219
+          },
+          {
+            "identityKey": "rule_7a285eaff21b50c77baba84f",
+            "canonicalClass": "user",
+            "kind": "rule",
+            "payload": {
+              "subject": "exec approval flow and systemRunPlan requirement for host=node",
+              "avoidAction": "Do not submit an exec approval request for host=node without systemRunPlan; such requests are rejected.",
+              "neededCapability": "Ability to resolve exec approvals and supply systemRunPlan (canonical argv/cwd/rawCommand/session metadata) when host=node.",
+              "recommendedAction": "When exec requires approval, handle exec.approval.requested by calling exec.approval.resolve (requires operator.approvals scope); for host=node include systemRunPlan in exec.approval.request."
+            },
+            "scope": {},
+            "provenanceCount": 1,
+            "firstHeadingPath": ["Gateway protocol (WebSocket)", "Exec approvals"],
+            "lineStart": 181,
+            "lineEnd": 186
+          }
+        ],
+        "projectionContentHashes": {
+          "memory-md": "2459e94bb19105c1a0bfc9dada6608fe7d2fff5e3984529d16c2f92e2d4bf60a",
+          "user-md": "d862288e12c545f53eb8a0ead9fc6efa01a5f16b135b7dc4d2cddb87cb5a1564",
+          "agents-md": "6b7bfc5b85e7215bcf8a326dbd2c60cce495665c6b0043f204039ae8d7c85076"
+        },
+        "contextArtifactHashes": {
+          "user_memory_pack:global": "eeae5bf29b489cc5f6045f0a5954be664fac64ac4e23c34f199a620669232bd0",
+          "project_memory_pack:scope_44136fa355b3678a": "0ef8bc1e98af45e3d75ada97502f2aaed2d6a3d74eec57453b8a5e6df2857f01"
+        },
+        "activeMemorySlotCount": 3,
+        "activeMemorySetCount": 8,
+        "projectionVersionCount": 3,
+        "contextArtifactCount": 2,
+        "provenanceValid": true,
+        "rejectReasons": [],
+        "executed": false
+      }
+    }
+  ]
+}

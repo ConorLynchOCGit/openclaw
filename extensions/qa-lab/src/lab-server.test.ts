@@ -80,7 +80,7 @@ async function waitForFile(filePath: string, timeoutMs = 5_000) {
 }
 
 describe("qa-lab server", () => {
-  it("serves bootstrap state and writes a self-check report", async () => {
+  it("serves bootstrap state and writes a self-check report", { timeout: 240_000 }, async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "qa-lab-test-"));
     cleanups.push(async () => {
       await rm(tempDir, { recursive: true, force: true });

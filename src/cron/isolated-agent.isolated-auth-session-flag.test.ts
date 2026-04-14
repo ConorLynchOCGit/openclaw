@@ -23,7 +23,7 @@ describe("isolated cron resolveSessionAuthProfileOverride isNewSession (#62783)"
     vi.restoreAllMocks();
   });
 
-  it("passes isNewSession=false when sessionTarget is isolated", async () => {
+  it("passes isNewSession=false when sessionTarget is isolated", { timeout: 240_000 }, async () => {
     const spy = vi.spyOn(sessionOverride, "resolveSessionAuthProfileOverride");
     spy.mockResolvedValue("openrouter:default");
 

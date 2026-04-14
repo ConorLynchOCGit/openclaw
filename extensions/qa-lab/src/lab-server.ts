@@ -1026,7 +1026,9 @@ export async function startQaLabServer(
     runSelfCheck,
     async stop() {
       runnerModelCatalogAbort?.abort();
-      await runnerModelCatalogPromise?.catch(() => undefined);
+      // Shutdown should not wait for a best-effort background warmup once we
+      // have explicitly canceled it.
+      void runnerModelCatalogPromise?.catch(() => undefined);
       await gateway?.stop();
       await closeQaHttpServer(server);
     },

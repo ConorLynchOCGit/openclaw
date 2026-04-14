@@ -32,7 +32,11 @@ import {
   isBoundaryTestFile,
   isBundledPluginDependentUnitTestFile,
 } from "../test/vitest/vitest.unit-paths.mjs";
-import { isCiLikeEnv, resolveLocalFullSuiteProfile } from "./lib/vitest-local-scheduling.mjs";
+import {
+  isCiLikeEnv,
+  isSerialTestProfile,
+  resolveLocalFullSuiteProfile,
+} from "./lib/vitest-local-scheduling.mjs";
 import { resolveVitestCliEntry, resolveVitestNodeArgs } from "./run-vitest.mjs";
 
 const DEFAULT_VITEST_CONFIG = "test/vitest/vitest.unit.config.ts";
@@ -650,6 +654,9 @@ export function buildFullSuiteVitestRunPlans(args, cwd = process.cwd()) {
 }
 
 export function shouldUseLocalFullSuiteParallelByDefault(env = process.env) {
+  if (isSerialTestProfile(env)) {
+    return false;
+  }
   if (hasConservativeVitestWorkerBudget(env)) {
     return false;
   }
@@ -674,6 +681,9 @@ export function resolveParallelFullSuiteConcurrency(specCount, env = process.env
   const override = parsePositiveInt(env.OPENCLAW_TEST_PROJECTS_PARALLEL);
   if (override !== null) {
     return Math.min(override, specCount);
+  }
+  if (isSerialTestProfile(env)) {
+    return 1;
   }
   if (env.OPENCLAW_TEST_PROJECTS_SERIAL === "1") {
     return 1;

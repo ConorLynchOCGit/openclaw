@@ -36,6 +36,12 @@ const EXPECTED_SHARED_FAMILY_CONTRACTS: Record<string, ExpectedSharedFamilyContr
   "amazon-bedrock": {
     replayFamilies: ["anthropic-by-model"],
   },
+  anthropic: {
+    replayFamilies: ["native-anthropic-by-model"],
+  },
+  "anthropic-vertex": {
+    replayFamilies: ["native-anthropic-by-model"],
+  },
   arcee: {
     replayFamilies: ["openai-compatible"],
   },

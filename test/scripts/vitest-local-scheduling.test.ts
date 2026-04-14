@@ -53,4 +53,23 @@ describe("vitest local full-suite profile", () => {
       vitestMaxWorkers: 1,
     });
   });
+
+  it("forces the serial profile to one shard and one worker", () => {
+    const env = { OPENCLAW_TEST_PROFILE: "serial" };
+    const hostInfo = {
+      cpuCount: 14,
+      loadAverage1m: 0,
+      totalMemoryBytes: 48 * 1024 ** 3,
+    };
+
+    expect(resolveLocalVitestScheduling(env, hostInfo, "threads")).toEqual({
+      maxWorkers: 1,
+      fileParallelism: false,
+      throttledBySystem: false,
+    });
+    expect(resolveLocalFullSuiteProfile(env, hostInfo)).toEqual({
+      shardParallelism: 1,
+      vitestMaxWorkers: 1,
+    });
+  });
 });

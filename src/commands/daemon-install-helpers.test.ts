@@ -171,7 +171,7 @@ describe("buildGatewayInstallPlan", () => {
     });
 
     const plan = await buildGatewayInstallPlan({
-      env: {},
+      env: { HOME: isolatedHome },
       port: 3000,
       runtime: "node",
       config: {
