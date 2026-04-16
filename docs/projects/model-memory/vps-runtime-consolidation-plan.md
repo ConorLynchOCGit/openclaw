@@ -135,6 +135,18 @@ What remains intentionally in place:
 The remaining cleanup is now mostly operator-surface and host-hygiene work, not
 multi-runtime migration.
 
+## Git remote posture
+
+The canonical git posture for the VPS is now:
+
+- `origin` = private deployment repo
+- `upstream` = OpenClaw core fetch source
+- upstream push disabled
+- `main` tracking `origin/main`
+
+See [VPS Git Remote And Auth Workflow](/projects/model-memory/vps-git-remote-and-auth-workflow)
+for the durable maintainer workflow.
+
 ## Preservation of model-memory
 
 The consolidation must preserve:

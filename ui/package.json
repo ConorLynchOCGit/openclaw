@@ -6,7 +6,9 @@
     "build": "vite build",
     "dev": "vite",
     "preview": "vite preview",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "turbo:build": "pnpm --filter openclaw-control-ui exec vite build",
+    "turbo:test": "pnpm --filter openclaw-control-ui exec vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "@create-markdown/preview": "^2.0.3",

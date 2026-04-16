@@ -13,16 +13,22 @@ title: "VPS PNPM And Build Optimization Plan"
 - explicit `pnpm config get shared-workspace-lockfile`: `undefined`
 - current store size after the executed prune: about `2.4G`
 - current repo `node_modules` size: about `3.9G`
-- current repo `.turbo` directory size: not present in the canonical checkout
+- current repo `.turbo` directory size: absent until a Turbo task is run locally
 - current `/root/.cache` size after the executed prune: about `771M`
 - current `/tmp` size after the executed cleanup: about `166M`
 
 Important finding:
 
-- there is no active Turborepo task graph in this repo
-- there is no `turbo.json` or `turbo.jsonc` in the canonical checkout
-- there are no `turbo` dependencies or `turbo run` scripts in `package.json`
-- optimization should focus on PNPM, Docker layer stability, and cache hygiene
+- this repo still does not have a broad package-by-package Turborepo graph
+- the only honest workspace task graph value right now is a narrow UI-scoped
+  Turbo lane
+- `turbo` is now installed as a root dev dependency
+- the canonical checkout now includes a minimal `turbo.json`
+- the root scripts expose:
+  - `pnpm turbo:ui:build`
+  - `pnpm turbo:ui:test`
+- optimization should still focus primarily on PNPM, Docker layer stability, and
+  cache hygiene
 
 ## Current bottlenecks
 
@@ -113,12 +119,42 @@ Current status:
 
 - validated on the live VPS in the current continuation
 
+### 6. Install a minimal honest Turbo lane instead of faking a repo-wide graph
+
+- install `turbo` at the workspace root
+- keep the graph intentionally narrow
+- use Turbo only for the workspace surface that already has real standalone
+  package scripts: `ui`
+- do not wrap the root monolithic `pnpm build`, `pnpm check`, or `pnpm test`
+  with fake Turbo orchestration
+
+Current status:
+
+- `turbo` is installed in the canonical repo
+- `turbo.json` defines only scoped `turbo:build` and `turbo:test` tasks
+- `ui/package.json` exposes `turbo:build` and `turbo:test`
+- the UI Turbo scripts resolve tools through
+  `pnpm --filter openclaw-control-ui exec ...` so the VPS uses the workspace
+  tool resolution that is already valid in the canonical checkout
+- `pnpm turbo:ui:test` runs the real UI Vitest config, so the VPS must keep the
+  corresponding Playwright browser and native Linux dependency set installed
+- root `package.json` exposes:
+  - `pnpm turbo:ui:build`
+  - `pnpm turbo:ui:test`
+
+Expected impact:
+
+- cached reruns for the standalone UI lane
+- a durable Turbo entry point on the VPS without pretending the whole repo is a
+  mature Turbo graph
+
 ## Defer for later
 
-### 1. Any Turborepo graph tuning
+### 1. Broad repo-wide Turborepo orchestration
 
-There is no live Turborepo graph to tune in this repo. Do not invent one just
-to satisfy the label.
+Do not pretend the repo has a mature package-task graph when the root build and
+test flow are still monolithic. Keep Turbo narrow until more workspace packages
+grow real standalone scripts.
 
 ### 2. Repeat PNPM store pruning on every landing
 

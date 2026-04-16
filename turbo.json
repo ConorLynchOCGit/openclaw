@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "turbo:build": {
+      "outputs": ["../dist/control-ui/**"]
+    },
+    "turbo:test": {
+      "cache": false,
+      "outputs": []
+    }
+  }
+}

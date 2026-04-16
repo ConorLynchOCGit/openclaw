@@ -1373,6 +1373,8 @@
     "tsgo": "node scripts/run-tsgo.mjs",
     "tui": "node scripts/run-node.mjs tui",
     "tui:dev": "OPENCLAW_PROFILE=dev node scripts/run-node.mjs --dev tui",
+    "turbo:ui:build": "turbo run turbo:build --filter=openclaw-control-ui",
+    "turbo:ui:test": "turbo run turbo:test --filter=openclaw-control-ui",
     "ui:build": "node scripts/ui.js build",
     "ui:dev": "node scripts/ui.js dev",
     "ui:i18n:check": "node --import tsx scripts/control-ui-i18n.ts check",
@@ -1473,6 +1475,7 @@
     "signal-utils": "0.21.1",
     "tsdown": "0.21.7",
     "tsx": "^4.21.0",
+    "turbo": "^2.9.6",
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"
   },
