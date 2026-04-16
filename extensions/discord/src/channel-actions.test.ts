@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { ChannelMessageActionContext } from "openclaw/plugin-sdk/channel-contract";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const handleDiscordMessageActionMock = vi.hoisted(() =>
   vi.fn(async () => ({ content: [], details: { ok: true } })),
@@ -14,7 +14,13 @@ vi.spyOn(handleActionModule, "handleDiscordMessageAction").mockImplementation(
 const { discordMessageActions } = await import("./channel-actions.js");
 
 describe("discordMessageActions", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("returns no tool actions when no token-sourced Discord accounts are enabled", () => {
+    vi.stubEnv("DISCORD_BOT_TOKEN", "");
+
     const discovery = discordMessageActions.describeMessageTool?.({
       cfg: {
         channels: {
