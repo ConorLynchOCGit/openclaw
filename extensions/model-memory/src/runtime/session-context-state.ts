@@ -16,7 +16,7 @@ export type SessionContextStateInput = {
 export type SessionContextStatePatch = Omit<SessionContextStateInput, "sessionId" | "agentId">;
 
 function normalizeStringList(values: string[] | undefined): string[] {
-  return Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean))).sort(
+  return Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean))).toSorted(
     (left, right) => left.localeCompare(right),
   );
 }
@@ -28,7 +28,7 @@ function normalizeProjectionVersions(
     Object.entries(versions ?? {})
       .map(([key, value]) => [key, value.trim()])
       .filter(([, value]) => value.length > 0)
-      .sort(([left], [right]) => left.localeCompare(right)),
+      .toSorted(([left], [right]) => left.localeCompare(right)),
   );
 }
 
@@ -41,7 +41,7 @@ export function createSessionContextState(
     activeProjectIds: normalizeStringList(input.activeProjectIds),
     openLoops: normalizeStringList(input.openLoops),
     unresolvedQuestions: normalizeStringList(input.unresolvedQuestions),
-    activePlanState: { ...(input.activePlanState ?? {}) },
+    activePlanState: { ...input.activePlanState },
     sessionSummaryArtifactId: input.sessionSummaryArtifactId,
     projectionVersions: normalizeProjectionVersions(input.projectionVersions),
     compactionStatus: input.compactionStatus ?? "delegated",

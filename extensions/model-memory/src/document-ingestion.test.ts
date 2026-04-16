@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ingestDocument } from "./document-ingestion.ts";
 import { JsonModelOutputError } from "./model-execution.ts";
+import { summarizeModelMemoryPayload } from "./payload-summary.ts";
 import type {
   SemanticInterpreter,
   SemanticInterpreterInput,
@@ -40,26 +41,7 @@ function firstProvenance(input: SemanticInterpreterInput) {
 function buildCandidateClaimFromResultObject(
   rawObject: Record<string, unknown> & { kind: string; payload: Record<string, unknown> },
 ): string {
-  switch (rawObject.kind) {
-    case "preference":
-      return String(rawObject.payload.instruction ?? rawObject.payload.subject ?? "candidate");
-    case "fact":
-      return `${String(rawObject.payload.subject ?? "fact")}: ${String(rawObject.payload.value ?? "")}`.trim();
-    case "rule":
-      return String(
-        rawObject.payload.recommendedAction ??
-          rawObject.payload.avoidAction ??
-          rawObject.payload.neededCapability ??
-          rawObject.payload.subject ??
-          "candidate",
-      );
-    case "procedure":
-      return String(rawObject.payload.title ?? "candidate");
-    case "reference":
-      return String(rawObject.payload.task ?? rawObject.payload.primaryResource ?? "candidate");
-    default:
-      return "candidate";
-  }
+  return summarizeModelMemoryPayload(rawObject) || "candidate";
 }
 
 function buildCandidateResultFromSemanticResult(

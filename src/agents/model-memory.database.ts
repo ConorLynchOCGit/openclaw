@@ -1,3 +1,4 @@
+import { loadConfig, type OpenClawConfig } from "../config/config.js";
 import {
   DatabaseMemoryObjectStore,
   DatabaseRetrievalStore,
@@ -8,8 +9,7 @@ import {
   type ModelMemoryPgPool,
   type ModelMemoryPgPoolConfig,
   type SqlClient,
-} from "../../extensions/model-memory/runtime-api.ts";
-import { loadConfig, type OpenClawConfig } from "../config/config.js";
+} from "../plugin-sdk/model-memory.js";
 
 const DEFAULT_MODEL_MEMORY_DATABASE_NAME = "model_memory";
 const MODEL_MEMORY_APPLICATION_NAME = "model-memory";
@@ -34,10 +34,10 @@ export type ModelMemoryDatabaseRuntime = {
   resolution: ModelMemoryDatabaseResolution;
   pool: ModelMemoryPgPool;
   sqlClient: SqlClient;
-  canonicalRepository: ModelMemoryCanonicalRepository;
-  runtimeRepository: RuntimeContextRepository;
-  memoryStore: DatabaseMemoryObjectStore;
-  retrievalStore: DatabaseRetrievalStore;
+  canonicalRepository: InstanceType<typeof ModelMemoryCanonicalRepository>;
+  runtimeRepository: InstanceType<typeof RuntimeContextRepository>;
+  memoryStore: InstanceType<typeof DatabaseMemoryObjectStore>;
+  retrievalStore: InstanceType<typeof DatabaseRetrievalStore>;
   migrationNames: string[];
 };
 

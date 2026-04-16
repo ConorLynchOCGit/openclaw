@@ -19,7 +19,7 @@ export function buildHarnessProjectionOutputs(input: {
   );
 
   return [...input.projectionVersions]
-    .sort((left, right) => left.targetId.localeCompare(right.targetId))
+    .toSorted((left, right) => left.targetId.localeCompare(right.targetId))
     .flatMap((version) => {
       const target = targetById.get(version.targetId);
       const content = input.projectionOutputs[version.targetId];

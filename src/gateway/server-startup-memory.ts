@@ -4,9 +4,11 @@ import {
   resolveModelMemoryLiveRuntimeStatus,
   warmModelMemoryLiveRuntime,
 } from "../agents/model-memory.live-runtime.js";
-import type { OpenClawConfig } from "../config/config.js";
-import { resolveMemoryBackendConfig } from "../memory/backend-config.js";
-import { getMemorySearchManager } from "../memory/index.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
+import {
+  getActiveMemorySearchManager,
+  resolveActiveMemoryBackendConfig,
+} from "../plugins/memory-runtime.js";
 
 export async function startGatewayMemoryBackend(params: {
   cfg: OpenClawConfig;
@@ -45,12 +47,12 @@ export async function startGatewayMemoryBackend(params: {
     if (!resolveMemorySearchConfig(params.cfg, agentId)) {
       continue;
     }
-    const resolved = resolveMemoryBackendConfig({ cfg: params.cfg, agentId });
-    if (resolved.backend !== "qmd" || !resolved.qmd) {
+    const resolved = resolveActiveMemoryBackendConfig({ cfg: params.cfg, agentId });
+    if (!resolved || resolved.backend !== "qmd") {
       continue;
     }
 
-    const { manager, error } = await getMemorySearchManager({ cfg: params.cfg, agentId });
+    const { manager, error } = await getActiveMemorySearchManager({ cfg: params.cfg, agentId });
     if (!manager) {
       params.log.warn(
         `qmd memory startup initialization failed for agent "${agentId}": ${error ?? "unknown error"}`,

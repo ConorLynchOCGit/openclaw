@@ -179,4 +179,29 @@ export type PluginRuntimeCore = {
       cfg?: import("../../config/types.openclaw.js").OpenClawConfig;
     }) => Promise<import("../../agents/model-auth-runtime-shared.js").ResolvedProviderAuth>;
   };
+  modelMemory: {
+    createDatabaseRuntime: (
+      params?: Parameters<
+        typeof import("./runtime-model-memory.runtime.js").createDatabaseRuntime
+      >[0],
+    ) => Promise<
+      Awaited<ReturnType<typeof import("./runtime-model-memory.runtime.js").createDatabaseRuntime>>
+    >;
+    resolveDatabaseResolution: (
+      params?: Parameters<
+        typeof import("./runtime-model-memory.runtime.js").resolveDatabaseResolution
+      >[0],
+    ) => Promise<
+      Awaited<
+        ReturnType<typeof import("./runtime-model-memory.runtime.js").resolveDatabaseResolution>
+      >
+    >;
+    createLiveJsonExecutor: (
+      params?: Parameters<
+        typeof import("./runtime-model-memory.runtime.js").createLiveJsonExecutor
+      >[0],
+    ) => Promise<
+      Awaited<ReturnType<typeof import("./runtime-model-memory.runtime.js").createLiveJsonExecutor>>
+    >;
+  };
 };

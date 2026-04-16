@@ -204,7 +204,7 @@ function normalizeComparableStringArray(value: unknown, options: { ordered: bool
     .filter((entry): entry is string => Boolean(entry));
   return options.ordered
     ? normalized
-    : [...normalized].sort((left, right) => left.localeCompare(right));
+    : [...normalized].toSorted((left, right) => left.localeCompare(right));
 }
 
 type ComparableTextMatchDescriptor = {
@@ -1155,7 +1155,7 @@ function normalizeScope(scope: ModelMemoryObject["scope"]): Record<string, unkno
       }
       return [key, value];
     })
-    .sort((leftEntry, rightEntry) => String(leftEntry[0]).localeCompare(String(rightEntry[0])));
+    .toSorted((leftEntry, rightEntry) => String(leftEntry[0]).localeCompare(String(rightEntry[0])));
 
   return Object.fromEntries(normalizedEntries);
 }
@@ -1196,6 +1196,9 @@ function buildIdentityParts(object: ModelMemoryObject): string[] {
         ...normalizeStringArray(object.payload.companionResources),
       ];
   }
+
+  const exhaustiveCheck: never = object;
+  return exhaustiveCheck;
 }
 
 function buildNormalizedSearchText(object: ModelMemoryObject): string {

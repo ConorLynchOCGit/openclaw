@@ -12,32 +12,6 @@ import {
 import type { OpenClawPluginApi } from "../api.js";
 
 const AjvCtor = Ajv as unknown as typeof import("ajv").default;
-type RunEmbeddedPiAgentFn = (params: Record<string, unknown>) => Promise<unknown>;
-
-async function loadRunEmbeddedPiAgent(): Promise<RunEmbeddedPiAgentFn> {
-  // Source checkout (tests/dev)
-  try {
-    const mod = await import("../../../src/agents/pi-embedded-runner.js");
-    // oxlint-disable-next-line typescript/no-explicit-any
-    if (typeof (mod as any).runEmbeddedPiAgent === "function") {
-      // oxlint-disable-next-line typescript/no-explicit-any
-      return (mod as any).runEmbeddedPiAgent;
-    }
-  } catch {
-    // ignore
-  }
-
-  // Bundled install (built)
-  // NOTE: there is no src/ tree in a packaged install. Prefer a stable internal entrypoint.
-  const bundledExtensionApiHref = new URL("../../../dist/extensionAPI.js", import.meta.url).href;
-  const mod = await import(bundledExtensionApiHref);
-  // oxlint-disable-next-line typescript/no-explicit-any
-  const fn = (mod as any).runEmbeddedPiAgent;
-  if (typeof fn !== "function") {
-    throw new Error("Internal error: runEmbeddedPiAgent not available");
-  }
-  return fn as RunEmbeddedPiAgentFn;
-}
 
 function stripCodeFences(s: string): string {
   const trimmed = s.trim();
@@ -218,8 +192,7 @@ export function createLlmTaskTool(api: OpenClawPluginApi) {
         const sessionId = `llm-task-${Date.now()}`;
         const sessionFile = path.join(tmpDir, "session.json");
 
-        const runEmbeddedPiAgent =
-          api.runtime.agent.runEmbeddedPiAgent ?? (await loadRunEmbeddedPiAgent());
+        const runEmbeddedPiAgent = api.runtime.agent.runEmbeddedPiAgent;
         const result = await runEmbeddedPiAgent({
           sessionId,
           sessionFile,

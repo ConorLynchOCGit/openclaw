@@ -1,3 +1,4 @@
+import { summarizeModelMemoryValue } from "../../payload-summary.ts";
 import type { ActiveMemorySetRecord, ActiveMemorySlotRecord } from "../../runtime-read-models.ts";
 import type { ModelMemoryObjectRecord } from "../../storage-database-contract.ts";
 
@@ -21,24 +22,26 @@ export function renderAgentsMdSection(input: RenderAgentsProjectionInput): strin
     .filter(
       (record) => record.kind === "rule" && ["feedback", "project"].includes(record.canonicalClass),
     )
-    .sort((left, right) =>
+    .toSorted((left, right) =>
       (left.normalizedSubject ?? "").localeCompare(right.normalizedSubject ?? ""),
     );
   const procedureRecords = input.sets
     .filter((entry) => entry.kind === "procedure")
     .map((entry) => getObjectById(input.memoryObjects, entry.memoryObjectId))
-    .sort((left, right) => (left.normalizedTitle ?? "").localeCompare(right.normalizedTitle ?? ""));
+    .toSorted((left, right) =>
+      (left.normalizedTitle ?? "").localeCompare(right.normalizedTitle ?? ""),
+    );
 
   return [
     "## Generated Memory Rules",
     ...(ruleRecords.length > 0
       ? ruleRecords.map((record) => {
-          const parts = [record.payload.subject];
+          const parts = [summarizeModelMemoryValue(record.payload.subject, "rule")];
           if (record.payload.recommendedAction) {
-            parts.push(`do: ${record.payload.recommendedAction}`);
+            parts.push(`do: ${summarizeModelMemoryValue(record.payload.recommendedAction)}`);
           }
           if (record.payload.avoidAction) {
-            parts.push(`avoid: ${record.payload.avoidAction}`);
+            parts.push(`avoid: ${summarizeModelMemoryValue(record.payload.avoidAction)}`);
           }
           return `- ${parts.join(" | ")}`;
         })
@@ -46,7 +49,9 @@ export function renderAgentsMdSection(input: RenderAgentsProjectionInput): strin
     "",
     "## Generated Procedures",
     ...(procedureRecords.length > 0
-      ? procedureRecords.map((record) => `- ${record.payload.title}`)
+      ? procedureRecords.map(
+          (record) => `- ${summarizeModelMemoryValue(record.payload.title, "procedure")}`,
+        )
       : ["- No projected procedures."]),
   ].join("\n");
 }

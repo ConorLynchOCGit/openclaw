@@ -3,24 +3,20 @@ import {
   buildZeroCandidateRecoverySelection,
   toBoundedCandidateAdjudicationCandidatesFromRetained,
   toBoundedCandidateAdjudicationCandidatesFromSearch,
-} from "../../extensions/model-memory/src/db/database-memory-object-store.ts";
-import type {
-  BoundedCandidateAdjudicationBatchDecision,
-  BoundedCandidateAdjudicationRequest,
-  BoundedCandidateAdjudicationSource,
-  SemanticCollisionAdjudicator,
-} from "../../extensions/model-memory/src/semantic-collision-adjudication.ts";
-import {
   deriveMemoryIdentity,
+  type BoundedCandidateAdjudicationBatchDecision,
+  type BoundedCandidateAdjudicationRequest,
+  type BoundedCandidateAdjudicationSource,
   type MemoryIdentityDescriptor,
-} from "../../extensions/model-memory/src/semantic-identity.ts";
-import type { ModelMemoryObject } from "../../extensions/model-memory/src/semantic-schema.ts";
+  type SemanticCollisionAdjudicator,
+} from "../plugin-sdk/model-memory.js";
+import type { ModelMemoryObject } from "../plugin-sdk/model-memory.js";
 import type {
   ModelMemoryObjectRecord,
   ModelMemorySourceRecord,
   ModelMemorySourceWindowRecord,
   ModelMemorySupportItemRecord,
-} from "../../extensions/model-memory/src/storage-database-contract.ts";
+} from "../plugin-sdk/model-memory.js";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import type {
   DuplicateAuditReport,

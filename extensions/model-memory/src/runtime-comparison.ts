@@ -43,13 +43,13 @@ export function compareRuntimeObservations(
 
   const matchedIdentityKeys = [...modelMap.keys()]
     .filter((identityKey) => legacyMap.has(identityKey))
-    .sort((left, right) => left.localeCompare(right));
+    .toSorted((left, right) => left.localeCompare(right));
   const modelOnlyIdentityKeys = [...modelMap.keys()]
     .filter((identityKey) => !legacyMap.has(identityKey))
-    .sort((left, right) => left.localeCompare(right));
+    .toSorted((left, right) => left.localeCompare(right));
   const legacyOnlyIdentityKeys = [...legacyMap.keys()]
     .filter((identityKey) => !modelMap.has(identityKey))
-    .sort((left, right) => left.localeCompare(right));
+    .toSorted((left, right) => left.localeCompare(right));
 
   return {
     matchedIdentityKeys,

@@ -20,10 +20,10 @@ export function buildContextArtifact(input: BuildContextArtifactInput): ContextA
     throw new Error("context artifact requires structuredPayload or renderedText");
   }
 
-  const normalizedSourceObjectIds = [...(input.sourceObjectIds ?? [])].sort((left, right) =>
+  const normalizedSourceObjectIds = [...(input.sourceObjectIds ?? [])].toSorted((left, right) =>
     left.localeCompare(right),
   );
-  const normalizedSourceSlotKeys = [...(input.sourceSlotKeys ?? [])].sort((left, right) =>
+  const normalizedSourceSlotKeys = [...(input.sourceSlotKeys ?? [])].toSorted((left, right) =>
     left.localeCompare(right),
   );
   const serializedPayload = JSON.stringify(

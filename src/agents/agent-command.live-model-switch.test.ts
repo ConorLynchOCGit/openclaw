@@ -240,19 +240,24 @@ vi.mock("./model-catalog.js", () => ({
   loadModelCatalog: async () => [],
 }));
 
-vi.mock("./model-selection.js", () => ({
-  buildAllowedModelSet: () => ({
-    allowedKeys: new Set<string>(["anthropic/claude", "openai/claude", "openai/gpt-5.4"]),
-    allowedCatalog: [],
-    allowAny: false,
-  }),
-  modelKey: (p: string, m: string) => `${p}/${m}`,
-  normalizeModelRef: (p: string, m: string) => ({ provider: p, model: m }),
-  parseModelRef: (m: string, p: string) => ({ provider: p, model: m }),
-  resolveConfiguredModelRef: () => ({ provider: "anthropic", model: "claude" }),
-  resolveDefaultModelForAgent: () => ({ provider: "anthropic", model: "claude" }),
-  resolveThinkingDefault: () => "low",
-}));
+vi.mock("./model-selection.js", async () => {
+  const actual =
+    await vi.importActual<typeof import("./model-selection.js")>("./model-selection.js");
+  return {
+    ...actual,
+    buildAllowedModelSet: () => ({
+      allowedKeys: new Set<string>(["anthropic/claude", "openai/claude", "openai/gpt-5.4"]),
+      allowedCatalog: [],
+      allowAny: false,
+    }),
+    modelKey: (p: string, m: string) => `${p}/${m}`,
+    normalizeModelRef: (p: string, m: string) => ({ provider: p, model: m }),
+    parseModelRef: (m: string, p: string) => ({ provider: p, model: m }),
+    resolveConfiguredModelRef: () => ({ provider: "anthropic", model: "claude" }),
+    resolveDefaultModelForAgent: () => ({ provider: "anthropic", model: "claude" }),
+    resolveThinkingDefault: () => "low",
+  };
+});
 
 vi.mock("./skills.js", () => ({
   buildWorkspaceSkillSnapshot: () => ({}),

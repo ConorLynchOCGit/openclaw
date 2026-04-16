@@ -3,7 +3,6 @@ import type {
   BoundedCandidateAdjudicationRequest,
   CollisionAdjudicationBatchDecision,
   CollisionAdjudicationDecision,
-  CollisionAdjudicationRequest,
   SemanticCollisionAdjudicator,
 } from "../semantic-collision-adjudication.ts";
 import { deriveMemoryIdentity } from "../semantic-identity.ts";
@@ -581,7 +580,6 @@ describe("canonical-repository", () => {
           throw new Error("batch collision adjudication should not be called");
         },
       };
-      const seedStore = new DatabaseMemoryObjectStore(repository);
       const store = new DatabaseMemoryObjectStore(repository, adjudicator);
       const windowIds = [
         "11111111-1111-5111-8111-111111111111",
@@ -612,7 +610,7 @@ describe("canonical-repository", () => {
 
       const first = await store.writeCapturedObject(
         capturedRule({
-          sourceWindowId: windowIds[0]!,
+          sourceWindowId: windowIds[0],
           canonicalClass: "user",
           subject: "Chat replies",
           recommendedAction: "Use repo-root relative file references only.",
@@ -620,7 +618,7 @@ describe("canonical-repository", () => {
       );
       const second = await store.writeCapturedObject(
         capturedRule({
-          sourceWindowId: windowIds[1]!,
+          sourceWindowId: windowIds[1],
           canonicalClass: "user",
           subject: "GitHub issue/PR comment multiline bodies",
           recommendedAction: "Use literal multiline strings or a heredoc.",
@@ -666,13 +664,13 @@ describe("canonical-repository", () => {
             {
               candidateId: prototypeRequest!.candidateId,
               sameCoreMemory: "yes" as const,
-              matchedCandidateId: prototypeRequest!.candidates[0]!.adjudicationCandidateId,
+              matchedCandidateId: prototypeRequest!.candidates[0].adjudicationCandidateId,
               deltaType: "non_additive" as const,
             },
             {
               candidateId: lazyRequest!.candidateId,
               sameCoreMemory: "yes" as const,
-              matchedCandidateId: lazyRequest!.candidates[0]!.adjudicationCandidateId,
+              matchedCandidateId: lazyRequest!.candidates[0].adjudicationCandidateId,
               deltaType: "non_additive" as const,
             },
           ];
@@ -712,39 +710,39 @@ describe("canonical-repository", () => {
 
       const seedResults = await store.writeCapturedObjects([
         capturedRule({
-          sourceWindowId: windowIds[0]!,
+          sourceWindowId: windowIds[0],
           canonicalClass: "user",
           subject: "GitHub issue/PR comment multiline bodies",
           recommendedAction: "Use literal multiline strings or a heredoc for real newlines.",
         }),
         capturedRule({
-          sourceWindowId: windowIds[1]!,
+          sourceWindowId: windowIds[1],
           subject: "Lazy loading import strategy",
           avoidAction: "Do not mix await import and static import.",
         }),
         capturedRule({
-          sourceWindowId: windowIds[4]!,
+          sourceWindowId: windowIds[4],
           canonicalClass: "user",
           subject: "GitHub comment body quoting",
           avoidAction:
             "Do not pass multiline or shell-sensitive text through gh issue/pr comment -b.",
         }),
         capturedRule({
-          sourceWindowId: windowIds[5]!,
+          sourceWindowId: windowIds[5],
           subject: "Lazy loading runtime boundaries",
           recommendedAction: "Keep lazy imports behind a dedicated *.runtime.ts boundary.",
         }),
       ]);
       const residualResults = await store.writeCapturedObjects([
         capturedRule({
-          sourceWindowId: windowIds[2]!,
+          sourceWindowId: windowIds[2],
           canonicalClass: "user",
           subject: "gh issue/pr comment -b usage",
           avoidAction:
             "Do not use gh issue/pr comment -b when the body contains shell-sensitive characters.",
         }),
         capturedRule({
-          sourceWindowId: windowIds[3]!,
+          sourceWindowId: windowIds[3],
           subject: "Lazy loading boundary",
           recommendedAction: "Create a dedicated *.runtime.ts boundary.",
         }),
@@ -785,7 +783,6 @@ describe("canonical-repository", () => {
           throw new Error("batch collision adjudication should not be called");
         },
       };
-      const seedStore = new DatabaseMemoryObjectStore(repository);
       const store = new DatabaseMemoryObjectStore(repository, adjudicator);
       const windowIds = [
         "77777777-7777-5777-8777-777777777777",
@@ -816,7 +813,7 @@ describe("canonical-repository", () => {
 
       const first = await store.writeCapturedObject(
         capturedRule({
-          sourceWindowId: windowIds[0]!,
+          sourceWindowId: windowIds[0],
           canonicalClass: "project",
           subject: "Landing gate verification",
           recommendedAction: "Run pnpm build pnpm check and pnpm test before pushing to main.",
@@ -824,7 +821,7 @@ describe("canonical-repository", () => {
       );
       const second = await store.writeCapturedObject(
         capturedRule({
-          sourceWindowId: windowIds[1]!,
+          sourceWindowId: windowIds[1],
           canonicalClass: "project",
           subject: "Landing verification",
           recommendedAction: "Run pnpm build pnpm check and pnpm test before pushing to main.",
@@ -890,21 +887,21 @@ describe("canonical-repository", () => {
       const broad = await seedStore.writeCapturedObject(
         capturedFact(
           "Both config.apply and config.patch accept baseHash plus optional sessionKey, note, and restartDelayMs. Restart requests are coalesced while one is already pending/in-flight, and a 30-second cooldown applies between restart cycles.",
-          windowIds[0]!,
+          windowIds[0],
           "config.apply and config.patch parameters and restart behavior",
         ),
       );
       const narrow = await seedStore.writeCapturedObject(
         capturedFact(
           "Restart requests are coalesced while one is already pending/in-flight, and a 30-second cooldown applies between restart cycles.",
-          windowIds[1]!,
+          windowIds[1],
           "Restart request handling",
         ),
       );
       const rerun = await store.writeCapturedObject(
         capturedFact(
           "Restart requests are coalesced while one is already pending/in-flight, and a 30-second cooldown applies between restart cycles.",
-          windowIds[2]!,
+          windowIds[2],
           "config.apply/config.patch restart requests",
         ),
       );
@@ -1222,7 +1219,7 @@ describe("canonical-repository", () => {
           return input.requests.map((request) => ({
             candidateId: request.candidateId,
             sameCoreMemory: "yes" as const,
-            matchedCandidateId: request.candidates[0]!.adjudicationCandidateId,
+            matchedCandidateId: request.candidates[0].adjudicationCandidateId,
             deltaType: "non_additive" as const,
           }));
         },
@@ -1308,7 +1305,7 @@ describe("canonical-repository", () => {
           return input.requests.map((request) => ({
             candidateId: request.candidateId,
             sameCoreMemory: "yes" as const,
-            matchedCandidateId: request.candidates[0]!.adjudicationCandidateId,
+            matchedCandidateId: request.candidates[0].adjudicationCandidateId,
             deltaType: "non_additive" as const,
           }));
         },

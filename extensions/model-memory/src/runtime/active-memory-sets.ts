@@ -31,7 +31,7 @@ export function materializeActiveMemorySets(
         updatedAt: record.createdAt,
       };
     })
-    .sort((left, right) => {
+    .toSorted((left, right) => {
       if (left.setKey !== right.setKey) {
         return left.setKey.localeCompare(right.setKey);
       }

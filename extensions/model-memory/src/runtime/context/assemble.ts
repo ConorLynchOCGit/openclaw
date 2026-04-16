@@ -50,7 +50,7 @@ function toStableSegments(
   projectionTexts: Record<string, string>,
 ): ContextSegment[] {
   return [...projectionVersions]
-    .sort((left, right) => left.targetId.localeCompare(right.targetId))
+    .toSorted((left, right) => left.targetId.localeCompare(right.targetId))
     .map((version) => {
       const target = getWorkspaceProjectionTarget(version.targetId);
       return {
@@ -71,7 +71,7 @@ function toSemiStableSegments(
   maxTokens: number,
 ): ContextSegment[] {
   const latestDerivedArtifactByKey = new Map<string, ContextArtifactRecord>();
-  for (const artifact of [...artifacts].sort((left, right) => {
+  for (const artifact of [...artifacts].toSorted((left, right) => {
     const byBuiltAt = right.builtAt.getTime() - left.builtAt.getTime();
     if (byBuiltAt !== 0) {
       return byBuiltAt;
@@ -95,7 +95,7 @@ function toSemiStableSegments(
             (normalizedScopeKeys.length === 0 ||
               (artifact.scopeKey ? normalizedScopeKeys.includes(artifact.scopeKey) : false)),
         )
-        .sort((left, right) => {
+        .toSorted((left, right) => {
           const byBuiltAt = right.builtAt.getTime() - left.builtAt.getTime();
           if (byBuiltAt !== 0) {
             return byBuiltAt;
@@ -104,7 +104,7 @@ function toSemiStableSegments(
         })
         .slice(0, DEFAULT_RETRIEVAL_PACK_LIMIT)
     : [];
-  const derivedArtifacts = [...latestDerivedArtifactByKey.values()].sort((left, right) =>
+  const derivedArtifacts = [...latestDerivedArtifactByKey.values()].toSorted((left, right) =>
     `${left.artifactType}:${left.scopeKey ?? "global"}:${left.contentHash}`.localeCompare(
       `${right.artifactType}:${right.scopeKey ?? "global"}:${right.contentHash}`,
     ),

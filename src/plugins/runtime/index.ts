@@ -41,6 +41,9 @@ const loadMediaUnderstandingRuntime = createLazyRuntimeModule(
 const loadModelAuthRuntime = createLazyRuntimeModule(
   () => import("./runtime-model-auth.runtime.js"),
 );
+const loadModelMemoryRuntime = createLazyRuntimeModule(
+  () => import("./runtime-model-memory.runtime.js"),
+);
 
 function createRuntimeTts(): PluginRuntime["tts"] {
   const bindTtsRuntime = createLazyRuntimeMethodBinder(loadTtsRuntime);
@@ -117,6 +120,27 @@ function createRuntimeModelAuth(): PluginRuntime["modelAuth"] {
         provider: params.provider,
         cfg: params.cfg,
       }),
+  };
+}
+
+function createRuntimeModelMemory(): PluginRuntime["modelMemory"] {
+  const createDatabaseRuntime = createLazyRuntimeMethod(
+    loadModelMemoryRuntime,
+    (runtime) => runtime.createDatabaseRuntime,
+  );
+  const resolveDatabaseResolution = createLazyRuntimeMethod(
+    loadModelMemoryRuntime,
+    (runtime) => runtime.resolveDatabaseResolution,
+  );
+  const createLiveJsonExecutor = createLazyRuntimeMethod(
+    loadModelMemoryRuntime,
+    (runtime) => runtime.createLiveJsonExecutor,
+  );
+
+  return {
+    createDatabaseRuntime: (params) => createDatabaseRuntime(params),
+    resolveDatabaseResolution: (params) => resolveDatabaseResolution(params),
+    createLiveJsonExecutor: (params) => createLiveJsonExecutor(params),
   };
 }
 
@@ -226,6 +250,7 @@ export function createPluginRuntime(_options: CreatePluginRuntimeOptions = {}): 
     events: createRuntimeEvents(),
     logging: createRuntimeLogging(),
     state: { resolveStateDir },
+    modelMemory: createRuntimeModelMemory(),
     tasks,
     taskFlow,
   } satisfies Omit<
@@ -248,6 +273,7 @@ export function createPluginRuntime(_options: CreatePluginRuntimeOptions = {}): 
         | "imageGeneration"
         | "videoGeneration"
         | "musicGeneration"
+        | "modelMemory"
       >
     >;
 
@@ -257,6 +283,7 @@ export function createPluginRuntime(_options: CreatePluginRuntimeOptions = {}): 
     transcribeAudioFile: mediaUnderstanding.transcribeAudioFile,
   }));
   defineCachedValue(runtime, "modelAuth", createRuntimeModelAuth);
+  defineCachedValue(runtime, "modelMemory", createRuntimeModelMemory);
   defineCachedValue(runtime, "imageGeneration", createRuntimeImageGeneration);
   defineCachedValue(runtime, "videoGeneration", createRuntimeVideoGeneration);
   defineCachedValue(runtime, "musicGeneration", createRuntimeMusicGeneration);

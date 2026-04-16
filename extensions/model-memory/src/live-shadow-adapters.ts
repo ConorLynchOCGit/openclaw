@@ -33,7 +33,7 @@ function toRuntimeObservation(input: {
       decision: entry.decision,
       identityKey:
         entry.memoryObject?.identityKey ??
-        deriveMemoryIdentity(input.capturedObjects[index]!.object).identityKey,
+        deriveMemoryIdentity(input.capturedObjects[index].object).identityKey,
       supersededIdentityKey: entry.supersessionLink?.priorObjectId,
     })),
   };

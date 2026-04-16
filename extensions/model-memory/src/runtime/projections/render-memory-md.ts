@@ -1,3 +1,4 @@
+import { summarizeModelMemoryValue } from "../../payload-summary.ts";
 import type { ActiveMemorySetRecord, ActiveMemorySlotRecord } from "../../runtime-read-models.ts";
 import type { ModelMemoryObjectRecord } from "../../storage-database-contract.ts";
 
@@ -16,33 +17,35 @@ function getObjectById(memoryObjects: ModelMemoryObjectRecord[], objectId: strin
 }
 
 function formatFact(record: ModelMemoryObjectRecord): string {
-  return `- ${record.payload.subject}: ${record.payload.value}`;
+  return `- ${summarizeModelMemoryValue(record.payload.subject, "fact")}: ${summarizeModelMemoryValue(record.payload.value)}`;
 }
 
 function formatRule(record: ModelMemoryObjectRecord): string {
-  const parts = [record.payload.subject];
+  const parts = [summarizeModelMemoryValue(record.payload.subject, "rule")];
   if (record.payload.recommendedAction) {
-    parts.push(`do: ${record.payload.recommendedAction}`);
+    parts.push(`do: ${summarizeModelMemoryValue(record.payload.recommendedAction)}`);
   }
   if (record.payload.avoidAction) {
-    parts.push(`avoid: ${record.payload.avoidAction}`);
+    parts.push(`avoid: ${summarizeModelMemoryValue(record.payload.avoidAction)}`);
   }
   if (record.payload.neededCapability) {
-    parts.push(`needs: ${record.payload.neededCapability}`);
+    parts.push(`needs: ${summarizeModelMemoryValue(record.payload.neededCapability)}`);
   }
   return `- ${parts.join(" | ")}`;
 }
 
 function formatProcedure(record: ModelMemoryObjectRecord): string {
-  const steps = Array.isArray(record.payload.steps) ? record.payload.steps.join(" -> ") : "";
-  return `- ${record.payload.title}: ${steps}`;
+  const steps = Array.isArray(record.payload.steps)
+    ? record.payload.steps.map((step) => summarizeModelMemoryValue(step)).join(" -> ")
+    : "";
+  return `- ${summarizeModelMemoryValue(record.payload.title, "procedure")}: ${steps}`;
 }
 
 export function renderMemoryMd(input: RenderProjectionInput): string {
   const selectedSlots = input.slots
     .map((slot) => getObjectById(input.memoryObjects, slot.currentObjectId))
     .filter((record) => ["user", "feedback", "project"].includes(record.canonicalClass))
-    .sort((left, right) =>
+    .toSorted((left, right) =>
       `${left.canonicalClass}:${left.kind}:${left.normalizedSubject ?? ""}`.localeCompare(
         `${right.canonicalClass}:${right.kind}:${right.normalizedSubject ?? ""}`,
       ),
@@ -50,7 +53,9 @@ export function renderMemoryMd(input: RenderProjectionInput): string {
   const procedureRecords = input.sets
     .filter((entry) => entry.kind === "procedure")
     .map((entry) => getObjectById(input.memoryObjects, entry.memoryObjectId))
-    .sort((left, right) => (left.normalizedTitle ?? "").localeCompare(right.normalizedTitle ?? ""));
+    .toSorted((left, right) =>
+      (left.normalizedTitle ?? "").localeCompare(right.normalizedTitle ?? ""),
+    );
 
   const lines = [
     "# MEMORY.md",
@@ -64,7 +69,7 @@ export function renderMemoryMd(input: RenderProjectionInput): string {
           if (record.kind === "rule") {
             return formatRule(record);
           }
-          return `- ${record.payload.subject}: ${record.payload.instruction}`;
+          return `- ${summarizeModelMemoryValue(record.payload.subject, "preference")}: ${summarizeModelMemoryValue(record.payload.instruction)}`;
         })
       : ["- No projected standing context."]),
     "",

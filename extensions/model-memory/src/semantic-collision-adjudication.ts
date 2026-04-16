@@ -59,7 +59,7 @@ export type BoundedCandidateAdjudicationDeltaType = "non_additive" | "additive" 
 
 export type BoundedCandidateAdjudicationDecision = {
   sameCoreMemory: "yes" | "no" | "ambiguous";
-  matchedCandidateId: string | "none";
+  matchedCandidateId: string;
   deltaType: BoundedCandidateAdjudicationDeltaType;
 };
 
@@ -106,34 +106,6 @@ export interface SemanticCollisionAdjudicator {
     contractVersion?: string;
   }): Promise<ZeroCandidateRecoveryBatchDecision[]>;
 }
-
-const CollisionAdjudicationSchema = z
-  .object({
-    relation: z.enum(["attach_support", "supersedes", "distinct", "conflict_hold"]),
-    targetObjectId: z.string().trim().min(1).optional(),
-  })
-  .superRefine((value, ctx) => {
-    if (
-      (value.relation === "attach_support" || value.relation === "supersedes") &&
-      !value.targetObjectId
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "targetObjectId is required for attach_support or supersedes",
-        path: ["targetObjectId"],
-      });
-    }
-    if (
-      (value.relation === "distinct" || value.relation === "conflict_hold") &&
-      value.targetObjectId
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "targetObjectId must be omitted for distinct or conflict_hold",
-        path: ["targetObjectId"],
-      });
-    }
-  });
 
 const CollisionAdjudicationBatchSchema = z.object({
   decisions: z.array(

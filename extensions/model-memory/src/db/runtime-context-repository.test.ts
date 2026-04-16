@@ -36,7 +36,7 @@ describe("runtime-context-repository", () => {
       ]);
       const memoryObject = await canonical.insertMemoryObject({
         id: "b4865c9e-b912-52c7-a28c-e0f32c0aaf0c",
-        sourceWindowId: window!.id,
+        sourceWindowId: window.id,
         canonicalClass: "project",
         kind: "fact",
         payload: { subject: "deployment region", value: "region-001" },

@@ -410,10 +410,16 @@ vi.mock("../../../image-generation/runtime.js", () => ({
   listRuntimeImageGenerationProviders: () => [],
 }));
 
-vi.mock("../../model-selection.js", () => ({
-  normalizeProviderId: (providerId?: string) => normalizeLowercaseStringOrEmpty(providerId),
-  resolveDefaultModelForAgent: () => ({ provider: "openai", model: "gpt-test" }),
-}));
+vi.mock("../../model-selection.js", async () => {
+  const actual = await vi.importActual<typeof import("../../model-selection.js")>(
+    "../../model-selection.js",
+  );
+  return {
+    ...actual,
+    normalizeProviderId: (providerId?: string) => normalizeLowercaseStringOrEmpty(providerId),
+    resolveDefaultModelForAgent: () => ({ provider: "openai", model: "gpt-test" }),
+  };
+});
 
 vi.mock("../../anthropic-vertex-stream.js", () => ({
   createAnthropicVertexStreamFnForModel: vi.fn(),

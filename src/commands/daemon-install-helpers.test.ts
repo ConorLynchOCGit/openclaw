@@ -163,6 +163,7 @@ describe("buildGatewayInstallPlan", () => {
   });
 
   it("merges config env vars into the environment", async () => {
+    const isolatedHome = fs.mkdtempSync(path.join(os.tmpdir(), "oc-plan-config-env-"));
     mockNodeGatewayPlanFixture({
       serviceEnvironment: {
         OPENCLAW_PORT: "3000",
@@ -170,27 +171,31 @@ describe("buildGatewayInstallPlan", () => {
       },
     });
 
-    const plan = await buildGatewayInstallPlan({
-      env: {},
-      port: 3000,
-      runtime: "node",
-      config: {
-        env: {
-          vars: {
-            GOOGLE_API_KEY: "test-key", // pragma: allowlist secret
+    try {
+      const plan = await buildGatewayInstallPlan({
+        env: { HOME: isolatedHome },
+        port: 3000,
+        runtime: "node",
+        config: {
+          env: {
+            vars: {
+              GOOGLE_API_KEY: "test-key", // pragma: allowlist secret
+            },
+            CUSTOM_VAR: "custom-value",
           },
-          CUSTOM_VAR: "custom-value",
         },
-      },
-    });
+      });
 
-    // Config env vars should be present
-    expect(plan.environment.GOOGLE_API_KEY).toBe("test-key");
-    expect(plan.environment.CUSTOM_VAR).toBe("custom-value");
-    expect(plan.environment.OPENCLAW_SERVICE_MANAGED_ENV_KEYS).toBe("CUSTOM_VAR,GOOGLE_API_KEY");
-    // Service environment vars should take precedence
-    expect(plan.environment.OPENCLAW_PORT).toBe("3000");
-    expect(plan.environment.HOME).toBe("/Users/me");
+      // Config env vars should be present.
+      expect(plan.environment.GOOGLE_API_KEY).toBe("test-key");
+      expect(plan.environment.CUSTOM_VAR).toBe("custom-value");
+      expect(plan.environment.OPENCLAW_SERVICE_MANAGED_ENV_KEYS).toBe("CUSTOM_VAR,GOOGLE_API_KEY");
+      // Service environment vars should take precedence.
+      expect(plan.environment.OPENCLAW_PORT).toBe("3000");
+      expect(plan.environment.HOME).toBe("/Users/me");
+    } finally {
+      fs.rmSync(isolatedHome, { recursive: true, force: true });
+    }
   });
 
   it("drops dangerous config env vars before service merge", async () => {

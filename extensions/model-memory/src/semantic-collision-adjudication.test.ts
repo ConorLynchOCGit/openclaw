@@ -368,7 +368,7 @@ describe("semantic-collision-adjudication", () => {
               candidateId: "candidate-1",
               subject: "docs path safety",
               targetId: "memory-1",
-            }).candidates[0]!,
+            }).candidates[0],
             sameCanonicalClass: false,
             sameKind: true,
             sameScope: false,

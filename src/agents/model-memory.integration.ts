@@ -6,7 +6,7 @@ import {
   type SessionContextStateRecord,
   type WorkspaceProjectionTargetRecord,
   type WorkspaceProjectionVersionRecord,
-} from "../../extensions/model-memory/runtime-api.ts";
+} from "../plugin-sdk/model-memory.js";
 import { normalizeUsage, type UsageLike } from "./usage.js";
 import {
   DEFAULT_AGENTS_FILENAME,

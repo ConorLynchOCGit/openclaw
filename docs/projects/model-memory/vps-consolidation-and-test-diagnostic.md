@@ -17,61 +17,74 @@ deployment path.
 
 ## Current VPS Inventory
 
-### OpenClaw repo and path surfaces before cleanup
+### OpenClaw repo and path surfaces after the latest cleanup pass
 
 - canonical git checkout: `/root/services/openclaw-roles/live`
-- duplicate non-git tree: `/root/services/openclaw-roles/dev`
-- compatibility symlink: `/root/services/openclaw`
-- compatibility symlink: `/root/services/openclaw-upgrade-2026.3.24`
+- compatibility symlink: `/root/services/openclaw-roles/dev -> /root/services/openclaw-roles/live`
+- no extra proof/debug git worktrees remain under `/tmp`
 
-Inventory count before cleanup:
+Inventory count now:
 
-- repo/path surfaces in play: `4`
+- repo/path surfaces in play: `2`
 - canonical git checkouts: `1`
-- duplicate non-canonical product trees: `1`
-- compatibility aliases: `2`
+- duplicate non-canonical product trees: `0`
+- compatibility aliases: `1`
 
-### OpenClaw container and image surfaces before cleanup
+Notable removals already completed:
+
+- `/root/services/openclaw`
+- `/root/services/openclaw-upgrade-2026.3.24`
+- duplicate non-git dev tree replacement; `dev` now resolves to the live checkout
+- `/tmp/openclaw-main-check`
+- `/tmp/openclaw-origin-main`
+
+### OpenClaw container and image surfaces after the latest cleanup pass
 
 - active runtime container: `openclaw-runtime`
-- stale sidecar container: `openclaw-cli`
+- generic compose still defines a non-running sidecar service: `openclaw-cli`
 - active OpenClaw image: `openclaw:local`
 
-Inventory count before cleanup:
+Inventory count now:
 
-- OpenClaw containers: `2`
+- OpenClaw containers: `1`
 - running OpenClaw containers: `1`
 - OpenClaw images: `1`
+- total Docker images still present for active supporting services: `4`
 
-### Active deployment truth before cleanup
+### Active deployment truth now
 
 - live compose root: `/root/services/openclaw-roles/live`
 - live compose file: `/root/services/openclaw-roles/live/docker-compose.yml`
 - live container/image pair: `openclaw-runtime` on `openclaw:local`
 - live runtime config already points memory authority at `model-memory`
-- live compose still mounted the dev tree into the runtime as `imports/product_dev`
-- live compose still defined the stale `openclaw-cli` service
+- live runtime mounts only the canonical live repo as `imports/product_live/content`
+- live runtime no longer mounts a duplicate `product_dev` tree
+- live deployment is already single-container in practice even though the repo's
+  generic compose file still contains the stale `openclaw-cli` service template
 
 ## GitHub CLI Diagnostic
 
 ### Result
 
-- `gh` was not installed before this sweep
-- `gh` is now installed locally via `apt`
-- verified command: `gh version`
+- `gh` is installed locally on the VPS
+- verified command: `gh --version`
 
 ### Auth posture
 
-- `gh auth status -h github.com` reported not logged in
+- `gh auth status` reported not logged in
 - no existing `GH_TOKEN` or `GITHUB_TOKEN` was present in the VPS shell
 - no existing `~/.config/gh/hosts.yml` was present
 
 Operational conclusion:
 
 - local GitHub CLI is now available on-server
-- authenticated `gh` usage still requires an operator login step
+- authenticated `gh` usage still requires one operator login step:
+  `gh auth login --hostname github.com`
 - this replaces SSH-to-GitHub host workflows as the expected tool surface, but
-  it does not change Git remote push transport by itself
+  the current git remotes still include SSH push URLs until auth and transport
+  are updated deliberately
+- the repo can still be pushed over the existing git remote transport while
+  `gh` auth remains operator-blocked
 
 ## Test and Runner Diagnostic
 
@@ -84,7 +97,7 @@ Operational conclusion:
   - `ui`: `45`
   - `test`: `11`
   - `vendor`: `1`
-- default `pnpm test` runner: `scripts/test-parallel.mjs`
+- default `pnpm test` runner: `scripts/test-projects.mjs`
 - default `pnpm test` is already scoped; it does not execute all `2123` tests
 - static count of files covered by the default unit config include set: about `810`
 
@@ -96,8 +109,9 @@ Operational conclusion:
    lane plus a dedicated isolated lane for setup-heavy or contention-heavy
    suites.
 3. Deployment sprawl is a real source of operator and filesystem overhead:
-   the live runtime still carried the dev tree into the container and the host
-   still documented both `product_live` and `product_dev`.
+   most of the old repo-path sprawl is now gone, but the repo still defines the
+   stale `openclaw-cli` sidecar service and still documents some earlier
+   pre-cleanup state.
 4. The most obvious runner clutter is not in the default test lane. It is in
    manual proof, trace, and legacy operator surfaces that survive long after the
    buildout phase.
@@ -107,6 +121,8 @@ Operational conclusion:
    wall time still lived under the retired legacy-memory stack in `src/memory/**`.
    That work is now split into an explicit `pnpm test:legacy-memory` lane so the
    default landing test no longer pays for retired runtime surfaces.
+7. On this VPS there is no active Turborepo task graph at all. Optimization is
+   PNPM-store, Docker-layer, and host-hygiene work, not `turbo` tuning.
 
 ## Reviewed runner and test surface classification
 
@@ -183,11 +199,9 @@ Interpretation:
 
 ### Remove
 
-- `scripts/model-memory-agents-stage-trace.ts`
-- `scripts/model-memory-ordinary-turn-stage-trace.ts`
-
-These two stage-trace wrappers had no current repo references and are superseded
-by the remaining proof and trace surfaces.
+- no additional repo runner removals were required in this continuation because
+  the obsolete stage-trace wrappers identified earlier are already absent from
+  the canonical checkout
 
 ## Host operator runner findings
 
@@ -239,12 +253,51 @@ Reason:
 
 ### Remove
 
-- stale `openclaw-cli` container/service
-- the live compose bind mount for `/root/services/openclaw-roles/dev`
-- the duplicate dev tree after validation and backup
-- the legacy upgrade-path symlink after validation
-- obsolete stage-trace wrapper scripts with no active references
+- the stale `openclaw-cli` compose service from the active VPS deployment path;
+  do not rewrite the product-wide generic Docker UX in the same change unless
+  the Docker docs and helper scripts are updated together
 - repo-root Docker compose backup files and root checkpoint clutter
+
+## Executed cleanup and optimization in this continuation
+
+- confirmed the host is already down to one canonical OpenClaw runtime
+  container and one canonical OpenClaw image in active use
+- removed the two stale clean-room git worktrees under `/tmp` after verifying
+  both were clean and not active deployment paths
+- confirmed the legacy memory/operator cron chain remains disabled
+- removed `3758` stale `/tmp/openclaw-test-home-*` directories plus stale
+  compile-cache and wrapper temp artifacts
+- removed the unused `postgres:17-alpine` image
+- pruned all Docker build cache on the host
+- executed `pnpm store prune`
+- reconfirmed there is no real Turborepo graph in the canonical repo, so the
+  remaining optimization lane is PNPM/cache/build hygiene only
+
+Measured before/after on this VPS:
+
+- root filesystem used: `47G -> 37G`
+- Docker build cache: `8.436G -> 0B`
+- Docker images: `5 -> 4`
+- PNPM store: `10G -> 2.4G`
+- `/tmp`: `4.3G -> 166M`
+- `/root/.cache`: `1.2G -> 771M`
+- canonical repo `node_modules`: `3.9G -> 3.9G`
+- retained rollback/archive surface left intentionally in place: `/root/backups`
+  at about `14G`, including `openclaw-roles-dev-retired-20260415T232235Z`
+
+## Landing-state verification after cleanup
+
+Final repo gates on the cleaned host:
+
+- `pnpm check`: green
+- `pnpm build`: green
+- `OPENCLAW_TEST_PROJECTS_PARALLEL=8 pnpm test`: green
+
+BlueBubbles note:
+
+- the isolated BlueBubbles shard exits cleanly on its own
+- the final full-suite rerun also closed cleanly after the oxlint cleanup and
+  host cleanup pass
 
 ## Verification policy after cleanup
 

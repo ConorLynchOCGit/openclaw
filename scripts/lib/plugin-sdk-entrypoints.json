@@ -203,6 +203,7 @@
   "memory-host-search",
   "memory-host-status",
   "memory-lancedb",
+  "model-memory",
   "msteams",
   "models-provider-runtime",
   "skill-commands-runtime",

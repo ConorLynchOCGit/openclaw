@@ -11,8 +11,18 @@ const serviceMock = vi.hoisted(() => ({
   label: "Gateway",
   loadedText: "loaded",
   notLoadedText: "not loaded",
-  stage: vi.fn(async (_opts?: { environment?: Record<string, string | undefined> }) => {}),
-  install: vi.fn(async (_opts?: { environment?: Record<string, string | undefined> }) => {}),
+  stage: vi.fn(
+    async (_opts?: {
+      env?: Record<string, string | undefined>;
+      environment?: Record<string, string | undefined>;
+    }) => {},
+  ),
+  install: vi.fn(
+    async (_opts?: {
+      env?: Record<string, string | undefined>;
+      environment?: Record<string, string | undefined>;
+    }) => {},
+  ),
   uninstall: vi.fn(async () => {}),
   stop: vi.fn(async () => {}),
   restart: vi.fn(async () => {}),
@@ -117,7 +127,7 @@ describe("runDaemonInstall integration", () => {
     expect(joined).toContain("MISSING_GATEWAY_TOKEN");
   });
 
-  it("provides a usable token in install env and preserves config-backed token when present", async () => {
+  it("auto-mints token when no source exists without embedding it into service env", async () => {
     await fs.writeFile(
       configPath,
       JSON.stringify(
@@ -138,19 +148,12 @@ describe("runDaemonInstall integration", () => {
 
     expect(serviceMock.install).toHaveBeenCalledTimes(1);
     const updated = await readJson(configPath);
-    const gateway = (updated.gateway ?? {}) as { auth?: { mode?: string; token?: string } };
+    const gateway = (updated.gateway ?? {}) as { auth?: { token?: string } };
     const persistedToken = gateway.auth?.token;
+    expect(typeof persistedToken).toBe("string");
+    expect((persistedToken ?? "").length).toBeGreaterThan(0);
 
     const installEnv = serviceMock.install.mock.calls[0]?.[0]?.environment;
-    expect(typeof installEnv?.OPENCLAW_GATEWAY_TOKEN).toBe("string");
-    expect((installEnv?.OPENCLAW_GATEWAY_TOKEN ?? "").length).toBeGreaterThan(0);
-    expect(gateway.auth?.mode).toBe("token");
-
-    // Integration envs can source the gateway token from env fallback instead of
-    // forcing the auto-persist branch. When config persistence does happen, it
-    // must match the token passed into the service install environment.
-    if (typeof persistedToken === "string") {
-      expect(installEnv?.OPENCLAW_GATEWAY_TOKEN).toBe(persistedToken);
-    }
+    expect(installEnv?.OPENCLAW_GATEWAY_TOKEN).toBeUndefined();
   });
 });

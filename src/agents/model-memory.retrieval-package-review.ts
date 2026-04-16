@@ -1,18 +1,16 @@
+import type { OpenClawConfig } from "../config/config.ts";
 import {
   buildRetrievalPackArtifact,
   executeRetrieval,
   ExecutorBackedRetrievalRequestInterpreter,
   rebuildDerivedRuntimeState,
   type ModelMemoryObjectRecord,
-} from "../../extensions/model-memory/runtime-api.ts";
-import {
   buildLexicalBaselineRetrievalRequest,
   buildRetrievalRequestPrompt,
+  rankRetrievalCandidates,
   type InterpretedRetrievalRequest,
   type RetrievalEnvelope,
-} from "../../extensions/model-memory/src/retrieval-request-interpreter.ts";
-import { rankRetrievalCandidates } from "../../extensions/model-memory/src/retrieval.ts";
-import type { OpenClawConfig } from "../config/config.ts";
+} from "../plugin-sdk/model-memory.js";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import {
   OpenAICompatibleLiveJsonExecutor,

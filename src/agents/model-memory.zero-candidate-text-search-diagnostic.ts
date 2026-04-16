@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { normalizeIdentityText } from "../../extensions/model-memory/src/semantic-identity.ts";
+import { normalizeIdentityText } from "../plugin-sdk/model-memory.js";
 import type {
   ModelMemoryObjectRecord,
   ModelMemorySourceRecord,
   ModelMemorySourceWindowRecord,
   ModelMemorySupportItemRecord,
-} from "../../extensions/model-memory/src/storage-database-contract.ts";
+} from "../plugin-sdk/model-memory.js";
 import { createModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import { summarizeModelMemoryPayload } from "./model-memory.payload-summary.ts";
 

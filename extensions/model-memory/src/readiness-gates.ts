@@ -28,7 +28,7 @@ export function evaluateModelMemoryReadiness(input: {
 }): ReadinessGateResult {
   const thresholds = {
     ...DEFAULT_READINESS_THRESHOLDS,
-    ...(input.thresholds ?? {}),
+    ...input.thresholds,
   };
   const reasons: string[] = [];
 

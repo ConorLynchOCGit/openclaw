@@ -37,7 +37,7 @@ describe("operator-inspection", () => {
       ]);
       await canonical.insertMemoryObject({
         id: "83f9606d-f16b-58d6-9d2d-5f05cf079c6c",
-        sourceWindowId: window!.id,
+        sourceWindowId: window.id,
         canonicalClass: "user",
         kind: "preference",
         payload: { subject: "response detail", instruction: "high level", operation: "prefer" },
@@ -61,7 +61,7 @@ describe("operator-inspection", () => {
       });
       await canonical.insertWriteEvent({
         id: "41cf719a-57d6-5f85-8b32-79082b6cc5a6",
-        sourceWindowId: window!.id,
+        sourceWindowId: window.id,
         candidateIdentityKey: "user-pref-001",
         decision: "write",
         memoryObjectId: "83f9606d-f16b-58d6-9d2d-5f05cf079c6c",

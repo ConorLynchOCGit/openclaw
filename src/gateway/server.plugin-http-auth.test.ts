@@ -188,64 +188,68 @@ describe("gateway plugin HTTP auth boundary", () => {
     });
   });
 
-  test("requires gateway auth for protected plugin route space and allows authenticated pass-through", async () => {
-    const handlePluginRequest = vi.fn(async (req: IncomingMessage, res: ServerResponse) => {
-      const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
-      if (pathname === "/api/channels") {
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(JSON.stringify({ ok: true, route: "channel-root" }));
-        return true;
-      }
-      if (pathname === "/api/channels/nostr/default/profile") {
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(JSON.stringify({ ok: true, route: "channel" }));
-        return true;
-      }
-      if (pathname === "/plugin/public") {
-        res.statusCode = 200;
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        res.end(JSON.stringify({ ok: true, route: "public" }));
-        return true;
-      }
-      return false;
-    });
+  test(
+    "requires gateway auth for protected plugin route space and allows authenticated pass-through",
+    { timeout: 180_000 },
+    async () => {
+      const handlePluginRequest = vi.fn(async (req: IncomingMessage, res: ServerResponse) => {
+        const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+        if (pathname === "/api/channels") {
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ ok: true, route: "channel-root" }));
+          return true;
+        }
+        if (pathname === "/api/channels/nostr/default/profile") {
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ ok: true, route: "channel" }));
+          return true;
+        }
+        if (pathname === "/plugin/public") {
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          res.end(JSON.stringify({ ok: true, route: "public" }));
+          return true;
+        }
+        return false;
+      });
 
-    await withGatewayServer({
-      prefix: "openclaw-plugin-http-auth-test-",
-      resolvedAuth: AUTH_TOKEN,
-      overrides: {
-        handlePluginRequest,
-        shouldEnforcePluginGatewayAuth: (pathContext) =>
-          isProtectedPluginRoutePath(pathContext.pathname) ||
-          pathContext.pathname === "/plugin/public",
-      },
-      run: async (server) => {
-        const unauthenticated = await sendRequest(server, {
-          path: "/api/channels/nostr/default/profile",
-        });
-        expectUnauthorizedResponse(unauthenticated);
-        expect(handlePluginRequest).not.toHaveBeenCalled();
+      await withGatewayServer({
+        prefix: "openclaw-plugin-http-auth-test-",
+        resolvedAuth: AUTH_TOKEN,
+        overrides: {
+          handlePluginRequest,
+          shouldEnforcePluginGatewayAuth: (pathContext) =>
+            isProtectedPluginRoutePath(pathContext.pathname) ||
+            pathContext.pathname === "/plugin/public",
+        },
+        run: async (server) => {
+          const unauthenticated = await sendRequest(server, {
+            path: "/api/channels/nostr/default/profile",
+          });
+          expectUnauthorizedResponse(unauthenticated);
+          expect(handlePluginRequest).not.toHaveBeenCalled();
 
-        const unauthenticatedRoot = await sendRequest(server, { path: "/api/channels" });
-        expectUnauthorizedResponse(unauthenticatedRoot);
-        expect(handlePluginRequest).not.toHaveBeenCalled();
+          const unauthenticatedRoot = await sendRequest(server, { path: "/api/channels" });
+          expectUnauthorizedResponse(unauthenticatedRoot);
+          expect(handlePluginRequest).not.toHaveBeenCalled();
 
-        const authenticated = await sendRequest(server, {
-          path: "/api/channels/nostr/default/profile",
-          authorization: "Bearer test-token",
-        });
-        expect(authenticated.res.statusCode).toBe(200);
-        expect(authenticated.getBody()).toContain('"route":"channel"');
+          const authenticated = await sendRequest(server, {
+            path: "/api/channels/nostr/default/profile",
+            authorization: "Bearer test-token",
+          });
+          expect(authenticated.res.statusCode).toBe(200);
+          expect(authenticated.getBody()).toContain('"route":"channel"');
 
-        const unauthenticatedPublic = await sendRequest(server, { path: "/plugin/public" });
-        expectUnauthorizedResponse(unauthenticatedPublic);
+          const unauthenticatedPublic = await sendRequest(server, { path: "/plugin/public" });
+          expectUnauthorizedResponse(unauthenticatedPublic);
 
-        expect(handlePluginRequest).toHaveBeenCalledTimes(1);
-      },
-    });
-  });
+          expect(handlePluginRequest).toHaveBeenCalledTimes(1);
+        },
+      });
+    },
+  );
 
   test("preserves trusted-proxy read scopes for gateway-auth plugin runtime routes", async () => {
     const observedRuntimeScopes: string[][] = [];

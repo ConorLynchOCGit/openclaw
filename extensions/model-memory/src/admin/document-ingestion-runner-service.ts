@@ -180,7 +180,7 @@ function mergeCounts(
 }
 
 function uniqueSorted(values: string[]): string[] {
-  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+  return [...new Set(values)].toSorted((left, right) => left.localeCompare(right));
 }
 
 function buildInitialRunRecord(input: {
@@ -194,7 +194,7 @@ function buildInitialRunRecord(input: {
 }): DocumentIngestionRunnerRunRecord {
   const createdAt = new Date().toISOString();
   const chunks = [...new Set(input.sources.map((source) => source.chunkIndex))]
-    .sort((left, right) => left - right)
+    .toSorted((left, right) => left - right)
     .map((chunkIndex) => ({
       chunkIndex,
       sourceIds: input.sources
@@ -330,7 +330,7 @@ async function runWithConcurrency<T>(
     while (nextIndex < items.length) {
       const currentIndex = nextIndex;
       nextIndex += 1;
-      await worker(items[currentIndex] as T, currentIndex);
+      await worker(items[currentIndex], currentIndex);
     }
   });
 
@@ -388,7 +388,7 @@ export class ModelMemoryDocumentIngestionRunnerService {
       message: `starting document ingestion run ${input.runId} with ${input.sources.length} sources`,
     });
 
-    const orderedChunks = [...new Set(input.sources.map((source) => source.chunkIndex))].sort(
+    const orderedChunks = [...new Set(input.sources.map((source) => source.chunkIndex))].toSorted(
       (left, right) => left - right,
     );
     const totalSources = input.sources.length;

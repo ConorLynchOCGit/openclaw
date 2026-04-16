@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/config.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 
 const { getMemorySearchManagerMock } = vi.hoisted(() => ({
   getMemorySearchManagerMock: vi.fn(),
@@ -11,8 +11,12 @@ const { resolveModelMemoryLiveRuntimeStatusMock, warmModelMemoryLiveRuntimeMock 
   }),
 );
 
-vi.mock("../memory/index.js", () => ({
-  getMemorySearchManager: getMemorySearchManagerMock,
+vi.mock("../plugins/memory-runtime.js", () => ({
+  getActiveMemorySearchManager: getMemorySearchManagerMock,
+  resolveActiveMemoryBackendConfig: vi.fn(({ cfg }: { cfg: OpenClawConfig; agentId: string }) => {
+    const backend = cfg.memory?.backend ?? "builtin";
+    return backend === "qmd" ? { backend: "qmd", qmd: {} } : { backend };
+  }),
 }));
 
 vi.mock("../agents/model-memory.live-runtime.js", () => ({

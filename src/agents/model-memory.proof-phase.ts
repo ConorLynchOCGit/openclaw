@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import type { OpenClawConfig } from "../config/config.ts";
 import {
   buildCalibrationReport,
   buildRetrievalPackArtifact,
@@ -28,9 +29,8 @@ import {
   type WorkspaceProjectionVersionRecord,
   ingestDocumentLive,
   recoverDailyContinuityCandidatesLive,
-} from "../../extensions/model-memory/runtime-api.ts";
-import { buildDeterministicUuid } from "../../extensions/model-memory/src/deterministic-uuid.ts";
-import type { OpenClawConfig } from "../config/config.ts";
+  buildDeterministicUuid,
+} from "../plugin-sdk/model-memory.js";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import {
   LARGE_DOCUMENT_EVIDENCE_MAX_WORDS_PER_WINDOW,
@@ -678,7 +678,7 @@ function toSyntheticSupportProbeObject(
 
 async function runSyntheticSupportOnlyProbe(input: {
   runtime: ModelMemoryDatabaseRuntime;
-  memoryStore: DatabaseMemoryObjectStore;
+  memoryStore: InstanceType<typeof DatabaseMemoryObjectStore>;
   snapshot: SnapshotState;
 }): Promise<
   | {
@@ -986,8 +986,8 @@ function buildRuntimeReadModelProof(input: {
 }
 
 async function buildOperatorInspectionProof(input: {
-  canonicalRepository: ModelMemoryCanonicalRepository;
-  runtimeRepository: RuntimeContextRepository;
+  canonicalRepository: InstanceType<typeof ModelMemoryCanonicalRepository>;
+  runtimeRepository: InstanceType<typeof RuntimeContextRepository>;
 }): Promise<OperatorInspectionProof> {
   const inspection = new ModelMemoryOperatorInspection(
     input.canonicalRepository,
@@ -1173,9 +1173,9 @@ export function buildProofGapMap(input: {
           ? "proven"
           : "failing_or_unstable",
       owningSeams: [
-        "extensions/model-memory/src/write-policy.ts",
-        "extensions/model-memory/src/memory-object-store.ts",
-        "extensions/model-memory/src/runtime-read-models.ts",
+        "src/plugin-sdk/model-memory.ts",
+        "src/agents/model-memory.database.ts",
+        "extensions/model-memory/runtime-api.ts",
       ],
       notes: [
         `active_objects=${input.corpusTotals.activeObjects}`,
@@ -1187,9 +1187,9 @@ export function buildProofGapMap(input: {
       id: "retrieval",
       status: retrievalHealthy ? "proven" : "failing_or_unstable",
       owningSeams: [
-        "extensions/model-memory/src/retrieval.ts",
-        "extensions/model-memory/src/retrieval-store.ts",
-        "extensions/model-memory/src/real-retrieval-request-interpreter.ts",
+        "src/plugin-sdk/model-memory.ts",
+        "src/agents/model-memory.retrieval-trace.ts",
+        "extensions/model-memory/runtime-api.ts",
       ],
       notes: input.retrievalContextProbes.map(
         (probe) =>
@@ -1200,8 +1200,9 @@ export function buildProofGapMap(input: {
       id: "context_assembly",
       status: contextHealthy ? "proven" : "failing_or_unstable",
       owningSeams: [
-        "extensions/model-memory/src/runtime/context/assemble.ts",
-        "extensions/model-memory/src/context-engine.ts",
+        "src/plugin-sdk/model-memory.ts",
+        "src/agents/model-memory.context-trace.ts",
+        "extensions/model-memory/runtime-api.ts",
       ],
       notes: input.retrievalContextProbes.map(
         (probe) =>
@@ -1214,9 +1215,9 @@ export function buildProofGapMap(input: {
         ? "proven"
         : "failing_or_unstable",
       owningSeams: [
-        "extensions/model-memory/src/runtime-read-models.ts",
-        "extensions/model-memory/src/runtime/active-memory-slots.ts",
-        "extensions/model-memory/src/runtime/active-memory-sets.ts",
+        "src/plugin-sdk/model-memory.ts",
+        "src/agents/model-memory.live-runtime.ts",
+        "extensions/model-memory/runtime-api.ts",
       ],
       notes: [
         `slots=${input.runtimeReadModelProof.activeMemorySlotCount}`,
@@ -1229,8 +1230,9 @@ export function buildProofGapMap(input: {
       id: "projections_rebuild",
       status: rebuildHealthy ? "proven" : "failing_or_unstable",
       owningSeams: [
-        "extensions/model-memory/src/runtime-rebuild-orchestrator.ts",
-        "extensions/model-memory/src/projection-compiler.ts",
+        "src/plugin-sdk/model-memory.ts",
+        "src/agents/model-memory.rebuild-diff.ts",
+        "extensions/model-memory/runtime-api.ts",
       ],
       notes: [
         `projection_hashes_stable=${input.rebuildProjectionProof.projectionHashesStable}`,
@@ -1246,8 +1248,9 @@ export function buildProofGapMap(input: {
       id: "cache_usage",
       status: cacheHealthy ? "proven" : "failing_or_unstable",
       owningSeams: [
-        "extensions/model-memory/src/usage-cache-ledger.ts",
-        "extensions/model-memory/src/context-engine.ts",
+        "src/plugin-sdk/model-memory.ts",
+        "src/agents/model-memory.proof-phase.ts",
+        "extensions/model-memory/runtime-api.ts",
       ],
       notes: [
         `unchanged_stable=${input.cacheUsageProof.unchangedStableLayerStable}`,
@@ -1264,7 +1267,11 @@ export function buildProofGapMap(input: {
       status: input.operatorInspectionProof.surfacesOperational
         ? "proven"
         : "already_partially_covered",
-      owningSeams: ["extensions/model-memory/src/operator-inspection.ts"],
+      owningSeams: [
+        "src/plugin-sdk/model-memory.ts",
+        "src/agents/model-memory.live-runtime.ts",
+        "extensions/model-memory/runtime-api.ts",
+      ],
       notes: [
         `recent_captures=${input.operatorInspectionProof.recentCaptureCount}`,
         `write_decisions=${input.operatorInspectionProof.writeDecisionCount}`,
@@ -1281,8 +1288,9 @@ export function buildProofGapMap(input: {
           : "already_partially_covered"
         : "missing_evidence",
       owningSeams: [
-        "extensions/model-memory/src/shadow-mode.ts",
-        "extensions/model-memory/src/live-shadow-adapters.ts",
+        "src/plugin-sdk/model-memory.ts",
+        "src/agents/model-memory.integration.ts",
+        "extensions/model-memory/index.ts",
       ],
       notes: [
         `surface_operational=${input.shadowSurfaceProof.surfaceOperational}`,
@@ -1295,8 +1303,8 @@ export function buildProofGapMap(input: {
       status: longHorizonHealthy ? "proven" : "failing_or_unstable",
       owningSeams: [
         "src/agents/model-memory.proof-phase.ts",
-        "extensions/model-memory/src/write-policy.ts",
-        "extensions/model-memory/src/semantic-collision-adjudication.ts",
+        "src/plugin-sdk/model-memory.ts",
+        "extensions/model-memory/runtime-api.ts",
       ],
       notes: [
         `starting_active=${input.longHorizonSummary.startingActiveObjects}`,
@@ -1522,10 +1530,10 @@ function buildAdjudicationRows(input: {
   duplicateClusters: DuplicateClusterCandidate[];
 }): IngestionAdjudicationRow[] {
   const objectById = new Map(input.memoryObjects.map((record) => [record.id, record] as const));
-  const supportCountByObjectId = input.supportItems.reduce<Map<string, number>>((acc, item) => {
+  const supportCountByObjectId = input.supportItems.reduce((acc, item) => {
     acc.set(item.memoryObjectId, (acc.get(item.memoryObjectId) ?? 0) + 1);
     return acc;
-  }, new Map());
+  }, new Map<string, number>());
 
   return input.writeResults.map((result) => {
     const record =
@@ -1783,7 +1791,7 @@ function countMatchingItems(
 async function runRetrievalContextProbe(input: {
   probe: RetrievalProbeSpec;
   runtime: ModelMemoryDatabaseRuntime;
-  retrievalInterpreter: ExecutorBackedRetrievalRequestInterpreter;
+  retrievalInterpreter: InstanceType<typeof ExecutorBackedRetrievalRequestInterpreter>;
   memoryObjects: ModelMemoryObjectRecord[];
   modelRef: string;
   projectionVersions: WorkspaceProjectionVersionRecord[];

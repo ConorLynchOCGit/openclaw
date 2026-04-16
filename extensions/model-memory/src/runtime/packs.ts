@@ -1,3 +1,4 @@
+import { summarizeModelMemoryValue } from "../payload-summary.ts";
 import type {
   ActiveMemorySetRecord,
   ActiveMemorySlotRecord,
@@ -20,36 +21,38 @@ function getObjectById(
 
 function formatObject(record: ModelMemoryObjectRecord): string {
   if (record.kind === "fact") {
-    return `- ${record.payload.subject}: ${record.payload.value}`;
+    return `- ${summarizeModelMemoryValue(record.payload.subject, "fact")}: ${summarizeModelMemoryValue(record.payload.value)}`;
   }
   if (record.kind === "rule") {
-    const parts = [String(record.payload.subject)];
+    const parts = [summarizeModelMemoryValue(record.payload.subject, "rule")];
     if (record.payload.recommendedAction) {
-      parts.push(`do: ${String(record.payload.recommendedAction)}`);
+      parts.push(`do: ${summarizeModelMemoryValue(record.payload.recommendedAction)}`);
     }
     if (record.payload.avoidAction) {
-      parts.push(`avoid: ${String(record.payload.avoidAction)}`);
+      parts.push(`avoid: ${summarizeModelMemoryValue(record.payload.avoidAction)}`);
     }
     if (record.payload.neededCapability) {
-      parts.push(`needs: ${String(record.payload.neededCapability)}`);
+      parts.push(`needs: ${summarizeModelMemoryValue(record.payload.neededCapability)}`);
     }
     return `- ${parts.join(" | ")}`;
   }
   if (record.kind === "procedure") {
     const steps = Array.isArray(record.payload.steps)
-      ? record.payload.steps.map((step) => String(step)).join(" -> ")
+      ? record.payload.steps.map((step) => summarizeModelMemoryValue(step)).join(" -> ")
       : "";
-    return `- ${String(record.payload.title)}: ${steps}`;
+    return `- ${summarizeModelMemoryValue(record.payload.title, "procedure")}: ${steps}`;
   }
   if (record.kind === "reference") {
     const companions = Array.isArray(record.payload.companionResources)
-      ? record.payload.companionResources.map((entry) => String(entry)).join(", ")
+      ? record.payload.companionResources
+          .map((entry) => summarizeModelMemoryValue(entry))
+          .join(", ")
       : "";
     return companions.length > 0
-      ? `- ${String(record.payload.task)} -> ${String(record.payload.primaryResource)} (${companions})`
-      : `- ${String(record.payload.task)} -> ${String(record.payload.primaryResource)}`;
+      ? `- ${summarizeModelMemoryValue(record.payload.task, "reference")} -> ${summarizeModelMemoryValue(record.payload.primaryResource)} (${companions})`
+      : `- ${summarizeModelMemoryValue(record.payload.task, "reference")} -> ${summarizeModelMemoryValue(record.payload.primaryResource)}`;
   }
-  return `- ${String(record.payload.subject)}: ${String(record.payload.instruction)}`;
+  return `- ${summarizeModelMemoryValue(record.payload.subject, "preference")}: ${summarizeModelMemoryValue(record.payload.instruction)}`;
 }
 
 export function buildDerivedContextArtifacts(input: {
@@ -69,7 +72,7 @@ export function buildDerivedContextArtifacts(input: {
 
   const userSlotObjects = currentSlotObjects
     .filter((entry) => entry.record.canonicalClass === "user")
-    .sort((left, right) =>
+    .toSorted((left, right) =>
       `${left.record.kind}:${left.record.normalizedSubject ?? ""}:${left.record.id}`.localeCompare(
         `${right.record.kind}:${right.record.normalizedSubject ?? ""}:${right.record.id}`,
       ),
@@ -105,10 +108,10 @@ export function buildDerivedContextArtifacts(input: {
     group.push(entry);
     scopedSlotGroups.set(entry.record.scopeKey, group);
   }
-  for (const [scopeKey, entries] of [...scopedSlotGroups.entries()].sort(([left], [right]) =>
+  for (const [scopeKey, entries] of [...scopedSlotGroups.entries()].toSorted(([left], [right]) =>
     left.localeCompare(right),
   )) {
-    const sortedEntries = [...entries].sort((left, right) =>
+    const sortedEntries = [...entries].toSorted((left, right) =>
       `${left.record.kind}:${left.record.normalizedSubject ?? ""}:${left.record.id}`.localeCompare(
         `${right.record.kind}:${right.record.normalizedSubject ?? ""}:${right.record.id}`,
       ),
@@ -140,10 +143,10 @@ export function buildDerivedContextArtifacts(input: {
     group.push(record);
     procedureGroups.set(scopeKey, group);
   }
-  for (const [scopeKey, records] of [...procedureGroups.entries()].sort(([left], [right]) =>
+  for (const [scopeKey, records] of [...procedureGroups.entries()].toSorted(([left], [right]) =>
     left.localeCompare(right),
   )) {
-    const sortedRecords = [...records].sort((left, right) =>
+    const sortedRecords = [...records].toSorted((left, right) =>
       `${left.normalizedTitle ?? ""}:${left.id}`.localeCompare(
         `${right.normalizedTitle ?? ""}:${right.id}`,
       ),
@@ -163,7 +166,7 @@ export function buildDerivedContextArtifacts(input: {
     );
   }
 
-  return artifacts.sort((left, right) =>
+  return artifacts.toSorted((left, right) =>
     `${left.artifactType}:${left.scopeKey ?? "global"}:${left.id}`.localeCompare(
       `${right.artifactType}:${right.scopeKey ?? "global"}:${right.id}`,
     ),

@@ -121,7 +121,7 @@ describe("context assemble", () => {
   });
 
   it("applies projection target budgets before final trimming", () => {
-    const oversizedProjection = new Array(800).fill("memory").join(" ");
+    const oversizedProjection = Array.from({ length: 800 }, () => "memory").join(" ");
     const result = assembleContext({
       projectionVersions: [
         {

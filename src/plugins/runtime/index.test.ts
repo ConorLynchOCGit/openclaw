@@ -235,6 +235,17 @@ describe("plugin runtime command execution", () => {
         ]);
       },
     },
+    {
+      name: "exposes runtime.modelMemory helper factories",
+      assert: (runtime: ReturnType<typeof createPluginRuntime>) => {
+        expect(runtime.modelMemory).toBeDefined();
+        expectFunctionKeys(runtime.modelMemory as Record<string, unknown>, [
+          "createDatabaseRuntime",
+          "resolveDatabaseResolution",
+          "createLiveJsonExecutor",
+        ]);
+      },
+    },
   ] as const)("$name", ({ assert }) => {
     expectRuntimeShape(assert);
   });

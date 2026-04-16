@@ -1,12 +1,11 @@
 import { buildDeterministicUuid } from "../deterministic-uuid.ts";
 import type { StoreWriteResult, StoredCaptureInput } from "../memory-object-store.ts";
+import { summarizeModelMemoryPayload } from "../payload-summary.ts";
 import type {
   BoundedCandidateAdjudicationBatchDecision,
   BoundedCandidateAdjudicationCandidate,
   BoundedCandidateAdjudicationRequest,
   BoundedCandidateAdjudicationSource,
-  CollisionAdjudicationBatchDecision,
-  CollisionAdjudicationRequest,
   CollisionCandidate,
   SemanticCollisionAdjudicator,
 } from "../semantic-collision-adjudication.ts";
@@ -33,7 +32,6 @@ import type {
 } from "../storage-database-contract.ts";
 import {
   decideWritePolicy,
-  type CollisionMatch,
   type ExistingStoredObject,
   type WritePolicyDecision,
 } from "../write-policy.ts";
@@ -237,28 +235,7 @@ function buildWriteEventRecord(
 }
 
 function summarizeObject(object: ModelMemoryObject): string {
-  if (object.kind === "fact") {
-    return `${String(object.payload.subject ?? "fact")}: ${String(object.payload.value ?? "")}`.trim();
-  }
-  if (object.kind === "preference") {
-    return [object.payload.subject, object.payload.instruction, object.payload.operation]
-      .filter((value) => typeof value === "string" && value.trim().length > 0)
-      .join(" | ");
-  }
-  if (object.kind === "rule") {
-    return [
-      object.payload.subject,
-      object.payload.recommendedAction,
-      object.payload.avoidAction,
-      object.payload.neededCapability,
-    ]
-      .filter((value) => typeof value === "string" && value.trim().length > 0)
-      .join(" | ");
-  }
-  if (object.kind === "procedure") {
-    return String(object.payload.title ?? "procedure");
-  }
-  return String(object.payload.task ?? object.payload.primaryResource ?? "reference");
+  return summarizeModelMemoryPayload(object);
 }
 
 function tokenize(value: string): string[] {
@@ -284,30 +261,6 @@ function buildSearchTextTokenSet(value: string): Set<string> {
   return new Set(
     tokenize(value).filter((token) => token.length >= COLLISION_ANCHOR_TOKEN_MIN_LENGTH),
   );
-}
-
-function normalizeOptionalPayloadText(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const normalized = normalizeIdentityText(value);
-  return normalized.length > 0 ? normalized : undefined;
-}
-
-function normalizePayloadTextArray(value: unknown, options: { ordered: boolean }): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const normalized = value
-    .map((entry) => normalizeOptionalPayloadText(entry))
-    .filter((entry): entry is string => Boolean(entry));
-  return options.ordered
-    ? normalized
-    : [...normalized].sort((left, right) => left.localeCompare(right));
-}
-
-function arraysEqual(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 export function calculateSearchTextOverlap(
@@ -417,7 +370,7 @@ export function buildZeroCandidateRecoverySelection(input: {
       sourcePath: input.resolveSourcePath?.(record),
     }))
     .filter((entry) => entry.similarityScore > 0)
-    .sort((left, right) => {
+    .toSorted((left, right) => {
       if (right.similarityScore !== left.similarityScore) {
         return right.similarityScore - left.similarityScore;
       }
@@ -455,14 +408,6 @@ export function buildZeroCandidateRecoverySelection(input: {
     rawSearchResults,
     selectedResults,
   };
-}
-
-function buildCollisionAnchorTokens(record: {
-  normalizedSubject?: string;
-  normalizedTitle?: string;
-  normalizedSearchText: string;
-}): Set<string> {
-  return buildSearchTextTokenSet(record.normalizedSearchText);
 }
 
 function buildSourceFamilyKey(source: ModelMemorySourceRecord): string {
@@ -839,7 +784,7 @@ export function buildCollisionCandidates(
       score: scoreCollisionCandidate(object, identity, record, sourceFamilyContext),
     }))
     .filter((entry) => entry.score >= 0)
-    .sort((left, right) => {
+    .toSorted((left, right) => {
       if (right.score !== left.score) {
         return right.score - left.score;
       }
@@ -920,49 +865,6 @@ export function toBoundedCandidateAdjudicationCandidatesFromRetained(input: {
     sameScope: true,
     sourcePath: input.resolveSourcePath?.(record),
   }));
-}
-
-function toCollisionCandidatesFromAdjudication(
-  candidates: BoundedCandidateAdjudicationCandidate[],
-): CollisionCandidate[] {
-  return candidates.map((candidate) => ({
-    id: candidate.id,
-    identityKey: candidate.identityKey,
-    canonicalClass: candidate.canonicalClass,
-    kind: candidate.kind,
-    payload: candidate.payload,
-    scope: candidate.scope,
-    normalizedSearchText: candidate.normalizedSearchText,
-    lifecycleState: candidate.lifecycleState,
-    slotKey: candidate.slotKey,
-  }));
-}
-
-function toCollisionMatch(
-  adjudication:
-    | {
-        relation: "distinct";
-      }
-    | {
-        relation: "conflict_hold";
-      }
-    | {
-        relation: "attach_support" | "supersedes";
-        targetObjectId: string;
-      },
-  candidates: ModelMemoryObjectRecord[],
-): CollisionMatch | undefined {
-  if (adjudication.relation === "distinct" || adjudication.relation === "conflict_hold") {
-    return { relation: adjudication.relation };
-  }
-  const target = candidates.find((candidate) => candidate.id === adjudication.targetObjectId);
-  if (!target) {
-    return { relation: "conflict_hold" };
-  }
-  return {
-    relation: adjudication.relation,
-    target: extractStoredObjectShape(target),
-  };
 }
 
 export class DatabaseMemoryObjectStore {
@@ -1313,7 +1215,7 @@ export class DatabaseMemoryObjectStore {
       if (pendingBoundedAdjudications.length > 0 && boundedCandidateAdjudicator) {
         for (const decision of await boundedCandidateAdjudicator({
           requests: pendingBoundedAdjudications.map((entry) => entry.request),
-          modelId: pendingBoundedAdjudications[0]!.input.modelId,
+          modelId: pendingBoundedAdjudications[0].input.modelId,
         })) {
           boundedAdjudicationDecisions.set(decision.candidateId, decision);
         }

@@ -1328,7 +1328,7 @@ describe("installPluginFromArchive", () => {
     }
   });
 
-  it.runIf(process.platform !== "win32")(
+  it.runIf(process.platform !== "win32" && process.getuid?.() !== 0)(
     "fails package installs when manifest traversal cannot read a directory",
     async () => {
       const { pluginDir, extensionsDir } = setupPluginInstallDirs();

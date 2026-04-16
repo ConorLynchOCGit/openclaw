@@ -3,31 +3,14 @@ import os from "node:os";
 import path from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createCapturedPluginRegistration } from "../../../src/test-utils/plugin-registration.ts";
 import { createModelMemoryDocumentIngestionTool } from "./document-ingestion-tool.ts";
 
 function fakeApi(overrides: Partial<OpenClawPluginApi> = {}): OpenClawPluginApi {
+  const captured = createCapturedPluginRegistration();
   return {
-    id: "model-memory",
-    name: "Model Memory",
-    description: "Model Memory",
-    source: "test",
+    ...captured.api,
     config: {},
-    pluginConfig: {},
-    runtime: { version: "test" } as never,
-    logger: { debug() {}, info() {}, warn() {}, error() {} },
-    registerTool() {},
-    registerHook() {},
-    registerHttpRoute() {},
-    registerChannel() {},
-    registerGatewayMethod() {},
-    registerCli() {},
-    registerService() {},
-    registerProvider() {},
-    registerCommand() {},
-    resolvePath(input: string) {
-      return input;
-    },
-    on() {},
     ...overrides,
   };
 }
@@ -81,14 +64,19 @@ describe("model-memory document ingestion tool", () => {
 
     const tool = createModelMemoryDocumentIngestionTool(fakeApi(), fakeCtx(workspaceDir), {
       loadInternalRuntimeDeps: async () => ({
-        createModelMemoryDatabaseRuntime: vi.fn(async () => ({
+        createDatabaseRuntime: vi.fn(async () => ({
           canonicalRepository: {},
           runtimeRepository: {},
           pool: { end: vi.fn(async () => undefined) },
         })) as never,
-        OpenAICompatibleLiveJsonExecutor: class {
-          constructor(_options: unknown) {}
-        } as never,
+        createLiveJsonExecutor: vi.fn(
+          async (_options: unknown) =>
+            ({
+              execute: vi.fn(),
+              getRequestTimeoutMs: () => 180_000,
+              getRequestSeed: () => 7,
+            }) as never,
+        ),
       }),
       createRunnerService: () =>
         ({
@@ -173,14 +161,19 @@ describe("model-memory document ingestion tool", () => {
 
     const tool = createModelMemoryDocumentIngestionTool(fakeApi(), fakeCtx(workspaceDir), {
       loadInternalRuntimeDeps: async () => ({
-        createModelMemoryDatabaseRuntime: vi.fn(async () => ({
+        createDatabaseRuntime: vi.fn(async () => ({
           canonicalRepository: {},
           runtimeRepository: {},
           pool: { end: vi.fn(async () => undefined) },
         })) as never,
-        OpenAICompatibleLiveJsonExecutor: class {
-          constructor(_options: unknown) {}
-        } as never,
+        createLiveJsonExecutor: vi.fn(
+          async (_options: unknown) =>
+            ({
+              execute: vi.fn(),
+              getRequestTimeoutMs: () => 180_000,
+              getRequestSeed: () => 7,
+            }) as never,
+        ),
       }),
       createRunnerService: () =>
         ({

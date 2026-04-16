@@ -60,13 +60,13 @@ export type BuildProjectionVersionInput = {
 export function buildWorkspaceProjectionVersion(
   input: BuildProjectionVersionInput,
 ): WorkspaceProjectionVersionRecord {
-  const normalizedSourceObjectIds = [...input.sourceObjectIds].sort((left, right) =>
+  const normalizedSourceObjectIds = [...input.sourceObjectIds].toSorted((left, right) =>
     left.localeCompare(right),
   );
-  const normalizedSourceSlotKeys = [...input.sourceSlotKeys].sort((left, right) =>
+  const normalizedSourceSlotKeys = [...input.sourceSlotKeys].toSorted((left, right) =>
     left.localeCompare(right),
   );
-  const normalizedSourceSetKeys = [...input.sourceSetKeys].sort((left, right) =>
+  const normalizedSourceSetKeys = [...input.sourceSetKeys].toSorted((left, right) =>
     left.localeCompare(right),
   );
   const contentHash = hashRuntimeValue(

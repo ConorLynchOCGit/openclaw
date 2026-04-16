@@ -35,7 +35,7 @@ describe("runtime-rebuild-orchestrator", () => {
       ]);
       await canonicalRepository.insertMemoryObject({
         id: "6b02d2df-6fa2-50b0-b8ee-b9c2dc52230a",
-        sourceWindowId: window!.id,
+        sourceWindowId: window.id,
         canonicalClass: "project",
         kind: "fact",
         payload: { subject: "deployment region", value: "region-001" },
@@ -72,7 +72,7 @@ describe("runtime-rebuild-orchestrator", () => {
 
       await canonicalRepository.insertMemoryObject({
         id: "6834cc71-3f62-5755-80bb-c23f09175c67",
-        sourceWindowId: window!.id,
+        sourceWindowId: window.id,
         canonicalClass: "project",
         kind: "fact",
         payload: { subject: "deployment region", value: "region-002" },

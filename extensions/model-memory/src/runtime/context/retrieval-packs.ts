@@ -24,7 +24,7 @@ export function buildRetrievalPackArtifact(input: {
   const objectById = new Map(input.memoryObjects.map((object) => [object.id, object] as const));
   const selectedItems = input.retrievalResultItems
     .filter((item) => item.selectedForContext)
-    .sort((left, right) => left.rankIndex - right.rankIndex);
+    .toSorted((left, right) => left.rankIndex - right.rankIndex);
   const results = selectedItems
     .map((item) => {
       const object = objectById.get(item.memoryObjectId);

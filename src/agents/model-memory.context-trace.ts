@@ -1,3 +1,4 @@
+import type { OpenClawConfig } from "../config/config.ts";
 import {
   buildRetrievalPackArtifact,
   executeRetrieval,
@@ -8,8 +9,7 @@ import {
   type ModelMemoryObjectRecord,
   type RetrievalResultItemRecord,
   type WorkspaceProjectionVersionRecord,
-} from "../../extensions/model-memory/runtime-api.ts";
-import type { OpenClawConfig } from "../config/config.ts";
+} from "../plugin-sdk/model-memory.js";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import { OpenAICompatibleLiveJsonExecutor } from "./model-memory.live-json-executor.ts";
 import { RETRIEVAL_PROBES, type RetrievalProbeSpec } from "./model-memory.proof-phase.ts";

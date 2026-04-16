@@ -222,7 +222,7 @@ export class ModelMemoryCanonicalRepository {
       );
       persisted.push(decodeSourceWindow(result.rows[0]));
     }
-    return persisted.sort((left, right) => left.windowIndex - right.windowIndex);
+    return persisted.toSorted((left, right) => left.windowIndex - right.windowIndex);
   }
 
   async findActiveMemoryObjectByIdentity(

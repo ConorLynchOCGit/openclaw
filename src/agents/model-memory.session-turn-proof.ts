@@ -1,27 +1,27 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
-  JsonModelExecutionRequest,
-  JsonModelExecutionResponse,
-  JsonModelExecutor,
-  ModelMemoryObject,
-  SemanticCollisionAdjudicator,
-  SemanticInterpreter,
-  SemanticInterpreterInput,
-  SemanticInterpreterResult,
   CollisionAdjudicationBatchDecision,
   CollisionAdjudicationDecision,
   CollisionAdjudicationRequest,
   CollisionCandidate,
   DatabaseMemoryObjectStoreObserver,
-} from "../../extensions/model-memory/runtime-api.ts";
+  JsonModelExecutionRequest,
+  JsonModelExecutionResponse,
+  JsonModelExecutor,
+  ModelMemoryObject,
+  SemanticInterpreter,
+  SemanticCollisionAdjudicator,
+  SemanticInterpreterInput,
+  SemanticInterpreterResult,
+} from "../plugin-sdk/model-memory.js";
 import {
   adaptOrdinaryTurnSource,
   captureOrdinaryTurnLive,
   DatabaseMemoryObjectStore,
   ExecutorBackedSemanticCollisionAdjudicator,
   ExecutorBackedSemanticInterpreter,
-} from "../../extensions/model-memory/runtime-api.ts";
+} from "../plugin-sdk/model-memory.js";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import { resetModelMemoryEvidenceDatabase } from "./model-memory.large-document-evidence.ts";
 import { OpenAICompatibleLiveJsonExecutor } from "./model-memory.live-json-executor.ts";

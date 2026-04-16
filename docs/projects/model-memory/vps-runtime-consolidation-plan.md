@@ -18,16 +18,14 @@ Converge the VPS onto one unambiguous OpenClaw deployment shape:
 ## Current state
 
 - canonical git checkout: `/root/services/openclaw-roles/live`
-- duplicate non-git product tree: `/root/services/openclaw-roles/dev`
-- compatibility aliases:
-  - `/root/services/openclaw`
-  - `/root/services/openclaw-upgrade-2026.3.24`
+- compatibility symlink: `/root/services/openclaw-roles/dev -> /root/services/openclaw-roles/live`
+- no extra proof/debug git worktrees remain under `/tmp`
 - active container: `openclaw-runtime`
-- stale sidecar container: `openclaw-cli`
+- no stale OpenClaw sidecar container is currently running
 - active image: `openclaw:local`
-- live runtime still mounts both:
+- live runtime mounts only:
   - `product_live`
-  - `product_dev`
+- live compose still defines the stale `openclaw-cli` service
 
 ## Target state
 
@@ -36,9 +34,9 @@ Converge the VPS onto one unambiguous OpenClaw deployment shape:
 - canonical runtime container: `openclaw-runtime`
 - live compose only mounts the canonical live repo
 - no `product_dev` curated import in the runtime workspace
-- no `openclaw-cli` service or container
-- no duplicate dev tree left on the host after validation
-- no historical upgrade symlink left on the host after validation
+- no extra OpenClaw container on the live VPS
+- no duplicate dev tree or detached proof worktree left on the host after validation
+- no stale compatibility aliases beyond the intentional `dev -> live` symlink
 
 ## Safety posture
 
@@ -58,12 +56,16 @@ Before deleting anything:
    - current containers
    - current images
    - current runtime config
-2. Update the live repo compose file.
-   - remove the `openclaw-cli` service
-   - remove the `product_dev` bind mount
+2. Keep the host runtime on the canonical container only.
+
+- do not start `openclaw-cli`
+- do not treat the generic compose-side CLI helper as a second live runtime
+
 3. Update the runtime workspace metadata.
-   - remove `product_dev` from the curated import manifest
-   - remove `product_dev` references from the workspace index and AGENTS-facing docs
+
+- confirm the runtime workspace still exposes only `product_live`
+- remove stale pre-cleanup wording from operator docs
+
 4. Rebuild and recreate the canonical gateway runtime.
    - use the live repo compose root only
    - verify the container is healthy
@@ -74,9 +76,10 @@ Before deleting anything:
 6. Back up the duplicate dev tree.
    - create a timestamped archive under `/root/backups/`
 7. Prune stale surfaces.
-   - remove the stopped `openclaw-cli` container
-   - remove the duplicate dev tree
-   - remove the historical upgrade symlink
+   - remove host-local stale repo and runtime clutter
+   - remove detached proof/debug git worktrees after they are no longer needed
+   - only remove the generic `openclaw-cli` compose definition in a product-wide
+     follow-up that also updates Docker docs and helper scripts
    - remove local repo-root checkpoint and compose-backup clutter
 8. Disable stale legacy host cron/report jobs.
    - keep scripts on disk for now
@@ -85,7 +88,7 @@ Before deleting anything:
    - one canonical repo path left in active use
    - one running OpenClaw container
    - one OpenClaw image
-   - no dev-tree dependency in compose or workspace imports
+   - no dev-tree dependency in active runtime mounts
 
 ## Rollback posture
 
@@ -105,11 +108,32 @@ Rollback does not require keeping the duplicate dev tree mounted by default.
 
 Delete only after the recreated gateway is healthy:
 
-1. stopped `openclaw-cli` container
-2. duplicate dev tree backup archive created successfully
-3. duplicate dev tree removed
-4. historical upgrade symlink removed
-5. root checkpoint and compose-backup clutter removed
+1. duplicate dev tree backup archive created successfully
+2. duplicate dev tree removed
+3. stale compatibility aliases pruned as justified
+4. root checkpoint and compose-backup clutter removed
+
+## Current execution status
+
+The VPS is already at the intended canonical deployment shape in active use:
+
+- one canonical repo checkout
+- one active OpenClaw image
+- one active OpenClaw runtime container
+- no remaining detached proof/debug worktrees under `/tmp`
+- no remaining stale OpenClaw repo tree in active use
+- stale temp test homes and Docker build cache have been pruned from the host
+
+What remains intentionally in place:
+
+- the compatibility symlink `dev -> live` until operator references no longer
+  depend on it
+- active supporting service containers (`pgvector`, `n8n`, `caddy`)
+- rollback/archive material under `/root/backups`, including the retired dev
+  tree backup
+
+The remaining cleanup is now mostly operator-surface and host-hygiene work, not
+multi-runtime migration.
 
 ## Preservation of model-memory
 

@@ -22,7 +22,7 @@ export type ContextBootstrapResult = {
 
 export function bootstrapContext(input: ContextBootstrapInput): ContextBootstrapResult {
   const latestProjectionByTarget = new Map<string, WorkspaceProjectionVersionRecord>();
-  for (const version of [...input.projectionVersions].sort((left, right) => {
+  for (const version of [...input.projectionVersions].toSorted((left, right) => {
     const byBuiltAt = right.builtAt.getTime() - left.builtAt.getTime();
     if (byBuiltAt !== 0) {
       return byBuiltAt;
@@ -33,7 +33,7 @@ export function bootstrapContext(input: ContextBootstrapInput): ContextBootstrap
       latestProjectionByTarget.set(version.targetId, version);
     }
   }
-  const projectionVersions = [...latestProjectionByTarget.values()].sort((left, right) =>
+  const projectionVersions = [...latestProjectionByTarget.values()].toSorted((left, right) =>
     left.targetId.localeCompare(right.targetId),
   );
   const sessionSummaryArtifact = input.sessionState?.sessionSummaryArtifactId
@@ -45,7 +45,7 @@ export function bootstrapContext(input: ContextBootstrapInput): ContextBootstrap
   return {
     sessionId: input.sessionId,
     agentId: input.agentId,
-    activeProjectIds: [...(input.sessionState?.activeProjectIds ?? [])].sort((left, right) =>
+    activeProjectIds: [...(input.sessionState?.activeProjectIds ?? [])].toSorted((left, right) =>
       left.localeCompare(right),
     ),
     projectionVersions,

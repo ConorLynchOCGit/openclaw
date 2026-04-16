@@ -8,7 +8,7 @@ import {
   type ModelMemoryObject,
   type ModelMemoryObjectRecord,
   type WorkspaceProjectionVersionRecord,
-} from "../../extensions/model-memory/runtime-api.ts";
+} from "../plugin-sdk/model-memory.js";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 
 export type SupportOnlyRebuildDiffReport = {

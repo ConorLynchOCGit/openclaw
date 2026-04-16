@@ -3,7 +3,7 @@ import {
   DEFAULT_WORKSPACE_PROJECTION_TARGETS,
   buildContextArtifact,
   buildWorkspaceProjectionVersion,
-} from "../../extensions/model-memory/runtime-api.ts";
+} from "../plugin-sdk/model-memory.js";
 import { integrateModelMemoryWithHarness } from "./model-memory.integration.ts";
 
 describe("model-memory harness integration", () => {
@@ -90,6 +90,7 @@ describe("model-memory harness integration", () => {
     ];
     const retrievalArtifact = buildContextArtifact({
       artifactType: "retrieval_pack",
+      scopeKey: "session-001",
       renderedText: "Retrieved procedure",
       buildPolicyVersion: "v1",
     });

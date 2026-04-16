@@ -6,9 +6,8 @@ import {
   isDeterministicSameSlotSupersession,
   type ClaimFieldComparison,
   type StructuralDeltaClass,
-} from "../../extensions/model-memory/src/semantic-identity.ts";
-import type { ModelMemoryObject } from "../../extensions/model-memory/src/semantic-schema.ts";
-import type { ModelMemoryObjectRecord } from "../../extensions/model-memory/src/storage-database-contract.ts";
+} from "../plugin-sdk/model-memory.js";
+import type { ModelMemoryObject, ModelMemoryObjectRecord } from "../plugin-sdk/model-memory.js";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import type {
   DuplicateAuditPathClassification,

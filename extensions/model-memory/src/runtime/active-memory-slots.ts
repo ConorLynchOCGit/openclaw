@@ -17,7 +17,7 @@ export function materializeActiveMemorySlots(
   }
 
   return Array.from(currentBySlot.entries())
-    .sort(([left], [right]) => left.localeCompare(right))
+    .toSorted(([left], [right]) => left.localeCompare(right))
     .map(([slotKey, record]) => ({
       slotKey,
       canonicalClass: record.canonicalClass,

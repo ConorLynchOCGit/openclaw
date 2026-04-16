@@ -867,6 +867,10 @@
       "types": "./dist/plugin-sdk/memory-lancedb.d.ts",
       "default": "./dist/plugin-sdk/memory-lancedb.js"
     },
+    "./plugin-sdk/model-memory": {
+      "types": "./dist/plugin-sdk/model-memory.d.ts",
+      "default": "./dist/plugin-sdk/model-memory.js"
+    },
     "./plugin-sdk/msteams": {
       "types": "./dist/plugin-sdk/msteams.d.ts",
       "default": "./dist/plugin-sdk/msteams.js"
@@ -1324,6 +1328,7 @@
     "test:install:e2e:anthropic": "OPENCLAW_E2E_MODELS=anthropic bash scripts/test-install-sh-e2e-docker.sh",
     "test:install:e2e:openai": "OPENCLAW_E2E_MODELS=openai bash scripts/test-install-sh-e2e-docker.sh",
     "test:install:smoke": "bash scripts/test-install-sh-docker.sh",
+    "test:legacy-memory": "vitest run --config vitest.legacy-memory.config.ts --pool=forks",
     "test:live": "node scripts/test-live.mjs",
     "test:live:cache": "bun scripts/check-live-cache.ts",
     "test:live:codex-harness": "OPENCLAW_LIVE_CODEX_HARNESS=1 node scripts/test-live.mjs -- src/gateway/gateway-codex-harness.live.test.ts",
@@ -1333,14 +1338,13 @@
     "test:live:media:music": "node --import tsx scripts/test-live-media.ts music",
     "test:live:media:video": "node --import tsx scripts/test-live-media.ts video",
     "test:live:models-profiles": "node scripts/test-live.mjs -- src/agents/models.profiles.live.test.ts",
+    "test:macmini": "OPENCLAW_TEST_VM_FORKS=0 OPENCLAW_TEST_PROFILE=serial node scripts/test-parallel.mjs",
     "test:macos:ci": "node scripts/test-projects.mjs src/daemon/launchd.test.ts src/daemon/runtime-paths.test.ts src/daemon/runtime-binary.test.ts src/infra/brew.test.ts src/infra/stable-node-path.test.ts test/scripts/vitest-process-group.test.ts",
     "test:max": "OPENCLAW_VITEST_MAX_WORKERS=8 node scripts/test-projects.mjs",
     "test:parallels:linux": "bash scripts/e2e/parallels-linux-smoke.sh",
     "test:parallels:macos": "bash scripts/e2e/parallels-macos-smoke.sh",
     "test:parallels:npm-update": "bash scripts/e2e/parallels-npm-update-smoke.sh",
     "test:parallels:windows": "bash scripts/e2e/parallels-windows-smoke.sh",
-    "test:legacy-memory": "vitest run --config vitest.legacy-memory.config.ts --pool=forks",
-    "test:macmini": "OPENCLAW_TEST_VM_FORKS=0 OPENCLAW_TEST_PROFILE=serial node scripts/test-parallel.mjs",
     "test:perf:budget": "node scripts/test-perf-budget.mjs",
     "test:perf:changed:bench": "node scripts/bench-test-changed.mjs",
     "test:perf:hotspots": "node scripts/test-hotspots.mjs",
@@ -1523,7 +1527,6 @@
       "@lydell/node-pty",
       "@matrix-org/matrix-sdk-crypto-nodejs",
       "@napi-rs/canvas",
-      "@tloncorp/api",
       "@tloncorp/tlon-skill",
       "@whiskeysockets/baileys",
       "authenticate-pam",

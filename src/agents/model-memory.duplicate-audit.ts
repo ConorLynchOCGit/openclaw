@@ -4,23 +4,21 @@ import {
   calculateSearchTextOverlap,
   selectDeterministicAttachCollisionCandidate,
   type SearchTextOverlap,
-} from "../../extensions/model-memory/src/db/database-memory-object-store.ts";
-import {
   assessStructuralSameClaimDelta,
   deriveMemoryIdentity,
   describeDecisiveFieldAgreement,
   type PackagingDriftType,
   type SameClaimConfidence,
   type StructuralDeltaClass,
-} from "../../extensions/model-memory/src/semantic-identity.ts";
-import type { ModelMemoryObject } from "../../extensions/model-memory/src/semantic-schema.ts";
+} from "../plugin-sdk/model-memory.js";
+import type { ModelMemoryObject } from "../plugin-sdk/model-memory.js";
 import type {
   ModelMemoryObjectRecord,
   ModelMemorySourceRecord,
   ModelMemorySourceWindowRecord,
   ModelMemorySupportItemRecord,
   ModelMemoryWriteEventRecord,
-} from "../../extensions/model-memory/src/storage-database-contract.ts";
+} from "../plugin-sdk/model-memory.js";
 import { buildModelMemoryCaseIdentity } from "./model-memory.case-identity.ts";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import { summarizeModelMemoryPayload } from "./model-memory.payload-summary.ts";

@@ -1,3 +1,5 @@
+import type { OpenClawConfig } from "../config/config.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
   DEFAULT_WORKSPACE_PROJECTION_TARGETS,
   ExecutorBackedSemanticCollisionAdjudicator,
@@ -5,12 +7,8 @@ import {
   captureOrdinaryTurnLive,
   compileProjection,
   rebuildDerivedRuntimeState,
-  type ModelMemoryCanonicalRepository,
-  type RuntimeContextRepository,
   type WorkspaceProjectionTargetRecord,
-} from "../../extensions/model-memory/runtime-api.ts";
-import type { OpenClawConfig } from "../config/config.js";
-import { createSubsystemLogger } from "../logging/subsystem.js";
+} from "../plugin-sdk/model-memory.js";
 import {
   createModelMemoryDatabaseRuntime,
   resolveModelMemoryDatabaseResolution,
@@ -62,17 +60,21 @@ export type ModelMemoryLiveRuntimeWarmResult = {
 };
 
 type LiveRuntimeDeps = Awaited<ReturnType<typeof createModelMemoryDatabaseRuntime>> & {
-  semanticInterpreter: ExecutorBackedSemanticInterpreter;
-  collisionAdjudicator: ExecutorBackedSemanticCollisionAdjudicator;
+  semanticInterpreter: InstanceType<typeof ExecutorBackedSemanticInterpreter>;
+  collisionAdjudicator: InstanceType<typeof ExecutorBackedSemanticCollisionAdjudicator>;
 };
 
 type LiveRuntimeReadModels = {
-  memoryObjects: Awaited<ReturnType<ModelMemoryCanonicalRepository["listMemoryObjects"]>>;
+  memoryObjects: Awaited<ReturnType<LiveRuntimeDeps["canonicalRepository"]["listMemoryObjects"]>>;
   projectionTargets: WorkspaceProjectionTargetRecord[];
   projectionOutputs: Record<string, string>;
   projectionVersions: ReturnType<typeof compileProjection>["version"][];
-  contextArtifacts: Awaited<ReturnType<RuntimeContextRepository["listContextArtifacts"]>>;
-  sessionState?: Awaited<ReturnType<RuntimeContextRepository["getSessionContextState"]>>;
+  contextArtifacts: Awaited<
+    ReturnType<LiveRuntimeDeps["runtimeRepository"]["listContextArtifacts"]>
+  >;
+  sessionState?: Awaited<
+    ReturnType<LiveRuntimeDeps["runtimeRepository"]["getSessionContextState"]>
+  >;
 };
 
 let runtimeCache:

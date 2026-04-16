@@ -145,7 +145,9 @@ async function withSafeBinsExecTool(
 }
 
 describe("createOpenClawCodingTools safeBins", () => {
-  it("threads tools.exec.safeBins into exec allowlist checks", async () => {
+  // This path loads the real lazy exec tool wiring and can exceed the default
+  // 120s timeout on a loaded VPS even when it succeeds.
+  it("threads tools.exec.safeBins into exec allowlist checks", { timeout: 180_000 }, async () => {
     await withSafeBinsExecTool(
       {
         tmpPrefix: "openclaw-safe-bins-",

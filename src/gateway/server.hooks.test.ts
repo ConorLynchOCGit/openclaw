@@ -160,7 +160,7 @@ describe("gateway server hooks", () => {
         model: "openai/gpt-4.1-mini",
       });
       expect(resAgentModel.status).toBe(200);
-      await waitForSystemEvent();
+      await waitForSystemEvent(5_000);
       const call = (cronIsolatedRun.mock.calls[0] as unknown[] | undefined)?.[0] as {
         job?: { payload?: { model?: string } };
       };
@@ -174,7 +174,7 @@ describe("gateway server hooks", () => {
         agentId: "hooks",
       });
       expect(resAgentWithId.status).toBe(200);
-      await waitForSystemEvent();
+      await waitForSystemEvent(5_000);
       const routedCall = (cronIsolatedRun.mock.calls[0] as unknown[] | undefined)?.[0] as {
         job?: { agentId?: string };
       };

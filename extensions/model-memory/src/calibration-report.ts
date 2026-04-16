@@ -16,7 +16,7 @@ function countByKey(values: string[]): Record<string, number> {
     counts.set(value, (counts.get(value) ?? 0) + 1);
   }
   return Object.fromEntries(
-    [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+    [...counts.entries()].toSorted(([left], [right]) => left.localeCompare(right)),
   );
 }
 

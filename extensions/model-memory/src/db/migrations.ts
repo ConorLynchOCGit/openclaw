@@ -39,7 +39,7 @@ export async function listModelMemoryMigrationFiles(): Promise<SqlMigrationFile[
   const files = entries
     .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
     .map((entry) => entry.name)
-    .sort((left, right) => left.localeCompare(right));
+    .toSorted((left, right) => left.localeCompare(right));
 
   return Promise.all(
     files.map(async (name) => ({

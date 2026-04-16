@@ -1083,7 +1083,12 @@ async function withOnboardEnv(
         OPENCLAW_DISABLE_PLUGIN_MANIFEST_CACHE: "1",
       },
       async () => {
-        await run({ configPath, runtime });
+        const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(tempHome);
+        try {
+          await run({ configPath, runtime });
+        } finally {
+          cwdSpy.mockRestore();
+        }
       },
     );
   } finally {

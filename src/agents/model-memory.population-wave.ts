@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import type { OpenClawConfig } from "../config/config.ts";
 import {
   DatabaseMemoryObjectStore,
   ExecutorBackedSemanticCollisionAdjudicator,
@@ -11,8 +12,7 @@ import {
   type ModelMemorySupportItemRecord,
   type ModelMemoryWriteEventRecord,
   type ModelMemorySourceKind,
-} from "../../extensions/model-memory/runtime-api.ts";
-import type { OpenClawConfig } from "../config/config.ts";
+} from "../plugin-sdk/model-memory.js";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import {
   LARGE_DOCUMENT_EVIDENCE_MAX_WORDS_PER_WINDOW,

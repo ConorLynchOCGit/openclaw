@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ModelMemoryObjectRecord } from "../../extensions/model-memory/runtime-api.ts";
+import type { ModelMemoryObjectRecord } from "../plugin-sdk/model-memory.js";
 import {
   buildDuplicateClusterCandidates,
   buildProofGapMap,
@@ -327,7 +327,7 @@ describe("model-memory proof phase helpers", () => {
         {
           id: "retrieval",
           status: "failing_or_unstable",
-          owningSeams: ["extensions/model-memory/src/retrieval.ts"],
+          owningSeams: ["src/plugin-sdk/model-memory.ts"],
           notes: [],
         },
       ],

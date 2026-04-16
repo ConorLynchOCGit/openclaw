@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type {
-  ModelMemoryPgPool,
-  ModelMemoryPgPoolConfig,
-} from "../../extensions/model-memory/runtime-api.ts";
 import type { OpenClawConfig } from "../config/config.js";
+import type { ModelMemoryPgPool, ModelMemoryPgPoolConfig } from "../plugin-sdk/model-memory.js";
 import {
   createModelMemoryDatabaseRuntime,
   resolveModelMemoryDatabaseResolution,

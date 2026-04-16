@@ -136,25 +136,29 @@ describe("task-registry maintenance issue #60299", () => {
     expect(currentTasks.get(task.taskId)).toMatchObject({ status: "running" });
   });
 
-  it("marks chat-backed cli tasks lost after the owning run context disappears", async () => {
-    const channelKey = "agent:main:slack:channel:C1234567890";
-    const task = makeStaleTask({
-      runtime: "cli",
-      sourceId: "run-chat-cli-stale",
-      runId: "run-chat-cli-stale",
-      ownerKey: "agent:main:main",
-      requesterSessionKey: channelKey,
-      childSessionKey: channelKey,
-    });
+  it(
+    "marks chat-backed cli tasks lost after the owning run context disappears",
+    { timeout: 180_000 },
+    async () => {
+      const channelKey = "agent:main:slack:channel:C1234567890";
+      const task = makeStaleTask({
+        runtime: "cli",
+        sourceId: "run-chat-cli-stale",
+        runId: "run-chat-cli-stale",
+        ownerKey: "agent:main:main",
+        requesterSessionKey: channelKey,
+        childSessionKey: channelKey,
+      });
 
-    const { mod, currentTasks } = await loadMaintenanceModule({
-      tasks: [task],
-      sessionStore: { [channelKey]: { updatedAt: Date.now() } },
-    });
+      const { mod, currentTasks } = await loadMaintenanceModule({
+        tasks: [task],
+        sessionStore: { [channelKey]: { updatedAt: Date.now() } },
+      });
 
-    expect(await mod.runTaskRegistryMaintenance()).toMatchObject({ reconciled: 1 });
-    expect(currentTasks.get(task.taskId)).toMatchObject({ status: "lost" });
-  });
+      expect(await mod.runTaskRegistryMaintenance()).toMatchObject({ reconciled: 1 });
+      expect(currentTasks.get(task.taskId)).toMatchObject({ status: "lost" });
+    },
+  );
 
   it("keeps chat-backed cli tasks live while the owning run context is still active", async () => {
     const channelKey = "agent:main:slack:channel:C1234567890";

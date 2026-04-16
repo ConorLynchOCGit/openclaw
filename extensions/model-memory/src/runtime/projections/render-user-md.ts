@@ -1,3 +1,4 @@
+import { summarizeModelMemoryValue } from "../../payload-summary.ts";
 import type { ActiveMemorySlotRecord } from "../../runtime-read-models.ts";
 import type { ModelMemoryObjectRecord } from "../../storage-database-contract.ts";
 
@@ -18,7 +19,7 @@ export function renderUserMd(input: RenderUserProjectionInput): string {
   const records = input.slots
     .map((slot) => getObjectById(input.memoryObjects, slot.currentObjectId))
     .filter((record) => record.canonicalClass === "user")
-    .sort((left, right) =>
+    .toSorted((left, right) =>
       `${left.kind}:${left.normalizedSubject ?? ""}`.localeCompare(
         `${right.kind}:${right.normalizedSubject ?? ""}`,
       ),
@@ -26,16 +27,19 @@ export function renderUserMd(input: RenderUserProjectionInput): string {
 
   const preferenceLines = records
     .filter((record) => record.kind === "preference")
-    .map((record) => `- ${record.payload.subject}: ${record.payload.instruction}`);
+    .map(
+      (record) =>
+        `- ${summarizeModelMemoryValue(record.payload.subject, "preference")}: ${summarizeModelMemoryValue(record.payload.instruction)}`,
+    );
   const ruleLines = records
     .filter((record) => record.kind === "rule")
     .map((record) => {
-      const segments = [record.payload.subject];
+      const segments = [summarizeModelMemoryValue(record.payload.subject, "rule")];
       if (record.payload.recommendedAction) {
-        segments.push(`do: ${record.payload.recommendedAction}`);
+        segments.push(`do: ${summarizeModelMemoryValue(record.payload.recommendedAction)}`);
       }
       if (record.payload.avoidAction) {
-        segments.push(`avoid: ${record.payload.avoidAction}`);
+        segments.push(`avoid: ${summarizeModelMemoryValue(record.payload.avoidAction)}`);
       }
       return `- ${segments.join(" | ")}`;
     });

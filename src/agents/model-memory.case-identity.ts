@@ -1,4 +1,4 @@
-import { normalizeIdentityText } from "../../extensions/model-memory/src/semantic-identity.ts";
+import { normalizeIdentityText } from "../plugin-sdk/model-memory.js";
 
 function normalizeCasePath(value: string): string {
   return value.replace(/\\/g, "/").trim();

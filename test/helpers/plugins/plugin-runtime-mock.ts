@@ -404,6 +404,46 @@ export function createPluginRuntimeMock(overrides: DeepPartial<PluginRuntime> = 
       resolveApiKeyForProvider:
         vi.fn() as unknown as PluginRuntime["modelAuth"]["resolveApiKeyForProvider"],
     },
+    modelMemory: {
+      createDatabaseRuntime: vi.fn(
+        async () =>
+          ({
+            resolution: {
+              connectionString: "postgres://localhost/model_memory",
+              databaseName: "model_memory",
+              source: "env:MODEL_MEMORY_DATABASE_URL",
+              derivedFromSharedServer: false,
+            },
+            pool: { end: vi.fn(async () => undefined) },
+            sqlClient: {
+              query: vi.fn(),
+              withTransaction: vi.fn(),
+            },
+            canonicalRepository: {},
+            runtimeRepository: {},
+            memoryStore: {},
+            retrievalStore: {},
+            migrationNames: [],
+          }) as never,
+      ) as unknown as PluginRuntime["modelMemory"]["createDatabaseRuntime"],
+      resolveDatabaseResolution: vi.fn(
+        async () =>
+          ({
+            connectionString: "postgres://localhost/model_memory",
+            databaseName: "model_memory",
+            source: "env:MODEL_MEMORY_DATABASE_URL",
+            derivedFromSharedServer: false,
+          }) as never,
+      ) as unknown as PluginRuntime["modelMemory"]["resolveDatabaseResolution"],
+      createLiveJsonExecutor: vi.fn(
+        async () =>
+          ({
+            execute: vi.fn(),
+            getRequestTimeoutMs: () => 180_000,
+            getRequestSeed: () => 7,
+          }) as never,
+      ) as unknown as PluginRuntime["modelMemory"]["createLiveJsonExecutor"],
+    },
     subagent: {
       run: vi.fn(),
       waitForRun: vi.fn(),

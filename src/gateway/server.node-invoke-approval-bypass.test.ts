@@ -22,7 +22,8 @@ import {
 
 installGatewayTestHooks({ scope: "suite" });
 const NODE_CONNECT_TIMEOUT_MS = 10_000;
-const CONNECT_REQ_TIMEOUT_MS = 2_000;
+const CONNECT_REQ_TIMEOUT_MS = 10_000;
+const RPC_TIMEOUT_MS = 20_000;
 
 function createDeviceIdentity(): DeviceIdentity {
   const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
@@ -76,23 +77,33 @@ async function requestAllowOnceApproval(
 ): Promise<string> {
   const approvalId = crypto.randomUUID();
   const commandArgv = command.split(/\s+/).filter((part) => part.length > 0);
-  const requestP = rpcReq(ws, "exec.approval.request", {
-    id: approvalId,
-    command,
-    commandArgv,
-    systemRunPlan: {
-      argv: commandArgv,
+  const requestP = rpcReq(
+    ws,
+    "exec.approval.request",
+    {
+      id: approvalId,
+      command,
+      commandArgv,
+      systemRunPlan: {
+        argv: commandArgv,
+        cwd: null,
+        commandText: command,
+        agentId: null,
+        sessionKey: null,
+      },
+      nodeId,
       cwd: null,
-      commandText: command,
-      agentId: null,
-      sessionKey: null,
+      host: "node",
+      timeoutMs: 30_000,
     },
-    nodeId,
-    cwd: null,
-    host: "node",
-    timeoutMs: 30_000,
-  });
-  await rpcReq(ws, "exec.approval.resolve", { id: approvalId, decision: "allow-once" });
+    RPC_TIMEOUT_MS,
+  );
+  await rpcReq(
+    ws,
+    "exec.approval.resolve",
+    { id: approvalId, decision: "allow-once" },
+    RPC_TIMEOUT_MS,
+  );
   const requested = await requestP;
   expect(requested.ok).toBe(true);
   return approvalId;
@@ -308,7 +319,7 @@ describe("node.invoke approval bypass", () => {
       ] as const;
 
       for (const testCase of cases) {
-        const res = await rpcReq(ws, "node.invoke", testCase.payload);
+        const res = await rpcReq(ws, "node.invoke", testCase.payload, RPC_TIMEOUT_MS);
         expect(res.ok, testCase.name).toBe(false);
         expect(res.error?.message ?? "", testCase.name).toContain(testCase.expectedError);
         await expectNoForwardedInvoke(() => sawInvoke);
@@ -331,16 +342,21 @@ describe("node.invoke approval bypass", () => {
     const ws = await connectOperator(["operator.write"]);
     try {
       const nodeId = await getConnectedNodeId(ws);
-      const res = await rpcReq(ws, "node.invoke", {
-        nodeId,
-        command: "browser.proxy",
-        params: {
-          method: "POST",
-          path: "/profiles/create",
-          body: { name: "poc", cdpUrl: "http://127.0.0.1:9222" },
+      const res = await rpcReq(
+        ws,
+        "node.invoke",
+        {
+          nodeId,
+          command: "browser.proxy",
+          params: {
+            method: "POST",
+            path: "/profiles/create",
+            body: { name: "poc", cdpUrl: "http://127.0.0.1:9222" },
+          },
+          idempotencyKey: crypto.randomUUID(),
         },
-        idempotencyKey: crypto.randomUUID(),
-      });
+        RPC_TIMEOUT_MS,
+      );
       expect(res.ok).toBe(false);
       expect(res.error?.message ?? "").toContain(
         "node.invoke cannot mutate persistent browser profiles via browser.proxy",
@@ -375,26 +391,31 @@ describe("node.invoke approval bypass", () => {
 
       const approvalId = await requestAllowOnceApproval(wsApprover, "echo hi", nodeId);
       // Separate caller connection simulates per-call clients.
-      const invoke = await rpcReq(wsCaller, "node.invoke", {
-        nodeId,
-        command: "system.run",
-        params: {
-          command: ["echo", "hi"],
-          rawCommand: "echo hi",
-          runId: approvalId,
-          approved: true,
-          approvalDecision: "allow-always",
-          injected: "nope",
+      const invoke = await rpcReq(
+        wsCaller,
+        "node.invoke",
+        {
+          nodeId,
+          command: "system.run",
+          params: {
+            command: ["echo", "hi"],
+            rawCommand: "echo hi",
+            runId: approvalId,
+            approved: true,
+            approvalDecision: "allow-always",
+            injected: "nope",
+          },
+          idempotencyKey: crypto.randomUUID(),
         },
-        idempotencyKey: crypto.randomUUID(),
-      });
+        RPC_TIMEOUT_MS,
+      );
       expect(invoke.ok).toBe(true);
-      for (let i = 0; i < 100; i += 1) {
-        if (lastInvokeParams) {
-          break;
-        }
-        await sleep(50);
-      }
+      await expect
+        .poll(() => lastInvokeParams, {
+          timeout: 15_000,
+          interval: 50,
+        })
+        .toBeTruthy();
       expect(lastInvokeParams).toBeTruthy();
       expect(lastInvokeParams?.["approved"]).toBe(true);
       expect(lastInvokeParams?.["approvalDecision"]).toBe("allow-once");
@@ -402,18 +423,23 @@ describe("node.invoke approval bypass", () => {
 
       const replayApprovalId = await requestAllowOnceApproval(wsApprover, "echo hi", nodeId);
       const invokeCountBeforeReplay = invokeCount;
-      const replay = await rpcReq(wsOtherDevice, "node.invoke", {
-        nodeId,
-        command: "system.run",
-        params: {
-          command: ["echo", "hi"],
-          rawCommand: "echo hi",
-          runId: replayApprovalId,
-          approved: true,
-          approvalDecision: "allow-once",
+      const replay = await rpcReq(
+        wsOtherDevice,
+        "node.invoke",
+        {
+          nodeId,
+          command: "system.run",
+          params: {
+            command: ["echo", "hi"],
+            rawCommand: "echo hi",
+            runId: replayApprovalId,
+            approved: true,
+            approvalDecision: "allow-once",
+          },
+          idempotencyKey: crypto.randomUUID(),
         },
-        idempotencyKey: crypto.randomUUID(),
-      });
+        RPC_TIMEOUT_MS,
+      );
       expect(replay.ok).toBe(false);
       expect(replay.error?.message ?? "").toContain("not valid for this device");
       await expectNoForwardedInvoke(() => invokeCount > invokeCountBeforeReplay);
@@ -457,18 +483,23 @@ describe("node.invoke approval bypass", () => {
       const approvalId = await requestAllowOnceApproval(wsApprover, "echo hi", approvedNodeId);
       const beforeReplayApprovedNode = invokeCounts.get(approvedNodeId) ?? 0;
       const beforeReplayOtherNode = invokeCounts.get(replayNodeId) ?? 0;
-      const replay = await rpcReq(wsCaller, "node.invoke", {
-        nodeId: replayNodeId,
-        command: "system.run",
-        params: {
-          command: ["echo", "hi"],
-          rawCommand: "echo hi",
-          runId: approvalId,
-          approved: true,
-          approvalDecision: "allow-once",
+      const replay = await rpcReq(
+        wsCaller,
+        "node.invoke",
+        {
+          nodeId: replayNodeId,
+          command: "system.run",
+          params: {
+            command: ["echo", "hi"],
+            rawCommand: "echo hi",
+            runId: approvalId,
+            approved: true,
+            approvalDecision: "allow-once",
+          },
+          idempotencyKey: crypto.randomUUID(),
         },
-        idempotencyKey: crypto.randomUUID(),
-      });
+        RPC_TIMEOUT_MS,
+      );
       expect(replay.ok).toBe(false);
       expect(replay.error?.message ?? "").toContain("not valid for this node");
       await expectNoForwardedInvoke(

@@ -168,7 +168,7 @@ export function rankRetrievalCandidates(input: {
   return getCurrentMemoryObjects(input.memoryObjects)
     .map((object) => scoreRetrievalCandidate(object, input.request))
     .filter((entry): entry is RankedCandidate => !!entry)
-    .sort((left, right) => {
+    .toSorted((left, right) => {
       if (right.score !== left.score) {
         return right.score - left.score;
       }

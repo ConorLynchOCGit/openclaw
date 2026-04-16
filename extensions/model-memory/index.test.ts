@@ -1,32 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
+import { createCapturedPluginRegistration } from "../../src/test-utils/plugin-registration.ts";
 import plugin from "./index.ts";
 
 describe("model-memory plugin registration", () => {
   it("registers the document-ingestion operator tool as an optional plugin tool", () => {
     const registerTool = vi.fn();
+    const captured = createCapturedPluginRegistration();
 
     plugin.register?.({
-      id: "model-memory",
-      name: "Model Memory",
-      description: "Model Memory",
-      source: "test",
+      ...captured.api,
       config: {},
-      pluginConfig: {},
-      runtime: { version: "test" } as never,
-      logger: { debug() {}, info() {}, warn() {}, error() {} },
       registerTool,
-      registerHook() {},
-      registerHttpRoute() {},
-      registerChannel() {},
-      registerGatewayMethod() {},
-      registerCli() {},
-      registerService() {},
-      registerProvider() {},
-      registerCommand() {},
-      resolvePath(input: string) {
-        return input;
-      },
-      on() {},
     });
 
     expect(registerTool).toHaveBeenCalledOnce();

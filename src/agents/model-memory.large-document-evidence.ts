@@ -8,23 +8,17 @@ import {
   type ModelMemorySupportItemRecord,
   type RuntimeRebuildResult,
   ingestDocumentLive,
-} from "../../extensions/model-memory/runtime-api.ts";
-import type {
-  ContextArtifactRecord,
-  WorkspaceProjectionVersionRecord,
-} from "../../extensions/model-memory/runtime-api.ts";
-import type {
-  JsonModelExecutionRequest,
-  JsonModelExecutionResponse,
-  JsonModelExecutor,
-} from "../../extensions/model-memory/runtime-api.ts";
-import type {
-  SemanticInterpreter,
-  SemanticInterpreterInput,
-  SemanticInterpreterResult,
-} from "../../extensions/model-memory/src/semantic-interpreter.ts";
-import type { ModelMemoryObject } from "../../extensions/model-memory/src/semantic-schema.ts";
-import type { ModelMemorySourceKind } from "../../extensions/model-memory/src/storage-database-contract.ts";
+  type ContextArtifactRecord,
+  type JsonModelExecutionRequest,
+  type JsonModelExecutionResponse,
+  type JsonModelExecutor,
+  type ModelMemoryObject,
+  type ModelMemorySourceKind,
+  type SemanticInterpreter,
+  type SemanticInterpreterInput,
+  type SemanticInterpreterResult,
+  type WorkspaceProjectionVersionRecord,
+} from "../plugin-sdk/model-memory.js";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.js";
 import { OpenAICompatibleLiveJsonExecutor } from "./model-memory.live-json-executor.js";
 
@@ -448,7 +442,7 @@ function countLines(text: string): number {
   return text.length === 0 ? 0 : text.split(/\r?\n/).length;
 }
 
-function countBy<T extends string>(values: T[]): Record<string, number> {
+function countBy(values: string[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const value of values) {
     counts[value] = (counts[value] ?? 0) + 1;
@@ -637,14 +631,12 @@ async function summarizeLatestState(
   );
   const objectIdsForSource = new Set(supportItemsForSource.map((item) => item.memoryObjectId));
   const objectsForSource = allObjects.filter((record) => objectIdsForSource.has(record.id));
-  const supportItemsByObjectId = supportItemsForSource.reduce<
-    Map<string, ModelMemorySupportItemRecord[]>
-  >((acc, item) => {
+  const supportItemsByObjectId = supportItemsForSource.reduce((acc, item) => {
     const current = acc.get(item.memoryObjectId) ?? [];
     current.push(item);
     acc.set(item.memoryObjectId, current);
     return acc;
-  }, new Map());
+  }, new Map<string, ModelMemorySupportItemRecord[]>());
   const rebuild = ingestResult ?? {
     activeMemorySlots: await runtime.runtimeRepository.listActiveMemorySlots(),
     activeMemorySets: await runtime.runtimeRepository.listActiveMemorySets(),

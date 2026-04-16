@@ -1,9 +1,9 @@
+import { loadConfig, type OpenClawConfig } from "../config/config.js";
 import type {
   JsonModelExecutionRequest,
   JsonModelExecutionResponse,
   JsonModelExecutor,
-} from "../../extensions/model-memory/runtime-api.ts";
-import { loadConfig, type OpenClawConfig } from "../config/config.js";
+} from "../plugin-sdk/model-memory.js";
 import { resolveApiKeyForProvider } from "./model-auth.js";
 import { parseModelRef, type ModelRef } from "./model-selection.js";
 

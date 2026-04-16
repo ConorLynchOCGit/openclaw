@@ -5,8 +5,10 @@ export function createRuntimeConfigVitestConfig(env?: Record<string, string | un
     dir: "src",
     env,
     includeOpenClawRuntimeSetup: false,
+    isolate: true,
     name: "runtime-config",
     passWithNoTests: true,
+    pool: "forks",
   });
   return {
     ...config,

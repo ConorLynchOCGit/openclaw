@@ -10,17 +10,17 @@ export class ModelMemoryOperatorInspection {
 
   async listRecentCaptures(limit = 20) {
     const memoryObjects = await this.canonicalRepository.listMemoryObjects();
-    return memoryObjects.slice(-limit).reverse();
+    return memoryObjects.slice(-limit).toReversed();
   }
 
   async listWriteDecisions(limit = 20) {
     const writeEvents = await this.canonicalRepository.listWriteEvents();
-    return writeEvents.slice(-limit).reverse();
+    return writeEvents.slice(-limit).toReversed();
   }
 
   async listProjectionVersions(limit = 20) {
     const projectionVersions = await this.runtimeRepository.listProjectionVersions();
-    return projectionVersions.slice(-limit).reverse();
+    return projectionVersions.slice(-limit).toReversed();
   }
 
   async listRetrievalInspections(limit = 20) {
@@ -31,9 +31,9 @@ export class ModelMemoryOperatorInspection {
     ]);
 
     return {
-      requests: requests.slice(-limit).reverse(),
-      resultSets: resultSets.slice(-limit).reverse(),
-      resultItems: resultItems.slice(-limit).reverse(),
+      requests: requests.slice(-limit).toReversed(),
+      resultSets: resultSets.slice(-limit).toReversed(),
+      resultItems: resultItems.slice(-limit).toReversed(),
     };
   }
 
@@ -43,8 +43,8 @@ export class ModelMemoryOperatorInspection {
       this.runtimeRepository.listContextRunSegments(),
     ]);
     return {
-      runs: runs.slice(-limit).reverse(),
-      segments: segments.slice(-limit).reverse(),
+      runs: runs.slice(-limit).toReversed(),
+      segments: segments.slice(-limit).toReversed(),
     };
   }
 

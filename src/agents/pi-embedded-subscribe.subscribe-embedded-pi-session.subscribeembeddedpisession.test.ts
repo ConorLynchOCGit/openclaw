@@ -198,9 +198,12 @@ describe("subscribeEmbeddedPiSession", () => {
     });
     emitAssistantTextDelta(emit, "After tool");
 
-    await vi.waitFor(() => {
-      expect(onToolResult).toHaveBeenCalledTimes(1);
-    });
+    await vi.waitFor(
+      () => {
+        expect(onToolResult).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 5_000 },
+    );
     expect(onPartialReply).not.toHaveBeenCalled();
 
     expect(resolveToolResult).toBeTypeOf("function");

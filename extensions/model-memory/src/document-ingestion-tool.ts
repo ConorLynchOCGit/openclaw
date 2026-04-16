@@ -6,9 +6,11 @@ import {
   JsonFileDocumentIngestionRunRecordStore,
   ModelMemoryDocumentIngestionRunnerService,
   type DocumentIngestionRunRecordStore,
+  type DocumentIngestionRunnerRunRecord,
   type DocumentIngestionRunnerSource,
 } from "./admin/document-ingestion-runner-service.ts";
 import { DatabaseMemoryObjectStore } from "./db/database-memory-object-store.ts";
+import type { JsonModelExecutor } from "./model-execution.ts";
 import { ExecutorBackedSemanticInterpreter } from "./real-semantic-interpreter.ts";
 import { ExecutorBackedSemanticCollisionAdjudicator } from "./semantic-collision-adjudication.ts";
 
@@ -19,11 +21,12 @@ const DEFAULT_MAX_WORDS_PER_WINDOW = 1500;
 const DEFAULT_CHUNK_SIZE = 10;
 const DEFAULT_MAX_CONCURRENCY = 1;
 
-type ModelMemoryRuntime = Awaited<
-  ReturnType<
-    typeof import("../../../src/agents/model-memory.database.js").createModelMemoryDatabaseRuntime
-  >
->;
+type ModelMemoryRuntimeApi = NonNullable<OpenClawPluginApi["runtime"]>["modelMemory"];
+type ModelMemoryRuntime = Awaited<ReturnType<ModelMemoryRuntimeApi["createDatabaseRuntime"]>>;
+type ModelMemoryLiveExecutor = JsonModelExecutor & {
+  getRequestTimeoutMs: () => number;
+  getRequestSeed: () => number | undefined;
+};
 
 type ModelMemoryToolContext = {
   workspaceDir?: string;
@@ -31,8 +34,10 @@ type ModelMemoryToolContext = {
 };
 
 type InternalRuntimeDeps = {
-  createModelMemoryDatabaseRuntime: typeof import("../../../src/agents/model-memory.database.js").createModelMemoryDatabaseRuntime;
-  OpenAICompatibleLiveJsonExecutor: typeof import("../../../src/agents/model-memory.live-json-executor.js").OpenAICompatibleLiveJsonExecutor;
+  createDatabaseRuntime: ModelMemoryRuntimeApi["createDatabaseRuntime"];
+  createLiveJsonExecutor: (
+    options?: Parameters<ModelMemoryRuntimeApi["createLiveJsonExecutor"]>[0],
+  ) => Promise<ModelMemoryLiveExecutor>;
 };
 
 type ToolInternalDependencies = {
@@ -98,35 +103,16 @@ function assertWorkspaceRelativePath(workspaceRoot: string, relativePath: string
   return absolutePath;
 }
 
-async function loadInternalRuntimeDeps(): Promise<InternalRuntimeDeps> {
-  try {
-    const sourceMod = await import("../../../src/extensionAPI.js");
-    if (
-      typeof sourceMod.createModelMemoryDatabaseRuntime === "function" &&
-      typeof sourceMod.OpenAICompatibleLiveJsonExecutor === "function"
-    ) {
-      return {
-        createModelMemoryDatabaseRuntime: sourceMod.createModelMemoryDatabaseRuntime,
-        OpenAICompatibleLiveJsonExecutor: sourceMod.OpenAICompatibleLiveJsonExecutor,
-      };
-    }
-  } catch {
-    // ignore source fallback failure
-  }
-
-  const bundledExtensionApiHref = new URL("../../../dist/extensionAPI.js", import.meta.url).href;
-  const bundledMod = await import(bundledExtensionApiHref);
-  if (
-    typeof bundledMod.createModelMemoryDatabaseRuntime !== "function" ||
-    typeof bundledMod.OpenAICompatibleLiveJsonExecutor !== "function"
-  ) {
+async function loadInternalRuntimeDeps(api: OpenClawPluginApi): Promise<InternalRuntimeDeps> {
+  const runtime = api.runtime?.modelMemory;
+  if (!runtime) {
     throw new Error(
-      "Internal error: model-memory runtime helpers are not available from extensionAPI",
+      "Internal error: model-memory runtime helpers are not available from the plugin runtime",
     );
   }
   return {
-    createModelMemoryDatabaseRuntime: bundledMod.createModelMemoryDatabaseRuntime,
-    OpenAICompatibleLiveJsonExecutor: bundledMod.OpenAICompatibleLiveJsonExecutor,
+    createDatabaseRuntime: runtime.createDatabaseRuntime,
+    createLiveJsonExecutor: runtime.createLiveJsonExecutor,
   };
 }
 
@@ -179,17 +165,6 @@ async function buildRunnerSources(input: {
     });
   }
   return records;
-}
-
-function createRunnerService(
-  runtime: ModelMemoryRuntime,
-): ModelMemoryDocumentIngestionRunnerService {
-  return new ModelMemoryDocumentIngestionRunnerService({
-    canonicalRepository: runtime.canonicalRepository,
-    runtimeRepository: runtime.runtimeRepository,
-    memoryStore: new DatabaseMemoryObjectStore(runtime.canonicalRepository),
-    collisionAdjudicator: undefined,
-  });
 }
 
 export function createModelMemoryDocumentIngestionTool(
@@ -265,8 +240,10 @@ export function createModelMemoryDocumentIngestionTool(
         assertWorkspaceRelativePath(workspaceRoot, sourcePath);
       }
 
-      const internal = await (deps.loadInternalRuntimeDeps ?? loadInternalRuntimeDeps)();
-      const runtime = await internal.createModelMemoryDatabaseRuntime({ config: api.config });
+      const internal = await (
+        deps.loadInternalRuntimeDeps ?? (() => loadInternalRuntimeDeps(api))
+      )();
+      const runtime = await internal.createDatabaseRuntime({ config: api.config });
       try {
         const runnerSources = await buildRunnerSources({
           workspaceRoot,
@@ -276,7 +253,7 @@ export function createModelMemoryDocumentIngestionTool(
           maxWordsPerWindow,
           readTextFile,
         });
-        const executor = new internal.OpenAICompatibleLiveJsonExecutor({
+        const executor = await internal.createLiveJsonExecutor({
           config: api.config,
           requestTimeoutMs,
           requestSeed,
@@ -299,7 +276,7 @@ export function createModelMemoryDocumentIngestionTool(
           deps.createRecordStore?.(recordAbsolutePath) ??
           new JsonFileDocumentIngestionRunRecordStore(recordAbsolutePath);
 
-        const record = await service.executeRun({
+        const record: DocumentIngestionRunnerRunRecord = await service.executeRun({
           runId,
           sources: runnerSources,
           interpreter,
