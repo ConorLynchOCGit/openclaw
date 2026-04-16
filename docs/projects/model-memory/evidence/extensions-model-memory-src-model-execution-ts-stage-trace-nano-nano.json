@@ -1,0 +1,389 @@
+{
+  "generatedAt": "2026-04-14T23:36:15.455Z",
+  "sourcePath": "extensions/model-memory/src/model-execution.ts",
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 180000,
+  "maxWordsPerWindow": 1500,
+  "summary": {
+    "previousCollisionModelCalls": 18,
+    "collisionModelCalls": 1,
+    "collisionModelCallReduction": 17,
+    "residualBatchRequestCount": 1,
+    "residualBatchCandidateCount": 1,
+    "zeroCandidateSkipCount": 3,
+    "admittedToBatchCount": 1,
+    "candidatePrunedCount": 1,
+    "collisionResultCounts": {
+      "distinct": 1
+    },
+    "resolvedModelIds": ["openai/gpt-5.4-nano-20260317"],
+    "finalSummary": {
+      "type": "final_summary",
+      "totalWindows": 1,
+      "capturedObjects": 4,
+      "writeResults": 4,
+      "persistedObjects": 4,
+      "persistedSupportItems": 4,
+      "windowOutcomeCounts": {
+        "capture": 1
+      },
+      "writeDecisionCounts": {
+        "write": 4
+      },
+      "elapsedMs": 17252
+    }
+  },
+  "traces": [
+    {
+      "type": "source_windows_ready",
+      "sourcePath": "extensions/model-memory/src/model-execution.ts",
+      "totalWindows": 1,
+      "windows": [
+        {
+          "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+          "windowIndex": 0,
+          "headingPath": [],
+          "lineStart": 1,
+          "lineEnd": 101,
+          "tokenEstimate": 252
+        }
+      ],
+      "elapsedMs": 868
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [],
+      "lineStart": 1,
+      "lineEnd": 101,
+      "promptChars": 6028,
+      "elapsedMs": 871
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 2077
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 2429
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1302,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"rule\",\"claim\":\"When parsing a JSON model output, strip an outer JSON code fence and then extract the first JSON object/array (or fall back to trimmed text), before JSON.parse.\",\"supportingSpa...",
+      "elapsedMs": 4902
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 4,
+      "elapsedMs": 4904
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [],
+      "lineStart": 1,
+      "lineEnd": 101,
+      "promptChars": 7484,
+      "elapsedMs": 4909
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 4911
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 5365
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1320,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"rule\",\"claim\":\"When parsing a JSON model output, strip an outer JSON code fence and then extract the first JSON object/array (or fall back to trimmed text), before JSON.parse.\",\"supportingSpa...",
+      "elapsedMs": 8339
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 4,
+      "elapsedMs": 8339
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [],
+      "lineStart": 1,
+      "lineEnd": 101,
+      "promptChars": 8089,
+      "elapsedMs": 8340
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 8341
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 10879
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2180,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"reference\",\"kind\":\"reference\",\"payload\":{\"task\":\"stripOuterJsonCodeFence and extractStructuredJsonCandidate: when parsing JSON model output, remove an outer ```json code fence if present; ot...",
+      "elapsedMs": 14549
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 4,
+      "elapsedMs": 14549
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "candidateId": "candidate-0",
+      "canonicalClass": "reference",
+      "kind": "reference",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 14981
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "candidateId": "candidate-1",
+      "canonicalClass": "reference",
+      "kind": "reference",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 1,
+      "prunedCandidateCount": 0,
+      "disposition": "admitted_to_batch",
+      "elapsedMs": 15294
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "candidateId": "candidate-2",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 15294
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "candidateId": "candidate-3",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 15597
+    },
+    {
+      "type": "collision_begin",
+      "sourceWindowIds": ["9368473f-76dc-5583-9502-c7a0c00c9dd5"],
+      "stage": "write_path_collision_adjudication",
+      "requestCount": 1,
+      "candidateCount": 1,
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "elapsedMs": 15892
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": -1,
+      "stage": "write_path_collision_adjudication",
+      "contractVersion": "v2-batch",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 15894
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": -1,
+      "stage": "write_path_collision_adjudication",
+      "contractVersion": "v2-batch",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 16260
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "windowIndex": -1,
+      "stage": "write_path_collision_adjudication",
+      "contractVersion": "v2-batch",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 67,
+      "outputPreview": "{\"decisions\":[{\"candidateId\":\"candidate-1\",\"relation\":\"distinct\"}]}",
+      "elapsedMs": 16535
+    },
+    {
+      "type": "collision_result",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "stage": "write_path_collision_adjudication",
+      "candidateId": "candidate-1",
+      "relation": "distinct",
+      "elapsedMs": 16536
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "action": "capture",
+      "objectCount": 4,
+      "rejectReasons": [],
+      "elapsedMs": 16893
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "decision": "write",
+      "memoryObjectId": "dac56f44-1f5c-565d-b285-d91869431f4d",
+      "supportItemId": "5d96da70-61f3-5e9c-b9a4-fb61ec916656",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 16893
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "decision": "write",
+      "memoryObjectId": "14e4289a-5461-54b0-ade8-6456f82f33e7",
+      "supportItemId": "5e04e474-9a1b-5a7a-86fb-2988a1af9f1d",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 16893
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "decision": "write",
+      "memoryObjectId": "6e0323d0-9a6e-53b4-8ecc-652f45b9afc0",
+      "supportItemId": "61dc95e3-b98d-5c57-8bf3-21c1fc8e57b8",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 16893
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "9368473f-76dc-5583-9502-c7a0c00c9dd5",
+      "decision": "write",
+      "memoryObjectId": "cb953d62-117f-5555-90ad-899524164019",
+      "supportItemId": "f96c928f-1490-5497-a123-a0f2eb8263f5",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 16893
+    },
+    {
+      "type": "final_summary",
+      "totalWindows": 1,
+      "capturedObjects": 4,
+      "writeResults": 4,
+      "persistedObjects": 4,
+      "persistedSupportItems": 4,
+      "windowOutcomeCounts": {
+        "capture": 1
+      },
+      "writeDecisionCounts": {
+        "write": 4
+      },
+      "elapsedMs": 17252
+    }
+  ]
+}

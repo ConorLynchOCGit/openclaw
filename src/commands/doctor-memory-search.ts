@@ -6,6 +6,7 @@ import {
 } from "../agents/agent-scope.js";
 import { resolveMemorySearchConfig } from "../agents/memory-search.js";
 import { resolveApiKeyForProvider } from "../agents/model-auth.js";
+import { resolveModelMemoryLiveRuntimeStatus } from "../agents/model-memory.live-runtime.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
@@ -230,6 +231,31 @@ export async function noteMemorySearchHealth(
     };
   },
 ): Promise<void> {
+  const modelMemoryRuntime = resolveModelMemoryLiveRuntimeStatus(cfg);
+  if (modelMemoryRuntime.enabled) {
+    if (
+      modelMemoryRuntime.legacyMemorySlotDisabled &&
+      modelMemoryRuntime.legacyMemorySearchDisabled
+    ) {
+      return;
+    }
+    note(
+      [
+        "model-memory live runtime is enabled, but legacy memory surfaces are still partially active.",
+        modelMemoryRuntime.legacyMemorySlotDisabled
+          ? null
+          : `- Disable legacy slot: ${formatCliCommand("openclaw config set plugins.slots.memory none")}`,
+        modelMemoryRuntime.legacyMemorySearchDisabled
+          ? null
+          : `- Disable legacy memory search: ${formatCliCommand("openclaw config set agents.defaults.memorySearch.enabled false")}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      "Model memory",
+    );
+    return;
+  }
+
   const agentId = resolveDefaultAgentId(cfg);
   const agentDir = resolveAgentDir(cfg, agentId);
   const resolved = resolveMemorySearchConfig(cfg, agentId);

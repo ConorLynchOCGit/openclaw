@@ -1,0 +1,48 @@
+{
+  "generatedAt": "2026-04-15T00:33:17.071Z",
+  "toolName": "model_memory_document_ingest",
+  "runId": "model-memory-tool-smoke",
+  "recordPath": "checkpoints/model-memory/model-memory-tool-smoke.json",
+  "modelId": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+  "requestTimeoutMs": 180000,
+  "requestSeed": 7,
+  "maxWordsPerWindow": 1500,
+  "chunkSize": 2,
+  "maxConcurrency": 1,
+  "sources": [
+    {
+      "displayPath": "AGENTS.md",
+      "status": "completed",
+      "windowCount": 3,
+      "capturedClaimCount": 14,
+      "writeDecisionCounts": {
+        "write": 14
+      }
+    },
+    {
+      "displayPath": "docs/help/testing.md",
+      "status": "completed",
+      "windowCount": 2,
+      "capturedClaimCount": 6,
+      "writeDecisionCounts": {
+        "write": 6
+      }
+    }
+  ],
+  "totals": {
+    "docsAttempted": 2,
+    "docsCompleted": 2,
+    "docsFailed": 0,
+    "capturedClaimCount": 20,
+    "ignoredWindowCount": 0,
+    "rejectedWindowCount": 0,
+    "writeDecisionCounts": {
+      "write": 20
+    },
+    "rejectReasons": []
+  },
+  "warnings": [
+    "plugins.entries.memory-middleware: plugin not found: memory-middleware (stale config entry ignored; remove it from plugins config)"
+  ]
+}

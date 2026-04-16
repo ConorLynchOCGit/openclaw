@@ -1,0 +1,251 @@
+{
+  "generatedAt": "2026-04-15T18:15:49.711Z",
+  "duplicateReviewPath": "/root/services/openclaw-roles/live/docs/projects/model-memory/evidence/duplicate-escape-review.json",
+  "duplicateReviewGeneratedAt": "2026-04-15T18:14:54.292Z",
+  "duplicateAuditPath": "/root/services/openclaw-roles/live/docs/projects/model-memory/evidence/duplicate-escape-audit.json",
+  "duplicateAuditGeneratedAt": "2026-04-15T18:14:48.296Z",
+  "coreClaimDeltaMeasurementPath": "/root/services/openclaw-roles/live/docs/projects/model-memory/evidence/core-claim-delta-measurement.json",
+  "coreClaimDeltaMeasurementGeneratedAt": "2026-04-15T16:47:32.078Z",
+  "tracePaths": [
+    "/root/services/openclaw-roles/live/docs/projects/model-memory/evidence/agents-md-collision-hinge-trace.json",
+    "/root/services/openclaw-roles/live/docs/projects/model-memory/evidence/docs-help-testing-md-collision-hinge-trace.json",
+    "/root/services/openclaw-roles/live/docs/projects/model-memory/evidence/docs-gateway-configuration-md-collision-hinge-trace.json"
+  ],
+  "sampleSize": 6,
+  "cases": [
+    {
+      "caseId": "rerun-ecb2ca60-a6a5-56c9-aa25-2ee522c7bf73",
+      "caseIdentity": "AGENTS.md::repository guidelines>security & configuration tips::rule_b75e13a5e00d0d2c27efb52b",
+      "source": "AGENTS.md",
+      "kind": "rule",
+      "role": "clear_duplicate_should_attach",
+      "liveMatchFound": false,
+      "liveRetainedCandidates": [],
+      "replayClassification": "deterministic_attach",
+      "replayCurrentPathBlocker": "blocking_packaging_fields",
+      "replayDeltaClass": "packaging_only_drift",
+      "replayRetainedCandidates": [
+        {
+          "identityKey": "rule_688390a612ba693c2f04e934",
+          "payloadSummary": "GHSA PATCH payload separation | Make separate calls. | Do not set GHSA severity and cvss_vector_string in the same PATCH."
+        },
+        {
+          "identityKey": "rule_ddf60d0b06b6c4a58cb12d64",
+          "payloadSummary": "When publishing security advisories (GHSA), read SECURITY.md first, then patch and publish via the GHSA API using separate PATCH calls if severity and cvss_vector_string both need changes. | Read SECURITY.md before reviewing security advisories. If severity and cvss_vector_string both need changes, use separate PATCH calls. | Do not attempt to set severity and cvss_vector_string in the same PATCH call."
+        },
+        {
+          "identityKey": "rule_d0150ec314b16ae65704c9be",
+          "payloadSummary": "GHSA PATCH payload constraints | Make separate PATCH calls for these fields. | Do not set `severity` and `cvss_vector_string` in the same PATCH request when patching GHSA via the API."
+        },
+        {
+          "identityKey": "rule_3ebaafd03f11373c7508e533",
+          "payloadSummary": "GHSA PATCH footgun | Do separate calls rather than setting `severity` and `cvss_vector_string` in the same PATCH. | Understanding GHSA PATCH API field constraints."
+        },
+        {
+          "identityKey": "rule_b586aded082f3f07390fcee9",
+          "payloadSummary": "GHSA advisory handling workflow | Before reviewing security advisories, read `SECURITY.md`, fetch via `gh api /repos/openclaw/openclaw/security-advisories/<GHSA>`, then PATCH the advisory including `\"state\":\"published\"` (no `/publish` endpoint). | Do not attempt to set `severity` and `cvss_vector_string` in the same GHSA PATCH call; do separate calls. | Use the documented GHSA API workflow and publish via PATCH including `\"state\":\"published\"`."
+        }
+      ],
+      "retainedCountDelta": -5,
+      "overlappingRetainedCandidateCount": 0,
+      "parityQuality": "unresolved_trace_match",
+      "localizedSeam": "trace_match",
+      "notes": ["No reliable trace-row match was found for this reviewed case."]
+    },
+    {
+      "caseId": "rerun-6c4e531b-5a0f-55cf-ba89-0c5e6726d3f4",
+      "caseIdentity": "docs/help/testing.md::testing::fact_fa606b42f1cd1f4a4b82b1f5",
+      "source": "docs/help/testing.md",
+      "kind": "fact",
+      "role": "clear_duplicate_should_attach",
+      "liveMatchFound": false,
+      "liveRetainedCandidates": [],
+      "replayClassification": "batched_adjudication",
+      "replayCurrentPathBlocker": "blocking_core_claim_fields",
+      "replayDeltaClass": "additive_operational_delta",
+      "replayRetainedCandidates": [
+        {
+          "identityKey": "fact_13cf9be94021a46271764c15",
+          "payloadSummary": "OpenClaw test suites: OpenClaw has three Vitest suites (unit/integration, e2e, live) and a small set of Docker runners."
+        },
+        {
+          "identityKey": "fact_03c18949dc94a804adf00aec",
+          "payloadSummary": "OpenClaw testing suites: OpenClaw has three Vitest suites (unit/integration, e2e, live) and a small set of Docker runners."
+        },
+        {
+          "identityKey": "fact_1ad01dd2f478bf84898a37ce",
+          "payloadSummary": "OpenClaw test guide: OpenClaw uses three Vitest suites (unit/integration, e2e, live) plus a small set of Docker runners; this doc is a “how we test” guide describing what each suite covers, which commands to run, how live tests discover credentials/select models, and how to add regressions for model/provider issues."
+        },
+        {
+          "identityKey": "fact_695c816f149438d96707ab70",
+          "payloadSummary": "Vitest suites: OpenClaw has three Vitest suites: unit/integration (default), e2e (gateway smoke), and live (real providers + real models)."
+        }
+      ],
+      "retainedCountDelta": -4,
+      "overlappingRetainedCandidateCount": 0,
+      "parityQuality": "unresolved_trace_match",
+      "localizedSeam": "trace_match",
+      "notes": ["No reliable trace-row match was found for this reviewed case."]
+    },
+    {
+      "caseId": "rerun-9fe78fe9-3b3f-55eb-9e90-5ada852549ed",
+      "caseIdentity": "docs/help/testing.md::testing::fact_fa1bee72803437f568d6bb04",
+      "source": "docs/help/testing.md",
+      "kind": "fact",
+      "role": "clear_duplicate_should_attach",
+      "liveMatchFound": false,
+      "liveRetainedCandidates": [],
+      "replayClassification": "deterministic_attach",
+      "replayRetainedCandidates": [
+        {
+          "identityKey": "fact_0b86c8d6d2b7f1d225de06f8",
+          "payloadSummary": "Live tests layer split: Live tests are split into two layers: Layer 1 direct model completion (no gateway) in `src/agents/models.profiles.live.test.ts`, and Layer 2 gateway + dev agent smoke (what “@openclaw” actually does) in `src/gateway/gateway-models.profiles.live.test.ts`."
+        },
+        {
+          "identityKey": "fact_b2aa81815f407622aa1454d0",
+          "payloadSummary": "Live model smoke layer split: Live model smoke is split into Layer 1 (direct model completion without gateway) and Layer 2 (gateway + dev agent smoke)."
+        },
+        {
+          "identityKey": "fact_a11ec6c21edd7de931af9f58",
+          "payloadSummary": "Live direct model completion (no gateway) suite enablement: The live direct model completion (no gateway) test is `src/agents/models.profiles.live.test.ts`, and it runs when `OPENCLAW_LIVE_MODELS` is set (otherwise it skips); enable via `pnpm test:live` or `OPENCLAW_LIVE_TEST=1`, and set `OPENCLAW_LIVE_MODELS=modern` (or `all`, alias for modern) to actually run it."
+        },
+        {
+          "identityKey": "fact_0b827596d3ff83d92b836a3c",
+          "payloadSummary": "LIVE gateway smoke test environment variable: For live gateway smoke, set OPENCLAW_LIVE_GATEWAY_MODELS and run `pnpm test:live src/gateway/gateway-models.profiles.live.test.ts`."
+        }
+      ],
+      "retainedCountDelta": -4,
+      "overlappingRetainedCandidateCount": 0,
+      "parityQuality": "unresolved_trace_match",
+      "localizedSeam": "trace_match",
+      "notes": ["No reliable trace-row match was found for this reviewed case."]
+    },
+    {
+      "caseId": "rerun-0f1a11dd-fb49-50d8-8b2f-0fe56681912f",
+      "caseIdentity": "docs/help/testing.md::testing::rule_024a76e951c684845ebbb3f7",
+      "source": "docs/help/testing.md",
+      "kind": "rule",
+      "role": "clear_distinct_should_stay_distinct",
+      "liveMatchFound": false,
+      "liveRetainedCandidates": [],
+      "replayClassification": "batched_adjudication",
+      "replayCurrentPathBlocker": "already_legit_distinct",
+      "replayDeltaClass": "additive_operational_delta",
+      "replayRetainedCandidates": [
+        {
+          "identityKey": "rule_e93808dff8b96dc0d3c0e9c5",
+          "payloadSummary": "Live gateway smoke should run `pnpm test:live src/gateway/gateway-models.profiles.live.test.ts` using `OPENCLAW_LIVE_GATEWAY_MODELS` including tool-calling and image-capable models. | Run `pnpm test:live src/gateway/gateway-models.profiles.live.test.ts` with `OPENCLAW_LIVE_GATEWAY_MODELS` set to include tool-calling and image-capable models."
+        },
+        {
+          "identityKey": "rule_0687acf8378a8247258b5e46",
+          "payloadSummary": "Run gateway live smoke with tools+image | Set `OPENCLAW_LIVE_GATEWAY_MODELS` and run `pnpm test:live src/gateway/gateway-models.profiles.live.test.ts`. | A correctly formatted `OPENCLAW_LIVE_GATEWAY_MODELS` value including the desired models."
+        },
+        {
+          "identityKey": "rule_721fdb08eb82fc9bcdecf6f8",
+          "payloadSummary": "Live model smoke layer 1 (direct model completion) | To run live model smoke layer 1 (direct model completion, no gateway), set `OPENCLAW_LIVE_MODELS=modern` (or `all`) and run `pnpm test:live` (or `OPENCLAW_LIVE_TEST=1` if invoking Vitest directly)."
+        },
+        {
+          "identityKey": "rule_0ef4055848a4f42cc3be8a80",
+          "payloadSummary": "Live model smoke layer separation | Isolate failures using the two layers | Layer 1 direct model completion and Layer 2 full gateway+agent pipeline to validate different failure modes"
+        },
+        {
+          "identityKey": "rule_a05d86035a4436bebe9460fd",
+          "payloadSummary": "Live gateway + dev agent smoke layer 2 | To run live gateway+dev agent smoke layer 2, run `pnpm test:live` and optionally narrow with `OPENCLAW_LIVE_GATEWAY_MODELS` and `OPENCLAW_LIVE_GATEWAY_PROVIDERS`."
+        }
+      ],
+      "retainedCountDelta": -5,
+      "overlappingRetainedCandidateCount": 0,
+      "parityQuality": "unresolved_trace_match",
+      "localizedSeam": "trace_match",
+      "notes": ["No reliable trace-row match was found for this reviewed case."]
+    },
+    {
+      "caseId": "rerun-59e58a61-441a-5723-be56-89bfbffa3a30",
+      "caseIdentity": "docs/gateway/configuration.md::configuration>config rpc (programmatic updates)::rule_421bfdc7b5cbcb29e0c0b27d",
+      "source": "docs/gateway/configuration.md",
+      "kind": "rule",
+      "role": "clear_distinct_should_stay_distinct",
+      "liveMatchFound": false,
+      "liveRetainedCandidates": [],
+      "replayClassification": "batched_adjudication",
+      "replayCurrentPathBlocker": "already_legit_distinct",
+      "replayDeltaClass": "additive_operational_delta",
+      "replayRetainedCandidates": [
+        {
+          "identityKey": "rule_e77916f638f1a747bec61ef9",
+          "payloadSummary": "env var substitution in config values | Use ${VAR_NAME} in config string values for substitution where VAR_NAME matches [A-Z_][A-Z0-9_]*, and ensure referenced vars are present and non-empty to avoid load-time errors. | Do not use undefined or empty env vars in ${VAR_NAME} substitutions (they throw an error at load time). | Support literal output escaping via $${VAR} when a config should contain the pattern without substitution."
+        },
+        {
+          "identityKey": "rule_2092f92287d1624d9f55541a",
+          "payloadSummary": "config string environment variable substitution rules | Use environment variables with uppercase names matching `[A-Z_][A-Z0-9_]*`; ensure referenced variables are present and non-empty at load time. | Do not reference missing or empty environment variables in config string substitutions because this throws an error at load time. | Escape literal output using `$${VAR}` when you need `$`-prefixed text instead of substitution."
+        },
+        {
+          "identityKey": "rule_b09a43596bc8a7fa65851f30",
+          "payloadSummary": "Env var substitution rules in config strings | Use ${VAR_NAME} with uppercase names matching [A-Z_][A-Z0-9_]*; missing/empty vars throw an error at load time; escape with $${VAR} for literal output. | Do not use lowercase or invalid variable names for substitution."
+        },
+        {
+          "identityKey": "rule_5a2a9c80126cb9af374e267e",
+          "payloadSummary": "Environment variable substitution in config values | Use ${VAR_NAME} in config strings where VAR_NAME matches [A-Z_][A-Z0-9_]*; escape literal output with $${VAR}. | Do not reference undefined or empty environment variables because they throw an error at load time. | Provide environment variables with uppercase names matching [A-Z_][A-Z0-9_]* (or escape with $${VAR} for literal output)."
+        },
+        {
+          "identityKey": "rule_abaf49ad95adf00c0c817170",
+          "payloadSummary": "Environment variable substitution in config values | Substitute only uppercase variable names matching `[A-Z_][A-Z0-9_]*`; if a referenced variable is missing/empty, raise an error at load time; escape `$${VAR}` to emit literal output. | Implement env var substitution rules with the specified name pattern, load-time errors for missing/empty vars, and `$${VAR}` escaping for literal output."
+        }
+      ],
+      "retainedCountDelta": -5,
+      "overlappingRetainedCandidateCount": 0,
+      "parityQuality": "unresolved_trace_match",
+      "localizedSeam": "trace_match",
+      "notes": ["No reliable trace-row match was found for this reviewed case."]
+    },
+    {
+      "caseId": "rerun-098ba11a-a3ff-5396-b0a8-f85288f251ef",
+      "caseIdentity": "AGENTS.md::repository guidelines::rule_ee209a084f7d8090ff8568e5",
+      "source": "AGENTS.md",
+      "kind": "rule",
+      "role": "true_ambiguity",
+      "liveMatchFound": false,
+      "liveRetainedCandidates": [],
+      "replayClassification": "batched_adjudication",
+      "replayCurrentPathBlocker": "blocking_core_claim_fields",
+      "replayDeltaClass": "additive_operational_delta",
+      "replayRetainedCandidates": [
+        {
+          "identityKey": "rule_e301d3545ad98b5c603d6f48",
+          "payloadSummary": "When creating GitHub comments, avoid gh issue/pr comment -b \"...\" if the body contains backticks or shell chars; use a single-quoted heredoc instead. | Always use single-quoted heredoc (-F - <<'EOF') to prevent escaping/command issues. | Never use `gh issue/pr comment -b \"...\"` when body contains backticks or shell chars."
+        },
+        {
+          "identityKey": "rule_42309a80450a4d058475e8a6",
+          "payloadSummary": "gh issue/pr comment -b usage with shell/backticks | Use a single-quoted heredoc (`-F - <<'EOF'`) to avoid escaping corruption. | Never use `gh issue/pr comment -b \"...\"` when the body contains backticks or shell chars."
+        },
+        {
+          "identityKey": "rule_20b4f0b65bc7ed9dd4cf0f5f",
+          "payloadSummary": "GitHub comment command -b usage with backticks/shell chars | Use single-quoted heredocs (`-F - <<'EOF'`) so no command substitution/escaping corruption occurs. | Never use `gh issue/pr comment -b \"...\"` when the body contains backticks or shell chars."
+        },
+        {
+          "identityKey": "rule_e9a24214e08eb57471b8212a",
+          "payloadSummary": "GitHub comment footgun: never use `gh issue/pr comment -b \"...\"` when body contains backticks or shell chars; always use single-quoted heredoc (`-F - <<'EOF'`). | When using `gh issue/pr comment`, prefer single-quoted heredoc (`-F - <<'EOF'`) to avoid escaping/command-substitution corruption, especially if the body contains backticks or shell characters. | Ability to invoke `gh` with single-quoted heredocs for safe comment body formatting."
+        },
+        {
+          "identityKey": "rule_6511693e796faf4625e1e576",
+          "payloadSummary": "Never use `gh issue/pr comment -b \"...\"` when the body contains backticks or shell chars; always use single-quoted heredoc (`-F - <<'EOF'`) so no command substitution/escaping corruption occurs. | Use single-quoted heredoc (`-F - <<'EOF'`) for GitHub comment bodies containing backticks/shell chars. | Do not use `gh issue/pr comment -b \"...\"` with bodies containing backticks or shell chars."
+        }
+      ],
+      "retainedCountDelta": -5,
+      "overlappingRetainedCandidateCount": 0,
+      "parityQuality": "unresolved_trace_match",
+      "localizedSeam": "trace_match",
+      "notes": ["No reliable trace-row match was found for this reviewed case."]
+    }
+  ],
+  "summary": {
+    "closeCount": 0,
+    "divergedCount": 6,
+    "parityByQuality": {
+      "unresolved_trace_match": 6
+    },
+    "divergenceBySeam": {
+      "trace_match": 6
+    }
+  }
+}

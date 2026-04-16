@@ -178,6 +178,9 @@ Example:
 ## Learn more
 
 <Columns>
+  <Card title="Projects" href="/projects" icon="folder-kanban">
+    Active project workspaces, roadmaps, specs, and status records.
+  </Card>
   <Card title="Full feature list" href="/concepts/features" icon="list">
     Complete channel, routing, and media capabilities.
   </Card>

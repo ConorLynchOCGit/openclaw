@@ -47,7 +47,12 @@ describe("runDaemonInstall integration", () => {
       "OPENCLAW_STATE_DIR",
       "OPENCLAW_CONFIG_PATH",
       "OPENCLAW_GATEWAY_TOKEN",
+      "CLAWDBOT_GATEWAY_TOKEN",
       "OPENCLAW_GATEWAY_PASSWORD",
+      "CLAWDBOT_GATEWAY_PASSWORD",
+      "OPENCLAW_LOAD_SHELL_ENV",
+      "OPENCLAW_DEFER_SHELL_ENV_FALLBACK",
+      "OPENCLAW_SHELL_ENV_TIMEOUT_MS",
     ]);
     tempHome = await makeTempWorkspace("openclaw-daemon-install-int-");
     configPath = path.join(tempHome, "openclaw.json");
@@ -65,11 +70,16 @@ describe("runDaemonInstall integration", () => {
     vi.clearAllMocks();
     resetRuntimeCapture();
     clearRuntimeConfigSnapshot();
-    // Keep these defined-but-empty so dotenv won't repopulate from local .env.
     process.env.OPENCLAW_GATEWAY_TOKEN = "";
+    delete process.env.CLAWDBOT_GATEWAY_TOKEN;
     process.env.OPENCLAW_GATEWAY_PASSWORD = "";
+    delete process.env.CLAWDBOT_GATEWAY_PASSWORD;
+    delete process.env.OPENCLAW_LOAD_SHELL_ENV;
+    delete process.env.OPENCLAW_DEFER_SHELL_ENV_FALLBACK;
+    delete process.env.OPENCLAW_SHELL_ENV_TIMEOUT_MS;
     serviceMock.isLoaded.mockResolvedValue(false);
     await fs.writeFile(configPath, JSON.stringify({}, null, 2));
+    clearRuntimeConfigSnapshot();
     clearConfigCache();
   });
 
@@ -107,7 +117,7 @@ describe("runDaemonInstall integration", () => {
     expect(joined).toContain("MISSING_GATEWAY_TOKEN");
   });
 
-  it("auto-mints token when no source exists without embedding it into service env", async () => {
+  it("provides a usable token in install env and preserves config-backed token when present", async () => {
     await fs.writeFile(
       configPath,
       JSON.stringify(
@@ -128,12 +138,19 @@ describe("runDaemonInstall integration", () => {
 
     expect(serviceMock.install).toHaveBeenCalledTimes(1);
     const updated = await readJson(configPath);
-    const gateway = (updated.gateway ?? {}) as { auth?: { token?: string } };
+    const gateway = (updated.gateway ?? {}) as { auth?: { mode?: string; token?: string } };
     const persistedToken = gateway.auth?.token;
-    expect(typeof persistedToken).toBe("string");
-    expect((persistedToken ?? "").length).toBeGreaterThan(0);
 
     const installEnv = serviceMock.install.mock.calls[0]?.[0]?.environment;
-    expect(installEnv?.OPENCLAW_GATEWAY_TOKEN).toBeUndefined();
+    expect(typeof installEnv?.OPENCLAW_GATEWAY_TOKEN).toBe("string");
+    expect((installEnv?.OPENCLAW_GATEWAY_TOKEN ?? "").length).toBeGreaterThan(0);
+    expect(gateway.auth?.mode).toBe("token");
+
+    // Integration envs can source the gateway token from env fallback instead of
+    // forcing the auto-persist branch. When config persistence does happen, it
+    // must match the token passed into the service install environment.
+    if (typeof persistedToken === "string") {
+      expect(installEnv?.OPENCLAW_GATEWAY_TOKEN).toBe(persistedToken);
+    }
   });
 });

@@ -1,0 +1,3118 @@
+{
+  "generatedAt": "2026-04-14T23:35:50.611Z",
+  "sourcePath": "docs/help/faq.md",
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 180000,
+  "maxWordsPerWindow": 1500,
+  "summary": {
+    "previousCollisionModelCalls": 18,
+    "collisionModelCalls": 1,
+    "collisionModelCallReduction": 17,
+    "residualBatchRequestCount": 4,
+    "residualBatchCandidateCount": 4,
+    "zeroCandidateSkipCount": 32,
+    "admittedToBatchCount": 4,
+    "candidatePrunedCount": 28,
+    "collisionResultCounts": {
+      "distinct": 4
+    },
+    "resolvedModelIds": ["openai/gpt-5.4-nano-20260317"],
+    "finalSummary": {
+      "type": "final_summary",
+      "totalWindows": 11,
+      "capturedObjects": 36,
+      "writeResults": 36,
+      "persistedObjects": 36,
+      "persistedSupportItems": 36,
+      "windowOutcomeCounts": {
+        "reject": 1,
+        "capture": 9,
+        "ignore": 1
+      },
+      "writeDecisionCounts": {
+        "write": 36
+      },
+      "elapsedMs": 149871
+    }
+  },
+  "traces": [
+    {
+      "type": "source_windows_ready",
+      "sourcePath": "docs/help/faq.md",
+      "totalWindows": 11,
+      "windows": [
+        {
+          "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+          "windowIndex": 0,
+          "headingPath": ["FAQ"],
+          "lineStart": 1,
+          "lineEnd": 177,
+          "tokenEstimate": 1662
+        },
+        {
+          "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+          "windowIndex": 1,
+          "headingPath": ["FAQ", "Table of contents"],
+          "lineStart": 178,
+          "lineEnd": 470,
+          "tokenEstimate": 1565
+        },
+        {
+          "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+          "windowIndex": 2,
+          "headingPath": [
+            "FAQ",
+            "Quick start and first-run setup",
+            "How do I install the beta version and what's the difference between beta and dev"
+          ],
+          "lineStart": 472,
+          "lineEnd": 768,
+          "tokenEstimate": 1525
+        },
+        {
+          "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+          "windowIndex": 3,
+          "headingPath": [
+            "install.ps1 has no dedicated -Verbose flag yet.",
+            null,
+            "How does Codex auth work"
+          ],
+          "lineStart": 770,
+          "lineEnd": 991,
+          "tokenEstimate": 1541
+        },
+        {
+          "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+          "windowIndex": 4,
+          "headingPath": [
+            "install.ps1 has no dedicated -Verbose flag yet.",
+            "What is OpenClaw?",
+            "What's the value proposition"
+          ],
+          "lineStart": 993,
+          "lineEnd": 1234,
+          "tokenEstimate": 1561
+        },
+        {
+          "sourceWindowId": "e407ad74-71bf-5e64-a2a7-5ded38c343cd",
+          "windowIndex": 5,
+          "headingPath": [
+            "install.ps1 has no dedicated -Verbose flag yet.",
+            "Sandboxing and memory",
+            "Is there a dedicated sandboxing doc"
+          ],
+          "lineStart": 1236,
+          "lineEnd": 1490,
+          "tokenEstimate": 1513
+        },
+        {
+          "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+          "windowIndex": 6,
+          "headingPath": [
+            "install.ps1 has no dedicated -Verbose flag yet.",
+            "Config basics",
+            "How do I enable web search and web fetch"
+          ],
+          "lineStart": 1492,
+          "lineEnd": 1766,
+          "tokenEstimate": 1561
+        },
+        {
+          "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+          "windowIndex": 7,
+          "headingPath": [
+            "install.ps1 has no dedicated -Verbose flag yet.",
+            "Env vars and .env loading",
+            "How does OpenClaw load environment variables"
+          ],
+          "lineStart": 1768,
+          "lineEnd": 2097,
+          "tokenEstimate": 1551
+        },
+        {
+          "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+          "windowIndex": 8,
+          "headingPath": [
+            "install.ps1 has no dedicated -Verbose flag yet.",
+            "Models: defaults, selection, aliases, switching",
+            "How do I switch models without wiping my config"
+          ],
+          "lineStart": 2098,
+          "lineEnd": 2414,
+          "tokenEstimate": 1562
+        },
+        {
+          "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+          "windowIndex": 9,
+          "headingPath": ["Or set an explicit order (fallback within provider)"],
+          "lineStart": 2416,
+          "lineEnd": 2767,
+          "tokenEstimate": 1570
+        },
+        {
+          "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+          "windowIndex": 10,
+          "headingPath": [
+            "Clear override (fall back to config auth.order / round-robin)",
+            "Security and access control",
+            "Is it safe to expose OpenClaw to inbound DMs"
+          ],
+          "lineStart": 2769,
+          "lineEnd": 2963,
+          "tokenEstimate": 1059
+        }
+      ],
+      "elapsedMs": 771
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["FAQ"],
+      "lineStart": 1,
+      "lineEnd": 177,
+      "promptChars": 21409,
+      "elapsedMs": 819
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 1895
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 2404
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 573,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"procedure\",\"claim\":\"Use the [Troubleshooting] and [Configuration] docs for runtime diagnostics and the full config reference, respectively.\",\"supportingSpans\":[{\"headingPathRef\":\"hp_1\",\"lineS...",
+      "elapsedMs": 3595
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 2,
+      "elapsedMs": 3596
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["FAQ"],
+      "lineStart": 1,
+      "lineEnd": 177,
+      "promptChars": 21922,
+      "elapsedMs": 3601
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 3604
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 3924
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 302,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"procedure\",\"claim\":\"Use the [Troubleshooting] docs for runtime diagnostics and the [Configuration] docs for the full config reference.\",\"supportingSpans\":[{\"headingPathRef\":\"hp_1\",\"lineStart\"...",
+      "elapsedMs": 4592
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 1,
+      "elapsedMs": 4593
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["FAQ"],
+      "lineStart": 1,
+      "lineEnd": 177,
+      "promptChars": 4675,
+      "elapsedMs": 4596
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 4598
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 5606
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 579,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"project\",\"kind\":\"procedure\",\"payload\":{\"title\":\"Use Troubleshooting and Configuration docs for diagnostics and config reference\",\"steps\":\"1. For runtime diagnostics, consult the [Troubleshoo...",
+      "elapsedMs": 6697
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 1,
+      "elapsedMs": 6697
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_2_repair",
+      "contractVersion": "v2-canonicalization-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["FAQ"],
+      "lineStart": 1,
+      "lineEnd": 177,
+      "promptChars": 3366,
+      "elapsedMs": 6701
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_2_repair",
+      "contractVersion": "v2-canonicalization-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 6703
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_2_repair",
+      "contractVersion": "v2-canonicalization-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 6977
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_2_repair",
+      "contractVersion": "v2-canonicalization-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 582,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"project\",\"kind\":\"procedure\",\"payload\":{\"title\":\"Use Troubleshooting and Configuration docs for diagnostics and config reference\",\"steps\":[\"1. For runtime diagnostics, consult the [Troublesho...",
+      "elapsedMs": 8100
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "windowIndex": 0,
+      "stage": "pass_2_repair",
+      "contractVersion": "v2-canonicalization-repair",
+      "action": "capture",
+      "objectCount": 1,
+      "elapsedMs": 8100
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["FAQ", "Table of contents"],
+      "lineStart": 178,
+      "lineEnd": 470,
+      "promptChars": 20143,
+      "elapsedMs": 8102
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 8102
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 8383
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2225,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"procedure\",\"claim\":\"Use openclaw status, openclaw status --all, openclaw gateway status, openclaw status --deep, openclaw logs --follow, and openclaw doctor as the first 60 seconds debugging ...",
+      "elapsedMs": 12239
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 7,
+      "elapsedMs": 12239
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["FAQ", "Table of contents"],
+      "lineStart": 178,
+      "lineEnd": 470,
+      "promptChars": 22843,
+      "elapsedMs": 12241
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 12243
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 12523
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2212,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"procedure\",\"claim\":\"Use openclaw status, openclaw status --all, openclaw gateway status, openclaw status --deep, openclaw logs --follow, and openclaw doctor as the first 60 seconds debugging ...",
+      "elapsedMs": 16501
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 7,
+      "elapsedMs": 16501
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["FAQ", "Table of contents"],
+      "lineStart": 178,
+      "lineEnd": 470,
+      "promptChars": 13903,
+      "elapsedMs": 16503
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 16503
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 16972
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 3612,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"user\",\"kind\":\"preference\",\"payload\":{\"subject\":\"onboarding debugging workflow\",\"instruction\":\"Use the OpenClaw first-60-seconds troubleshooting checklist with these commands: openclaw status...",
+      "elapsedMs": 23584
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "windowIndex": 1,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 7,
+      "elapsedMs": 23584
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "FAQ",
+        "Quick start and first-run setup",
+        "How do I install the beta version and what's the difference between beta and dev"
+      ],
+      "lineStart": 472,
+      "lineEnd": 768,
+      "promptChars": 20583,
+      "elapsedMs": 23591
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 23592
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 23942
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1207,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"rule\",\"claim\":\"On macOS/Linux, install the beta version by running the install script with the --beta flag.\",\"supportingSpans\":[{\"headingPathRef\":\"hp_1\",\"lineStart\":472,\"lineEnd\":481}],\"confi...",
+      "elapsedMs": 26603
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 4,
+      "elapsedMs": 26603
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "FAQ",
+        "Quick start and first-run setup",
+        "How do I install the beta version and what's the difference between beta and dev"
+      ],
+      "lineStart": 472,
+      "lineEnd": 768,
+      "promptChars": 21944,
+      "elapsedMs": 26605
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 26606
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 27077
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1233,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"rule\",\"claim\":\"On macOS/Linux, install the beta version by running the install script with the --beta flag.\",\"supportingSpans\":[{\"headingPathRef\":\"hp_1\",\"lineStart\":472,\"lineEnd\":481}],\"confi...",
+      "elapsedMs": 29297
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 4,
+      "elapsedMs": 29297
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "FAQ",
+        "Quick start and first-run setup",
+        "How do I install the beta version and what's the difference between beta and dev"
+      ],
+      "lineStart": 472,
+      "lineEnd": 768,
+      "promptChars": 12811,
+      "elapsedMs": 29299
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 29300
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 29564
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1888,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"user\",\"kind\":\"rule\",\"payload\":{\"subject\":\"macOS/Linux install beta\",\"recommendedAction\":\"Run the install script with the --beta flag.\"},\"scope\":{\"userScope\":\"\"},\"provenance\":[{\"sourceId\":\"ba...",
+      "elapsedMs": 33410
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "windowIndex": 2,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 4,
+      "elapsedMs": 33411
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        null,
+        "How does Codex auth work"
+      ],
+      "lineStart": 770,
+      "lineEnd": 991,
+      "promptChars": 20283,
+      "elapsedMs": 33412
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 33413
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 33801
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1818,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"OpenClaw fully supports OpenAI Code (Codex) subscription OAuth via the onboarding wizard.\",\"supportingSpans\":[{\"headingPathRef\":\"hp_2\",\"lineStart\":772,\"lineEnd\":778}],\"confiden...",
+      "elapsedMs": 37401
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 7,
+      "elapsedMs": 37401
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        null,
+        "How does Codex auth work"
+      ],
+      "lineStart": 770,
+      "lineEnd": 991,
+      "promptChars": 22576,
+      "elapsedMs": 37402
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 37403
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 37695
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1836,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"OpenClaw fully supports OpenAI Code (Codex) subscription OAuth via the onboarding wizard.\",\"supportingSpans\":[{\"headingPathRef\":\"hp_2\",\"lineStart\":772,\"lineEnd\":778}],\"confiden...",
+      "elapsedMs": 41577
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 7,
+      "elapsedMs": 41577
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        null,
+        "How does Codex auth work"
+      ],
+      "lineStart": 770,
+      "lineEnd": 991,
+      "promptChars": 14982,
+      "elapsedMs": 41578
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 41579
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 41862
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 3112,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"project\",\"kind\":\"fact\",\"payload\":{\"subject\":\"OpenClaw OAuth for OpenAI Code (Codex) subscription\",\"value\":\"OpenClaw fully supports OpenAI Code (Codex) subscription OAuth via the onboarding w...",
+      "elapsedMs": 47965
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "windowIndex": 3,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 7,
+      "elapsedMs": 47965
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "What is OpenClaw?",
+        "What's the value proposition"
+      ],
+      "lineStart": 993,
+      "lineEnd": 1234,
+      "promptChars": 20470,
+      "elapsedMs": 47968
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 47969
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 48272
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2049,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"OpenClaw keeps workspace and session history local when you run the Gateway.\",\"supportingSpans\":[{\"headingPathRef\":\"hp_1\",\"lineStart\":993,\"lineEnd\":995}] ,\"confidence\":0.74,\"sh...",
+      "elapsedMs": 52109
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 7,
+      "elapsedMs": 52109
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "What is OpenClaw?",
+        "What's the value proposition"
+      ],
+      "lineStart": 993,
+      "lineEnd": 1234,
+      "promptChars": 22993,
+      "elapsedMs": 52111
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 52112
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 52360
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2095,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"OpenClaw keeps workspace and session history local when you run the Gateway.\",\"supportingSpans\":[{\"headingPathRef\":\"hp_1\",\"lineStart\":993,\"lineEnd\":995}],\"confidence\":\"strong\",...",
+      "elapsedMs": 55908
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 7,
+      "elapsedMs": 55908
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "What is OpenClaw?",
+        "What's the value proposition"
+      ],
+      "lineStart": 993,
+      "lineEnd": 1234,
+      "promptChars": 14670,
+      "elapsedMs": 55909
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 55910
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 56190
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 3456,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"project\",\"kind\":\"fact\",\"payload\":{\"subject\":\"OpenClaw Gateway data handling\",\"value\":\"When you run the Gateway, OpenClaw keeps workspace and session history local.\"},\"provenance\":[{\"sourceId...",
+      "elapsedMs": 66176
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "windowIndex": 4,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 7,
+      "elapsedMs": 66176
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "e407ad74-71bf-5e64-a2a7-5ded38c343cd",
+      "windowIndex": 5,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "Sandboxing and memory",
+        "Is there a dedicated sandboxing doc"
+      ],
+      "lineStart": 1236,
+      "lineEnd": 1490,
+      "promptChars": 22361,
+      "elapsedMs": 66178
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "e407ad74-71bf-5e64-a2a7-5ded38c343cd",
+      "windowIndex": 5,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 66178
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "e407ad74-71bf-5e64-a2a7-5ded38c343cd",
+      "windowIndex": 5,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 66460
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "e407ad74-71bf-5e64-a2a7-5ded38c343cd",
+      "windowIndex": 5,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2782,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"OpenClaw memory is stored as Markdown files in the agent workspace (daily notes in memory/YYYY-MM-DD.md and long-term notes in MEMORY.md for main/private sessions).\",\"supportin...",
+      "elapsedMs": 71250
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "e407ad74-71bf-5e64-a2a7-5ded38c343cd",
+      "windowIndex": 5,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 8,
+      "elapsedMs": 71250
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "e407ad74-71bf-5e64-a2a7-5ded38c343cd",
+      "windowIndex": 5,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "Sandboxing and memory",
+        "Is there a dedicated sandboxing doc"
+      ],
+      "lineStart": 1236,
+      "lineEnd": 1490,
+      "promptChars": 25725,
+      "elapsedMs": 71252
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "e407ad74-71bf-5e64-a2a7-5ded38c343cd",
+      "windowIndex": 5,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 71252
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "e407ad74-71bf-5e64-a2a7-5ded38c343cd",
+      "windowIndex": 5,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 71540
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "e407ad74-71bf-5e64-a2a7-5ded38c343cd",
+      "windowIndex": 5,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 19,
+      "outputPreview": "{\"action\":\"ignore\"}",
+      "elapsedMs": 71817
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "e407ad74-71bf-5e64-a2a7-5ded38c343cd",
+      "windowIndex": 5,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "ignore",
+      "objectCount": 0,
+      "elapsedMs": 71817
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "Config basics",
+        "How do I enable web search and web fetch"
+      ],
+      "lineStart": 1492,
+      "lineEnd": 1766,
+      "promptChars": 20994,
+      "elapsedMs": 71817
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 71818
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 72132
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1355,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"web_fetch works without an API key, while web_search requires a Brave Search API key.\",\"supportingSpans\":[{\"headingPathRef\":\"hp_1\",\"lineStart\":1492,\"lineEnd\":1495}],\"confidence...",
+      "elapsedMs": 74656
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 5,
+      "elapsedMs": 74656
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "Config basics",
+        "How do I enable web search and web fetch"
+      ],
+      "lineStart": 1492,
+      "lineEnd": 1766,
+      "promptChars": 22610,
+      "elapsedMs": 74657
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 74658
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 74934
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1416,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"`web_fetch` works without an API key, while `web_search` requires a Brave Search API key.\",\"supportingSpans\":[{\"headingPathRef\":\"hp_1\",\"lineStart\":1492,\"lineEnd\":1495}],\"confid...",
+      "elapsedMs": 78426
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 5,
+      "elapsedMs": 78426
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "Config basics",
+        "How do I enable web search and web fetch"
+      ],
+      "lineStart": 1492,
+      "lineEnd": 1766,
+      "promptChars": 13492,
+      "elapsedMs": 78433
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 78434
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 78845
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2654,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"user\",\"kind\":\"preference\",\"payload\":{\"subject\":\"web_search vs web_fetch API key usage\",\"instruction\":\"Use web_fetch without an API key; only web_search requires a Brave Search API key.\",\"ope...",
+      "elapsedMs": 83898
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "windowIndex": 6,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 5,
+      "elapsedMs": 83898
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "Env vars and .env loading",
+        "How does OpenClaw load environment variables"
+      ],
+      "lineStart": 1768,
+      "lineEnd": 2097,
+      "promptChars": 23131,
+      "elapsedMs": 83901
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 83902
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 84165
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1669,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"OpenClaw loads .env from the current working directory and a global fallback from ~/.openclaw/.env ($OPENCLAW_STATE_DIR/.env), and these .env files do not override existing pro...",
+      "elapsedMs": 87026
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 5,
+      "elapsedMs": 87026
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "Env vars and .env loading",
+        "How does OpenClaw load environment variables"
+      ],
+      "lineStart": 1768,
+      "lineEnd": 2097,
+      "promptChars": 25061,
+      "elapsedMs": 87028
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 87028
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 87320
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1746,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"OpenClaw loads `.env` from the current working directory and a global fallback from `~/.openclaw/.env` (aka `$OPENCLAW_STATE_DIR/.env`), and these `.env` files do not override ...",
+      "elapsedMs": 91524
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 5,
+      "elapsedMs": 91524
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "Env vars and .env loading",
+        "How does OpenClaw load environment variables"
+      ],
+      "lineStart": 1768,
+      "lineEnd": 2097,
+      "promptChars": 15405,
+      "elapsedMs": 91525
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 91525
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 91776
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2851,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"project\",\"kind\":\"fact\",\"payload\":{\"subject\":\"OpenClaw environment variable loading\",\"value\":\"OpenClaw reads env vars from the parent process and additionally loads `.env` from the current wo...",
+      "elapsedMs": 96911
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": 7,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 5,
+      "elapsedMs": 96912
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "Models: defaults, selection, aliases, switching",
+        "How do I switch models without wiping my config"
+      ],
+      "lineStart": 2098,
+      "lineEnd": 2414,
+      "promptChars": 22602,
+      "elapsedMs": 96915
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 96916
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 97218
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1787,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"Auth profiles are stored per agent at ~/.openclaw/agents/<agentId>/agent/auth-profiles.json.\",\"supportingSpans\":[{\"headingPathRef\":\"hp_17\",\"lineStart\":2385,\"lineEnd\":2392},{\"he...",
+      "elapsedMs": 100517
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 6,
+      "elapsedMs": 100517
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "Models: defaults, selection, aliases, switching",
+        "How do I switch models without wiping my config"
+      ],
+      "lineStart": 2098,
+      "lineEnd": 2414,
+      "promptChars": 24757,
+      "elapsedMs": 100521
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 100523
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 100827
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1585,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"Auth profiles are stored per agent at ~/.openclaw/agents/<agentId>/agent/auth-profiles.json.\",\"supportingSpans\":[{\"headingPathRef\":\"hp_17\",\"lineStart\":2385,\"lineEnd\":2392},{\"he...",
+      "elapsedMs": 103599
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 5,
+      "elapsedMs": 103599
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "install.ps1 has no dedicated -Verbose flag yet.",
+        "Models: defaults, selection, aliases, switching",
+        "How do I switch models without wiping my config"
+      ],
+      "lineStart": 2098,
+      "lineEnd": 2414,
+      "promptChars": 15521,
+      "elapsedMs": 103601
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 103617
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 103958
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2845,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"project\",\"kind\":\"fact\",\"payload\":{\"subject\":\"Auth profiles location\",\"value\":\"Auth profiles are stored per agent at ~/.openclaw/agents/<agentId>/agent/auth-profiles.json.\"},\"scope\":{\"project...",
+      "elapsedMs": 110123
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "windowIndex": 8,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 5,
+      "elapsedMs": 110123
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["Or set an explicit order (fallback within provider)"],
+      "lineStart": 2416,
+      "lineEnd": 2767,
+      "promptChars": 24880,
+      "elapsedMs": 110126
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 110127
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 110434
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2064,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"rule\",\"claim\":\"To set model auth order for a provider, use `openclaw models auth order set --provider <provider>` and clear overrides with `... clear --provider <provider>` to fall back to co...",
+      "elapsedMs": 114071
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 6,
+      "elapsedMs": 114071
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["Or set an explicit order (fallback within provider)"],
+      "lineStart": 2416,
+      "lineEnd": 2767,
+      "promptChars": 27312,
+      "elapsedMs": 114074
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 114075
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 114356
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2089,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"rule\",\"claim\":\"To set model auth order for a provider, use `openclaw models auth order set --provider <provider>` and clear overrides with `... clear --provider <provider>` to fall back to co...",
+      "elapsedMs": 117818
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 6,
+      "elapsedMs": 117818
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["Or set an explicit order (fallback within provider)"],
+      "lineStart": 2416,
+      "lineEnd": 2767,
+      "promptChars": 19419,
+      "elapsedMs": 117820
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 117821
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 118124
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 3291,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"user\",\"kind\":\"rule\",\"payload\":{\"subject\":\"Setting provider model auth order and clearing overrides\",\"recommendedAction\":\"Use `openclaw models auth order set --provider <provider>` to set an ...",
+      "elapsedMs": 123938
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "windowIndex": 9,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 6,
+      "elapsedMs": 123938
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "Clear override (fall back to config auth.order / round-robin)",
+        "Security and access control",
+        "Is it safe to expose OpenClaw to inbound DMs"
+      ],
+      "lineStart": 2769,
+      "lineEnd": 2963,
+      "promptChars": 15725,
+      "elapsedMs": 123940
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 123943
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 124276
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1398,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"Inbound DMs are untrusted input; default behavior on DM-capable channels is pairing so unknown senders get a code and the bot does not process their messages.\",\"supportingSpans...",
+      "elapsedMs": 126885
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 5,
+      "elapsedMs": 126885
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "Clear override (fall back to config auth.order / round-robin)",
+        "Security and access control",
+        "Is it safe to expose OpenClaw to inbound DMs"
+      ],
+      "lineStart": 2769,
+      "lineEnd": 2963,
+      "promptChars": 17384,
+      "elapsedMs": 126886
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 126887
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 127177
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1495,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"Inbound DMs are untrusted input; default behavior on DM-capable channels is pairing so unknown senders get a code and the bot does not process their messages.\",\"supportingSpans...",
+      "elapsedMs": 129759
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 5,
+      "elapsedMs": 129759
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "Clear override (fall back to config auth.order / round-robin)",
+        "Security and access control",
+        "Is it safe to expose OpenClaw to inbound DMs"
+      ],
+      "lineStart": 2769,
+      "lineEnd": 2963,
+      "promptChars": 12739,
+      "elapsedMs": 129759
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 129760
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 129989
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2614,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"project\",\"kind\":\"fact\",\"payload\":{\"subject\":\"Inbound DMs\",\"value\":\"Treat inbound DMs as untrusted input; on DM-capable channels the default behavior is pairing so unknown senders receive a p...",
+      "elapsedMs": 135270
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "windowIndex": 10,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 5,
+      "elapsedMs": 135270
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "candidateId": "candidate-0",
+      "canonicalClass": "user",
+      "kind": "preference",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 137226
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "candidateId": "candidate-1",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 137572
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "candidateId": "candidate-2",
+      "canonicalClass": "user",
+      "kind": "rule",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 137864
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "candidateId": "candidate-3",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 138163
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "candidateId": "candidate-4",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 2,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 2,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 138459
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "candidateId": "candidate-5",
+      "canonicalClass": "user",
+      "kind": "rule",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 138756
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "candidateId": "candidate-6",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 3,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 3,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 139448
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "candidateId": "candidate-7",
+      "canonicalClass": "user",
+      "kind": "rule",
+      "rawCandidateCount": 2,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 2,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 139759
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "candidateId": "candidate-8",
+      "canonicalClass": "user",
+      "kind": "rule",
+      "rawCandidateCount": 3,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 3,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 140053
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "candidateId": "candidate-9",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 4,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 4,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 140352
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "candidateId": "candidate-10",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 5,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 5,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 140654
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "candidateId": "candidate-11",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 6,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 6,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 140950
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "candidateId": "candidate-12",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 7,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 7,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 141245
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "candidateId": "candidate-13",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 141537
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "candidateId": "candidate-14",
+      "canonicalClass": "user",
+      "kind": "preference",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 141829
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "candidateId": "candidate-15",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 8,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 8,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 142129
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "candidateId": "candidate-16",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 142427
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "candidateId": "candidate-17",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 9,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 9,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 142728
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "candidateId": "candidate-18",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 2,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 2,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 143024
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "candidateId": "candidate-19",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 10,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 10,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 143324
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "candidateId": "candidate-20",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 11,
+      "retainedCandidateCount": 1,
+      "prunedCandidateCount": 10,
+      "disposition": "admitted_to_batch",
+      "elapsedMs": 143627
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "candidateId": "candidate-21",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 11,
+      "retainedCandidateCount": 1,
+      "prunedCandidateCount": 10,
+      "disposition": "admitted_to_batch",
+      "elapsedMs": 143631
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "candidateId": "candidate-22",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 143633
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "candidateId": "candidate-23",
+      "canonicalClass": "user",
+      "kind": "rule",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 143934
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "candidateId": "candidate-24",
+      "canonicalClass": "user",
+      "kind": "rule",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 144230
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "candidateId": "candidate-25",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 144525
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "candidateId": "candidate-26",
+      "canonicalClass": "user",
+      "kind": "rule",
+      "rawCandidateCount": 4,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 4,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 144822
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "candidateId": "candidate-27",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 11,
+      "retainedCandidateCount": 1,
+      "prunedCandidateCount": 10,
+      "disposition": "admitted_to_batch",
+      "elapsedMs": 145121
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "candidateId": "candidate-28",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 11,
+      "retainedCandidateCount": 1,
+      "prunedCandidateCount": 10,
+      "disposition": "admitted_to_batch",
+      "elapsedMs": 145124
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "candidateId": "candidate-29",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 3,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 3,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 145125
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "candidateId": "candidate-30",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 4,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 4,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 145424
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "candidateId": "candidate-31",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 5,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 5,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 145753
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "candidateId": "candidate-32",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 146054
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "candidateId": "candidate-33",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 146347
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "candidateId": "candidate-34",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 146641
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "candidateId": "candidate-35",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 2,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 2,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 146940
+    },
+    {
+      "type": "collision_begin",
+      "sourceWindowIds": [
+        "5eef4758-7a32-5773-9326-4c9631b32bff",
+        "5eef4758-7a32-5773-9326-4c9631b32bff",
+        "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+        "ca1bd876-e939-50db-bacc-7e5a1cb8a04d"
+      ],
+      "stage": "write_path_collision_adjudication",
+      "requestCount": 4,
+      "candidateCount": 4,
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "elapsedMs": 147237
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": -1,
+      "stage": "write_path_collision_adjudication",
+      "contractVersion": "v2-batch",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 147239
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": -1,
+      "stage": "write_path_collision_adjudication",
+      "contractVersion": "v2-batch",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 147571
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "windowIndex": -1,
+      "stage": "write_path_collision_adjudication",
+      "contractVersion": "v2-batch",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 227,
+      "outputPreview": "{\"decisions\":[{\"candidateId\":\"candidate-20\",\"relation\":\"distinct\"},{\"candidateId\":\"candidate-21\",\"relation\":\"distinct\"},{\"candidateId\":\"candidate-27\",\"relation\":\"distinct\"},{\"candidateId\":\"candidate-28\",\"relation\":\"distinct\"}]}",
+      "elapsedMs": 148085
+    },
+    {
+      "type": "collision_result",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "stage": "write_path_collision_adjudication",
+      "candidateId": "candidate-20",
+      "relation": "distinct",
+      "elapsedMs": 148086
+    },
+    {
+      "type": "collision_result",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "stage": "write_path_collision_adjudication",
+      "candidateId": "candidate-21",
+      "relation": "distinct",
+      "elapsedMs": 148086
+    },
+    {
+      "type": "collision_result",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "stage": "write_path_collision_adjudication",
+      "candidateId": "candidate-27",
+      "relation": "distinct",
+      "elapsedMs": 148086
+    },
+    {
+      "type": "collision_result",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "stage": "write_path_collision_adjudication",
+      "candidateId": "candidate-28",
+      "relation": "distinct",
+      "elapsedMs": 148086
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "3fdb3da4-01c7-5be9-881a-94018d205cfb",
+      "action": "reject",
+      "objectCount": 0,
+      "rejectReasons": ["Invalid input: expected \"feedback\""],
+      "elapsedMs": 149380
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "action": "capture",
+      "objectCount": 7,
+      "rejectReasons": [],
+      "elapsedMs": 149381
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "action": "capture",
+      "objectCount": 2,
+      "rejectReasons": [],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "action": "capture",
+      "objectCount": 1,
+      "rejectReasons": [],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "action": "capture",
+      "objectCount": 4,
+      "rejectReasons": [],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "e407ad74-71bf-5e64-a2a7-5ded38c343cd",
+      "action": "ignore",
+      "objectCount": 0,
+      "rejectReasons": [],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "action": "capture",
+      "objectCount": 3,
+      "rejectReasons": [],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "action": "capture",
+      "objectCount": 5,
+      "rejectReasons": [],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "action": "capture",
+      "objectCount": 4,
+      "rejectReasons": [],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "action": "capture",
+      "objectCount": 6,
+      "rejectReasons": [],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "action": "capture",
+      "objectCount": 4,
+      "rejectReasons": [],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "decision": "write",
+      "memoryObjectId": "8b148e1e-6d34-54fa-a4cf-0a124c3204fa",
+      "supportItemId": "df455948-71e6-55c9-b0f2-ab160fe2245e",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "decision": "write",
+      "memoryObjectId": "2d0b7a23-d42e-59ad-b3a6-0c79f8577730",
+      "supportItemId": "43d9a304-655f-54e8-8e3b-27e26e6744bc",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "decision": "write",
+      "memoryObjectId": "8dd797ff-4a18-552e-8b80-428eb07a750b",
+      "supportItemId": "c936dfdf-7227-5e9a-97f6-a87f404ada4d",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "decision": "write",
+      "memoryObjectId": "45769a58-0e98-5ed0-8843-75a079bb76a6",
+      "supportItemId": "5f5c49ef-a695-5e2b-82d3-3e013391048f",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "decision": "write",
+      "memoryObjectId": "89e520ee-1e13-54cf-a111-706af1d6c42d",
+      "supportItemId": "c3406fe6-2e40-5166-a623-8deb58bdb475",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "decision": "write",
+      "memoryObjectId": "0cb4f9f5-062c-58d7-a144-1327d54eae4f",
+      "supportItemId": "b9a59875-1c31-5738-9d6c-fa93098ce0a1",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d752b35f-4b37-526a-9d84-61d867b9c060",
+      "decision": "write",
+      "memoryObjectId": "067bee88-541c-53f6-8a55-77e6c103acc1",
+      "supportItemId": "51d2549d-caff-5f2a-ae40-694a77d260fc",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "decision": "write",
+      "memoryObjectId": "00c25bae-f798-5f0b-9a5d-ba37ec61ebc0",
+      "supportItemId": "9d89e537-57c4-5969-b248-9d171c450a9c",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ba303437-2534-5e0a-b408-4479d2bc88f2",
+      "decision": "write",
+      "memoryObjectId": "59d19d9a-2efc-509e-b2ce-a15b8a2771f7",
+      "supportItemId": "506a8192-3971-5c7c-a5c7-bccf70c43d67",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "2ef40ddf-80b8-52b6-ba32-1c97fcfd33c2",
+      "decision": "write",
+      "memoryObjectId": "1dfe318c-588b-505a-9edc-c0e9e26d878e",
+      "supportItemId": "e728fca9-2c03-5609-a8bb-422c95b3e1d1",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "decision": "write",
+      "memoryObjectId": "3303b0cb-596c-5cf6-a171-09a108f6ceeb",
+      "supportItemId": "93619d2d-5787-5583-b460-7e6d486e47ec",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "decision": "write",
+      "memoryObjectId": "f43c3e2d-8816-5191-a1bc-c6f301a1113c",
+      "supportItemId": "489ac927-8b15-5927-8320-52602cb7134e",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "decision": "write",
+      "memoryObjectId": "d7c59750-b7c9-516e-a831-0edc011f9a42",
+      "supportItemId": "06b4167b-ad1e-55a3-a22f-7ea60e47eaab",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "5b087ded-c16d-5bd5-9864-37c65f5b5446",
+      "decision": "write",
+      "memoryObjectId": "5c5a82ab-ab03-5489-8329-44b2ac7080b9",
+      "supportItemId": "d3d2078a-b260-54bf-ab97-fe3ac9f575d2",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149383
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "decision": "write",
+      "memoryObjectId": "6ca7d520-2f47-5af5-81c9-500075a4e29d",
+      "supportItemId": "a198b39c-6df4-51b2-b70a-18b3f0915f19",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "decision": "write",
+      "memoryObjectId": "d9e5feff-abd0-5a3f-82af-57091e543321",
+      "supportItemId": "215118bd-3daa-5b35-bcb2-01f471b678cc",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "e035611e-f8c6-519e-bfc2-f6d8e309a85d",
+      "decision": "write",
+      "memoryObjectId": "51b0377b-508b-50ac-adea-8d57043d0f3c",
+      "supportItemId": "080cdab5-19f0-5b67-baf2-794b0e2ee15a",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "decision": "write",
+      "memoryObjectId": "6bd8cd31-9c05-56bb-9599-1df00db1ae29",
+      "supportItemId": "d859e0a4-6eb6-5b02-ac68-ce472815b904",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "decision": "write",
+      "memoryObjectId": "a3c53e01-88dd-5529-94f5-31d3363477ee",
+      "supportItemId": "852c10e0-6872-5ecf-8251-dc768e9d3070",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "decision": "write",
+      "memoryObjectId": "54a56542-9d3a-5754-b610-af36a0622f3e",
+      "supportItemId": "ca8834c2-464d-594d-9d09-a695feb3f3ff",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "decision": "write",
+      "memoryObjectId": "67bc79fd-1de6-5c87-b75e-a5bdeb6e860c",
+      "supportItemId": "0c6f47d5-57c0-5cc9-b19b-b6f9e75d9362",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "decision": "write",
+      "memoryObjectId": "8733a5a8-ad2e-56ce-8d92-9a6acb765d6d",
+      "supportItemId": "b6782beb-12db-57c5-9b51-b64749cc22c4",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "decision": "write",
+      "memoryObjectId": "770840a1-81fc-5d24-8071-dec3bf3a8514",
+      "supportItemId": "a6290886-88c7-52f5-b3d4-5dd12dec8331",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "fc21ed52-76fc-5801-8252-3802b8b6c474",
+      "decision": "write",
+      "memoryObjectId": "2883303a-2972-5e20-b571-a4f7280b50f0",
+      "supportItemId": "7bbd6fbc-af45-515f-a214-fd06610b156d",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "decision": "write",
+      "memoryObjectId": "eae13fc0-b91b-5269-a48f-1b13e9782a19",
+      "supportItemId": "84e7f1a9-92cc-522a-a5e7-b24b5c8187e8",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "decision": "write",
+      "memoryObjectId": "0aa03caf-e857-5a97-add0-0fb0aabbaf59",
+      "supportItemId": "fa198cce-f3bd-5a46-b315-2fd6a7af128a",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "decision": "write",
+      "memoryObjectId": "adbd7b50-e064-5fbd-a27a-e7caeb785092",
+      "supportItemId": "c6ad4901-0907-586c-b7a0-4aaf9a28343d",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "decision": "write",
+      "memoryObjectId": "5fae93dc-deeb-5320-86f6-3d811ca89ab4",
+      "supportItemId": "c8c7c0dd-3950-58ed-93ee-bb801a0e0ff4",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "decision": "write",
+      "memoryObjectId": "de84b761-cbdf-5109-a197-48a108e9c53a",
+      "supportItemId": "a67acb05-e06b-5c8b-955b-f2ed3af30b1b",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "decision": "write",
+      "memoryObjectId": "f43861c7-6485-5706-adbd-deaf17d817b3",
+      "supportItemId": "ec64ac91-ca28-593b-ad91-8ab7245c3451",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "decision": "write",
+      "memoryObjectId": "0222eac1-1fb4-5590-ac5e-8ff786352dee",
+      "supportItemId": "791c4424-6de1-584f-8bc5-1c6aa565c784",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "25665d80-1dc8-567e-bf0a-c4caad4d761c",
+      "decision": "write",
+      "memoryObjectId": "3259ce13-0e61-5186-ba7d-7f01f308c858",
+      "supportItemId": "80a5d712-777f-5e1d-99c3-4c914f8e5354",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "decision": "write",
+      "memoryObjectId": "44fe67e5-efde-5328-adfc-14f3d9a15a5c",
+      "supportItemId": "5a28cfe5-2d85-586d-8a2d-ba3db74a13ee",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "5eef4758-7a32-5773-9326-4c9631b32bff",
+      "decision": "write",
+      "memoryObjectId": "963fc9c5-91f6-55ad-afd4-f3e6dc7b646a",
+      "supportItemId": "5ff3a9c5-8a11-5312-ab2d-45a54c92dcc1",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "decision": "write",
+      "memoryObjectId": "f675d73d-4ce9-5aaa-b1d1-6900e9986973",
+      "supportItemId": "43ad8b77-8cfd-5ba5-93a3-e3ab1b308623",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ca1bd876-e939-50db-bacc-7e5a1cb8a04d",
+      "decision": "write",
+      "memoryObjectId": "4bc8f7d6-f056-5d65-bb70-f0bb21a59ce7",
+      "supportItemId": "0f8a33ec-1c4e-5238-81f5-d6df47641b33",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 149384
+    },
+    {
+      "type": "final_summary",
+      "totalWindows": 11,
+      "capturedObjects": 36,
+      "writeResults": 36,
+      "persistedObjects": 36,
+      "persistedSupportItems": 36,
+      "windowOutcomeCounts": {
+        "reject": 1,
+        "capture": 9,
+        "ignore": 1
+      },
+      "writeDecisionCounts": {
+        "write": 36
+      },
+      "elapsedMs": 149871
+    }
+  ]
+}

@@ -1,0 +1,1802 @@
+{
+  "generatedAt": "2026-04-15T20:45:18.699Z",
+  "corpusMode": "current_corpus",
+  "workspaceRoot": "/root/.openclaw/workspace",
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 180000,
+  "maxWordsPerWindow": 1500,
+  "ingestionSources": [
+    {
+      "id": "tier1-agents",
+      "sourceKind": "document",
+      "relativePath": "AGENTS.md",
+      "absolutePath": "/root/services/openclaw-roles/live/AGENTS.md",
+      "displayPath": "AGENTS.md",
+      "purposes": ["rule_extraction", "reference_extraction", "omission_discipline"],
+      "classification": "bootstrap_preservation_sensitive_input"
+    },
+    {
+      "id": "tier1-docs-help-testing",
+      "sourceKind": "document",
+      "relativePath": "docs/help/testing.md",
+      "absolutePath": "/root/services/openclaw-roles/live/docs/help/testing.md",
+      "displayPath": "docs/help/testing.md",
+      "purposes": ["procedure_extraction", "omission_discipline"],
+      "classification": "primary_large_source_proof_input"
+    },
+    {
+      "id": "tier1-gateway-configuration",
+      "sourceKind": "document",
+      "relativePath": "docs/gateway/configuration.md",
+      "absolutePath": "/root/services/openclaw-roles/live/docs/gateway/configuration.md",
+      "displayPath": "docs/gateway/configuration.md",
+      "purposes": ["reference_extraction", "omission_discipline"],
+      "classification": "primary_large_source_proof_input"
+    },
+    {
+      "id": "tier1-gateway-protocol",
+      "sourceKind": "document",
+      "relativePath": "docs/gateway/protocol.md",
+      "absolutePath": "/root/services/openclaw-roles/live/docs/gateway/protocol.md",
+      "displayPath": "docs/gateway/protocol.md",
+      "purposes": ["reference_extraction", "architecture_fact_extraction"],
+      "classification": "primary_large_source_proof_input"
+    },
+    {
+      "id": "tier1-model-memory-db-schema",
+      "sourceKind": "document",
+      "relativePath": "docs/projects/model-memory/specs/database-schema-v1.md",
+      "absolutePath": "/root/services/openclaw-roles/live/docs/projects/model-memory/specs/database-schema-v1.md",
+      "displayPath": "docs/projects/model-memory/specs/database-schema-v1.md",
+      "purposes": ["architecture_fact_extraction", "omission_discipline"],
+      "classification": "primary_large_source_proof_input"
+    },
+    {
+      "id": "tier1-model-memory-proof-corpus-plan",
+      "sourceKind": "document",
+      "relativePath": "docs/projects/model-memory/proof-corpus-plan.md",
+      "absolutePath": "/root/services/openclaw-roles/live/docs/projects/model-memory/proof-corpus-plan.md",
+      "displayPath": "docs/projects/model-memory/proof-corpus-plan.md",
+      "purposes": ["proof_fixture_contamination_risk", "omission_discipline"],
+      "classification": "primary_large_source_proof_input"
+    },
+    {
+      "id": "extra-docs-projects-model-memory-specs-architecture-overview-md",
+      "sourceKind": "document",
+      "relativePath": "docs/projects/model-memory/specs/architecture-overview.md",
+      "absolutePath": "/root/services/openclaw-roles/live/docs/projects/model-memory/specs/architecture-overview.md",
+      "displayPath": "docs/projects/model-memory/specs/architecture-overview.md",
+      "purposes": ["architecture_fact_extraction", "reference_extraction"],
+      "classification": "primary_large_source_proof_input"
+    },
+    {
+      "id": "extra-docs-projects-model-memory-specs-identity-dedupe-supersession-md",
+      "sourceKind": "document",
+      "relativePath": "docs/projects/model-memory/specs/identity-dedupe-supersession.md",
+      "absolutePath": "/root/services/openclaw-roles/live/docs/projects/model-memory/specs/identity-dedupe-supersession.md",
+      "displayPath": "docs/projects/model-memory/specs/identity-dedupe-supersession.md",
+      "purposes": ["architecture_fact_extraction", "reference_extraction"],
+      "classification": "primary_large_source_proof_input"
+    },
+    {
+      "id": "extra-docs-projects-model-memory-specs-runtime-read-models-and-artifacts-md",
+      "sourceKind": "document",
+      "relativePath": "docs/projects/model-memory/specs/runtime-read-models-and-artifacts.md",
+      "absolutePath": "/root/services/openclaw-roles/live/docs/projects/model-memory/specs/runtime-read-models-and-artifacts.md",
+      "displayPath": "docs/projects/model-memory/specs/runtime-read-models-and-artifacts.md",
+      "purposes": ["architecture_fact_extraction", "reference_extraction"],
+      "classification": "primary_large_source_proof_input"
+    },
+    {
+      "id": "extra-docs-projects-model-memory-specs-storage-database-md",
+      "sourceKind": "document",
+      "relativePath": "docs/projects/model-memory/specs/storage-database.md",
+      "absolutePath": "/root/services/openclaw-roles/live/docs/projects/model-memory/specs/storage-database.md",
+      "displayPath": "docs/projects/model-memory/specs/storage-database.md",
+      "purposes": ["architecture_fact_extraction", "reference_extraction"],
+      "classification": "primary_large_source_proof_input"
+    },
+    {
+      "id": "extra-docs-gateway-doctor-md",
+      "sourceKind": "document",
+      "relativePath": "docs/gateway/doctor.md",
+      "absolutePath": "/root/services/openclaw-roles/live/docs/gateway/doctor.md",
+      "displayPath": "docs/gateway/doctor.md",
+      "purposes": ["procedure_extraction", "reference_extraction"],
+      "classification": "primary_large_source_proof_input"
+    },
+    {
+      "id": "daily-2026-04-12",
+      "sourceKind": "daily_continuity",
+      "absolutePath": "/root/.openclaw/workspace/memory/2026-04-12.md",
+      "displayPath": "memory/2026-04-12.md",
+      "purposes": ["omission_discipline", "rule_extraction"],
+      "classification": "daily_continuity_recovery_input"
+    },
+    {
+      "id": "daily-2026-04-11",
+      "sourceKind": "daily_continuity",
+      "absolutePath": "/root/.openclaw/workspace/memory/2026-04-11.md",
+      "displayPath": "memory/2026-04-11.md",
+      "purposes": ["omission_discipline", "rule_extraction"],
+      "classification": "daily_continuity_recovery_input"
+    },
+    {
+      "id": "daily-2026-04-10",
+      "sourceKind": "daily_continuity",
+      "absolutePath": "/root/.openclaw/workspace/memory/2026-04-10.md",
+      "displayPath": "memory/2026-04-10.md",
+      "purposes": ["omission_discipline", "rule_extraction"],
+      "classification": "daily_continuity_recovery_input"
+    },
+    {
+      "id": "daily-2026-04-04",
+      "sourceKind": "daily_continuity",
+      "absolutePath": "/root/.openclaw/workspace/memory/2026-04-04.md",
+      "displayPath": "memory/2026-04-04.md",
+      "purposes": ["omission_discipline", "rule_extraction"],
+      "classification": "daily_continuity_recovery_input"
+    }
+  ],
+  "ingestionSummaries": [],
+  "adjudicationRows": [],
+  "saturationRuns": [
+    {
+      "runIndex": 1,
+      "sources": ["AGENTS.md", "docs/help/testing.md", "docs/gateway/configuration.md"],
+      "objectDelta": 20,
+      "supportItemDelta": 20,
+      "activeObjectDelta": 17,
+      "provisionalObjectDelta": 0,
+      "attachSupportCount": 6,
+      "distinctWriteCount": 19,
+      "supersedeCount": 1,
+      "supportAttachmentRate": 0.2308,
+      "nearDuplicateEscapeCount": 20,
+      "duplicateClusterCandidateCount": -1
+    },
+    {
+      "runIndex": 2,
+      "sources": ["AGENTS.md", "docs/help/testing.md", "docs/gateway/configuration.md"],
+      "objectDelta": 13,
+      "supportItemDelta": 13,
+      "activeObjectDelta": 13,
+      "provisionalObjectDelta": 0,
+      "attachSupportCount": 8,
+      "distinctWriteCount": 13,
+      "supersedeCount": 0,
+      "supportAttachmentRate": 0.381,
+      "nearDuplicateEscapeCount": 13,
+      "duplicateClusterCandidateCount": 2
+    },
+    {
+      "runIndex": 3,
+      "sources": ["AGENTS.md", "docs/help/testing.md", "docs/gateway/configuration.md"],
+      "objectDelta": 17,
+      "supportItemDelta": 17,
+      "activeObjectDelta": 16,
+      "provisionalObjectDelta": 0,
+      "attachSupportCount": 16,
+      "distinctWriteCount": 15,
+      "supersedeCount": 2,
+      "supportAttachmentRate": 0.4848,
+      "nearDuplicateEscapeCount": 17,
+      "duplicateClusterCandidateCount": 0
+    }
+  ],
+  "retrievalContextProbes": [
+    {
+      "id": "probe-live-tests-primary-1776285278574",
+      "queryText": "How do I run live tests in OpenClaw?",
+      "selectedCount": 5,
+      "matchingKindCount": 3,
+      "matchingClassCount": 0,
+      "bounded": true,
+      "activeOnly": true,
+      "retrievalPackIncluded": false,
+      "orderedSegmentCount": 6,
+      "estimatedInputTokens": 1297,
+      "pruningUsed": true,
+      "stableLayerHash": "52e3ed6bd71bcce0e89d2f90540c646e45f763abb3ca12a29b1d5780d609f473",
+      "semiStableLayerHash": "2512f9af9e63afc6a716fbd36231ee5512c25292a97f00c571d98bb7fdbb98b1",
+      "volatileLayerHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "topResults": [
+        {
+          "objectId": "5079c76c-b8c1-581f-a47b-44f5c400a160",
+          "canonicalClass": "user",
+          "kind": "preference",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "8cf4f421-883d-523a-a85b-55cd73edb4c9",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "096c0f61-d8df-5f20-a637-8c253aa1d603",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "2885a5fd-3783-5ffe-b1fb-9f42aa1306e3",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "69b8b69a-1427-5174-a4a5-8246803e3193",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        }
+      ],
+      "layerSegments": [
+        {
+          "order": 0,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:agents-md",
+          "projectionTargetId": "agents-md",
+          "textHash": "d9878d48afa47d04",
+          "textPreview": "## Generated Memory Rules - No projected agent-visible rules. ## Generated Procedures - Diagnose and repair configura..."
+        },
+        {
+          "order": 1,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:memory-md",
+          "projectionTargetId": "memory-md",
+          "textHash": "c5db87f4eb6ed200",
+          "textPreview": "# MEMORY.md ## Standing Context - `session_context_state`: `session_context_state` is session working state, not dura..."
+        },
+        {
+          "order": 2,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:user-md",
+          "projectionTargetId": "user-md",
+          "textHash": "0e90ce89ba358707",
+          "textPreview": "# USER.md ## Preferences - Chat replies file references: Use repo-root relative file references only (e.g., `extensio..."
+        },
+        {
+          "order": 3,
+          "layer": "semi_stable",
+          "segmentType": "user_pack",
+          "includeReason": "artifact:user_memory_pack",
+          "sourceArtifactType": "user_memory_pack",
+          "textHash": "5d6ab017b180c6be",
+          "textPreview": "# User Memory Pack - Chat replies file references: Use repo-root relative file references only (e.g., `extensions/......"
+        },
+        {
+          "order": 4,
+          "layer": "volatile",
+          "segmentType": "retrieval_pack",
+          "includeReason": "artifact:retrieval_pack:proof-probe-live-tests-primary-1776285278574",
+          "sourceArtifactType": "retrieval_pack",
+          "sourceArtifactScopeKey": "proof-probe-live-tests-primary-1776285278574",
+          "textHash": "3480490089bf6644",
+          "textPreview": "Retrieval for operator_help: How do I run live tests in OpenClaw? 1. user/preference {\"subject\":\"Model selection for ..."
+        },
+        {
+          "order": 5,
+          "layer": "volatile",
+          "segmentType": "recent_turns",
+          "includeReason": "recent_turns",
+          "textHash": "307bc71112e0bed1",
+          "textPreview": "user: How do I run live tests in OpenClaw?"
+        }
+      ]
+    },
+    {
+      "id": "probe-gateway-protocol-primary-1776285278574",
+      "queryText": "What should I consult for gateway protocol contracts?",
+      "selectedCount": 5,
+      "matchingKindCount": 5,
+      "matchingClassCount": 5,
+      "bounded": true,
+      "activeOnly": true,
+      "retrievalPackIncluded": false,
+      "orderedSegmentCount": 6,
+      "estimatedInputTokens": 1297,
+      "pruningUsed": true,
+      "stableLayerHash": "52e3ed6bd71bcce0e89d2f90540c646e45f763abb3ca12a29b1d5780d609f473",
+      "semiStableLayerHash": "2512f9af9e63afc6a716fbd36231ee5512c25292a97f00c571d98bb7fdbb98b1",
+      "volatileLayerHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "topResults": [
+        {
+          "objectId": "c3f9594d-5870-598f-bb13-10a0bf750afe",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "0bd402bd-0b2e-5ee6-a009-9daad6ff35db",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "1264c528-1ca5-52da-821d-ef335b5f200d",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "2394fbb7-9adb-5df1-a90d-92a9de61c32c",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "254ab877-f0ca-5594-a00f-5ef654d72de9",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        }
+      ],
+      "layerSegments": [
+        {
+          "order": 0,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:agents-md",
+          "projectionTargetId": "agents-md",
+          "textHash": "d9878d48afa47d04",
+          "textPreview": "## Generated Memory Rules - No projected agent-visible rules. ## Generated Procedures - Diagnose and repair configura..."
+        },
+        {
+          "order": 1,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:memory-md",
+          "projectionTargetId": "memory-md",
+          "textHash": "c5db87f4eb6ed200",
+          "textPreview": "# MEMORY.md ## Standing Context - `session_context_state`: `session_context_state` is session working state, not dura..."
+        },
+        {
+          "order": 2,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:user-md",
+          "projectionTargetId": "user-md",
+          "textHash": "0e90ce89ba358707",
+          "textPreview": "# USER.md ## Preferences - Chat replies file references: Use repo-root relative file references only (e.g., `extensio..."
+        },
+        {
+          "order": 3,
+          "layer": "semi_stable",
+          "segmentType": "user_pack",
+          "includeReason": "artifact:user_memory_pack",
+          "sourceArtifactType": "user_memory_pack",
+          "textHash": "5d6ab017b180c6be",
+          "textPreview": "# User Memory Pack - Chat replies file references: Use repo-root relative file references only (e.g., `extensions/......"
+        },
+        {
+          "order": 4,
+          "layer": "volatile",
+          "segmentType": "retrieval_pack",
+          "includeReason": "artifact:retrieval_pack:proof-probe-gateway-protocol-primary-1776285278574",
+          "sourceArtifactType": "retrieval_pack",
+          "sourceArtifactScopeKey": "proof-probe-gateway-protocol-primary-1776285278574",
+          "textHash": "4a5139afb9a39316",
+          "textPreview": "Retrieval for reference_lookup: What should I consult for gateway protocol contracts? 1. project/fact {\"value\":\"OpenC..."
+        },
+        {
+          "order": 5,
+          "layer": "volatile",
+          "segmentType": "recent_turns",
+          "includeReason": "recent_turns",
+          "textHash": "b184b1787901326f",
+          "textPreview": "user: What should I consult for gateway protocol contracts?"
+        }
+      ]
+    },
+    {
+      "id": "probe-planning-guidance-primary-1776285278574",
+      "queryText": "What should I read before planning or roadmap work?",
+      "selectedCount": 5,
+      "matchingKindCount": 5,
+      "matchingClassCount": 3,
+      "bounded": true,
+      "activeOnly": true,
+      "retrievalPackIncluded": false,
+      "orderedSegmentCount": 6,
+      "estimatedInputTokens": 1297,
+      "pruningUsed": true,
+      "stableLayerHash": "52e3ed6bd71bcce0e89d2f90540c646e45f763abb3ca12a29b1d5780d609f473",
+      "semiStableLayerHash": "2512f9af9e63afc6a716fbd36231ee5512c25292a97f00c571d98bb7fdbb98b1",
+      "volatileLayerHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "topResults": [
+        {
+          "objectId": "c3105aa2-5d5d-5e7c-8907-513489c58acd",
+          "canonicalClass": "feedback",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "fdbfb7f3-f2c8-5fa2-9ddc-b9c43c864322",
+          "canonicalClass": "feedback",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "2958c4bb-2b03-5dcd-9ef2-4b1a92a32157",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "3126e51a-d494-57a4-9215-d01bae41e4c0",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "50613c29-67a6-5640-8d68-34eb051e35af",
+          "canonicalClass": "user",
+          "kind": "preference",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        }
+      ],
+      "layerSegments": [
+        {
+          "order": 0,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:agents-md",
+          "projectionTargetId": "agents-md",
+          "textHash": "d9878d48afa47d04",
+          "textPreview": "## Generated Memory Rules - No projected agent-visible rules. ## Generated Procedures - Diagnose and repair configura..."
+        },
+        {
+          "order": 1,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:memory-md",
+          "projectionTargetId": "memory-md",
+          "textHash": "c5db87f4eb6ed200",
+          "textPreview": "# MEMORY.md ## Standing Context - `session_context_state`: `session_context_state` is session working state, not dura..."
+        },
+        {
+          "order": 2,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:user-md",
+          "projectionTargetId": "user-md",
+          "textHash": "0e90ce89ba358707",
+          "textPreview": "# USER.md ## Preferences - Chat replies file references: Use repo-root relative file references only (e.g., `extensio..."
+        },
+        {
+          "order": 3,
+          "layer": "semi_stable",
+          "segmentType": "user_pack",
+          "includeReason": "artifact:user_memory_pack",
+          "sourceArtifactType": "user_memory_pack",
+          "textHash": "5d6ab017b180c6be",
+          "textPreview": "# User Memory Pack - Chat replies file references: Use repo-root relative file references only (e.g., `extensions/......"
+        },
+        {
+          "order": 4,
+          "layer": "volatile",
+          "segmentType": "retrieval_pack",
+          "includeReason": "artifact:retrieval_pack:proof-probe-planning-guidance-primary-1776285278574",
+          "sourceArtifactType": "retrieval_pack",
+          "sourceArtifactScopeKey": "proof-probe-planning-guidance-primary-1776285278574",
+          "textHash": "6fec012b6982ffd4",
+          "textPreview": "Retrieval for workflow_guidance: What should I read before planning or roadmap work? 1. feedback/rule {\"subject\":\"Bef..."
+        },
+        {
+          "order": 5,
+          "layer": "volatile",
+          "segmentType": "recent_turns",
+          "includeReason": "recent_turns",
+          "textHash": "e4283d9b8c4269e0",
+          "textPreview": "user: What should I read before planning or roadmap work?"
+        }
+      ]
+    },
+    {
+      "id": "probe-schema-reference-primary-1776285278574",
+      "queryText": "Where is the model-memory schema and storage design documented?",
+      "selectedCount": 5,
+      "matchingKindCount": 5,
+      "matchingClassCount": 4,
+      "bounded": true,
+      "activeOnly": true,
+      "retrievalPackIncluded": false,
+      "orderedSegmentCount": 6,
+      "estimatedInputTokens": 1297,
+      "pruningUsed": true,
+      "stableLayerHash": "52e3ed6bd71bcce0e89d2f90540c646e45f763abb3ca12a29b1d5780d609f473",
+      "semiStableLayerHash": "2512f9af9e63afc6a716fbd36231ee5512c25292a97f00c571d98bb7fdbb98b1",
+      "volatileLayerHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "topResults": [
+        {
+          "objectId": "96e4ec02-0583-5c9f-8ba0-29352a73db26",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "047a87cd-8b90-58f9-ab6c-4b8c5b25eade",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "4192b3b6-5337-5f4c-9b90-32653c342c9b",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "65b907e8-2481-5219-b927-590352de939c",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "97271931-6cbd-58b2-87a6-680f14d491d0",
+          "canonicalClass": "user",
+          "kind": "rule",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        }
+      ],
+      "layerSegments": [
+        {
+          "order": 0,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:agents-md",
+          "projectionTargetId": "agents-md",
+          "textHash": "d9878d48afa47d04",
+          "textPreview": "## Generated Memory Rules - No projected agent-visible rules. ## Generated Procedures - Diagnose and repair configura..."
+        },
+        {
+          "order": 1,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:memory-md",
+          "projectionTargetId": "memory-md",
+          "textHash": "c5db87f4eb6ed200",
+          "textPreview": "# MEMORY.md ## Standing Context - `session_context_state`: `session_context_state` is session working state, not dura..."
+        },
+        {
+          "order": 2,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:user-md",
+          "projectionTargetId": "user-md",
+          "textHash": "0e90ce89ba358707",
+          "textPreview": "# USER.md ## Preferences - Chat replies file references: Use repo-root relative file references only (e.g., `extensio..."
+        },
+        {
+          "order": 3,
+          "layer": "semi_stable",
+          "segmentType": "user_pack",
+          "includeReason": "artifact:user_memory_pack",
+          "sourceArtifactType": "user_memory_pack",
+          "textHash": "5d6ab017b180c6be",
+          "textPreview": "# User Memory Pack - Chat replies file references: Use repo-root relative file references only (e.g., `extensions/......"
+        },
+        {
+          "order": 4,
+          "layer": "volatile",
+          "segmentType": "retrieval_pack",
+          "includeReason": "artifact:retrieval_pack:proof-probe-schema-reference-primary-1776285278574",
+          "sourceArtifactType": "retrieval_pack",
+          "sourceArtifactScopeKey": "proof-probe-schema-reference-primary-1776285278574",
+          "textHash": "ca0550b3e0388e91",
+          "textPreview": "Retrieval for architecture_lookup: Where is the model-memory schema and storage design documented? 1. project/rule {\"..."
+        },
+        {
+          "order": 5,
+          "layer": "volatile",
+          "segmentType": "recent_turns",
+          "includeReason": "recent_turns",
+          "textHash": "001395d172e8b0fe",
+          "textPreview": "user: Where is the model-memory schema and storage design documented?"
+        }
+      ]
+    },
+    {
+      "id": "probe-mixed-work-prompt-primary-1776285278574",
+      "queryText": "I need to update docs, run the right gates, preserve unrelated changes, and check what the repo policy says before landing a change. What should I remember?",
+      "selectedCount": 5,
+      "matchingKindCount": 5,
+      "matchingClassCount": 5,
+      "bounded": true,
+      "activeOnly": true,
+      "retrievalPackIncluded": false,
+      "orderedSegmentCount": 6,
+      "estimatedInputTokens": 1297,
+      "pruningUsed": true,
+      "stableLayerHash": "52e3ed6bd71bcce0e89d2f90540c646e45f763abb3ca12a29b1d5780d609f473",
+      "semiStableLayerHash": "2512f9af9e63afc6a716fbd36231ee5512c25292a97f00c571d98bb7fdbb98b1",
+      "volatileLayerHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "topResults": [
+        {
+          "objectId": "0d7f1923-854a-5ba9-a9bf-40fdc48ff4b0",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "47f4a8d0-cdc2-54dc-ad85-25151cbe48e7",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "6b00341c-e91f-5ec2-ae9e-ace667199800",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "a372b39f-fda2-57c7-b7d2-73cd93c0ee5a",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "220bb2ff-d4ca-501b-b9c2-242a25ae3be1",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        }
+      ],
+      "layerSegments": [
+        {
+          "order": 0,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:agents-md",
+          "projectionTargetId": "agents-md",
+          "textHash": "d9878d48afa47d04",
+          "textPreview": "## Generated Memory Rules - No projected agent-visible rules. ## Generated Procedures - Diagnose and repair configura..."
+        },
+        {
+          "order": 1,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:memory-md",
+          "projectionTargetId": "memory-md",
+          "textHash": "c5db87f4eb6ed200",
+          "textPreview": "# MEMORY.md ## Standing Context - `session_context_state`: `session_context_state` is session working state, not dura..."
+        },
+        {
+          "order": 2,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:user-md",
+          "projectionTargetId": "user-md",
+          "textHash": "0e90ce89ba358707",
+          "textPreview": "# USER.md ## Preferences - Chat replies file references: Use repo-root relative file references only (e.g., `extensio..."
+        },
+        {
+          "order": 3,
+          "layer": "semi_stable",
+          "segmentType": "user_pack",
+          "includeReason": "artifact:user_memory_pack",
+          "sourceArtifactType": "user_memory_pack",
+          "textHash": "5d6ab017b180c6be",
+          "textPreview": "# User Memory Pack - Chat replies file references: Use repo-root relative file references only (e.g., `extensions/......"
+        },
+        {
+          "order": 4,
+          "layer": "volatile",
+          "segmentType": "retrieval_pack",
+          "includeReason": "artifact:retrieval_pack:proof-probe-mixed-work-prompt-primary-1776285278574",
+          "sourceArtifactType": "retrieval_pack",
+          "sourceArtifactScopeKey": "proof-probe-mixed-work-prompt-primary-1776285278574",
+          "textHash": "e3c638647a9c8910",
+          "textPreview": "Retrieval for workflow_guidance: I need to update docs, run the right gates, preserve unrelated changes, and check wh..."
+        },
+        {
+          "order": 5,
+          "layer": "volatile",
+          "segmentType": "recent_turns",
+          "includeReason": "recent_turns",
+          "textHash": "24fc903e75aa45f4",
+          "textPreview": "user: I need to update docs, run the right gates, preserve unrelated changes, and check what the repo policy says bef..."
+        }
+      ]
+    },
+    {
+      "id": "probe-rule-heavy-instruction-primary-1776285278574",
+      "queryText": "What are the repo rules around targeted tests, no destructive git commands, and preserving unrelated worktree changes?",
+      "selectedCount": 5,
+      "matchingKindCount": 4,
+      "matchingClassCount": 5,
+      "bounded": true,
+      "activeOnly": true,
+      "retrievalPackIncluded": false,
+      "orderedSegmentCount": 6,
+      "estimatedInputTokens": 1297,
+      "pruningUsed": true,
+      "stableLayerHash": "52e3ed6bd71bcce0e89d2f90540c646e45f763abb3ca12a29b1d5780d609f473",
+      "semiStableLayerHash": "2512f9af9e63afc6a716fbd36231ee5512c25292a97f00c571d98bb7fdbb98b1",
+      "volatileLayerHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "topResults": [
+        {
+          "objectId": "36fdaa4c-b99d-59f7-a4e6-ab4dfa791806",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "200a77b3-45a1-5725-ba0f-c3eaa0532b15",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "c04808f6-15f9-5b08-9aad-7774caf490d5",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "0277fbd1-80ac-5f4d-a623-1d3d88a75868",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "046aa314-ad72-5151-9156-8220990d134d",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "secondary",
+          "reasonCodes": ["text_match", "rerank_selected"]
+        }
+      ],
+      "layerSegments": [
+        {
+          "order": 0,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:agents-md",
+          "projectionTargetId": "agents-md",
+          "textHash": "d9878d48afa47d04",
+          "textPreview": "## Generated Memory Rules - No projected agent-visible rules. ## Generated Procedures - Diagnose and repair configura..."
+        },
+        {
+          "order": 1,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:memory-md",
+          "projectionTargetId": "memory-md",
+          "textHash": "c5db87f4eb6ed200",
+          "textPreview": "# MEMORY.md ## Standing Context - `session_context_state`: `session_context_state` is session working state, not dura..."
+        },
+        {
+          "order": 2,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:user-md",
+          "projectionTargetId": "user-md",
+          "textHash": "0e90ce89ba358707",
+          "textPreview": "# USER.md ## Preferences - Chat replies file references: Use repo-root relative file references only (e.g., `extensio..."
+        },
+        {
+          "order": 3,
+          "layer": "semi_stable",
+          "segmentType": "user_pack",
+          "includeReason": "artifact:user_memory_pack",
+          "sourceArtifactType": "user_memory_pack",
+          "textHash": "5d6ab017b180c6be",
+          "textPreview": "# User Memory Pack - Chat replies file references: Use repo-root relative file references only (e.g., `extensions/......"
+        },
+        {
+          "order": 4,
+          "layer": "volatile",
+          "segmentType": "retrieval_pack",
+          "includeReason": "artifact:retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776285278574",
+          "sourceArtifactType": "retrieval_pack",
+          "sourceArtifactScopeKey": "proof-probe-rule-heavy-instruction-primary-1776285278574",
+          "textHash": "0bafaaeeeb855dd2",
+          "textPreview": "Retrieval for workflow_guidance: What are the repo rules around targeted tests, no destructive git commands, and pres..."
+        },
+        {
+          "order": 5,
+          "layer": "volatile",
+          "segmentType": "recent_turns",
+          "includeReason": "recent_turns",
+          "textHash": "cbbfc9eacdd2149b",
+          "textPreview": "user: What are the repo rules around targeted tests, no destructive git commands, and preserving unrelated worktree c..."
+        }
+      ]
+    },
+    {
+      "id": "probe-fact-heavy-configuration-primary-1776285278574",
+      "queryText": "Where are the OpenClaw live test credential and config paths, and what are the config file location facts I should rely on?",
+      "selectedCount": 5,
+      "matchingKindCount": 5,
+      "matchingClassCount": 5,
+      "bounded": true,
+      "activeOnly": true,
+      "retrievalPackIncluded": false,
+      "orderedSegmentCount": 6,
+      "estimatedInputTokens": 1297,
+      "pruningUsed": true,
+      "stableLayerHash": "52e3ed6bd71bcce0e89d2f90540c646e45f763abb3ca12a29b1d5780d609f473",
+      "semiStableLayerHash": "2512f9af9e63afc6a716fbd36231ee5512c25292a97f00c571d98bb7fdbb98b1",
+      "volatileLayerHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "topResults": [
+        {
+          "objectId": "8cf4f421-883d-523a-a85b-55cd73edb4c9",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "1b8b0a62-8415-526b-8e55-62388a6bf61a",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "f5f98b07-33cd-5753-b75d-b5a64f6f9a2c",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "primary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "f88e5225-9826-50da-abd7-36f4ff18611e",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        },
+        {
+          "objectId": "096c0f61-d8df-5f20-a637-8c253aa1d603",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rankBand": "secondary",
+          "reasonCodes": ["subject_match", "text_match", "rerank_selected"]
+        }
+      ],
+      "layerSegments": [
+        {
+          "order": 0,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:agents-md",
+          "projectionTargetId": "agents-md",
+          "textHash": "d9878d48afa47d04",
+          "textPreview": "## Generated Memory Rules - No projected agent-visible rules. ## Generated Procedures - Diagnose and repair configura..."
+        },
+        {
+          "order": 1,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:memory-md",
+          "projectionTargetId": "memory-md",
+          "textHash": "c5db87f4eb6ed200",
+          "textPreview": "# MEMORY.md ## Standing Context - `session_context_state`: `session_context_state` is session working state, not dura..."
+        },
+        {
+          "order": 2,
+          "layer": "stable",
+          "segmentType": "bootstrap",
+          "includeReason": "projection:user-md",
+          "projectionTargetId": "user-md",
+          "textHash": "0e90ce89ba358707",
+          "textPreview": "# USER.md ## Preferences - Chat replies file references: Use repo-root relative file references only (e.g., `extensio..."
+        },
+        {
+          "order": 3,
+          "layer": "semi_stable",
+          "segmentType": "user_pack",
+          "includeReason": "artifact:user_memory_pack",
+          "sourceArtifactType": "user_memory_pack",
+          "textHash": "5d6ab017b180c6be",
+          "textPreview": "# User Memory Pack - Chat replies file references: Use repo-root relative file references only (e.g., `extensions/......"
+        },
+        {
+          "order": 4,
+          "layer": "volatile",
+          "segmentType": "retrieval_pack",
+          "includeReason": "artifact:retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776285278574",
+          "sourceArtifactType": "retrieval_pack",
+          "sourceArtifactScopeKey": "proof-probe-fact-heavy-configuration-primary-1776285278574",
+          "textHash": "dcd6cd9cb629d61b",
+          "textPreview": "Retrieval for reference_lookup: Where are the OpenClaw live test credential and config paths, and what are the config..."
+        },
+        {
+          "order": 5,
+          "layer": "volatile",
+          "segmentType": "recent_turns",
+          "includeReason": "recent_turns",
+          "textHash": "c0bd3dd58d7274c4",
+          "textPreview": "user: Where are the OpenClaw live test credential and config paths, and what are the config file location facts I sho..."
+        }
+      ]
+    }
+  ],
+  "runtimeReadModelProof": {
+    "activeMemorySlotCount": 123,
+    "activeMemorySetCount": 580,
+    "contextArtifactCount": 87,
+    "projectionVersionCount": 27,
+    "slotLeakObjectIds": [],
+    "setLeakObjectIds": [],
+    "activeOnlyDefaultReadsHold": true
+  },
+  "rebuildProjectionProof": {
+    "baselineProjectionHashes": {
+      "user-md": "7ef4b67bc22683ce8462017d47a91baecc9239a19e2d0014be2fd929ea1eeb4b",
+      "memory-md": "3f35f568fc9fc1c44ba4bdffea4f50595235841d47cbda4870bc426174e78a63",
+      "agents-md": "5f193a00f892a55f5ebc35fe4146021d053f72e18e65b9d7acb8afaf8d75a0b7"
+    },
+    "rerunProjectionHashes": {
+      "user-md": "7ef4b67bc22683ce8462017d47a91baecc9239a19e2d0014be2fd929ea1eeb4b",
+      "memory-md": "3f35f568fc9fc1c44ba4bdffea4f50595235841d47cbda4870bc426174e78a63",
+      "agents-md": "5f193a00f892a55f5ebc35fe4146021d053f72e18e65b9d7acb8afaf8d75a0b7"
+    },
+    "baselineArtifactHashes": {
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776272056886": "4cbbab24687688dbfc84bcda064353c70979f90f95d674c06dcf3b06b2294f16",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776275729653": "c7e4e7008179094aec186f485c41e62102479b877221082e195926feb3aee2f3",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776275729653": "c867dc7388d97adda4ccee9002957ec95c0bc6613f09636ee5f6de53997e5c19",
+      "project_memory_pack:scope_44136fa355b3678a": "18534440d162f200b4115da5f783fdea91b0731374c55c5bc6bb5ffb924dcaf4",
+      "project_memory_pack:scope_44e458425fd297ec": "8d0f12e4c6c655801a33e8c2b6edf9c755492ff4ce34c059065114d516180bc2",
+      "user_memory_pack:global": "6e6b08a3953b3dddb345eb6cf11f183e47405f532f07bb9f009350cbf7a04be5",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776272056886": "8d7593818ec878b83a2a9c394158234359e0ee96c4699c676d684bfde0628b29",
+      "retrieval_pack:proof-probe-live-tests-primary-1776263417159": "ae48ca4b0aa4f8abf1e4256b6e6a459fd6ce4cd22c5282f60a5fd5481dd6027b",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776272056886": "7a0176fe77d4a24de1fd5b97fbbd02c32e575356a2d8eacdb52c8eb18f8904a9",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776263914049": "7e032bb51649d7c67519444898ddb3398e537cbc71520f1c8f6922e72510ffc5",
+      "project_memory_pack:scope_9cab8df573fd292b": "aa5822f17f08af5627dcfb390beffaff55e83082c70dbb92fc5e652b7cc4fe1a",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776261279772": "aae5e8d23b9ea2e1050bbe869fedd9e5445879e55c62b48192e932b862ec2573",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776275729653": "f94f8a30e35429a674eca5eb2dc86721459cba21cd59860a3e41fadd7105cb5d",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776272056886": "4b22ae5c111868412e2251464058325093798713e87c8bb88048f7dc920e5093",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776281594386": "0b0fea7d96d20ba35607cfa3089c48ade2fb7354912e650a22f9cc5279f23027",
+      "retrieval_pack:proof-probe-live-tests-primary-1776261279772": "9cbd1a31606c8245e990ac3da757caa7990687931a27aa2649fdce39694d5581",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776275729653": "4880a79334b2acdbeb77e024f439322da11a95039015afd0f6a518e17c442509",
+      "project_memory_pack:scope_b1f2b25a8beec198": "885114e3cd567faf0f749df483eec104dccf3ff3b9e5f178e3b8651fc4debf11",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776275729653": "602e863ceab202c681c74fbe5a5f4f2cccee5a2ce8017dcc0b5e7bd6415d18e1",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776272056886": "e3ac82d04dc407cd7359efe9eb744461b2d2f6a6fe4f07950ed8bb9e27f28074",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776281594386": "2981427c527b2249714132c0ce90db5cbbc714f3878eb331406f83ef32afda63",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776261279772": "40d53581e303676963a054ad9283bbeaf48b9aec535eb19ab02fef291cfa5dbc",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776272056886": "089f041cfdceeea1ed84d2eb2bdffb984f465a6a7be2a8b019909c9cee541bbf",
+      "retrieval_pack:proof-probe-live-tests-primary-1776281594386": "41f1dfea49f15d4b2dd1095dc69eb58569c24b205585dcb0f41528910aa6d4ec",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776257341693": "152fdd6ed7a9271d4a3b1832793fbd1662204825ca852c027207dccae3a484f4",
+      "project_memory_pack:scope_ed4c2164adff3e2a": "098d78af9a28f9e39994931f595dd1906b3980e4f9a6fd385cc0518a8acd315e",
+      "retrieval_pack:proof-probe-live-tests-primary-1776272056886": "b7a85a347dbf7f27e7e03a2eb140e947f7f789abd4f4eb2769ab340c26f14326",
+      "retrieval_pack:proof-probe-live-tests-primary-1776263914049": "2153807c426a6574c2b839ca6b077146b6f5c48cf561bb79724a3a6c4f368726",
+      "project_memory_pack:scope_0625375581425851": "84e97c37a6e5079aa7dc0c1821829647da7209abbaf9caa2b1ed31593b74ae2a",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776257341693": "5ea3266a78efcac1c69e6275d9dc10d1e8d61151db13443f3e0b0bff6f11fcd7",
+      "retrieval_pack:proof-probe-live-tests-primary-1776275729653": "bb99b0fda0e1f760c88838ea96263fc864cd5a43f50556d74f4d4659fcd984da",
+      "project_memory_pack:scope_4f8208d1e536ba1a": "b8c94b9e676384dd7835d33c1eed030a9b5f961a911200fc2717f71bbae08b5a",
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776281594386": "8059da0f5d92e15ca426f8f114682608bcdbf44339a2a49ce61d7e8fcdf3261d",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776275729653": "581ad8e71ccce0c775cc01fa9fdc70d9b7e63570adac8439bfba5bb679cf9d48",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776263914049": "553254292606fea59ae38baadda082258b580342174f8552a7418c105776de05",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776281594386": "acc6534e257b41fe30c4c72752cfd0e2b082acbbb885b1fc2a320ce1786b5467",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776272056886": "ce3be3b04ab972c11c42832c0741409b88dfc133a9fbc71e1a31f2444594a31a",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776261279772": "64e2c93950394f3108652b6fbf750e0161c59a8b03e3c0615505417b939bbf5d",
+      "project_memory_pack:scope_473957521e1a43e8": "f8cd4465f9d221c0a6a45e96a6e33795811ee30a351bfc6fe087e3e15f1305e8",
+      "project_memory_pack:scope_f9b1d95a97b14225": "378e91a0d0e70701c7d8a67a77dd1df53d1a8301ae4c7529f3fceace8089c685",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776263417159": "976bd90c0a38dda9e1f1ac8a5f3ded1ee1b3a0d24bc668e24ddfb6596681cfbc",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776281594386": "60c617e8e69f5a3162705caed8b64d0b267bff0547a371522f3bd8ee01c61b3f",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776257341693": "b1764990944e198484d206a57d5f152f720ee604e5bd415f50ce7e224220f3f4",
+      "project_memory_pack:scope_4c4c214bef0a1c5c": "7a0b91292fa3fe6d2e9122ca5a1af742aad1a0360888840a5dc33228563c3c3c",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776275729653": "d3219ce3c92b1035e85a27dc3a8dc1fb572b6a1af02fcc0568970366cf7c7bfd",
+      "procedure_memory_pack:scope_44136fa355b3678a": "fc47ce075136948f0f5af8c7559cf46acca50c884417ab6919f7ae24d0118f2a",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776263417159": "a849f552622cdb259ad3a314931d7846c6a4cb875515409eefe3e52de4c125ab",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776281594386": "49f30bd84ee58f385394058c3ba307ec3f5925158ef6aa89419195482da2ac08",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776263417159": "0ad15793e130559d1f5722d8a82c4bc524588c937a0dca28f8e1ba7174db1402",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776263417159": "0b3612f26aa39f90c6d45c307b895529db41a7bba0e3857094170500994b915b",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776272056886": "579a0eae7217965c7e9352e26d4fbcbaf29823138088a5ec410e77fb8e63dd2a",
+      "retrieval_pack:proof-probe-live-tests-primary-1776257341693": "22443f9b456274a49e14cd756870e64bae8917dfbfd732c38504b09c4c5c1a00",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776257341693": "8ccc992f124dbbc45ec6bcb650e956dc5b4022d67353d2312937c7e1225e7a94",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776281594386": "8df2ae118e311774dc408cba192eb78a0a9152d6384225ee50e28d61402c2eef",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776257341693": "a12e7407f5e302c198db3f0e8ef25c97d0c9a344e635dc18357edbe13687d10f",
+      "project_memory_pack:scope_841ea75148720667": "fe08fb59950f56d4cf78497ea6ed0a9a17b0ef4b17273bb693f68fe5e2b244e1",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776263914049": "95a29c959f6781878493cb44ffbac120c00a33be92d2ad6abdaa3e008877f0f0",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776261279772": "37327c89623d4da441b23e714d858216e4c0a441433a7919f6c9c572d8b46aa9",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776263914049": "7cea27d260f9966ffa6973f6ce1dcff71575459eff1ef409538558b5731a78a2",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776261279772": "e5861a389c7b74e3193010d47d82f84791a01d0638cc4d2b3888f28615387437",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776257341693": "89310dcae07833688733022219bfd3baa2a1bc119d33c58adfe91159e3f71dd1",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776281594386": "f24157e68515ddb71721b1420f9c09158dedbf306a65405b7d91da058e3aab25",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776261279772": "589aa9dad8d153d17a9a72fe0f86db8b9683ee9d6fa3adf25dc19e13c8f6d116",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776263914049": "d996ea79354d7094c9794d12143b7ffa323cbe4e86085fcf30d807f69a33a3da",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776272056886": "a6831e322dd3c9dfe67a1355fa31f063e119fb1ec6c5a4113e232c49003e7814",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776275729653": "b37144888d845d693a18350849e3c06f8145d3ed634bf19b34ae9f2f005f2926",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776263914049": "bfeee36d893e8b7043383fc971ece62373816a1fa9641729ca41208fda7c3902",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776281594386": "6bd29221fef8aae197f701dd11b48316524c496c2b3959d60963e75b58b165be",
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776275729653": "4f359d0c56771461cd3beba04294e7947247526e23be646a519d3a4a75be47f4",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776263417159": "6dc5fff84d3c25c6d9183bf637e9538d78ff9d87c9fab3079b96d8f1eee905bb"
+    },
+    "rerunArtifactHashes": {
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776272056886": "4cbbab24687688dbfc84bcda064353c70979f90f95d674c06dcf3b06b2294f16",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776275729653": "c7e4e7008179094aec186f485c41e62102479b877221082e195926feb3aee2f3",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776275729653": "c867dc7388d97adda4ccee9002957ec95c0bc6613f09636ee5f6de53997e5c19",
+      "project_memory_pack:scope_44136fa355b3678a": "18534440d162f200b4115da5f783fdea91b0731374c55c5bc6bb5ffb924dcaf4",
+      "project_memory_pack:scope_44e458425fd297ec": "8d0f12e4c6c655801a33e8c2b6edf9c755492ff4ce34c059065114d516180bc2",
+      "user_memory_pack:global": "6e6b08a3953b3dddb345eb6cf11f183e47405f532f07bb9f009350cbf7a04be5",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776272056886": "8d7593818ec878b83a2a9c394158234359e0ee96c4699c676d684bfde0628b29",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776285278574": "7f3a7d5e2050e0a09103411febd8ed9ed5d2387dd26d9f06a8dfd6a3259c0a3c",
+      "retrieval_pack:proof-probe-live-tests-primary-1776263417159": "ae48ca4b0aa4f8abf1e4256b6e6a459fd6ce4cd22c5282f60a5fd5481dd6027b",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776272056886": "7a0176fe77d4a24de1fd5b97fbbd02c32e575356a2d8eacdb52c8eb18f8904a9",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776263914049": "7e032bb51649d7c67519444898ddb3398e537cbc71520f1c8f6922e72510ffc5",
+      "project_memory_pack:scope_9cab8df573fd292b": "aa5822f17f08af5627dcfb390beffaff55e83082c70dbb92fc5e652b7cc4fe1a",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776261279772": "aae5e8d23b9ea2e1050bbe869fedd9e5445879e55c62b48192e932b862ec2573",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776275729653": "f94f8a30e35429a674eca5eb2dc86721459cba21cd59860a3e41fadd7105cb5d",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776285278574": "fda67d5a31a423ba9376912f21a902145e1a103be5616865fa10a7c2c0753af7",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776272056886": "4b22ae5c111868412e2251464058325093798713e87c8bb88048f7dc920e5093",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776281594386": "0b0fea7d96d20ba35607cfa3089c48ade2fb7354912e650a22f9cc5279f23027",
+      "retrieval_pack:proof-probe-live-tests-primary-1776261279772": "9cbd1a31606c8245e990ac3da757caa7990687931a27aa2649fdce39694d5581",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776275729653": "4880a79334b2acdbeb77e024f439322da11a95039015afd0f6a518e17c442509",
+      "project_memory_pack:scope_b1f2b25a8beec198": "885114e3cd567faf0f749df483eec104dccf3ff3b9e5f178e3b8651fc4debf11",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776275729653": "602e863ceab202c681c74fbe5a5f4f2cccee5a2ce8017dcc0b5e7bd6415d18e1",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776272056886": "e3ac82d04dc407cd7359efe9eb744461b2d2f6a6fe4f07950ed8bb9e27f28074",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776281594386": "2981427c527b2249714132c0ce90db5cbbc714f3878eb331406f83ef32afda63",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776285278574": "0bf52ac468415ce7d66ad7d1987573ec87da1d704c09f70f59ebd57973bc31b0",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776261279772": "40d53581e303676963a054ad9283bbeaf48b9aec535eb19ab02fef291cfa5dbc",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776272056886": "089f041cfdceeea1ed84d2eb2bdffb984f465a6a7be2a8b019909c9cee541bbf",
+      "retrieval_pack:proof-probe-live-tests-primary-1776281594386": "41f1dfea49f15d4b2dd1095dc69eb58569c24b205585dcb0f41528910aa6d4ec",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776257341693": "152fdd6ed7a9271d4a3b1832793fbd1662204825ca852c027207dccae3a484f4",
+      "project_memory_pack:scope_ed4c2164adff3e2a": "098d78af9a28f9e39994931f595dd1906b3980e4f9a6fd385cc0518a8acd315e",
+      "retrieval_pack:proof-probe-live-tests-primary-1776272056886": "b7a85a347dbf7f27e7e03a2eb140e947f7f789abd4f4eb2769ab340c26f14326",
+      "retrieval_pack:proof-probe-live-tests-primary-1776263914049": "2153807c426a6574c2b839ca6b077146b6f5c48cf561bb79724a3a6c4f368726",
+      "project_memory_pack:scope_0625375581425851": "84e97c37a6e5079aa7dc0c1821829647da7209abbaf9caa2b1ed31593b74ae2a",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776257341693": "5ea3266a78efcac1c69e6275d9dc10d1e8d61151db13443f3e0b0bff6f11fcd7",
+      "retrieval_pack:proof-probe-live-tests-primary-1776275729653": "bb99b0fda0e1f760c88838ea96263fc864cd5a43f50556d74f4d4659fcd984da",
+      "project_memory_pack:scope_4f8208d1e536ba1a": "b8c94b9e676384dd7835d33c1eed030a9b5f961a911200fc2717f71bbae08b5a",
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776281594386": "8059da0f5d92e15ca426f8f114682608bcdbf44339a2a49ce61d7e8fcdf3261d",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776285278574": "67fe0e958634d329593f8261e0acca18df713963527ca834524bf678def3eb50",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776275729653": "581ad8e71ccce0c775cc01fa9fdc70d9b7e63570adac8439bfba5bb679cf9d48",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776263914049": "553254292606fea59ae38baadda082258b580342174f8552a7418c105776de05",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776281594386": "acc6534e257b41fe30c4c72752cfd0e2b082acbbb885b1fc2a320ce1786b5467",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776272056886": "ce3be3b04ab972c11c42832c0741409b88dfc133a9fbc71e1a31f2444594a31a",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776261279772": "64e2c93950394f3108652b6fbf750e0161c59a8b03e3c0615505417b939bbf5d",
+      "project_memory_pack:scope_473957521e1a43e8": "f8cd4465f9d221c0a6a45e96a6e33795811ee30a351bfc6fe087e3e15f1305e8",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776285278574": "21464204374ee012fe9f9c81917b77253132f133f66d9e3c6840ca4c8503f399",
+      "project_memory_pack:scope_f9b1d95a97b14225": "378e91a0d0e70701c7d8a67a77dd1df53d1a8301ae4c7529f3fceace8089c685",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776263417159": "976bd90c0a38dda9e1f1ac8a5f3ded1ee1b3a0d24bc668e24ddfb6596681cfbc",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776281594386": "60c617e8e69f5a3162705caed8b64d0b267bff0547a371522f3bd8ee01c61b3f",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776257341693": "b1764990944e198484d206a57d5f152f720ee604e5bd415f50ce7e224220f3f4",
+      "project_memory_pack:scope_4c4c214bef0a1c5c": "7a0b91292fa3fe6d2e9122ca5a1af742aad1a0360888840a5dc33228563c3c3c",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776275729653": "d3219ce3c92b1035e85a27dc3a8dc1fb572b6a1af02fcc0568970366cf7c7bfd",
+      "procedure_memory_pack:scope_44136fa355b3678a": "fc47ce075136948f0f5af8c7559cf46acca50c884417ab6919f7ae24d0118f2a",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776263417159": "a849f552622cdb259ad3a314931d7846c6a4cb875515409eefe3e52de4c125ab",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776281594386": "49f30bd84ee58f385394058c3ba307ec3f5925158ef6aa89419195482da2ac08",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776263417159": "0ad15793e130559d1f5722d8a82c4bc524588c937a0dca28f8e1ba7174db1402",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776263417159": "0b3612f26aa39f90c6d45c307b895529db41a7bba0e3857094170500994b915b",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776272056886": "579a0eae7217965c7e9352e26d4fbcbaf29823138088a5ec410e77fb8e63dd2a",
+      "retrieval_pack:proof-probe-live-tests-primary-1776257341693": "22443f9b456274a49e14cd756870e64bae8917dfbfd732c38504b09c4c5c1a00",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776257341693": "8ccc992f124dbbc45ec6bcb650e956dc5b4022d67353d2312937c7e1225e7a94",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776281594386": "8df2ae118e311774dc408cba192eb78a0a9152d6384225ee50e28d61402c2eef",
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776285278574": "d9f68f40a1b686df7714a6521032c513e65249cd3d1825ea24f9fc0c979478bf",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776257341693": "a12e7407f5e302c198db3f0e8ef25c97d0c9a344e635dc18357edbe13687d10f",
+      "retrieval_pack:proof-probe-live-tests-primary-1776285278574": "5699a0245e96ce6b44af2de15f2ea98174beaaba72bad4040f7e556ab7294f03",
+      "project_memory_pack:scope_841ea75148720667": "fe08fb59950f56d4cf78497ea6ed0a9a17b0ef4b17273bb693f68fe5e2b244e1",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776263914049": "95a29c959f6781878493cb44ffbac120c00a33be92d2ad6abdaa3e008877f0f0",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776261279772": "37327c89623d4da441b23e714d858216e4c0a441433a7919f6c9c572d8b46aa9",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776263914049": "7cea27d260f9966ffa6973f6ce1dcff71575459eff1ef409538558b5731a78a2",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776261279772": "e5861a389c7b74e3193010d47d82f84791a01d0638cc4d2b3888f28615387437",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776257341693": "89310dcae07833688733022219bfd3baa2a1bc119d33c58adfe91159e3f71dd1",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776281594386": "f24157e68515ddb71721b1420f9c09158dedbf306a65405b7d91da058e3aab25",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776261279772": "589aa9dad8d153d17a9a72fe0f86db8b9683ee9d6fa3adf25dc19e13c8f6d116",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776263914049": "d996ea79354d7094c9794d12143b7ffa323cbe4e86085fcf30d807f69a33a3da",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776272056886": "a6831e322dd3c9dfe67a1355fa31f063e119fb1ec6c5a4113e232c49003e7814",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776275729653": "b37144888d845d693a18350849e3c06f8145d3ed634bf19b34ae9f2f005f2926",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776263914049": "bfeee36d893e8b7043383fc971ece62373816a1fa9641729ca41208fda7c3902",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776281594386": "6bd29221fef8aae197f701dd11b48316524c496c2b3959d60963e75b58b165be",
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776275729653": "4f359d0c56771461cd3beba04294e7947247526e23be646a519d3a4a75be47f4",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776263417159": "6dc5fff84d3c25c6d9183bf637e9538d78ff9d87c9fab3079b96d8f1eee905bb"
+    },
+    "baselineStableArtifactHashes": {
+      "project_memory_pack:scope_44136fa355b3678a": "18534440d162f200b4115da5f783fdea91b0731374c55c5bc6bb5ffb924dcaf4",
+      "project_memory_pack:scope_44e458425fd297ec": "8d0f12e4c6c655801a33e8c2b6edf9c755492ff4ce34c059065114d516180bc2",
+      "user_memory_pack:global": "6e6b08a3953b3dddb345eb6cf11f183e47405f532f07bb9f009350cbf7a04be5",
+      "project_memory_pack:scope_9cab8df573fd292b": "aa5822f17f08af5627dcfb390beffaff55e83082c70dbb92fc5e652b7cc4fe1a",
+      "project_memory_pack:scope_b1f2b25a8beec198": "885114e3cd567faf0f749df483eec104dccf3ff3b9e5f178e3b8651fc4debf11",
+      "project_memory_pack:scope_ed4c2164adff3e2a": "098d78af9a28f9e39994931f595dd1906b3980e4f9a6fd385cc0518a8acd315e",
+      "project_memory_pack:scope_0625375581425851": "84e97c37a6e5079aa7dc0c1821829647da7209abbaf9caa2b1ed31593b74ae2a",
+      "project_memory_pack:scope_4f8208d1e536ba1a": "b8c94b9e676384dd7835d33c1eed030a9b5f961a911200fc2717f71bbae08b5a",
+      "project_memory_pack:scope_473957521e1a43e8": "f8cd4465f9d221c0a6a45e96a6e33795811ee30a351bfc6fe087e3e15f1305e8",
+      "project_memory_pack:scope_f9b1d95a97b14225": "378e91a0d0e70701c7d8a67a77dd1df53d1a8301ae4c7529f3fceace8089c685",
+      "project_memory_pack:scope_4c4c214bef0a1c5c": "7a0b91292fa3fe6d2e9122ca5a1af742aad1a0360888840a5dc33228563c3c3c",
+      "procedure_memory_pack:scope_44136fa355b3678a": "fc47ce075136948f0f5af8c7559cf46acca50c884417ab6919f7ae24d0118f2a",
+      "project_memory_pack:scope_841ea75148720667": "fe08fb59950f56d4cf78497ea6ed0a9a17b0ef4b17273bb693f68fe5e2b244e1"
+    },
+    "rerunStableArtifactHashes": {
+      "project_memory_pack:scope_44136fa355b3678a": "18534440d162f200b4115da5f783fdea91b0731374c55c5bc6bb5ffb924dcaf4",
+      "project_memory_pack:scope_44e458425fd297ec": "8d0f12e4c6c655801a33e8c2b6edf9c755492ff4ce34c059065114d516180bc2",
+      "user_memory_pack:global": "6e6b08a3953b3dddb345eb6cf11f183e47405f532f07bb9f009350cbf7a04be5",
+      "project_memory_pack:scope_9cab8df573fd292b": "aa5822f17f08af5627dcfb390beffaff55e83082c70dbb92fc5e652b7cc4fe1a",
+      "project_memory_pack:scope_b1f2b25a8beec198": "885114e3cd567faf0f749df483eec104dccf3ff3b9e5f178e3b8651fc4debf11",
+      "project_memory_pack:scope_ed4c2164adff3e2a": "098d78af9a28f9e39994931f595dd1906b3980e4f9a6fd385cc0518a8acd315e",
+      "project_memory_pack:scope_0625375581425851": "84e97c37a6e5079aa7dc0c1821829647da7209abbaf9caa2b1ed31593b74ae2a",
+      "project_memory_pack:scope_4f8208d1e536ba1a": "b8c94b9e676384dd7835d33c1eed030a9b5f961a911200fc2717f71bbae08b5a",
+      "project_memory_pack:scope_473957521e1a43e8": "f8cd4465f9d221c0a6a45e96a6e33795811ee30a351bfc6fe087e3e15f1305e8",
+      "project_memory_pack:scope_f9b1d95a97b14225": "378e91a0d0e70701c7d8a67a77dd1df53d1a8301ae4c7529f3fceace8089c685",
+      "project_memory_pack:scope_4c4c214bef0a1c5c": "7a0b91292fa3fe6d2e9122ca5a1af742aad1a0360888840a5dc33228563c3c3c",
+      "procedure_memory_pack:scope_44136fa355b3678a": "fc47ce075136948f0f5af8c7559cf46acca50c884417ab6919f7ae24d0118f2a",
+      "project_memory_pack:scope_841ea75148720667": "fe08fb59950f56d4cf78497ea6ed0a9a17b0ef4b17273bb693f68fe5e2b244e1"
+    },
+    "baselineTransientArtifactHashes": {
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776272056886": "4cbbab24687688dbfc84bcda064353c70979f90f95d674c06dcf3b06b2294f16",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776275729653": "c7e4e7008179094aec186f485c41e62102479b877221082e195926feb3aee2f3",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776275729653": "c867dc7388d97adda4ccee9002957ec95c0bc6613f09636ee5f6de53997e5c19",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776272056886": "8d7593818ec878b83a2a9c394158234359e0ee96c4699c676d684bfde0628b29",
+      "retrieval_pack:proof-probe-live-tests-primary-1776263417159": "ae48ca4b0aa4f8abf1e4256b6e6a459fd6ce4cd22c5282f60a5fd5481dd6027b",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776272056886": "7a0176fe77d4a24de1fd5b97fbbd02c32e575356a2d8eacdb52c8eb18f8904a9",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776263914049": "7e032bb51649d7c67519444898ddb3398e537cbc71520f1c8f6922e72510ffc5",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776261279772": "aae5e8d23b9ea2e1050bbe869fedd9e5445879e55c62b48192e932b862ec2573",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776275729653": "f94f8a30e35429a674eca5eb2dc86721459cba21cd59860a3e41fadd7105cb5d",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776272056886": "4b22ae5c111868412e2251464058325093798713e87c8bb88048f7dc920e5093",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776281594386": "0b0fea7d96d20ba35607cfa3089c48ade2fb7354912e650a22f9cc5279f23027",
+      "retrieval_pack:proof-probe-live-tests-primary-1776261279772": "9cbd1a31606c8245e990ac3da757caa7990687931a27aa2649fdce39694d5581",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776275729653": "4880a79334b2acdbeb77e024f439322da11a95039015afd0f6a518e17c442509",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776275729653": "602e863ceab202c681c74fbe5a5f4f2cccee5a2ce8017dcc0b5e7bd6415d18e1",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776272056886": "e3ac82d04dc407cd7359efe9eb744461b2d2f6a6fe4f07950ed8bb9e27f28074",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776281594386": "2981427c527b2249714132c0ce90db5cbbc714f3878eb331406f83ef32afda63",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776261279772": "40d53581e303676963a054ad9283bbeaf48b9aec535eb19ab02fef291cfa5dbc",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776272056886": "089f041cfdceeea1ed84d2eb2bdffb984f465a6a7be2a8b019909c9cee541bbf",
+      "retrieval_pack:proof-probe-live-tests-primary-1776281594386": "41f1dfea49f15d4b2dd1095dc69eb58569c24b205585dcb0f41528910aa6d4ec",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776257341693": "152fdd6ed7a9271d4a3b1832793fbd1662204825ca852c027207dccae3a484f4",
+      "retrieval_pack:proof-probe-live-tests-primary-1776272056886": "b7a85a347dbf7f27e7e03a2eb140e947f7f789abd4f4eb2769ab340c26f14326",
+      "retrieval_pack:proof-probe-live-tests-primary-1776263914049": "2153807c426a6574c2b839ca6b077146b6f5c48cf561bb79724a3a6c4f368726",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776257341693": "5ea3266a78efcac1c69e6275d9dc10d1e8d61151db13443f3e0b0bff6f11fcd7",
+      "retrieval_pack:proof-probe-live-tests-primary-1776275729653": "bb99b0fda0e1f760c88838ea96263fc864cd5a43f50556d74f4d4659fcd984da",
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776281594386": "8059da0f5d92e15ca426f8f114682608bcdbf44339a2a49ce61d7e8fcdf3261d",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776275729653": "581ad8e71ccce0c775cc01fa9fdc70d9b7e63570adac8439bfba5bb679cf9d48",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776263914049": "553254292606fea59ae38baadda082258b580342174f8552a7418c105776de05",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776281594386": "acc6534e257b41fe30c4c72752cfd0e2b082acbbb885b1fc2a320ce1786b5467",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776272056886": "ce3be3b04ab972c11c42832c0741409b88dfc133a9fbc71e1a31f2444594a31a",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776261279772": "64e2c93950394f3108652b6fbf750e0161c59a8b03e3c0615505417b939bbf5d",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776263417159": "976bd90c0a38dda9e1f1ac8a5f3ded1ee1b3a0d24bc668e24ddfb6596681cfbc",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776281594386": "60c617e8e69f5a3162705caed8b64d0b267bff0547a371522f3bd8ee01c61b3f",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776257341693": "b1764990944e198484d206a57d5f152f720ee604e5bd415f50ce7e224220f3f4",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776275729653": "d3219ce3c92b1035e85a27dc3a8dc1fb572b6a1af02fcc0568970366cf7c7bfd",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776263417159": "a849f552622cdb259ad3a314931d7846c6a4cb875515409eefe3e52de4c125ab",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776281594386": "49f30bd84ee58f385394058c3ba307ec3f5925158ef6aa89419195482da2ac08",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776263417159": "0ad15793e130559d1f5722d8a82c4bc524588c937a0dca28f8e1ba7174db1402",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776263417159": "0b3612f26aa39f90c6d45c307b895529db41a7bba0e3857094170500994b915b",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776272056886": "579a0eae7217965c7e9352e26d4fbcbaf29823138088a5ec410e77fb8e63dd2a",
+      "retrieval_pack:proof-probe-live-tests-primary-1776257341693": "22443f9b456274a49e14cd756870e64bae8917dfbfd732c38504b09c4c5c1a00",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776257341693": "8ccc992f124dbbc45ec6bcb650e956dc5b4022d67353d2312937c7e1225e7a94",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776281594386": "8df2ae118e311774dc408cba192eb78a0a9152d6384225ee50e28d61402c2eef",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776257341693": "a12e7407f5e302c198db3f0e8ef25c97d0c9a344e635dc18357edbe13687d10f",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776263914049": "95a29c959f6781878493cb44ffbac120c00a33be92d2ad6abdaa3e008877f0f0",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776261279772": "37327c89623d4da441b23e714d858216e4c0a441433a7919f6c9c572d8b46aa9",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776263914049": "7cea27d260f9966ffa6973f6ce1dcff71575459eff1ef409538558b5731a78a2",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776261279772": "e5861a389c7b74e3193010d47d82f84791a01d0638cc4d2b3888f28615387437",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776257341693": "89310dcae07833688733022219bfd3baa2a1bc119d33c58adfe91159e3f71dd1",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776281594386": "f24157e68515ddb71721b1420f9c09158dedbf306a65405b7d91da058e3aab25",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776261279772": "589aa9dad8d153d17a9a72fe0f86db8b9683ee9d6fa3adf25dc19e13c8f6d116",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776263914049": "d996ea79354d7094c9794d12143b7ffa323cbe4e86085fcf30d807f69a33a3da",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776272056886": "a6831e322dd3c9dfe67a1355fa31f063e119fb1ec6c5a4113e232c49003e7814",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776275729653": "b37144888d845d693a18350849e3c06f8145d3ed634bf19b34ae9f2f005f2926",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776263914049": "bfeee36d893e8b7043383fc971ece62373816a1fa9641729ca41208fda7c3902",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776281594386": "6bd29221fef8aae197f701dd11b48316524c496c2b3959d60963e75b58b165be",
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776275729653": "4f359d0c56771461cd3beba04294e7947247526e23be646a519d3a4a75be47f4",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776263417159": "6dc5fff84d3c25c6d9183bf637e9538d78ff9d87c9fab3079b96d8f1eee905bb"
+    },
+    "rerunTransientArtifactHashes": {
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776272056886": "4cbbab24687688dbfc84bcda064353c70979f90f95d674c06dcf3b06b2294f16",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776275729653": "c7e4e7008179094aec186f485c41e62102479b877221082e195926feb3aee2f3",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776275729653": "c867dc7388d97adda4ccee9002957ec95c0bc6613f09636ee5f6de53997e5c19",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776272056886": "8d7593818ec878b83a2a9c394158234359e0ee96c4699c676d684bfde0628b29",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776285278574": "7f3a7d5e2050e0a09103411febd8ed9ed5d2387dd26d9f06a8dfd6a3259c0a3c",
+      "retrieval_pack:proof-probe-live-tests-primary-1776263417159": "ae48ca4b0aa4f8abf1e4256b6e6a459fd6ce4cd22c5282f60a5fd5481dd6027b",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776272056886": "7a0176fe77d4a24de1fd5b97fbbd02c32e575356a2d8eacdb52c8eb18f8904a9",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776263914049": "7e032bb51649d7c67519444898ddb3398e537cbc71520f1c8f6922e72510ffc5",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776261279772": "aae5e8d23b9ea2e1050bbe869fedd9e5445879e55c62b48192e932b862ec2573",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776275729653": "f94f8a30e35429a674eca5eb2dc86721459cba21cd59860a3e41fadd7105cb5d",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776285278574": "fda67d5a31a423ba9376912f21a902145e1a103be5616865fa10a7c2c0753af7",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776272056886": "4b22ae5c111868412e2251464058325093798713e87c8bb88048f7dc920e5093",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776281594386": "0b0fea7d96d20ba35607cfa3089c48ade2fb7354912e650a22f9cc5279f23027",
+      "retrieval_pack:proof-probe-live-tests-primary-1776261279772": "9cbd1a31606c8245e990ac3da757caa7990687931a27aa2649fdce39694d5581",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776275729653": "4880a79334b2acdbeb77e024f439322da11a95039015afd0f6a518e17c442509",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776275729653": "602e863ceab202c681c74fbe5a5f4f2cccee5a2ce8017dcc0b5e7bd6415d18e1",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776272056886": "e3ac82d04dc407cd7359efe9eb744461b2d2f6a6fe4f07950ed8bb9e27f28074",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776281594386": "2981427c527b2249714132c0ce90db5cbbc714f3878eb331406f83ef32afda63",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776285278574": "0bf52ac468415ce7d66ad7d1987573ec87da1d704c09f70f59ebd57973bc31b0",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776261279772": "40d53581e303676963a054ad9283bbeaf48b9aec535eb19ab02fef291cfa5dbc",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776272056886": "089f041cfdceeea1ed84d2eb2bdffb984f465a6a7be2a8b019909c9cee541bbf",
+      "retrieval_pack:proof-probe-live-tests-primary-1776281594386": "41f1dfea49f15d4b2dd1095dc69eb58569c24b205585dcb0f41528910aa6d4ec",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776257341693": "152fdd6ed7a9271d4a3b1832793fbd1662204825ca852c027207dccae3a484f4",
+      "retrieval_pack:proof-probe-live-tests-primary-1776272056886": "b7a85a347dbf7f27e7e03a2eb140e947f7f789abd4f4eb2769ab340c26f14326",
+      "retrieval_pack:proof-probe-live-tests-primary-1776263914049": "2153807c426a6574c2b839ca6b077146b6f5c48cf561bb79724a3a6c4f368726",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776257341693": "5ea3266a78efcac1c69e6275d9dc10d1e8d61151db13443f3e0b0bff6f11fcd7",
+      "retrieval_pack:proof-probe-live-tests-primary-1776275729653": "bb99b0fda0e1f760c88838ea96263fc864cd5a43f50556d74f4d4659fcd984da",
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776281594386": "8059da0f5d92e15ca426f8f114682608bcdbf44339a2a49ce61d7e8fcdf3261d",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776285278574": "67fe0e958634d329593f8261e0acca18df713963527ca834524bf678def3eb50",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776275729653": "581ad8e71ccce0c775cc01fa9fdc70d9b7e63570adac8439bfba5bb679cf9d48",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776263914049": "553254292606fea59ae38baadda082258b580342174f8552a7418c105776de05",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776281594386": "acc6534e257b41fe30c4c72752cfd0e2b082acbbb885b1fc2a320ce1786b5467",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776272056886": "ce3be3b04ab972c11c42832c0741409b88dfc133a9fbc71e1a31f2444594a31a",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776261279772": "64e2c93950394f3108652b6fbf750e0161c59a8b03e3c0615505417b939bbf5d",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776285278574": "21464204374ee012fe9f9c81917b77253132f133f66d9e3c6840ca4c8503f399",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776263417159": "976bd90c0a38dda9e1f1ac8a5f3ded1ee1b3a0d24bc668e24ddfb6596681cfbc",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776281594386": "60c617e8e69f5a3162705caed8b64d0b267bff0547a371522f3bd8ee01c61b3f",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776257341693": "b1764990944e198484d206a57d5f152f720ee604e5bd415f50ce7e224220f3f4",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776275729653": "d3219ce3c92b1035e85a27dc3a8dc1fb572b6a1af02fcc0568970366cf7c7bfd",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776263417159": "a849f552622cdb259ad3a314931d7846c6a4cb875515409eefe3e52de4c125ab",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776281594386": "49f30bd84ee58f385394058c3ba307ec3f5925158ef6aa89419195482da2ac08",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776263417159": "0ad15793e130559d1f5722d8a82c4bc524588c937a0dca28f8e1ba7174db1402",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776263417159": "0b3612f26aa39f90c6d45c307b895529db41a7bba0e3857094170500994b915b",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776272056886": "579a0eae7217965c7e9352e26d4fbcbaf29823138088a5ec410e77fb8e63dd2a",
+      "retrieval_pack:proof-probe-live-tests-primary-1776257341693": "22443f9b456274a49e14cd756870e64bae8917dfbfd732c38504b09c4c5c1a00",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776257341693": "8ccc992f124dbbc45ec6bcb650e956dc5b4022d67353d2312937c7e1225e7a94",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776281594386": "8df2ae118e311774dc408cba192eb78a0a9152d6384225ee50e28d61402c2eef",
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776285278574": "d9f68f40a1b686df7714a6521032c513e65249cd3d1825ea24f9fc0c979478bf",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776257341693": "a12e7407f5e302c198db3f0e8ef25c97d0c9a344e635dc18357edbe13687d10f",
+      "retrieval_pack:proof-probe-live-tests-primary-1776285278574": "5699a0245e96ce6b44af2de15f2ea98174beaaba72bad4040f7e556ab7294f03",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776263914049": "95a29c959f6781878493cb44ffbac120c00a33be92d2ad6abdaa3e008877f0f0",
+      "retrieval_pack:proof-probe-live-tests-cache-support-1776261279772": "37327c89623d4da441b23e714d858216e4c0a441433a7919f6c9c572d8b46aa9",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776263914049": "7cea27d260f9966ffa6973f6ce1dcff71575459eff1ef409538558b5731a78a2",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776261279772": "e5861a389c7b74e3193010d47d82f84791a01d0638cc4d2b3888f28615387437",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776257341693": "89310dcae07833688733022219bfd3baa2a1bc119d33c58adfe91159e3f71dd1",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776281594386": "f24157e68515ddb71721b1420f9c09158dedbf306a65405b7d91da058e3aab25",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776261279772": "589aa9dad8d153d17a9a72fe0f86db8b9683ee9d6fa3adf25dc19e13c8f6d116",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776263914049": "d996ea79354d7094c9794d12143b7ffa323cbe4e86085fcf30d807f69a33a3da",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776272056886": "a6831e322dd3c9dfe67a1355fa31f063e119fb1ec6c5a4113e232c49003e7814",
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776275729653": "b37144888d845d693a18350849e3c06f8145d3ed634bf19b34ae9f2f005f2926",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776263914049": "bfeee36d893e8b7043383fc971ece62373816a1fa9641729ca41208fda7c3902",
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776281594386": "6bd29221fef8aae197f701dd11b48316524c496c2b3959d60963e75b58b165be",
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776275729653": "4f359d0c56771461cd3beba04294e7947247526e23be646a519d3a4a75be47f4",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776263417159": "6dc5fff84d3c25c6d9183bf637e9538d78ff9d87c9fab3079b96d8f1eee905bb"
+    },
+    "projectionHashesStable": true,
+    "artifactHashesStable": true,
+    "unchangedRebuildClass": "transient_retrieval_artifact_growth",
+    "transientArtifactGrowthKeys": [
+      "retrieval_pack:proof-probe-fact-heavy-configuration-primary-1776285278574",
+      "retrieval_pack:proof-probe-gateway-protocol-primary-1776285278574",
+      "retrieval_pack:proof-probe-live-tests-primary-1776285278574",
+      "retrieval_pack:proof-probe-mixed-work-prompt-primary-1776285278574",
+      "retrieval_pack:proof-probe-planning-guidance-primary-1776285278574",
+      "retrieval_pack:proof-probe-rule-heavy-instruction-primary-1776285278574",
+      "retrieval_pack:proof-probe-schema-reference-primary-1776285278574"
+    ],
+    "supportOnlySource": "synthetic/support-only-proof/26e8acab-21e3-54ac-bb1d-e6da5a152cdc.md",
+    "supportOnlyTarget": {
+      "sourceType": "synthetic_existing_object_replay",
+      "source": "synthetic/support-only-proof/26e8acab-21e3-54ac-bb1d-e6da5a152cdc.md",
+      "targetObjectId": "26e8acab-21e3-54ac-bb1d-e6da5a152cdc",
+      "targetSummary": "Use repo-root relative file references only; never use absolute paths or ~/...",
+      "existingSupportCount": 2
+    },
+    "supportOnlyProbeClass": "pure_attach_support",
+    "supportOnlyProjectionChurn": false,
+    "supportOnlyArtifactChurn": false,
+    "supportOnlyTransientArtifactGrowthKeys": [
+      "retrieval_pack:proof-probe-live-tests-cache-baseline-1776285278574",
+      "retrieval_pack:proof-probe-live-tests-cache-repeat-1776285278574"
+    ],
+    "supportOnlyStableSurfaceDiffs": []
+  },
+  "cacheUsageProof": {
+    "unchangedStableLayerStable": true,
+    "unchangedSemiStableLayerStable": true,
+    "unchangedVolatileLayerStable": true,
+    "supportOnlyStableLayerStable": true,
+    "supportOnlySemiStableLayerStable": true,
+    "supportOnlyVolatileLayerStable": true,
+    "baselineHashes": {
+      "stable": "52e3ed6bd71bcce0e89d2f90540c646e45f763abb3ca12a29b1d5780d609f473",
+      "semiStable": "2512f9af9e63afc6a716fbd36231ee5512c25292a97f00c571d98bb7fdbb98b1",
+      "volatile": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "repeatedHashes": {
+      "stable": "52e3ed6bd71bcce0e89d2f90540c646e45f763abb3ca12a29b1d5780d609f473",
+      "semiStable": "2512f9af9e63afc6a716fbd36231ee5512c25292a97f00c571d98bb7fdbb98b1",
+      "volatile": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "supportOnlyHashes": {
+      "stable": "52e3ed6bd71bcce0e89d2f90540c646e45f763abb3ca12a29b1d5780d609f473",
+      "semiStable": "2512f9af9e63afc6a716fbd36231ee5512c25292a97f00c571d98bb7fdbb98b1",
+      "volatile": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "supportOnlyStableSegmentDiffs": []
+  },
+  "operatorInspectionProof": {
+    "recentCaptureCount": 20,
+    "writeDecisionCount": 20,
+    "projectionVersionCount": 20,
+    "retrievalRequestCount": 20,
+    "retrievalResultSetCount": 20,
+    "retrievalResultItemCount": 20,
+    "contextRunCount": 20,
+    "contextRunSegmentCount": 20,
+    "surfacesOperational": true
+  },
+  "shadowSurfaceProof": {
+    "attempted": true,
+    "source": "docs/help/testing.md",
+    "surfaceOperational": true,
+    "comparisonMeaningful": false,
+    "matchedIdentityCount": 0,
+    "modelOnlyIdentityCount": 11,
+    "legacyOnlyIdentityCount": 0,
+    "omissionDivergence": true,
+    "notes": [
+      "shadow_surface_executed_with_stub_legacy_observer",
+      "legacy_parity_not_proven_in_this_phase"
+    ]
+  },
+  "longHorizonSummary": {
+    "startingActiveObjects": 534,
+    "endingActiveObjects": 580,
+    "startingSupportItems": 638,
+    "endingSupportItems": 688,
+    "conflictHoldCount": 88,
+    "provisionalCount": 5,
+    "expiredCount": 0,
+    "duplicateActiveObjectCount": 29,
+    "supportOutgrewObjectsOnReruns": true
+  },
+  "corpusTotals": {
+    "canonicalObjectsPersisted": 686,
+    "supportItemsPersisted": 688,
+    "provisionalObjectsCreated": 5,
+    "activeObjects": 580,
+    "provisionalObjects": 5,
+    "conflictHoldObjects": 88,
+    "supersededObjects": 13,
+    "expiredObjects": 0,
+    "writeDecisionCounts": {
+      "write": 673,
+      "supersede": 13,
+      "attach_support": 227,
+      "ignore": 25
+    },
+    "duplicateClusterCandidates": [
+      {
+        "leftObjectId": "ee520ea8-8dd5-5963-b822-ab1246eaa815",
+        "rightObjectId": "65faa69b-9e65-5293-aa37-acc585565718",
+        "canonicalClass": "project",
+        "kind": "fact",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.9565
+      },
+      {
+        "leftObjectId": "f4be3215-9836-5fb9-8280-e2ee93d8dd43",
+        "rightObjectId": "0f12fe93-9160-500f-9c5e-3c02a5457e39",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.9286
+      },
+      {
+        "leftObjectId": "0778f49a-b058-5d8d-8d7f-fd95221ebfd3",
+        "rightObjectId": "7d8724c0-dc81-5c6f-8196-d9fe2119455c",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.9
+      },
+      {
+        "leftObjectId": "4c3ca671-9c26-5958-89c0-1b06a820ddbc",
+        "rightObjectId": "107b5b39-600b-5855-ad27-6f2b88c23b82",
+        "canonicalClass": "feedback",
+        "kind": "procedure",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.9
+      },
+      {
+        "leftObjectId": "00e1f898-bc88-5045-ac49-360f2343668a",
+        "rightObjectId": "544cf7c6-16a3-5687-a656-dc64d7da468e",
+        "canonicalClass": "project",
+        "kind": "fact",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.8966
+      },
+      {
+        "leftObjectId": "4192b3b6-5337-5f4c-9b90-32653c342c9b",
+        "rightObjectId": "cb3fe85b-392e-5e94-b9ba-0875774b7f03",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.8889
+      },
+      {
+        "leftObjectId": "9c8d21c2-b4e2-5a8f-8fb9-3f15346b2616",
+        "rightObjectId": "89608ecc-9cda-5484-b2e8-02c5ffa6f507",
+        "canonicalClass": "user",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.85
+      },
+      {
+        "leftObjectId": "95ad4642-8981-50a3-868c-d3c13f4d6657",
+        "rightObjectId": "6c4e531b-5a0f-55cf-ba89-0c5e6726d3f4",
+        "canonicalClass": "project",
+        "kind": "fact",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.8421
+      },
+      {
+        "leftObjectId": "ebd328d3-854f-5b59-ab14-7b13671f31f8",
+        "rightObjectId": "62d8fe25-f2b0-5ad9-9148-da726ceb4b43",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.84
+      },
+      {
+        "leftObjectId": "ee291b24-7748-5e78-8745-c000a4511b3d",
+        "rightObjectId": "6c4e531b-5a0f-55cf-ba89-0c5e6726d3f4",
+        "canonicalClass": "project",
+        "kind": "fact",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.8333
+      },
+      {
+        "leftObjectId": "2b6fb68b-a49f-51bf-9120-c60dedc3c4b8",
+        "rightObjectId": "a032fe54-6900-5d28-8ca5-b44024de67f1",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.8
+      },
+      {
+        "leftObjectId": "0778f49a-b058-5d8d-8d7f-fd95221ebfd3",
+        "rightObjectId": "19bcd2f1-f379-53fa-befb-265b78fcad4a",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7917
+      },
+      {
+        "leftObjectId": "0778f49a-b058-5d8d-8d7f-fd95221ebfd3",
+        "rightObjectId": "cb6544db-1120-5ca0-b3f2-877b5d5ed4cf",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7917
+      },
+      {
+        "leftObjectId": "0778f49a-b058-5d8d-8d7f-fd95221ebfd3",
+        "rightObjectId": "e64bcb66-c891-5045-9146-4d7e15a3567e",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7917
+      },
+      {
+        "leftObjectId": "ebd328d3-854f-5b59-ab14-7b13671f31f8",
+        "rightObjectId": "ec7d26dc-5aa2-5574-a49c-90e2037bf2c3",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7917
+      },
+      {
+        "leftObjectId": "26e8acab-21e3-54ac-bb1d-e6da5a152cdc",
+        "rightObjectId": "28f04856-2992-5fed-a6a7-6969f131aa81",
+        "canonicalClass": "user",
+        "kind": "preference",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7895
+      },
+      {
+        "leftObjectId": "ee291b24-7748-5e78-8745-c000a4511b3d",
+        "rightObjectId": "95ad4642-8981-50a3-868c-d3c13f4d6657",
+        "canonicalClass": "project",
+        "kind": "fact",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7895
+      },
+      {
+        "leftObjectId": "19bcd2f1-f379-53fa-befb-265b78fcad4a",
+        "rightObjectId": "7d8724c0-dc81-5c6f-8196-d9fe2119455c",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7826
+      },
+      {
+        "leftObjectId": "cb6544db-1120-5ca0-b3f2-877b5d5ed4cf",
+        "rightObjectId": "7d8724c0-dc81-5c6f-8196-d9fe2119455c",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7826
+      },
+      {
+        "leftObjectId": "e64bcb66-c891-5045-9146-4d7e15a3567e",
+        "rightObjectId": "7d8724c0-dc81-5c6f-8196-d9fe2119455c",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7826
+      },
+      {
+        "leftObjectId": "0fd79f3d-ea47-5dfd-ab0e-e9d8d6f4fe3e",
+        "rightObjectId": "4c3ca671-9c26-5958-89c0-1b06a820ddbc",
+        "canonicalClass": "feedback",
+        "kind": "procedure",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7727
+      },
+      {
+        "leftObjectId": "2b6fb68b-a49f-51bf-9120-c60dedc3c4b8",
+        "rightObjectId": "1febdc79-a316-57fc-96ab-ba48f468961a",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7692
+      },
+      {
+        "leftObjectId": "705e9c6b-6dd2-5d62-8d69-4083930bfeef",
+        "rightObjectId": "ebd328d3-854f-5b59-ab14-7b13671f31f8",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7692
+      },
+      {
+        "leftObjectId": "26e8acab-21e3-54ac-bb1d-e6da5a152cdc",
+        "rightObjectId": "be29567f-41d0-5a78-acc2-41c6c4c74935",
+        "canonicalClass": "user",
+        "kind": "preference",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7647
+      },
+      {
+        "leftObjectId": "0fd79f3d-ea47-5dfd-ab0e-e9d8d6f4fe3e",
+        "rightObjectId": "107b5b39-600b-5855-ad27-6f2b88c23b82",
+        "canonicalClass": "feedback",
+        "kind": "procedure",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.7619
+      },
+      {
+        "leftObjectId": "0284742e-5f0f-5fb2-9482-ed26db08a826",
+        "rightObjectId": "d75897ee-3113-505d-b545-7ae3a5be5244",
+        "canonicalClass": "reference",
+        "kind": "reference",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.75
+      },
+      {
+        "leftObjectId": "4bba2644-9344-5219-8816-9b88b2ccb2f9",
+        "rightObjectId": "d305e7c3-e0e9-5ba0-8c73-654e3dafe0f1",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.75
+      },
+      {
+        "leftObjectId": "99661188-7f6c-528b-8fa4-214b64618959",
+        "rightObjectId": "502a2cff-fb72-56d4-90e7-94e7c79948fe",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.75
+      },
+      {
+        "leftObjectId": "aa1b3012-fddb-5401-bdb3-382c866e6d5c",
+        "rightObjectId": "a0f4ac61-b957-59b3-b9e6-7c9783dc9f3b",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "scopeKey": "scope_44136fa355b3678a",
+        "similarity": 0.75
+      }
+    ]
+  },
+  "calibration": {
+    "captureRate": 0.7174840085287847,
+    "ignoreRate": 0.026652452025586353,
+    "duplicateRate": 0.2420042643923241,
+    "supersessionRate": 0.013859275053304905,
+    "retrievalRequestVolume": 67,
+    "averageRetrievalCandidateSetSize": 5,
+    "averageRetrievalPackingSize": 5,
+    "canonicalClassDistribution": {
+      "feedback": 24,
+      "project": 560,
+      "reference": 7,
+      "user": 95
+    },
+    "kindDistribution": {
+      "fact": 119,
+      "preference": 33,
+      "procedure": 5,
+      "reference": 7,
+      "rule": 522
+    },
+    "confidenceDistribution": {
+      "medium": 351,
+      "strong": 328,
+      "weak": 7
+    },
+    "reviewModeDistribution": {
+      "auto_accept": 686
+    },
+    "contractNameDistribution": {
+      "semantic_extraction": 686
+    },
+    "contractVersionDistribution": {
+      "v2-canonicalization": 685,
+      "v2-canonicalization-repair": 1
+    },
+    "modelIdDistribution": {
+      "openrouter/openai/gpt-5.4-nano": 686
+    },
+    "shadowComparisonCount": 0,
+    "omissionDivergenceCount": 0,
+    "contextRunCount": 67
+  },
+  "proofGaps": [
+    {
+      "id": "storage_lifecycle",
+      "status": "proven",
+      "owningSeams": [
+        "extensions/model-memory/src/write-policy.ts",
+        "extensions/model-memory/src/memory-object-store.ts",
+        "extensions/model-memory/src/runtime-read-models.ts"
+      ],
+      "notes": ["active_objects=580", "provisional_objects=5", "conflict_hold_objects=88"]
+    },
+    {
+      "id": "retrieval",
+      "status": "proven",
+      "owningSeams": [
+        "extensions/model-memory/src/retrieval.ts",
+        "extensions/model-memory/src/retrieval-store.ts",
+        "extensions/model-memory/src/real-retrieval-request-interpreter.ts"
+      ],
+      "notes": [
+        "probe-live-tests-primary-1776285278574:selected=5:matchingKinds=3:matchingClasses=0:activeOnly=true",
+        "probe-gateway-protocol-primary-1776285278574:selected=5:matchingKinds=5:matchingClasses=5:activeOnly=true",
+        "probe-planning-guidance-primary-1776285278574:selected=5:matchingKinds=5:matchingClasses=3:activeOnly=true",
+        "probe-schema-reference-primary-1776285278574:selected=5:matchingKinds=5:matchingClasses=4:activeOnly=true",
+        "probe-mixed-work-prompt-primary-1776285278574:selected=5:matchingKinds=5:matchingClasses=5:activeOnly=true",
+        "probe-rule-heavy-instruction-primary-1776285278574:selected=5:matchingKinds=4:matchingClasses=5:activeOnly=true",
+        "probe-fact-heavy-configuration-primary-1776285278574:selected=5:matchingKinds=5:matchingClasses=5:activeOnly=true"
+      ]
+    },
+    {
+      "id": "context_assembly",
+      "status": "proven",
+      "owningSeams": [
+        "extensions/model-memory/src/runtime/context/assemble.ts",
+        "extensions/model-memory/src/context-engine.ts"
+      ],
+      "notes": [
+        "probe-live-tests-primary-1776285278574:segments=6:estimatedTokens=1297:pruning=true",
+        "probe-gateway-protocol-primary-1776285278574:segments=6:estimatedTokens=1297:pruning=true",
+        "probe-planning-guidance-primary-1776285278574:segments=6:estimatedTokens=1297:pruning=true",
+        "probe-schema-reference-primary-1776285278574:segments=6:estimatedTokens=1297:pruning=true",
+        "probe-mixed-work-prompt-primary-1776285278574:segments=6:estimatedTokens=1297:pruning=true",
+        "probe-rule-heavy-instruction-primary-1776285278574:segments=6:estimatedTokens=1297:pruning=true",
+        "probe-fact-heavy-configuration-primary-1776285278574:segments=6:estimatedTokens=1297:pruning=true"
+      ]
+    },
+    {
+      "id": "runtime_read_models",
+      "status": "proven",
+      "owningSeams": [
+        "extensions/model-memory/src/runtime-read-models.ts",
+        "extensions/model-memory/src/runtime/active-memory-slots.ts",
+        "extensions/model-memory/src/runtime/active-memory-sets.ts"
+      ],
+      "notes": ["slots=123", "sets=580", "slot_leaks=0", "set_leaks=0"]
+    },
+    {
+      "id": "projections_rebuild",
+      "status": "proven",
+      "owningSeams": [
+        "extensions/model-memory/src/runtime-rebuild-orchestrator.ts",
+        "extensions/model-memory/src/projection-compiler.ts"
+      ],
+      "notes": [
+        "projection_hashes_stable=true",
+        "artifact_hashes_stable=true",
+        "unchanged_rebuild_class=transient_retrieval_artifact_growth",
+        "transient_artifact_growth=7",
+        "support_probe_class=pure_attach_support",
+        "support_only_projection_churn=false",
+        "support_only_artifact_churn=false"
+      ]
+    },
+    {
+      "id": "cache_usage",
+      "status": "proven",
+      "owningSeams": [
+        "extensions/model-memory/src/usage-cache-ledger.ts",
+        "extensions/model-memory/src/context-engine.ts"
+      ],
+      "notes": [
+        "unchanged_stable=true",
+        "unchanged_semi=true",
+        "unchanged_volatile=true",
+        "support_only_stable=true",
+        "support_only_semi=true",
+        "support_only_volatile=true",
+        "support_probe_class=pure_attach_support"
+      ]
+    },
+    {
+      "id": "operator_inspection",
+      "status": "proven",
+      "owningSeams": ["extensions/model-memory/src/operator-inspection.ts"],
+      "notes": [
+        "recent_captures=20",
+        "write_decisions=20",
+        "projection_versions=20",
+        "retrieval_requests=20",
+        "context_runs=20"
+      ]
+    },
+    {
+      "id": "shadow_runtime_integration",
+      "status": "already_partially_covered",
+      "owningSeams": [
+        "extensions/model-memory/src/shadow-mode.ts",
+        "extensions/model-memory/src/live-shadow-adapters.ts"
+      ],
+      "notes": [
+        "surface_operational=true",
+        "comparison_meaningful=false",
+        "shadow_surface_executed_with_stub_legacy_observer",
+        "legacy_parity_not_proven_in_this_phase"
+      ]
+    },
+    {
+      "id": "long_horizon_behavior",
+      "status": "failing_or_unstable",
+      "owningSeams": [
+        "src/agents/model-memory.proof-phase.ts",
+        "extensions/model-memory/src/write-policy.ts",
+        "extensions/model-memory/src/semantic-collision-adjudication.ts"
+      ],
+      "notes": [
+        "starting_active=534",
+        "ending_active=580",
+        "starting_supports=638",
+        "ending_supports=688",
+        "duplicate_active_object_count=29",
+        "support_outgrew_objects=true"
+      ]
+    }
+  ],
+  "readiness": {
+    "ready": false,
+    "decision": "not_ready",
+    "reasons": ["blocked_by:long_horizon_behavior"],
+    "blockers": ["long_horizon_behavior"]
+  }
+}

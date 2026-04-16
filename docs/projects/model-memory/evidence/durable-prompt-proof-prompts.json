@@ -1,0 +1,74 @@
+{
+  "prompts": [
+    {
+      "id": "durable-001-high-level-and-blockers",
+      "order": 1,
+      "title": "High Level Responses And Exact Blockers",
+      "text": "For work in the openclaw repo, keep explanations high level by default unless I ask for more detail. Use repo-root relative file references in reports. If a required gate fails, report the exact blocker and command instead of guessing.",
+      "selectionReason": "Stable response-style and reporting preferences that should behave like durable user guidance."
+    },
+    {
+      "id": "durable-002-landing-gates",
+      "order": 2,
+      "title": "Landing Gate Policy",
+      "text": "When changing code on main in openclaw, run pnpm check before landing. If the touched surface affects build output or module boundaries, also run pnpm build. Do not claim a clean landing if required gates are red.",
+      "selectionReason": "Persistent repo operating rules with clear durable procedural value."
+    },
+    {
+      "id": "durable-003-nano-defaults",
+      "order": 3,
+      "title": "Nano Defaults For Model Memory",
+      "text": "For model-memory work, use openrouter/openai/gpt-5.4-nano for both pass 1 and pass 2 by default. Do not use openrouter/auto as the default lane. Keep max words per window at 1500 and request timeout at 180000 unless explicitly changed and reported.",
+      "selectionReason": "Concrete long-lived operating defaults for the active clean-room memory lane."
+    },
+    {
+      "id": "durable-004-clean-room-boundary",
+      "order": 4,
+      "title": "Clean Room Boundary",
+      "text": "Do not modify legacy extensions/memory-middleware while working on the clean-room model-memory system. Keep new memory work inside extensions/model-memory and src/agents/model-memory files unless there is a justified runtime boundary seam.",
+      "selectionReason": "Stable project-scope boundary instruction that should persist across turns."
+    },
+    {
+      "id": "durable-005-safe-worktree-policy",
+      "order": 5,
+      "title": "Preserve Unrelated Worktree Changes",
+      "text": "Preserve unrelated worktree changes. Do not revert unrelated files. Do not use destructive git commands like git reset --hard or git checkout -- unless I explicitly ask.",
+      "selectionReason": "Durable safety constraints for repository operations."
+    },
+    {
+      "id": "durable-006-evidence-discipline",
+      "order": 6,
+      "title": "Evidence And Reporting Discipline",
+      "text": "For model-memory proof runs, produce durable JSON and Markdown artifacts under docs/projects/model-memory/evidence. Do not hand-edit evidence artifacts. Report exact commands, counts, and blockers honestly.",
+      "selectionReason": "Persistent procedural guidance about proof artifacts and honesty requirements."
+    },
+    {
+      "id": "durable-007-shared-two-pass-rule",
+      "order": 7,
+      "title": "Shared Two Pass Requirement",
+      "text": "Prompt-only ordinary-turn capture should reuse the same shared two-pass ingestion framework as document ingestion. Do not keep a separate degraded extraction path for prompts.",
+      "selectionReason": "Architectural constraint for the active prompt-only ingestion lane."
+    },
+    {
+      "id": "durable-008-active-only-runtime-reads",
+      "order": 8,
+      "title": "Active Only Runtime Reads",
+      "text": "Default runtime reads in model-memory should surface active objects only. Do not leak provisional or conflict_hold objects into ordinary retrieval and context assembly by default.",
+      "selectionReason": "Stable runtime policy that should produce durable rule-like memory."
+    },
+    {
+      "id": "durable-009-operator-surface",
+      "order": 9,
+      "title": "Operator Surface Constraint",
+      "text": "For document ingestion from OpenClaw, keep the operator surface explicit and constrained. Use operator or admin tool invocation rather than autonomous background ingestion by default.",
+      "selectionReason": "Durable operator policy for the newly exposed document-ingestion tool surface."
+    },
+    {
+      "id": "durable-010-doc-links",
+      "order": 10,
+      "title": "Full Docs URLs",
+      "text": "When I ask for documentation links, return full https://docs.openclaw.ai URLs instead of root-relative paths.",
+      "selectionReason": "Simple long-lived docs-formatting preference that should be easy to capture if the prompt lane is useful."
+    }
+  ]
+}

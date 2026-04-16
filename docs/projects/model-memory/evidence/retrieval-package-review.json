@@ -1,0 +1,658 @@
+{
+  "generatedAt": "2026-04-15T11:20:42.673Z",
+  "currentCorpus": true,
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestTimeoutMs": 180000,
+  "requestSeed": 7,
+  "probeIds": [
+    "probe-live-tests",
+    "probe-gateway-protocol",
+    "probe-planning-guidance",
+    "probe-schema-reference"
+  ],
+  "probes": [
+    {
+      "probeId": "probe-live-tests",
+      "queryText": "How do I run live tests in OpenClaw?",
+      "requestPurpose": "operator_help",
+      "promptPayload": {
+        "contractName": "retrieval_request_interpretation",
+        "contractVersion": "v1",
+        "modelId": "openrouter/openai/gpt-5.4-nano",
+        "systemPrompt": "Interpret retrieval requests for model-memory.\nReturn only valid JSON for structured retrieval intent.\nReturn exactly one of these JSON shapes and no other top-level shape:\n{\"action\":\"skip\"}\n{\"action\":\"retrieve\",\"request\":{\"goal\":\"...\",\"canonicalClasses\":[\"user\"|\"feedback\"|\"project\"|\"reference\"],\"kinds\":[\"preference\"|\"fact\"|\"rule\"|\"procedure\"|\"reference\"],\"scopeConstraints\":{\"key\":\"value\"},\"subjectHints\":[\"...\"],\"contentHints\":[\"...\"],\"desiredResultCount\":1,\"requestConfidence\":\"weak\"|\"medium\"|\"strong\"}}\nUse skip only when the query clearly cannot benefit from stored memory or reference knowledge.\nFor documentation lookup, workflow guidance, architecture lookup, operator help, or project/reference questions, prefer retrieve.\nDo not return fields like intent, queryText, requestPurpose, scope, or maxResults at the top level.\nUse canonical classes and kinds only when supported by the query.\nPrefer broad filters over invented specifics.\nFor broad documentation, planning, workflow, architecture, or reference questions, keep canonicalClasses empty unless the query explicitly names a required class.\nFor those broad questions, omit kinds unless the query explicitly asks for a kind-specific answer.\nDo not shrink desiredResultCount below the provided maxResults unless the query itself clearly asks for a smaller bounded answer.\nDo not invent abstract hints like strategy, framework, checklist, or best practices unless those ideas are present in the query text.",
+        "userPrompt": "{\n  \"queryText\": \"How do I run live tests in OpenClaw?\",\n  \"requestPurpose\": \"operator_help\",\n  \"scope\": {},\n  \"maxResults\": 5\n}",
+        "responseFormat": "json"
+      },
+      "providerTrace": {
+        "contractName": "retrieval_request_interpretation",
+        "contractVersion": "v1",
+        "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+        "provider": "openrouter",
+        "providerModel": "openai/gpt-5.4-nano",
+        "requestUrl": "https://openrouter.ai/api/v1/chat/completions",
+        "requestBody": {
+          "model": "openai/gpt-5.4-nano",
+          "temperature": 0,
+          "seed": 7,
+          "messages": [
+            {
+              "role": "system",
+              "content": "Interpret retrieval requests for model-memory.\nReturn only valid JSON for structured retrieval intent.\nReturn exactly one of these JSON shapes and no other top-level shape:\n{\"action\":\"skip\"}\n{\"action\":\"retrieve\",\"request\":{\"goal\":\"...\",\"canonicalClasses\":[\"user\"|\"feedback\"|\"project\"|\"reference\"],\"kinds\":[\"preference\"|\"fact\"|\"rule\"|\"procedure\"|\"reference\"],\"scopeConstraints\":{\"key\":\"value\"},\"subjectHints\":[\"...\"],\"contentHints\":[\"...\"],\"desiredResultCount\":1,\"requestConfidence\":\"weak\"|\"medium\"|\"strong\"}}\nUse skip only when the query clearly cannot benefit from stored memory or reference knowledge.\nFor documentation lookup, workflow guidance, architecture lookup, operator help, or project/reference questions, prefer retrieve.\nDo not return fields like intent, queryText, requestPurpose, scope, or maxResults at the top level.\nUse canonical classes and kinds only when supported by the query.\nPrefer broad filters over invented specifics.\nFor broad documentation, planning, workflow, architecture, or reference questions, keep canonicalClasses empty unless the query explicitly names a required class.\nFor those broad questions, omit kinds unless the query explicitly asks for a kind-specific answer.\nDo not shrink desiredResultCount below the provided maxResults unless the query itself clearly asks for a smaller bounded answer.\nDo not invent abstract hints like strategy, framework, checklist, or best practices unless those ideas are present in the query text."
+            },
+            {
+              "role": "user",
+              "content": "{\n  \"queryText\": \"How do I run live tests in OpenClaw?\",\n  \"requestPurpose\": \"operator_help\",\n  \"scope\": {},\n  \"maxResults\": 5\n}"
+            }
+          ],
+          "response_format": {
+            "type": "json_object"
+          }
+        },
+        "httpStatus": 200,
+        "responseOk": true,
+        "responseBodyReceived": true,
+        "responseBodyExcerpt": "{\"id\":\"gen-1776252038-heILqhOwtLG46Bly7E5H\",\"object\":\"chat.completion\",\"created\":1776252038,\"model\":\"openai/gpt-5.4-nano-20260317\",\"provider\":\"OpenAI\",\"system_fingerprint\":null,\"service_tier\":\"default\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\",\"native_finish_reason\":\"completed\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\":\\\"retrieve\\\",\\\"request\\\":{\\\"goal\\\":\\\"How do I ...",
+        "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+        "outputTextExcerpt": "{\"action\":\"retrieve\",\"request\":{\"goal\":\"How do I run live tests in OpenClaw?\",\"canonicalClasses\":[],\"kinds\":[],\"scopeConstraints\":{},\"subjectHints\":[\"OpenClaw\",\"live tests\"],\"contentHints\":[\"running live tests\",\"test execution\",\"operator instructions\"],\"desiredResultCount\":5,\"requestConfidence\":\"medium\"}}"
+      },
+      "lexicalBaselineRequest": {
+        "goal": "How do I run live tests in OpenClaw?",
+        "canonicalClasses": [],
+        "scopeConstraints": {},
+        "subjectHints": ["live", "tests", "openclaw"],
+        "contentHints": ["live", "tests", "openclaw"],
+        "desiredResultCount": 5,
+        "requestConfidence": "weak"
+      },
+      "modelAction": "retrieve",
+      "modelInterpretedRequest": {
+        "goal": "How do I run live tests in OpenClaw?",
+        "canonicalClasses": [],
+        "scopeConstraints": {},
+        "subjectHints": ["live", "tests", "openclaw"],
+        "contentHints": ["live", "tests", "openclaw"],
+        "desiredResultCount": 5,
+        "requestConfidence": "weak"
+      },
+      "lexicalBaselineResults": [
+        {
+          "objectId": "720e59c5-849b-5da1-a671-074350d79740",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "score": 35,
+          "payloadSummary": "Live tests discover credentials the same way the CLI does.: If the CLI works, live tests should find the same keys; if a live test says “no creds”, debug the same way you would for `openclaw models list` / model selection.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "e36a1ea2-ea96-5782-87c4-bc2a7f1f1fa8",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 35,
+          "payloadSummary": "Do not commit credentials; live tests discover credentials via CLI/credential discovery using profile store and config path/env var. | Do not commit credentials. | Ensure live tests can discover credentials via the CLI/credential discovery using `~/.openclaw/credentials/` and config at `~/.openclaw/openclaw.json` or `OPENCLAW_CONFIG_PATH`.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "1360e9b9-0ec3-5459-9c9c-54dac3696bf5",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "Live tests stability and cost expectations | Prefer running narrowed subsets instead of “everything”, because live tests are not CI-stable by design and use real networks/provider policies/quotas/outages and rate limits. | Avoid relying on live tests as CI-stable; avoid running the full live suite when you only need a focused check.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "2f29bdd0-8ac0-5c0b-88ad-8f2f7fb87766",
+          "canonicalClass": "feedback",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "Do not commit or publish real phone numbers, videos, or live configuration values; use obviously fake placeholders in docs/tests/examples. | Use obviously fake placeholders in docs, tests, and examples rather than real phone numbers, videos, or live configuration values.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "3b80ba32-b3df-58a6-b3a0-f1a620227b4d",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "For live gateway smoke, run pnpm test:live on src/gateway/gateway-models.profiles.live.test.ts with OPENCLAW_LIVE_GATEWAY_MODELS specifying a targeted model matrix (tools + at least one image-capable model). | Run `pnpm test:live src/gateway/gateway-models.profiles.live.test.ts` with `OPENCLAW_LIVE_GATEWAY_MODELS` set to a targeted model matrix that includes tools coverage and at least one image-capable model.",
+          "reasonCodes": ["subject_match", "text_match"]
+        }
+      ],
+      "modelResults": [
+        {
+          "objectId": "720e59c5-849b-5da1-a671-074350d79740",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "score": 35,
+          "payloadSummary": "Live tests discover credentials the same way the CLI does.: If the CLI works, live tests should find the same keys; if a live test says “no creds”, debug the same way you would for `openclaw models list` / model selection.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "e36a1ea2-ea96-5782-87c4-bc2a7f1f1fa8",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 35,
+          "payloadSummary": "Do not commit credentials; live tests discover credentials via CLI/credential discovery using profile store and config path/env var. | Do not commit credentials. | Ensure live tests can discover credentials via the CLI/credential discovery using `~/.openclaw/credentials/` and config at `~/.openclaw/openclaw.json` or `OPENCLAW_CONFIG_PATH`.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "1360e9b9-0ec3-5459-9c9c-54dac3696bf5",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "Live tests stability and cost expectations | Prefer running narrowed subsets instead of “everything”, because live tests are not CI-stable by design and use real networks/provider policies/quotas/outages and rate limits. | Avoid relying on live tests as CI-stable; avoid running the full live suite when you only need a focused check.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "2f29bdd0-8ac0-5c0b-88ad-8f2f7fb87766",
+          "canonicalClass": "feedback",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "Do not commit or publish real phone numbers, videos, or live configuration values; use obviously fake placeholders in docs/tests/examples. | Use obviously fake placeholders in docs, tests, and examples rather than real phone numbers, videos, or live configuration values.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "3b80ba32-b3df-58a6-b3a0-f1a620227b4d",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "For live gateway smoke, run pnpm test:live on src/gateway/gateway-models.profiles.live.test.ts with OPENCLAW_LIVE_GATEWAY_MODELS specifying a targeted model matrix (tools + at least one image-capable model). | Run `pnpm test:live src/gateway/gateway-models.profiles.live.test.ts` with `OPENCLAW_LIVE_GATEWAY_MODELS` set to a targeted model matrix that includes tools coverage and at least one image-capable model.",
+          "reasonCodes": ["subject_match", "text_match"]
+        }
+      ],
+      "lexicalAcceptedCount": {
+        "matchingKinds": 4,
+        "matchingClasses": 1
+      },
+      "modelAcceptedCount": {
+        "matchingKinds": 4,
+        "matchingClasses": 1
+      },
+      "finalRetrievalPackPreview": "Retrieval for operator_help: How do I run live tests in OpenClaw?\n1. project/fact {\"value\":\"If the CLI works, live tests should find the same keys; if a live test says “no creds”, debug the same way you would for `openclaw models list` / model selection.\",\"subject\":\"Live tests discover credentials the same way the CLI does.\"} [primary]\n2. project/rule {\"subject\":\"Do not commit credentials; live tests discover credentials via CLI/credential discovery using profile store and config path/env var.\",\"avoidAction\":\"Do not commit credentials.\",\"neededCapability\":\"Ensure live tests can discover credentials via the CLI/credential discovery using `~/.openclaw/credentials/` and config at `~/.openclaw/openclaw.json` or `OPENCLAW_CONFIG_PATH`.\"} [primary]\n3. project/rule {\"subject\":\"Live tests stability and cost expectations\",\"avoidAction\":\"Avoid relying on live tests as CI-stable; avoid running the full live suite when you only need a focused check.\",\"recommendedAction\":\"Prefer running narrowed subsets instead of “everything”, because live tests are not CI-stable by design and use real networks/provider policies/quotas/outages and rate limits.\"} [primary]\n4. feedback/rule {\"subject\":\"Do not commit or publish real phone numbers, videos, or live configuration values; use obviously fake placeholders in docs/tests/examples.\",\"recommendedAction\":\"Use obviously fake placeholders in docs, tests, and examples rather than real phone numbers, videos, or live configuration values.\"} [secondary]\n5. project/rule {\"subject\":\"For live gateway smoke, run pnpm test:live on src/gateway/gateway-models.profiles.live.test.ts with OPENCLAW_LIVE_GATEWAY_MODELS specifying a targeted model matrix (tools + at least one image-capable model).\",\"recommendedAction\":\"Run `pnpm test:live src/gateway/gateway-models.profiles.live.test.ts` with `OPENCLAW_LIVE_GATEWAY_MODELS` set to a targeted model matrix that includes tools coverage and at least one image-capable model.\"} [secondary]",
+      "verdict": "mostly_same_value_as_deterministic",
+      "rationale": ["same_ranked_ids", "accepted_signal=5"]
+    },
+    {
+      "probeId": "probe-gateway-protocol",
+      "queryText": "What should I consult for gateway protocol contracts?",
+      "requestPurpose": "reference_lookup",
+      "promptPayload": {
+        "contractName": "retrieval_request_interpretation",
+        "contractVersion": "v1",
+        "modelId": "openrouter/openai/gpt-5.4-nano",
+        "systemPrompt": "Interpret retrieval requests for model-memory.\nReturn only valid JSON for structured retrieval intent.\nReturn exactly one of these JSON shapes and no other top-level shape:\n{\"action\":\"skip\"}\n{\"action\":\"retrieve\",\"request\":{\"goal\":\"...\",\"canonicalClasses\":[\"user\"|\"feedback\"|\"project\"|\"reference\"],\"kinds\":[\"preference\"|\"fact\"|\"rule\"|\"procedure\"|\"reference\"],\"scopeConstraints\":{\"key\":\"value\"},\"subjectHints\":[\"...\"],\"contentHints\":[\"...\"],\"desiredResultCount\":1,\"requestConfidence\":\"weak\"|\"medium\"|\"strong\"}}\nUse skip only when the query clearly cannot benefit from stored memory or reference knowledge.\nFor documentation lookup, workflow guidance, architecture lookup, operator help, or project/reference questions, prefer retrieve.\nDo not return fields like intent, queryText, requestPurpose, scope, or maxResults at the top level.\nUse canonical classes and kinds only when supported by the query.\nPrefer broad filters over invented specifics.\nFor broad documentation, planning, workflow, architecture, or reference questions, keep canonicalClasses empty unless the query explicitly names a required class.\nFor those broad questions, omit kinds unless the query explicitly asks for a kind-specific answer.\nDo not shrink desiredResultCount below the provided maxResults unless the query itself clearly asks for a smaller bounded answer.\nDo not invent abstract hints like strategy, framework, checklist, or best practices unless those ideas are present in the query text.",
+        "userPrompt": "{\n  \"queryText\": \"What should I consult for gateway protocol contracts?\",\n  \"requestPurpose\": \"reference_lookup\",\n  \"scope\": {},\n  \"maxResults\": 5\n}",
+        "responseFormat": "json"
+      },
+      "providerTrace": {
+        "contractName": "retrieval_request_interpretation",
+        "contractVersion": "v1",
+        "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+        "provider": "openrouter",
+        "providerModel": "openai/gpt-5.4-nano",
+        "requestUrl": "https://openrouter.ai/api/v1/chat/completions",
+        "requestBody": {
+          "model": "openai/gpt-5.4-nano",
+          "temperature": 0,
+          "seed": 7,
+          "messages": [
+            {
+              "role": "system",
+              "content": "Interpret retrieval requests for model-memory.\nReturn only valid JSON for structured retrieval intent.\nReturn exactly one of these JSON shapes and no other top-level shape:\n{\"action\":\"skip\"}\n{\"action\":\"retrieve\",\"request\":{\"goal\":\"...\",\"canonicalClasses\":[\"user\"|\"feedback\"|\"project\"|\"reference\"],\"kinds\":[\"preference\"|\"fact\"|\"rule\"|\"procedure\"|\"reference\"],\"scopeConstraints\":{\"key\":\"value\"},\"subjectHints\":[\"...\"],\"contentHints\":[\"...\"],\"desiredResultCount\":1,\"requestConfidence\":\"weak\"|\"medium\"|\"strong\"}}\nUse skip only when the query clearly cannot benefit from stored memory or reference knowledge.\nFor documentation lookup, workflow guidance, architecture lookup, operator help, or project/reference questions, prefer retrieve.\nDo not return fields like intent, queryText, requestPurpose, scope, or maxResults at the top level.\nUse canonical classes and kinds only when supported by the query.\nPrefer broad filters over invented specifics.\nFor broad documentation, planning, workflow, architecture, or reference questions, keep canonicalClasses empty unless the query explicitly names a required class.\nFor those broad questions, omit kinds unless the query explicitly asks for a kind-specific answer.\nDo not shrink desiredResultCount below the provided maxResults unless the query itself clearly asks for a smaller bounded answer.\nDo not invent abstract hints like strategy, framework, checklist, or best practices unless those ideas are present in the query text."
+            },
+            {
+              "role": "user",
+              "content": "{\n  \"queryText\": \"What should I consult for gateway protocol contracts?\",\n  \"requestPurpose\": \"reference_lookup\",\n  \"scope\": {},\n  \"maxResults\": 5\n}"
+            }
+          ],
+          "response_format": {
+            "type": "json_object"
+          }
+        },
+        "httpStatus": 200,
+        "responseOk": true,
+        "responseBodyReceived": true,
+        "responseBodyExcerpt": "{\"id\":\"gen-1776252039-gsJO41FYwCcKgdcWm9X2\",\"object\":\"chat.completion\",\"created\":1776252039,\"model\":\"openai/gpt-5.4-nano-20260317\",\"provider\":\"OpenAI\",\"system_fingerprint\":null,\"service_tier\":\"default\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\",\"native_finish_reason\":\"completed\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\":\\\"retrieve\\\",\\\"request\\\":{\\\"goal\\\":\\\"Consult g...",
+        "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+        "outputTextExcerpt": "{\"action\":\"retrieve\",\"request\":{\"goal\":\"Consult gateway protocol contracts\",\"canonicalClasses\":[],\"kinds\":[\"reference\"],\"scopeConstraints\":{},\"subjectHints\":[\"gateway protocol contracts\"],\"contentHints\":[\"gateway protocol contracts\"],\"desiredResultCount\":5,\"requestConfidence\":\"medium\"}}"
+      },
+      "lexicalBaselineRequest": {
+        "goal": "What should I consult for gateway protocol contracts?",
+        "canonicalClasses": [],
+        "scopeConstraints": {},
+        "subjectHints": ["gateway", "protocol", "contracts"],
+        "contentHints": ["gateway", "protocol", "contracts"],
+        "desiredResultCount": 5,
+        "requestConfidence": "weak"
+      },
+      "modelAction": "retrieve",
+      "modelInterpretedRequest": {
+        "goal": "Consult gateway protocol contracts",
+        "canonicalClasses": [],
+        "scopeConstraints": {},
+        "subjectHints": ["gateway", "protocol", "contracts"],
+        "contentHints": ["gateway", "protocol", "contracts"],
+        "desiredResultCount": 5,
+        "requestConfidence": "weak"
+      },
+      "lexicalBaselineResults": [
+        {
+          "objectId": "a4e506b7-fe65-54b2-9782-8e413f495aa5",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 20,
+          "payloadSummary": "Side-effecting Gateway WS methods | Use idempotency keys for side-effecting methods. | Idempotency key support as defined by the Gateway protocol schema.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "0387b626-495c-59b4-be5c-c7b0a4d10950",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 15,
+          "payloadSummary": "Gateway configuration strict validation | Refuse to start when the configuration does not fully match the schema, except allow $schema at the root as a string for JSON Schema metadata. | Do not start the Gateway when unknown keys, malformed types, or invalid values are present.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "04b21af3-0961-5549-a76f-9cb328e26a00",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 15,
+          "payloadSummary": "Gateway WebSocket handshake error code 1008 | Do not send anything other than a `connect` frame as the first WebSocket message; do not open the Gateway WS port using a normal browser (HTTP URL). | Use the correct WS URL (`ws://<host>:18789` or `wss://...`) and include the token/password in the `connect` frame when auth is enabled.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "078d7c86-2bc9-5991-97f9-ca7e9d855cc4",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "score": 15,
+          "payloadSummary": "Bridge protocol: The Bridge protocol is a legacy TCP JSONL transport and current builds do not ship a TCP bridge listener.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "0bebe1b9-615f-522b-ac7e-4f55df479c29",
+          "canonicalClass": "user",
+          "kind": "preference",
+          "score": 15,
+          "payloadSummary": "Live gateway model matrix | For the live gateway model matrix, include at least one tool-calling capable model per provider family and optionally add more tool models for extra coverage. | Include tool-calling models per provider family in OPENCLAW_LIVE_GATEWAY_MODELS.",
+          "reasonCodes": ["subject_match", "text_match"]
+        }
+      ],
+      "modelResults": [
+        {
+          "objectId": "a4e506b7-fe65-54b2-9782-8e413f495aa5",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 20,
+          "payloadSummary": "Side-effecting Gateway WS methods | Use idempotency keys for side-effecting methods. | Idempotency key support as defined by the Gateway protocol schema.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "0387b626-495c-59b4-be5c-c7b0a4d10950",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 15,
+          "payloadSummary": "Gateway configuration strict validation | Refuse to start when the configuration does not fully match the schema, except allow $schema at the root as a string for JSON Schema metadata. | Do not start the Gateway when unknown keys, malformed types, or invalid values are present.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "04b21af3-0961-5549-a76f-9cb328e26a00",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 15,
+          "payloadSummary": "Gateway WebSocket handshake error code 1008 | Do not send anything other than a `connect` frame as the first WebSocket message; do not open the Gateway WS port using a normal browser (HTTP URL). | Use the correct WS URL (`ws://<host>:18789` or `wss://...`) and include the token/password in the `connect` frame when auth is enabled.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "078d7c86-2bc9-5991-97f9-ca7e9d855cc4",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "score": 15,
+          "payloadSummary": "Bridge protocol: The Bridge protocol is a legacy TCP JSONL transport and current builds do not ship a TCP bridge listener.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "0bebe1b9-615f-522b-ac7e-4f55df479c29",
+          "canonicalClass": "user",
+          "kind": "preference",
+          "score": 15,
+          "payloadSummary": "Live gateway model matrix | For the live gateway model matrix, include at least one tool-calling capable model per provider family and optionally add more tool models for extra coverage. | Include tool-calling models per provider family in OPENCLAW_LIVE_GATEWAY_MODELS.",
+          "reasonCodes": ["subject_match", "text_match"]
+        }
+      ],
+      "lexicalAcceptedCount": {
+        "matchingKinds": 4,
+        "matchingClasses": 4
+      },
+      "modelAcceptedCount": {
+        "matchingKinds": 4,
+        "matchingClasses": 4
+      },
+      "finalRetrievalPackPreview": "Retrieval for reference_lookup: What should I consult for gateway protocol contracts?\n1. project/rule {\"subject\":\"Side-effecting Gateway WS methods\",\"neededCapability\":\"Idempotency key support as defined by the Gateway protocol schema.\",\"recommendedAction\":\"Use idempotency keys for side-effecting methods.\"} [primary]\n2. project/rule {\"subject\":\"Gateway configuration strict validation\",\"avoidAction\":\"Do not start the Gateway when unknown keys, malformed types, or invalid values are present.\",\"recommendedAction\":\"Refuse to start when the configuration does not fully match the schema, except allow $schema at the root as a string for JSON Schema metadata.\"} [primary]\n3. project/rule {\"subject\":\"Gateway WebSocket handshake error code 1008\",\"avoidAction\":\"Do not send anything other than a `connect` frame as the first WebSocket message; do not open the Gateway WS port using a normal browser (HTTP URL).\",\"neededCapability\":\"Use the correct WS URL (`ws://<host>:18789` or `wss://...`) and include the token/password in the `connect` frame when auth is enabled.\"} [primary]\n4. project/fact {\"value\":\"The Bridge protocol is a legacy TCP JSONL transport and current builds do not ship a TCP bridge listener.\",\"subject\":\"Bridge protocol\"} [secondary]\n5. user/preference {\"subject\":\"Live gateway model matrix\",\"operation\":\"Include tool-calling models per provider family in OPENCLAW_LIVE_GATEWAY_MODELS.\",\"instruction\":\"For the live gateway model matrix, include at least one tool-calling capable model per provider family and optionally add more tool models for extra coverage.\"} [secondary]",
+      "verdict": "mostly_same_value_as_deterministic",
+      "rationale": ["same_ranked_ids", "accepted_signal=8"]
+    },
+    {
+      "probeId": "probe-planning-guidance",
+      "queryText": "What should I read before planning or roadmap work?",
+      "requestPurpose": "workflow_guidance",
+      "promptPayload": {
+        "contractName": "retrieval_request_interpretation",
+        "contractVersion": "v1",
+        "modelId": "openrouter/openai/gpt-5.4-nano",
+        "systemPrompt": "Interpret retrieval requests for model-memory.\nReturn only valid JSON for structured retrieval intent.\nReturn exactly one of these JSON shapes and no other top-level shape:\n{\"action\":\"skip\"}\n{\"action\":\"retrieve\",\"request\":{\"goal\":\"...\",\"canonicalClasses\":[\"user\"|\"feedback\"|\"project\"|\"reference\"],\"kinds\":[\"preference\"|\"fact\"|\"rule\"|\"procedure\"|\"reference\"],\"scopeConstraints\":{\"key\":\"value\"},\"subjectHints\":[\"...\"],\"contentHints\":[\"...\"],\"desiredResultCount\":1,\"requestConfidence\":\"weak\"|\"medium\"|\"strong\"}}\nUse skip only when the query clearly cannot benefit from stored memory or reference knowledge.\nFor documentation lookup, workflow guidance, architecture lookup, operator help, or project/reference questions, prefer retrieve.\nDo not return fields like intent, queryText, requestPurpose, scope, or maxResults at the top level.\nUse canonical classes and kinds only when supported by the query.\nPrefer broad filters over invented specifics.\nFor broad documentation, planning, workflow, architecture, or reference questions, keep canonicalClasses empty unless the query explicitly names a required class.\nFor those broad questions, omit kinds unless the query explicitly asks for a kind-specific answer.\nDo not shrink desiredResultCount below the provided maxResults unless the query itself clearly asks for a smaller bounded answer.\nDo not invent abstract hints like strategy, framework, checklist, or best practices unless those ideas are present in the query text.",
+        "userPrompt": "{\n  \"queryText\": \"What should I read before planning or roadmap work?\",\n  \"requestPurpose\": \"workflow_guidance\",\n  \"scope\": {},\n  \"maxResults\": 5\n}",
+        "responseFormat": "json"
+      },
+      "providerTrace": {
+        "contractName": "retrieval_request_interpretation",
+        "contractVersion": "v1",
+        "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+        "provider": "openrouter",
+        "providerModel": "openai/gpt-5.4-nano",
+        "requestUrl": "https://openrouter.ai/api/v1/chat/completions",
+        "requestBody": {
+          "model": "openai/gpt-5.4-nano",
+          "temperature": 0,
+          "seed": 7,
+          "messages": [
+            {
+              "role": "system",
+              "content": "Interpret retrieval requests for model-memory.\nReturn only valid JSON for structured retrieval intent.\nReturn exactly one of these JSON shapes and no other top-level shape:\n{\"action\":\"skip\"}\n{\"action\":\"retrieve\",\"request\":{\"goal\":\"...\",\"canonicalClasses\":[\"user\"|\"feedback\"|\"project\"|\"reference\"],\"kinds\":[\"preference\"|\"fact\"|\"rule\"|\"procedure\"|\"reference\"],\"scopeConstraints\":{\"key\":\"value\"},\"subjectHints\":[\"...\"],\"contentHints\":[\"...\"],\"desiredResultCount\":1,\"requestConfidence\":\"weak\"|\"medium\"|\"strong\"}}\nUse skip only when the query clearly cannot benefit from stored memory or reference knowledge.\nFor documentation lookup, workflow guidance, architecture lookup, operator help, or project/reference questions, prefer retrieve.\nDo not return fields like intent, queryText, requestPurpose, scope, or maxResults at the top level.\nUse canonical classes and kinds only when supported by the query.\nPrefer broad filters over invented specifics.\nFor broad documentation, planning, workflow, architecture, or reference questions, keep canonicalClasses empty unless the query explicitly names a required class.\nFor those broad questions, omit kinds unless the query explicitly asks for a kind-specific answer.\nDo not shrink desiredResultCount below the provided maxResults unless the query itself clearly asks for a smaller bounded answer.\nDo not invent abstract hints like strategy, framework, checklist, or best practices unless those ideas are present in the query text."
+            },
+            {
+              "role": "user",
+              "content": "{\n  \"queryText\": \"What should I read before planning or roadmap work?\",\n  \"requestPurpose\": \"workflow_guidance\",\n  \"scope\": {},\n  \"maxResults\": 5\n}"
+            }
+          ],
+          "response_format": {
+            "type": "json_object"
+          }
+        },
+        "httpStatus": 200,
+        "responseOk": true,
+        "responseBodyReceived": true,
+        "responseBodyExcerpt": "{\"id\":\"gen-1776252040-oBPWFuRs7XhZC6xQLHaE\",\"object\":\"chat.completion\",\"created\":1776252040,\"model\":\"openai/gpt-5.4-nano-20260317\",\"provider\":\"OpenAI\",\"system_fingerprint\":null,\"service_tier\":\"default\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\",\"native_finish_reason\":\"completed\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\":\\\"retrieve\\\",\\\"request\\\":{\\\"goal\\\":\\\"Identify ...",
+        "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+        "outputTextExcerpt": "{\"action\":\"retrieve\",\"request\":{\"goal\":\"Identify recommended materials to read before planning or roadmap work.\",\"canonicalClasses\":[],\"kinds\":[],\"scopeConstraints\":{},\"subjectHints\":[],\"contentHints\":[\"planning\",\"roadmap\",\"prerequisites\",\"requirements\",\"prioritization\",\"stakeholders\"],\"desiredResultCount\":1,\"requestConfidence\":\"medium\"}}"
+      },
+      "lexicalBaselineRequest": {
+        "goal": "What should I read before planning or roadmap work?",
+        "canonicalClasses": [],
+        "scopeConstraints": {},
+        "subjectHints": ["read", "planning", "roadmap", "work"],
+        "contentHints": ["read", "planning", "roadmap", "work"],
+        "desiredResultCount": 5,
+        "requestConfidence": "weak"
+      },
+      "modelAction": "retrieve",
+      "modelInterpretedRequest": {
+        "goal": "Identify recommended materials to read before planning or roadmap work.",
+        "canonicalClasses": [],
+        "scopeConstraints": {},
+        "subjectHints": ["read", "planning", "roadmap", "work"],
+        "contentHints": ["read", "planning", "roadmap", "work"],
+        "desiredResultCount": 5,
+        "requestConfidence": "weak"
+      },
+      "lexicalBaselineResults": [
+        {
+          "objectId": "0a6eebe9-b7e5-51de-92da-d724ba4f52b8",
+          "canonicalClass": "user",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "README (GitHub): keep absolute docs URLs (`https://docs.openclaw.ai/...`) so links work on GitHub. | Use absolute `https://docs.openclaw.ai/...` URLs in the README to ensure GitHub link correctness.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "5fde5abf-c13b-53aa-91e9-6ee240d0439b",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "When working with documentation, read the mintlify skill | Read the mintlify skill when working with documentation.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "89ef514f-7781-5b7d-b598-bac65d95c60e",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "Release work requires reading specific release docs first | Always read `docs/reference/RELEASING.md` and `docs/platforms/mac/release.md` before any release work; do not ask routine questions once those docs answer them. | Do not ask routine questions once those docs answer them.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "14204618-d171-56a0-afe7-b5b2d8a0499e",
+          "canonicalClass": "user",
+          "kind": "rule",
+          "score": 20,
+          "payloadSummary": "Release workflow prerequisites | Always read `docs/reference/RELEASING.md` and `docs/platforms/mac/release.md` before any release work; do not ask routine questions once those docs answer them.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "51438834-96e6-5966-8ba9-c2cb62ac8c52",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 20,
+          "payloadSummary": "Release work prerequisites | Before any release work, always read docs/reference/RELEASING.md and docs/platforms/mac/release.md and do not ask routine questions once those docs answer them.",
+          "reasonCodes": ["subject_match", "text_match"]
+        }
+      ],
+      "modelResults": [
+        {
+          "objectId": "0a6eebe9-b7e5-51de-92da-d724ba4f52b8",
+          "canonicalClass": "user",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "README (GitHub): keep absolute docs URLs (`https://docs.openclaw.ai/...`) so links work on GitHub. | Use absolute `https://docs.openclaw.ai/...` URLs in the README to ensure GitHub link correctness.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "5fde5abf-c13b-53aa-91e9-6ee240d0439b",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "When working with documentation, read the mintlify skill | Read the mintlify skill when working with documentation.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "89ef514f-7781-5b7d-b598-bac65d95c60e",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "Release work requires reading specific release docs first | Always read `docs/reference/RELEASING.md` and `docs/platforms/mac/release.md` before any release work; do not ask routine questions once those docs answer them. | Do not ask routine questions once those docs answer them.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "14204618-d171-56a0-afe7-b5b2d8a0499e",
+          "canonicalClass": "user",
+          "kind": "rule",
+          "score": 20,
+          "payloadSummary": "Release workflow prerequisites | Always read `docs/reference/RELEASING.md` and `docs/platforms/mac/release.md` before any release work; do not ask routine questions once those docs answer them.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "51438834-96e6-5966-8ba9-c2cb62ac8c52",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 20,
+          "payloadSummary": "Release work prerequisites | Before any release work, always read docs/reference/RELEASING.md and docs/platforms/mac/release.md and do not ask routine questions once those docs answer them.",
+          "reasonCodes": ["subject_match", "text_match"]
+        }
+      ],
+      "lexicalAcceptedCount": {
+        "matchingKinds": 5,
+        "matchingClasses": 2
+      },
+      "modelAcceptedCount": {
+        "matchingKinds": 5,
+        "matchingClasses": 2
+      },
+      "finalRetrievalPackPreview": "Retrieval for workflow_guidance: What should I read before planning or roadmap work?\n1. user/rule {\"subject\":\"README (GitHub): keep absolute docs URLs (`https://docs.openclaw.ai/...`) so links work on GitHub.\",\"recommendedAction\":\"Use absolute `https://docs.openclaw.ai/...` URLs in the README to ensure GitHub link correctness.\"} [primary]\n2. project/rule {\"subject\":\"When working with documentation, read the mintlify skill\",\"recommendedAction\":\"Read the mintlify skill when working with documentation.\"} [primary]\n3. project/rule {\"subject\":\"Release work requires reading specific release docs first\",\"avoidAction\":\"Do not ask routine questions once those docs answer them.\",\"recommendedAction\":\"Always read `docs/reference/RELEASING.md` and `docs/platforms/mac/release.md` before any release work; do not ask routine questions once those docs answer them.\"} [primary]\n4. user/rule {\"subject\":\"Release workflow prerequisites\",\"recommendedAction\":\"Always read `docs/reference/RELEASING.md` and `docs/platforms/mac/release.md` before any release work; do not ask routine questions once those docs answer them.\"} [secondary]\n5. project/rule {\"subject\":\"Release work prerequisites\",\"recommendedAction\":\"Before any release work, always read docs/reference/RELEASING.md and docs/platforms/mac/release.md and do not ask routine questions once those docs answer them.\"} [secondary]",
+      "verdict": "mostly_same_value_as_deterministic",
+      "rationale": ["same_ranked_ids", "accepted_signal=7"]
+    },
+    {
+      "probeId": "probe-schema-reference",
+      "queryText": "Where is the model-memory schema and storage design documented?",
+      "requestPurpose": "architecture_lookup",
+      "promptPayload": {
+        "contractName": "retrieval_request_interpretation",
+        "contractVersion": "v1",
+        "modelId": "openrouter/openai/gpt-5.4-nano",
+        "systemPrompt": "Interpret retrieval requests for model-memory.\nReturn only valid JSON for structured retrieval intent.\nReturn exactly one of these JSON shapes and no other top-level shape:\n{\"action\":\"skip\"}\n{\"action\":\"retrieve\",\"request\":{\"goal\":\"...\",\"canonicalClasses\":[\"user\"|\"feedback\"|\"project\"|\"reference\"],\"kinds\":[\"preference\"|\"fact\"|\"rule\"|\"procedure\"|\"reference\"],\"scopeConstraints\":{\"key\":\"value\"},\"subjectHints\":[\"...\"],\"contentHints\":[\"...\"],\"desiredResultCount\":1,\"requestConfidence\":\"weak\"|\"medium\"|\"strong\"}}\nUse skip only when the query clearly cannot benefit from stored memory or reference knowledge.\nFor documentation lookup, workflow guidance, architecture lookup, operator help, or project/reference questions, prefer retrieve.\nDo not return fields like intent, queryText, requestPurpose, scope, or maxResults at the top level.\nUse canonical classes and kinds only when supported by the query.\nPrefer broad filters over invented specifics.\nFor broad documentation, planning, workflow, architecture, or reference questions, keep canonicalClasses empty unless the query explicitly names a required class.\nFor those broad questions, omit kinds unless the query explicitly asks for a kind-specific answer.\nDo not shrink desiredResultCount below the provided maxResults unless the query itself clearly asks for a smaller bounded answer.\nDo not invent abstract hints like strategy, framework, checklist, or best practices unless those ideas are present in the query text.",
+        "userPrompt": "{\n  \"queryText\": \"Where is the model-memory schema and storage design documented?\",\n  \"requestPurpose\": \"architecture_lookup\",\n  \"scope\": {},\n  \"maxResults\": 5\n}",
+        "responseFormat": "json"
+      },
+      "providerTrace": {
+        "contractName": "retrieval_request_interpretation",
+        "contractVersion": "v1",
+        "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+        "provider": "openrouter",
+        "providerModel": "openai/gpt-5.4-nano",
+        "requestUrl": "https://openrouter.ai/api/v1/chat/completions",
+        "requestBody": {
+          "model": "openai/gpt-5.4-nano",
+          "temperature": 0,
+          "seed": 7,
+          "messages": [
+            {
+              "role": "system",
+              "content": "Interpret retrieval requests for model-memory.\nReturn only valid JSON for structured retrieval intent.\nReturn exactly one of these JSON shapes and no other top-level shape:\n{\"action\":\"skip\"}\n{\"action\":\"retrieve\",\"request\":{\"goal\":\"...\",\"canonicalClasses\":[\"user\"|\"feedback\"|\"project\"|\"reference\"],\"kinds\":[\"preference\"|\"fact\"|\"rule\"|\"procedure\"|\"reference\"],\"scopeConstraints\":{\"key\":\"value\"},\"subjectHints\":[\"...\"],\"contentHints\":[\"...\"],\"desiredResultCount\":1,\"requestConfidence\":\"weak\"|\"medium\"|\"strong\"}}\nUse skip only when the query clearly cannot benefit from stored memory or reference knowledge.\nFor documentation lookup, workflow guidance, architecture lookup, operator help, or project/reference questions, prefer retrieve.\nDo not return fields like intent, queryText, requestPurpose, scope, or maxResults at the top level.\nUse canonical classes and kinds only when supported by the query.\nPrefer broad filters over invented specifics.\nFor broad documentation, planning, workflow, architecture, or reference questions, keep canonicalClasses empty unless the query explicitly names a required class.\nFor those broad questions, omit kinds unless the query explicitly asks for a kind-specific answer.\nDo not shrink desiredResultCount below the provided maxResults unless the query itself clearly asks for a smaller bounded answer.\nDo not invent abstract hints like strategy, framework, checklist, or best practices unless those ideas are present in the query text."
+            },
+            {
+              "role": "user",
+              "content": "{\n  \"queryText\": \"Where is the model-memory schema and storage design documented?\",\n  \"requestPurpose\": \"architecture_lookup\",\n  \"scope\": {},\n  \"maxResults\": 5\n}"
+            }
+          ],
+          "response_format": {
+            "type": "json_object"
+          }
+        },
+        "httpStatus": 200,
+        "responseOk": true,
+        "responseBodyReceived": true,
+        "responseBodyExcerpt": "{\"id\":\"gen-1776252041-xafD0thmnEScpjJpAF6N\",\"object\":\"chat.completion\",\"created\":1776252041,\"model\":\"openai/gpt-5.4-nano-20260317\",\"provider\":\"OpenAI\",\"system_fingerprint\":null,\"service_tier\":\"default\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\",\"native_finish_reason\":\"completed\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\":\\\"retrieve\\\",\\\"request\\\":{\\\"goal\\\":\\\"Find the ...",
+        "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+        "outputTextExcerpt": "{\"action\":\"retrieve\",\"request\":{\"goal\":\"Find the documentation that describes the model-memory schema and storage design, including where the schema is defined and how memory is persisted.\",\"canonicalClasses\":[],\"kinds\":[\"reference\"],\"scopeConstraints\":{},\"subjectHints\":[\"model-memory schema\",\"storage design\",\"memory persistence\"],\"contentHints\":[\"documentation\",\"schema\",\"storage\",\"design\"],\"de..."
+      },
+      "lexicalBaselineRequest": {
+        "goal": "Where is the model-memory schema and storage design documented?",
+        "canonicalClasses": [],
+        "scopeConstraints": {},
+        "subjectHints": ["model", "memory", "schema", "storage", "design", "documented"],
+        "contentHints": ["model", "memory", "schema", "storage", "design", "documented"],
+        "desiredResultCount": 5,
+        "requestConfidence": "weak"
+      },
+      "modelAction": "retrieve",
+      "modelInterpretedRequest": {
+        "goal": "Find the documentation that describes the model-memory schema and storage design, including where the schema is defined and how memory is persisted.",
+        "canonicalClasses": [],
+        "scopeConstraints": {},
+        "subjectHints": ["model", "memory", "schema", "storage", "design", "documented"],
+        "contentHints": ["model", "memory", "schema", "storage", "design", "documented"],
+        "desiredResultCount": 5,
+        "requestConfidence": "weak"
+      },
+      "lexicalBaselineResults": [
+        {
+          "objectId": "1d020857-379e-5e36-9dc7-ec8a0b8aad0d",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "score": 45,
+          "payloadSummary": "v1 model-memory schema: Implemented as an ordered SQL migration set under `extensions/model-memory/migrations/` and applied to the live logical database `model_memory`.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "304c74a3-a71b-57a7-b20c-7b722ccc47f2",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "score": 30,
+          "payloadSummary": "@openclaw/model-memory: version 2026.3.3 is marked as private",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "3210fc39-1042-57b0-9fd7-f11a1252d217",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "score": 30,
+          "payloadSummary": "OpenClaw memory storage: OpenClaw memory is stored as Markdown files in the agent workspace: daily notes in memory/YYYY-MM-DD.md and curated long-term notes in MEMORY.md (main/private sessions only).",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "3adbb08a-4a64-5d08-b828-9b5dc9a715c2",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "ModelMemoryReplayService replay operations rebuild runtime | When calling replayDocument and replayOrdinaryTurn, set rebuildRuntime to true so the respective live ingestion/capture services rebuild the runtime. | Do not call replayDocument or replayOrdinaryTurn with rebuildRuntime set to false.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "5d005e1c-fd80-51c8-8c18-c3fea0f4e846",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "score": 30,
+          "payloadSummary": "model_memory.memory_objects lifecycle_state activation rules: lifecycle_state is set to 'active' when superseded_at is NULL; otherwise it is set to 'superseded'.",
+          "reasonCodes": ["subject_match", "text_match"]
+        }
+      ],
+      "modelResults": [
+        {
+          "objectId": "1d020857-379e-5e36-9dc7-ec8a0b8aad0d",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "score": 45,
+          "payloadSummary": "v1 model-memory schema: Implemented as an ordered SQL migration set under `extensions/model-memory/migrations/` and applied to the live logical database `model_memory`.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "304c74a3-a71b-57a7-b20c-7b722ccc47f2",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "score": 30,
+          "payloadSummary": "@openclaw/model-memory: version 2026.3.3 is marked as private",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "3210fc39-1042-57b0-9fd7-f11a1252d217",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "score": 30,
+          "payloadSummary": "OpenClaw memory storage: OpenClaw memory is stored as Markdown files in the agent workspace: daily notes in memory/YYYY-MM-DD.md and curated long-term notes in MEMORY.md (main/private sessions only).",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "3adbb08a-4a64-5d08-b828-9b5dc9a715c2",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "score": 30,
+          "payloadSummary": "ModelMemoryReplayService replay operations rebuild runtime | When calling replayDocument and replayOrdinaryTurn, set rebuildRuntime to true so the respective live ingestion/capture services rebuild the runtime. | Do not call replayDocument or replayOrdinaryTurn with rebuildRuntime set to false.",
+          "reasonCodes": ["subject_match", "text_match"]
+        },
+        {
+          "objectId": "5d005e1c-fd80-51c8-8c18-c3fea0f4e846",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "score": 30,
+          "payloadSummary": "model_memory.memory_objects lifecycle_state activation rules: lifecycle_state is set to 'active' when superseded_at is NULL; otherwise it is set to 'superseded'.",
+          "reasonCodes": ["subject_match", "text_match"]
+        }
+      ],
+      "lexicalAcceptedCount": {
+        "matchingKinds": 5,
+        "matchingClasses": 5
+      },
+      "modelAcceptedCount": {
+        "matchingKinds": 5,
+        "matchingClasses": 5
+      },
+      "finalRetrievalPackPreview": "Retrieval for architecture_lookup: Where is the model-memory schema and storage design documented?\n1. project/fact {\"value\":\"Implemented as an ordered SQL migration set under `extensions/model-memory/migrations/` and applied to the live logical database `model_memory`.\",\"subject\":\"v1 model-memory schema\"} [primary]\n2. project/fact {\"value\":\"version 2026.3.3 is marked as private\",\"subject\":\"@openclaw/model-memory\"} [primary]\n3. project/fact {\"value\":\"OpenClaw memory is stored as Markdown files in the agent workspace: daily notes in memory/YYYY-MM-DD.md and curated long-term notes in MEMORY.md (main/private sessions only).\",\"subject\":\"OpenClaw memory storage\"} [primary]\n4. project/rule {\"subject\":\"ModelMemoryReplayService replay operations rebuild runtime\",\"avoidAction\":\"Do not call replayDocument or replayOrdinaryTurn with rebuildRuntime set to false.\",\"recommendedAction\":\"When calling replayDocument and replayOrdinaryTurn, set rebuildRuntime to true so the respective live ingestion/capture services rebuild the runtime.\"} [secondary]\n5. project/fact {\"value\":\"lifecycle_state is set to 'active' when superseded_at is NULL; otherwise it is set to 'superseded'.\",\"subject\":\"model_memory.memory_objects lifecycle_state activation rules\"} [secondary]",
+      "verdict": "mostly_same_value_as_deterministic",
+      "rationale": ["same_ranked_ids", "accepted_signal=10"]
+    }
+  ],
+  "summary": {
+    "verdictCounts": {
+      "mostly_same_value_as_deterministic": 4
+    },
+    "modelAddsMaterialValueBeyondDeterministicSearch": false,
+    "modelSteeringEligibleForCutover": true
+  }
+}

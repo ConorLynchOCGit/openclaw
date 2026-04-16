@@ -1,0 +1,47 @@
+{
+  "id": "model-memory",
+  "name": "Model Memory",
+  "description": "Clean-room model-memory runtime and operator surfaces.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "database": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "databaseName": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "dbName": {
+            "type": "string"
+          }
+        }
+      },
+      "live": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "includeRetrievalPacks": {
+            "type": "boolean"
+          },
+          "modelId": {
+            "type": "string"
+          },
+          "candidateModelId": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

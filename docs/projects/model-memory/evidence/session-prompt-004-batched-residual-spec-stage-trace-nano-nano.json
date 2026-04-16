@@ -1,0 +1,321 @@
+{
+  "generatedAt": "2026-04-15T01:19:00.845Z",
+  "title": "Session Prompt 004 Batched Residual Spec Stage Trace",
+  "artifactBasename": "session-prompt-004-batched-residual-spec-stage-trace-nano-nano",
+  "sourceKind": "ordinary_turn",
+  "promptText": "Write a spec for this: \" If you want, I can next turn this into a concrete deterministic gate for collision recall so the write path only calls the model on the small ambiguous remainder instead of all 18.\" Update the docs with it. We should explore adjudicating ALL of the remaining objects in a single pass. That reduces to one additional model call on a tiny set of objects. If resolution on it isn't perfect, I think we have to accept memory loss vs trying to over optimize for perfect capture or risk allowing extra junk into the db. Then write the prompt for building that adjudication change and for the next Agents.md test.",
+  "modelId": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 180000,
+  "maxWordsPerWindow": 1500,
+  "windowCount": 1,
+  "capturedClaimCount": 2,
+  "windowOutcomeCounts": {
+    "capture": 1
+  },
+  "writeDecisionCounts": {
+    "write": 2
+  },
+  "persistedObjectCount": 2,
+  "persistedSupportItemCount": 2,
+  "traces": [
+    {
+      "type": "source_windows_ready",
+      "totalWindows": 1,
+      "windows": [
+        {
+          "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+          "windowIndex": 0,
+          "tokenEstimate": 116
+        }
+      ],
+      "elapsedMs": 94
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "promptChars": 2992,
+      "elapsedMs": 99
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "submitted": true,
+      "method": "POST",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "elapsedMs": 1159
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 1554
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 603,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"preference\",\"claim\":\"Optimize adjudication by resolving all remaining objects in a single pass, reducing it to one additional model call on a small ambiguous remainder.\",\"supportingSpans\":[{\"...",
+      "elapsedMs": 2428
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 2,
+      "elapsedMs": 2429
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "promptChars": 3535,
+      "elapsedMs": 2431
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "submitted": true,
+      "method": "POST",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "elapsedMs": 2432
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 2834
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 607,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"preference\",\"claim\":\"Optimize adjudication by resolving all remaining objects in a single pass, reducing it to one additional model call on a small ambiguous remainder.\",\"supportingSpans\":[{\"...",
+      "elapsedMs": 3801
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 2,
+      "elapsedMs": 3801
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "promptChars": 5913,
+      "elapsedMs": 3805
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "submitted": true,
+      "method": "POST",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "elapsedMs": 3806
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 4120
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1132,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"user\",\"kind\":\"preference\",\"payload\":{\"subject\":\"Adjudication strategy for remaining objects\",\"instruction\":\"Optimize adjudication by resolving all remaining objects in a single pass, reducin...",
+      "elapsedMs": 5857
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 2,
+      "elapsedMs": 5858
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "candidateId": "candidate-0",
+      "canonicalClass": "user",
+      "kind": "preference",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 6291
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "candidateId": "candidate-1",
+      "canonicalClass": "feedback",
+      "kind": "rule",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 6592
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "action": "capture",
+      "objectCount": 2,
+      "rejectReasons": [],
+      "elapsedMs": 6950
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "decision": "write",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "memoryObjectId": "f030f896-02d2-5ac5-ae37-22aad96b6ae7",
+      "supportItemId": "87ee2423-3071-57d7-a0e2-29d95d38332d",
+      "lifecycleState": "active",
+      "elapsedMs": 6950
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "decision": "write",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "memoryObjectId": "03e46a9b-6a4e-5ca4-b2d4-f3f11dc43399",
+      "supportItemId": "1f489052-6c1e-50d4-b6ce-906afe9c53f8",
+      "lifecycleState": "active",
+      "elapsedMs": 6950
+    }
+  ],
+  "windowResults": [
+    {
+      "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+      "action": "capture",
+      "objects": [
+        {
+          "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+          "sourceKind": "ordinary_turn",
+          "object": {
+            "provenance": [
+              {
+                "sourceId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+                "lineStart": 1,
+                "lineEnd": 1,
+                "headingPath": []
+              }
+            ],
+            "confidence": "medium",
+            "durability": "durable",
+            "reviewMode": "manual_review",
+            "canonicalClass": "user",
+            "kind": "preference",
+            "payload": {
+              "subject": "Adjudication strategy for remaining objects",
+              "instruction": "Optimize adjudication by resolving all remaining objects in a single pass, reducing it to one additional model call on a small ambiguous remainder.",
+              "operation": "Update the docs and write the prompt/spec for the adjudication change and the next Agents.md test."
+            }
+          },
+          "contractName": "semantic_extraction",
+          "contractVersion": "v2-canonicalization",
+          "modelId": "openrouter/openai/gpt-5.4-nano"
+        },
+        {
+          "sourceWindowId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+          "sourceKind": "ordinary_turn",
+          "object": {
+            "provenance": [
+              {
+                "sourceId": "3af81ee9-17a0-52b6-8558-ccc7a6d8a612",
+                "lineStart": 1,
+                "lineEnd": 1,
+                "headingPath": []
+              }
+            ],
+            "confidence": "medium",
+            "durability": "durable",
+            "reviewMode": "manual_review",
+            "canonicalClass": "feedback",
+            "kind": "rule",
+            "payload": {
+              "subject": "Tradeoff when adjudication is not perfect",
+              "recommendedAction": "Accept some memory loss rather than over-optimizing for perfect capture or risking extra junk into the db.",
+              "avoidAction": "Do not over-optimize for perfect capture if it risks allowing extra junk into the db."
+            }
+          },
+          "contractName": "semantic_extraction",
+          "contractVersion": "v2-canonicalization",
+          "modelId": "openrouter/openai/gpt-5.4-nano"
+        }
+      ]
+    }
+  ],
+  "writeResults": [
+    {
+      "decision": "write",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "memoryObjectId": "f030f896-02d2-5ac5-ae37-22aad96b6ae7",
+      "supportItemId": "87ee2423-3071-57d7-a0e2-29d95d38332d",
+      "lifecycleState": "active",
+      "identityKey": "preference_8b6d7966450b427dcc7fdedc"
+    },
+    {
+      "decision": "write",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "memoryObjectId": "03e46a9b-6a4e-5ca4-b2d4-f3f11dc43399",
+      "supportItemId": "1f489052-6c1e-50d4-b6ce-906afe9c53f8",
+      "lifecycleState": "active",
+      "identityKey": "rule_c809c2e88103f9418016f8ef"
+    }
+  ]
+}

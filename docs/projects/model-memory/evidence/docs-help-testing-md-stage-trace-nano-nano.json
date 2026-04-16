@@ -1,0 +1,667 @@
+{
+  "generatedAt": "2026-04-14T20:36:47.123Z",
+  "sourcePath": "docs/help/testing.md",
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 180000,
+  "maxWordsPerWindow": 1500,
+  "summary": {
+    "previousCollisionModelCalls": 18,
+    "collisionModelCalls": 1,
+    "collisionModelCallReduction": 17,
+    "residualBatchRequestCount": 1,
+    "residualBatchCandidateCount": 1,
+    "zeroCandidateSkipCount": 6,
+    "admittedToBatchCount": 1,
+    "candidatePrunedCount": 5,
+    "collisionResultCounts": {
+      "distinct": 1
+    },
+    "resolvedModelIds": ["openai/gpt-5.4-nano-20260317"],
+    "finalSummary": {
+      "type": "final_summary",
+      "totalWindows": 2,
+      "capturedObjects": 8,
+      "writeResults": 8,
+      "persistedObjects": 7,
+      "persistedSupportItems": 7,
+      "windowOutcomeCounts": {
+        "capture": 2
+      },
+      "writeDecisionCounts": {
+        "write": 7,
+        "ignore": 1
+      },
+      "elapsedMs": 54758
+    }
+  },
+  "traces": [
+    {
+      "type": "source_windows_ready",
+      "sourcePath": "docs/help/testing.md",
+      "totalWindows": 2,
+      "windows": [
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "windowIndex": 0,
+          "headingPath": ["Testing"],
+          "lineStart": 1,
+          "lineEnd": 279,
+          "tokenEstimate": 1685
+        },
+        {
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "windowIndex": 1,
+          "headingPath": [
+            "Testing",
+            "Live: model matrix (what we cover)",
+            "Modern smoke set (tool calling + image)"
+          ],
+          "lineStart": 280,
+          "lineEnd": 407,
+          "tokenEstimate": 840
+        }
+      ],
+      "elapsedMs": 748
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["Testing"],
+      "lineStart": 1,
+      "lineEnd": 279,
+      "promptChars": 18644,
+      "elapsedMs": 754
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 1780
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 2142
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2942,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"OpenClaw has three Vitest suites (unit/integration, e2e, live) plus a small set of Docker runners.\",\"supportingSpans\":[{\"headingPath\":[\"Testing\"],\"lineStart\":12,\"lineEnd\":13}],...",
+      "elapsedMs": 8585
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 10,
+      "elapsedMs": 8587
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["Testing"],
+      "lineStart": 1,
+      "lineEnd": 279,
+      "promptChars": 22382,
+      "elapsedMs": 8590
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 8591
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 8994
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2827,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"OpenClaw has three Vitest suites (unit/integration, e2e, live) and a small set of Docker runners.\",\"supportingSpans\":[{\"headingPath\":[\"Testing\"],\"lineStart\":12,\"lineEnd\":13}],\"...",
+      "elapsedMs": 15177
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 9,
+      "elapsedMs": 15178
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["Testing"],
+      "lineStart": 1,
+      "lineEnd": 279,
+      "promptChars": 10977,
+      "elapsedMs": 15180
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 15180
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 15441
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 5440,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"project\",\"kind\":\"fact\",\"payload\":{\"subject\":\"OpenClaw test suites\",\"value\":\"OpenClaw has three Vitest suites: unit/integration, e2e, and live, plus a small set of Docker runners.\"},\"provenan...",
+      "elapsedMs": 29462
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 9,
+      "elapsedMs": 29462
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "Testing",
+        "Live: model matrix (what we cover)",
+        "Modern smoke set (tool calling + image)"
+      ],
+      "lineStart": 280,
+      "lineEnd": 407,
+      "promptChars": 11006,
+      "elapsedMs": 29471
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 29472
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 29771
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 3540,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"rule\",\"claim\":\"For the live gateway model smoke matrix, run pnpm test:live with OPENCLAW_LIVE_GATEWAY_MODELS set to a curated set and execute src/gateway/gateway-models.profiles.live.test.ts....",
+      "elapsedMs": 38694
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 6,
+      "elapsedMs": 38695
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "Testing",
+        "Live: model matrix (what we cover)",
+        "Modern smoke set (tool calling + image)"
+      ],
+      "lineStart": 280,
+      "lineEnd": 407,
+      "promptChars": 16399,
+      "elapsedMs": 38697
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 38700
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 38967
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2169,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"rule\",\"claim\":\"For the live gateway model smoke matrix, run pnpm test:live with OPENCLAW_LIVE_GATEWAY_MODELS set to a curated set and execute src/gateway/gateway-models.profiles.live.test.ts....",
+      "elapsedMs": 43201
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 6,
+      "elapsedMs": 43201
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": [
+        "Testing",
+        "Live: model matrix (what we cover)",
+        "Modern smoke set (tool calling + image)"
+      ],
+      "lineStart": 280,
+      "lineEnd": 407,
+      "promptChars": 8725,
+      "elapsedMs": 43202
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 43203
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 43403
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 3406,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"user\",\"kind\":\"preference\",\"payload\":{\"subject\":\"ACP plain-language thread smoke script\",\"instruction\":\"Keep the ACP plain-language thread smoke script (bun scripts/dev/discord-acp-plain-lang...",
+      "elapsedMs": 50277
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "windowIndex": 1,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 6,
+      "elapsedMs": 50277
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "candidateId": "candidate-0",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 51360
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "candidateId": "candidate-1",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 51662
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "candidateId": "candidate-2",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 51960
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "candidateId": "candidate-3",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 2,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 2,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 52255
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "candidateId": "candidate-4",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 3,
+      "retainedCandidateCount": 1,
+      "prunedCandidateCount": 2,
+      "disposition": "admitted_to_batch",
+      "elapsedMs": 52548
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "candidateId": "candidate-6",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 52727
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "candidateId": "candidate-7",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 3,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 3,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 53023
+    },
+    {
+      "type": "collision_begin",
+      "sourceWindowIds": ["bb74a609-75e6-58fb-949b-e7c18ccfc6dd"],
+      "stage": "write_path_collision_adjudication",
+      "requestCount": 1,
+      "candidateCount": 1,
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "elapsedMs": 53321
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": -1,
+      "stage": "write_path_collision_adjudication",
+      "contractVersion": "v2-batch",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 53323
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": -1,
+      "stage": "write_path_collision_adjudication",
+      "contractVersion": "v2-batch",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 53635
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "windowIndex": -1,
+      "stage": "write_path_collision_adjudication",
+      "contractVersion": "v2-batch",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 67,
+      "outputPreview": "{\"decisions\":[{\"candidateId\":\"candidate-4\",\"relation\":\"distinct\"}]}",
+      "elapsedMs": 53927
+    },
+    {
+      "type": "collision_result",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "stage": "write_path_collision_adjudication",
+      "candidateId": "candidate-4",
+      "relation": "distinct",
+      "elapsedMs": 53928
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "action": "capture",
+      "objectCount": 5,
+      "rejectReasons": [],
+      "elapsedMs": 54282
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "action": "capture",
+      "objectCount": 3,
+      "rejectReasons": [],
+      "elapsedMs": 54282
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "decision": "write",
+      "memoryObjectId": "95ad4642-8981-50a3-868c-d3c13f4d6657",
+      "supportItemId": "19721345-2691-5f30-b862-99cd08e86545",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "elapsedMs": 54282
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "decision": "write",
+      "memoryObjectId": "bfe0dafa-0a24-5bb0-aadc-4f3243cc13ec",
+      "supportItemId": "1cf0087c-152c-54f4-809f-2d02d6623e83",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "elapsedMs": 54282
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "decision": "write",
+      "memoryObjectId": "1aebf728-fc3d-51b7-9261-cb0561964342",
+      "supportItemId": "8d19982d-0391-5d2c-b818-1465a3ced502",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "elapsedMs": 54282
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "decision": "write",
+      "memoryObjectId": "9428236b-e9a6-5797-af49-62cfe13be65d",
+      "supportItemId": "e516c81f-db31-5581-b4d7-dc3263b3b762",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "elapsedMs": 54282
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "decision": "ignore",
+      "decisionCodes": ["non_durable_ignored"],
+      "elapsedMs": 54282
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "decision": "write",
+      "memoryObjectId": "e9f41152-26e9-510a-8018-f43cb27fa341",
+      "supportItemId": "b5069260-776a-5658-ae0b-194fffdb95aa",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 54282
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+      "decision": "write",
+      "memoryObjectId": "80c72e6b-08b9-5fd1-b05d-1928f79bf0d2",
+      "supportItemId": "8eec4ebe-cc02-5ae2-b695-ca8e17f6dad0",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 54282
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+      "decision": "write",
+      "memoryObjectId": "f372a379-728e-5f48-bf6a-0e30b247be14",
+      "supportItemId": "73e71fed-2a2e-588a-b903-63933dbd6333",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "elapsedMs": 54282
+    },
+    {
+      "type": "final_summary",
+      "totalWindows": 2,
+      "capturedObjects": 8,
+      "writeResults": 8,
+      "persistedObjects": 7,
+      "persistedSupportItems": 7,
+      "windowOutcomeCounts": {
+        "capture": 2
+      },
+      "writeDecisionCounts": {
+        "write": 7,
+        "ignore": 1
+      },
+      "elapsedMs": 54758
+    }
+  ]
+}

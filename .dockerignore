@@ -26,6 +26,9 @@ node_modules
 .pnpm-store
 **/.pnpm-store
 .turbo
+checkpoints
+docker-compose.yml.bak
+docker-compose.yml.bak-*
 **/.turbo
 .cache
 **/.cache

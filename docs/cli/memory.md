@@ -10,7 +10,16 @@ title: "memory"
 # `openclaw memory`
 
 Manage semantic memory indexing and search.
-Provided by the active memory plugin (default: `memory-core`; set `plugins.slots.memory = "none"` to disable).
+
+This command operates on the legacy memory plugin stack.
+
+After the `model-memory` production cutover, production config keeps:
+
+- `plugins.slots.memory = "none"`
+- `agents.defaults.memorySearch.enabled = false`
+
+That means `openclaw memory ...` becomes a legacy/admin surface rather than the
+live memory authority, and it may report disabled or unavailable intentionally.
 
 Related:
 

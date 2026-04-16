@@ -1,0 +1,60 @@
+import { describe, expect, it, vi } from "vitest";
+import plugin from "./index.ts";
+
+describe("model-memory plugin registration", () => {
+  it("registers the document-ingestion operator tool as an optional plugin tool", () => {
+    const registerTool = vi.fn();
+
+    plugin.register?.({
+      id: "model-memory",
+      name: "Model Memory",
+      description: "Model Memory",
+      source: "test",
+      config: {},
+      pluginConfig: {},
+      runtime: { version: "test" } as never,
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+      registerTool,
+      registerHook() {},
+      registerHttpRoute() {},
+      registerChannel() {},
+      registerGatewayMethod() {},
+      registerCli() {},
+      registerService() {},
+      registerProvider() {},
+      registerCommand() {},
+      resolvePath(input: string) {
+        return input;
+      },
+      on() {},
+    });
+
+    expect(registerTool).toHaveBeenCalledOnce();
+    expect(registerTool.mock.calls[0]?.[1]).toMatchObject({
+      names: [
+        "model_memory_document_ingest",
+        "model_memory_ingest_document",
+        "ingest_document_into_model_memory",
+      ],
+      optional: true,
+    });
+
+    const toolFactory = registerTool.mock.calls[0]?.[0];
+    const tool = toolFactory({
+      config: {},
+      workspaceDir: "/tmp/workspace",
+      sandboxed: false,
+    });
+    expect(tool).toMatchObject({
+      name: "model_memory_document_ingest",
+      label: "Model Memory Document Ingest",
+    });
+
+    const sandboxedTool = toolFactory({
+      config: {},
+      workspaceDir: "/tmp/workspace",
+      sandboxed: true,
+    });
+    expect(sandboxedTool).toBeNull();
+  });
+});

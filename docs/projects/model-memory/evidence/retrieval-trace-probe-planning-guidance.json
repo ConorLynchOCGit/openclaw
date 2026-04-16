@@ -1,0 +1,76 @@
+{
+  "generatedAt": "2026-04-15T04:11:39.785Z",
+  "probeId": "probe-planning-guidance",
+  "queryText": "What should I read before planning or roadmap work?",
+  "currentCorpus": true,
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestTimeoutMs": 180000,
+  "requestSeed": 7,
+  "promptPayload": {
+    "contractName": "retrieval_request_interpretation",
+    "contractVersion": "v1",
+    "modelId": "openrouter/openai/gpt-5.4-nano",
+    "systemPrompt": "Interpret retrieval requests for model-memory.\nReturn only valid JSON for structured retrieval intent.\nReturn exactly one of these JSON shapes and no other top-level shape:\n{\"action\":\"skip\"}\n{\"action\":\"retrieve\",\"request\":{\"goal\":\"...\",\"canonicalClasses\":[\"user\"|\"feedback\"|\"project\"|\"reference\"],\"kinds\":[\"preference\"|\"fact\"|\"rule\"|\"procedure\"|\"reference\"],\"scopeConstraints\":{\"key\":\"value\"},\"subjectHints\":[\"...\"],\"contentHints\":[\"...\"],\"desiredResultCount\":1,\"requestConfidence\":\"weak\"|\"medium\"|\"strong\"}}\nUse skip only when the query clearly cannot benefit from stored memory or reference knowledge.\nFor documentation lookup, workflow guidance, architecture lookup, operator help, or project/reference questions, prefer retrieve.\nDo not return fields like intent, queryText, requestPurpose, scope, or maxResults at the top level.\nUse canonical classes and kinds only when supported by the query.\nPrefer broad filters over invented specifics.",
+    "userPrompt": "{\n  \"queryText\": \"What should I read before planning or roadmap work?\",\n  \"requestPurpose\": \"workflow_guidance\",\n  \"scope\": {},\n  \"maxResults\": 5\n}",
+    "responseFormat": "json"
+  },
+  "providerTrace": {
+    "contractName": "retrieval_request_interpretation",
+    "contractVersion": "v1",
+    "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+    "provider": "openrouter",
+    "providerModel": "openai/gpt-5.4-nano",
+    "requestUrl": "https://openrouter.ai/api/v1/chat/completions",
+    "requestBody": {
+      "model": "openai/gpt-5.4-nano",
+      "temperature": 0,
+      "seed": 7,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Interpret retrieval requests for model-memory.\nReturn only valid JSON for structured retrieval intent.\nReturn exactly one of these JSON shapes and no other top-level shape:\n{\"action\":\"skip\"}\n{\"action\":\"retrieve\",\"request\":{\"goal\":\"...\",\"canonicalClasses\":[\"user\"|\"feedback\"|\"project\"|\"reference\"],\"kinds\":[\"preference\"|\"fact\"|\"rule\"|\"procedure\"|\"reference\"],\"scopeConstraints\":{\"key\":\"value\"},\"subjectHints\":[\"...\"],\"contentHints\":[\"...\"],\"desiredResultCount\":1,\"requestConfidence\":\"weak\"|\"medium\"|\"strong\"}}\nUse skip only when the query clearly cannot benefit from stored memory or reference knowledge.\nFor documentation lookup, workflow guidance, architecture lookup, operator help, or project/reference questions, prefer retrieve.\nDo not return fields like intent, queryText, requestPurpose, scope, or maxResults at the top level.\nUse canonical classes and kinds only when supported by the query.\nPrefer broad filters over invented specifics."
+        },
+        {
+          "role": "user",
+          "content": "{\n  \"queryText\": \"What should I read before planning or roadmap work?\",\n  \"requestPurpose\": \"workflow_guidance\",\n  \"scope\": {},\n  \"maxResults\": 5\n}"
+        }
+      ],
+      "response_format": {
+        "type": "json_object"
+      }
+    },
+    "httpStatus": 200,
+    "responseOk": true,
+    "responseBodyReceived": true,
+    "responseBodyExcerpt": "{\"id\":\"gen-1776226296-9rKiP6EHx7XFpDS6NjVH\",\"object\":\"chat.completion\",\"created\":1776226296,\"model\":\"openai/gpt-5.4-nano-20260317\",\"provider\":\"OpenAI\",\"system_fingerprint\":null,\"service_tier\":\"default\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\",\"native_finish_reason\":\"completed\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\":\\\"retrieve\\\",\\\"request\\\":{\\\"goal\\\":\\\"Identify ...",
+    "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+    "outputTextExcerpt": "{\"action\":\"retrieve\",\"request\":{\"goal\":\"Identify recommended reading or resources to prepare before doing planning or roadmap work.\",\"canonicalClasses\":[\"reference\",\"project\"],\"kinds\":[\"procedure\",\"reference\",\"rule\"],\"scopeConstraints\":{},\"subjectHints\":[\"planning\",\"roadmap\",\"strategy\",\"prioritization\",\"product management\"],\"contentHints\":[\"pre-planning checklists\",\"roadmap planning frameworks\"..."
+  },
+  "parseValidationFailedAfterSuccessfulProviderResponse": false,
+  "retrieval": {
+    "action": "retrieve",
+    "selectedCount": 1,
+    "matchingKindCount": 1,
+    "matchingClassCount": 0,
+    "activeOnly": true,
+    "topResults": [
+      {
+        "objectId": "f703ea44-be7c-59cd-b534-195f79b38109",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "rankBand": "primary",
+        "reasonCodes": ["class_match", "subject_match", "rerank_selected"]
+      }
+    ]
+  },
+  "context": {
+    "attempted": true,
+    "orderedSegmentCount": 24,
+    "estimatedInputTokens": 17765,
+    "pruningUsed": true,
+    "retrievalPackIncluded": true,
+    "stableLayerHash": "2abbf71ef1014dabaa9c2e603c2021c9a4b5e87a81fd2c851f32378e92482dc2",
+    "semiStableLayerHash": "3b0925694b14dd364e1b678e8c3c4bfaea3d0fc319c5a6d6da9e5de1d9d048a8",
+    "volatileLayerHash": "6fc69d14bdbfd2f33be424a9db225be1edb0dc3226623dda4f76932d54ad2d55"
+  }
+}

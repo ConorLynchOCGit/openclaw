@@ -1,0 +1,2517 @@
+{
+  "generatedAt": "2026-04-15T01:06:29.028Z",
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 180000,
+  "maxWordsPerWindow": 1500,
+  "prompts": [
+    {
+      "id": "durable-001-high-level-and-blockers",
+      "order": 1,
+      "title": "High Level Responses And Exact Blockers",
+      "text": "For work in the openclaw repo, keep explanations high level by default unless I ask for more detail. Use repo-root relative file references in reports. If a required gate fails, report the exact blocker and command instead of guessing.",
+      "selectionReason": "Stable response-style and reporting preferences that should behave like durable user guidance."
+    },
+    {
+      "id": "durable-002-landing-gates",
+      "order": 2,
+      "title": "Landing Gate Policy",
+      "text": "When changing code on main in openclaw, run pnpm check before landing. If the touched surface affects build output or module boundaries, also run pnpm build. Do not claim a clean landing if required gates are red.",
+      "selectionReason": "Persistent repo operating rules with clear durable procedural value."
+    },
+    {
+      "id": "durable-003-nano-defaults",
+      "order": 3,
+      "title": "Nano Defaults For Model Memory",
+      "text": "For model-memory work, use openrouter/openai/gpt-5.4-nano for both pass 1 and pass 2 by default. Do not use openrouter/auto as the default lane. Keep max words per window at 1500 and request timeout at 180000 unless explicitly changed and reported.",
+      "selectionReason": "Concrete long-lived operating defaults for the active clean-room memory lane."
+    },
+    {
+      "id": "durable-004-clean-room-boundary",
+      "order": 4,
+      "title": "Clean Room Boundary",
+      "text": "Do not modify legacy extensions/memory-middleware while working on the clean-room model-memory system. Keep new memory work inside extensions/model-memory and src/agents/model-memory files unless there is a justified runtime boundary seam.",
+      "selectionReason": "Stable project-scope boundary instruction that should persist across turns."
+    },
+    {
+      "id": "durable-005-safe-worktree-policy",
+      "order": 5,
+      "title": "Preserve Unrelated Worktree Changes",
+      "text": "Preserve unrelated worktree changes. Do not revert unrelated files. Do not use destructive git commands like git reset --hard or git checkout -- unless I explicitly ask.",
+      "selectionReason": "Durable safety constraints for repository operations."
+    },
+    {
+      "id": "durable-006-evidence-discipline",
+      "order": 6,
+      "title": "Evidence And Reporting Discipline",
+      "text": "For model-memory proof runs, produce durable JSON and Markdown artifacts under docs/projects/model-memory/evidence. Do not hand-edit evidence artifacts. Report exact commands, counts, and blockers honestly.",
+      "selectionReason": "Persistent procedural guidance about proof artifacts and honesty requirements."
+    },
+    {
+      "id": "durable-007-shared-two-pass-rule",
+      "order": 7,
+      "title": "Shared Two Pass Requirement",
+      "text": "Prompt-only ordinary-turn capture should reuse the same shared two-pass ingestion framework as document ingestion. Do not keep a separate degraded extraction path for prompts.",
+      "selectionReason": "Architectural constraint for the active prompt-only ingestion lane."
+    },
+    {
+      "id": "durable-008-active-only-runtime-reads",
+      "order": 8,
+      "title": "Active Only Runtime Reads",
+      "text": "Default runtime reads in model-memory should surface active objects only. Do not leak provisional or conflict_hold objects into ordinary retrieval and context assembly by default.",
+      "selectionReason": "Stable runtime policy that should produce durable rule-like memory."
+    },
+    {
+      "id": "durable-009-operator-surface",
+      "order": 9,
+      "title": "Operator Surface Constraint",
+      "text": "For document ingestion from OpenClaw, keep the operator surface explicit and constrained. Use operator or admin tool invocation rather than autonomous background ingestion by default.",
+      "selectionReason": "Durable operator policy for the newly exposed document-ingestion tool surface."
+    },
+    {
+      "id": "durable-010-doc-links",
+      "order": 10,
+      "title": "Full Docs URLs",
+      "text": "When I ask for documentation links, return full https://docs.openclaw.ai URLs instead of root-relative paths.",
+      "selectionReason": "Simple long-lived docs-formatting preference that should be easy to capture if the prompt lane is useful."
+    }
+  ],
+  "promptRuns": [
+    {
+      "promptId": "durable-001-high-level-and-blockers",
+      "order": 1,
+      "title": "High Level Responses And Exact Blockers",
+      "text": "For work in the openclaw repo, keep explanations high level by default unless I ask for more detail. Use repo-root relative file references in reports. If a required gate fails, report the exact blocker and command instead of guessing.",
+      "sourceId": "d9055c7a-ba89-5f36-bd13-d60bd198f9e2",
+      "sourceWindowCount": 1,
+      "status": "completed",
+      "capturedClaimCount": 3,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 3
+      },
+      "lifecycleCounts": {
+        "active": 3
+      },
+      "rejectReasons": [],
+      "traces": [
+        {
+          "type": "source_windows_ready",
+          "totalWindows": 1,
+          "windows": [
+            {
+              "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+              "windowIndex": 0,
+              "tokenEstimate": 40
+            }
+          ],
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 3
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2594,
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 6
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 1063
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 1615
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 725,
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 2911
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "action": "capture",
+          "objectCount": 3,
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 2912
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 3366,
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 2914
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 2915
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 3225
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 726,
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 6855
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "action": "capture",
+          "objectCount": 3,
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 6856
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 5586,
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 6857
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 6857
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 7162
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 1344,
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 9196
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "action": "capture",
+          "objectCount": 3,
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 9196
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "candidateId": "candidate-0",
+          "canonicalClass": "user",
+          "kind": "preference",
+          "rawCandidateCount": 0,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 0,
+          "disposition": "zero_candidate_skip",
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 9629
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "candidateId": "candidate-1",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 0,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 0,
+          "disposition": "zero_candidate_skip",
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 9929
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "candidateId": "candidate-2",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 0,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 0,
+          "disposition": "zero_candidate_skip",
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 10225
+        },
+        {
+          "type": "window_result",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "action": "capture",
+          "objectCount": 3,
+          "rejectReasons": [],
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 10579
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "a8897cb0-89cc-5745-a9e8-5f8829045d95",
+          "supportItemId": "8f51727d-34fa-58a7-9d11-bfe95eab8861",
+          "lifecycleState": "active",
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 10579
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "decision": "write",
+          "decisionCodes": [
+            "write_structural_accept",
+            "collision_distinct",
+            "review_mode_overridden"
+          ],
+          "memoryObjectId": "0de95d5b-3830-538d-9507-bb96b806e231",
+          "supportItemId": "2837127c-e70d-550a-961e-f51750579bbc",
+          "lifecycleState": "active",
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 10579
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "ca83b5f9-5255-52f2-862e-6db04e0b4bb8",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "c5afcb52-3de8-5e59-ae66-050c0ff525ff",
+          "supportItemId": "31b3a584-84c6-5250-8cb3-c0a8f4f263c2",
+          "lifecycleState": "active",
+          "promptId": "durable-001-high-level-and-blockers",
+          "elapsedMs": 10579
+        }
+      ]
+    },
+    {
+      "promptId": "durable-002-landing-gates",
+      "order": 2,
+      "title": "Landing Gate Policy",
+      "text": "When changing code on main in openclaw, run pnpm check before landing. If the touched surface affects build output or module boundaries, also run pnpm build. Do not claim a clean landing if required gates are red.",
+      "sourceId": "e147592c-e663-5013-bedb-b65aaff30b5a",
+      "sourceWindowCount": 1,
+      "status": "completed",
+      "capturedClaimCount": 1,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 1
+      },
+      "lifecycleCounts": {
+        "active": 1
+      },
+      "rejectReasons": [],
+      "traces": [
+        {
+          "type": "source_windows_ready",
+          "totalWindows": 1,
+          "windows": [
+            {
+              "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+              "windowIndex": 0,
+              "tokenEstimate": 38
+            }
+          ],
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 3
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2572,
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 3
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 4
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 274
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 504,
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 1070
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "action": "capture",
+          "objectCount": 2,
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 1070
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 3016,
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 1071
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 1072
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 1288
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 513,
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 2097
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "action": "capture",
+          "objectCount": 2,
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 2098
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 4979,
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 2098
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 2099
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 2326
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 1011,
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 3944
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "action": "capture",
+          "objectCount": 2,
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 3944
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "candidateId": "candidate-0",
+          "canonicalClass": "feedback",
+          "kind": "rule",
+          "rawCandidateCount": 0,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 0,
+          "disposition": "zero_candidate_skip",
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 4357
+        },
+        {
+          "type": "window_result",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "action": "capture",
+          "objectCount": 1,
+          "rejectReasons": [],
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 4711
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "021166f2-027a-59a4-a3bf-a7f442ac9555",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "16b5cfd4-1694-58f5-8e35-8ab89283eae7",
+          "supportItemId": "e115cc70-d74c-5d93-ae1f-4fc43a8fbd5a",
+          "lifecycleState": "active",
+          "promptId": "durable-002-landing-gates",
+          "elapsedMs": 4711
+        }
+      ]
+    },
+    {
+      "promptId": "durable-003-nano-defaults",
+      "order": 3,
+      "title": "Nano Defaults For Model Memory",
+      "text": "For model-memory work, use openrouter/openai/gpt-5.4-nano for both pass 1 and pass 2 by default. Do not use openrouter/auto as the default lane. Keep max words per window at 1500 and request timeout at 180000 unless explicitly changed and reported.",
+      "sourceId": "6c1aeff8-8558-5a6d-92c9-0ec8b40e2cb2",
+      "sourceWindowCount": 1,
+      "status": "completed",
+      "capturedClaimCount": 2,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 2
+      },
+      "lifecycleCounts": {
+        "active": 2
+      },
+      "rejectReasons": [],
+      "traces": [
+        {
+          "type": "source_windows_ready",
+          "totalWindows": 1,
+          "windows": [
+            {
+              "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+              "windowIndex": 0,
+              "tokenEstimate": 40
+            }
+          ],
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 0
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2607,
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 1
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 3
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 2169
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 529,
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 3822
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "action": "capture",
+          "objectCount": 2,
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 3822
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 3076,
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 3822
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 3823
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 4098
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 537,
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 5002
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "action": "capture",
+          "objectCount": 2,
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 5002
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 5073,
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 5002
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 5003
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 5236
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 1035,
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 6929
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "action": "capture",
+          "objectCount": 2,
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 6929
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "candidateId": "candidate-0",
+          "canonicalClass": "user",
+          "kind": "preference",
+          "rawCandidateCount": 1,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 1,
+          "disposition": "zero_candidate_skip",
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 7367
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "candidateId": "candidate-1",
+          "canonicalClass": "user",
+          "kind": "preference",
+          "rawCandidateCount": 2,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 2,
+          "disposition": "zero_candidate_skip",
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 7669
+        },
+        {
+          "type": "window_result",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "action": "capture",
+          "objectCount": 2,
+          "rejectReasons": [],
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 8025
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "249f316b-6b3a-5c37-bbed-745aa0cea53a",
+          "supportItemId": "b7a971e2-a5a7-585c-a32b-0ae24368692a",
+          "lifecycleState": "active",
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 8025
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "50fb01bc-60c1-567f-ab32-8840dfd944c1",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "ac229d23-9a2e-5d23-b34a-ba26a4418875",
+          "supportItemId": "e5bda644-a8ce-5496-ab45-7c23e59ac8c9",
+          "lifecycleState": "active",
+          "promptId": "durable-003-nano-defaults",
+          "elapsedMs": 8025
+        }
+      ]
+    },
+    {
+      "promptId": "durable-004-clean-room-boundary",
+      "order": 4,
+      "title": "Clean Room Boundary",
+      "text": "Do not modify legacy extensions/memory-middleware while working on the clean-room model-memory system. Keep new memory work inside extensions/model-memory and src/agents/model-memory files unless there is a justified runtime boundary seam.",
+      "sourceId": "f1b94e00-2f64-5194-99c5-108c01016cdb",
+      "sourceWindowCount": 1,
+      "status": "completed",
+      "capturedClaimCount": 1,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 1
+      },
+      "lifecycleCounts": {
+        "active": 1
+      },
+      "rejectReasons": [],
+      "traces": [
+        {
+          "type": "source_windows_ready",
+          "totalWindows": 1,
+          "windows": [
+            {
+              "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+              "windowIndex": 0,
+              "tokenEstimate": 30
+            }
+          ],
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 2
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2598,
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 3
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 4
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 257
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 411,
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 970
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 970
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2842,
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 971
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 972
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 1189
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 416,
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 1812
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 1812
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 4580,
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 1812
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 1813
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 2151
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 966,
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 3293
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 3293
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "candidateId": "candidate-0",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 1,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 1,
+          "disposition": "zero_candidate_skip",
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 3709
+        },
+        {
+          "type": "window_result",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "action": "capture",
+          "objectCount": 1,
+          "rejectReasons": [],
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 4060
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "e87f5285-ed6d-5246-9dbc-05b81323b819",
+          "decision": "write",
+          "decisionCodes": [
+            "write_structural_accept",
+            "collision_distinct",
+            "review_mode_overridden"
+          ],
+          "memoryObjectId": "ae3e6c25-ed81-5451-9e22-cb0512545080",
+          "supportItemId": "863f6690-03c4-5d9e-9751-44bcd2b53cf7",
+          "lifecycleState": "active",
+          "promptId": "durable-004-clean-room-boundary",
+          "elapsedMs": 4060
+        }
+      ]
+    },
+    {
+      "promptId": "durable-005-safe-worktree-policy",
+      "order": 5,
+      "title": "Preserve Unrelated Worktree Changes",
+      "text": "Preserve unrelated worktree changes. Do not revert unrelated files. Do not use destructive git commands like git reset --hard or git checkout -- unless I explicitly ask.",
+      "sourceId": "c18348d0-6256-5953-8d53-0bb222a3e023",
+      "sourceWindowCount": 1,
+      "status": "completed",
+      "capturedClaimCount": 2,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 2
+      },
+      "lifecycleCounts": {
+        "active": 2
+      },
+      "rejectReasons": [],
+      "traces": [
+        {
+          "type": "source_windows_ready",
+          "totalWindows": 1,
+          "windows": [
+            {
+              "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+              "windowIndex": 0,
+              "tokenEstimate": 28
+            }
+          ],
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 1
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2528,
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 2
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 2
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 352
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 504,
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 2768
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "action": "capture",
+          "objectCount": 2,
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 2769
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2972,
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 2769
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 2769
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 3015
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 517,
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 3836
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "action": "capture",
+          "objectCount": 2,
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 3836
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 4895,
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 3836
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 3838
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 4029
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 1022,
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 5745
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "action": "capture",
+          "objectCount": 2,
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 5745
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "candidateId": "candidate-0",
+          "canonicalClass": "user",
+          "kind": "preference",
+          "rawCandidateCount": 3,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 3,
+          "disposition": "zero_candidate_skip",
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 6204
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "candidateId": "candidate-1",
+          "canonicalClass": "user",
+          "kind": "rule",
+          "rawCandidateCount": 0,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 0,
+          "disposition": "zero_candidate_skip",
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 6522
+        },
+        {
+          "type": "window_result",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "action": "capture",
+          "objectCount": 2,
+          "rejectReasons": [],
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 6891
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "14403e98-5347-57de-96b7-17fff48a90a0",
+          "supportItemId": "93751960-e54d-5a10-b8ee-7c1b741a6b5e",
+          "lifecycleState": "active",
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 6891
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "508ce468-339a-54ce-8b85-ac7dd511245d",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "aff7b301-2e24-5ba5-a6f3-805592b56404",
+          "supportItemId": "13e2c455-b445-557d-ac70-1fbb79515a01",
+          "lifecycleState": "active",
+          "promptId": "durable-005-safe-worktree-policy",
+          "elapsedMs": 6891
+        }
+      ]
+    },
+    {
+      "promptId": "durable-006-evidence-discipline",
+      "order": 6,
+      "title": "Evidence And Reporting Discipline",
+      "text": "For model-memory proof runs, produce durable JSON and Markdown artifacts under docs/projects/model-memory/evidence. Do not hand-edit evidence artifacts. Report exact commands, counts, and blockers honestly.",
+      "sourceId": "d5c786cd-5098-51b5-9130-35d4bb41ffdc",
+      "sourceWindowCount": 1,
+      "status": "completed",
+      "capturedClaimCount": 1,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 1
+      },
+      "lifecycleCounts": {
+        "active": 1
+      },
+      "rejectReasons": [],
+      "traces": [
+        {
+          "type": "source_windows_ready",
+          "totalWindows": 1,
+          "windows": [
+            {
+              "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+              "windowIndex": 0,
+              "tokenEstimate": 25
+            }
+          ],
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 0
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2565,
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 1
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 2
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 254
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 371,
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 967
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 967
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2769,
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 968
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 968
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 1322
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 375,
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 2023
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 2023
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 4506,
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 2024
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 2025
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 2230
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 516,
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 3044
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 3044
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "candidateId": "candidate-0",
+          "canonicalClass": "user",
+          "kind": "preference",
+          "rawCandidateCount": 4,
+          "retainedCandidateCount": 1,
+          "prunedCandidateCount": 3,
+          "disposition": "admitted_to_batch",
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 3461
+        },
+        {
+          "type": "window_result",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "action": "capture",
+          "objectCount": 1,
+          "rejectReasons": [],
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 4353
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "86bb6459-c9aa-5a62-b627-36031f6aeaeb",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "69a880a2-5e2a-5e48-b4f8-342ad36cd571",
+          "supportItemId": "e323020e-af29-595b-b5e4-ce115750e3ef",
+          "lifecycleState": "active",
+          "promptId": "durable-006-evidence-discipline",
+          "elapsedMs": 4353
+        }
+      ]
+    },
+    {
+      "promptId": "durable-007-shared-two-pass-rule",
+      "order": 7,
+      "title": "Shared Two Pass Requirement",
+      "text": "Prompt-only ordinary-turn capture should reuse the same shared two-pass ingestion framework as document ingestion. Do not keep a separate degraded extraction path for prompts.",
+      "sourceId": "c77ab337-c211-5b48-8720-8861d6e0849b",
+      "sourceWindowCount": 1,
+      "status": "completed",
+      "capturedClaimCount": 1,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "ignore": 1
+      },
+      "lifecycleCounts": {
+        "unknown": 1
+      },
+      "rejectReasons": [],
+      "traces": [
+        {
+          "type": "source_windows_ready",
+          "totalWindows": 1,
+          "windows": [
+            {
+              "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+              "windowIndex": 0,
+              "tokenEstimate": 25
+            }
+          ],
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 0
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2534,
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 1
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 1
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 280
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 341,
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 817
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 817
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2708,
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 818
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 818
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 1062
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 345,
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 1746
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 1746
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 4445,
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 1747
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 1748
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 1961
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 476,
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 2823
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 2823
+        },
+        {
+          "type": "window_result",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "action": "capture",
+          "objectCount": 1,
+          "rejectReasons": [],
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 3473
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "075cc3f5-8cd8-5054-94ee-667284314146",
+          "decision": "ignore",
+          "decisionCodes": ["non_durable_ignored"],
+          "promptId": "durable-007-shared-two-pass-rule",
+          "elapsedMs": 3473
+        }
+      ]
+    },
+    {
+      "promptId": "durable-008-active-only-runtime-reads",
+      "order": 8,
+      "title": "Active Only Runtime Reads",
+      "text": "Default runtime reads in model-memory should surface active objects only. Do not leak provisional or conflict_hold objects into ordinary retrieval and context assembly by default.",
+      "sourceId": "554a7bb6-6da5-5c69-bf9b-e9d428c7fdd1",
+      "sourceWindowCount": 1,
+      "status": "completed",
+      "capturedClaimCount": 1,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 1
+      },
+      "lifecycleCounts": {
+        "active": 1
+      },
+      "rejectReasons": [],
+      "traces": [
+        {
+          "type": "source_windows_ready",
+          "totalWindows": 1,
+          "windows": [
+            {
+              "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+              "windowIndex": 0,
+              "tokenEstimate": 26
+            }
+          ],
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 0
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2538,
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 0
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 1
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 552
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 333,
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 1225
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 1225
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2704,
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 1226
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 1226
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 1554
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 353,
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 2115
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 2115
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 4457,
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 2115
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 2116
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 2346
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 472,
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 3121
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 3121
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "candidateId": "candidate-0",
+          "canonicalClass": "user",
+          "kind": "rule",
+          "rawCandidateCount": 1,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 1,
+          "disposition": "zero_candidate_skip",
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 3539
+        },
+        {
+          "type": "window_result",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "action": "capture",
+          "objectCount": 1,
+          "rejectReasons": [],
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 3894
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "c2320f55-ec51-5e74-a9e5-838865672327",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "9e0f5f86-a44d-5339-bf00-27a37f1cb3b7",
+          "supportItemId": "479a4451-e9d3-57d1-8a79-d466041f0c91",
+          "lifecycleState": "active",
+          "promptId": "durable-008-active-only-runtime-reads",
+          "elapsedMs": 3894
+        }
+      ]
+    },
+    {
+      "promptId": "durable-009-operator-surface",
+      "order": 9,
+      "title": "Operator Surface Constraint",
+      "text": "For document ingestion from OpenClaw, keep the operator surface explicit and constrained. Use operator or admin tool invocation rather than autonomous background ingestion by default.",
+      "sourceId": "4043ed6e-e4dd-5ca1-837c-1bf3563dbc03",
+      "sourceWindowCount": 1,
+      "status": "completed",
+      "capturedClaimCount": 1,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 1
+      },
+      "lifecycleCounts": {
+        "active": 1
+      },
+      "rejectReasons": [],
+      "traces": [
+        {
+          "type": "source_windows_ready",
+          "totalWindows": 1,
+          "windows": [
+            {
+              "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+              "windowIndex": 0,
+              "tokenEstimate": 26
+            }
+          ],
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 1
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2542,
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 1
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 2
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 826
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 312,
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 1398
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 1398
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2687,
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 1398
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 1399
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 1744
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 316,
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 2142
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 2142
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 4424,
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 2143
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 2143
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 4163
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 591,
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 5280
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 5280
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "candidateId": "candidate-0",
+          "canonicalClass": "user",
+          "kind": "preference",
+          "rawCandidateCount": 5,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 5,
+          "disposition": "zero_candidate_skip",
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 5694
+        },
+        {
+          "type": "window_result",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "action": "capture",
+          "objectCount": 1,
+          "rejectReasons": [],
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 6048
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "1fbddbea-80dc-574c-8346-0faea9cce06d",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "76a199b5-be8c-5cde-89ed-c54d22105e41",
+          "supportItemId": "60030fab-f619-58e4-baa3-577377a9c8ec",
+          "lifecycleState": "active",
+          "promptId": "durable-009-operator-surface",
+          "elapsedMs": 6048
+        }
+      ]
+    },
+    {
+      "promptId": "durable-010-doc-links",
+      "order": 10,
+      "title": "Full Docs URLs",
+      "text": "When I ask for documentation links, return full https://docs.openclaw.ai URLs instead of root-relative paths.",
+      "sourceId": "1af0e3cf-a61e-5bf4-b7a5-5e2235980404",
+      "sourceWindowCount": 1,
+      "status": "completed",
+      "capturedClaimCount": 1,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 1
+      },
+      "lifecycleCounts": {
+        "active": 1
+      },
+      "rejectReasons": [],
+      "traces": [
+        {
+          "type": "source_windows_ready",
+          "totalWindows": 1,
+          "windows": [
+            {
+              "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+              "windowIndex": 0,
+              "tokenEstimate": 15
+            }
+          ],
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 0
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2468,
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 0
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 1
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 1871
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 290,
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 5612
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_1_candidate",
+          "contractVersion": "v2-candidate",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 5612
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 2591,
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 5613
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 5613
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 5820
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 295,
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 6378
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_1_repair",
+          "contractVersion": "v2-candidate-repair",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 6378
+        },
+        {
+          "type": "stage_begin",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "modelId": "openrouter/openai/gpt-5.4-nano",
+          "promptChars": 4329,
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 6378
+        },
+        {
+          "type": "http_request",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "submitted": true,
+          "method": "POST",
+          "url": "https://openrouter.ai/api/v1/chat/completions",
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 6379
+        },
+        {
+          "type": "http_response",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "status": 200,
+          "ok": true,
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 6628
+        },
+        {
+          "type": "executor_success",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+          "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+          "outputChars": 514,
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 7543
+        },
+        {
+          "type": "interpreter_result",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "windowIndex": 0,
+          "stage": "pass_2_canonicalization",
+          "contractVersion": "v2-canonicalization",
+          "action": "capture",
+          "objectCount": 1,
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 7543
+        },
+        {
+          "type": "collision_gate",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "candidateId": "candidate-0",
+          "canonicalClass": "user",
+          "kind": "preference",
+          "rawCandidateCount": 6,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 6,
+          "disposition": "zero_candidate_skip",
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 7958
+        },
+        {
+          "type": "window_result",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "action": "capture",
+          "objectCount": 1,
+          "rejectReasons": [],
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 8315
+        },
+        {
+          "type": "write_result",
+          "sourceWindowId": "56cd178c-1735-5441-ac65-345f813d2609",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "4024d468-e5a5-51d4-8e76-4d2c0141c209",
+          "supportItemId": "e2b42193-eff1-5569-8e1a-d02e05bb09ce",
+          "lifecycleState": "active",
+          "promptId": "durable-010-doc-links",
+          "elapsedMs": 8315
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "promptsAttempted": 10,
+    "promptsCompleted": 10,
+    "promptsFailed": 0,
+    "capturedClaimCount": 14,
+    "ignoredWindowCount": 0,
+    "rejectedWindowCount": 0,
+    "writeDecisionCounts": {
+      "write": 13,
+      "ignore": 1
+    },
+    "lifecycleCounts": {
+      "active": 13,
+      "unknown": 1
+    },
+    "rejectReasons": []
+  },
+  "finalSnapshot": {
+    "sourceCount": 10,
+    "sourceWindowCount": 10,
+    "memoryObjectCount": 13,
+    "supportItemCount": 13,
+    "writeEventCount": 14,
+    "lifecycleCounts": {
+      "active": 13
+    }
+  }
+}

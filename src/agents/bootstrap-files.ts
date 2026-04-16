@@ -6,6 +6,10 @@ import { resolveSessionAgentIds } from "./agent-scope.js";
 import { getOrLoadBootstrapFiles } from "./bootstrap-cache.js";
 import { applyBootstrapHookOverrides } from "./bootstrap-hooks.js";
 import { shouldIncludeHeartbeatGuidanceForSystemPrompt } from "./heartbeat-system-prompt.js";
+import {
+  mergeBootstrapFilesWithModelMemoryOverlay,
+  resolveModelMemoryBootstrapOverlay,
+} from "./model-memory.live-runtime.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
 import {
   buildBootstrapContextFiles,
@@ -191,6 +195,23 @@ export async function resolveBootstrapFilesForRun(params: {
   contextMode?: BootstrapContextMode;
   runKind?: BootstrapContextRunKind;
 }): Promise<WorkspaceBootstrapFile[]> {
+  const { bootstrapFiles } = await resolveBootstrapArtifactsForRun(params);
+  return bootstrapFiles;
+}
+
+async function resolveBootstrapArtifactsForRun(params: {
+  workspaceDir: string;
+  config?: OpenClawConfig;
+  sessionKey?: string;
+  sessionId?: string;
+  agentId?: string;
+  warn?: (message: string) => void;
+  contextMode?: BootstrapContextMode;
+  runKind?: BootstrapContextRunKind;
+}): Promise<{
+  bootstrapFiles: WorkspaceBootstrapFile[];
+  modelMemoryOverlay: Awaited<ReturnType<typeof resolveModelMemoryBootstrapOverlay>>;
+}> {
   const excludeHeartbeatBootstrapFile = shouldExcludeHeartbeatBootstrapFile(params);
   const sessionKey = params.sessionKey ?? params.sessionId;
   const rawFiles = params.sessionKey
@@ -204,19 +225,33 @@ export async function resolveBootstrapFilesForRun(params: {
     contextMode: params.contextMode,
     runKind: params.runKind,
   });
+  const modelMemoryOverlay = await resolveModelMemoryBootstrapOverlay({
+    config: params.config,
+    sessionId: params.sessionId,
+    agentId: params.agentId,
+  });
+  const overlayAdjustedFiles = modelMemoryOverlay
+    ? mergeBootstrapFilesWithModelMemoryOverlay({
+        baseFiles: bootstrapFiles,
+        overlayFiles: modelMemoryOverlay.bootstrapFiles,
+      })
+    : bootstrapFiles;
 
   const updated = await applyBootstrapHookOverrides({
-    files: bootstrapFiles,
+    files: overlayAdjustedFiles,
     workspaceDir: params.workspaceDir,
     config: params.config,
     sessionKey: params.sessionKey,
     sessionId: params.sessionId,
     agentId: params.agentId,
   });
-  return sanitizeBootstrapFiles(
-    filterHeartbeatBootstrapFile(updated, excludeHeartbeatBootstrapFile),
-    params.warn,
-  );
+  return {
+    bootstrapFiles: sanitizeBootstrapFiles(
+      filterHeartbeatBootstrapFile(updated, excludeHeartbeatBootstrapFile),
+      params.warn,
+    ),
+    modelMemoryOverlay,
+  };
 }
 
 export async function resolveBootstrapContextForRun(params: {
@@ -232,11 +267,14 @@ export async function resolveBootstrapContextForRun(params: {
   bootstrapFiles: WorkspaceBootstrapFile[];
   contextFiles: EmbeddedContextFile[];
 }> {
-  const bootstrapFiles = await resolveBootstrapFilesForRun(params);
+  const { bootstrapFiles, modelMemoryOverlay } = await resolveBootstrapArtifactsForRun(params);
   const contextFiles = buildBootstrapContextFiles(bootstrapFiles, {
     maxChars: resolveBootstrapMaxChars(params.config),
     totalMaxChars: resolveBootstrapTotalMaxChars(params.config),
     warn: params.warn,
   });
-  return { bootstrapFiles, contextFiles };
+  const mergedContextFiles = modelMemoryOverlay
+    ? [...contextFiles, ...modelMemoryOverlay.contextFiles]
+    : contextFiles;
+  return { bootstrapFiles, contextFiles: mergedContextFiles };
 }

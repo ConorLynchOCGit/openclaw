@@ -1,0 +1,455 @@
+{
+  "generatedAt": "2026-04-14T20:37:34.028Z",
+  "sourcePath": "docs/projects/model-memory/specs/identity-dedupe-supersession.md",
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 180000,
+  "maxWordsPerWindow": 1500,
+  "summary": {
+    "previousCollisionModelCalls": 18,
+    "collisionModelCalls": 1,
+    "collisionModelCallReduction": 17,
+    "residualBatchRequestCount": 1,
+    "residualBatchCandidateCount": 1,
+    "zeroCandidateSkipCount": 6,
+    "admittedToBatchCount": 1,
+    "candidatePrunedCount": 6,
+    "collisionResultCounts": {
+      "attach_support": 1
+    },
+    "resolvedModelIds": ["openai/gpt-5.4-nano-20260317"],
+    "finalSummary": {
+      "type": "final_summary",
+      "totalWindows": 1,
+      "capturedObjects": 7,
+      "writeResults": 7,
+      "persistedObjects": 6,
+      "persistedSupportItems": 6,
+      "windowOutcomeCounts": {
+        "capture": 1
+      },
+      "writeDecisionCounts": {
+        "write": 6,
+        "attach_support": 1
+      },
+      "elapsedMs": 29530
+    }
+  },
+  "traces": [
+    {
+      "type": "source_windows_ready",
+      "sourcePath": "docs/projects/model-memory/specs/identity-dedupe-supersession.md",
+      "totalWindows": 1,
+      "windows": [
+        {
+          "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+          "windowIndex": 0,
+          "headingPath": ["Identity, Dedupe, And Supersession"],
+          "lineStart": 1,
+          "lineEnd": 342,
+          "tokenEstimate": 1434
+        }
+      ],
+      "elapsedMs": 743
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["Identity, Dedupe, And Supersession"],
+      "lineStart": 1,
+      "lineEnd": 342,
+      "promptChars": 15160,
+      "elapsedMs": 747
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 1842
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 2260
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2843,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"rule\",\"claim\":\"V1 disallows similarity search or threshold-based merging to become merge authority in the live write path.\",\"supportingSpans\":[{\"headingPath\":[\"Identity, Dedupe, And Supersess...",
+      "elapsedMs": 8175
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 7,
+      "elapsedMs": 8177
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["Identity, Dedupe, And Supersession"],
+      "lineStart": 1,
+      "lineEnd": 342,
+      "promptChars": 18478,
+      "elapsedMs": 8181
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 8182
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 11033
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 2872,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"rule\",\"claim\":\"V1 disallows similarity search or threshold-based merging to become merge authority in the live write path.\",\"supportingSpans\":[{\"headingPath\":[\"Identity, Dedupe, And Supersess...",
+      "elapsedMs": 16562
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 7,
+      "elapsedMs": 16562
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["Identity, Dedupe, And Supersession"],
+      "lineStart": 1,
+      "lineEnd": 342,
+      "promptChars": 12860,
+      "elapsedMs": 16564
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 16565
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 16855
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 5029,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"project\",\"kind\":\"rule\",\"payload\":{\"subject\":\"V1 live write path merge authority\",\"recommendedAction\":\"Disallow similarity search or threshold-based merging to become merge authority in the l...",
+      "elapsedMs": 25451
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 7,
+      "elapsedMs": 25451
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "candidateId": "candidate-0",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 26113
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "candidateId": "candidate-1",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 26419
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "candidateId": "candidate-2",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 2,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 2,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 26712
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "candidateId": "candidate-3",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 3,
+      "retainedCandidateCount": 1,
+      "prunedCandidateCount": 2,
+      "disposition": "admitted_to_batch",
+      "elapsedMs": 27009
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "candidateId": "candidate-4",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 3,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 3,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 27011
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "candidateId": "candidate-5",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 4,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 4,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 27307
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "candidateId": "candidate-6",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 5,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 5,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 27603
+    },
+    {
+      "type": "collision_begin",
+      "sourceWindowIds": ["d3821e1f-3fd2-5223-93b1-ca6427bd30de"],
+      "stage": "write_path_collision_adjudication",
+      "requestCount": 1,
+      "candidateCount": 1,
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "elapsedMs": 27898
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": -1,
+      "stage": "write_path_collision_adjudication",
+      "contractVersion": "v2-batch",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 27899
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": -1,
+      "stage": "write_path_collision_adjudication",
+      "contractVersion": "v2-batch",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 28196
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "windowIndex": -1,
+      "stage": "write_path_collision_adjudication",
+      "contractVersion": "v2-batch",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 129,
+      "outputPreview": "{\"decisions\":[{\"candidateId\":\"candidate-3\",\"relation\":\"attach_support\",\"targetObjectId\":\"77d83b18-3973-5c7a-812f-363ed89b5c6e\"}]}",
+      "elapsedMs": 28767
+    },
+    {
+      "type": "collision_result",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "stage": "write_path_collision_adjudication",
+      "candidateId": "candidate-3",
+      "relation": "attach_support",
+      "targetObjectId": "77d83b18-3973-5c7a-812f-363ed89b5c6e",
+      "elapsedMs": 28768
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "action": "capture",
+      "objectCount": 7,
+      "rejectReasons": [],
+      "elapsedMs": 29063
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "decision": "write",
+      "memoryObjectId": "8c981028-b166-57ba-b773-d98579185d3d",
+      "supportItemId": "8cb57164-3e30-538b-bac5-c64eacfc5868",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 29063
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "decision": "write",
+      "memoryObjectId": "494fafaa-d963-5c06-9fe7-ed52d58f765d",
+      "supportItemId": "296ecbdf-95de-54dc-9185-a9c8fc565375",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 29063
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "decision": "write",
+      "memoryObjectId": "77d83b18-3973-5c7a-812f-363ed89b5c6e",
+      "supportItemId": "b78676a5-a904-5bb5-a439-2c70f2b3b6e9",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 29063
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "decision": "write",
+      "memoryObjectId": "28b6a9f3-6f6b-5f6b-a77e-4c00ac07780e",
+      "supportItemId": "f26ce16f-8713-5d5b-863a-567d92d678e0",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 29063
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "decision": "write",
+      "memoryObjectId": "d17885ec-1f7b-5f7b-b3d6-a43ee34590a6",
+      "supportItemId": "1e0e977a-36ba-559b-9f68-f58355742411",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 29063
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "decision": "write",
+      "memoryObjectId": "300ffe34-5a65-5d23-b7f9-f396845fd43f",
+      "supportItemId": "a2087858-afaa-5b33-a0f4-61ee206e5f94",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 29063
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "d3821e1f-3fd2-5223-93b1-ca6427bd30de",
+      "decision": "attach_support",
+      "memoryObjectId": "77d83b18-3973-5c7a-812f-363ed89b5c6e",
+      "supportItemId": "b78676a5-a904-5bb5-a439-2c70f2b3b6e9",
+      "decisionCodes": ["support_attached", "same_source_rerun"],
+      "elapsedMs": 29063
+    },
+    {
+      "type": "final_summary",
+      "totalWindows": 1,
+      "capturedObjects": 7,
+      "writeResults": 7,
+      "persistedObjects": 6,
+      "persistedSupportItems": 6,
+      "windowOutcomeCounts": {
+        "capture": 1
+      },
+      "writeDecisionCounts": {
+        "write": 6,
+        "attach_support": 1
+      },
+      "elapsedMs": 29530
+    }
+  ]
+}

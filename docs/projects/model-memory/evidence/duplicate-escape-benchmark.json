@@ -1,0 +1,710 @@
+{
+  "generatedAt": "2026-04-15T20:32:54.751Z",
+  "duplicateAuditPath": "/root/services/openclaw-roles/live/docs/projects/model-memory/evidence/duplicate-escape-audit.json",
+  "duplicateAuditGeneratedAt": "2026-04-15T19:32:58.936Z",
+  "duplicateReviewPath": "/root/services/openclaw-roles/live/docs/projects/model-memory/evidence/duplicate-escape-review.json",
+  "duplicateReviewGeneratedAt": "2026-04-15T20:32:54.488Z",
+  "databaseMode": "full_corpus_proof_db",
+  "databaseName": "model_memory",
+  "priorBenchmarkPath": "/root/services/openclaw-roles/live/docs/projects/model-memory/evidence/duplicate-escape-benchmark.json",
+  "seedBootstrapMode": "review_aligned_semantic_seeds",
+  "seedStrategy": "semantic_fingerprint_v1",
+  "missingBootstrapRerunCaseIds": [
+    "rerun-f995f462-6fbb-5ac2-97df-16e41ec5efbc",
+    "rerun-dd10aabd-96c3-5649-976d-4586157325f0",
+    "rerun-7afb9896-a61b-5fee-9f97-6e3eb4ad9c2b",
+    "rerun-c908cccf-d704-572e-ad8c-4caca7113144",
+    "rerun-4444f492-2ca6-5bc8-9cef-e90eb3f1a1e6",
+    "rerun-384a8e58-db4e-509f-a996-b0e7860be346",
+    "rerun-77308577-0850-518c-82f9-29887d8eab4d",
+    "rerun-a39686ff-094e-5377-b5c0-9dd2fdebca87",
+    "rerun-1d30a83a-260f-51cf-971a-f51cba11de7a",
+    "rerun-f8185f64-64d8-5906-85c7-4dbee4171203",
+    "rerun-c3cd4d39-a7a1-512d-bfff-14dc2a94887d",
+    "rerun-a2476beb-d562-54de-87b1-faa18959118d",
+    "rerun-351698cb-edb6-5d1a-a87d-6cf101df30a4"
+  ],
+  "missingBootstrapClusterCaseIds": [
+    "cluster-daca8ea0-6d53-552c-89ed-d8f292b07a93-b9d35e91-e117-5a07-9f37-da3b0c9f3342",
+    "cluster-4fa114d0-fa23-5e31-a63b-e04bb0c6c94a-cb8ecf16-ec11-567c-a729-3619a85ddaad",
+    "cluster-412e863d-b427-5ab5-9381-d301e341e0b6-519e8c35-8fd0-53de-be09-4121b91663e9",
+    "cluster-f465113d-983e-5e5b-810e-d30f25477f1b-7afb9896-a61b-5fee-9f97-6e3eb4ad9c2b",
+    "cluster-cb59ac43-944e-56c4-ad7b-3fcb6acb74f6-44413f95-04b6-5fa1-82a5-01a93d4d4312"
+  ],
+  "unresolvedSemanticSeedIds": ["rerun-001641dd-ed15-5e44-be90-e0b7e63aee56"],
+  "semanticSeeds": [
+    {
+      "seedId": "rerun-ecb2ca60-a6a5-56c9-aa25-2ee522c7bf73",
+      "from": "rerun_escape",
+      "source": "AGENTS.md",
+      "kind": "rule",
+      "payloadSummaryHash": "be2d81268c8a3602",
+      "payloadSummaryPreview": "GHSA PATCH field constraint | If updating GHSA, make separate PATCH calls instead of setting both `severity` and `cvss_vector_string` together. | Do not set `severity` and `cvss_vector_string` in the same PATCH.",
+      "topPriorCandidateSummaryHash": "d52f7569cc6c76ea",
+      "topPriorCandidateSummaryPreview": "GHSA PATCH payload separation | Make separate calls. | Do not set GHSA severity and cvss_vector_string in the same PATCH.",
+      "adjudicatedLabel": "should_attach_support",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_duplicate_should_attach with stratification={\"sourceFamily\":\"AGENTS.md\",\"kind\":\"rule\",\"replayPath\":\"deterministic_attach\",\"missClass\":\"deterministic_attach_miss\",\"deltaClass\":\"packaging_only_drift\",\"packagingDriftType\":\"field_packing_drift\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-6c4e531b-5a0f-55cf-ba89-0c5e6726d3f4",
+      "from": "rerun_escape",
+      "source": "docs/help/testing.md",
+      "kind": "fact",
+      "payloadSummaryHash": "6722ceaa07dfd1ab",
+      "payloadSummaryPreview": "Vitest test suites in OpenClaw: OpenClaw has three Vitest suites (unit/integration, e2e, live) and a small set of Docker runners.",
+      "topPriorCandidateSummaryHash": "dd41c8fea9b33abb",
+      "topPriorCandidateSummaryPreview": "OpenClaw test suites: OpenClaw has three Vitest suites (unit/integration, e2e, live) and a small set of Docker runners.",
+      "adjudicatedLabel": "should_attach_support",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_duplicate_should_attach with stratification={\"sourceFamily\":\"docs/help/testing.md\",\"kind\":\"fact\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"batch_attach_miss\",\"deltaClass\":\"packaging_only_drift\",\"packagingDriftType\":\"subject_drift\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-9fe78fe9-3b3f-55eb-9e90-5ada852549ed",
+      "from": "rerun_escape",
+      "source": "docs/help/testing.md",
+      "kind": "fact",
+      "payloadSummaryHash": "aa751dae7b9eca39",
+      "payloadSummaryPreview": "Live test layers: Live tests are split into Layer 1 direct model completion (src/agents/models.profiles.live.test.ts) and Layer 2 gateway + dev agent smoke (src/gateway/gateway-models.profiles.live.test.ts).",
+      "topPriorCandidateSummaryHash": "676cf1c1e8e9957c",
+      "topPriorCandidateSummaryPreview": "Live tests layer split: Live tests are split into two layers: Layer 1 direct model completion (no gateway) in `src/agents/models.profiles.live.test.ts`, and Layer 2 gateway + dev agent smoke (what “@openclaw” actually does) in `src/gateway/gateway-models.profiles.live.test.ts`.",
+      "adjudicatedLabel": "should_attach_support",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_duplicate_should_attach with stratification={\"sourceFamily\":\"docs/help/testing.md\",\"kind\":\"fact\",\"replayPath\":\"deterministic_attach\",\"missClass\":\"deterministic_attach_miss\",\"deltaClass\":\"packaging_only_drift\",\"packagingDriftType\":\"subject_drift\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-9c0f2b0a-a1b9-5b0f-a064-1c6b9c30cf7f",
+      "from": "rerun_escape",
+      "source": "docs/gateway/configuration.md",
+      "kind": "fact",
+      "payloadSummaryHash": "104a32dbfdd13d80",
+      "payloadSummaryPreview": "Config hot reload watch path and effect: In config hot reload, the Gateway watches `~/.openclaw/openclaw.json` and applies changes automatically for most settings (no manual restart needed).",
+      "topPriorCandidateSummaryHash": "b394f75fc29021f7",
+      "topPriorCandidateSummaryPreview": "Config hot reload behavior: The Gateway watches ~/.openclaw/openclaw.json and applies changes automatically (no manual restart needed for most settings).",
+      "adjudicatedLabel": "should_attach_support",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_duplicate_should_attach with stratification={\"sourceFamily\":\"docs/gateway/configuration.md\",\"kind\":\"fact\",\"replayPath\":\"deterministic_attach\",\"missClass\":\"deterministic_attach_miss\",\"deltaClass\":\"packaging_only_drift\",\"packagingDriftType\":\"subject_drift\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-00e1f898-bc88-5045-ac49-360f2343668a",
+      "from": "rerun_escape",
+      "source": "docs/gateway/configuration.md",
+      "kind": "fact",
+      "payloadSummaryHash": "7e3fe97227d26b52",
+      "payloadSummaryPreview": "Environment variable sources and precedence: OpenClaw reads env vars from the parent process plus .env from the current working directory (if present) and ~/.openclaw/.env as a global fallback, and neither file overrides existing env vars.",
+      "topPriorCandidateSummaryHash": "3e13c1c0abd84918",
+      "topPriorCandidateSummaryPreview": "OpenClaw environment variable loading: OpenClaw reads env vars from the parent process plus `.env` in the current working directory (if present) and `~/.openclaw/.env` as a global fallback; neither file overrides existing env vars.",
+      "adjudicatedLabel": "should_attach_support",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_duplicate_should_attach with stratification={\"sourceFamily\":\"docs/gateway/configuration.md\",\"kind\":\"fact\",\"replayPath\":\"deterministic_attach\",\"missClass\":\"historical_supersede_miss\",\"deltaClass\":\"packaging_only_drift\",\"packagingDriftType\":\"subject_drift\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-a032fe54-6900-5d28-8ca5-b44024de67f1",
+      "from": "rerun_escape",
+      "source": "AGENTS.md",
+      "kind": "rule",
+      "payloadSummaryHash": "3c85d134be04ac85",
+      "payloadSummaryPreview": "Handling real personal/media/config values in commits | Use obviously fake placeholders in docs, tests, and examples. | Never commit or publish real phone numbers, videos, or live configuration values.",
+      "topPriorCandidateSummaryHash": "129f3961f61c53e3",
+      "topPriorCandidateSummaryPreview": "Avoid committing or publishing real sensitive values | Use obviously fake placeholders in docs, tests, and examples. | Never commit or publish real phone numbers, videos, or live configuration values.",
+      "adjudicatedLabel": "should_attach_support",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_duplicate_should_attach with stratification={\"sourceFamily\":\"AGENTS.md\",\"kind\":\"rule\",\"replayPath\":\"deterministic_attach\",\"missClass\":\"deterministic_attach_miss\",\"deltaClass\":\"packaging_only_drift\",\"packagingDriftType\":\"subject_drift\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-0f1a11dd-fb49-50d8-8b2f-0fe56681912f",
+      "from": "rerun_escape",
+      "source": "docs/help/testing.md",
+      "kind": "rule",
+      "payloadSummaryHash": "5cd55308ba0e15c8",
+      "payloadSummaryPreview": "Layer 1 vs Layer 2 live test enablement | Layer 1 live model completion (no gateway) uses `src/agents/models.profiles.live.test.ts` and is enabled only when `OPENCLAW_LIVE_MODELS` is set; otherwise it skips. | Layer 2 live gateway smoke uses `src/gateway/gateway-models.profiles.live.test.ts` and validates the full gateway+agent pipeline including tool/image probes.",
+      "topPriorCandidateSummaryHash": "719fc6db3605bcaf",
+      "topPriorCandidateSummaryPreview": "Live gateway smoke should run `pnpm test:live src/gateway/gateway-models.profiles.live.test.ts` using `OPENCLAW_LIVE_GATEWAY_MODELS` including tool-calling and image-capable models. | Run `pnpm test:live src/gateway/gateway-models.profiles.live.test.ts` with `OPENCLAW_LIVE_GATEWAY_MODELS` set to include tool-calling and image-capable models.",
+      "adjudicatedLabel": "legit_distinct",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_distinct_should_stay_distinct with stratification={\"sourceFamily\":\"docs/help/testing.md\",\"kind\":\"rule\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"legit_distinct\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-59e58a61-441a-5723-be56-89bfbffa3a30",
+      "from": "rerun_escape",
+      "source": "docs/gateway/configuration.md",
+      "kind": "rule",
+      "payloadSummaryHash": "727a0f70f0a2a50f",
+      "payloadSummaryPreview": "Environment variable substitution in OpenClaw configs | Use ${VAR_NAME} substitution where VAR_NAME matches [A-Z_][A-Z0-9_]*; ensure the referenced env var is present and non-empty (missing/empty vars throw an error at load time). Escape for literal output with $${VAR} (e.g., $${BASE}).",
+      "topPriorCandidateSummaryHash": "dd2b98ea4b9dc012",
+      "topPriorCandidateSummaryPreview": "env var substitution in config values | Use ${VAR_NAME} in config string values for substitution where VAR_NAME matches [A-Z_][A-Z0-9_]*, and ensure referenced vars are present and non-empty to avoid load-time errors. | Do not use undefined or empty env vars in ${VAR_NAME} substitutions (they throw an error at load time). | Support literal output escaping via $${VAR} when a config should contain the pattern without substitution.",
+      "adjudicatedLabel": "legit_distinct",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_distinct_should_stay_distinct with stratification={\"sourceFamily\":\"docs/gateway/configuration.md\",\"kind\":\"rule\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"legit_distinct\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-8f7d28d3-dc6a-5294-8ca4-0c28e6cec824",
+      "from": "rerun_escape",
+      "source": "docs/help/testing.md",
+      "kind": "fact",
+      "payloadSummaryHash": "990c576f1ec12ee8",
+      "payloadSummaryPreview": "Vitest suites: OpenClaw has three Vitest suites: unit/integration (default), e2e (gateway smoke), and live (real providers + real models).",
+      "topPriorCandidateSummaryHash": "dd41c8fea9b33abb",
+      "topPriorCandidateSummaryPreview": "OpenClaw test suites: OpenClaw has three Vitest suites (unit/integration, e2e, live) and a small set of Docker runners.",
+      "adjudicatedLabel": "legit_distinct",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_distinct_should_stay_distinct with stratification={\"sourceFamily\":\"docs/help/testing.md\",\"kind\":\"fact\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"legit_distinct\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-96f254b5-221c-5a4c-a674-6621216b3d19",
+      "from": "rerun_escape",
+      "source": "AGENTS.md",
+      "kind": "rule",
+      "payloadSummaryHash": "6e617517f7aa436e",
+      "payloadSummaryPreview": "GHSA advisory patch/publish workflow | Read SECURITY.md first and follow the documented API workflow; patch using gh api PATCH and then verify that state is published (published_at set) by re-fetching the advisory. | Do not publish via a `/publish` endpoint; include published state via PATCH input as documented. | Ability to use the GHSA API workflow (including handling the PATCH severity/cvss_vector_string constraint via separate calls) and to verify the published state after PATCH.",
+      "topPriorCandidateSummaryHash": "80b3a0c95e929648",
+      "topPriorCandidateSummaryPreview": "GHSA advisory handling workflow | Before reviewing security advisories, read `SECURITY.md`, fetch via `gh api /repos/openclaw/openclaw/security-advisories/<GHSA>`, then PATCH the advisory including `\"state\":\"published\"` (no `/publish` endpoint). | Do not attempt to set `severity` and `cvss_vector_string` in the same GHSA PATCH call; do separate calls. | Use the documented GHSA API workflow and publish via PATCH including `\"state\":\"published\"`.",
+      "adjudicatedLabel": "legit_distinct",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_distinct_should_stay_distinct with stratification={\"sourceFamily\":\"AGENTS.md\",\"kind\":\"rule\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"legit_distinct\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-e8995751-48cd-54e6-a550-16df7b37adfa",
+      "from": "rerun_escape",
+      "source": "docs/gateway/configuration.md",
+      "kind": "fact",
+      "payloadSummaryHash": "413a60c33126e28a",
+      "payloadSummaryPreview": "Fields requiring restart during hot reload: During hot reload, changes to `gateway.*` (port, bind, auth, tailscale, TLS, HTTP) require a restart, and changes to `discovery`, `canvasHost`, and `plugins` require a restart; most other config fields do not.",
+      "topPriorCandidateSummaryHash": "b71800d2f5eda18c",
+      "topPriorCandidateSummaryPreview": "Hybrid hot reload mode behavior: In `hybrid` hot reload mode (default), hot-applies safe changes instantly and automatically restarts for critical ones; restart-required changes include `gateway.*` (port, bind, auth, tailscale, TLS, HTTP) and `discovery`, `canvasHost`, `plugins`.",
+      "adjudicatedLabel": "legit_distinct",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_distinct_should_stay_distinct with stratification={\"sourceFamily\":\"docs/gateway/configuration.md\",\"kind\":\"fact\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"legit_distinct\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-001641dd-ed15-5e44-be90-e0b7e63aee56",
+      "from": "rerun_escape",
+      "source": "AGENTS.md",
+      "kind": "rule",
+      "payloadSummaryHash": "2da0fa514353f1fd",
+      "payloadSummaryPreview": "Plugin release fast path (no core openclaw publish) | Release only already-on-npm plugins from the Current npm plugin list, and never run publish from the repo root unless explicitly requested.",
+      "adjudicatedLabel": "legit_distinct",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_distinct_should_stay_distinct with stratification={\"sourceFamily\":\"AGENTS.md\",\"kind\":\"rule\",\"replayPath\":\"distinct_write\",\"missClass\":\"legit_distinct\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-098ba11a-a3ff-5396-b0a8-f85288f251ef",
+      "from": "rerun_escape",
+      "source": "AGENTS.md",
+      "kind": "rule",
+      "payloadSummaryHash": "b045bf30ca6b4fad",
+      "payloadSummaryPreview": "GitHub PR/issue comment command usage | When using `gh issue/pr comment`, prefer single-quoted heredoc (`-F - <<'EOF'`). | Never use `gh issue/pr comment -b \"...\"` when body contains backticks or shell chars.",
+      "topPriorCandidateSummaryHash": "a2a920207248f573",
+      "topPriorCandidateSummaryPreview": "When creating GitHub comments, avoid gh issue/pr comment -b \"...\" if the body contains backticks or shell chars; use a single-quoted heredoc instead. | Always use single-quoted heredoc (-F - <<'EOF') to prevent escaping/command issues. | Never use `gh issue/pr comment -b \"...\"` when body contains backticks or shell chars.",
+      "adjudicatedLabel": "ambiguous_but_contained",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=true_ambiguity with stratification={\"sourceFamily\":\"AGENTS.md\",\"kind\":\"rule\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"batch_attach_miss\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-126478b9-53cc-5346-b7da-478d100163e8",
+      "from": "rerun_escape",
+      "source": "docs/help/testing.md",
+      "kind": "fact",
+      "payloadSummaryHash": "b7cf950498ef9279",
+      "payloadSummaryPreview": "Credential lookup locations: Provider credential lookup uses the profile store at ~/.openclaw/credentials/ (preferred) and config at ~/.openclaw/openclaw.json or OPENCLAW_CONFIG_PATH.",
+      "topPriorCandidateSummaryHash": "8fccf76a94d9dc9c",
+      "topPriorCandidateSummaryPreview": "Live test credential profile store and config path: Profile store: ~/.openclaw/credentials/. Config: ~/.openclaw/openclaw.json (or OPENCLAW_CONFIG_PATH).",
+      "adjudicatedLabel": "ambiguous_but_contained",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=true_ambiguity with stratification={\"sourceFamily\":\"docs/help/testing.md\",\"kind\":\"fact\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"batch_attach_miss\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-23c7d058-fd08-54f4-8926-ed7df81b8e59",
+      "from": "rerun_escape",
+      "source": "docs/gateway/configuration.md",
+      "kind": "rule",
+      "payloadSummaryHash": "f4830eed120e2678",
+      "payloadSummaryPreview": "Env var substitution in config values | Reference env vars in config string values with `${VAR_NAME}` where VAR_NAME matches `[A-Z_][A-Z0-9_]*`; escape a literal dollar with `$${VAR}`.",
+      "topPriorCandidateSummaryHash": "6612662b51c3ad7d",
+      "topPriorCandidateSummaryPreview": "Env var substitution in config string values | In config string values, substitute `${VAR_NAME}` where `VAR_NAME` matches `[A-Z_][A-Z0-9_]*`; treat missing/empty vars as an error at load time; and use `$${VAR}` to escape for literal output (including inside `$include` files).",
+      "adjudicatedLabel": "ambiguous_but_contained",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=true_ambiguity with stratification={\"sourceFamily\":\"docs/gateway/configuration.md\",\"kind\":\"rule\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"batch_attach_miss\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ]
+    },
+    {
+      "seedId": "rerun-32723415-ae40-5d46-8443-d3d55ac80593",
+      "from": "rerun_escape",
+      "source": "docs/help/testing.md",
+      "kind": "rule",
+      "payloadSummaryHash": "9a0077d24c686d07",
+      "payloadSummaryPreview": "Include at least one tool-calling-capable baseline model per provider family in OPENCLAW_LIVE_GATEWAY_MODELS. | Include at least one tool-calling-capable baseline model per provider family in OPENCLAW_LIVE_GATEWAY_MODELS.",
+      "topPriorCandidateSummaryHash": "081e195af46f9f71",
+      "topPriorCandidateSummaryPreview": "Live gateway smoke matrix tool-calling coverage | Include at least one tool-calling model per provider family.",
+      "adjudicatedLabel": "ambiguous_but_contained",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=true_ambiguity with stratification={\"sourceFamily\":\"docs/help/testing.md\",\"kind\":\"rule\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"batch_attach_miss\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ]
+    }
+  ],
+  "rerunReviewedCases": [
+    {
+      "seedId": "rerun-ecb2ca60-a6a5-56c9-aa25-2ee522c7bf73",
+      "caseId": "rerun-ecb2ca60-a6a5-56c9-aa25-2ee522c7bf73",
+      "source": "AGENTS.md",
+      "kind": "rule",
+      "payloadSummary": "GHSA PATCH field constraint | If updating GHSA, make separate PATCH calls instead of setting both `severity` and `cvss_vector_string` together. | Do not set `severity` and `cvss_vector_string` in the same PATCH.",
+      "historicalDecision": "write",
+      "replayPathClassification": "deterministic_attach",
+      "topPriorCandidateSummary": "GHSA PATCH payload separation | Make separate calls. | Do not set GHSA severity and cvss_vector_string in the same PATCH.",
+      "topPriorCandidateDecisiveFieldAgreement": true,
+      "topPriorCandidateDecisiveFieldSummary": "actionBundle=match",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 10,
+        "smallerCoverage": 0.8333333333333334,
+        "largerCoverage": 0.5882352941176471
+      },
+      "adjudicatedLabel": "should_attach_support",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_duplicate_should_attach with stratification={\"sourceFamily\":\"AGENTS.md\",\"kind\":\"rule\",\"replayPath\":\"deterministic_attach\",\"missClass\":\"deterministic_attach_miss\",\"deltaClass\":\"packaging_only_drift\",\"packagingDriftType\":\"field_packing_drift\"}."
+      ],
+      "resolution": "exact_fingerprint"
+    },
+    {
+      "seedId": "rerun-6c4e531b-5a0f-55cf-ba89-0c5e6726d3f4",
+      "caseId": "rerun-6c4e531b-5a0f-55cf-ba89-0c5e6726d3f4",
+      "source": "docs/help/testing.md",
+      "kind": "fact",
+      "payloadSummary": "Vitest test suites in OpenClaw: OpenClaw has three Vitest suites (unit/integration, e2e, live) and a small set of Docker runners.",
+      "historicalDecision": "write",
+      "replayPathClassification": "batched_adjudication",
+      "topPriorCandidateSummary": "OpenClaw test suites: OpenClaw has three Vitest suites (unit/integration, e2e, live) and a small set of Docker runners.",
+      "topPriorCandidateDecisiveFieldAgreement": true,
+      "topPriorCandidateDecisiveFieldSummary": "value=match",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 11,
+        "smallerCoverage": 1,
+        "largerCoverage": 1
+      },
+      "adjudicatedLabel": "should_attach_support",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_duplicate_should_attach with stratification={\"sourceFamily\":\"docs/help/testing.md\",\"kind\":\"fact\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"batch_attach_miss\",\"deltaClass\":\"packaging_only_drift\",\"packagingDriftType\":\"subject_drift\"}."
+      ],
+      "resolution": "exact_fingerprint"
+    },
+    {
+      "seedId": "rerun-9fe78fe9-3b3f-55eb-9e90-5ada852549ed",
+      "caseId": "rerun-9fe78fe9-3b3f-55eb-9e90-5ada852549ed",
+      "source": "docs/help/testing.md",
+      "kind": "fact",
+      "payloadSummary": "Live test layers: Live tests are split into Layer 1 direct model completion (src/agents/models.profiles.live.test.ts) and Layer 2 gateway + dev agent smoke (src/gateway/gateway-models.profiles.live.test.ts).",
+      "historicalDecision": "write",
+      "replayPathClassification": "deterministic_attach",
+      "topPriorCandidateSummary": "Live tests layer split: Live tests are split into two layers: Layer 1 direct model completion (no gateway) in `src/agents/models.profiles.live.test.ts`, and Layer 2 gateway + dev agent smoke (what “@openclaw” actually does) in `src/gateway/gateway-models.profiles.live.test.ts`.",
+      "topPriorCandidateDecisiveFieldAgreement": true,
+      "topPriorCandidateDecisiveFieldSummary": "value=match",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 16,
+        "smallerCoverage": 1,
+        "largerCoverage": 0.8
+      },
+      "adjudicatedLabel": "should_attach_support",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_duplicate_should_attach with stratification={\"sourceFamily\":\"docs/help/testing.md\",\"kind\":\"fact\",\"replayPath\":\"deterministic_attach\",\"missClass\":\"deterministic_attach_miss\",\"deltaClass\":\"packaging_only_drift\",\"packagingDriftType\":\"subject_drift\"}."
+      ],
+      "resolution": "exact_fingerprint"
+    },
+    {
+      "seedId": "rerun-9c0f2b0a-a1b9-5b0f-a064-1c6b9c30cf7f",
+      "caseId": "rerun-9c0f2b0a-a1b9-5b0f-a064-1c6b9c30cf7f",
+      "source": "docs/gateway/configuration.md",
+      "kind": "fact",
+      "payloadSummary": "Config hot reload watch path and effect: In config hot reload, the Gateway watches `~/.openclaw/openclaw.json` and applies changes automatically for most settings (no manual restart needed).",
+      "historicalDecision": "write",
+      "replayPathClassification": "deterministic_attach",
+      "topPriorCandidateSummary": "Config hot reload behavior: The Gateway watches ~/.openclaw/openclaw.json and applies changes automatically (no manual restart needed for most settings).",
+      "topPriorCandidateDecisiveFieldAgreement": true,
+      "topPriorCandidateDecisiveFieldSummary": "value=match",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 14,
+        "smallerCoverage": 0.9333333333333333,
+        "largerCoverage": 0.8235294117647058
+      },
+      "adjudicatedLabel": "should_attach_support",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_duplicate_should_attach with stratification={\"sourceFamily\":\"docs/gateway/configuration.md\",\"kind\":\"fact\",\"replayPath\":\"deterministic_attach\",\"missClass\":\"deterministic_attach_miss\",\"deltaClass\":\"packaging_only_drift\",\"packagingDriftType\":\"subject_drift\"}."
+      ],
+      "resolution": "exact_fingerprint"
+    },
+    {
+      "seedId": "rerun-00e1f898-bc88-5045-ac49-360f2343668a",
+      "caseId": "rerun-00e1f898-bc88-5045-ac49-360f2343668a",
+      "source": "docs/gateway/configuration.md",
+      "kind": "fact",
+      "payloadSummary": "Environment variable sources and precedence: OpenClaw reads env vars from the parent process plus .env from the current working directory (if present) and ~/.openclaw/.env as a global fallback, and neither file overrides existing env vars.",
+      "historicalDecision": "supersede",
+      "replayPathClassification": "deterministic_attach",
+      "topPriorCandidateSummary": "OpenClaw environment variable loading: OpenClaw reads env vars from the parent process plus `.env` in the current working directory (if present) and `~/.openclaw/.env` as a global fallback; neither file overrides existing env vars.",
+      "topPriorCandidateDecisiveFieldAgreement": true,
+      "topPriorCandidateDecisiveFieldSummary": "value=match",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 19,
+        "smallerCoverage": 0.95,
+        "largerCoverage": 0.9047619047619048
+      },
+      "adjudicatedLabel": "should_attach_support",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_duplicate_should_attach with stratification={\"sourceFamily\":\"docs/gateway/configuration.md\",\"kind\":\"fact\",\"replayPath\":\"deterministic_attach\",\"missClass\":\"historical_supersede_miss\",\"deltaClass\":\"packaging_only_drift\",\"packagingDriftType\":\"subject_drift\"}."
+      ],
+      "resolution": "exact_fingerprint"
+    },
+    {
+      "seedId": "rerun-a032fe54-6900-5d28-8ca5-b44024de67f1",
+      "caseId": "rerun-a032fe54-6900-5d28-8ca5-b44024de67f1",
+      "source": "AGENTS.md",
+      "kind": "rule",
+      "payloadSummary": "Handling real personal/media/config values in commits | Use obviously fake placeholders in docs, tests, and examples. | Never commit or publish real phone numbers, videos, or live configuration values.",
+      "historicalDecision": "write",
+      "replayPathClassification": "deterministic_attach",
+      "topPriorCandidateSummary": "Avoid committing or publishing real sensitive values | Use obviously fake placeholders in docs, tests, and examples. | Never commit or publish real phone numbers, videos, or live configuration values.",
+      "topPriorCandidateDecisiveFieldAgreement": true,
+      "topPriorCandidateDecisiveFieldSummary": "actionBundle=match",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 16,
+        "smallerCoverage": 0.8,
+        "largerCoverage": 0.7619047619047619
+      },
+      "adjudicatedLabel": "should_attach_support",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_duplicate_should_attach with stratification={\"sourceFamily\":\"AGENTS.md\",\"kind\":\"rule\",\"replayPath\":\"deterministic_attach\",\"missClass\":\"deterministic_attach_miss\",\"deltaClass\":\"packaging_only_drift\",\"packagingDriftType\":\"subject_drift\"}."
+      ],
+      "resolution": "exact_fingerprint"
+    },
+    {
+      "seedId": "rerun-0f1a11dd-fb49-50d8-8b2f-0fe56681912f",
+      "caseId": "rerun-0f1a11dd-fb49-50d8-8b2f-0fe56681912f",
+      "source": "docs/help/testing.md",
+      "kind": "rule",
+      "payloadSummary": "Layer 1 vs Layer 2 live test enablement | Layer 1 live model completion (no gateway) uses `src/agents/models.profiles.live.test.ts` and is enabled only when `OPENCLAW_LIVE_MODELS` is set; otherwise it skips. | Layer 2 live gateway smoke uses `src/gateway/gateway-models.profiles.live.test.ts` and validates the full gateway+agent pipeline including tool/image probes.",
+      "historicalDecision": "write",
+      "replayPathClassification": "batched_adjudication",
+      "topPriorCandidateSummary": "Live gateway + dev agent smoke layer 2 | To run live gateway+dev agent smoke layer 2, run `pnpm test:live` and optionally narrow with `OPENCLAW_LIVE_GATEWAY_MODELS` and `OPENCLAW_LIVE_GATEWAY_PROVIDERS`.",
+      "topPriorCandidateDecisiveFieldAgreement": false,
+      "topPriorCandidateDecisiveFieldSummary": "recommendedAction=diff(layer 1 live model completion (no gateway) uses `src/agents/models.profiles.live.test.ts` and is enabled only when `openclaw_live_models` is set; otherwise it skips. -> to run live gateway+dev agent smoke layer 2, run `pnpm test:live` and optionally narrow with `openclaw_live_gateway_models` and `openclaw_live_gateway_providers`.); avoidAction=diff(layer 2 live gateway smoke uses `src/gateway/gateway-models.profiles.live.test.ts` and validates the full gateway+agent pipeline including tool/image probes. -> missing)",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 8,
+        "smallerCoverage": 0.6153846153846154,
+        "largerCoverage": 0.3076923076923077
+      },
+      "adjudicatedLabel": "legit_distinct",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_distinct_should_stay_distinct with stratification={\"sourceFamily\":\"docs/help/testing.md\",\"kind\":\"rule\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"legit_distinct\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ],
+      "resolution": "semantic_fallback"
+    },
+    {
+      "seedId": "rerun-59e58a61-441a-5723-be56-89bfbffa3a30",
+      "caseId": "rerun-59e58a61-441a-5723-be56-89bfbffa3a30",
+      "source": "docs/gateway/configuration.md",
+      "kind": "rule",
+      "payloadSummary": "Environment variable substitution in OpenClaw configs | Use ${VAR_NAME} substitution where VAR_NAME matches [A-Z_][A-Z0-9_]*; ensure the referenced env var is present and non-empty (missing/empty vars throw an error at load time). Escape for literal output with $${VAR} (e.g., $${BASE}).",
+      "historicalDecision": "write",
+      "replayPathClassification": "batched_adjudication",
+      "topPriorCandidateSummary": "env var substitution in config values | Use ${VAR_NAME} in config string values for substitution where VAR_NAME matches [A-Z_][A-Z0-9_]*, and ensure referenced vars are present and non-empty to avoid load-time errors. | Do not use undefined or empty env vars in ${VAR_NAME} substitutions (they throw an error at load time). | Support literal output escaping via $${VAR} when a config should contain the pattern without substitution.",
+      "topPriorCandidateDecisiveFieldAgreement": false,
+      "topPriorCandidateDecisiveFieldSummary": "recommendedAction=diff(use ${var_name} substitution where var_name matches [a-z_][a-z0-9_]*; ensure the referenced env var is present and non-empty (missing/empty vars throw an error at load time). escape for literal output with $${var} (e.g., $${base}). -> use ${var_name} in config string values for substitution where var_name matches [a-z_][a-z0-9_]*, and ensure referenced vars are present and non-empty to avoid load-time errors.); avoidAction=diff(missing -> do not use undefined or empty env vars in ${var_name} substitutions (they throw an error at load time).); neededCapability=diff(missing -> support literal output escaping via $${var} when a config should contain the pattern without substitution.)",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 15,
+        "smallerCoverage": 0.6521739130434783,
+        "largerCoverage": 0.5
+      },
+      "adjudicatedLabel": "legit_distinct",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_distinct_should_stay_distinct with stratification={\"sourceFamily\":\"docs/gateway/configuration.md\",\"kind\":\"rule\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"legit_distinct\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ],
+      "resolution": "exact_fingerprint"
+    },
+    {
+      "seedId": "rerun-8f7d28d3-dc6a-5294-8ca4-0c28e6cec824",
+      "caseId": "rerun-8f7d28d3-dc6a-5294-8ca4-0c28e6cec824",
+      "source": "docs/help/testing.md",
+      "kind": "fact",
+      "payloadSummary": "Vitest suites: OpenClaw has three Vitest suites: unit/integration (default), e2e (gateway smoke), and live (real providers + real models).",
+      "historicalDecision": "write",
+      "replayPathClassification": "batched_adjudication",
+      "topPriorCandidateSummary": "OpenClaw testing suites: OpenClaw has three Vitest suites (unit/integration, e2e, live) and a small set of Docker runners.",
+      "topPriorCandidateDecisiveFieldAgreement": false,
+      "topPriorCandidateDecisiveFieldSummary": "value=diff(openclaw has three vitest suites: unit/integration (default), e2e (gateway smoke), and live (real providers + real models). -> openclaw has three vitest suites (unit/integration, e2e, live) and a small set of docker runners.)",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 7,
+        "smallerCoverage": 0.6363636363636364,
+        "largerCoverage": 0.5384615384615384
+      },
+      "adjudicatedLabel": "legit_distinct",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_distinct_should_stay_distinct with stratification={\"sourceFamily\":\"docs/help/testing.md\",\"kind\":\"fact\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"legit_distinct\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ],
+      "resolution": "semantic_fallback"
+    },
+    {
+      "seedId": "rerun-96f254b5-221c-5a4c-a674-6621216b3d19",
+      "caseId": "rerun-96f254b5-221c-5a4c-a674-6621216b3d19",
+      "source": "AGENTS.md",
+      "kind": "rule",
+      "payloadSummary": "GHSA advisory patch/publish workflow | Read SECURITY.md first and follow the documented API workflow; patch using gh api PATCH and then verify that state is published (published_at set) by re-fetching the advisory. | Do not publish via a `/publish` endpoint; include published state via PATCH input as documented. | Ability to use the GHSA API workflow (including handling the PATCH severity/cvss_vector_string constraint via separate calls) and to verify the published state after PATCH.",
+      "historicalDecision": "write",
+      "replayPathClassification": "batched_adjudication",
+      "topPriorCandidateSummary": "GHSA advisory handling workflow | Before reviewing security advisories, read `SECURITY.md`, fetch via `gh api /repos/openclaw/openclaw/security-advisories/<GHSA>`, then PATCH the advisory including `\"state\":\"published\"` (no `/publish` endpoint). | Do not attempt to set `severity` and `cvss_vector_string` in the same GHSA PATCH call; do separate calls. | Use the documented GHSA API workflow and publish via PATCH including `\"state\":\"published\"`.",
+      "topPriorCandidateDecisiveFieldAgreement": false,
+      "topPriorCandidateDecisiveFieldSummary": "recommendedAction=diff(read security.md first and follow the documented api workflow; patch using gh api patch and then verify that state is published (published_at set) by re-fetching the advisory. -> before reviewing security advisories, read `security.md`, fetch via `gh api /repos/openclaw/openclaw/security-advisories/<ghsa>`, then patch the advisory including `\"state\":\"published\"` (no `/publish` endpoint).); avoidAction=diff(do not publish via a `/publish` endpoint; include published state via patch input as documented. -> do not attempt to set `severity` and `cvss_vector_string` in the same ghsa patch call; do separate calls.); neededCapability=diff(ability to use the ghsa api workflow (including handling the patch severity/cvss_vector_string constraint via separate calls) and to verify the published state after patch. -> use the documented ghsa api workflow and publish via patch including `\"state\":\"published\"`.)",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 20,
+        "smallerCoverage": 0.6896551724137931,
+        "largerCoverage": 0.6451612903225806
+      },
+      "adjudicatedLabel": "legit_distinct",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_distinct_should_stay_distinct with stratification={\"sourceFamily\":\"AGENTS.md\",\"kind\":\"rule\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"legit_distinct\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ],
+      "resolution": "exact_fingerprint"
+    },
+    {
+      "seedId": "rerun-e8995751-48cd-54e6-a550-16df7b37adfa",
+      "caseId": "rerun-e8995751-48cd-54e6-a550-16df7b37adfa",
+      "source": "docs/gateway/configuration.md",
+      "kind": "fact",
+      "payloadSummary": "Fields requiring restart during hot reload: During hot reload, changes to `gateway.*` (port, bind, auth, tailscale, TLS, HTTP) require a restart, and changes to `discovery`, `canvasHost`, and `plugins` require a restart; most other config fields do not.",
+      "historicalDecision": "write",
+      "replayPathClassification": "batched_adjudication",
+      "topPriorCandidateSummary": "Hybrid hot reload mode behavior: In `hybrid` hot reload mode (default), hot-applies safe changes instantly and automatically restarts for critical ones; restart-required changes include `gateway.*` (port, bind, auth, tailscale, TLS, HTTP) and `discovery`, `canvasHost`, `plugins`.",
+      "topPriorCandidateDecisiveFieldAgreement": false,
+      "topPriorCandidateDecisiveFieldSummary": "value=diff(during hot reload, changes to `gateway.*` (port, bind, auth, tailscale, tls, http) require a restart, and changes to `discovery`, `canvashost`, and `plugins` require a restart; most other config fields do not. -> in `hybrid` hot reload mode (default), hot-applies safe changes instantly and automatically restarts for critical ones; restart-required changes include `gateway.*` (port, bind, auth, tailscale, tls, http) and `discovery`, `canvashost`, `plugins`.)",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 12,
+        "smallerCoverage": 0.631578947368421,
+        "largerCoverage": 0.48
+      },
+      "adjudicatedLabel": "legit_distinct",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=clear_distinct_should_stay_distinct with stratification={\"sourceFamily\":\"docs/gateway/configuration.md\",\"kind\":\"fact\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"legit_distinct\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ],
+      "resolution": "exact_fingerprint"
+    },
+    {
+      "seedId": "rerun-098ba11a-a3ff-5396-b0a8-f85288f251ef",
+      "caseId": "rerun-098ba11a-a3ff-5396-b0a8-f85288f251ef",
+      "source": "AGENTS.md",
+      "kind": "rule",
+      "payloadSummary": "GitHub PR/issue comment command usage | When using `gh issue/pr comment`, prefer single-quoted heredoc (`-F - <<'EOF'`). | Never use `gh issue/pr comment -b \"...\"` when body contains backticks or shell chars.",
+      "historicalDecision": "write",
+      "replayPathClassification": "batched_adjudication",
+      "topPriorCandidateSummary": "GitHub comment footgun: never use `gh issue/pr comment -b \"...\"` when body contains backticks or shell chars; always use single-quoted heredoc (`-F - <<'EOF'`). | When using `gh issue/pr comment`, prefer single-quoted heredoc (`-F - <<'EOF'`) to avoid escaping/command-substitution corruption, especially if the body contains backticks or shell characters. | Ability to invoke `gh` with single-quoted heredocs for safe comment body formatting.",
+      "topPriorCandidateDecisiveFieldAgreement": false,
+      "topPriorCandidateDecisiveFieldSummary": "recommendedAction=diff(when using `gh issue/pr comment`, prefer single-quoted heredoc (`-f - <<'eof'`). -> when using `gh issue/pr comment`, prefer single-quoted heredoc (`-f - <<'eof'`) to avoid escaping/command-substitution corruption, especially if the body contains backticks or shell characters.); avoidAction=diff(never use `gh issue/pr comment -b \"...\"` when body contains backticks or shell chars. -> missing); neededCapability=diff(missing -> ability to invoke `gh` with single-quoted heredocs for safe comment body formatting.)",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 16,
+        "smallerCoverage": 0.9411764705882353,
+        "largerCoverage": 0.5333333333333333
+      },
+      "adjudicatedLabel": "ambiguous_but_contained",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=true_ambiguity with stratification={\"sourceFamily\":\"AGENTS.md\",\"kind\":\"rule\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"batch_attach_miss\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ],
+      "resolution": "semantic_fallback"
+    },
+    {
+      "seedId": "rerun-126478b9-53cc-5346-b7da-478d100163e8",
+      "caseId": "rerun-126478b9-53cc-5346-b7da-478d100163e8",
+      "source": "docs/help/testing.md",
+      "kind": "fact",
+      "payloadSummary": "Credential lookup locations: Provider credential lookup uses the profile store at ~/.openclaw/credentials/ (preferred) and config at ~/.openclaw/openclaw.json or OPENCLAW_CONFIG_PATH.",
+      "historicalDecision": "write",
+      "replayPathClassification": "batched_adjudication",
+      "topPriorCandidateSummary": "Live test credential profile store and config path: Profile store: ~/.openclaw/credentials/. Config: ~/.openclaw/openclaw.json (or OPENCLAW_CONFIG_PATH).",
+      "topPriorCandidateDecisiveFieldAgreement": false,
+      "topPriorCandidateDecisiveFieldSummary": "value=diff(provider credential lookup uses the profile store at ~/.openclaw/credentials/ (preferred) and config at ~/.openclaw/openclaw.json or openclaw_config_path. -> profile store: ~/.openclaw/credentials/. config: ~/.openclaw/openclaw.json (or openclaw_config_path).)",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 8,
+        "smallerCoverage": 0.8,
+        "largerCoverage": 0.6153846153846154
+      },
+      "adjudicatedLabel": "ambiguous_but_contained",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=true_ambiguity with stratification={\"sourceFamily\":\"docs/help/testing.md\",\"kind\":\"fact\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"batch_attach_miss\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ],
+      "resolution": "exact_fingerprint"
+    },
+    {
+      "seedId": "rerun-23c7d058-fd08-54f4-8926-ed7df81b8e59",
+      "caseId": "rerun-23c7d058-fd08-54f4-8926-ed7df81b8e59",
+      "source": "docs/gateway/configuration.md",
+      "kind": "rule",
+      "payloadSummary": "Env var substitution in config values | Reference env vars in config string values with `${VAR_NAME}` where VAR_NAME matches `[A-Z_][A-Z0-9_]*`; escape a literal dollar with `$${VAR}`.",
+      "historicalDecision": "write",
+      "replayPathClassification": "batched_adjudication",
+      "topPriorCandidateSummary": "Env var substitution in config string values | In config string values, substitute `${VAR_NAME}` where `VAR_NAME` matches `[A-Z_][A-Z0-9_]*`; treat missing/empty vars as an error at load time; and use `$${VAR}` to escape for literal output (including inside `$include` files).",
+      "topPriorCandidateDecisiveFieldAgreement": false,
+      "topPriorCandidateDecisiveFieldSummary": "recommendedAction=diff(reference env vars in config string values with `${var_name}` where var_name matches `[a-z_][a-z0-9_]*`; escape a literal dollar with `$${var}`. -> in config string values, substitute `${var_name}` where `var_name` matches `[a-z_][a-z0-9_]*`; treat missing/empty vars as an error at load time; and use `$${var}` to escape for literal output (including inside `$include` files).)",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 10,
+        "smallerCoverage": 0.7692307692307693,
+        "largerCoverage": 0.45454545454545453
+      },
+      "adjudicatedLabel": "ambiguous_but_contained",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=true_ambiguity with stratification={\"sourceFamily\":\"docs/gateway/configuration.md\",\"kind\":\"rule\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"batch_attach_miss\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ],
+      "resolution": "exact_fingerprint"
+    },
+    {
+      "seedId": "rerun-32723415-ae40-5d46-8443-d3d55ac80593",
+      "caseId": "rerun-32723415-ae40-5d46-8443-d3d55ac80593",
+      "source": "docs/help/testing.md",
+      "kind": "rule",
+      "payloadSummary": "Include at least one tool-calling-capable baseline model per provider family in OPENCLAW_LIVE_GATEWAY_MODELS. | Include at least one tool-calling-capable baseline model per provider family in OPENCLAW_LIVE_GATEWAY_MODELS.",
+      "historicalDecision": "write",
+      "replayPathClassification": "batched_adjudication",
+      "topPriorCandidateSummary": "Include tools-capable models in OPENCLAW_LIVE_GATEWAY_MODELS for live model matrix smoke test | Select at least one “tools” capable model per provider family in OPENCLAW_LIVE_GATEWAY_MODELS (for example: OpenAI openai/gpt-5.2 or openai/gpt-5-mini; Anthropic anthropic/claude-opus-4-6 or anthropic/claude-sonnet-4-5; Google google/gemini-3-flash-preview or google/gemini-3-pro-preview; Z.AI (GLM) zai/glm-4.7; MiniMax minimax/minimax-m2.5).",
+      "topPriorCandidateDecisiveFieldAgreement": false,
+      "topPriorCandidateDecisiveFieldSummary": "recommendedAction=diff(include at least one tool-calling-capable baseline model per provider family in openclaw_live_gateway_models. -> select at least one “tools” capable model per provider family in openclaw_live_gateway_models (for example: openai openai/gpt-5.2 or openai/gpt-5-mini; anthropic anthropic/claude-opus-4-6 or anthropic/claude-sonnet-4-5; google google/gemini-3-flash-preview or google/gemini-3-pro-preview; z.ai (glm) zai/glm-4.7; minimax minimax/minimax-m2.5).)",
+      "topPriorCandidateOverlap": {
+        "overlapCount": 10,
+        "smallerCoverage": 0.7692307692307693,
+        "largerCoverage": 0.37037037037037035
+      },
+      "adjudicatedLabel": "ambiguous_but_contained",
+      "rationale": [
+        "Seed aligned to the current qualitative duplicate review basket.",
+        "Review label=true_ambiguity with stratification={\"sourceFamily\":\"docs/help/testing.md\",\"kind\":\"rule\",\"replayPath\":\"batched_adjudication\",\"missClass\":\"batch_attach_miss\",\"deltaClass\":\"additive_operational_delta\",\"packagingDriftType\":\"extra_constraint\"}."
+      ],
+      "resolution": "semantic_fallback"
+    }
+  ],
+  "clusterCorroborationCases": [],
+  "summary": {
+    "rerunSampleSize": 15,
+    "clusterCorroborationSize": 0,
+    "rerunHistoricalWriteCaseCount": 14,
+    "rerunHistoricalSupersedeCaseCount": 1,
+    "rerunLabelCounts": {
+      "should_attach_support": 6,
+      "legit_distinct": 5,
+      "ambiguous_but_contained": 4
+    },
+    "clusterLabelCounts": {},
+    "reviewBasketComposition": {
+      "bySourceFamily": {
+        "AGENTS.md": 5,
+        "docs/help/testing.md": 6,
+        "docs/gateway/configuration.md": 5
+      },
+      "byKind": {
+        "rule": 9,
+        "fact": 7
+      },
+      "byReplayPath": {
+        "deterministic_attach": 5,
+        "batched_adjudication": 10,
+        "distinct_write": 1
+      },
+      "byMissClass": {
+        "deterministic_attach_miss": 4,
+        "batch_attach_miss": 5,
+        "historical_supersede_miss": 1,
+        "legit_distinct": 6
+      },
+      "byDeltaClass": {
+        "packaging_only_drift": 6,
+        "additive_operational_delta": 10
+      },
+      "byPackagingDriftType": {
+        "field_packing_drift": 1,
+        "subject_drift": 5,
+        "extra_constraint": 10
+      }
+    },
+    "falseDistinctRateOnReruns": 0.3571,
+    "trueDistinctRateOnReruns": 0.3571,
+    "attachSupportMissRateOnReruns": 0.3571,
+    "falseSupersedeRateOnReruns": 1,
+    "falseDistinctRateIntervalOnReruns": {
+      "lower": 0.1634,
+      "upper": 0.6124,
+      "sampleSize": 14
+    },
+    "trueDistinctRateIntervalOnReruns": {
+      "lower": 0.1634,
+      "upper": 0.6124,
+      "sampleSize": 14
+    },
+    "attachSupportMissRateIntervalOnReruns": {
+      "lower": 0.1634,
+      "upper": 0.6124,
+      "sampleSize": 14
+    }
+  },
+  "recommendedDeterministicAttachPatterns": [
+    {
+      "id": "fact_exact_value_subject_drift",
+      "description": "Fact reruns with the same value, matching class/kind/scope, and high normalized-search overlap should attach support even when the subject phrasing drifts.",
+      "supportingCaseIds": [
+        "rerun-6c4e531b-5a0f-55cf-ba89-0c5e6726d3f4",
+        "rerun-9fe78fe9-3b3f-55eb-9e90-5ada852549ed",
+        "rerun-9c0f2b0a-a1b9-5b0f-a064-1c6b9c30cf7f",
+        "rerun-00e1f898-bc88-5045-ac49-360f2343668a"
+      ]
+    },
+    {
+      "id": "rule_same_actions_subject_drift",
+      "description": "Rule reruns with the same recommended/avoid/capability fields and one clearly dominant candidate should attach support despite subject drift.",
+      "supportingCaseIds": [
+        "rerun-ecb2ca60-a6a5-56c9-aa25-2ee522c7bf73",
+        "rerun-a032fe54-6900-5d28-8ca5-b44024de67f1"
+      ]
+    },
+    {
+      "id": "procedure_same_steps_title_drift",
+      "description": "Procedure reruns with the same ordered steps should attach support when only the title wording drifts.",
+      "supportingCaseIds": []
+    }
+  ]
+}

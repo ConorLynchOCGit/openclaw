@@ -903,6 +903,12 @@ export function resolveSessionDisplayName(
   const displayName = normalizeOptionalString(row?.displayName) ?? "";
   const { prefix, fallbackName } = parseSessionKey(key);
 
+  // Canonical main-session keys should always render as "Main Session",
+  // even if the row metadata carries a stale or misleading displayName.
+  if (key === "main" || key === "agent:main:main") {
+    return fallbackName;
+  }
+
   const applyTypedPrefix = (name: string): string => {
     if (!prefix) {
       return name;

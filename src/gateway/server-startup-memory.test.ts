@@ -4,14 +4,20 @@ import type { OpenClawConfig } from "../config/config.js";
 const { getMemorySearchManagerMock } = vi.hoisted(() => ({
   getMemorySearchManagerMock: vi.fn(),
 }));
+const { resolveModelMemoryLiveRuntimeStatusMock, warmModelMemoryLiveRuntimeMock } = vi.hoisted(
+  () => ({
+    resolveModelMemoryLiveRuntimeStatusMock: vi.fn(),
+    warmModelMemoryLiveRuntimeMock: vi.fn(),
+  }),
+);
 
-const { resolveActiveMemoryBackendConfigMock } = vi.hoisted(() => ({
-  resolveActiveMemoryBackendConfigMock: vi.fn(),
+vi.mock("../memory/index.js", () => ({
+  getMemorySearchManager: getMemorySearchManagerMock,
 }));
 
-vi.mock("../plugins/memory-runtime.js", () => ({
-  getActiveMemorySearchManager: getMemorySearchManagerMock,
-  resolveActiveMemoryBackendConfig: resolveActiveMemoryBackendConfigMock,
+vi.mock("../agents/model-memory.live-runtime.js", () => ({
+  resolveModelMemoryLiveRuntimeStatus: resolveModelMemoryLiveRuntimeStatusMock,
+  warmModelMemoryLiveRuntime: warmModelMemoryLiveRuntimeMock,
 }));
 
 import { startGatewayMemoryBackend } from "./server-startup-memory.js";
@@ -30,11 +36,19 @@ function createGatewayLogMock() {
 describe("startGatewayMemoryBackend", () => {
   beforeEach(() => {
     getMemorySearchManagerMock.mockClear();
-    resolveActiveMemoryBackendConfigMock.mockReset();
-    resolveActiveMemoryBackendConfigMock.mockImplementation(({ cfg }: { cfg: OpenClawConfig }) => ({
-      backend: cfg.memory?.backend === "qmd" ? "qmd" : "builtin",
-      qmd: cfg.memory?.backend === "qmd" ? {} : undefined,
-    }));
+    resolveModelMemoryLiveRuntimeStatusMock.mockReset();
+    resolveModelMemoryLiveRuntimeStatusMock.mockReturnValue({
+      enabled: false,
+      source: "disabled",
+      reason: "model-memory live runtime disabled",
+      includeRetrievalPacks: false,
+      contextInjectionEnabled: false,
+      captureWritesEnabled: false,
+      legacyMemorySlotDisabled: false,
+      legacyMemorySearchDisabled: false,
+      databaseConfigured: false,
+    });
+    warmModelMemoryLiveRuntimeMock.mockReset();
   });
 
   it("skips initialization when memory backend is not qmd", async () => {
@@ -49,6 +63,110 @@ describe("startGatewayMemoryBackend", () => {
     expect(getMemorySearchManagerMock).not.toHaveBeenCalled();
     expect(log.info).not.toHaveBeenCalled();
     expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("arms model-memory live runtime and skips legacy qmd startup when enabled", async () => {
+    const cfg = {
+      plugins: {
+        slots: {
+          memory: "none",
+        },
+      },
+      agents: {
+        defaults: {
+          memorySearch: {
+            enabled: false,
+          },
+        },
+      },
+    } as OpenClawConfig;
+    const log = createGatewayLogMock();
+    resolveModelMemoryLiveRuntimeStatusMock.mockReturnValue({
+      enabled: true,
+      source: "config:plugins.entries.model-memory.config.live.enabled",
+      includeRetrievalPacks: false,
+      contextInjectionEnabled: true,
+      captureWritesEnabled: true,
+      legacyMemorySlotDisabled: true,
+      legacyMemorySearchDisabled: true,
+      databaseConfigured: true,
+      databaseName: "model_memory_live",
+    });
+    warmModelMemoryLiveRuntimeMock.mockResolvedValue({
+      status: {
+        enabled: true,
+        source: "config:plugins.entries.model-memory.config.live.enabled",
+        includeRetrievalPacks: false,
+        contextInjectionEnabled: true,
+        captureWritesEnabled: true,
+        legacyMemorySlotDisabled: true,
+        legacyMemorySearchDisabled: true,
+        databaseConfigured: true,
+        databaseName: "model_memory_live",
+      },
+      memoryObjectCount: 12,
+      projectionTargetCount: 4,
+    });
+
+    await startGatewayMemoryBackend({ cfg, log });
+
+    expect(warmModelMemoryLiveRuntimeMock).toHaveBeenCalledWith({ config: cfg });
+    expect(getMemorySearchManagerMock).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith(
+      "model-memory live runtime armed (12 objects, 4 projection targets, db=model_memory_live)",
+    );
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("warns when model-memory live runtime is enabled but legacy memory config remains on", async () => {
+    const cfg = {
+      plugins: {
+        slots: {
+          memory: "memory-core",
+        },
+      },
+      agents: {
+        defaults: {
+          memorySearch: {
+            enabled: true,
+          },
+        },
+      },
+    } as OpenClawConfig;
+    const log = createGatewayLogMock();
+    resolveModelMemoryLiveRuntimeStatusMock.mockReturnValue({
+      enabled: true,
+      source: "config:plugins.entries.model-memory.config.live.enabled",
+      includeRetrievalPacks: false,
+      contextInjectionEnabled: true,
+      captureWritesEnabled: true,
+      legacyMemorySlotDisabled: false,
+      legacyMemorySearchDisabled: false,
+      databaseConfigured: true,
+      databaseName: "model_memory_live",
+    });
+    warmModelMemoryLiveRuntimeMock.mockResolvedValue({
+      status: {
+        enabled: true,
+        source: "config:plugins.entries.model-memory.config.live.enabled",
+        includeRetrievalPacks: false,
+        contextInjectionEnabled: true,
+        captureWritesEnabled: true,
+        legacyMemorySlotDisabled: false,
+        legacyMemorySearchDisabled: false,
+        databaseConfigured: true,
+        databaseName: "model_memory_live",
+      },
+      memoryObjectCount: 4,
+      projectionTargetCount: 4,
+    });
+
+    await startGatewayMemoryBackend({ cfg, log });
+
+    expect(log.warn).toHaveBeenCalledWith(
+      'model-memory live runtime is enabled while legacy memory surfaces remain configured; keep plugins.slots.memory="none" and agents.defaults.memorySearch.enabled=false for cutover mode',
+    );
+    expect(getMemorySearchManagerMock).not.toHaveBeenCalled();
   });
 
   it("initializes qmd backend for each configured agent", async () => {

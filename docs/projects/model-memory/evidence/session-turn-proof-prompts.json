@@ -1,0 +1,74 @@
+{
+  "prompts": [
+    {
+      "id": "prompt-001-ingestion-quality-phase",
+      "order": 1,
+      "title": "Ingestion Quality Phase",
+      "text": "We now need to thoroughly test document ingestion with the new features, including human adjudicated test output. Then we should push through testing all of the other features in the memory / context engine / cache stack.",
+      "selectionReason": "Direct request to move from architecture to ingestion quality and downstream proof."
+    },
+    {
+      "id": "prompt-002-agents-stage-visibility",
+      "order": 2,
+      "title": "Stage Visibility Request",
+      "text": "We need to determine why the writes aren't happening. We need to see granular emission at each stage - each window and each stage (pass 1, pass 1 repair, pass 2, pass 2 repair). And we need to know that the prompt was submitted successfully, and that the model actually returned a result. Lets focus all of our testing JUST on agents.md for now. Lets start with GPT 5.4 nano on both passes because we know its the fastest model.",
+      "selectionReason": "Explicit instrumentation request with concrete model and scope constraints."
+    },
+    {
+      "id": "prompt-003-bounded-collision-question",
+      "order": 3,
+      "title": "Collision Adjudication Efficiency",
+      "text": "\"every write candidate runs bounded collision adjudication\" if we are doing search and match and then duplicate adjudication deterministically later, why do we need to have each object with its own model prompt doing bounded collision adjudication? That is not efficient.",
+      "selectionReason": "Direct architectural question about deterministic gating versus model adjudication."
+    },
+    {
+      "id": "prompt-004-batched-residual-spec",
+      "order": 4,
+      "title": "Batched Residual Adjudication Spec",
+      "text": "Write a spec for this: \" If you want, I can next turn this into a concrete deterministic gate for collision recall so the write path only calls the model on the small ambiguous remainder instead of all 18.\" Update the docs with it. We should explore adjudicating ALL of the remaining objects in a single pass. That reduces to one additional model call on a tiny set of objects. If resolution on it isn't perfect, I think we have to accept memory loss vs trying to over optimize for perfect capture or risk allowing extra junk into the db. Then write the prompt for building that adjudication change and for the next Agents.md test.",
+      "selectionReason": "Rich operator instruction about spec, docs, and batched adjudication tradeoffs."
+    },
+    {
+      "id": "prompt-005-priority-top10",
+      "order": 5,
+      "title": "Priority Top 10 Ingestion",
+      "text": "Pick a basket of 10 documents from the top of our priority ingestion list. Run ingestion on those.",
+      "selectionReason": "Simple imperative ingestion request from the same project lane."
+    },
+    {
+      "id": "prompt-006-nano-default",
+      "order": 6,
+      "title": "Nano Default Posture",
+      "text": "Just to be clear - the default for ALL runs and all versions of the system should be nano/nano not mini. Adjust any documentation or actual code that has mini as teh default for any passes.",
+      "selectionReason": "Clear default-runtime policy instruction with documentation and code impact."
+    },
+    {
+      "id": "prompt-007-updated-proof-standard",
+      "order": 7,
+      "title": "Revised Proof Standard",
+      "text": "Rerun stable will never be true because of model constraints. If we accept that limitation on the model, what is a reasonable updated proof standard?",
+      "selectionReason": "High-level proof-standard question that should surface durable policy claims if the turn lane works."
+    },
+    {
+      "id": "prompt-008-remaining-121",
+      "order": 8,
+      "title": "Remaining 121 Population",
+      "text": "Run the document ingestor across the remaining 121 documents we haven't read yet.",
+      "selectionReason": "Direct operator request for large-batch ingestion execution."
+    },
+    {
+      "id": "prompt-009-tool-surface-question",
+      "order": 9,
+      "title": "Callable Tool Surface",
+      "text": "Is the document ingestor now a callable tool in OpenClaw? I know the framework was built.",
+      "selectionReason": "Operator-facing product question about the new ingestion surface."
+    },
+    {
+      "id": "prompt-010-tool-and-turn-proof-request",
+      "order": 10,
+      "title": "Tool Registration And Turn Proof",
+      "text": "Do this: \"  If you want this to be callable from OpenClaw itself, the next step is to add one of these surfaces: - an agent tool registration in the clean-room package\". Then we need to do some test runs of the prompt/turn ingestion lane. I want you to take 10 prompts I have actually given you in this session and test them with the system. Write the strict prompt for the above.",
+      "selectionReason": "Current operator request that combines tool registration with turn-ingestion proof."
+    }
+  ]
+}

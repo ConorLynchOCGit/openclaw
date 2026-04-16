@@ -1,0 +1,377 @@
+{
+  "generatedAt": "2026-04-14T20:43:53.590Z",
+  "sourcePath": "docs/gateway/protocol.md",
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 180000,
+  "maxWordsPerWindow": 1500,
+  "summary": {
+    "previousCollisionModelCalls": 18,
+    "collisionModelCalls": 0,
+    "collisionModelCallReduction": 18,
+    "residualBatchRequestCount": 0,
+    "residualBatchCandidateCount": 0,
+    "zeroCandidateSkipCount": 6,
+    "admittedToBatchCount": 0,
+    "candidatePrunedCount": 3,
+    "collisionResultCounts": {},
+    "resolvedModelIds": ["openai/gpt-5.4-nano-20260317"],
+    "finalSummary": {
+      "type": "final_summary",
+      "totalWindows": 1,
+      "capturedObjects": 6,
+      "writeResults": 6,
+      "persistedObjects": 6,
+      "persistedSupportItems": 6,
+      "windowOutcomeCounts": {
+        "capture": 1
+      },
+      "writeDecisionCounts": {
+        "write": 6
+      },
+      "elapsedMs": 19427
+    }
+  },
+  "traces": [
+    {
+      "type": "source_windows_ready",
+      "sourcePath": "docs/gateway/protocol.md",
+      "totalWindows": 1,
+      "windows": [
+        {
+          "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+          "windowIndex": 0,
+          "headingPath": ["Gateway protocol (WebSocket)"],
+          "lineStart": 1,
+          "lineEnd": 256,
+          "tokenEstimate": 990
+        }
+      ],
+      "elapsedMs": 810
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["Gateway protocol (WebSocket)"],
+      "lineStart": 1,
+      "lineEnd": 256,
+      "promptChars": 13550,
+      "elapsedMs": 813
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 1666
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 2151
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1749,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"The OpenClaw Gateway WebSocket protocol is the single control plane plus node transport for all clients, which declare their role and scope at handshake time.\",\"supportingSpans...",
+      "elapsedMs": 6176
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_1_candidate",
+      "contractVersion": "v2-candidate",
+      "action": "capture",
+      "objectCount": 6,
+      "elapsedMs": 6177
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["Gateway protocol (WebSocket)"],
+      "lineStart": 1,
+      "lineEnd": 256,
+      "promptChars": 15667,
+      "elapsedMs": 6180
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 6181
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 6461
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 1774,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"candidateType\":\"fact\",\"claim\":\"The OpenClaw Gateway WebSocket protocol is the single control plane plus node transport for all clients, which declare their role and scope at handshake time.\",\"supportingSpans...",
+      "elapsedMs": 10322
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_1_repair",
+      "contractVersion": "v2-candidate-repair",
+      "action": "capture",
+      "objectCount": 6,
+      "elapsedMs": 10322
+    },
+    {
+      "type": "stage_begin",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "headingPath": ["Gateway protocol (WebSocket)"],
+      "lineStart": 1,
+      "lineEnd": 256,
+      "promptChars": 8758,
+      "elapsedMs": 10324
+    },
+    {
+      "type": "http_request",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "url": "https://openrouter.ai/api/v1/chat/completions",
+      "method": "POST",
+      "submitted": true,
+      "elapsedMs": 10325
+    },
+    {
+      "type": "http_response",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "status": 200,
+      "ok": true,
+      "elapsedMs": 11057
+    },
+    {
+      "type": "executor_success",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+      "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+      "outputChars": 3171,
+      "outputPreview": "{\"action\":\"capture\",\"objects\":[{\"canonicalClass\":\"project\",\"kind\":\"fact\",\"payload\":{\"subject\":\"OpenClaw Gateway WebSocket protocol\",\"value\":\"The OpenClaw Gateway WebSocket protocol is the single control plane plus node transport for all cli...",
+      "elapsedMs": 16704
+    },
+    {
+      "type": "interpreter_result",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "windowIndex": 0,
+      "stage": "pass_2_canonicalization",
+      "contractVersion": "v2-canonicalization",
+      "action": "capture",
+      "objectCount": 6,
+      "elapsedMs": 16704
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "candidateId": "candidate-0",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 17245
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "candidateId": "candidate-1",
+      "canonicalClass": "user",
+      "kind": "preference",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 17543
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "candidateId": "candidate-2",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 0,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 0,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 17835
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "candidateId": "candidate-3",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 18126
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "candidateId": "candidate-4",
+      "canonicalClass": "project",
+      "kind": "rule",
+      "rawCandidateCount": 2,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 2,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 18422
+    },
+    {
+      "type": "collision_gate",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "candidateId": "candidate-5",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "rawCandidateCount": 1,
+      "retainedCandidateCount": 0,
+      "prunedCandidateCount": 1,
+      "disposition": "zero_candidate_skip",
+      "elapsedMs": 18715
+    },
+    {
+      "type": "window_result",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "action": "capture",
+      "objectCount": 6,
+      "rejectReasons": [],
+      "elapsedMs": 19065
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "decision": "write",
+      "memoryObjectId": "685deac5-763e-5ea9-a11c-ae07577deb86",
+      "supportItemId": "aac8a4df-fed2-5ed5-8b4f-2e54742bf9c3",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 19065
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "decision": "write",
+      "memoryObjectId": "543b385c-116a-5b3d-a91d-258f538ebf0b",
+      "supportItemId": "da432964-b7f3-53a8-9010-a7ae4d8c4da2",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "elapsedMs": 19065
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "decision": "write",
+      "memoryObjectId": "538b6566-a6d9-5c41-ac3a-a872c3d37620",
+      "supportItemId": "e07e2ed4-ed85-58af-849c-8ee7cd029784",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "elapsedMs": 19065
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "decision": "write",
+      "memoryObjectId": "8674f5b3-6782-55fc-8fd2-f1af1c36a791",
+      "supportItemId": "d9880a87-8d50-5ca6-9407-27394c5208e1",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "elapsedMs": 19065
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "decision": "write",
+      "memoryObjectId": "d5d35e6e-b981-5443-9f34-635dc453c394",
+      "supportItemId": "e738ca68-15b7-5af6-87f3-4ad878db055a",
+      "decisionCodes": ["write_structural_accept", "collision_distinct", "review_mode_overridden"],
+      "elapsedMs": 19065
+    },
+    {
+      "type": "write_result",
+      "sourceWindowId": "ca4a695f-9d9f-5dd5-8692-78159463177e",
+      "decision": "write",
+      "memoryObjectId": "94e14d85-c95b-5aa0-a914-6f9df1d5fe3c",
+      "supportItemId": "04a3dc9b-c111-5bc4-a2c1-3949ba27a221",
+      "decisionCodes": ["write_structural_accept", "collision_distinct"],
+      "elapsedMs": 19065
+    },
+    {
+      "type": "final_summary",
+      "totalWindows": 1,
+      "capturedObjects": 6,
+      "writeResults": 6,
+      "persistedObjects": 6,
+      "persistedSupportItems": 6,
+      "windowOutcomeCounts": {
+        "capture": 1
+      },
+      "writeDecisionCounts": {
+        "write": 6
+      },
+      "elapsedMs": 19427
+    }
+  ]
+}

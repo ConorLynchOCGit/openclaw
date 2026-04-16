@@ -168,12 +168,9 @@ function normalizeSessionKeyForDefaults(
     return mainSessionKey;
   }
   const mainKey = defaults.mainKey?.trim() || "main";
-  const defaultAgentId = defaults.defaultAgentId?.trim();
-  const isAlias =
-    raw === "main" ||
-    raw === mainKey ||
-    (defaultAgentId &&
-      (raw === `agent:${defaultAgentId}:main` || raw === `agent:${defaultAgentId}:${mainKey}`));
+  // Only normalize generic "main" aliases. If the URL requests an exact
+  // agent-scoped session key (for example agent:main:main), respect it.
+  const isAlias = raw === "main" || raw === mainKey;
   return isAlias ? mainSessionKey : raw;
 }
 

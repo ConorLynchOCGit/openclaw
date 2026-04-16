@@ -1,0 +1,110 @@
+{
+  "generatedAt": "2026-04-15T05:04:32.317Z",
+  "probeId": "probe-live-tests",
+  "queryText": "How do I run live tests in OpenClaw?",
+  "currentCorpus": true,
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestTimeoutMs": 180000,
+  "requestSeed": 7,
+  "sessionId": "context-trace-probe-live-tests-manual-1776229422183",
+  "retrieval": {
+    "action": "retrieve",
+    "selectedCount": 1,
+    "topResults": [
+      {
+        "objectId": "7d098de1-c437-5857-8e7b-e5b03f742d0a",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "rankBand": "primary",
+        "reasonCodes": ["class_match", "subject_match", "rerank_selected"]
+      }
+    ]
+  },
+  "context": {
+    "orderedSegmentCount": 6,
+    "estimatedInputTokens": 1342,
+    "pruningUsed": false,
+    "stableLayerHash": "0ac8c44de18bc1ce3598f2dbeb938b19d1620c308fa4b32a20a9a5d2905807d3",
+    "semiStableLayerHash": "ab69944b472cc2b60aa8417a4ae27be9d45ca6d6016ff546ece653616b010456",
+    "volatileLayerHash": "44c7a994da4c089cf2fbcdd74c22a40c3fe9c2bc028ad4a5ffd2a32150e398d4",
+    "segments": [
+      {
+        "order": 0,
+        "layer": "stable",
+        "segmentType": "bootstrap",
+        "sourceKind": "workspace_projection",
+        "includeReason": "projection:agents-md",
+        "estimatedTokens": 41,
+        "dropped": false,
+        "trimmed": false,
+        "projectionTargetId": "agents-md",
+        "projectionVersionId": "efeb6cfb-60c8-5113-9402-f391709d0790",
+        "textPreview": "## Generated Memory Rules - No projected agent-visible rules. ## Generated Procedures - Auto-start the OpenClaw remote gateway SSH tunnel..."
+      },
+      {
+        "order": 1,
+        "layer": "stable",
+        "segmentType": "bootstrap",
+        "sourceKind": "workspace_projection",
+        "includeReason": "projection:memory-md",
+        "estimatedTokens": 600,
+        "dropped": false,
+        "trimmed": false,
+        "projectionTargetId": "memory-md",
+        "projectionVersionId": "c8cbd9dc-1812-5530-9c4a-541f8d4f9d1e",
+        "textPreview": "# MEMORY.md ## Standing Context - @openclaw/model-memory: version 2026.3.3 is marked as private - /tools/invoke authentication: /tools/in..."
+      },
+      {
+        "order": 2,
+        "layer": "stable",
+        "segmentType": "bootstrap",
+        "sourceKind": "workspace_projection",
+        "includeReason": "projection:user-md",
+        "estimatedTokens": 400,
+        "dropped": false,
+        "trimmed": false,
+        "projectionTargetId": "user-md",
+        "projectionVersionId": "c32471fa-7fbd-5f18-b174-3499e90e4326",
+        "textPreview": "# USER.md ## Preferences - Apply HSTS at the single TLS termination point (typically the reverse proxy for internet-facing deployments).:..."
+      },
+      {
+        "order": 3,
+        "layer": "semi_stable",
+        "segmentType": "user_pack",
+        "sourceKind": "context_artifact",
+        "includeReason": "artifact:user_memory_pack",
+        "estimatedTokens": 252,
+        "dropped": false,
+        "trimmed": false,
+        "sourceArtifactId": "64ca0a54-eb3b-55c2-8ae3-328af3133b37",
+        "sourceArtifactType": "user_memory_pack",
+        "textPreview": "# User Memory Pack - Apply HSTS at the single TLS termination point (typically the reverse proxy for internet-facing deployments).: Set S..."
+      },
+      {
+        "order": 4,
+        "layer": "semi_stable",
+        "segmentType": "retrieval_pack",
+        "sourceKind": "context_artifact",
+        "includeReason": "artifact:retrieval_pack:context-trace-probe-live-tests-manual-1776229422183",
+        "estimatedTokens": 40,
+        "dropped": false,
+        "trimmed": false,
+        "sourceArtifactId": "79a78e2b-c50e-5eb6-a14c-b47cdce32fd1",
+        "sourceArtifactType": "retrieval_pack",
+        "sourceArtifactScopeKey": "context-trace-probe-live-tests-manual-1776229422183",
+        "textPreview": "Retrieval for operator_help: How do I run live tests in OpenClaw? 1. project/rule {\"subject\":\"Running live tests\",\"neededCapability\":\"Use..."
+      },
+      {
+        "order": 5,
+        "layer": "volatile",
+        "segmentType": "recent_turns",
+        "sourceKind": "turn_history",
+        "includeReason": "current_turn_with_recent_history",
+        "estimatedTokens": 9,
+        "dropped": false,
+        "trimmed": false,
+        "textPreview": "user: How do I run live tests in OpenClaw?"
+      }
+    ]
+  }
+}

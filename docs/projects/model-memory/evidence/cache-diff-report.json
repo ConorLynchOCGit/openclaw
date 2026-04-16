@@ -1,0 +1,96 @@
+{
+  "generatedAt": "2026-04-15T05:15:35.425Z",
+  "probeId": "probe-live-tests",
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "unchanged": {
+    "baselineHashes": {
+      "stable": "0ac8c44de18bc1ce3598f2dbeb938b19d1620c308fa4b32a20a9a5d2905807d3",
+      "semiStable": "8e459973e7f83ac9e31dedc91c91158623691f0d77bb15f7fcdb05a2ffcb33c9",
+      "volatile": "46297f96ce3f2576c0898ce16d874e6c01d34aebf8226325c5b8c651f05fbfd8"
+    },
+    "repeatedHashes": {
+      "stable": "0ac8c44de18bc1ce3598f2dbeb938b19d1620c308fa4b32a20a9a5d2905807d3",
+      "semiStable": "8e459973e7f83ac9e31dedc91c91158623691f0d77bb15f7fcdb05a2ffcb33c9",
+      "volatile": "a09dedc41029174ef74b7f4db654277c4a66070d5e8f6ff136e3bbbc6d093ded"
+    },
+    "stableLayerStable": true,
+    "semiStableLayerStable": true,
+    "volatileLayerStable": false,
+    "changedStableSegments": [],
+    "changedSemiStableSegments": [],
+    "changedVolatileSegments": [
+      {
+        "order": 0,
+        "before": {
+          "segmentType": "retrieval_pack",
+          "includeReason": "artifact:retrieval_pack:context-trace-probe-live-tests-cache-baseline-1776229877432",
+          "sourceArtifactId": "4011ca64-dc4a-5e72-b43f-a7f56ec0f400",
+          "sourceArtifactType": "retrieval_pack",
+          "sourceArtifactScopeKey": "context-trace-probe-live-tests-cache-baseline-1776229877432",
+          "estimatedTokens": 23,
+          "dropped": false,
+          "textPreview": "Retrieval for operator_help: How do I run live tests in OpenClaw? 1. reference/reference {\"task\":\"Providers and Troubleshooting documenta..."
+        },
+        "after": {
+          "segmentType": "retrieval_pack",
+          "includeReason": "artifact:retrieval_pack:context-trace-probe-live-tests-cache-repeat-1776229877432",
+          "sourceArtifactId": "9b1ad527-aca1-5004-8424-6b234c5a7b03",
+          "sourceArtifactType": "retrieval_pack",
+          "sourceArtifactScopeKey": "context-trace-probe-live-tests-cache-repeat-1776229877432",
+          "estimatedTokens": 36,
+          "dropped": false,
+          "textPreview": "Retrieval for operator_help: How do I run live tests in OpenClaw? 1. project/rule {\"subject\":\"Running OpenClaw gateway in remote mode\",\"r..."
+        }
+      }
+    ]
+  },
+  "supportOnly": {
+    "baselineHashes": {
+      "stable": "0ac8c44de18bc1ce3598f2dbeb938b19d1620c308fa4b32a20a9a5d2905807d3",
+      "semiStable": "8e459973e7f83ac9e31dedc91c91158623691f0d77bb15f7fcdb05a2ffcb33c9",
+      "volatile": "46297f96ce3f2576c0898ce16d874e6c01d34aebf8226325c5b8c651f05fbfd8"
+    },
+    "supportHashes": {
+      "stable": "0ac8c44de18bc1ce3598f2dbeb938b19d1620c308fa4b32a20a9a5d2905807d3",
+      "semiStable": "8e459973e7f83ac9e31dedc91c91158623691f0d77bb15f7fcdb05a2ffcb33c9",
+      "volatile": "8dab6fed0a632faa2825edcc5f886a6adf69e1f10428b26b731ae4a4a33e3715"
+    },
+    "stableLayerStable": true,
+    "semiStableLayerStable": true,
+    "volatileLayerStable": false,
+    "changedStableSegments": [],
+    "changedSemiStableSegments": [],
+    "changedVolatileSegments": [
+      {
+        "order": 0,
+        "before": {
+          "segmentType": "retrieval_pack",
+          "includeReason": "artifact:retrieval_pack:context-trace-probe-live-tests-cache-baseline-1776229877432",
+          "sourceArtifactId": "4011ca64-dc4a-5e72-b43f-a7f56ec0f400",
+          "sourceArtifactType": "retrieval_pack",
+          "sourceArtifactScopeKey": "context-trace-probe-live-tests-cache-baseline-1776229877432",
+          "estimatedTokens": 23,
+          "dropped": false,
+          "textPreview": "Retrieval for operator_help: How do I run live tests in OpenClaw? 1. reference/reference {\"task\":\"Providers and Troubleshooting documenta..."
+        },
+        "after": {
+          "segmentType": "retrieval_pack",
+          "includeReason": "artifact:retrieval_pack:context-trace-probe-live-tests-cache-support-1776229877432",
+          "sourceArtifactId": "6537f535-393e-59d2-bca4-c23a7d63b905",
+          "sourceArtifactType": "retrieval_pack",
+          "sourceArtifactScopeKey": "context-trace-probe-live-tests-cache-support-1776229877432",
+          "estimatedTokens": 11,
+          "dropped": false,
+          "textPreview": "Retrieval for operator_help: How do I run live tests in OpenClaw?"
+        }
+      }
+    ],
+    "rebuildDiff": {
+      "selectedMemoryObjectId": "7f36acd2-0baa-575f-8a19-d0b526a364b8",
+      "selectedSummary": "Bonjour/mDNS TXT records are not authoritative routing | Clients must route using the resolved service endpoint (SRV + A/AAAA) and treat lanHost, tailnetDns, gatewayPort, and gatewayTlsSha256 as hints only. | Clients must not treat Bonjour/mDNS TXT records as authoritative routing. | Be able to resolve and use SRV plus A/AAAA records for the service endpoint.",
+      "writeDecision": "attach_support",
+      "writeDecisionCodes": ["duplicate_identity", "support_attached"],
+      "classification": "pure_support_only_stable"
+    }
+  }
+}

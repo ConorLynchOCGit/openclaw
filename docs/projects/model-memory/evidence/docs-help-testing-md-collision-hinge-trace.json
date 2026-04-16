@@ -1,0 +1,1927 @@
+{
+  "generatedAt": "2026-04-15T20:31:22.697Z",
+  "databaseMode": "targeted_trace_scratch_db",
+  "databaseName": "model_memory_trace_scratch",
+  "sourcePath": "docs/help/testing.md",
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 180000,
+  "maxWordsPerWindow": 1500,
+  "passes": [
+    {
+      "passLabel": "baseline",
+      "objectDelta": 4,
+      "supportDelta": 4,
+      "capturedClaimCount": 4,
+      "writeDecisionCounts": {
+        "write": 4
+      },
+      "collisionModelCalls": 0,
+      "collisionGate": [],
+      "collisionBatch": [],
+      "boundedCandidateAdjudication": [],
+      "writeResults": [
+        {
+          "caseIdentity": "docs/help/testing.md::testing>test suites (what runs where)>unit / integration (default)::rule_cd8302ee1734f3ba306c077f",
+          "candidateId": "candidate-0",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "0382ea58-37d0-52ef-bb9f-e787b6a3b776",
+          "supportItemId": "c0ea35bd-d258-5667-b687-e8939e9675c6",
+          "objectSummary": "Unit/integration tests in CI should not require real keys | Run unit/integration tests in CI with no real keys required. | CI environment that provides no real provider/model credentials."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>test suites (what runs where)>live (real providers + real models)::rule_e28fc0c0b496657ea7fdbc00",
+          "candidateId": "candidate-1",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "258d9733-3eeb-51f6-932b-7e40c39dc569",
+          "supportItemId": "389536e3-2860-53f2-a03b-679b4dbd7f88",
+          "objectSummary": "Live tests source shell profile for missing API keys | Ensure live test runs source `~/.profile` so missing API keys are picked up. | A local environment where `~/.profile` contains any missing provider/model API keys."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>live: model matrix (what we cover)>modern smoke set (tool calling + image)::fact_8ba61d5f389a73448d99538e",
+          "candidateId": "candidate-2",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "decision": "write",
+          "decisionCodes": [
+            "write_structural_accept",
+            "collision_distinct",
+            "review_mode_overridden"
+          ],
+          "memoryObjectId": "65d218a4-8a87-5bbd-a762-6cea7cad2131",
+          "supportItemId": "7cc3553d-6935-52fb-83b9-cca68379bae6",
+          "objectSummary": "Gateway smoke (live) command: Run gateway smoke with tools + image:\n`OPENCLAW_LIVE_GATEWAY_MODELS=\"openai/gpt-5.2,openai-codex/gpt-5.3-codex,anthropic/claude-opus-4-6,google/gemini-3-pro-preview,google/gemini-3-flash-preview,google-antigravity/claude-opus-4-6-thinking,google-antigravity/gemini-3-flash,zai/glm-4.7,minimax/minimax-m2.5\" pnpm test:live src/gateway/gateway-models.profiles.live.test.ts`"
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>credentials (never commit)::fact_00c09a29c07a3645a54c50e9",
+          "candidateId": "candidate-3",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "decision": "write",
+          "decisionCodes": [
+            "write_structural_accept",
+            "collision_distinct",
+            "review_mode_overridden"
+          ],
+          "memoryObjectId": "dd930f17-5412-5fcc-bca0-3277240c279b",
+          "supportItemId": "bacaf9b6-272c-5a39-b6cb-a19882c86f91",
+          "objectSummary": "Credential discovery locations: Profile store: ~/.openclaw/credentials/ (preferred). Config: ~/.openclaw/openclaw.json or OPENCLAW_CONFIG_PATH."
+        }
+      ]
+    },
+    {
+      "passLabel": "rerun_1",
+      "objectDelta": 12,
+      "supportDelta": 12,
+      "capturedClaimCount": 12,
+      "writeDecisionCounts": {
+        "write": 12
+      },
+      "collisionModelCalls": 1,
+      "collisionGate": [
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-0",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_13cf9be94021a46271764c15",
+          "objectSummary": "OpenClaw test suites: OpenClaw has three Vitest suites (unit/integration, e2e, live) and a small set of Docker runners.",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 0,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 0,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-1",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:rule_a96367277a5fb3ea6e428728",
+          "objectSummary": "Full gate before push | Most days, run `pnpm build && pnpm check && pnpm test` as the full gate expected before push.",
+          "canonicalClass": "user",
+          "kind": "rule",
+          "rawCandidateCount": 0,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 0,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-2",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_147d45c9817ad226abbf96ad",
+          "objectSummary": "pnpm test configuration: `pnpm test` runs unit/integration tests via `scripts/test-parallel.mjs`, which runs `vitest.unit.config.ts`, `vitest.extensions.config.ts`, and `vitest.gateway.config.ts`.",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 1,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 1,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-3",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:rule_17ffd2f773fd20ccb43def94",
+          "objectSummary": "Debugging live tests | Prefer running `pnpm test:live` with narrowed live allowlists (via allowlist env vars) instead of running everything when debugging failing live cases.",
+          "canonicalClass": "user",
+          "kind": "rule",
+          "rawCandidateCount": 1,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 1,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-4",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_f8c8aec1a0f6d316dc4031d4",
+          "objectSummary": "Vitest vmForks behavior on Node versions: OpenClaw uses Vitest `vmForks` on Node 22/23 for faster unit shards, and automatically falls back to regular `forks` on Node 24+ to avoid Node VM linking errors (`ERR_VM_MODULE_LINK_FAILURE` / `module is already linked`). Override via `OPENCLAW_TEST_VM_FORKS=0` (force `forks`) or `OPENCLAW_TEST_VM_FORKS=1` (force `vmForks`).",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 2,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 2,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-5",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_26234fe7bd1a43312a259818",
+          "objectSummary": "Live tests credentials source and activation: Live tests source credentials from `~/.profile` and are enabled by `pnpm test:live` (sets `OPENCLAW_LIVE_TEST=1`).",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 3,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 3,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-6",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_4ed44ee4899e173030d01997",
+          "objectSummary": "Live model smoke layers: Live model smoke is split into Layer 1 (Direct model completion without gateway) and Layer 2 (Gateway + dev agent smoke).",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 4,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 4,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-7",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_b03bfccddf1c61424f41277b",
+          "objectSummary": "Layer 2 gateway + dev agent smoke probes: Layer 2 (Gateway + dev agent) live smoke uses a `read` probe (write nonce file, agent reads and echoes nonce), an `exec+read` probe (agent exec-write nonce then read back), and an image probe when the model advertises image input support (expects `cat <CODE>`).",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 5,
+          "retainedCandidateCount": 1,
+          "prunedCandidateCount": 4,
+          "disposition": "admitted_to_batch"
+        },
+        {
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "candidateId": "candidate-8",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:fact_b8f2377526efb98c3b67a956",
+          "objectSummary": "Live gateway smoke test command: Run gateway smoke with tools + image by setting OPENCLAW_LIVE_GATEWAY_MODELS and executing pnpm test:live src/gateway/gateway-models.profiles.live.test.ts.",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 5,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 5,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "candidateId": "candidate-9",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_d134fae18d28003accaee5ae",
+          "objectSummary": "Model selection for OPENCLAW_LIVE_GATEWAY_MODELS (tool-calling baseline) | Use at least one tool-calling baseline model per provider family in OPENCLAW_LIVE_GATEWAY_MODELS. | At least one tools-capable model per provider family (e.g., OpenAI/Anthropic/Google/Z.AI/MiniMax; optionally xAI/Mistral/Cerebras if enabled).",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 2,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 2,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "candidateId": "candidate-10",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_ccf5b1b9c0736936dc2f0cc5",
+          "objectSummary": "Model selection for OPENCLAW_LIVE_GATEWAY_MODELS (image probe) | Include at least one image-capable model in OPENCLAW_LIVE_GATEWAY_MODELS to exercise the image probe. | An image/vision-capable model variant (e.g., Claude/Gemini/OpenAI vision-capable variants) enabled for the test.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 3,
+          "retainedCandidateCount": 1,
+          "prunedCandidateCount": 2,
+          "disposition": "admitted_to_batch"
+        },
+        {
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "candidateId": "candidate-11",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_a852cf73ee1dc585c534eac8",
+          "objectSummary": "Adding regressions after live-discovered issues | When you fix a provider/model issue discovered in live, add a CI-safe regression if possible (mock/stub provider, or capture the exact request-shape transformation). If inherently live-only, keep the live test narrow and opt-in via env vars. | Avoid making inherently live-only fixes too broad; keep the live test narrow and env-gated. | Ability to create CI-safe mock/stub regressions or capture request-shape transformations; ability to keep live tests opt-in via env vars for live-only issues.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 3,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 3,
+          "disposition": "zero_candidate_skip"
+        }
+      ],
+      "collisionBatch": [],
+      "boundedCandidateAdjudication": [
+        {
+          "candidateId": "candidate-0",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_13cf9be94021a46271764c15",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "OpenClaw test suites: OpenClaw has three Vitest suites (unit/integration, e2e, live) and a small set of Docker runners.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "openclaw test suites openclaw has three vitest suites (unit/integration, e2e, live) and a small set of docker runners.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "258d9733-3eeb-51f6-932b-7e40c39dc569",
+              "similarityScore": 0.0789,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "65d218a4-8a87-5bbd-a762-6cea7cad2131",
+              "similarityScore": 0.0577,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_d069270bd186afce",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "0382ea58-37d0-52ef-bb9f-e787b6a3b776",
+              "similarityScore": 0.0571,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "dd930f17-5412-5fcc-bca0-3277240c279b",
+              "similarityScore": 0.0357,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_d069270bd186afce",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-1",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:rule_a96367277a5fb3ea6e428728",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "Full gate before push | Most days, run `pnpm build && pnpm check && pnpm test` as the full gate expected before push.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "full gate before push most days, run `pnpm build && pnpm check && pnpm test` as the full gate expected before push.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "65d218a4-8a87-5bbd-a762-6cea7cad2131",
+              "similarityScore": 0.0612,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_d069270bd186afce",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "904467e3-9095-5629-91d7-7384dcda4e14",
+              "similarityScore": 0.0333,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "0382ea58-37d0-52ef-bb9f-e787b6a3b776",
+              "similarityScore": 0.0303,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "258d9733-3eeb-51f6-932b-7e40c39dc569",
+              "similarityScore": 0.027,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-2",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_147d45c9817ad226abbf96ad",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "pnpm test configuration: `pnpm test` runs unit/integration tests via `scripts/test-parallel.mjs`, which runs `vitest.unit.config.ts`, `vitest.extensions.config.ts`, and `vitest.gateway.config.ts`.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "pnpm test configuration `pnpm test` runs unit/integration tests via `scripts/test-parallel.mjs`, which runs `vitest.unit.config.ts`, `vitest.extensions.config.ts`, and `vitest.gateway.config.ts`.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "904467e3-9095-5629-91d7-7384dcda4e14",
+              "similarityScore": 0.1667,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "0382ea58-37d0-52ef-bb9f-e787b6a3b776",
+              "similarityScore": 0.0857,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "258d9733-3eeb-51f6-932b-7e40c39dc569",
+              "similarityScore": 0.0769,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "65d218a4-8a87-5bbd-a762-6cea7cad2131",
+              "similarityScore": 0.0769,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_d069270bd186afce",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "ef1be3fc-b102-5ca5-ab24-62a3ebfaf737",
+              "similarityScore": 0.0667,
+              "searchRank": 5,
+              "canonicalClass": "user",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-3",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:rule_17ffd2f773fd20ccb43def94",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "Debugging live tests | Prefer running `pnpm test:live` with narrowed live allowlists (via allowlist env vars) instead of running everything when debugging failing live cases.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "debugging live tests prefer running `pnpm test:live` with narrowed live allowlists (via allowlist env vars) instead of running everything when debugging failing live cases.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "33246c0b-aea6-549b-b164-43df2f79bea7",
+              "similarityScore": 0.1176,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "904467e3-9095-5629-91d7-7384dcda4e14",
+              "similarityScore": 0.0882,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "65d218a4-8a87-5bbd-a762-6cea7cad2131",
+              "similarityScore": 0.0741,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_d069270bd186afce",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "258d9733-3eeb-51f6-932b-7e40c39dc569",
+              "similarityScore": 0.0732,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "ef1be3fc-b102-5ca5-ab24-62a3ebfaf737",
+              "similarityScore": 0.0625,
+              "searchRank": 5,
+              "canonicalClass": "user",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-4",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_f8c8aec1a0f6d316dc4031d4",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "Vitest vmForks behavior on Node versions: OpenClaw uses Vitest `vmForks` on Node 22/23 for faster unit shards, and automatically falls back to regular `forks` on Node 24+ to avoid Node VM linking errors (`ERR_VM_MODULE_LINK_FAILURE` / `module is already linked`). Override via `OPENCLAW_TEST_VM_FORKS=0` (force `forks`) or `OPENCLAW_TEST_VM_FORKS=1` (force `vmForks`).",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "vitest vmforks behavior on node versions openclaw uses vitest `vmforks` on node 22/23 for faster unit shards, and automatically falls back to regular `forks` on node 24+ to avoid node vm linking errors (`err_vm_module_link_failure` / `module is already linked`). override via `openclaw_test_vm_forks=0` (force `forks`) or `openclaw_test_vm_forks=1` (force `vmforks`).",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "904467e3-9095-5629-91d7-7384dcda4e14",
+              "similarityScore": 0.0962,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "33246c0b-aea6-549b-b164-43df2f79bea7",
+              "similarityScore": 0.0943,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "dd930f17-5412-5fcc-bca0-3277240c279b",
+              "similarityScore": 0.04,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_d069270bd186afce",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "84e09e60-4420-5d29-8271-eb19e8befd3e",
+              "similarityScore": 0.0345,
+              "searchRank": 4,
+              "canonicalClass": "user",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "258d9733-3eeb-51f6-932b-7e40c39dc569",
+              "similarityScore": 0.0323,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-5",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_26234fe7bd1a43312a259818",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "Live tests credentials source and activation: Live tests source credentials from `~/.profile` and are enabled by `pnpm test:live` (sets `OPENCLAW_LIVE_TEST=1`).",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "live tests credentials source and activation live tests source credentials from `~/.profile` and are enabled by `pnpm test:live` (sets `openclaw_live_test=1`).",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "258d9733-3eeb-51f6-932b-7e40c39dc569",
+              "similarityScore": 0.1765,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "904467e3-9095-5629-91d7-7384dcda4e14",
+              "similarityScore": 0.1379,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "33246c0b-aea6-549b-b164-43df2f79bea7",
+              "similarityScore": 0.1333,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "84e09e60-4420-5d29-8271-eb19e8befd3e",
+              "similarityScore": 0.125,
+              "searchRank": 4,
+              "canonicalClass": "user",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "dd930f17-5412-5fcc-bca0-3277240c279b",
+              "similarityScore": 0.12,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_d069270bd186afce",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-6",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_4ed44ee4899e173030d01997",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "Live model smoke layers: Live model smoke is split into Layer 1 (Direct model completion without gateway) and Layer 2 (Gateway + dev agent smoke).",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "live model smoke layers live model smoke is split into layer 1 (direct model completion without gateway) and layer 2 (gateway + dev agent smoke).",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "c3bdc0a3-a692-5c6d-bb83-4e44ec2c0949",
+              "similarityScore": 0.1,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "65d218a4-8a87-5bbd-a762-6cea7cad2131",
+              "similarityScore": 0.0784,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_d069270bd186afce",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "904467e3-9095-5629-91d7-7384dcda4e14",
+              "similarityScore": 0.0625,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "33246c0b-aea6-549b-b164-43df2f79bea7",
+              "similarityScore": 0.0606,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "8543e81d-eee6-541c-9ced-5019d76bbab6",
+              "similarityScore": 0.0556,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-8",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:fact_b8f2377526efb98c3b67a956",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "objectSummary": "Live gateway smoke test command: Run gateway smoke with tools + image by setting OPENCLAW_LIVE_GATEWAY_MODELS and executing pnpm test:live src/gateway/gateway-models.profiles.live.test.ts.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "live gateway smoke test command run gateway smoke with tools + image by setting openclaw_live_gateway_models and executing pnpm test:live src/gateway/gateway-models.profiles.live.test.ts.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "65d218a4-8a87-5bbd-a762-6cea7cad2131",
+              "similarityScore": 0.3571,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_d069270bd186afce",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "c3bdc0a3-a692-5c6d-bb83-4e44ec2c0949",
+              "similarityScore": 0.2069,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "33246c0b-aea6-549b-b164-43df2f79bea7",
+              "similarityScore": 0.1563,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "904467e3-9095-5629-91d7-7384dcda4e14",
+              "similarityScore": 0.125,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "b5545011-4c03-5f70-9c19-049380182dcf",
+              "similarityScore": 0.125,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-9",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_d134fae18d28003accaee5ae",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "objectSummary": "Model selection for OPENCLAW_LIVE_GATEWAY_MODELS (tool-calling baseline) | Use at least one tool-calling baseline model per provider family in OPENCLAW_LIVE_GATEWAY_MODELS. | At least one tools-capable model per provider family (e.g., OpenAI/Anthropic/Google/Z.AI/MiniMax; optionally xAI/Mistral/Cerebras if enabled).",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "model selection for openclaw_live_gateway_models (tool-calling baseline) use at least one tool-calling baseline model per provider family in openclaw_live_gateway_models. at least one tools-capable model per provider family (e.g., openai/anthropic/google/z.ai/minimax; optionally xai/mistral/cerebras if enabled).",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "65d218a4-8a87-5bbd-a762-6cea7cad2131",
+              "similarityScore": 0.1429,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_d069270bd186afce",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "5865d1ca-2577-52b8-940c-45d8f7116e3e",
+              "similarityScore": 0.1042,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "258d9733-3eeb-51f6-932b-7e40c39dc569",
+              "similarityScore": 0.0741,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "c3bdc0a3-a692-5c6d-bb83-4e44ec2c0949",
+              "similarityScore": 0.0638,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "b5545011-4c03-5f70-9c19-049380182dcf",
+              "similarityScore": 0.0625,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-11",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_a852cf73ee1dc585c534eac8",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "objectSummary": "Adding regressions after live-discovered issues | When you fix a provider/model issue discovered in live, add a CI-safe regression if possible (mock/stub provider, or capture the exact request-shape transformation). If inherently live-only, keep the live test narrow and opt-in via env vars. | Avoid making inherently live-only fixes too broad; keep the live test narrow and env-gated. | Ability to create CI-safe mock/stub regressions or capture request-shape transformations; ability to keep live tests opt-in via env vars for live-only issues.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "adding regressions after live-discovered issues when you fix a provider/model issue discovered in live, add a ci-safe regression if possible (mock/stub provider, or capture the exact request-shape transformation). if inherently live-only, keep the live test narrow and opt-in via env vars. avoid making inherently live-only fixes too broad; keep the live test narrow and env-gated. ability to create ci-safe mock/stub regressions or capture request-shape transformations; ability to keep live tests opt-in via env vars for live-only issues.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "84e09e60-4420-5d29-8271-eb19e8befd3e",
+              "similarityScore": 0.1094,
+              "searchRank": 1,
+              "canonicalClass": "user",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "258d9733-3eeb-51f6-932b-7e40c39dc569",
+              "similarityScore": 0.1029,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "8543e81d-eee6-541c-9ced-5019d76bbab6",
+              "similarityScore": 0.0833,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "9936b566-cec2-54a0-97c6-8a72a5fc4702",
+              "similarityScore": 0.0759,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "0382ea58-37d0-52ef-bb9f-e787b6a3b776",
+              "similarityScore": 0.0758,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-7",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_b03bfccddf1c61424f41277b",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "Layer 2 gateway + dev agent smoke probes: Layer 2 (Gateway + dev agent) live smoke uses a `read` probe (write nonce file, agent reads and echoes nonce), an `exec+read` probe (agent exec-write nonce then read back), and an image probe when the model advertises image input support (expects `cat <CODE>`).",
+          "candidateSource": "retained_structural",
+          "queryText": "layer 2 gateway + dev agent smoke probes layer 2 (gateway + dev agent) live smoke uses a `read` probe (write nonce file, agent reads and echoes nonce), an `exec+read` probe (agent exec-write nonce then read back), and an image probe when the model advertises image input support (expects `cat <code>`).",
+          "adjudicationCandidateCount": 1,
+          "adjudicationBatchAdmitted": true,
+          "finalLocalRouting": "direct_distinct",
+          "modelOutput": {
+            "sameCoreMemory": "no",
+            "matchedCandidateId": "none",
+            "deltaType": "unclear"
+          },
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "b5545011-4c03-5f70-9c19-049380182dcf",
+              "similarityScore": 1,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": true
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-10",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_ccf5b1b9c0736936dc2f0cc5",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "objectSummary": "Model selection for OPENCLAW_LIVE_GATEWAY_MODELS (image probe) | Include at least one image-capable model in OPENCLAW_LIVE_GATEWAY_MODELS to exercise the image probe. | An image/vision-capable model variant (e.g., Claude/Gemini/OpenAI vision-capable variants) enabled for the test.",
+          "candidateSource": "retained_structural",
+          "queryText": "model selection for openclaw_live_gateway_models (image probe) include at least one image-capable model in openclaw_live_gateway_models to exercise the image probe. an image/vision-capable model variant (e.g., claude/gemini/openai vision-capable variants) enabled for the test.",
+          "adjudicationCandidateCount": 1,
+          "adjudicationBatchAdmitted": true,
+          "finalLocalRouting": "direct_distinct",
+          "modelOutput": {
+            "sameCoreMemory": "no",
+            "matchedCandidateId": "none",
+            "deltaType": "unclear"
+          },
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "9936b566-cec2-54a0-97c6-8a72a5fc4702",
+              "similarityScore": 1,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": true
+            }
+          ]
+        }
+      ],
+      "writeResults": [
+        {
+          "caseIdentity": "docs/help/testing.md::testing>test suites (what runs where)>live (real providers + real models)::fact_13cf9be94021a46271764c15",
+          "candidateId": "candidate-0",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "904467e3-9095-5629-91d7-7384dcda4e14",
+          "supportItemId": "fe441b63-34a0-5d7a-b9fc-c76a484ca52a",
+          "objectSummary": "OpenClaw test suites: OpenClaw has three Vitest suites (unit/integration, e2e, live) and a small set of Docker runners."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>quick start::rule_a96367277a5fb3ea6e428728",
+          "candidateId": "candidate-1",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "ef1be3fc-b102-5ca5-ab24-62a3ebfaf737",
+          "supportItemId": "0263612c-1363-57d6-a253-4ecb4824b8e8",
+          "objectSummary": "Full gate before push | Most days, run `pnpm build && pnpm check && pnpm test` as the full gate expected before push."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>test suites (what runs where)>unit / integration (default)::fact_147d45c9817ad226abbf96ad",
+          "candidateId": "candidate-2",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "33246c0b-aea6-549b-b164-43df2f79bea7",
+          "supportItemId": "d44de056-b9f7-52ee-8ac2-4afdead843bf",
+          "objectSummary": "pnpm test configuration: `pnpm test` runs unit/integration tests via `scripts/test-parallel.mjs`, which runs `vitest.unit.config.ts`, `vitest.extensions.config.ts`, and `vitest.gateway.config.ts`."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>quick start::rule_17ffd2f773fd20ccb43def94",
+          "candidateId": "candidate-3",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "84e09e60-4420-5d29-8271-eb19e8befd3e",
+          "supportItemId": "edc619de-3d2c-5be8-856f-9ba98a0b8eca",
+          "objectSummary": "Debugging live tests | Prefer running `pnpm test:live` with narrowed live allowlists (via allowlist env vars) instead of running everything when debugging failing live cases."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>test suites (what runs where)>unit / integration (default)::fact_f8c8aec1a0f6d316dc4031d4",
+          "candidateId": "candidate-4",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "8543e81d-eee6-541c-9ced-5019d76bbab6",
+          "supportItemId": "7440cc94-5934-507c-9ae7-f54c6a90c6a7",
+          "objectSummary": "Vitest vmForks behavior on Node versions: OpenClaw uses Vitest `vmForks` on Node 22/23 for faster unit shards, and automatically falls back to regular `forks` on Node 24+ to avoid Node VM linking errors (`ERR_VM_MODULE_LINK_FAILURE` / `module is already linked`). Override via `OPENCLAW_TEST_VM_FORKS=0` (force `forks`) or `OPENCLAW_TEST_VM_FORKS=1` (force `vmForks`)."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>test suites (what runs where)>live (real providers + real models)::fact_26234fe7bd1a43312a259818",
+          "candidateId": "candidate-5",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "c3bdc0a3-a692-5c6d-bb83-4e44ec2c0949",
+          "supportItemId": "edfa85db-1c3b-5d73-a824-b4f421c7802a",
+          "objectSummary": "Live tests credentials source and activation: Live tests source credentials from `~/.profile` and are enabled by `pnpm test:live` (sets `OPENCLAW_LIVE_TEST=1`)."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>live: model smoke (profile keys)::fact_4ed44ee4899e173030d01997",
+          "candidateId": "candidate-6",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "b5545011-4c03-5f70-9c19-049380182dcf",
+          "supportItemId": "a43811ba-a31b-5812-aa1c-35d20917188e",
+          "objectSummary": "Live model smoke layers: Live model smoke is split into Layer 1 (Direct model completion without gateway) and Layer 2 (Gateway + dev agent smoke)."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>live: model smoke (profile keys)>layer 2: gateway + dev agent smoke (what “@openclaw” actually does)::fact_b03bfccddf1c61424f41277b",
+          "candidateId": "candidate-7",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "5865d1ca-2577-52b8-940c-45d8f7116e3e",
+          "supportItemId": "49a25bae-f86a-5e1a-a911-729a5ef3aa1c",
+          "objectSummary": "Layer 2 gateway + dev agent smoke probes: Layer 2 (Gateway + dev agent) live smoke uses a `read` probe (write nonce file, agent reads and echoes nonce), an `exec+read` probe (agent exec-write nonce then read back), and an image probe when the model advertises image input support (expects `cat <CODE>`)."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>live: model matrix (what we cover)>modern smoke set (tool calling + image)::fact_b8f2377526efb98c3b67a956",
+          "candidateId": "candidate-8",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "9936b566-cec2-54a0-97c6-8a72a5fc4702",
+          "supportItemId": "80265363-245b-5e76-8673-e6d5588de62a",
+          "objectSummary": "Live gateway smoke test command: Run gateway smoke with tools + image by setting OPENCLAW_LIVE_GATEWAY_MODELS and executing pnpm test:live src/gateway/gateway-models.profiles.live.test.ts."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>live: model matrix (what we cover)>baseline: tool calling (read + optional exec)::rule_d134fae18d28003accaee5ae",
+          "candidateId": "candidate-9",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "decision": "write",
+          "decisionCodes": [
+            "write_structural_accept",
+            "collision_distinct",
+            "review_mode_overridden"
+          ],
+          "memoryObjectId": "a0adfb4a-1985-56bb-bb2c-9a4a862e8bf9",
+          "supportItemId": "01f057db-cc51-58e2-a8f3-620d747004eb",
+          "objectSummary": "Model selection for OPENCLAW_LIVE_GATEWAY_MODELS (tool-calling baseline) | Use at least one tool-calling baseline model per provider family in OPENCLAW_LIVE_GATEWAY_MODELS. | At least one tools-capable model per provider family (e.g., OpenAI/Anthropic/Google/Z.AI/MiniMax; optionally xAI/Mistral/Cerebras if enabled)."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>live: model matrix (what we cover)>vision: image send (attachment %e2%86%92 multimodal message)::rule_ccf5b1b9c0736936dc2f0cc5",
+          "candidateId": "candidate-10",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "d70206dc-5b03-52ab-9c31-282aabb8ffd2",
+          "supportItemId": "c75b391a-e46d-5014-8597-e11affe167a9",
+          "objectSummary": "Model selection for OPENCLAW_LIVE_GATEWAY_MODELS (image probe) | Include at least one image-capable model in OPENCLAW_LIVE_GATEWAY_MODELS to exercise the image probe. | An image/vision-capable model variant (e.g., Claude/Gemini/OpenAI vision-capable variants) enabled for the test."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>adding regressions (guidance)::rule_a852cf73ee1dc585c534eac8",
+          "candidateId": "candidate-11",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "6258dbfd-436d-52ae-966a-ea60d0a9c358",
+          "supportItemId": "ad2c6f5a-0260-5b6d-98da-140e74167de0",
+          "objectSummary": "Adding regressions after live-discovered issues | When you fix a provider/model issue discovered in live, add a CI-safe regression if possible (mock/stub provider, or capture the exact request-shape transformation). If inherently live-only, keep the live test narrow and opt-in via env vars. | Avoid making inherently live-only fixes too broad; keep the live test narrow and env-gated. | Ability to create CI-safe mock/stub regressions or capture request-shape transformations; ability to keep live tests opt-in via env vars for live-only issues."
+        }
+      ]
+    },
+    {
+      "passLabel": "rerun_2",
+      "objectDelta": 11,
+      "supportDelta": 11,
+      "capturedClaimCount": 11,
+      "writeDecisionCounts": {
+        "write": 11
+      },
+      "collisionModelCalls": 1,
+      "collisionGate": [
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-0",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_c84f90bdfd016e1039490a2f",
+          "objectSummary": "OpenClaw default test gate: `pnpm build && pnpm check && pnpm test`",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 7,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 7,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-1",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:rule_363b27c382ac872798b82aeb",
+          "objectSummary": "Which test suite to run based on what you're changing | If editing logic/tests, run `pnpm test` (and `pnpm test:coverage` if you changed a lot). If touching gateway networking/WS protocol/pairing, add `pnpm test:e2e`. If debugging `my bot is down`/provider-specific failures/tool calling, run a narrowed `pnpm test:live`.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 5,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 5,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-2",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_f41d191af301a240a66401d8",
+          "objectSummary": "Live tests stability and cost: Live tests are not CI-stable by design: they require real networks, real provider policies/quotas, and may have outages; they also cost money and use rate limits. Prefer running narrowed subsets instead of \"everything\".",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 8,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 8,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-3",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_0388b94c142c93404109d7c6",
+          "objectSummary": "Selecting models/providers for live tests and where API keys come from: Live tests can select models via `OPENCLAW_LIVE_MODELS` (e.g., `modern`, `all`, or a comma allowlist) and select providers via `OPENCLAW_LIVE_PROVIDERS` (comma allowlist). By default, keys come from the profile store and env fallbacks; set `OPENCLAW_LIVE_REQUIRE_PROFILE_KEYS=1` to enforce profile store only.",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 9,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 9,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-4",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:rule_7ee39baa70dfba80d2acebeb",
+          "objectSummary": "Narrow live tests instead of running everything | When debugging real providers/models (requires real creds), prefer narrowing live tests via the allowlist env vars described below rather than running \"everything\".",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 6,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 6,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-5",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_4beb22eb2ac9f72d1ad2f7bf",
+          "objectSummary": "Gateway+dev-agent live smoke probe types: Gateway+dev-agent live smoke uses `read` and `exec+read` tool probes and an image probe: it expects `cat <CODE>` from the model from an attached generated PNG, with minor OCR tolerance. Implementation references: `src/gateway/gateway-models.profiles.live.test.ts` and `src/gateway/live-image-probe.ts`.",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 10,
+          "retainedCandidateCount": 2,
+          "prunedCandidateCount": 8,
+          "disposition": "admitted_to_batch"
+        },
+        {
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "candidateId": "candidate-6",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_22aaa7598ad0c87ff185862c",
+          "objectSummary": "Recommended modern live smoke models: Recommended models to cover regularly on a dev machine with keys include OpenAI `openai/gpt-5.2` (optional `openai/gpt-5.1`), OpenAI Codex `openai-codex/gpt-5.3-codex` (optional `openai-codex/gpt-5.3-codex-codex`), and Anthropic `anthropic/claude-opus-4-6` (or `anthropic/claude-sonnet-4-5`).",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 10,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 10,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "candidateId": "candidate-7",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_1b2e008402cb2408a19c8b47",
+          "objectSummary": "Live gateway model matrix should use the Modern smoke set and avoid older Gemini 2.x models. | Use modern smoke set models for the live gateway matrix and avoid older Gemini 2.x models.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 0,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 0,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "candidateId": "candidate-8",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_7968e9273632204339adeb83",
+          "objectSummary": "OPENCLAW_LIVE_GATEWAY_MODELS should include at least one vision-capable model. | Do not omit vision-capable models from OPENCLAW_LIVE_GATEWAY_MODELS.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 1,
+          "retainedCandidateCount": 1,
+          "prunedCandidateCount": 0,
+          "disposition": "admitted_to_batch"
+        },
+        {
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "candidateId": "candidate-9",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_3cbbfc1baadfc7536dd0bdf9",
+          "objectSummary": "Live tests discover credentials the same way the CLI does; profile store is preferred. | Use the CLI-style credential discovery; store profile keys in ~/.openclaw/credentials/ (preferred) and configure via ~/.openclaw/openclaw.json or OPENCLAW_CONFIG_PATH.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 1,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 1,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "candidateId": "candidate-10",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_e740ed223488fb3984d38ffa",
+          "objectSummary": "When adding regressions from live issues, prefer CI-safe regressions and keep live tests narrow/opt-in. | Add a CI-safe regression if possible (mock/stub provider or capture the exact request-shape transformation). | If the issue is inherently live-only (rate limits, auth policies), keep the live test narrow and opt-in via env vars.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 2,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 2,
+          "disposition": "zero_candidate_skip"
+        }
+      ],
+      "collisionBatch": [],
+      "boundedCandidateAdjudication": [
+        {
+          "candidateId": "candidate-0",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_c84f90bdfd016e1039490a2f",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "OpenClaw default test gate: `pnpm build && pnpm check && pnpm test`",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "openclaw default test gate `pnpm build && pnpm check && pnpm test`",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "ef1be3fc-b102-5ca5-ab24-62a3ebfaf737",
+              "similarityScore": 0.3125,
+              "searchRank": 1,
+              "canonicalClass": "user",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "c3bdc0a3-a692-5c6d-bb83-4e44ec2c0949",
+              "similarityScore": 0.15,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "5865d1ca-2577-52b8-940c-45d8f7116e3e",
+              "similarityScore": 0.1304,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "904467e3-9095-5629-91d7-7384dcda4e14",
+              "similarityScore": 0.0909,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "33246c0b-aea6-549b-b164-43df2f79bea7",
+              "similarityScore": 0.087,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-1",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:rule_363b27c382ac872798b82aeb",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "Which test suite to run based on what you're changing | If editing logic/tests, run `pnpm test` (and `pnpm test:coverage` if you changed a lot). If touching gateway networking/WS protocol/pairing, add `pnpm test:e2e`. If debugging `my bot is down`/provider-specific failures/tool calling, run a narrowed `pnpm test:live`.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "which test suite to run based on what you're changing if editing logic/tests, run `pnpm test` (and `pnpm test:coverage` if you changed a lot). if touching gateway networking/ws protocol/pairing, add `pnpm test:e2e`. if debugging `my bot is down`/provider-specific failures/tool calling, run a narrowed `pnpm test:live`.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "a0adfb4a-1985-56bb-bb2c-9a4a862e8bf9",
+              "similarityScore": 0.122,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "33246c0b-aea6-549b-b164-43df2f79bea7",
+              "similarityScore": 0.1132,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "5865d1ca-2577-52b8-940c-45d8f7116e3e",
+              "similarityScore": 0.1111,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "84e09e60-4420-5d29-8271-eb19e8befd3e",
+              "similarityScore": 0.1091,
+              "searchRank": 4,
+              "canonicalClass": "user",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "c3bdc0a3-a692-5c6d-bb83-4e44ec2c0949",
+              "similarityScore": 0.0962,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-2",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_f41d191af301a240a66401d8",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "Live tests stability and cost: Live tests are not CI-stable by design: they require real networks, real provider policies/quotas, and may have outages; they also cost money and use rate limits. Prefer running narrowed subsets instead of \"everything\".",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "live tests stability and cost live tests are not ci-stable by design: they require real networks, real provider policies/quotas, and may have outages; they also cost money and use rate limits. prefer running narrowed subsets instead of \"everything\".",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "84e09e60-4420-5d29-8271-eb19e8befd3e",
+              "similarityScore": 0.1778,
+              "searchRank": 1,
+              "canonicalClass": "user",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "0382ea58-37d0-52ef-bb9f-e787b6a3b776",
+              "similarityScore": 0.1277,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "c3bdc0a3-a692-5c6d-bb83-4e44ec2c0949",
+              "similarityScore": 0.1136,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "258d9733-3eeb-51f6-932b-7e40c39dc569",
+              "similarityScore": 0.0755,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "4c3c62c6-f119-5955-996e-8a1ff5722ddb",
+              "similarityScore": 0.0725,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-3",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_0388b94c142c93404109d7c6",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "Selecting models/providers for live tests and where API keys come from: Live tests can select models via `OPENCLAW_LIVE_MODELS` (e.g., `modern`, `all`, or a comma allowlist) and select providers via `OPENCLAW_LIVE_PROVIDERS` (comma allowlist). By default, keys come from the profile store and env fallbacks; set `OPENCLAW_LIVE_REQUIRE_PROFILE_KEYS=1` to enforce profile store only.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "selecting models/providers for live tests and where api keys come from live tests can select models via `openclaw_live_models` (e.g., `modern`, `all`, or a comma allowlist) and select providers via `openclaw_live_providers` (comma allowlist). by default, keys come from the profile store and env fallbacks; set `openclaw_live_require_profile_keys=1` to enforce profile store only.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "c3bdc0a3-a692-5c6d-bb83-4e44ec2c0949",
+              "similarityScore": 0.1778,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "258d9733-3eeb-51f6-932b-7e40c39dc569",
+              "similarityScore": 0.1509,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "a0adfb4a-1985-56bb-bb2c-9a4a862e8bf9",
+              "similarityScore": 0.1429,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "6258dbfd-436d-52ae-966a-ea60d0a9c358",
+              "similarityScore": 0.1379,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "904467e3-9095-5629-91d7-7384dcda4e14",
+              "similarityScore": 0.102,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-4",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:rule_7ee39baa70dfba80d2acebeb",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "Narrow live tests instead of running everything | When debugging real providers/models (requires real creds), prefer narrowing live tests via the allowlist env vars described below rather than running \"everything\".",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "narrow live tests instead of running everything when debugging real providers/models (requires real creds), prefer narrowing live tests via the allowlist env vars described below rather than running \"everything\".",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "84e09e60-4420-5d29-8271-eb19e8befd3e",
+              "similarityScore": 0.4063,
+              "searchRank": 1,
+              "canonicalClass": "user",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "b594153c-bba0-5a13-a6cd-40d46100c334",
+              "similarityScore": 0.16,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "045b2273-9a2b-593d-a999-6f3c000b44e1",
+              "similarityScore": 0.1481,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "a0adfb4a-1985-56bb-bb2c-9a4a862e8bf9",
+              "similarityScore": 0.1176,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "6258dbfd-436d-52ae-966a-ea60d0a9c358",
+              "similarityScore": 0.0588,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-6",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_22aaa7598ad0c87ff185862c",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "Recommended modern live smoke models: Recommended models to cover regularly on a dev machine with keys include OpenAI `openai/gpt-5.2` (optional `openai/gpt-5.1`), OpenAI Codex `openai-codex/gpt-5.3-codex` (optional `openai-codex/gpt-5.3-codex-codex`), and Anthropic `anthropic/claude-opus-4-6` (or `anthropic/claude-sonnet-4-5`).",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "recommended modern live smoke models recommended models to cover regularly on a dev machine with keys include openai `openai/gpt-5.2` (optional `openai/gpt-5.1`), openai codex `openai-codex/gpt-5.3-codex` (optional `openai-codex/gpt-5.3-codex-codex`), and anthropic `anthropic/claude-opus-4-6` (or `anthropic/claude-sonnet-4-5`).",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "65d218a4-8a87-5bbd-a762-6cea7cad2131",
+              "similarityScore": 0.2778,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_d069270bd186afce",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "045b2273-9a2b-593d-a999-6f3c000b44e1",
+              "similarityScore": 0.1525,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "b5545011-4c03-5f70-9c19-049380182dcf",
+              "similarityScore": 0.1429,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "5865d1ca-2577-52b8-940c-45d8f7116e3e",
+              "similarityScore": 0.1111,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "6258dbfd-436d-52ae-966a-ea60d0a9c358",
+              "similarityScore": 0.1111,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-7",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_1b2e008402cb2408a19c8b47",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "objectSummary": "Live gateway model matrix should use the Modern smoke set and avoid older Gemini 2.x models. | Use modern smoke set models for the live gateway matrix and avoid older Gemini 2.x models.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "live gateway model matrix should use the modern smoke set and avoid older gemini 2.x models. use modern smoke set models for the live gateway matrix and avoid older gemini 2.x models.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "b5545011-4c03-5f70-9c19-049380182dcf",
+              "similarityScore": 0.2069,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "6258dbfd-436d-52ae-966a-ea60d0a9c358",
+              "similarityScore": 0.175,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "d70206dc-5b03-52ab-9c31-282aabb8ffd2",
+              "similarityScore": 0.1628,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "5865d1ca-2577-52b8-940c-45d8f7116e3e",
+              "similarityScore": 0.1563,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "045b2273-9a2b-593d-a999-6f3c000b44e1",
+              "similarityScore": 0.1458,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-9",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_3cbbfc1baadfc7536dd0bdf9",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "objectSummary": "Live tests discover credentials the same way the CLI does; profile store is preferred. | Use the CLI-style credential discovery; store profile keys in ~/.openclaw/credentials/ (preferred) and configure via ~/.openclaw/openclaw.json or OPENCLAW_CONFIG_PATH.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "live tests discover credentials the same way the cli does; profile store is preferred. use the cli-style credential discovery; store profile keys in ~/.openclaw/credentials/ (preferred) and configure via ~/.openclaw/openclaw.json or openclaw_config_path.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "dd930f17-5412-5fcc-bca0-3277240c279b",
+              "similarityScore": 0.3929,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_d069270bd186afce",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "045b2273-9a2b-593d-a999-6f3c000b44e1",
+              "similarityScore": 0.1852,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "c3bdc0a3-a692-5c6d-bb83-4e44ec2c0949",
+              "similarityScore": 0.1622,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "a0adfb4a-1985-56bb-bb2c-9a4a862e8bf9",
+              "similarityScore": 0.0986,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "33246c0b-aea6-549b-b164-43df2f79bea7",
+              "similarityScore": 0.0976,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-10",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_e740ed223488fb3984d38ffa",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "objectSummary": "When adding regressions from live issues, prefer CI-safe regressions and keep live tests narrow/opt-in. | Add a CI-safe regression if possible (mock/stub provider or capture the exact request-shape transformation). | If the issue is inherently live-only (rate limits, auth policies), keep the live test narrow and opt-in via env vars.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "when adding regressions from live issues, prefer ci-safe regressions and keep live tests narrow/opt-in. add a ci-safe regression if possible (mock/stub provider or capture the exact request-shape transformation). if the issue is inherently live-only (rate limits, auth policies), keep the live test narrow and opt-in via env vars.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "a0adfb4a-1985-56bb-bb2c-9a4a862e8bf9",
+              "similarityScore": 0.6034,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "81f0e716-e8d3-5bd4-9328-b321a5df8b0a",
+              "similarityScore": 0.1552,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "84e09e60-4420-5d29-8271-eb19e8befd3e",
+              "similarityScore": 0.1481,
+              "searchRank": 3,
+              "canonicalClass": "user",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "045b2273-9a2b-593d-a999-6f3c000b44e1",
+              "similarityScore": 0.1449,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "b594153c-bba0-5a13-a6cd-40d46100c334",
+              "similarityScore": 0.1364,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-5",
+          "caseIdentity": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd:fact_4beb22eb2ac9f72d1ad2f7bf",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "objectSummary": "Gateway+dev-agent live smoke probe types: Gateway+dev-agent live smoke uses `read` and `exec+read` tool probes and an image probe: it expects `cat <CODE>` from the model from an attached generated PNG, with minor OCR tolerance. Implementation references: `src/gateway/gateway-models.profiles.live.test.ts` and `src/gateway/live-image-probe.ts`.",
+          "candidateSource": "retained_structural",
+          "queryText": "gateway+dev-agent live smoke probe types gateway+dev-agent live smoke uses `read` and `exec+read` tool probes and an image probe: it expects `cat <code>` from the model from an attached generated png, with minor ocr tolerance. implementation references: `src/gateway/gateway-models.profiles.live.test.ts` and `src/gateway/live-image-probe.ts`.",
+          "adjudicationCandidateCount": 2,
+          "adjudicationBatchAdmitted": true,
+          "finalLocalRouting": "direct_distinct",
+          "modelOutput": {
+            "sameCoreMemory": "no",
+            "matchedCandidateId": "none",
+            "deltaType": "unclear"
+          },
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "d70206dc-5b03-52ab-9c31-282aabb8ffd2",
+              "similarityScore": 1,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": true
+            },
+            {
+              "memoryObjectId": "5865d1ca-2577-52b8-940c-45d8f7116e3e",
+              "similarityScore": 1,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": true
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-8",
+          "caseIdentity": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3:rule_7968e9273632204339adeb83",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "objectSummary": "OPENCLAW_LIVE_GATEWAY_MODELS should include at least one vision-capable model. | Do not omit vision-capable models from OPENCLAW_LIVE_GATEWAY_MODELS.",
+          "candidateSource": "retained_structural",
+          "queryText": "openclaw_live_gateway_models should include at least one vision-capable model. do not omit vision-capable models from openclaw_live_gateway_models.",
+          "adjudicationCandidateCount": 1,
+          "adjudicationBatchAdmitted": true,
+          "finalLocalRouting": "direct_distinct",
+          "modelOutput": {
+            "sameCoreMemory": "no",
+            "matchedCandidateId": "none",
+            "deltaType": "unclear"
+          },
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "7912f6d5-51c2-5d09-9491-e7070e986593",
+              "similarityScore": 1,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_841ea75148720667",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": true
+            }
+          ]
+        }
+      ],
+      "writeResults": [
+        {
+          "caseIdentity": "docs/help/testing.md::testing>quick start::fact_c84f90bdfd016e1039490a2f",
+          "candidateId": "candidate-0",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "eb8bb771-3d99-5c32-946e-a111e68d3ef5",
+          "supportItemId": "eb0de173-e309-579f-ba7c-02347c07b9fa",
+          "objectSummary": "OpenClaw default test gate: `pnpm build && pnpm check && pnpm test`"
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>which suite should i run?::rule_363b27c382ac872798b82aeb",
+          "candidateId": "candidate-1",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "4c3c62c6-f119-5955-996e-8a1ff5722ddb",
+          "supportItemId": "02416d47-cf45-5afb-aa37-af052c17aa4c",
+          "objectSummary": "Which test suite to run based on what you're changing | If editing logic/tests, run `pnpm test` (and `pnpm test:coverage` if you changed a lot). If touching gateway networking/WS protocol/pairing, add `pnpm test:e2e`. If debugging `my bot is down`/provider-specific failures/tool calling, run a narrowed `pnpm test:live`."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>test suites (what runs where)>live (real providers + real models)::fact_f41d191af301a240a66401d8",
+          "candidateId": "candidate-2",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "b594153c-bba0-5a13-a6cd-40d46100c334",
+          "supportItemId": "26ec3e9f-5b78-5428-a9d5-bbac853f0eec",
+          "objectSummary": "Live tests stability and cost: Live tests are not CI-stable by design: they require real networks, real provider policies/quotas, and may have outages; they also cost money and use rate limits. Prefer running narrowed subsets instead of \"everything\"."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>live: model smoke (profile keys)>layer 1: direct model completion (no gateway)::fact_0388b94c142c93404109d7c6",
+          "candidateId": "candidate-3",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "045b2273-9a2b-593d-a999-6f3c000b44e1",
+          "supportItemId": "24a2de2b-f345-52d5-8c32-f727b7f5d774",
+          "objectSummary": "Selecting models/providers for live tests and where API keys come from: Live tests can select models via `OPENCLAW_LIVE_MODELS` (e.g., `modern`, `all`, or a comma allowlist) and select providers via `OPENCLAW_LIVE_PROVIDERS` (comma allowlist). By default, keys come from the profile store and env fallbacks; set `OPENCLAW_LIVE_REQUIRE_PROFILE_KEYS=1` to enforce profile store only."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>test suites (what runs where)>live (real providers + real models)::rule_7ee39baa70dfba80d2acebeb",
+          "candidateId": "candidate-4",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "81f0e716-e8d3-5bd4-9328-b321a5df8b0a",
+          "supportItemId": "65a21bdb-fc0a-50e2-9ce3-96329ee2314b",
+          "objectSummary": "Narrow live tests instead of running everything | When debugging real providers/models (requires real creds), prefer narrowing live tests via the allowlist env vars described below rather than running \"everything\"."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>live: model smoke (profile keys)>layer 2: gateway + dev agent smoke (what “@openclaw” actually does)::fact_4beb22eb2ac9f72d1ad2f7bf",
+          "candidateId": "candidate-5",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "bb2e706f-30b0-5dd1-a809-9392a8d3e346",
+          "supportItemId": "1189486c-8598-54e0-8216-0f9381ef3b90",
+          "objectSummary": "Gateway+dev-agent live smoke probe types: Gateway+dev-agent live smoke uses `read` and `exec+read` tool probes and an image probe: it expects `cat <CODE>` from the model from an attached generated PNG, with minor OCR tolerance. Implementation references: `src/gateway/gateway-models.profiles.live.test.ts` and `src/gateway/live-image-probe.ts`."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>live: model matrix (what we cover)>modern smoke set (tool calling + image)::fact_22aaa7598ad0c87ff185862c",
+          "candidateId": "candidate-6",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "7912f6d5-51c2-5d09-9491-e7070e986593",
+          "supportItemId": "d7ed5032-289e-5bf6-8249-c272057e82c7",
+          "objectSummary": "Recommended modern live smoke models: Recommended models to cover regularly on a dev machine with keys include OpenAI `openai/gpt-5.2` (optional `openai/gpt-5.1`), OpenAI Codex `openai-codex/gpt-5.3-codex` (optional `openai-codex/gpt-5.3-codex-codex`), and Anthropic `anthropic/claude-opus-4-6` (or `anthropic/claude-sonnet-4-5`)."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>live: model matrix (what we cover)>modern smoke set (tool calling + image)::rule_1b2e008402cb2408a19c8b47",
+          "candidateId": "candidate-7",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "f52a4f2c-87f9-56b6-99b4-9e757caa4a7a",
+          "supportItemId": "9a8dd549-eed8-59c2-b155-fa9fee256880",
+          "objectSummary": "Live gateway model matrix should use the Modern smoke set and avoid older Gemini 2.x models. | Use modern smoke set models for the live gateway matrix and avoid older Gemini 2.x models."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>live: model matrix (what we cover)>vision: image send (attachment %e2%86%92 multimodal message)::rule_7968e9273632204339adeb83",
+          "candidateId": "candidate-8",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "93fd0064-8adf-5cae-bb22-8118fc80ef54",
+          "supportItemId": "98a97310-3bbb-518f-af70-374c0031487a",
+          "objectSummary": "OPENCLAW_LIVE_GATEWAY_MODELS should include at least one vision-capable model. | Do not omit vision-capable models from OPENCLAW_LIVE_GATEWAY_MODELS."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>credentials (never commit)::rule_3cbbfc1baadfc7536dd0bdf9",
+          "candidateId": "candidate-9",
+          "sourceWindowId": "bb74a609-75e6-58fb-949b-e7c18ccfc6dd",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "6e9187d8-3541-5add-9d6e-d3c8e5b07f14",
+          "supportItemId": "b898c02b-59de-54a7-abe5-b8e5fb4735d5",
+          "objectSummary": "Live tests discover credentials the same way the CLI does; profile store is preferred. | Use the CLI-style credential discovery; store profile keys in ~/.openclaw/credentials/ (preferred) and configure via ~/.openclaw/openclaw.json or OPENCLAW_CONFIG_PATH."
+        },
+        {
+          "caseIdentity": "docs/help/testing.md::testing>adding regressions (guidance)::rule_e740ed223488fb3984d38ffa",
+          "candidateId": "candidate-10",
+          "sourceWindowId": "ed9c548e-58e0-59df-ab0e-0c353c7e22d3",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "1160e98d-6692-52a3-bf59-79948361d091",
+          "supportItemId": "7736d9ff-fbd6-56ca-b08b-f8d4d0062b27",
+          "objectSummary": "When adding regressions from live issues, prefer CI-safe regressions and keep live tests narrow/opt-in. | Add a CI-safe regression if possible (mock/stub provider or capture the exact request-shape transformation). | If the issue is inherently live-only (rate limits, auth policies), keep the live test narrow and opt-in via env vars."
+        }
+      ]
+    }
+  ],
+  "diagnosis": {
+    "totalDistinctWrites": 27,
+    "totalAttachSupports": 0,
+    "totalConflictHoldWrites": 0,
+    "zeroCandidateSkips": 19,
+    "admittedToBatch": 4,
+    "likelyHinge": "deterministic_gate_too_strict"
+  }
+}

@@ -1,0 +1,802 @@
+{
+  "generatedAt": "2026-04-15T20:32:49.035Z",
+  "databaseMode": "targeted_trace_scratch_db",
+  "databaseName": "model_memory_trace_scratch",
+  "sourcePath": "docs/gateway/configuration.md",
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 180000,
+  "maxWordsPerWindow": 1500,
+  "passes": [
+    {
+      "passLabel": "baseline",
+      "objectDelta": 10,
+      "supportDelta": 10,
+      "capturedClaimCount": 10,
+      "writeDecisionCounts": {
+        "write": 10
+      },
+      "collisionModelCalls": 0,
+      "collisionGate": [],
+      "collisionBatch": [],
+      "boundedCandidateAdjudication": [],
+      "writeResults": [
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration::fact_002f98c0073ea15130184a6c",
+          "candidateId": "candidate-0",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "39de6b9c-d913-5d8a-a9ca-56a30da9f20e",
+          "supportItemId": "418f5203-a016-5ff7-9ef9-d25396c00a58",
+          "objectSummary": "OpenClaw config file location and default behavior: OpenClaw reads an optional JSON5 config from ~/.openclaw/openclaw.json and uses safe defaults if the file is missing."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>strict validation::rule_c3772f5d7d10c9173c9f5844",
+          "candidateId": "candidate-1",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "b3a1d68a-2340-50d0-a6a3-c6b0f2d7a97a",
+          "supportItemId": "79959777-65ff-5eeb-abb0-6ead99b64bc3",
+          "objectSummary": "Strict configuration schema validation | Ensure configurations fully match the schema. | Do not include unknown keys, malformed types, or invalid values (except a root-level $schema string)."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>config hot reload::rule_5617956030f85084921617d2",
+          "candidateId": "candidate-2",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "decision": "write",
+          "decisionCodes": [
+            "write_structural_accept",
+            "collision_distinct",
+            "review_mode_overridden"
+          ],
+          "memoryObjectId": "e5db48bf-26dc-5bda-9b30-1d6b23abd7ec",
+          "supportItemId": "61a52ca9-321c-58da-bdf0-78765d5ecd50",
+          "objectSummary": "Config hot reload behavior and reload modes | Use reload modes hybrid (default), hot, restart, or off to control whether changes hot-apply or require a restart. | Ability to select and understand reload modes (hybrid, hot, restart, off) for file-watching behavior."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>config hot reload>what hot-applies vs what needs a restart::rule_7ee1ded3356b6b9be86aa9af",
+          "candidateId": "candidate-3",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "decision": "write",
+          "decisionCodes": [
+            "write_structural_accept",
+            "collision_distinct",
+            "review_mode_overridden"
+          ],
+          "memoryObjectId": "65ece99d-2dcc-516f-aa0c-837c83c2f1c6",
+          "supportItemId": "50e4e076-6a88-50da-b736-203c40db414c",
+          "objectSummary": "Hybrid hot reload restart-required fields and exceptions | In hybrid mode, expect automatic restarts for gateway.* and infrastructure fields. | Do not assume gateway.reload or gateway.remote changes trigger a restart."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>config rpc (programmatic updates)::rule_2c707f5948990ea8ab3f4a45",
+          "candidateId": "candidate-4",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "bcbf10e0-a56a-5f48-ac13-944bc7348bf5",
+          "supportItemId": "b9f77470-49a5-52fb-9ca5-92581aa3985f",
+          "objectSummary": "Rate limits for control-plane configuration write RPCs | If a config write RPC returns UNAVAILABLE, respect retryAfterMs and retry later. | Do not exceed 3 requests per 60 seconds per deviceId+clientIp for config.apply, config.patch, and update.run."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>config rpc (programmatic updates)::fact_39c83fefc3763f845fcefc52",
+          "candidateId": "candidate-5",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "09a2a6bc-d98d-5858-a228-1bd1090eeffb",
+          "supportItemId": "7bc18276-865d-5a84-9e4a-9b7ada2ce114",
+          "objectSummary": "config.apply parameters: config.apply parameters include: raw (required), optional baseHash, optional sessionKey, optional note, and optional restartDelayMs (default 2000)."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>config rpc (programmatic updates)::rule_cb9ef32eaebe7affe3ee4cf5",
+          "candidateId": "candidate-6",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "07b1d6aa-af92-52e7-8049-289fa5dc9573",
+          "supportItemId": "d4bb6d6f-4995-5f59-bd9f-35fa333a19c1",
+          "objectSummary": "Restart coalescing and cooldown | If you need multiple restart requests, expect them to be coalesced while one is already pending/in-flight and to observe a 30-second cooldown between restart cycles. | Do not assume every restart request immediately triggers a new restart cycle during in-flight restarts or within the cooldown window."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>config rpc (programmatic updates)::rule_ce1e9eb9679ab7e0c5a49e8c",
+          "candidateId": "candidate-7",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "849a11eb-a6a4-5341-a078-d463bdf816cc",
+          "supportItemId": "6ac6144f-c755-5797-833e-f0693f5cd3a8",
+          "objectSummary": "config.patch JSON merge patch semantics | Use JSON merge patch semantics for config.patch: objects merge recursively, null deletes keys, and arrays replace. | When using config.patch, construct updates knowing that arrays replace rather than merge element-wise."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>environment variables::rule_9fbf84a9e59128e82883b62c",
+          "candidateId": "candidate-8",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "c18415bf-bfba-5869-b938-dc49ed25f8d7",
+          "supportItemId": "a5653318-1264-5526-ad99-9be1e2c710d6",
+          "objectSummary": "Environment variable sources and non-overriding .env files | Set environment variables via the parent process, and optionally provide additional values via a .env in the current working directory (if present) and via ~/.openclaw/.env; these .env files do not override existing env vars. | Ensure required env vars are present in the parent process or the supported .env locations without relying on .env files to override already-set env vars."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>environment variables::rule_95d98993c7ccf764732d30e5",
+          "candidateId": "candidate-9",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "8e314276-d48b-5b94-ac67-9b7a432ab0a8",
+          "supportItemId": "e05e3b62-3954-5336-a34f-a672eafae743",
+          "objectSummary": "Env var substitution rules in config values | Reference env vars using ${VAR_NAME} where VAR_NAME must be uppercase; ensure every referenced var exists and is non-empty at load time; use $${VAR} to emit literal ${VAR} output. | Do not use lowercase or non-matching env var names, and do not rely on missing/empty vars—these throw an error at load time."
+        }
+      ]
+    },
+    {
+      "passLabel": "rerun_1",
+      "objectDelta": 8,
+      "supportDelta": 8,
+      "capturedClaimCount": 8,
+      "writeDecisionCounts": {
+        "supersede": 1,
+        "write": 7
+      },
+      "collisionModelCalls": 1,
+      "collisionGate": [
+        {
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "candidateId": "candidate-1",
+          "caseIdentity": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7:rule_d968143e9ac6919a5eb938e8",
+          "objectSummary": "Strict configuration schema validation | Ensure configurations fully match the schema (no unknown keys, malformed types, or invalid values). | Do not include unknown keys or invalid values, since the Gateway will refuse to start. | Use JSON Schema metadata via the root-level `$schema` field (string) for editor support.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 7,
+          "retainedCandidateCount": 1,
+          "prunedCandidateCount": 6,
+          "disposition": "admitted_to_batch"
+        },
+        {
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "candidateId": "candidate-2",
+          "caseIdentity": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7:rule_1f2fce031bf94898b26809ce",
+          "objectSummary": "Config hot reload watches the OpenClaw config file | Set `gateway.reload.mode` to control reload behavior (default `hybrid`, or `hot`, `restart`, `off`). | Do not assume manual restarts are needed for most settings when hot reload is enabled. | Understand how `hybrid`, `hot`, `restart`, and `off` affect whether a restart is performed on changes.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 7,
+          "retainedCandidateCount": 1,
+          "prunedCandidateCount": 6,
+          "disposition": "admitted_to_batch"
+        },
+        {
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "candidateId": "candidate-3",
+          "caseIdentity": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7:rule_bbf9763c2bcfb01250bfcdeb",
+          "objectSummary": "Hybrid hot reload restart behavior by config category | In `hybrid` mode, rely on automatic restarts for `gateway.*` changes and for infrastructure fields like `discovery`, `canvasHost`, and `plugins`. | Do not expect no-restart behavior when changing `gateway.*` or infrastructure fields in `hybrid` mode. | Separate changes into categories that are safe to hot-apply vs those that require restart.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 7,
+          "retainedCandidateCount": 1,
+          "prunedCandidateCount": 6,
+          "disposition": "admitted_to_batch"
+        },
+        {
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "candidateId": "candidate-4",
+          "caseIdentity": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7:rule_7f41ee4c2517a77ee93f00dd",
+          "objectSummary": "Rate limiting for control-plane write RPCs | Throttle control-plane write RPC calls (`config.apply`, `config.patch`, `update.run`) to avoid hitting the limit. | Do not exceed 3 requests per 60 seconds per `deviceId+clientIp`, since the RPC will return `UNAVAILABLE`. | Handle `UNAVAILABLE` responses that include `retryAfterMs` when rate-limited.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 7,
+          "retainedCandidateCount": 1,
+          "prunedCandidateCount": 6,
+          "disposition": "admitted_to_batch"
+        },
+        {
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "candidateId": "candidate-5",
+          "caseIdentity": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec:rule_6b3e620beb5ba7f1f2ad34ab",
+          "objectSummary": "Restart requests coalescing and cooldown | When issuing restart requests while a restart is already pending/in-flight, expect them to be coalesced; ensure restart cycles are spaced by at least 30 seconds to avoid cooldown-related behavior. | Be able to schedule or debounce restart requests to account for a 30-second cooldown between restart cycles.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 7,
+          "retainedCandidateCount": 1,
+          "prunedCandidateCount": 6,
+          "disposition": "admitted_to_batch"
+        },
+        {
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "candidateId": "candidate-6",
+          "caseIdentity": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec:rule_36b1cab9a501338c8d3227b3",
+          "objectSummary": "Environment variable loading order and precedence | Set environment variables in the parent process first; if you provide `.env` in the current working directory or `~/.openclaw/.env`, they will be read in addition to parent-process env vars but will not override already-set env vars. | Ensure desired env vars are not already defined in the parent process if you want `.env` files to supply them.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 7,
+          "retainedCandidateCount": 1,
+          "prunedCandidateCount": 6,
+          "disposition": "admitted_to_batch"
+        },
+        {
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "candidateId": "candidate-7",
+          "caseIdentity": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec:rule_e1d77de882262ec6a5241ff9",
+          "objectSummary": "Config string env substitution syntax, failure mode, and escaping | Use `${VAR_NAME}` in config string values only with uppercase variable names matching `[A-Z_][A-Z0-9_]*`; do not rely on missing/empty vars since they throw an error at load time; use `$${VAR}` when you need literal output. | Be able to provide required uppercase env vars at load time and apply `$${VAR}` escaping for literal text.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 7,
+          "retainedCandidateCount": 1,
+          "prunedCandidateCount": 6,
+          "disposition": "admitted_to_batch"
+        }
+      ],
+      "collisionBatch": [],
+      "boundedCandidateAdjudication": [
+        {
+          "candidateId": "candidate-1",
+          "caseIdentity": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7:rule_d968143e9ac6919a5eb938e8",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "objectSummary": "Strict configuration schema validation | Ensure configurations fully match the schema (no unknown keys, malformed types, or invalid values). | Do not include unknown keys or invalid values, since the Gateway will refuse to start. | Use JSON Schema metadata via the root-level `$schema` field (string) for editor support.",
+          "candidateSource": "retained_structural",
+          "queryText": "strict configuration schema validation ensure configurations fully match the schema (no unknown keys, malformed types, or invalid values). do not include unknown keys or invalid values, since the gateway will refuse to start. use json schema metadata via the root-level `$schema` field (string) for editor support.",
+          "adjudicationCandidateCount": 1,
+          "adjudicationBatchAdmitted": true,
+          "finalLocalRouting": "direct_distinct",
+          "modelOutput": {
+            "sameCoreMemory": "no",
+            "matchedCandidateId": "none",
+            "deltaType": "unclear"
+          },
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "b3a1d68a-2340-50d0-a6a3-c6b0f2d7a97a",
+              "similarityScore": 1,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": true
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-2",
+          "caseIdentity": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7:rule_1f2fce031bf94898b26809ce",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "objectSummary": "Config hot reload watches the OpenClaw config file | Set `gateway.reload.mode` to control reload behavior (default `hybrid`, or `hot`, `restart`, `off`). | Do not assume manual restarts are needed for most settings when hot reload is enabled. | Understand how `hybrid`, `hot`, `restart`, and `off` affect whether a restart is performed on changes.",
+          "candidateSource": "retained_structural",
+          "queryText": "config hot reload watches the openclaw config file set `gateway.reload.mode` to control reload behavior (default `hybrid`, or `hot`, `restart`, `off`). do not assume manual restarts are needed for most settings when hot reload is enabled. understand how `hybrid`, `hot`, `restart`, and `off` affect whether a restart is performed on changes.",
+          "adjudicationCandidateCount": 1,
+          "adjudicationBatchAdmitted": true,
+          "finalLocalRouting": "direct_distinct",
+          "modelOutput": {
+            "sameCoreMemory": "no",
+            "matchedCandidateId": "none",
+            "deltaType": "unclear"
+          },
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "65ece99d-2dcc-516f-aa0c-837c83c2f1c6",
+              "similarityScore": 1,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": true
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-3",
+          "caseIdentity": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7:rule_bbf9763c2bcfb01250bfcdeb",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "objectSummary": "Hybrid hot reload restart behavior by config category | In `hybrid` mode, rely on automatic restarts for `gateway.*` changes and for infrastructure fields like `discovery`, `canvasHost`, and `plugins`. | Do not expect no-restart behavior when changing `gateway.*` or infrastructure fields in `hybrid` mode. | Separate changes into categories that are safe to hot-apply vs those that require restart.",
+          "candidateSource": "retained_structural",
+          "queryText": "hybrid hot reload restart behavior by config category in `hybrid` mode, rely on automatic restarts for `gateway.*` changes and for infrastructure fields like `discovery`, `canvashost`, and `plugins`. do not expect no-restart behavior when changing `gateway.*` or infrastructure fields in `hybrid` mode. separate changes into categories that are safe to hot-apply vs those that require restart.",
+          "adjudicationCandidateCount": 1,
+          "adjudicationBatchAdmitted": true,
+          "finalLocalRouting": "direct_distinct",
+          "modelOutput": {
+            "sameCoreMemory": "no",
+            "matchedCandidateId": "none",
+            "deltaType": "unclear"
+          },
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "65ece99d-2dcc-516f-aa0c-837c83c2f1c6",
+              "similarityScore": 1,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": true
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-4",
+          "caseIdentity": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7:rule_7f41ee4c2517a77ee93f00dd",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "objectSummary": "Rate limiting for control-plane write RPCs | Throttle control-plane write RPC calls (`config.apply`, `config.patch`, `update.run`) to avoid hitting the limit. | Do not exceed 3 requests per 60 seconds per `deviceId+clientIp`, since the RPC will return `UNAVAILABLE`. | Handle `UNAVAILABLE` responses that include `retryAfterMs` when rate-limited.",
+          "candidateSource": "retained_structural",
+          "queryText": "rate limiting for control-plane write rpcs throttle control-plane write rpc calls (`config.apply`, `config.patch`, `update.run`) to avoid hitting the limit. do not exceed 3 requests per 60 seconds per `deviceid+clientip`, since the rpc will return `unavailable`. handle `unavailable` responses that include `retryafterms` when rate-limited.",
+          "adjudicationCandidateCount": 1,
+          "adjudicationBatchAdmitted": true,
+          "finalLocalRouting": "direct_distinct",
+          "modelOutput": {
+            "sameCoreMemory": "no",
+            "matchedCandidateId": "none",
+            "deltaType": "unclear"
+          },
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "bcbf10e0-a56a-5f48-ac13-944bc7348bf5",
+              "similarityScore": 1,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": true
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-5",
+          "caseIdentity": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec:rule_6b3e620beb5ba7f1f2ad34ab",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "objectSummary": "Restart requests coalescing and cooldown | When issuing restart requests while a restart is already pending/in-flight, expect them to be coalesced; ensure restart cycles are spaced by at least 30 seconds to avoid cooldown-related behavior. | Be able to schedule or debounce restart requests to account for a 30-second cooldown between restart cycles.",
+          "candidateSource": "retained_structural",
+          "queryText": "restart requests coalescing and cooldown when issuing restart requests while a restart is already pending/in-flight, expect them to be coalesced; ensure restart cycles are spaced by at least 30 seconds to avoid cooldown-related behavior. be able to schedule or debounce restart requests to account for a 30-second cooldown between restart cycles.",
+          "adjudicationCandidateCount": 1,
+          "adjudicationBatchAdmitted": true,
+          "finalLocalRouting": "direct_distinct",
+          "modelOutput": {
+            "sameCoreMemory": "no",
+            "matchedCandidateId": "none",
+            "deltaType": "unclear"
+          },
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "07b1d6aa-af92-52e7-8049-289fa5dc9573",
+              "similarityScore": 1,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": true
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-6",
+          "caseIdentity": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec:rule_36b1cab9a501338c8d3227b3",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "objectSummary": "Environment variable loading order and precedence | Set environment variables in the parent process first; if you provide `.env` in the current working directory or `~/.openclaw/.env`, they will be read in addition to parent-process env vars but will not override already-set env vars. | Ensure desired env vars are not already defined in the parent process if you want `.env` files to supply them.",
+          "candidateSource": "retained_structural",
+          "queryText": "environment variable loading order and precedence set environment variables in the parent process first; if you provide `.env` in the current working directory or `~/.openclaw/.env`, they will be read in addition to parent-process env vars but will not override already-set env vars. ensure desired env vars are not already defined in the parent process if you want `.env` files to supply them.",
+          "adjudicationCandidateCount": 1,
+          "adjudicationBatchAdmitted": true,
+          "finalLocalRouting": "direct_distinct",
+          "modelOutput": {
+            "sameCoreMemory": "no",
+            "matchedCandidateId": "none",
+            "deltaType": "unclear"
+          },
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "c18415bf-bfba-5869-b938-dc49ed25f8d7",
+              "similarityScore": 1,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": true
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-7",
+          "caseIdentity": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec:rule_e1d77de882262ec6a5241ff9",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "objectSummary": "Config string env substitution syntax, failure mode, and escaping | Use `${VAR_NAME}` in config string values only with uppercase variable names matching `[A-Z_][A-Z0-9_]*`; do not rely on missing/empty vars since they throw an error at load time; use `$${VAR}` when you need literal output. | Be able to provide required uppercase env vars at load time and apply `$${VAR}` escaping for literal text.",
+          "candidateSource": "retained_structural",
+          "queryText": "config string env substitution syntax, failure mode, and escaping use `${var_name}` in config string values only with uppercase variable names matching `[a-z_][a-z0-9_]*`; do not rely on missing/empty vars since they throw an error at load time; use `$${var}` when you need literal output. be able to provide required uppercase env vars at load time and apply `$${var}` escaping for literal text.",
+          "adjudicationCandidateCount": 1,
+          "adjudicationBatchAdmitted": true,
+          "finalLocalRouting": "direct_distinct",
+          "modelOutput": {
+            "sameCoreMemory": "no",
+            "matchedCandidateId": "none",
+            "deltaType": "unclear"
+          },
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "8e314276-d48b-5b94-ac67-9b7a432ab0a8",
+              "similarityScore": 1,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": true,
+              "selectedForAdjudication": true
+            }
+          ]
+        }
+      ],
+      "writeResults": [
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration::fact_4acf74b6a1c473e6037e5e05",
+          "candidateId": "candidate-0",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "decision": "supersede",
+          "decisionCodes": ["slot_supersession"],
+          "memoryObjectId": "d9aa3006-b80c-5a60-af6b-76893693c085",
+          "supportItemId": "667ded44-f7cc-5552-b767-cdb3a2f5eb1f",
+          "objectSummary": "OpenClaw config file location and default behavior: OpenClaw reads an optional JSON5 config from `~/.openclaw/openclaw.json`; if the file is missing, it uses safe defaults."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>strict validation::rule_d968143e9ac6919a5eb938e8",
+          "candidateId": "candidate-1",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "01436734-2d5e-547a-9a70-16fd6a20d6a0",
+          "supportItemId": "bd625aef-3e82-5bbc-868a-1500219bcc83",
+          "objectSummary": "Strict configuration schema validation | Ensure configurations fully match the schema (no unknown keys, malformed types, or invalid values). | Do not include unknown keys or invalid values, since the Gateway will refuse to start. | Use JSON Schema metadata via the root-level `$schema` field (string) for editor support."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>config hot reload::rule_1f2fce031bf94898b26809ce",
+          "candidateId": "candidate-2",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "1ee330b1-8a2b-5016-8987-5fa1debff280",
+          "supportItemId": "b1525f16-22de-55bc-80b9-9bd30f1dd49b",
+          "objectSummary": "Config hot reload watches the OpenClaw config file | Set `gateway.reload.mode` to control reload behavior (default `hybrid`, or `hot`, `restart`, `off`). | Do not assume manual restarts are needed for most settings when hot reload is enabled. | Understand how `hybrid`, `hot`, `restart`, and `off` affect whether a restart is performed on changes."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>config hot reload>what hot-applies vs what needs a restart::rule_bbf9763c2bcfb01250bfcdeb",
+          "candidateId": "candidate-3",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "abf20254-2583-5cab-ba78-437f89480772",
+          "supportItemId": "fbf94695-8afd-5940-a46f-655f8477399b",
+          "objectSummary": "Hybrid hot reload restart behavior by config category | In `hybrid` mode, rely on automatic restarts for `gateway.*` changes and for infrastructure fields like `discovery`, `canvasHost`, and `plugins`. | Do not expect no-restart behavior when changing `gateway.*` or infrastructure fields in `hybrid` mode. | Separate changes into categories that are safe to hot-apply vs those that require restart."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>config rpc (programmatic updates)::rule_7f41ee4c2517a77ee93f00dd",
+          "candidateId": "candidate-4",
+          "sourceWindowId": "73c2bb30-9528-5e26-9427-ee2d2dd9ccc7",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "92541bad-05fd-52e6-bbae-cd5ed4e1fc48",
+          "supportItemId": "62e922a8-304c-5b39-9821-2e16b7726045",
+          "objectSummary": "Rate limiting for control-plane write RPCs | Throttle control-plane write RPC calls (`config.apply`, `config.patch`, `update.run`) to avoid hitting the limit. | Do not exceed 3 requests per 60 seconds per `deviceId+clientIp`, since the RPC will return `UNAVAILABLE`. | Handle `UNAVAILABLE` responses that include `retryAfterMs` when rate-limited."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>config rpc (programmatic updates)::rule_6b3e620beb5ba7f1f2ad34ab",
+          "candidateId": "candidate-5",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "9a78ff53-9f62-5a4b-a4ef-3115cd652e2a",
+          "supportItemId": "628a6236-c2bb-533c-b6af-7555b652049b",
+          "objectSummary": "Restart requests coalescing and cooldown | When issuing restart requests while a restart is already pending/in-flight, expect them to be coalesced; ensure restart cycles are spaced by at least 30 seconds to avoid cooldown-related behavior. | Be able to schedule or debounce restart requests to account for a 30-second cooldown between restart cycles."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>environment variables::rule_36b1cab9a501338c8d3227b3",
+          "candidateId": "candidate-6",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "9625e69d-4815-5bb2-8226-807f27f5ad44",
+          "supportItemId": "e5067d56-09d3-5e67-8ea6-35705daf4dd4",
+          "objectSummary": "Environment variable loading order and precedence | Set environment variables in the parent process first; if you provide `.env` in the current working directory or `~/.openclaw/.env`, they will be read in addition to parent-process env vars but will not override already-set env vars. | Ensure desired env vars are not already defined in the parent process if you want `.env` files to supply them."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>environment variables::rule_e1d77de882262ec6a5241ff9",
+          "candidateId": "candidate-7",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "decision": "write",
+          "decisionCodes": [
+            "write_structural_accept",
+            "collision_distinct",
+            "review_mode_overridden"
+          ],
+          "memoryObjectId": "0eff5c57-25ce-5f1a-8dfe-5853a9612383",
+          "supportItemId": "c0a91e14-fbc1-5b4c-aed8-c69660afc2f0",
+          "objectSummary": "Config string env substitution syntax, failure mode, and escaping | Use `${VAR_NAME}` in config string values only with uppercase variable names matching `[A-Z_][A-Z0-9_]*`; do not rely on missing/empty vars since they throw an error at load time; use `$${VAR}` when you need literal output. | Be able to provide required uppercase env vars at load time and apply `$${VAR}` escaping for literal text."
+        }
+      ]
+    },
+    {
+      "passLabel": "rerun_2",
+      "objectDelta": 3,
+      "supportDelta": 3,
+      "capturedClaimCount": 3,
+      "writeDecisionCounts": {
+        "write": 3
+      },
+      "collisionModelCalls": 0,
+      "collisionGate": [
+        {
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "candidateId": "candidate-0",
+          "caseIdentity": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec:rule_d90eff1cc7b53f61a71072f4",
+          "objectSummary": "config.apply and config.patch restart coalescing | Coalesce restart requests while one is already pending/in-flight, and enforce a 30-second cooldown between restart cycles. | Detect an in-flight pending restart request and apply a 30-second cooldown to subsequent restart cycles.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 0,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 0,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "candidateId": "candidate-1",
+          "caseIdentity": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec:fact_bb8c647f526438b0ad6c8c5a",
+          "objectSummary": "OpenClaw environment variable loading order and override behavior: OpenClaw reads env vars from the parent process plus `.env` from the current working directory (if present) and `~/.openclaw/.env` as a global fallback; neither file overrides existing env vars.",
+          "canonicalClass": "project",
+          "kind": "fact",
+          "rawCandidateCount": 0,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 0,
+          "disposition": "zero_candidate_skip"
+        },
+        {
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "candidateId": "candidate-2",
+          "caseIdentity": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec:rule_2989b66f8003247247d7a66f",
+          "objectSummary": "Env var substitution in config string values | Use `${VAR_NAME}` for uppercase env var names matching `[A-Z_][A-Z0-9_]*`; ensure required variables are present and non-empty to avoid load-time errors; escape `${VAR}` as `$${VAR}` for literal output. | Do not use non-matching variable names or rely on missing/empty env vars, since they cause errors at load time. | Validate `${VAR_NAME}` tokens against the allowed uppercase-name pattern and resolve them during config load; implement `$${VAR}` escaping for literal output.",
+          "canonicalClass": "project",
+          "kind": "rule",
+          "rawCandidateCount": 1,
+          "retainedCandidateCount": 0,
+          "prunedCandidateCount": 1,
+          "disposition": "zero_candidate_skip"
+        }
+      ],
+      "collisionBatch": [],
+      "boundedCandidateAdjudication": [
+        {
+          "candidateId": "candidate-0",
+          "caseIdentity": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec:rule_d90eff1cc7b53f61a71072f4",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "objectSummary": "config.apply and config.patch restart coalescing | Coalesce restart requests while one is already pending/in-flight, and enforce a 30-second cooldown between restart cycles. | Detect an in-flight pending restart request and apply a 30-second cooldown to subsequent restart cycles.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "config.apply and config.patch restart coalescing coalesce restart requests while one is already pending/in-flight, and enforce a 30-second cooldown between restart cycles. detect an in-flight pending restart request and apply a 30-second cooldown to subsequent restart cycles.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "07b1d6aa-af92-52e7-8049-289fa5dc9573",
+              "similarityScore": 0.38,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "9a78ff53-9f62-5a4b-a4ef-3115cd652e2a",
+              "similarityScore": 0.3469,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "e5db48bf-26dc-5bda-9b30-1d6b23abd7ec",
+              "similarityScore": 0.1304,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_f9b1d95a97b14225",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "bcbf10e0-a56a-5f48-ac13-944bc7348bf5",
+              "similarityScore": 0.1111,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "1ee330b1-8a2b-5016-8987-5fa1debff280",
+              "similarityScore": 0.0984,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-1",
+          "caseIdentity": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec:fact_bb8c647f526438b0ad6c8c5a",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "objectSummary": "OpenClaw environment variable loading order and override behavior: OpenClaw reads env vars from the parent process plus `.env` from the current working directory (if present) and `~/.openclaw/.env` as a global fallback; neither file overrides existing env vars.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "openclaw environment variable loading order and override behavior openclaw reads env vars from the parent process plus `.env` from the current working directory (if present) and `~/.openclaw/.env` as a global fallback; neither file overrides existing env vars.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "c18415bf-bfba-5869-b938-dc49ed25f8d7",
+              "similarityScore": 0.3091,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "9625e69d-4815-5bb2-8226-807f27f5ad44",
+              "similarityScore": 0.2963,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "d9aa3006-b80c-5a60-af6b-76893693c085",
+              "similarityScore": 0.1905,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "fact",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "1ee330b1-8a2b-5016-8987-5fa1debff280",
+              "similarityScore": 0.0952,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "e5db48bf-26dc-5bda-9b30-1d6b23abd7ec",
+              "similarityScore": 0.08,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_f9b1d95a97b14225",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        },
+        {
+          "candidateId": "candidate-2",
+          "caseIdentity": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec:rule_2989b66f8003247247d7a66f",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "objectSummary": "Env var substitution in config string values | Use `${VAR_NAME}` for uppercase env var names matching `[A-Z_][A-Z0-9_]*`; ensure required variables are present and non-empty to avoid load-time errors; escape `${VAR}` as `$${VAR}` for literal output. | Do not use non-matching variable names or rely on missing/empty env vars, since they cause errors at load time. | Validate `${VAR_NAME}` tokens against the allowed uppercase-name pattern and resolve them during config load; implement `$${VAR}` escaping for literal output.",
+          "candidateSource": "raw_text_fallback",
+          "queryText": "env var substitution in config string values use `${var_name}` for uppercase env var names matching `[a-z_][a-z0-9_]*`; ensure required variables are present and non-empty to avoid load-time errors; escape `${var}` as `$${var}` for literal output. do not use non-matching variable names or rely on missing/empty env vars, since they cause errors at load time. validate `${var_name}` tokens against the allowed uppercase-name pattern and resolve them during config load; implement `$${var}` escaping for literal output.",
+          "adjudicationCandidateCount": 0,
+          "adjudicationBatchAdmitted": false,
+          "finalLocalRouting": "no_candidates",
+          "rawSearchResults": [
+            {
+              "memoryObjectId": "0eff5c57-25ce-5f1a-8dfe-5853a9612383",
+              "similarityScore": 0.4932,
+              "searchRank": 1,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "8e314276-d48b-5b94-ac67-9b7a432ab0a8",
+              "similarityScore": 0.3836,
+              "searchRank": 2,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "c18415bf-bfba-5869-b938-dc49ed25f8d7",
+              "similarityScore": 0.2346,
+              "searchRank": 3,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "9625e69d-4815-5bb2-8226-807f27f5ad44",
+              "similarityScore": 0.1667,
+              "searchRank": 4,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            },
+            {
+              "memoryObjectId": "01436734-2d5e-547a-9a70-16fd6a20d6a0",
+              "similarityScore": 0.1325,
+              "searchRank": 5,
+              "canonicalClass": "project",
+              "kind": "rule",
+              "scopeKey": "scope_44136fa355b3678a",
+              "eligibleForMergeConsideration": false,
+              "selectedForAdjudication": false
+            }
+          ]
+        }
+      ],
+      "writeResults": [
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>config rpc (programmatic updates)::rule_d90eff1cc7b53f61a71072f4",
+          "candidateId": "candidate-0",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "ffa5fc71-29ec-527d-87d1-147ed0f68f5b",
+          "supportItemId": "4f961c33-689d-5488-9710-33cf2799b102",
+          "objectSummary": "config.apply and config.patch restart coalescing | Coalesce restart requests while one is already pending/in-flight, and enforce a 30-second cooldown between restart cycles. | Detect an in-flight pending restart request and apply a 30-second cooldown to subsequent restart cycles."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>environment variables::fact_bb8c647f526438b0ad6c8c5a",
+          "candidateId": "candidate-1",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "decision": "write",
+          "decisionCodes": ["write_structural_accept", "collision_distinct"],
+          "memoryObjectId": "89d6528c-ea41-5a7f-8b13-8f9d543f1a0e",
+          "supportItemId": "6eaa459e-b333-5a59-a101-2dab3837a5f4",
+          "objectSummary": "OpenClaw environment variable loading order and override behavior: OpenClaw reads env vars from the parent process plus `.env` from the current working directory (if present) and `~/.openclaw/.env` as a global fallback; neither file overrides existing env vars."
+        },
+        {
+          "caseIdentity": "docs/gateway/configuration.md::configuration>environment variables::rule_2989b66f8003247247d7a66f",
+          "candidateId": "candidate-2",
+          "sourceWindowId": "11bc30c5-5c8a-5fa8-b0c8-511dd73336ec",
+          "decision": "write",
+          "decisionCodes": [
+            "write_structural_accept",
+            "collision_distinct",
+            "review_mode_overridden"
+          ],
+          "memoryObjectId": "6ae9ecd6-27a8-51b3-ad88-3161d0234dd7",
+          "supportItemId": "380b3f6f-9681-56cf-a414-2b9d0edaf820",
+          "objectSummary": "Env var substitution in config string values | Use `${VAR_NAME}` for uppercase env var names matching `[A-Z_][A-Z0-9_]*`; ensure required variables are present and non-empty to avoid load-time errors; escape `${VAR}` as `$${VAR}` for literal output. | Do not use non-matching variable names or rely on missing/empty env vars, since they cause errors at load time. | Validate `${VAR_NAME}` tokens against the allowed uppercase-name pattern and resolve them during config load; implement `$${VAR}` escaping for literal output."
+        }
+      ]
+    }
+  ],
+  "diagnosis": {
+    "totalDistinctWrites": 20,
+    "totalAttachSupports": 0,
+    "totalConflictHoldWrites": 0,
+    "zeroCandidateSkips": 3,
+    "admittedToBatch": 7,
+    "likelyHinge": "batch_adjudication_too_conservative"
+  }
+}

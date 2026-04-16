@@ -24,6 +24,8 @@ export { resolveThinkingDefault } from "./agents/model-selection.js";
 export { runEmbeddedPiAgent } from "./agents/pi-embedded.js";
 export { resolveAgentTimeoutMs } from "./agents/timeout.js";
 export { ensureAgentWorkspace } from "./agents/workspace.js";
+export { createModelMemoryDatabaseRuntime } from "./agents/model-memory.database.js";
+export { OpenAICompatibleLiveJsonExecutor } from "./agents/model-memory.live-json-executor.js";
 export {
   resolveStorePath,
   loadSessionStore,

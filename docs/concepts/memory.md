@@ -12,6 +12,17 @@ OpenClaw remembers things by writing **plain Markdown files** in your agent's
 workspace. The model only "remembers" what gets saved to disk -- there is no
 hidden state.
 
+This page describes the legacy markdown-plus-memory-search stack.
+
+After the `model-memory` production cutover, the live runtime uses the
+clean-room `model-memory` system with:
+
+- `plugins.slots.memory = "none"`
+- `agents.defaults.memorySearch.enabled = false`
+
+That means this page remains relevant for legacy or pre-cutover environments,
+not as the canonical description of the current live memory runtime.
+
 ## How it works
 
 Your agent has three memory-related files:

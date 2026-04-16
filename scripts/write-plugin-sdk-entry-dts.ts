@@ -56,8 +56,9 @@ const TYPE_SHIMS: Partial<Record<string, string>> = {
   ].join("\n"),
 };
 
-// `tsc` emits declarations under `dist/plugin-sdk/src/plugin-sdk/*` because the source lives
-// at `src/plugin-sdk/*` and `rootDir` is `.` (repo root, to support cross-src/extensions refs).
+// `tsc` emits declarations under `dist/plugin-sdk/src/plugin-sdk/*` because the source
+// tree can now include cross-package imports outside `src/plugin-sdk/*` and `rootDir`
+// is the repo root.
 //
 // Our package export map points subpath `types` at `dist/plugin-sdk/<entry>.d.ts`, so we
 // generate stable entry d.ts files that re-export the real declarations.

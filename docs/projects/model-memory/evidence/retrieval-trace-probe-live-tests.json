@@ -1,0 +1,76 @@
+{
+  "generatedAt": "2026-04-15T04:09:49.349Z",
+  "probeId": "probe-live-tests",
+  "queryText": "How do I run live tests in OpenClaw?",
+  "currentCorpus": true,
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestTimeoutMs": 180000,
+  "requestSeed": 7,
+  "promptPayload": {
+    "contractName": "retrieval_request_interpretation",
+    "contractVersion": "v1",
+    "modelId": "openrouter/openai/gpt-5.4-nano",
+    "systemPrompt": "Interpret retrieval requests for model-memory.\nReturn only valid JSON for structured retrieval intent.\nReturn exactly one of these JSON shapes and no other top-level shape:\n{\"action\":\"skip\"}\n{\"action\":\"retrieve\",\"request\":{\"goal\":\"...\",\"canonicalClasses\":[\"user\"|\"feedback\"|\"project\"|\"reference\"],\"kinds\":[\"preference\"|\"fact\"|\"rule\"|\"procedure\"|\"reference\"],\"scopeConstraints\":{\"key\":\"value\"},\"subjectHints\":[\"...\"],\"contentHints\":[\"...\"],\"desiredResultCount\":1,\"requestConfidence\":\"weak\"|\"medium\"|\"strong\"}}\nUse skip only when the query clearly cannot benefit from stored memory or reference knowledge.\nFor documentation lookup, workflow guidance, architecture lookup, operator help, or project/reference questions, prefer retrieve.\nDo not return fields like intent, queryText, requestPurpose, scope, or maxResults at the top level.\nUse canonical classes and kinds only when supported by the query.\nPrefer broad filters over invented specifics.",
+    "userPrompt": "{\n  \"queryText\": \"How do I run live tests in OpenClaw?\",\n  \"requestPurpose\": \"operator_help\",\n  \"scope\": {},\n  \"maxResults\": 5\n}",
+    "responseFormat": "json"
+  },
+  "providerTrace": {
+    "contractName": "retrieval_request_interpretation",
+    "contractVersion": "v1",
+    "requestedModelId": "openrouter/openai/gpt-5.4-nano",
+    "provider": "openrouter",
+    "providerModel": "openai/gpt-5.4-nano",
+    "requestUrl": "https://openrouter.ai/api/v1/chat/completions",
+    "requestBody": {
+      "model": "openai/gpt-5.4-nano",
+      "temperature": 0,
+      "seed": 7,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Interpret retrieval requests for model-memory.\nReturn only valid JSON for structured retrieval intent.\nReturn exactly one of these JSON shapes and no other top-level shape:\n{\"action\":\"skip\"}\n{\"action\":\"retrieve\",\"request\":{\"goal\":\"...\",\"canonicalClasses\":[\"user\"|\"feedback\"|\"project\"|\"reference\"],\"kinds\":[\"preference\"|\"fact\"|\"rule\"|\"procedure\"|\"reference\"],\"scopeConstraints\":{\"key\":\"value\"},\"subjectHints\":[\"...\"],\"contentHints\":[\"...\"],\"desiredResultCount\":1,\"requestConfidence\":\"weak\"|\"medium\"|\"strong\"}}\nUse skip only when the query clearly cannot benefit from stored memory or reference knowledge.\nFor documentation lookup, workflow guidance, architecture lookup, operator help, or project/reference questions, prefer retrieve.\nDo not return fields like intent, queryText, requestPurpose, scope, or maxResults at the top level.\nUse canonical classes and kinds only when supported by the query.\nPrefer broad filters over invented specifics."
+        },
+        {
+          "role": "user",
+          "content": "{\n  \"queryText\": \"How do I run live tests in OpenClaw?\",\n  \"requestPurpose\": \"operator_help\",\n  \"scope\": {},\n  \"maxResults\": 5\n}"
+        }
+      ],
+      "response_format": {
+        "type": "json_object"
+      }
+    },
+    "httpStatus": 200,
+    "responseOk": true,
+    "responseBodyReceived": true,
+    "responseBodyExcerpt": "{\"id\":\"gen-1776226185-hyIrOZLO9u963fiw8wI5\",\"object\":\"chat.completion\",\"created\":1776226185,\"model\":\"openai/gpt-5.4-nano-20260317\",\"provider\":\"OpenAI\",\"system_fingerprint\":null,\"service_tier\":\"default\",\"choices\":[{\"index\":0,\"logprobs\":null,\"finish_reason\":\"stop\",\"native_finish_reason\":\"completed\",\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"action\\\":\\\"retrieve\\\",\\\"request\\\":{\\\"goal\\\":\\\"Find inst...",
+    "resolvedModelId": "openai/gpt-5.4-nano-20260317",
+    "outputTextExcerpt": "{\"action\":\"retrieve\",\"request\":{\"goal\":\"Find instructions for running live tests in OpenClaw, including prerequisites, steps/commands, configuration, and how to interpret results.\",\"canonicalClasses\":[\"reference\",\"project\",\"feedback\",\"user\"],\"kinds\":[\"procedure\",\"reference\",\"rule\"],\"scopeConstraints\":{},\"subjectHints\":[\"OpenClaw\",\"live tests\",\"test runner\",\"integration testing\"],\"contentHints\":..."
+  },
+  "parseValidationFailedAfterSuccessfulProviderResponse": false,
+  "retrieval": {
+    "action": "retrieve",
+    "selectedCount": 1,
+    "matchingKindCount": 1,
+    "matchingClassCount": 0,
+    "activeOnly": true,
+    "topResults": [
+      {
+        "objectId": "c5d9d75e-c5bd-5785-9324-5e6ca95a579f",
+        "canonicalClass": "project",
+        "kind": "rule",
+        "rankBand": "primary",
+        "reasonCodes": ["class_match", "subject_match", "text_match", "rerank_selected"]
+      }
+    ]
+  },
+  "context": {
+    "attempted": true,
+    "orderedSegmentCount": 22,
+    "estimatedInputTokens": 17672,
+    "pruningUsed": true,
+    "retrievalPackIncluded": true,
+    "stableLayerHash": "2abbf71ef1014dabaa9c2e603c2021c9a4b5e87a81fd2c851f32378e92482dc2",
+    "semiStableLayerHash": "4475fbf20ce9df1897ee5e589a3fef7164c8fb08c8ea12af227b34ed4b4a5d25",
+    "volatileLayerHash": "4cf2799b6df0f875c3c3390839805fb1bae6d03942f4e2843cd4dd3852e0773f"
+  }
+}

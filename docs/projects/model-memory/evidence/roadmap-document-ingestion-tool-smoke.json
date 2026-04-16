@@ -1,0 +1,59 @@
+{
+  "generatedAt": "2026-04-15T01:07:37.865Z",
+  "title": "Roadmap Document Ingestion Tool Smoke",
+  "toolName": "model_memory_document_ingest",
+  "runId": "model-memory-roadmap-ui-smoke",
+  "recordPath": "checkpoints/model-memory/model-memory-roadmap-ui-smoke.json",
+  "modelId": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+  "requestTimeoutMs": 180000,
+  "requestSeed": 7,
+  "maxWordsPerWindow": 1500,
+  "chunkSize": 1,
+  "maxConcurrency": 1,
+  "invocation": {
+    "sources": ["docs/projects/model-memory/roadmap.md"],
+    "runId": "model-memory-roadmap-ui-smoke",
+    "recordPath": "checkpoints/model-memory/model-memory-roadmap-ui-smoke.json",
+    "chunkSize": 1,
+    "maxConcurrency": 1,
+    "resume": true,
+    "modelId": "openrouter/openai/gpt-5.4-nano",
+    "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+    "requestTimeoutMs": 180000,
+    "requestSeed": 7,
+    "maxWordsPerWindow": 1500
+  },
+  "sources": [
+    {
+      "displayPath": "docs/projects/model-memory/roadmap.md",
+      "status": "completed",
+      "windowCount": 1,
+      "capturedClaimCount": 11,
+      "writeDecisionCounts": {
+        "write": 11
+      },
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "rejectReasons": []
+    }
+  ],
+  "totals": {
+    "docsAttempted": 1,
+    "docsCompleted": 1,
+    "docsFailed": 0,
+    "capturedClaimCount": 11,
+    "ignoredWindowCount": 0,
+    "rejectedWindowCount": 0,
+    "writeDecisionCounts": {
+      "write": 11
+    },
+    "rejectReasons": []
+  },
+  "manualUiSteps": [
+    "Use the OpenClaw operator tool `model_memory_document_ingest`.",
+    "Pass sources [\"docs/projects/model-memory/roadmap.md\"].",
+    "Keep chunkSize=1, maxConcurrency=1, resume=true, modelId=openrouter/openai/gpt-5.4-nano, candidateModelId=openrouter/openai/gpt-5.4-nano.",
+    "After the run, inspect checkpoints/model-memory/model-memory-roadmap-ui-smoke.json and the model-memory operator evidence surfaces for captured claims and write decisions."
+  ]
+}

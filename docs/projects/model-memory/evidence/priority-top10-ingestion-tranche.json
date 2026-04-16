@@ -1,0 +1,264 @@
+{
+  "generatedAt": "2026-04-14T21:04:21.881Z",
+  "modelRef": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelRef": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 180000,
+  "maxWordsPerWindow": 1500,
+  "selectedSourcePaths": [
+    "AGENTS.md",
+    "docs/help/testing.md",
+    "docs/gateway/configuration.md",
+    "docs/gateway/protocol.md",
+    "docs/projects/model-memory/specs/database-schema-v1.md",
+    "docs/projects/model-memory/proof-corpus-plan.md",
+    "docs/projects/model-memory/specs/architecture-overview.md",
+    "docs/projects/model-memory/specs/identity-dedupe-supersession.md",
+    "docs/projects/model-memory/specs/runtime-read-models-and-artifacts.md",
+    "docs/projects/model-memory/specs/storage-database.md"
+  ],
+  "sources": [
+    {
+      "source": "AGENTS.md",
+      "classification": "bootstrap_preservation_sensitive_input",
+      "lineCount": 261,
+      "windowCount": 3,
+      "capturedClaimCount": 5,
+      "persistedObjectCount": 5,
+      "persistedSupportItemCount": 5,
+      "ignoredWindowCount": 1,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 5
+      },
+      "lifecycle": {
+        "provisional": 0,
+        "active": 4,
+        "superseded": 0,
+        "expired": 0,
+        "conflict_hold": 1
+      },
+      "rejectReasons": [],
+      "failed": false
+    },
+    {
+      "source": "docs/help/testing.md",
+      "classification": "primary_large_source_proof_input",
+      "lineCount": 408,
+      "windowCount": 2,
+      "capturedClaimCount": 6,
+      "persistedObjectCount": 6,
+      "persistedSupportItemCount": 6,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 6
+      },
+      "lifecycle": {
+        "provisional": 0,
+        "active": 6,
+        "superseded": 0,
+        "expired": 0,
+        "conflict_hold": 0
+      },
+      "rejectReasons": [],
+      "failed": false
+    },
+    {
+      "source": "docs/gateway/configuration.md",
+      "classification": "primary_large_source_proof_input",
+      "lineCount": 547,
+      "windowCount": 2,
+      "capturedClaimCount": 8,
+      "persistedObjectCount": 8,
+      "persistedSupportItemCount": 8,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 8
+      },
+      "lifecycle": {
+        "provisional": 0,
+        "active": 8,
+        "superseded": 0,
+        "expired": 0,
+        "conflict_hold": 0
+      },
+      "rejectReasons": [],
+      "failed": false
+    },
+    {
+      "source": "docs/gateway/protocol.md",
+      "classification": "primary_large_source_proof_input",
+      "lineCount": 257,
+      "windowCount": 1,
+      "capturedClaimCount": 5,
+      "persistedObjectCount": 5,
+      "persistedSupportItemCount": 5,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 5
+      },
+      "lifecycle": {
+        "provisional": 0,
+        "active": 5,
+        "superseded": 0,
+        "expired": 0,
+        "conflict_hold": 0
+      },
+      "rejectReasons": [],
+      "failed": false
+    },
+    {
+      "source": "docs/projects/model-memory/specs/database-schema-v1.md",
+      "classification": "primary_large_source_proof_input",
+      "lineCount": 586,
+      "windowCount": 1,
+      "capturedClaimCount": 8,
+      "persistedObjectCount": 8,
+      "persistedSupportItemCount": 8,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 8
+      },
+      "lifecycle": {
+        "provisional": 0,
+        "active": 8,
+        "superseded": 0,
+        "expired": 0,
+        "conflict_hold": 0
+      },
+      "rejectReasons": [],
+      "failed": false
+    },
+    {
+      "source": "docs/projects/model-memory/proof-corpus-plan.md",
+      "classification": "primary_large_source_proof_input",
+      "lineCount": 443,
+      "windowCount": 1,
+      "capturedClaimCount": 0,
+      "persistedObjectCount": 0,
+      "persistedSupportItemCount": 0,
+      "ignoredWindowCount": 1,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {},
+      "lifecycle": {
+        "provisional": 0,
+        "active": 0,
+        "superseded": 0,
+        "expired": 0,
+        "conflict_hold": 0
+      },
+      "rejectReasons": [],
+      "failed": false
+    },
+    {
+      "source": "docs/projects/model-memory/specs/architecture-overview.md",
+      "classification": "primary_large_source_proof_input",
+      "lineCount": 166,
+      "windowCount": 1,
+      "capturedClaimCount": 4,
+      "persistedObjectCount": 4,
+      "persistedSupportItemCount": 4,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 4
+      },
+      "lifecycle": {
+        "provisional": 0,
+        "active": 4,
+        "superseded": 0,
+        "expired": 0,
+        "conflict_hold": 0
+      },
+      "rejectReasons": [],
+      "failed": false
+    },
+    {
+      "source": "docs/projects/model-memory/specs/identity-dedupe-supersession.md",
+      "classification": "primary_large_source_proof_input",
+      "lineCount": 363,
+      "windowCount": 1,
+      "capturedClaimCount": 6,
+      "persistedObjectCount": 6,
+      "persistedSupportItemCount": 6,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 6
+      },
+      "lifecycle": {
+        "provisional": 0,
+        "active": 5,
+        "superseded": 0,
+        "expired": 0,
+        "conflict_hold": 1
+      },
+      "rejectReasons": [],
+      "failed": false
+    },
+    {
+      "source": "docs/projects/model-memory/specs/runtime-read-models-and-artifacts.md",
+      "classification": "primary_large_source_proof_input",
+      "lineCount": 153,
+      "windowCount": 1,
+      "capturedClaimCount": 6,
+      "persistedObjectCount": 6,
+      "persistedSupportItemCount": 6,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 6
+      },
+      "lifecycle": {
+        "provisional": 0,
+        "active": 6,
+        "superseded": 0,
+        "expired": 0,
+        "conflict_hold": 0
+      },
+      "rejectReasons": [],
+      "failed": false
+    },
+    {
+      "source": "docs/projects/model-memory/specs/storage-database.md",
+      "classification": "primary_large_source_proof_input",
+      "lineCount": 92,
+      "windowCount": 1,
+      "capturedClaimCount": 4,
+      "persistedObjectCount": 4,
+      "persistedSupportItemCount": 4,
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "writeDecisionCounts": {
+        "write": 4
+      },
+      "lifecycle": {
+        "provisional": 0,
+        "active": 4,
+        "superseded": 0,
+        "expired": 0,
+        "conflict_hold": 0
+      },
+      "rejectReasons": [],
+      "failed": false
+    }
+  ],
+  "totals": {
+    "objects": 52,
+    "supportItems": 52,
+    "lifecycle": {
+      "provisional": 0,
+      "active": 50,
+      "superseded": 0,
+      "expired": 0,
+      "conflict_hold": 2
+    },
+    "writeDecisionCounts": {
+      "write": 52
+    }
+  }
+}

@@ -20,6 +20,7 @@ const auditDreamingArtifacts = vi.hoisted(() => vi.fn());
 const auditShortTermPromotionArtifacts = vi.hoisted(() => vi.fn());
 const repairDreamingArtifacts = vi.hoisted(() => vi.fn());
 const repairShortTermPromotionArtifacts = vi.hoisted(() => vi.fn());
+const resolveModelMemoryLiveRuntimeStatus = vi.hoisted(() => vi.fn());
 
 vi.mock("../terminal/note.js", () => ({
   note,
@@ -74,6 +75,10 @@ vi.mock("../plugin-sdk/memory-core-engine-runtime.js", () => ({
     },
     { providerId: "local", authProviderId: "local", envVars: [], transport: "local" },
   ]),
+}));
+
+vi.mock("../agents/model-memory.live-runtime.js", () => ({
+  resolveModelMemoryLiveRuntimeStatus,
 }));
 
 import { noteMemorySearchHealth } from "./doctor-memory-search.js";
@@ -157,6 +162,58 @@ describe("noteMemorySearchHealth", () => {
     checkQmdBinaryAvailability.mockReset();
     checkQmdBinaryAvailability.mockResolvedValue({ available: true });
     resetMemoryRecallMocks();
+    resolveModelMemoryLiveRuntimeStatus.mockReset();
+    resolveModelMemoryLiveRuntimeStatus.mockReturnValue({
+      enabled: false,
+      source: "disabled",
+      reason: "model-memory live runtime disabled",
+      includeRetrievalPacks: false,
+      contextInjectionEnabled: false,
+      captureWritesEnabled: false,
+      legacyMemorySlotDisabled: false,
+      legacyMemorySearchDisabled: false,
+      databaseConfigured: false,
+    });
+  });
+
+  it("stays quiet when model-memory live runtime is enabled and legacy memory is intentionally off", async () => {
+    resolveModelMemoryLiveRuntimeStatus.mockReturnValue({
+      enabled: true,
+      source: "config:plugins.entries.model-memory.config.live.enabled",
+      includeRetrievalPacks: false,
+      contextInjectionEnabled: true,
+      captureWritesEnabled: true,
+      legacyMemorySlotDisabled: true,
+      legacyMemorySearchDisabled: true,
+      databaseConfigured: true,
+      databaseName: "model_memory_live",
+    });
+
+    await noteMemorySearchHealth(cfg, {});
+
+    expect(note).not.toHaveBeenCalled();
+    expect(resolveMemorySearchConfig).not.toHaveBeenCalled();
+  });
+
+  it("warns when model-memory live runtime is enabled but legacy memory is still partially active", async () => {
+    resolveModelMemoryLiveRuntimeStatus.mockReturnValue({
+      enabled: true,
+      source: "config:plugins.entries.model-memory.config.live.enabled",
+      includeRetrievalPacks: false,
+      contextInjectionEnabled: true,
+      captureWritesEnabled: true,
+      legacyMemorySlotDisabled: false,
+      legacyMemorySearchDisabled: true,
+      databaseConfigured: true,
+      databaseName: "model_memory_live",
+    });
+
+    await noteMemorySearchHealth(cfg, {});
+
+    expect(note).toHaveBeenCalledTimes(1);
+    const message = String(note.mock.calls[0]?.[0] ?? "");
+    expect(message).toContain("model-memory live runtime is enabled");
+    expect(message).toContain("plugins.slots.memory none");
   });
 
   it("does not warn when local provider is set with no explicit modelPath (default model fallback)", async () => {

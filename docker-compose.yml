@@ -1,6 +1,11 @@
 services:
   openclaw-gateway:
+    container_name: openclaw-runtime
     image: ${OPENCLAW_IMAGE:-openclaw:local}
+    labels:
+      io.openclaw.stack: live
+      io.openclaw.role: runtime
+      io.openclaw.surface: gateway
     environment:
       HOME: /home/node
       TERM: xterm-256color
@@ -16,8 +21,8 @@ services:
       - /root/openclaw-config/agent-workspaces:/home/node/.openclaw/agent-workspaces
       # Canonical workspace-visible host filesystem surfaces.
       - /:/home/node/.openclaw/workspace/system/hostfs:ro
-      - /root/services/openclaw:/home/node/.openclaw/workspace/imports/live_openclaw_stack/content:ro
-      - /root/services/openclaw-upgrade-2026.3.24:/home/node/.openclaw/workspace/imports/engineering_repo/content:ro
+      - /root/services/openclaw-roles/live:/home/node/.openclaw/workspace/imports/product_live/content:ro
+      - /root/openclaw-config:/home/node/.openclaw/workspace/imports/config_dr/content:ro
       - /root/services/webhook-gateway:/home/node/.openclaw/workspace/imports/webhook_gateway/content:ro
       - /root/.openclaw:/home/node/.openclaw/workspace/imports/runtime_state/content:ro
       - /root/.openclaw/agent-workspaces:/home/node/.openclaw/workspace/imports/agent_workspaces/content:ro

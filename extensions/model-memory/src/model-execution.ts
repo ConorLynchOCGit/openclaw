@@ -1,0 +1,101 @@
+import { z } from "zod";
+import type { ModelContractMetadata } from "./prompt-contracts.ts";
+
+export const JsonModelExecutionRequestSchema = z
+  .object({
+    contract: z.object({
+      contractName: z.string().trim().min(1),
+      contractVersion: z.string().trim().min(1),
+      modelId: z.string().trim().min(1),
+    }),
+    systemPrompt: z.string(),
+    userPrompt: z.string(),
+    responseFormat: z.literal("json"),
+  })
+  .strict();
+
+export type JsonModelExecutionRequest = z.infer<typeof JsonModelExecutionRequestSchema>;
+
+export const JsonModelExecutionResponseSchema = z
+  .object({
+    outputText: z.string().trim().min(1),
+    resolvedModelId: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
+export type JsonModelExecutionResponse = z.infer<typeof JsonModelExecutionResponseSchema>;
+
+export interface JsonModelExecutor {
+  execute(request: JsonModelExecutionRequest): Promise<JsonModelExecutionResponse>;
+}
+
+function stripOuterJsonCodeFence(text: string): string {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return match?.[1]?.trim() ?? trimmed;
+}
+
+function extractStructuredJsonCandidate(text: string): string {
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  const objectStart = text.indexOf("{");
+  const objectEnd = text.lastIndexOf("}");
+  if (objectStart !== -1 && objectEnd > objectStart) {
+    return text.slice(objectStart, objectEnd + 1).trim();
+  }
+
+  const arrayStart = text.indexOf("[");
+  const arrayEnd = text.lastIndexOf("]");
+  if (arrayStart !== -1 && arrayEnd > arrayStart) {
+    return text.slice(arrayStart, arrayEnd + 1).trim();
+  }
+
+  return text.trim();
+}
+
+export class JsonModelOutputError extends Error {
+  constructor(
+    message: string,
+    readonly contract: ModelContractMetadata,
+    readonly outputText: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "JsonModelOutputError";
+  }
+}
+
+export function parseJsonModelOutput<T>(
+  response: JsonModelExecutionResponse,
+  contract: ModelContractMetadata,
+  schema: z.ZodType<T>,
+): T {
+  const normalizedOutputText = extractStructuredJsonCandidate(
+    stripOuterJsonCodeFence(response.outputText),
+  );
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(normalizedOutputText);
+  } catch (error) {
+    throw new JsonModelOutputError(
+      `invalid JSON model output for ${contract.contractName}`,
+      contract,
+      response.outputText,
+      { cause: error },
+    );
+  }
+
+  const result = schema.safeParse(parsed);
+  if (!result.success) {
+    throw new JsonModelOutputError(
+      `invalid structured output for ${contract.contractName}`,
+      contract,
+      response.outputText,
+      { cause: result.error },
+    );
+  }
+  return result.data;
+}

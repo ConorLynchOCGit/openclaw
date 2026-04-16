@@ -1,0 +1,352 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { Type } from "@sinclair/typebox";
+import type { AnyAgentTool, OpenClawPluginApi } from "openclaw/plugin-sdk/core";
+import {
+  JsonFileDocumentIngestionRunRecordStore,
+  ModelMemoryDocumentIngestionRunnerService,
+  type DocumentIngestionRunRecordStore,
+  type DocumentIngestionRunnerSource,
+} from "./admin/document-ingestion-runner-service.ts";
+import { DatabaseMemoryObjectStore } from "./db/database-memory-object-store.ts";
+import { ExecutorBackedSemanticInterpreter } from "./real-semantic-interpreter.ts";
+import { ExecutorBackedSemanticCollisionAdjudicator } from "./semantic-collision-adjudication.ts";
+
+const DEFAULT_MODEL_REF = "openrouter/openai/gpt-5.4-nano";
+const DEFAULT_REQUEST_TIMEOUT_MS = 180_000;
+const DEFAULT_REQUEST_SEED = 7;
+const DEFAULT_MAX_WORDS_PER_WINDOW = 1500;
+const DEFAULT_CHUNK_SIZE = 10;
+const DEFAULT_MAX_CONCURRENCY = 1;
+
+type ModelMemoryRuntime = Awaited<
+  ReturnType<
+    typeof import("../../../src/agents/model-memory.database.js").createModelMemoryDatabaseRuntime
+  >
+>;
+
+type ModelMemoryToolContext = {
+  workspaceDir?: string;
+  sandboxed?: boolean;
+};
+
+type InternalRuntimeDeps = {
+  createModelMemoryDatabaseRuntime: typeof import("../../../src/agents/model-memory.database.js").createModelMemoryDatabaseRuntime;
+  OpenAICompatibleLiveJsonExecutor: typeof import("../../../src/agents/model-memory.live-json-executor.js").OpenAICompatibleLiveJsonExecutor;
+};
+
+type ToolInternalDependencies = {
+  loadInternalRuntimeDeps?: () => Promise<InternalRuntimeDeps>;
+  readTextFile?: (filePath: string, encoding: BufferEncoding) => Promise<string>;
+  createRecordStore?: (filePath: string) => DocumentIngestionRunRecordStore;
+  createRunnerService?: (
+    runtime: ModelMemoryRuntime,
+  ) => Pick<ModelMemoryDocumentIngestionRunnerService, "executeRun">;
+};
+
+type DocumentIngestionToolParams = {
+  source?: unknown;
+  sources?: unknown;
+  runId?: unknown;
+  recordPath?: unknown;
+  chunkSize?: unknown;
+  maxConcurrency?: unknown;
+  resume?: unknown;
+  modelId?: unknown;
+  candidateModelId?: unknown;
+  requestTimeoutMs?: unknown;
+  requestSeed?: unknown;
+  maxWordsPerWindow?: unknown;
+  projectId?: unknown;
+};
+
+function readTrimmedString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readPositiveInteger(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+  return fallback;
+}
+
+function readInteger(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return value;
+  }
+  return fallback;
+}
+
+function resolveWorkspaceRoot(ctx: ModelMemoryToolContext): string {
+  return ctx.workspaceDir ? path.resolve(ctx.workspaceDir) : process.cwd();
+}
+
+function assertWorkspaceRelativePath(workspaceRoot: string, relativePath: string): string {
+  if (path.isAbsolute(relativePath)) {
+    throw new Error("paths must be workspace-relative, not absolute");
+  }
+  const absolutePath = path.resolve(workspaceRoot, relativePath);
+  const relativeFromRoot = path.relative(workspaceRoot, absolutePath);
+  if (
+    relativeFromRoot.startsWith("..") ||
+    path.isAbsolute(relativeFromRoot) ||
+    (relativeFromRoot.length === 0 && absolutePath !== workspaceRoot)
+  ) {
+    throw new Error(`path escapes workspace root: ${relativePath}`);
+  }
+  return absolutePath;
+}
+
+async function loadInternalRuntimeDeps(): Promise<InternalRuntimeDeps> {
+  try {
+    const sourceMod = await import("../../../src/extensionAPI.js");
+    if (
+      typeof sourceMod.createModelMemoryDatabaseRuntime === "function" &&
+      typeof sourceMod.OpenAICompatibleLiveJsonExecutor === "function"
+    ) {
+      return {
+        createModelMemoryDatabaseRuntime: sourceMod.createModelMemoryDatabaseRuntime,
+        OpenAICompatibleLiveJsonExecutor: sourceMod.OpenAICompatibleLiveJsonExecutor,
+      };
+    }
+  } catch {
+    // ignore source fallback failure
+  }
+
+  const bundledExtensionApiHref = new URL("../../../dist/extensionAPI.js", import.meta.url).href;
+  const bundledMod = await import(bundledExtensionApiHref);
+  if (
+    typeof bundledMod.createModelMemoryDatabaseRuntime !== "function" ||
+    typeof bundledMod.OpenAICompatibleLiveJsonExecutor !== "function"
+  ) {
+    throw new Error(
+      "Internal error: model-memory runtime helpers are not available from extensionAPI",
+    );
+  }
+  return {
+    createModelMemoryDatabaseRuntime: bundledMod.createModelMemoryDatabaseRuntime,
+    OpenAICompatibleLiveJsonExecutor: bundledMod.OpenAICompatibleLiveJsonExecutor,
+  };
+}
+
+function normalizeSources(params: DocumentIngestionToolParams): string[] {
+  const single = readTrimmedString(params.source);
+  if (single) {
+    return [single];
+  }
+  if (!Array.isArray(params.sources) || params.sources.length === 0) {
+    throw new Error(
+      "provide source for one workspace-relative path or sources for a non-empty list of workspace-relative file paths",
+    );
+  }
+  const normalized = params.sources
+    .map((entry) => readTrimmedString(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  if (normalized.length === 0) {
+    throw new Error("sources must include at least one non-empty workspace-relative path");
+  }
+  return normalized;
+}
+
+async function buildRunnerSources(input: {
+  workspaceRoot: string;
+  sources: string[];
+  chunkSize: number;
+  projectId?: string;
+  maxWordsPerWindow: number;
+  readTextFile: (filePath: string, encoding: BufferEncoding) => Promise<string>;
+}): Promise<DocumentIngestionRunnerSource[]> {
+  const records: DocumentIngestionRunnerSource[] = [];
+  for (const [index, relativePath] of input.sources.entries()) {
+    const absolutePath = assertWorkspaceRelativePath(input.workspaceRoot, relativePath);
+    const text = await input.readTextFile(absolutePath, "utf8");
+    records.push({
+      sourceId: `model-memory-tool-source-${index + 1}`,
+      displayPath: relativePath,
+      chunkIndex: Math.floor(index / input.chunkSize) + 1,
+      document: {
+        externalSourceId: relativePath,
+        text,
+        projectId: input.projectId,
+        sourceKind: "document",
+        sourceMetadata: {
+          relativePath,
+          sourceSurface: "model_memory_document_ingest_tool",
+        },
+        maxWordsPerWindow: input.maxWordsPerWindow,
+      },
+    });
+  }
+  return records;
+}
+
+function createRunnerService(
+  runtime: ModelMemoryRuntime,
+): ModelMemoryDocumentIngestionRunnerService {
+  return new ModelMemoryDocumentIngestionRunnerService({
+    canonicalRepository: runtime.canonicalRepository,
+    runtimeRepository: runtime.runtimeRepository,
+    memoryStore: new DatabaseMemoryObjectStore(runtime.canonicalRepository),
+    collisionAdjudicator: undefined,
+  });
+}
+
+export function createModelMemoryDocumentIngestionTool(
+  api: OpenClawPluginApi,
+  ctx: ModelMemoryToolContext,
+  deps: ToolInternalDependencies = {},
+): AnyAgentTool {
+  const workspaceRoot = resolveWorkspaceRoot(ctx);
+  const readTextFile = deps.readTextFile ?? readFile;
+
+  return {
+    name: "model_memory_document_ingest",
+    label: "Model Memory Document Ingest",
+    description:
+      "Operator/admin tool for ingesting one or more workspace-relative documents into clean-room model-memory. Prefer source for the common single-document case, for example source=docs/projects/model-memory/roadmap.md. Use this when the user asks in natural language to ingest a document into model memory.",
+    parameters: Type.Object({
+      source: Type.Optional(
+        Type.String({
+          minLength: 1,
+          description:
+            "Preferred common case: one workspace-relative document path to ingest, for example docs/projects/model-memory/roadmap.md.",
+        }),
+      ),
+      sources: Type.Optional(
+        Type.Array(Type.String({ minLength: 1 }), {
+          minItems: 1,
+          description:
+            "Optional multi-document form: workspace-relative document paths to ingest in the given order.",
+        }),
+      ),
+      runId: Type.Optional(Type.String({ minLength: 1 })),
+      recordPath: Type.Optional(
+        Type.String({
+          minLength: 1,
+          description:
+            "Workspace-relative JSON path for the durable run record. Defaults under checkpoints/model-memory/.",
+        }),
+      ),
+      chunkSize: Type.Optional(Type.Number({ minimum: 1 })),
+      maxConcurrency: Type.Optional(Type.Number({ minimum: 1 })),
+      resume: Type.Optional(Type.Boolean()),
+      modelId: Type.Optional(Type.String({ minLength: 1 })),
+      candidateModelId: Type.Optional(Type.String({ minLength: 1 })),
+      requestTimeoutMs: Type.Optional(Type.Number({ minimum: 1 })),
+      requestSeed: Type.Optional(Type.Number()),
+      maxWordsPerWindow: Type.Optional(Type.Number({ minimum: 1 })),
+      projectId: Type.Optional(Type.String({ minLength: 1 })),
+    }),
+
+    async execute(_id: string, rawParams: Record<string, unknown>) {
+      const params = rawParams as DocumentIngestionToolParams;
+      const sources = normalizeSources(params);
+      const chunkSize = readPositiveInteger(params.chunkSize, DEFAULT_CHUNK_SIZE);
+      const maxConcurrency = readPositiveInteger(params.maxConcurrency, DEFAULT_MAX_CONCURRENCY);
+      const modelId = readTrimmedString(params.modelId) ?? DEFAULT_MODEL_REF;
+      const candidateModelId = readTrimmedString(params.candidateModelId) ?? DEFAULT_MODEL_REF;
+      const requestTimeoutMs = readPositiveInteger(
+        params.requestTimeoutMs,
+        DEFAULT_REQUEST_TIMEOUT_MS,
+      );
+      const requestSeed = readInteger(params.requestSeed, DEFAULT_REQUEST_SEED);
+      const maxWordsPerWindow = readPositiveInteger(
+        params.maxWordsPerWindow,
+        DEFAULT_MAX_WORDS_PER_WINDOW,
+      );
+      const projectId = readTrimmedString(params.projectId);
+      const runId = readTrimmedString(params.runId) ?? `model-memory-document-ingest-${Date.now()}`;
+      const recordRelativePath =
+        readTrimmedString(params.recordPath) ?? `checkpoints/model-memory/${runId}.json`;
+      const recordAbsolutePath = assertWorkspaceRelativePath(workspaceRoot, recordRelativePath);
+      const resume = typeof params.resume === "boolean" ? params.resume : true;
+      for (const sourcePath of sources) {
+        assertWorkspaceRelativePath(workspaceRoot, sourcePath);
+      }
+
+      const internal = await (deps.loadInternalRuntimeDeps ?? loadInternalRuntimeDeps)();
+      const runtime = await internal.createModelMemoryDatabaseRuntime({ config: api.config });
+      try {
+        const runnerSources = await buildRunnerSources({
+          workspaceRoot,
+          sources,
+          chunkSize,
+          projectId,
+          maxWordsPerWindow,
+          readTextFile,
+        });
+        const executor = new internal.OpenAICompatibleLiveJsonExecutor({
+          config: api.config,
+          requestTimeoutMs,
+          requestSeed,
+        });
+        const interpreter = new ExecutorBackedSemanticInterpreter(executor);
+        const collisionAdjudicator = new ExecutorBackedSemanticCollisionAdjudicator(executor);
+        const memoryStore = new DatabaseMemoryObjectStore(
+          runtime.canonicalRepository,
+          collisionAdjudicator,
+        );
+        const service =
+          deps.createRunnerService?.(runtime) ??
+          new ModelMemoryDocumentIngestionRunnerService({
+            canonicalRepository: runtime.canonicalRepository,
+            runtimeRepository: runtime.runtimeRepository,
+            memoryStore,
+            collisionAdjudicator,
+          });
+        const recordStore =
+          deps.createRecordStore?.(recordAbsolutePath) ??
+          new JsonFileDocumentIngestionRunRecordStore(recordAbsolutePath);
+
+        const record = await service.executeRun({
+          runId,
+          sources: runnerSources,
+          interpreter,
+          modelId,
+          candidateModelId,
+          chunkSize,
+          maxConcurrency,
+          maxWordsPerWindow,
+          recordStore,
+          resume,
+          onProgress: (event) => {
+            api.logger.info(`[model-memory-tool] ${event.message}`);
+          },
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: [
+                `Run ${runId} completed with status ${record.status}.`,
+                `Sources: ${record.totals.docsCompleted}/${record.totals.docsAttempted} completed, ${record.totals.docsFailed} failed.`,
+                `Captured claims: ${record.totals.capturedClaimCount}.`,
+                `Ignored windows: ${record.totals.ignoredWindowCount}. Rejected windows: ${record.totals.rejectedWindowCount}.`,
+                `Record path: ${recordRelativePath}`,
+              ].join(" "),
+            },
+          ],
+          details: {
+            runId,
+            status: record.status,
+            recordPath: recordRelativePath,
+            workspaceRoot,
+            modelId,
+            candidateModelId,
+            requestTimeoutMs,
+            requestSeed,
+            maxWordsPerWindow,
+            chunkSize,
+            maxConcurrency,
+            resume,
+            totals: record.totals,
+          },
+        };
+      } finally {
+        await runtime.pool.end();
+      }
+    },
+  };
+}

@@ -3,6 +3,7 @@ import { hasConfiguredModelFallbacks, resolveSessionAgentId } from "../../agents
 import { resolveContextTokensForModel } from "../../agents/context.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../../agents/defaults.js";
 import { resolveModelAuthMode } from "../../agents/model-auth.js";
+import { captureModelMemoryAssistantTurn } from "../../agents/model-memory.live-runtime.js";
 import { isCliProvider } from "../../agents/model-selection.js";
 import { queueEmbeddedPiMessage } from "../../agents/pi-embedded-runner/runs.js";
 import { hasNonzeroUsage, normalizeUsage } from "../../agents/usage.js";
@@ -15,6 +16,7 @@ import {
 } from "../../config/sessions.js";
 import type { TypingMode } from "../../config/types.js";
 import { resolveSessionTranscriptCandidates } from "../../gateway/session-utils.fs.js";
+import { logVerbose } from "../../globals.js";
 import { emitAgentEvent } from "../../infra/agent-events.js";
 import { emitDiagnosticEvent, isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
 import { enqueueSystemEvent } from "../../infra/system-events.js";
@@ -1369,6 +1371,30 @@ export async function runReplyAgent(params: {
 
     if (replyPayloads.length === 0) {
       return finalizeWithFollowup(undefined, queueKey, runFollowupTurn);
+    }
+
+    const modelMemoryAssistantText = replyPayloads
+      .filter((payload) => !payload.isError)
+      .map((payload) => payload.text?.trim() ?? "")
+      .filter((text) => text.length > 0)
+      .join("\n\n");
+    if (modelMemoryAssistantText) {
+      void captureModelMemoryAssistantTurn({
+        config: cfg,
+        sessionId: followupRun.run.sessionId,
+        sessionKey,
+        agentId: followupRun.run.agentId,
+        userText: commandBody,
+        assistantText: modelMemoryAssistantText,
+        sourceMetadata: {
+          provider: providerUsed,
+          model: modelUsed,
+          currentChannelId: sessionCtx.Surface ?? sessionCtx.Provider,
+          accountId: sessionCtx.AccountId,
+        },
+      }).catch((error) => {
+        logVerbose(`model-memory live capture failed: ${String(error)}`);
+      });
     }
 
     const successfulCronAdds = runResult.successfulCronAdds ?? 0;
