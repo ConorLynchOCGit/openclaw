@@ -56,11 +56,63 @@ export function isCronRunSessionKey(sessionKey: string | undefined | null): bool
 }
 
 export function isCronSessionKey(sessionKey: string | undefined | null): boolean {
+  const raw = normalizeOptionalLowercaseString(sessionKey);
+  if (raw?.startsWith("cron:")) {
+    return true;
+  }
   const parsed = parseAgentSessionKey(sessionKey);
   if (!parsed) {
     return false;
   }
   return normalizeOptionalLowercaseString(parsed.rest)?.startsWith("cron:") === true;
+}
+
+const DEFAULT_VISIBLE_SESSION_KEYS = new Set([
+  "agent:main:main",
+  "agent:chief:main",
+  "agent:builder:main",
+  "agent:x-manager:main",
+  "agent:web-researcher:main",
+  "agent:writer:main",
+]);
+
+const DEFAULT_HIDDEN_SESSION_PATTERNS = [
+  /:proof-[^:]+/i,
+  /:dashboard:w[0-9a-z-]*(?:[:.-]|$)/i,
+  /(^|[:.-])w(?:5|6|6d|8|9|10|11|14|15|16)[0-9a-z-]*(?:[:.-]|$)/i,
+  /:delegate(?:[:.-]|$)/i,
+  /:main-smoke:/i,
+  /:xmanager-smoke:/i,
+  /:fresh(?:[:.-]|$)/i,
+  /:(?:example|clawhub|react|docs)(?:[:.-]|$)/i,
+  /:routing-verification(?:[:.-]|$)/i,
+  /:heartbeat$/i,
+  /:unknown:direct:/i,
+  /^agent:chief:telegram:direct:/i,
+  /^webchat:g-agent-[^-]+-w[0-9a-z-]+/i,
+  /^webchat:g-agent-[a-z0-9-]+-main$/i,
+  /:g-agent-[^:]*-w[0-9a-z-]+/i,
+];
+
+export function isDefaultVisibleOperationalSessionKey(
+  sessionKey: string | undefined | null,
+): boolean {
+  const normalized = normalizeOptionalLowercaseString(sessionKey);
+  if (!normalized) {
+    return false;
+  }
+  return DEFAULT_VISIBLE_SESSION_KEYS.has(normalized);
+}
+
+export function isDefaultHiddenUiSessionKey(sessionKey: string | undefined | null): boolean {
+  const normalized = normalizeOptionalLowercaseString(sessionKey);
+  if (!normalized || isDefaultVisibleOperationalSessionKey(normalized)) {
+    return false;
+  }
+  if (isCronSessionKey(normalized)) {
+    return true;
+  }
+  return DEFAULT_HIDDEN_SESSION_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 export function isSubagentSessionKey(sessionKey: string | undefined | null): boolean {

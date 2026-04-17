@@ -9,39 +9,27 @@ import {
 function createConfig(input: {
   modelMemoryUrl?: string;
   modelMemoryDatabaseName?: string;
-  memoryMiddlewareUrl?: string;
 }): OpenClawConfig {
+  const modelMemoryEntry =
+    input.modelMemoryUrl || input.modelMemoryDatabaseName
+      ? {
+          "model-memory": {
+            enabled: true,
+            config: {
+              database: {
+                ...(input.modelMemoryUrl ? { url: input.modelMemoryUrl } : {}),
+                ...(input.modelMemoryDatabaseName
+                  ? { databaseName: input.modelMemoryDatabaseName }
+                  : {}),
+              },
+            },
+          },
+        }
+      : {};
+
   return {
     plugins: {
-      entries: {
-        ...(input.modelMemoryUrl || input.modelMemoryDatabaseName
-          ? {
-              "model-memory": {
-                enabled: true,
-                config: {
-                  database: {
-                    ...(input.modelMemoryUrl ? { url: input.modelMemoryUrl } : {}),
-                    ...(input.modelMemoryDatabaseName
-                      ? { databaseName: input.modelMemoryDatabaseName }
-                      : {}),
-                  },
-                },
-              },
-            }
-          : {}),
-        ...(input.memoryMiddlewareUrl
-          ? {
-              "memory-middleware": {
-                enabled: true,
-                config: {
-                  database: {
-                    url: input.memoryMiddlewareUrl,
-                  },
-                },
-              },
-            }
-          : {}),
-      },
+      entries: modelMemoryEntry,
     },
   } as OpenClawConfig;
 }
@@ -53,60 +41,53 @@ describe("model-memory database resolution", () => {
         MODEL_MEMORY_DATABASE_URL:
           "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/model_memory_live?sslmode=require",
       },
-      config: createConfig({
-        memoryMiddlewareUrl:
-          "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require",
-      }),
+      config: createConfig({}),
     });
 
     expect(resolution.source).toBe("env:MODEL_MEMORY_DATABASE_URL");
     expect(resolution.databaseName).toBe("model_memory_live");
     expect(resolution.connectionString).toContain("application_name=model-memory");
     expect(resolution.connectionString).toContain("/model_memory_live");
-    expect(resolution.derivedFromSharedServer).toBe(false);
   });
 
-  it("prefers explicit model-memory plugin config URL over the shared legacy URL", () => {
+  it("prefers explicit model-memory plugin config URL", () => {
     const resolution = resolveModelMemoryDatabaseResolution({
       config: createConfig({
         modelMemoryUrl:
           "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/model_memory_prod?sslmode=require",
-        memoryMiddlewareUrl:
-          "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require",
       }),
     });
 
     expect(resolution.source).toBe("config:plugins.entries.model-memory.config.database.url");
     expect(resolution.databaseName).toBe("model_memory_prod");
     expect(resolution.connectionString).toContain("/model_memory_prod");
-    expect(resolution.derivedFromSharedServer).toBe(false);
   });
 
-  it("derives a same-server model-memory URL from the configured memory-middleware URL", () => {
+  it("retargets explicit model-memory URLs by mode so dedicated lanes stay separated", () => {
     const resolution = resolveModelMemoryDatabaseResolution({
+      databaseMode: "targeted_trace_scratch_db",
       config: createConfig({
+        modelMemoryUrl:
+          "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/model_memory_prod?uselibpqcompat=true&sslmode=require",
         modelMemoryDatabaseName: "model_memory_shadow",
-        memoryMiddlewareUrl:
-          "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/postgres?uselibpqcompat=true&sslmode=require",
       }),
     });
 
-    expect(resolution.source).toBe("config:plugins.entries.memory-middleware.config.database.url");
-    expect(resolution.databaseName).toBe("model_memory_shadow");
+    expect(resolution.source).toBe("config:plugins.entries.model-memory.config.database.url");
+    expect(resolution.databaseName).toBe("model_memory_shadow_trace_scratch");
     expect(resolution.connectionString).toContain(
-      "@aws-1-us-east-1.pooler.supabase.com:5432/model_memory_shadow",
+      "@aws-1-us-east-1.pooler.supabase.com:5432/model_memory_shadow_trace_scratch",
     );
     expect(resolution.connectionString).toContain("sslmode=require");
     expect(resolution.connectionString).toContain("application_name=model-memory");
-    expect(resolution.derivedFromSharedServer).toBe(true);
   });
 
   it("uses a dedicated scratch database name for targeted traces", () => {
     const resolution = resolveModelMemoryDatabaseResolution({
       databaseMode: "targeted_trace_scratch_db",
       config: createConfig({
-        memoryMiddlewareUrl:
-          "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/postgres?uselibpqcompat=true&sslmode=require",
+        modelMemoryUrl:
+          "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/model_memory_prod?uselibpqcompat=true&sslmode=require",
       }),
     });
 
@@ -148,8 +129,8 @@ describe("model-memory database resolution", () => {
 
     const runtime = await createModelMemoryDatabaseRuntime({
       config: createConfig({
-        memoryMiddlewareUrl:
-          "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require",
+        modelMemoryUrl:
+          "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/model_memory_runtime?sslmode=require",
       }),
       defaultDatabaseName: "model_memory_runtime",
       createPool,

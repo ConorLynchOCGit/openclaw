@@ -7,6 +7,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import {
+  __test as chromeTestHelpers,
   decorateOpenClawProfile,
   ensureProfileCleanExit,
   findChromeExecutableMac,
@@ -204,6 +205,20 @@ describe("browser chrome profile decoration", () => {
     const prefs = await readJson(path.join(userDataDir, "Default", "Preferences"));
     const profile = prefs.profile as Record<string, unknown>;
     expect(profile.name).toBe(DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME);
+  });
+
+  it("detects stale singleton-lock stderr as a recoverable managed-profile error", () => {
+    expect(
+      chromeTestHelpers.isRecoverableProfileLockStderr(
+        [
+          "The profile appears to be in use by another Chromium process.",
+          "SingletonLock: /tmp/chrome/SingletonLock",
+        ].join("\n"),
+      ),
+    ).toBe(true);
+    expect(chromeTestHelpers.isRecoverableProfileLockStderr("plain crash without lock")).toBe(
+      false,
+    );
   });
 });
 

@@ -20,12 +20,24 @@ function parsePositiveInt(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function resolveVitestMaxOldSpaceSizeMb(env = process.env) {
+  return (
+    parsePositiveInt(env.OPENCLAW_VITEST_MAX_OLD_SPACE_SIZE_MB) ??
+    parsePositiveInt(env.OPENCLAW_TEST_MAX_OLD_SPACE_SIZE_MB)
+  );
+}
+
 export function resolveVitestNodeArgs(env = process.env) {
+  const args = [];
+  const maxOldSpaceSizeMb = resolveVitestMaxOldSpaceSizeMb(env);
+  if (maxOldSpaceSizeMb !== null) {
+    args.push(`--max-old-space-size=${maxOldSpaceSizeMb}`);
+  }
   if (isTruthyEnvValue(env.OPENCLAW_VITEST_ENABLE_MAGLEV)) {
-    return [];
+    return args;
   }
 
-  return ["--no-maglev"];
+  return [...args, "--no-maglev"];
 }
 
 export function resolveVitestCliEntry() {

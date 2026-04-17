@@ -24,6 +24,9 @@ import {
 } from "./row-codecs.ts";
 import type { SqlClient } from "./sql-client.ts";
 
+const RUNTIME_REBUILD_LOCK_NAMESPACE = 42042;
+const RUNTIME_REBUILD_LOCK_ID = 1;
+
 function decodeActiveMemorySlot(row: QueryResultRow): ActiveMemorySlotRecord {
   return {
     slotKey: readString(row.slot_key),
@@ -203,6 +206,21 @@ export class RuntimeContextRepository {
 
   withTransaction<T>(work: (repository: RuntimeContextRepository) => Promise<T>): Promise<T> {
     return this.sql.withTransaction((tx) => work(new RuntimeContextRepository(tx)));
+  }
+
+  withRuntimeRebuildLock<T>(
+    work: (repository: RuntimeContextRepository) => Promise<T>,
+  ): Promise<T> {
+    return this.withTransaction(async (repository) => {
+      // Serialize derived runtime rebuilds across interactive capture, daily
+      // continuity recovery, and bulk ingestion so overlapping writers do not
+      // race on the active runtime tables.
+      await repository.sql.query("SELECT pg_advisory_xact_lock($1, $2)", [
+        RUNTIME_REBUILD_LOCK_NAMESPACE,
+        RUNTIME_REBUILD_LOCK_ID,
+      ]);
+      return work(repository);
+    });
   }
 
   async replaceActiveMemorySlots(

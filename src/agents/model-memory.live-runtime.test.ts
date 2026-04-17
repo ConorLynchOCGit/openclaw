@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import {
-  mergeBootstrapFilesWithModelMemoryOverlay,
-  resolveModelMemoryLiveRuntimeStatus,
-} from "./model-memory.live-runtime.ts";
+import { resolveModelMemoryLiveRuntimeStatus } from "./model-memory.live-runtime.ts";
 
 describe("resolveModelMemoryLiveRuntimeStatus", () => {
   it("stays disabled by default", () => {
@@ -79,49 +76,5 @@ describe("resolveModelMemoryLiveRuntimeStatus", () => {
 
     expect(status.enabled).toBe(false);
     expect(status.source).toBe("disabled");
-  });
-});
-
-describe("mergeBootstrapFilesWithModelMemoryOverlay", () => {
-  it("replaces overlapping bootstrap filenames with the model-memory overlay", () => {
-    const merged = mergeBootstrapFilesWithModelMemoryOverlay({
-      baseFiles: [
-        {
-          name: "AGENTS.md",
-          path: "AGENTS.md",
-          content: "legacy agents",
-          missing: false,
-        },
-        {
-          name: "SOUL.md",
-          path: "SOUL.md",
-          content: "persona",
-          missing: false,
-        },
-      ],
-      overlayFiles: [
-        {
-          name: "AGENTS.md",
-          path: ".openclaw/model-memory/projections/AGENTS.md",
-          content: "model-memory agents",
-          missing: false,
-        },
-      ],
-    });
-
-    expect(merged).toEqual([
-      {
-        name: "AGENTS.md",
-        path: ".openclaw/model-memory/projections/AGENTS.md",
-        content: "model-memory agents",
-        missing: false,
-      },
-      {
-        name: "SOUL.md",
-        path: "SOUL.md",
-        content: "persona",
-        missing: false,
-      },
-    ]);
   });
 });

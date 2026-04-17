@@ -63,7 +63,7 @@ describe("isCronSessionKey", () => {
     { key: "agent:main:cron:job-1:run:run-1", expected: true },
     { key: "agent:main:main", expected: false },
     { key: "agent:main:subagent:worker", expected: false },
-    { key: "cron:job-1", expected: false },
+    { key: "cron:job-1", expected: true },
     { key: undefined, expected: false },
   ] as const)("matches cron key %j => $expected", ({ key, expected }) => {
     expect(isCronSessionKey(key)).toBe(expected);

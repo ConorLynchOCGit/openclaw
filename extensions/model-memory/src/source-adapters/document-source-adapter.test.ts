@@ -50,4 +50,17 @@ describe("document-source-adapter", () => {
     );
     expect(result.windows.map((window) => window.windowIndex)).toEqual([0, 1]);
   });
+
+  it("uses current timestamps by default instead of epoch placeholders", () => {
+    const before = Date.now();
+    const result = adaptDocumentSource({
+      externalSourceId: "doc-003",
+      text: "# Runtime\nFresh canonical document.",
+    });
+    const after = Date.now();
+
+    expect(result.source.createdAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(result.source.createdAt.getTime()).toBeLessThanOrEqual(after);
+    expect(result.windows[0]?.createdAt.getTime()).toBe(result.source.createdAt.getTime());
+  });
 });

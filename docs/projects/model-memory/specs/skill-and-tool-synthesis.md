@@ -1,0 +1,297 @@
+---
+summary: "Phase 2 design for turning repeated successful traces into reviewable skill and tool candidates."
+title: "Skill And Tool Synthesis"
+---
+
+# Skill And Tool Synthesis
+
+## Status
+
+This is an approved Phase 2 direction document.
+
+The synthesis direction is approved with these boundaries:
+
+- promotions remain review-gated
+- third-party skills must go through `skill-vetter`
+- the recommendation flow is `install`, `inspire`, or `reject`
+- approved install means real install, not a fake placeholder action
+
+## Objective
+
+Turn repeated successful interactions into reusable, auditable candidate skills
+and tools.
+
+The system should improve by accumulating reusable artifacts rather than relying
+on hidden prompt drift or opaque behavior changes.
+
+## Core rule
+
+Self-improvement should promote auditable artifacts, not hidden behavior.
+
+## Why this exists
+
+The current system already has:
+
+- canonical memory objects
+- document ingest
+- prompt-turn capture
+- daily summary ingestion
+- operator skills
+- skill vetting support
+
+Phase 2 should connect these into one synthesis pipeline so repeated successful
+workflows can become:
+
+- internal skill candidates
+- internal tool candidates
+- third-party skill adoption candidates
+
+## Candidate sources
+
+Candidate synthesis may draw from:
+
+- repeated successful interaction traces
+- repeated operator workflows
+- repeated document-ingest or maintenance procedures
+- frequently reused tool call sequences
+- recurring workaround patterns
+- successful third-party skill usage
+
+## Candidate types
+
+Suggested candidate types:
+
+- `internal_skill_candidate`
+- `internal_tool_candidate`
+- `third_party_skill_candidate`
+- `workflow_doc_candidate`
+- `tooling_gap_candidate`
+
+## Internal skill synthesis
+
+The first synthesis target should be internal skills.
+
+Pipeline:
+
+1. detect repeated successful trajectory
+2. cluster similar trajectories
+3. extract the reusable skeleton
+4. compare against existing skills and tools
+5. compile a candidate draft
+6. run replay and contract checks
+7. surface for operator review
+8. promote only after approval
+
+The output should be a real candidate artifact with:
+
+- candidate name
+- trigger conditions
+- expected inputs
+- expected outputs
+- required tools
+- safety notes
+- replay evidence
+
+## Internal tool synthesis
+
+The system should also notice when a repeated workflow should not be a skill but
+a real tool seam.
+
+Signals include:
+
+- repeated deterministic shell or script flows
+- stable argument extraction from user intent
+- repeated planner proposals pointing to the same missing capability
+- high-value operator workflow bottlenecks
+
+The system may draft a tool proposal, but implementation remains a reviewed
+engineering action.
+
+## Third-party skill adoption
+
+Phase 2 should cover third-party skills explicitly.
+
+The pipeline should be:
+
+1. notice a capability gap
+2. evaluate internal synthesis options
+3. evaluate ClawHub options
+4. run `skill-vetter` on any third-party candidate
+5. run bounded local evaluation
+6. produce a recommendation:
+   - `install`
+   - `inspire`
+   - `reject`
+7. surface the recommendation through normal OpenClaw review channels
+8. on approval:
+   - `install` -> install it
+   - `inspire` -> produce a project spec or candidate draft
+   - `reject` -> record rejection rationale
+
+## Meaning of recommendation outcomes
+
+### `install`
+
+The third-party skill appears worth direct adoption.
+
+It still requires:
+
+- `skill-vetter`
+- bounded local evaluation
+- explicit operator approval
+
+### `inspire`
+
+The skill is useful as design inspiration but should not be installed directly.
+
+Next output:
+
+- a repo-owned project spec or candidate draft
+
+### `reject`
+
+The capability should not proceed through that third-party option.
+
+The system should preserve the reason so the same poor fit is not rediscovered
+as if it were new.
+
+## Current install semantics
+
+The current agent posture is effectively unrestricted skill visibility.
+
+That means approved `install` should be read honestly as:
+
+- install and make available
+
+It is not a staged or quarantined install unless a future staging layer is
+added.
+
+Phase 2 should therefore keep approval explicit and visible before any
+third-party install action.
+
+## Promotion gates
+
+Promotion must be review-gated.
+
+Required checks before promotion:
+
+- replay on representative traces
+- contract verification
+- scope and permission review
+- privacy and egress review
+- if third-party:
+  - `skill-vetter`
+  - local bounded evaluation
+  - explicit human approval
+
+## Preferred promotion targets
+
+### Internal candidate
+
+First promotion target:
+
+- repo-owned draft artifact
+
+This keeps the first promotion auditable and reviewable.
+
+### Third-party candidate
+
+First promotion target:
+
+- review artifact only until approval
+
+Only after approval should the system install it.
+
+## Review surfacing
+
+The review surface must appear inside OpenClaw’s ordinary operator workflow.
+
+Required surfacing:
+
+- turn-level surfacing when a candidate is locally relevant
+- heartbeat when pending candidates exist
+- daily operator review summary
+
+## Relationship to memory objects
+
+Skill and tool candidates are not canonical memory truth.
+
+They should be stored as reviewable artifacts with evidence links.
+
+However, the memory system should still capture facts such as:
+
+- this workflow recurs often
+- this workaround succeeded repeatedly
+- this candidate was approved or rejected
+
+Those are canonicalizable facts about the operating system, not the same thing
+as the candidate artifact itself.
+
+## Relationship to graph runtime
+
+The graph layer should connect:
+
+- candidate skills
+- candidate tools
+- repeated trajectories
+- source documents
+- operator lanes
+- existing tools and skills
+
+This makes it possible to answer:
+
+- what does this candidate replace?
+- what existing workflow does it overlap?
+- which documents and subjects justify it?
+
+## Relationship to memory-system evolution
+
+Phase 2 should allow the system to evolve its own memory-management workflows.
+
+However, first-pass implementation should focus on:
+
+- candidate generation
+- replay-backed evaluation
+- review gating
+
+and not on autonomous live mutation of the memory pipeline itself.
+
+## Prompt injection and privacy
+
+No external document, web page, or third-party skill page should directly drive
+promotion.
+
+All external capability sources must be treated as untrusted until they pass:
+
+- structured extraction
+- vetting
+- replay checks
+- approval
+
+If candidate generation uses prior sessions or memory files, the pipeline must
+ensure no sensitive or secret-bearing content gets packaged into a candidate
+artifact by default.
+
+## Non-goals
+
+This spec does not authorize:
+
+- autonomous third-party skill installation
+- autonomous tool enablement
+- autonomous runtime prompt mutation
+- direct publish-to-ClawHub behavior from live memory traces
+- hidden parameter-level self-improvement
+
+## Rollout
+
+1. candidate extraction only
+2. replay and contract validation
+3. review surfacing in turn, heartbeat, and daily operator review
+4. operator-approved internal skill promotion to repo-owned draft artifacts
+5. operator-approved third-party `install` or `inspire` outcomes
+6. only later consider staging or quarantine layers if the product needs them
+
+## Related specs
+
+- [Skill And Tool Candidate Evaluation](/projects/model-memory/specs/skill-and-tool-candidate-evaluation)
+- [Planner Review Artifacts And Surfacing](/projects/model-memory/specs/planner-review-artifacts-and-surfacing)

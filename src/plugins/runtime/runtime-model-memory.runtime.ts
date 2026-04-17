@@ -18,10 +18,7 @@ export type RuntimeModelMemoryDatabaseResolution = {
   databaseMode?: RuntimeModelMemoryDatabaseMode;
   source:
     | "env:MODEL_MEMORY_DATABASE_URL"
-    | "config:plugins.entries.model-memory.config.database.url"
-    | "env:MEMORY_MIDDLEWARE_DATABASE_URL"
-    | "config:plugins.entries.memory-middleware.config.database.url";
-  derivedFromSharedServer: boolean;
+    | "config:plugins.entries.model-memory.config.database.url";
 };
 
 export type RuntimeModelMemoryDatabaseRuntime = Awaited<{

@@ -205,7 +205,7 @@ export type AgentDefaultsConfig = {
    *   transcript already contains a completed assistant turn
    */
   contextInjection?: AgentContextInjection;
-  /** Max chars for injected bootstrap files before truncation (default: 20000). */
+  /** Max chars for injected bootstrap files before truncation (default: 30000). */
   bootstrapMaxChars?: number;
   /** Max total chars across all injected bootstrap files (default: 150000). */
   bootstrapTotalMaxChars?: number;

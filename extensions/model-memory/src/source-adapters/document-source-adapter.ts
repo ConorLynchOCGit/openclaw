@@ -24,6 +24,7 @@ export type DocumentSourceInput = {
   sourceMetadata?: Record<string, unknown>;
   maxWordsPerWindow?: number;
   sourceKind?: Extract<ModelMemorySourceKind, "document" | "daily_continuity">;
+  createdAt?: Date;
 };
 
 export type DocumentSourceWindow = Omit<ModelMemorySourceWindowRecord, "blockDescriptors"> & {
@@ -152,6 +153,7 @@ function buildWindowRecord(
   windowIndex: number,
   blockDescriptors: DocumentBlockDescriptor[],
   normalizedLines: string[],
+  createdAt: Date,
 ): DocumentSourceWindow {
   const lineStart = blockDescriptors[0]?.lineStart;
   const lineEnd = blockDescriptors[blockDescriptors.length - 1]?.lineEnd;
@@ -185,11 +187,12 @@ function buildWindowRecord(
     blockDescriptors,
     lineStart,
     lineEnd,
-    createdAt: new Date(0),
+    createdAt,
   };
 }
 
 export function adaptDocumentSource(input: DocumentSourceInput): DocumentSourceEnvelope {
+  const createdAt = input.createdAt ?? new Date();
   const normalizedText = normalizeDocumentText(input.text);
   const normalizedLines = normalizedText.split("\n");
   const blocks = buildBlockDescriptors(normalizedText);
@@ -211,7 +214,7 @@ export function adaptDocumentSource(input: DocumentSourceInput): DocumentSourceE
     sourceFingerprint,
     projectId: input.projectId,
     sourceMetadata: input.sourceMetadata ?? {},
-    createdAt: new Date(0),
+    createdAt,
   };
 
   if (blocks.length === 0) {
@@ -233,6 +236,7 @@ export function adaptDocumentSource(input: DocumentSourceInput): DocumentSourceE
             },
           ],
           normalizedLines,
+          createdAt,
         ),
       ],
     };
@@ -247,7 +251,9 @@ export function adaptDocumentSource(input: DocumentSourceInput): DocumentSourceE
     if (currentBlocks.length === 0) {
       return;
     }
-    windows.push(buildWindowRecord(sourceId, windows.length, currentBlocks, normalizedLines));
+    windows.push(
+      buildWindowRecord(sourceId, windows.length, currentBlocks, normalizedLines, createdAt),
+    );
     currentBlocks = [];
     currentWordCount = 0;
   };

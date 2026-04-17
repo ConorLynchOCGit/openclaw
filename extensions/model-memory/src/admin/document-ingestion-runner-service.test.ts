@@ -2,6 +2,10 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { ModelMemoryCanonicalRepository } from "../db/canonical-repository.ts";
+import { applyModelMemoryMigrations } from "../db/migrations.ts";
+import { createPgMemTestDatabase } from "../db/pg-test.ts";
+import { RuntimeContextRepository } from "../db/runtime-context-repository.ts";
 import {
   JsonFileDocumentIngestionRunRecordStore,
   ModelMemoryDocumentIngestionRunnerService,
@@ -167,5 +171,71 @@ describe("document-ingestion-runner-service", () => {
     expect(secondCalls).toEqual([]);
     expect(resumed.totals.docsCompleted).toBe(2);
     expect(resumed.totals.docsFailed).toBe(1);
+  });
+
+  it("records interrupted status when chunk-end runtime rebuild fails", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "model-memory-runner-interrupted-"));
+    const recordPath = path.join(tempDir, "run.json");
+    const store = new JsonFileDocumentIngestionRunRecordStore(recordPath);
+    const database = await createPgMemTestDatabase();
+
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const canonicalRepository = new ModelMemoryCanonicalRepository(database.sql);
+      const runtimeRepository = new RuntimeContextRepository(database.sql);
+      const service = new ModelMemoryDocumentIngestionRunnerService({
+        canonicalRepository,
+        runtimeRepository,
+        async processSource() {
+          return {
+            lineCount: 2,
+            windowCount: 1,
+            capturedClaimCount: 1,
+            writeDecisionCounts: { write: 1 },
+            ignoredWindowCount: 0,
+            rejectedWindowCount: 0,
+            rejectReasons: [],
+          };
+        },
+      });
+
+      const original = runtimeRepository.withRuntimeRebuildLock.bind(runtimeRepository);
+      runtimeRepository.withRuntimeRebuildLock = async (work) =>
+        original(async (repository) => {
+          const error = new Error("forced rebuild failure");
+          await work(repository);
+          throw error;
+        });
+
+      await expect(
+        service.executeRun({
+          runId: "run-003",
+          sources: buildSources(),
+          interpreter: {
+            interpret() {
+              throw new Error("unused");
+            },
+          },
+          modelId: "openrouter/openai/gpt-5.4-nano",
+          candidateModelId: "openrouter/openai/gpt-5.4-nano",
+          chunkSize: 2,
+          recordStore: store,
+          resume: true,
+        }),
+      ).rejects.toThrow("forced rebuild failure");
+
+      const persisted = JSON.parse(await readFile(recordPath, "utf8")) as {
+        status: string;
+        runError?: { phase?: string; chunkIndex?: number };
+        totals: { docsCompleted: number; docsFailed: number };
+      };
+      expect(persisted.status).toBe("interrupted");
+      expect(persisted.runError?.phase).toBe("runtime_rebuild_after_chunk");
+      expect(persisted.runError?.chunkIndex).toBe(1);
+      expect(persisted.totals.docsCompleted).toBe(2);
+      expect(persisted.totals.docsFailed).toBe(0);
+    } finally {
+      await database.close();
+    }
   });
 });

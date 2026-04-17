@@ -29,6 +29,17 @@ These specs define the clean-room `model-memory` project before any implementati
 18. [Document Ingestion Runner Service](/projects/model-memory/specs/document-ingestion-runner-service)
 19. [Structural Family Recall](/projects/model-memory/specs/structural-family-recall)
 20. [Post-Cutover Hierarchical Retrieval](/projects/model-memory/specs/post-cutover-hierarchical-retrieval)
+21. [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
+22. [Subject Capsules And Dense Ingestion](/projects/model-memory/specs/subject-capsules-and-dense-ingestion)
+23. [Proactive Memory Planner](/projects/model-memory/specs/proactive-memory-planner)
+24. [Skill And Tool Synthesis](/projects/model-memory/specs/skill-and-tool-synthesis)
+25. [Cache And Projection Policy](/projects/model-memory/specs/cache-and-projection-policy)
+26. [Kind Primary Schema Migration](/projects/model-memory/specs/kind-primary-schema-migration)
+27. [Graph Schema And Runtime Dependencies](/projects/model-memory/specs/graph-schema-and-runtime-dependencies)
+28. [Project State Capsule Schema](/projects/model-memory/specs/project-state-capsule-schema)
+29. [Planner Review Artifacts And Surfacing](/projects/model-memory/specs/planner-review-artifacts-and-surfacing)
+30. [Skill And Tool Candidate Evaluation](/projects/model-memory/specs/skill-and-tool-candidate-evaluation)
+31. [Prompt Contract Phase 2 Migration](/projects/model-memory/specs/prompt-contract-phase2-migration)
 
 ## Companion project docs
 

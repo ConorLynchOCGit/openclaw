@@ -32,17 +32,19 @@ let releaseLock = () => {};
 let lockReleased = false;
 
 const FULL_SUITE_CONFIG_WEIGHT = new Map([
+  // Stagger the heaviest gateway shards across other large lanes so local
+  // full-suite runs do not start four gateway-intensive configs at once.
   ["test/vitest/vitest.gateway.config.ts", 180],
-  ["test/vitest/vitest.gateway-server.config.ts", 180],
-  ["test/vitest/vitest.gateway-core.config.ts", 179],
-  ["test/vitest/vitest.gateway-client.config.ts", 178],
-  ["test/vitest/vitest.gateway-methods.config.ts", 177],
-  ["test/vitest/vitest.commands.config.ts", 175],
-  ["test/vitest/vitest.agents.config.ts", 170],
-  ["test/vitest/vitest.extension-voice-call.config.ts", 169],
-  ["test/vitest/vitest.extensions.config.ts", 168],
-  ["test/vitest/vitest.extension-channels.config.ts", 167],
-  ["test/vitest/vitest.runtime-config.config.ts", 166],
+  ["test/vitest/vitest.gateway-server.config.ts", 179],
+  ["test/vitest/vitest.commands.config.ts", 178],
+  ["test/vitest/vitest.agents.config.ts", 177],
+  ["test/vitest/vitest.gateway-core.config.ts", 176],
+  ["test/vitest/vitest.runtime-config.config.ts", 175],
+  ["test/vitest/vitest.gateway-client.config.ts", 174],
+  ["test/vitest/vitest.gateway-methods.config.ts", 173],
+  ["test/vitest/vitest.extension-voice-call.config.ts", 172],
+  ["test/vitest/vitest.extensions.config.ts", 171],
+  ["test/vitest/vitest.extension-channels.config.ts", 170],
   ["test/vitest/vitest.contracts.config.ts", 165],
   ["test/vitest/vitest.tasks.config.ts", 165],
   ["test/vitest/vitest.channels.config.ts", 164],
@@ -171,6 +173,43 @@ function applyDefaultParallelVitestWorkerBudget(specs, env) {
   }));
 }
 
+function refreshVitestNodeArgs(specs) {
+  const vitestCliEntry = resolveVitestCliEntry();
+  return specs.map((spec) => {
+    const vitestCliIndex = spec.pnpmArgs.indexOf(vitestCliEntry);
+    if (vitestCliIndex < 0) {
+      return spec;
+    }
+    return {
+      ...spec,
+      pnpmArgs: [
+        "exec",
+        "node",
+        ...resolveVitestNodeArgs(spec.env),
+        ...spec.pnpmArgs.slice(vitestCliIndex),
+      ],
+    };
+  });
+}
+
+function applyDefaultParallelVitestOldSpaceBudget(specs, env) {
+  if (
+    env.OPENCLAW_VITEST_MAX_OLD_SPACE_SIZE_MB ||
+    env.OPENCLAW_TEST_MAX_OLD_SPACE_SIZE_MB ||
+    isCiLikeEnv(env)
+  ) {
+    return specs;
+  }
+  const { vitestMaxOldSpaceSizeMb } = resolveLocalFullSuiteProfile(env);
+  return specs.map((spec) => ({
+    ...spec,
+    env: {
+      ...spec.env,
+      OPENCLAW_TEST_MAX_OLD_SPACE_SIZE_MB: String(vitestMaxOldSpaceSizeMb),
+    },
+  }));
+}
+
 function orderFullSuiteSpecsForParallelRun(specs) {
   return specs.toSorted((a, b) => {
     const weightDelta =
@@ -258,12 +297,17 @@ async function main() {
     const concurrency = resolveParallelFullSuiteConcurrency(runSpecs.length, process.env);
     if (concurrency > 1) {
       const localFullSuiteProfile = resolveLocalFullSuiteProfile(process.env);
-      const parallelSpecs = applyDefaultParallelVitestWorkerBudget(
-        applyParallelVitestCachePaths(orderFullSuiteSpecsForParallelRun(runSpecs), {
-          cwd: process.cwd(),
-          env: process.env,
-        }),
-        process.env,
+      const parallelSpecs = refreshVitestNodeArgs(
+        applyDefaultParallelVitestOldSpaceBudget(
+          applyDefaultParallelVitestWorkerBudget(
+            applyParallelVitestCachePaths(orderFullSuiteSpecsForParallelRun(runSpecs), {
+              cwd: process.cwd(),
+              env: process.env,
+            }),
+            process.env,
+          ),
+          process.env,
+        ),
       );
       if (
         !isCiLikeEnv(process.env) &&

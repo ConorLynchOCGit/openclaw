@@ -41,6 +41,7 @@ import {
   DEFAULT_OPENCLAW_BROWSER_COLOR,
   DEFAULT_OPENCLAW_BROWSER_PROFILE_NAME,
 } from "./constants.js";
+import { movePathToTrash } from "./trash.js";
 
 const log = createSubsystemLogger("browser").child("chrome");
 
@@ -84,6 +85,24 @@ export function resolveOpenClawUserDataDir(profileName = DEFAULT_OPENCLAW_BROWSE
 
 function cdpUrlForPort(cdpPort: number) {
   return `http://127.0.0.1:${cdpPort}`;
+}
+
+const STALE_PROFILE_LOCK_PATTERNS = [
+  "profile appears to be in use by another chromium process",
+  "profile appears to be in use by another google chrome process",
+  "profile appears to be in use by another brave process",
+  "profile appears to be in use by another microsoft edge process",
+  "singletonlock",
+  "singletonsocket",
+  "singletoncookie",
+] as const;
+
+function isRecoverableProfileLockStderr(stderrOutput: string): boolean {
+  const normalized = normalizeOptionalString(stderrOutput)?.toLowerCase() ?? "";
+  if (!normalized) {
+    return false;
+  }
+  return STALE_PROFILE_LOCK_PATTERNS.some((pattern) => normalized.includes(pattern));
 }
 
 export function buildOpenClawChromeLaunchArgs(params: {
@@ -319,141 +338,144 @@ export async function launchOpenClawChrome(
   }
 
   const userDataDir = resolveOpenClawUserDataDir(profile.name);
-  fs.mkdirSync(userDataDir, { recursive: true });
-
-  const needsDecorate = !isProfileDecorated(
-    userDataDir,
-    profile.name,
-    (profile.color ?? DEFAULT_OPENCLAW_BROWSER_COLOR).toUpperCase(),
-  );
-
-  // First launch to create preference files if missing, then decorate and relaunch.
   const spawnOnce = () => {
     const args = buildOpenClawChromeLaunchArgs({
       resolved,
       profile,
       userDataDir,
     });
-    // stdio tuple: discard stdout to prevent buffer saturation in constrained
-    // environments (e.g. Docker), while keeping stderr piped for diagnostics.
-    // Cast to ChildProcessWithoutNullStreams so callers can use .stderr safely;
-    // the tuple overload resolution varies across @types/node versions.
     return spawn(exe.path, args, {
       stdio: ["ignore", "ignore", "pipe"],
       env: {
         ...process.env,
-        // Reduce accidental sharing with the user's env.
         HOME: os.homedir(),
       },
     }) as unknown as ChildProcessWithoutNullStreams;
   };
 
-  const startedAt = Date.now();
+  const launchWithRetry = async (allowProfileResetRetry: boolean): Promise<RunningChrome> => {
+    fs.mkdirSync(userDataDir, { recursive: true });
 
-  const localStatePath = path.join(userDataDir, "Local State");
-  const preferencesPath = path.join(userDataDir, "Default", "Preferences");
-  const needsBootstrap = !exists(localStatePath) || !exists(preferencesPath);
-
-  // If the profile doesn't exist yet, bootstrap it once so Chrome creates defaults.
-  // Then decorate (if needed) before the "real" run.
-  if (needsBootstrap) {
-    const bootstrap = spawnOnce();
-    const deadline = Date.now() + CHROME_BOOTSTRAP_PREFS_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      if (exists(localStatePath) && exists(preferencesPath)) {
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    try {
-      bootstrap.kill("SIGTERM");
-    } catch {
-      // ignore
-    }
-    const exitDeadline = Date.now() + CHROME_BOOTSTRAP_EXIT_TIMEOUT_MS;
-    while (Date.now() < exitDeadline) {
-      if (bootstrap.exitCode != null) {
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 50));
-    }
-  }
-
-  if (needsDecorate) {
-    try {
-      decorateOpenClawProfile(userDataDir, {
-        name: profile.name,
-        color: profile.color,
-      });
-      log.info(`🦞 openclaw browser profile decorated (${profile.color})`);
-    } catch (err) {
-      log.warn(`openclaw browser profile decoration failed: ${String(err)}`);
-    }
-  }
-
-  try {
-    ensureProfileCleanExit(userDataDir);
-  } catch (err) {
-    log.warn(`openclaw browser clean-exit prefs failed: ${String(err)}`);
-  }
-
-  const proc = spawnOnce();
-
-  // Collect stderr for diagnostics in case Chrome fails to start.
-  // The listener is removed on success to avoid unbounded memory growth
-  // from a long-lived Chrome process that emits periodic warnings.
-  const stderrChunks: Buffer[] = [];
-  const onStderr = (chunk: Buffer) => {
-    stderrChunks.push(chunk);
-  };
-  proc.stderr?.on("data", onStderr);
-
-  // Wait for CDP to come up.
-  const readyDeadline = Date.now() + CHROME_LAUNCH_READY_WINDOW_MS;
-  while (Date.now() < readyDeadline) {
-    if (await isChromeReachable(profile.cdpUrl)) {
-      break;
-    }
-    await new Promise((r) => setTimeout(r, CHROME_LAUNCH_READY_POLL_MS));
-  }
-
-  if (!(await isChromeReachable(profile.cdpUrl))) {
-    const stderrOutput =
-      normalizeOptionalString(Buffer.concat(stderrChunks).toString("utf8")) ?? "";
-    const stderrHint = stderrOutput
-      ? `\nChrome stderr:\n${stderrOutput.slice(0, CHROME_STDERR_HINT_MAX_CHARS)}`
-      : "";
-    const sandboxHint =
-      process.platform === "linux" && !resolved.noSandbox
-        ? "\nHint: If running in a container or as root, try setting browser.noSandbox: true in config."
-        : "";
-    try {
-      proc.kill("SIGKILL");
-    } catch {
-      // ignore
-    }
-    throw new Error(
-      `Failed to start Chrome CDP on port ${profile.cdpPort} for profile "${profile.name}".${sandboxHint}${stderrHint}`,
+    const needsDecorate = !isProfileDecorated(
+      userDataDir,
+      profile.name,
+      (profile.color ?? DEFAULT_OPENCLAW_BROWSER_COLOR).toUpperCase(),
     );
-  }
+    const startedAt = Date.now();
 
-  // Chrome started successfully — detach the stderr listener and release the buffer.
-  proc.stderr?.off("data", onStderr);
-  stderrChunks.length = 0;
+    const localStatePath = path.join(userDataDir, "Local State");
+    const preferencesPath = path.join(userDataDir, "Default", "Preferences");
+    const needsBootstrap = !exists(localStatePath) || !exists(preferencesPath);
 
-  const pid = proc.pid ?? -1;
-  log.info(
-    `🦞 openclaw browser started (${exe.kind}) profile "${profile.name}" on 127.0.0.1:${profile.cdpPort} (pid ${pid})`,
-  );
+    if (needsBootstrap) {
+      const bootstrap = spawnOnce();
+      const deadline = Date.now() + CHROME_BOOTSTRAP_PREFS_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        if (exists(localStatePath) && exists(preferencesPath)) {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      try {
+        bootstrap.kill("SIGTERM");
+      } catch {
+        // ignore
+      }
+      const exitDeadline = Date.now() + CHROME_BOOTSTRAP_EXIT_TIMEOUT_MS;
+      while (Date.now() < exitDeadline) {
+        if (bootstrap.exitCode != null) {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
 
-  return {
-    pid,
-    exe,
-    userDataDir,
-    cdpPort: profile.cdpPort,
-    startedAt,
-    proc,
+    if (needsDecorate) {
+      try {
+        decorateOpenClawProfile(userDataDir, {
+          name: profile.name,
+          color: profile.color,
+        });
+        log.info(`🦞 openclaw browser profile decorated (${profile.color})`);
+      } catch (err) {
+        log.warn(`openclaw browser profile decoration failed: ${String(err)}`);
+      }
+    }
+
+    try {
+      ensureProfileCleanExit(userDataDir);
+    } catch (err) {
+      log.warn(`openclaw browser clean-exit prefs failed: ${String(err)}`);
+    }
+
+    const proc = spawnOnce();
+    const stderrChunks: Buffer[] = [];
+    const onStderr = (chunk: Buffer) => {
+      stderrChunks.push(chunk);
+    };
+    proc.stderr?.on("data", onStderr);
+
+    const readyDeadline = Date.now() + CHROME_LAUNCH_READY_WINDOW_MS;
+    while (Date.now() < readyDeadline) {
+      if (await isChromeReachable(profile.cdpUrl)) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, CHROME_LAUNCH_READY_POLL_MS));
+    }
+
+    if (!(await isChromeReachable(profile.cdpUrl))) {
+      const stderrOutput =
+        normalizeOptionalString(Buffer.concat(stderrChunks).toString("utf8")) ?? "";
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // ignore
+      }
+      proc.stderr?.off("data", onStderr);
+      if (allowProfileResetRetry && isRecoverableProfileLockStderr(stderrOutput)) {
+        try {
+          const movedTo = await movePathToTrash(userDataDir);
+          log.warn(
+            `openclaw browser profile "${profile.name}" had a stale lock; moved ${userDataDir} -> ${movedTo} and retrying once`,
+          );
+        } catch (error) {
+          log.warn(
+            `openclaw browser stale-lock recovery failed for profile "${profile.name}": ${String(error)}`,
+          );
+        }
+        return await launchWithRetry(false);
+      }
+      const stderrHint = stderrOutput
+        ? `\nChrome stderr:\n${stderrOutput.slice(0, CHROME_STDERR_HINT_MAX_CHARS)}`
+        : "";
+      const sandboxHint =
+        process.platform === "linux" && !resolved.noSandbox
+          ? "\nHint: If running in a container or as root, try setting browser.noSandbox: true in config."
+          : "";
+      throw new Error(
+        `Failed to start Chrome CDP on port ${profile.cdpPort} for profile "${profile.name}".${sandboxHint}${stderrHint}`,
+      );
+    }
+
+    proc.stderr?.off("data", onStderr);
+    stderrChunks.length = 0;
+
+    const pid = proc.pid ?? -1;
+    log.info(
+      `🦞 openclaw browser started (${exe.kind}) profile "${profile.name}" on 127.0.0.1:${profile.cdpPort} (pid ${pid})`,
+    );
+
+    return {
+      pid,
+      exe,
+      userDataDir,
+      cdpPort: profile.cdpPort,
+      startedAt,
+      proc,
+    };
   };
+
+  return await launchWithRetry(true);
 }
 
 export async function stopOpenClawChrome(
@@ -487,3 +509,7 @@ export async function stopOpenClawChrome(
     // ignore
   }
 }
+
+export const __test = {
+  isRecoverableProfileLockStderr,
+};

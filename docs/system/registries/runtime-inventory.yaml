@@ -1,0 +1,14 @@
+version: 1
+canonical:
+  repoRootKind: live_checkout
+  runtimeContainerNames:
+    - openclaw-runtime
+  runtimeImageTags:
+    - openclaw:local
+policy:
+  disallowAdditionalActiveOpenClawContainers: true
+  disallowAdditionalCompetingOpenClawImagesInActiveUse: true
+  measureBeforeCleanup: true
+  notes:
+    - Stopped or stale assets should be measured and classified before removal.
+    - Generic product deployment behavior should not be rewritten just to make host state look tidy.

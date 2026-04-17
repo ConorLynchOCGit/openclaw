@@ -40,4 +40,29 @@ describe("browser trash", () => {
     expect(existsSync).toHaveBeenCalledWith("/home/test/.Trash/demo-123");
     expect(renameSync).toHaveBeenCalledWith("/tmp/demo", "/home/test/.Trash/demo-123");
   });
+
+  it("falls back to a same-volume hidden trash dir on EXDEV", async () => {
+    const { movePathToTrash } = await import("./trash.js");
+    runExec.mockRejectedValue(new Error("permission denied"));
+    vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    const renameSync = vi
+      .spyOn(fs, "renameSync")
+      .mockImplementationOnce(() => {
+        const error = new Error("cross-device link not permitted") as NodeJS.ErrnoException;
+        error.code = "EXDEV";
+        throw error;
+      })
+      .mockImplementationOnce(() => undefined);
+
+    await expect(movePathToTrash("/mounted/demo")).resolves.toBe(
+      "/mounted/.openclaw-trash/demo-123",
+    );
+    expect(renameSync).toHaveBeenNthCalledWith(1, "/mounted/demo", "/home/test/.Trash/demo-123");
+    expect(renameSync).toHaveBeenNthCalledWith(
+      2,
+      "/mounted/demo",
+      "/mounted/.openclaw-trash/demo-123",
+    );
+  });
 });

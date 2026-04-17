@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveAgentContextLimits } from "../../agents/agent-scope.js";
+import { materializeCanonicalBootstrapCompatibilityFiles } from "../../agents/bootstrap-canonicalization.js";
 import { resolveCronStyleNow } from "../../agents/current-time.js";
 import { resolveUserTimezone } from "../../agents/date-time.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -78,6 +79,11 @@ export async function readPostCompactionContext(
   const agentsPath = path.join(workspaceDir, "AGENTS.md");
 
   try {
+    await materializeCanonicalBootstrapCompatibilityFiles({
+      workspaceDir,
+      config: cfg,
+      agentId,
+    });
     const opened = await openBoundaryFile({
       absolutePath: agentsPath,
       rootPath: workspaceDir,

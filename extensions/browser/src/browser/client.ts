@@ -113,7 +113,8 @@ export async function browserStart(baseUrl?: string, opts?: { profile?: string }
   const q = buildProfileQuery(opts?.profile);
   await fetchBrowserJson(withBaseUrl(baseUrl, `/start${q}`), {
     method: "POST",
-    timeoutMs: 15000,
+    // Managed Chrome startup can legitimately take longer after profile recovery.
+    timeoutMs: 45000,
   });
 }
 
@@ -218,7 +219,8 @@ export async function browserOpenTab(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url }),
-    timeoutMs: 15000,
+    // Opening the first tab may need to wait for Chrome boot + stale-lock recovery.
+    timeoutMs: 45000,
   });
 }
 

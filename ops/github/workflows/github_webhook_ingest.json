@@ -1,0 +1,258 @@
+{
+  "name": "GitHub Webhook Ingest",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "github",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-256, -16],
+      "id": "b0f2a3d7-cf4d-462c-be74-e6e2552d45c5",
+      "name": "Webhook",
+      "webhookId": "a59f2937-324d-466e-b358-990cc1a19f5d"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1d89265b-c9b5-4be6-928d-35610cbecf53",
+              "leftValue": "x-github-event",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [-96, -16],
+      "id": "868340a8-aecf-424b-ad7c-8ad77b87b4d9",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8a32ba78-63ca-4ba8-834f-83a54bb14453",
+              "name": "source",
+              "value": "github",
+              "type": "string"
+            },
+            {
+              "id": "f7584001-51b7-45a5-9502-cb668ca4a000",
+              "name": "event",
+              "value": "={{ $json.headers[\"x-github-event\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "8c7e1efe-0c73-408f-8b78-418768ffafd9",
+              "name": "delivery_id",
+              "value": "={{ $json.headers[\"x-github-delivery\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "798d5908-bf32-4867-9d7d-6d9dfb13a093",
+              "name": "hook_id",
+              "value": "={{ $json.headers[\"x-github-hook-id\"] }}",
+              "type": "string"
+            },
+            {
+              "id": "95219e81-d743-4f61-88eb-cc22b5463db4",
+              "name": "repository_full_name",
+              "value": "={{ $json.body.repository.full_name }}",
+              "type": "string"
+            },
+            {
+              "id": "813084ec-f83a-460e-9327-4c21406382b2",
+              "name": "sender_login",
+              "value": "={{ $json.body.sender.login }}",
+              "type": "string"
+            },
+            {
+              "id": "e9709393-d11e-4f72-a6c5-626e7204b75d",
+              "name": "action",
+              "value": "={{ $json.body.action \n\n \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "1efcf30d-bb48-4631-850f-dff521d8bccd",
+              "name": "received_at",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            },
+            {
+              "id": "8e57fafa-6c01-478b-8945-40c06652a1f5",
+              "name": "signature_valid",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "91b59538-1069-4ffe-b2b3-17499b9ba03d",
+              "name": "payload",
+              "value": "={{ $json.body }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [432, -192],
+      "id": "3dd0e0f7-a6ac-421e-83d7-490f60716b61",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "{\"ok\":true,\"source\":\"github-webhook\"}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [{ "name": "Content-Type", "value": "application/json" }]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [784, -192],
+      "id": "0e84b6ae-41ba-4851-8032-b369e96f5adc",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "binaryData": true,
+        "dataPropertyName": "github_hmac_hex"
+      },
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [96, -112],
+      "id": "365465eb-42bd-4ce6-a078-5650cb926185",
+      "name": "Crypto",
+      "credentials": {
+        "crypto": {
+          "id": "K4a4svbPRg3v0dJv",
+          "name": "Crypto account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "0ff48b81-acc9-438e-a4f4-6375e545b0be",
+              "leftValue": "={{ 'sha256=' + $json.github_hmac_hex }}",
+              "rightValue": "={{ $json.headers[\"x-hub-signature-256\"] }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [240, -112],
+      "id": "24caab2b-ad36-4ed1-b6ab-75f2f3cc6e40",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "{\"ok\":false,\"error\":\"invalid_signature\"}",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "entries": [{ "name": "Content-Type", "value": "application/json" }]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [672, 16],
+      "id": "9b99b1b0-6c8e-4dfe-94f0-835264597998",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into inbound_events (\n  source,\n  delivery_id,\n  event,\n  action,\n  hook_id,\n  repository_full_name,\n  sender_login,\n  received_at,\n  signature_valid,\n  payload\n)\nvalues (\n  $1,\n  $2,\n  $3,\n  $4,\n  $5,\n  $6,\n  $7,\n  $8,\n  $9,\n  $10\n)\non conflict (source, delivery_id) do nothing;",
+        "options": {
+          "queryReplacement": "={{ $json.source }}, \n{{ $json.delivery_id }}, \n{{ $json.event }}, \n{{ $json.action }}, \n{{ $json.hook_id}}, \n{{ $json.repository_full_name }}, \n{{ $json.sender_login }}, \n{{ $json.received_at }}, \n{{ $json.signature_valid }}, \n{{ JSON.stringify($json.payload) }} "
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [608, -192],
+      "id": "cca06aa5-f35a-4370-97b9-5d361cbfcdff",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "XCUoaSgpUvIweNYr",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": { "main": [[{ "node": "If", "type": "main", "index": 0 }]] },
+    "If": { "main": [[{ "node": "Crypto", "type": "main", "index": 0 }]] },
+    "Edit Fields": { "main": [[{ "node": "Execute a SQL query", "type": "main", "index": 0 }]] },
+    "Crypto": { "main": [[{ "node": "If1", "type": "main", "index": 0 }]] },
+    "If1": {
+      "main": [
+        [{ "node": "Edit Fields", "type": "main", "index": 0 }],
+        [{ "node": "Respond to Webhook1", "type": "main", "index": 0 }]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "0e84dce4-39d4-4d30-be13-d376f8ac4d5b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ab9a13f53f56cb7d04947ee58877ed99f12ca606dea663b2cafd914cded4f144"
+  },
+  "id": "Y8IOyD8CLfXk57J0",
+  "tags": []
+}

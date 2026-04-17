@@ -78,6 +78,12 @@ const {
 const VITEST_NODE_PREFIX = [
   "exec",
   "node",
+  ...(() => {
+    const oldSpace =
+      process.env.OPENCLAW_VITEST_MAX_OLD_SPACE_SIZE_MB ??
+      process.env.OPENCLAW_TEST_MAX_OLD_SPACE_SIZE_MB;
+    return oldSpace ? [`--max-old-space-size=${oldSpace}`] : [];
+  })(),
   "--no-maglev",
   expect.stringMatching(/(?:^|[\\/])node_modules[\\/]vitest[\\/]vitest\.mjs$/),
 ];

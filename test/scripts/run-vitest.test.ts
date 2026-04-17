@@ -13,6 +13,15 @@ describe("scripts/run-vitest", () => {
     expect(resolveVitestNodeArgs({ PATH: "/usr/bin" })).toEqual(["--no-maglev"]);
   });
 
+  it("adds an explicit old-space budget when configured", () => {
+    expect(
+      resolveVitestNodeArgs({
+        OPENCLAW_TEST_MAX_OLD_SPACE_SIZE_MB: "6144",
+        PATH: "/usr/bin",
+      }),
+    ).toEqual(["--max-old-space-size=6144", "--no-maglev"]);
+  });
+
   it("allows opting back into Maglev explicitly", () => {
     expect(
       resolveVitestNodeArgs({
@@ -20,6 +29,13 @@ describe("scripts/run-vitest", () => {
         PATH: "/usr/bin",
       }),
     ).toEqual([]);
+    expect(
+      resolveVitestNodeArgs({
+        OPENCLAW_VITEST_ENABLE_MAGLEV: "1",
+        OPENCLAW_TEST_MAX_OLD_SPACE_SIZE_MB: "4096",
+        PATH: "/usr/bin",
+      }),
+    ).toEqual(["--max-old-space-size=4096"]);
   });
 
   it("parses the optional no-output timeout env", () => {

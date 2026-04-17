@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
@@ -13,17 +15,13 @@ import {
   createModelMemoryDatabaseRuntime,
   resolveModelMemoryDatabaseResolution,
 } from "./model-memory.database.js";
-import { integrateModelMemoryWithHarness } from "./model-memory.integration.js";
 import { OpenAICompatibleLiveJsonExecutor } from "./model-memory.live-json-executor.js";
-import type { WorkspaceBootstrapFile } from "./workspace.js";
 
 const log = createSubsystemLogger("model-memory/live-runtime");
 
 const MODEL_MEMORY_PLUGIN_ID = "model-memory";
 const LIVE_MODEL_MEMORY_ENABLED_ENV = "MODEL_MEMORY_LIVE_ENABLED";
 const DEFAULT_LIVE_MODEL_REF = "openrouter/openai/gpt-5.4-nano";
-const DEFAULT_CONTEXT_MODEL_ID = "openrouter/openai/gpt-5.4-nano";
-const MODEL_MEMORY_PROJECTION_PATH_PREFIX = ".openclaw/model-memory/projections";
 const MODEL_MEMORY_CONTEXT_PATH_PREFIX = ".openclaw/model-memory/context";
 
 type JsonRecord = Record<string, unknown>;
@@ -43,13 +41,13 @@ export type ModelMemoryLiveRuntimeStatus = {
   databaseConfigured: boolean;
   databaseSource?: string;
   databaseName?: string;
-  databaseDerivedFromSharedServer?: boolean;
   databaseError?: string;
 };
 
 export type ModelMemoryBootstrapOverlay = {
-  bootstrapFiles: WorkspaceBootstrapFile[];
   contextFiles: Array<{ path: string; content: string }>;
+  projectionOutputs: Record<string, string>;
+  projectionVersions: ReturnType<typeof compileProjection>["version"][];
   status: ModelMemoryLiveRuntimeStatus;
 };
 
@@ -182,7 +180,6 @@ export function resolveModelMemoryLiveRuntimeStatus(
       databaseConfigured: true,
       databaseSource: resolution.source,
       databaseName: resolution.databaseName,
-      databaseDerivedFromSharedServer: resolution.derivedFromSharedServer,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -241,6 +238,7 @@ async function getLiveRuntime(config?: OpenClawConfig): Promise<LiveRuntimeDeps>
 async function loadRuntimeReadModels(params: {
   config?: OpenClawConfig;
   sessionId?: string;
+  workspaceDir?: string;
 }): Promise<LiveRuntimeReadModels> {
   const runtime = await getLiveRuntime(params.config);
   const canonicalRepository = runtime.canonicalRepository;
@@ -274,36 +272,34 @@ async function loadRuntimeReadModels(params: {
   );
   const compiled = effectiveTargets
     .filter((target) => target.enabled && knownTargetIds.has(target.targetId))
-    .map((target) =>
-      compileProjection({
+    .map(async (target) => {
+      const existingFileContent = params.workspaceDir
+        ? await fs
+            .readFile(path.join(params.workspaceDir, target.relativePath), "utf8")
+            .catch(() => undefined)
+        : undefined;
+      return compileProjection({
         targetId: target.targetId,
         memoryObjects,
         slots,
         sets,
-      }),
-    );
+        existingFileContent,
+      });
+    });
+  const compiledResults = await Promise.all(compiled);
 
   return {
     memoryObjects,
     projectionTargets: effectiveTargets,
     projectionOutputs: Object.fromEntries(
-      compiled.map((entry) => [entry.target.targetId, entry.renderedText]),
+      compiledResults.map((entry) => [entry.target.targetId, entry.renderedText]),
     ),
-    projectionVersions: compiled.map((entry) => entry.version),
+    projectionVersions: compiledResults.map((entry) => entry.version),
     contextArtifacts: artifacts,
     sessionState: params.sessionId
       ? await runtimeRepository.getSessionContextState(params.sessionId)
       : undefined,
   };
-}
-
-function decorateProjectionBootstrapFiles(
-  files: WorkspaceBootstrapFile[],
-): WorkspaceBootstrapFile[] {
-  return files.map((file) => ({
-    ...file,
-    path: `${MODEL_MEMORY_PROJECTION_PATH_PREFIX}/${file.name}`,
-  }));
 }
 
 function buildExtraContextFiles(params: {
@@ -346,21 +342,11 @@ function buildExtraContextFiles(params: {
   }));
 }
 
-export function mergeBootstrapFilesWithModelMemoryOverlay(input: {
-  baseFiles: WorkspaceBootstrapFile[];
-  overlayFiles: WorkspaceBootstrapFile[];
-}): WorkspaceBootstrapFile[] {
-  const overlayByName = new Map(input.overlayFiles.map((file) => [file.name, file] as const));
-  const merged = input.baseFiles
-    .filter((file) => !overlayByName.has(file.name))
-    .concat(input.overlayFiles);
-  return merged.toSorted((left, right) => left.name.localeCompare(right.name));
-}
-
 export async function resolveModelMemoryBootstrapOverlay(params: {
   config?: OpenClawConfig;
   sessionId?: string;
   agentId?: string;
+  workspaceDir?: string;
 }): Promise<ModelMemoryBootstrapOverlay | null> {
   const status = resolveModelMemoryLiveRuntimeStatus(params.config);
   if (!status.enabled || !status.databaseConfigured) {
@@ -371,30 +357,16 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
     const readModels = await loadRuntimeReadModels({
       config: params.config,
       sessionId: params.sessionId,
-    });
-    const integrated = integrateModelMemoryWithHarness({
-      sessionId: params.sessionId ?? "model-memory-live",
-      agentId: params.agentId ?? "main",
-      sessionState: readModels.sessionState,
-      projectionTargets: readModels.projectionTargets,
-      projectionVersions: readModels.projectionVersions,
-      projectionOutputs: readModels.projectionOutputs,
-      artifacts: readModels.contextArtifacts,
-      recentTurns: [],
-      toolResults: [],
-      currentTurn: "",
-      maxTokens: 1024,
-      provider: "model-memory-live-runtime",
-      model: DEFAULT_CONTEXT_MODEL_ID,
-      includeRetrievalPacks: status.includeRetrievalPacks,
+      workspaceDir: params.workspaceDir,
     });
 
     return {
-      bootstrapFiles: decorateProjectionBootstrapFiles(integrated.bootstrapFiles),
       contextFiles: buildExtraContextFiles({
         artifacts: readModels.contextArtifacts,
         sessionSummaryArtifactId: readModels.sessionState?.sessionSummaryArtifactId,
       }),
+      projectionOutputs: readModels.projectionOutputs,
+      projectionVersions: readModels.projectionVersions,
       status,
     };
   } catch (error) {

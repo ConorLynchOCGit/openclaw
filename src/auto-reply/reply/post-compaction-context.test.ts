@@ -125,6 +125,7 @@ Ignore this.
     const longContent =
       "## Session Startup\n\n" + "B".repeat(4000) + "\n\n## Red Lines\n\nGuardrails.";
     fs.writeFileSync(path.join(tmpDir, "AGENTS.md"), longContent);
+    const agentId = "writer-test";
     const cfg = {
       agents: {
         defaults: {
@@ -134,7 +135,7 @@ Ignore this.
         },
         list: [
           {
-            id: "writer",
+            id: agentId,
             contextLimits: {
               postCompactionMaxChars: 300,
             },
@@ -143,7 +144,7 @@ Ignore this.
       },
     } as OpenClawConfig;
 
-    const result = await readPostCompactionContext(tmpDir, { cfg, agentId: "writer" });
+    const result = await readPostCompactionContext(tmpDir, { cfg, agentId });
     expect(result).not.toBeNull();
     expect(result).toContain("[truncated]");
     expect(result!.length).toBeLessThan(1_200);

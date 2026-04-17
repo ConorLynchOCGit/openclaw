@@ -327,6 +327,9 @@ export async function runPreparedReply(
           cfg,
         })
       : null;
+  if (startupContextPrelude) {
+    extraSystemPromptParts.unshift(startupContextPrelude);
+  }
   const baseBodyFinal = isBareSessionReset
     ? buildBareSessionResetPrompt(cfg)
     : stripPromptThinkingDirectives(baseBody);
@@ -343,7 +346,7 @@ export async function runPreparedReply(
     envelopeOptions,
   );
   const baseBodyForPrompt = isBareSessionReset
-    ? [startupContextPrelude, baseBodyFinal].filter(Boolean).join("\n\n")
+    ? baseBodyFinal
     : [inboundUserContext, baseBodyFinal].filter(Boolean).join("\n\n");
   const baseBodyTrimmed = baseBodyForPrompt.trim();
   const hasMediaAttachment = Boolean(

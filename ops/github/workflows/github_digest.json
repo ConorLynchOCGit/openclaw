@@ -1,0 +1,63 @@
+{
+  "name": "Github Digest",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "id": "33f853ed-d0b5-4651-bcfc-84ced65ac7d7",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select\n  repository_full_name,\n  event,\n  coalesce(nullif(action, 'null'), 'none') as action,\n  count(*) as event_count,\n  max(received_at) as latest_event\nfrom inbound_events\nwhere source = 'github'\n  and signature_valid = true\n  and repository_full_name = any (array['openclaw/openclaw'])\n  and received_at >= now() - interval '24 hours'\ngroup by 1, 2, 3\norder by latest_event desc;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [208, 0],
+      "id": "fe3feec3-07e6-42db-bdb1-c1427ab8e532",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "XCUoaSgpUvIweNYr",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(item => item.json);\n\nif (!rows.length) {\n  return [\n    {\n      json: {\n        summary: 'GitHub Digest (last 24h)\\n\\nNo signed GitHub events found.',\n      },\n    },\n  ];\n}\n\nconst lines = rows.map((row, index) => {\n  return `${index + 1}. ${row.repository_full_name} — ${row.event} / ${row.action} — ${row.event_count} event(s) — latest ${row.latest_event}`;\n});\n\nreturn [\n  {\n    json: {\n      summary: `GitHub Digest (last 24h)\\n\\n${lines.join('\\n')}`,\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [416, 0],
+      "id": "ff2975bf-f581-4546-8267-66e21e20e306",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [[{ "node": "Execute a SQL query", "type": "main", "index": 0 }]]
+    },
+    "Execute a SQL query": {
+      "main": [[{ "node": "Code in JavaScript", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "0c3d9c92-fd0a-428a-80b2-b4c5e100c3ae",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ab9a13f53f56cb7d04947ee58877ed99f12ca606dea663b2cafd914cded4f144"
+  },
+  "id": "KgBYVAqCjNagoA6R",
+  "tags": []
+}

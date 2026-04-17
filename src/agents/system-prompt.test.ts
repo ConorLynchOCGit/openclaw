@@ -149,6 +149,33 @@ describe("buildAgentSystemPrompt", () => {
     );
   });
 
+  it("adds the public-web browsing contract when browsing tools are available", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      toolNames: ["web_fetch", "web_search", "browser"],
+      skillsPrompt: "<available_skills></available_skills>",
+    });
+
+    expect(prompt).toContain("## Web Browsing");
+    expect(prompt).toContain("do not use `web_search` first just to search");
+    expect(prompt).toContain(
+      "Never conclude a public JS-heavy page is empty from one thin fetch alone.",
+    );
+    expect(prompt).toContain("never read local `/app/skills/*.md`");
+  });
+
+  it("adds web-researcher delegation rules when sessions_send is available", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      toolNames: ["sessions_send"],
+      skillsPrompt: "<available_skills></available_skills>",
+    });
+
+    expect(prompt).toContain("canonical `agent:web-researcher:main`");
+    expect(prompt).toContain("fresh temporary `web-researcher` session");
+    expect(prompt).toContain("desired_output_shape");
+  });
+
   it("omits skills in minimal prompt mode when skillsPrompt is absent", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",

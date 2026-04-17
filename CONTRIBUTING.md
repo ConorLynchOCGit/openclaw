@@ -170,6 +170,11 @@ AI PRs are first-class citizens here. We just want transparency so reviewers kno
 
 ## Current Focus & Roadmap 🗺
 
+For the canonical internal roadmap pointer surfaces, see:
+
+- `docs/system/roadmap.md`
+- `docs/system/roadmap-ideas.md`
+
 We are currently prioritizing:
 
 - **Stability**: Fixing edge cases in channel connections (WhatsApp/Telegram).

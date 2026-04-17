@@ -78,6 +78,25 @@ Current status:
 19. [VPS Consolidation And Test Diagnostic](/projects/model-memory/vps-consolidation-and-test-diagnostic)
 20. [VPS Runtime Consolidation Plan](/projects/model-memory/vps-runtime-consolidation-plan)
 21. [VPS PNPM And Build Optimization Plan](/projects/model-memory/vps-pnpm-turbo-optimization-plan)
+22. [Model Memory Ops Reporting Lane](/projects/model-memory/ops-reporting-lane)
+23. [Document Read And Ingest Arbitration](/projects/model-memory/specs/document-read-and-ingest-arbitration)
+24. [Deep Document Ingest Targets 2026-04](/projects/model-memory/document-ingest-targets-2026-04-deep-pass)
+25. [Deep Document Ingest Runbook](/projects/model-memory/deep-document-ingest-runbook)
+26. [Deep Ingest Verification Plan](/projects/model-memory/deep-ingest-verification-plan)
+27. [Deep Memory Soak Human Tests](/projects/model-memory/deep-memory-soak-human-tests)
+28. [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
+29. [Subject Capsules And Dense Ingestion](/projects/model-memory/specs/subject-capsules-and-dense-ingestion)
+30. [Proactive Memory Planner](/projects/model-memory/specs/proactive-memory-planner)
+31. [Skill And Tool Synthesis](/projects/model-memory/specs/skill-and-tool-synthesis)
+32. [Cache And Projection Policy](/projects/model-memory/specs/cache-and-projection-policy)
+33. [Kind Primary Schema Migration](/projects/model-memory/specs/kind-primary-schema-migration)
+34. [Graph Schema And Runtime Dependencies](/projects/model-memory/specs/graph-schema-and-runtime-dependencies)
+35. [Project State Capsule Schema](/projects/model-memory/specs/project-state-capsule-schema)
+36. [Planner Review Artifacts And Surfacing](/projects/model-memory/specs/planner-review-artifacts-and-surfacing)
+37. [Skill And Tool Candidate Evaluation](/projects/model-memory/specs/skill-and-tool-candidate-evaluation)
+38. [Prompt Contract Phase 2 Migration](/projects/model-memory/specs/prompt-contract-phase2-migration)
+39. [Phase 2 Execution Roadmap](/projects/model-memory/phase-2-execution-roadmap)
+40. [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
 
 ## Scope
 
@@ -94,3 +113,19 @@ Current operational scope:
 - 72-hour stabilization watch
 - sampled post-cutover review and fast-follow fixes
 - legacy retirement and deletion
+- deep substrate population and the upcoming human soak flow through the
+  canonical ingest, verification, and prompt-set docs
+- a bundled operator skill now exists for the canonical deep ingest flow:
+  - `skills/model-memory-deep-ingest/SKILL.md`
+- first-cut user-transparent arbitration between long-document reads and
+  background document ingest for repeated or capped workspace text reads
+- the next conceptual planning pack now exists for post-soak Phase 2 design:
+  - graph-derived runtime model
+  - subject capsules and dense ingestion
+  - proactive planner
+  - skill and tool synthesis
+  - cache and projection policy
+- the reviewed implementation order now exists in:
+  - [Phase 2 Execution Roadmap](/projects/model-memory/phase-2-execution-roadmap)
+- the original Main-run interruption record now exists in:
+  - [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)

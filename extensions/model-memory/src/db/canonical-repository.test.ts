@@ -567,6 +567,59 @@ describe("canonical-repository", () => {
     }
   });
 
+  it("uses near-now timestamps for stored memory writes by default", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const repository = new ModelMemoryCanonicalRepository(database.sql);
+      const store = new DatabaseMemoryObjectStore(repository);
+
+      const source = await repository.persistSource({
+        id: "e4d5cd36-8af8-5d0e-a3ff-284a26df9b4e",
+        sourceKind: "ordinary_turn",
+        sourceFingerprint: "turn-source-002",
+        sessionId: "session-002",
+        sourceMetadata: {},
+        createdAt: new Date(),
+      });
+      await repository.persistSourceWindows([
+        {
+          id: "1cb0de5a-b7b5-5d74-a5a1-eaf0cb4f64a9",
+          sourceId: source.id,
+          windowIndex: 0,
+          normalizedText: "turn now",
+          normalizedFingerprint: "turn-window-004",
+          tokenEstimate: 2,
+          headingPath: [],
+          blockDescriptors: [],
+          createdAt: new Date(),
+        },
+      ]);
+
+      const before = Date.now();
+      await store.writeCapturedObject(
+        capturedFact("region-now", "1cb0de5a-b7b5-5d74-a5a1-eaf0cb4f64a9"),
+      );
+      const after = Date.now();
+      const snapshot = await store.snapshot();
+      const objectCreatedAt = snapshot.memoryObjects[0]?.createdAt?.getTime();
+      const supportCreatedAt = snapshot.supportItems[0]?.createdAt?.getTime();
+      const writeCreatedAt = snapshot.writeEvents[0]?.createdAt?.getTime();
+
+      expect(objectCreatedAt).toBeDefined();
+      expect(supportCreatedAt).toBeDefined();
+      expect(writeCreatedAt).toBeDefined();
+      expect(objectCreatedAt).toBeGreaterThanOrEqual(before - 1_000);
+      expect(writeCreatedAt).toBeGreaterThanOrEqual(before - 1_000);
+      expect(supportCreatedAt).toBeGreaterThanOrEqual(before - 1_000);
+      expect(objectCreatedAt).toBeLessThanOrEqual(after + 1_000);
+      expect(writeCreatedAt).toBeLessThanOrEqual(after + 1_000);
+      expect(supportCreatedAt).toBeLessThanOrEqual(after + 1_000);
+    } finally {
+      await database.close();
+    }
+  });
+
   it("skips collision adjudication when deterministic gating prunes noisy candidates", async () => {
     const database = await createPgMemTestDatabase();
     try {

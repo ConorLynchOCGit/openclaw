@@ -7,6 +7,7 @@ export const DEFAULT_LOCAL_FULL_SUITE_PARALLELISM = 4;
 export const LARGE_LOCAL_FULL_SUITE_PARALLELISM = 10;
 export const DEFAULT_LOCAL_FULL_SUITE_VITEST_WORKERS = 1;
 export const LARGE_LOCAL_FULL_SUITE_VITEST_WORKERS = 2;
+export const DEFAULT_LOCAL_FULL_SUITE_VITEST_MAX_OLD_SPACE_SIZE_MB = 6144;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -153,10 +154,12 @@ export function resolveLocalFullSuiteProfile(env = process.env, system = detectV
     return {
       shardParallelism: LARGE_LOCAL_FULL_SUITE_PARALLELISM,
       vitestMaxWorkers: LARGE_LOCAL_FULL_SUITE_VITEST_WORKERS,
+      vitestMaxOldSpaceSizeMb: DEFAULT_LOCAL_FULL_SUITE_VITEST_MAX_OLD_SPACE_SIZE_MB,
     };
   }
   return {
     shardParallelism: DEFAULT_LOCAL_FULL_SUITE_PARALLELISM,
     vitestMaxWorkers: DEFAULT_LOCAL_FULL_SUITE_VITEST_WORKERS,
+    vitestMaxOldSpaceSizeMb: DEFAULT_LOCAL_FULL_SUITE_VITEST_MAX_OLD_SPACE_SIZE_MB,
   };
 }

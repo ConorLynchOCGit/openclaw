@@ -66,6 +66,11 @@ describe("resolveBootstrapFilesForRun", () => {
     registerExtraBootstrapFileHook();
 
     const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    await fs.writeFile(
+      path.join(workspaceDir, "AGENTS.md"),
+      "# AGENTS.md\n\n## Session Startup\n- use startup context\n",
+      "utf8",
+    );
     const files = await resolveBootstrapFilesForRun({ workspaceDir });
 
     expect(files.some((file) => file.path === path.join(workspaceDir, "EXTRA.md"))).toBe(true);
@@ -86,6 +91,24 @@ describe("resolveBootstrapFilesForRun", () => {
     ).toBe(true);
     expect(warnings).toHaveLength(3);
     expect(warnings[0]).toContain('missing or invalid "path" field');
+  });
+
+  it("materializes canonical bootstrap sections into the workspace before runtime loading", async () => {
+    const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    const agentsPath = path.join(workspaceDir, "AGENTS.md");
+    await fs.writeFile(
+      agentsPath,
+      "# AGENTS.md\n\n## Session Startup\n- use startup context\n\n## Red Lines\n- do not exfiltrate data\n",
+      "utf8",
+    );
+
+    const files = await resolveBootstrapFilesForRun({ workspaceDir });
+    const agents = files.find((file) => file.name === "AGENTS.md");
+    const diskContent = await fs.readFile(agentsPath, "utf8");
+
+    expect(agents?.content).toContain("<!-- BEGIN GENERATED: openclaw-canonical -->");
+    expect(agents?.content).toContain("## Session Startup");
+    expect(diskContent).toContain("<!-- BEGIN GENERATED: openclaw-canonical -->");
   });
 });
 

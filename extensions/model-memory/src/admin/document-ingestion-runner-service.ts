@@ -28,7 +28,18 @@ export type DocumentIngestionRunnerRunStatus =
   | "pending"
   | "running"
   | "completed"
-  | "completed_with_failures";
+  | "completed_with_failures"
+  | "interrupted";
+
+export type DocumentIngestionRunnerRunError = {
+  phase: "processing_source" | "runtime_rebuild_after_chunk" | "run_record_save";
+  message: string;
+  name?: string;
+  chunkIndex?: number;
+  sourceId?: string;
+  displayPath?: string;
+  occurredAt: string;
+};
 
 export type DocumentIngestionRunnerSourceRecord = {
   sourceId: string;
@@ -85,6 +96,7 @@ export type DocumentIngestionRunnerRunRecord = {
     writeDecisionCounts: Record<string, number>;
     rejectReasons: string[];
   };
+  runError?: DocumentIngestionRunnerRunError;
 };
 
 export type DocumentIngestionRunnerProgressEvent =
@@ -382,170 +394,198 @@ export class ModelMemoryDocumentIngestionRunnerService {
     record.updatedAt = new Date().toISOString();
     await input.recordStore?.save(record);
 
-    await input.onProgress?.({
-      type: "phase",
-      phase: "start",
-      message: `starting document ingestion run ${input.runId} with ${input.sources.length} sources`,
-    });
+    let failurePhase: DocumentIngestionRunnerRunError["phase"] = "processing_source";
+    let failureChunkIndex: number | undefined;
+    let failureSource: DocumentIngestionRunnerSource | undefined;
 
-    const orderedChunks = [...new Set(input.sources.map((source) => source.chunkIndex))].toSorted(
-      (left, right) => left - right,
-    );
-    const totalSources = input.sources.length;
-
-    for (const chunkIndex of orderedChunks) {
-      const chunkSources = input.sources.filter((source) => source.chunkIndex === chunkIndex);
-      const chunkRecord = record.chunks.find((chunk) => chunk.chunkIndex === chunkIndex);
-      if (!chunkRecord) {
-        continue;
-      }
-
-      const pendingSources = chunkSources.filter((source) => {
-        const existingSource = record.sources.find((entry) => entry.sourceId === source.sourceId);
-        return (
-          !existingSource ||
-          existingSource.status === "pending" ||
-          existingSource.status === "running"
-        );
+    try {
+      await input.onProgress?.({
+        type: "phase",
+        phase: "start",
+        message: `starting document ingestion run ${input.runId} with ${input.sources.length} sources`,
       });
 
-      if (pendingSources.length === 0) {
+      const orderedChunks = [...new Set(input.sources.map((source) => source.chunkIndex))].toSorted(
+        (left, right) => left - right,
+      );
+      const totalSources = input.sources.length;
+
+      for (const chunkIndex of orderedChunks) {
+        failureChunkIndex = chunkIndex;
+        const chunkSources = input.sources.filter((source) => source.chunkIndex === chunkIndex);
+        const chunkRecord = record.chunks.find((chunk) => chunk.chunkIndex === chunkIndex);
+        if (!chunkRecord) {
+          continue;
+        }
+
+        const pendingSources = chunkSources.filter((source) => {
+          const existingSource = record.sources.find((entry) => entry.sourceId === source.sourceId);
+          return (
+            !existingSource ||
+            existingSource.status === "pending" ||
+            existingSource.status === "running"
+          );
+        });
+
+        if (pendingSources.length === 0) {
+          await input.onProgress?.({
+            type: "phase",
+            phase: "resume_chunk",
+            message: `skipping chunk ${chunkIndex}; already completed in prior run record`,
+          });
+          continue;
+        }
+
+        chunkRecord.status = "running";
+        chunkRecord.startedAt ??= new Date().toISOString();
+        record = recalculateRunRecord(record);
+        await input.recordStore?.save(record);
+
         await input.onProgress?.({
           type: "phase",
-          phase: "resume_chunk",
-          message: `skipping chunk ${chunkIndex}; already completed in prior run record`,
+          phase: "start_chunk",
+          message: `starting chunk ${chunkIndex} with ${pendingSources.length} pending sources`,
         });
-        continue;
+
+        await runWithConcurrency(pendingSources, maxConcurrency, async (source) => {
+          failurePhase = "processing_source";
+          failureSource = source;
+          const sourceIndex =
+            input.sources.findIndex((entry) => entry.sourceId === source.sourceId) + 1;
+          const sourceRecord = record.sources.find((entry) => entry.sourceId === source.sourceId);
+          if (sourceRecord) {
+            sourceRecord.status = "running";
+            sourceRecord.startedAt ??= new Date().toISOString();
+          }
+          record = recalculateRunRecord(record);
+          await input.recordStore?.save(record);
+
+          await input.onProgress?.({
+            type: "source_start",
+            index: sourceIndex,
+            total: totalSources,
+            source,
+            message: `ingesting ${sourceIndex}/${totalSources}: ${source.displayPath}`,
+          });
+
+          let nextRecord: DocumentIngestionRunnerSourceRecord;
+          try {
+            const processed = await this.processSource({
+              source,
+              interpreter: input.interpreter,
+              modelId: input.modelId,
+              candidateModelId: input.candidateModelId,
+              maxWordsPerWindow: input.maxWordsPerWindow,
+              rebuildRuntime: false,
+            });
+            nextRecord = {
+              sourceId: source.sourceId,
+              displayPath: source.displayPath,
+              chunkIndex: source.chunkIndex,
+              status: "completed",
+              lineCount: processed.lineCount,
+              windowCount: processed.windowCount,
+              capturedClaimCount: processed.capturedClaimCount,
+              writeDecisionCounts: processed.writeDecisionCounts,
+              ignoredWindowCount: processed.ignoredWindowCount,
+              rejectedWindowCount: processed.rejectedWindowCount,
+              rejectReasons: processed.rejectReasons,
+              startedAt: sourceRecord?.startedAt ?? new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+            };
+          } catch (error) {
+            nextRecord = {
+              sourceId: source.sourceId,
+              displayPath: source.displayPath,
+              chunkIndex: source.chunkIndex,
+              status: "failed",
+              lineCount: countLines(source.document.text),
+              windowCount: 0,
+              capturedClaimCount: 0,
+              writeDecisionCounts: {},
+              ignoredWindowCount: 0,
+              rejectedWindowCount: 0,
+              rejectReasons: [],
+              errorMessage: error instanceof Error ? error.message : String(error),
+              startedAt: sourceRecord?.startedAt ?? new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+            };
+          }
+
+          const sourceRecordIndex = record.sources.findIndex(
+            (entry) => entry.sourceId === source.sourceId,
+          );
+          if (sourceRecordIndex >= 0) {
+            record.sources[sourceRecordIndex] = nextRecord;
+          } else {
+            record.sources.push(nextRecord);
+          }
+
+          record = recalculateRunRecord(record);
+          await input.recordStore?.save(record);
+
+          await input.onProgress?.({
+            type: "source_complete",
+            index: sourceIndex,
+            total: totalSources,
+            source,
+            result: nextRecord,
+            message:
+              nextRecord.status === "completed"
+                ? `completed ${sourceIndex}/${totalSources}: ${source.displayPath} captured=${nextRecord.capturedClaimCount} decisions=${JSON.stringify(nextRecord.writeDecisionCounts)}`
+                : `failed ${sourceIndex}/${totalSources}: ${source.displayPath} error=${nextRecord.errorMessage}`,
+          });
+        });
+
+        failurePhase = "runtime_rebuild_after_chunk";
+        failureSource = undefined;
+        if (
+          this.deps.canonicalRepository &&
+          this.deps.runtimeRepository &&
+          (input.rebuildRuntime ?? true)
+        ) {
+          await rebuildDerivedRuntimeState({
+            canonicalRepository: this.deps.canonicalRepository,
+            runtimeRepository: this.deps.runtimeRepository,
+          });
+        }
+
+        const refreshedChunk = record.chunks.find((entry) => entry.chunkIndex === chunkIndex);
+        if (refreshedChunk) {
+          refreshedChunk.completedAt = new Date().toISOString();
+        }
+        record = recalculateRunRecord(record);
+        await input.recordStore?.save(record);
       }
 
-      chunkRecord.status = "running";
-      chunkRecord.startedAt ??= new Date().toISOString();
       record = recalculateRunRecord(record);
       await input.recordStore?.save(record);
 
       await input.onProgress?.({
         type: "phase",
-        phase: "start_chunk",
-        message: `starting chunk ${chunkIndex} with ${pendingSources.length} pending sources`,
+        phase: "complete",
+        message: `document ingestion run ${input.runId} complete: completed=${record.totals.docsCompleted} failed=${record.totals.docsFailed}`,
       });
 
-      await runWithConcurrency(pendingSources, maxConcurrency, async (source) => {
-        const sourceIndex =
-          input.sources.findIndex((entry) => entry.sourceId === source.sourceId) + 1;
-        const sourceRecord = record.sources.find((entry) => entry.sourceId === source.sourceId);
-        if (sourceRecord) {
-          sourceRecord.status = "running";
-          sourceRecord.startedAt ??= new Date().toISOString();
-        }
-        record = recalculateRunRecord(record);
-        await input.recordStore?.save(record);
-
-        await input.onProgress?.({
-          type: "source_start",
-          index: sourceIndex,
-          total: totalSources,
-          source,
-          message: `ingesting ${sourceIndex}/${totalSources}: ${source.displayPath}`,
-        });
-
-        let nextRecord: DocumentIngestionRunnerSourceRecord;
-        try {
-          const processed = await this.processSource({
-            source,
-            interpreter: input.interpreter,
-            modelId: input.modelId,
-            candidateModelId: input.candidateModelId,
-            maxWordsPerWindow: input.maxWordsPerWindow,
-            rebuildRuntime: false,
-          });
-          nextRecord = {
-            sourceId: source.sourceId,
-            displayPath: source.displayPath,
-            chunkIndex: source.chunkIndex,
-            status: "completed",
-            lineCount: processed.lineCount,
-            windowCount: processed.windowCount,
-            capturedClaimCount: processed.capturedClaimCount,
-            writeDecisionCounts: processed.writeDecisionCounts,
-            ignoredWindowCount: processed.ignoredWindowCount,
-            rejectedWindowCount: processed.rejectedWindowCount,
-            rejectReasons: processed.rejectReasons,
-            startedAt: sourceRecord?.startedAt ?? new Date().toISOString(),
-            completedAt: new Date().toISOString(),
-          };
-        } catch (error) {
-          nextRecord = {
-            sourceId: source.sourceId,
-            displayPath: source.displayPath,
-            chunkIndex: source.chunkIndex,
-            status: "failed",
-            lineCount: countLines(source.document.text),
-            windowCount: 0,
-            capturedClaimCount: 0,
-            writeDecisionCounts: {},
-            ignoredWindowCount: 0,
-            rejectedWindowCount: 0,
-            rejectReasons: [],
-            errorMessage: error instanceof Error ? error.message : String(error),
-            startedAt: sourceRecord?.startedAt ?? new Date().toISOString(),
-            completedAt: new Date().toISOString(),
-          };
-        }
-
-        const sourceRecordIndex = record.sources.findIndex(
-          (entry) => entry.sourceId === source.sourceId,
-        );
-        if (sourceRecordIndex >= 0) {
-          record.sources[sourceRecordIndex] = nextRecord;
-        } else {
-          record.sources.push(nextRecord);
-        }
-
-        record = recalculateRunRecord(record);
-        await input.recordStore?.save(record);
-
-        await input.onProgress?.({
-          type: "source_complete",
-          index: sourceIndex,
-          total: totalSources,
-          source,
-          result: nextRecord,
-          message:
-            nextRecord.status === "completed"
-              ? `completed ${sourceIndex}/${totalSources}: ${source.displayPath} captured=${nextRecord.capturedClaimCount} decisions=${JSON.stringify(nextRecord.writeDecisionCounts)}`
-              : `failed ${sourceIndex}/${totalSources}: ${source.displayPath} error=${nextRecord.errorMessage}`,
-        });
-      });
-
-      if (
-        this.deps.canonicalRepository &&
-        this.deps.runtimeRepository &&
-        (input.rebuildRuntime ?? true)
-      ) {
-        await rebuildDerivedRuntimeState({
-          canonicalRepository: this.deps.canonicalRepository,
-          runtimeRepository: this.deps.runtimeRepository,
-        });
-      }
-
-      const refreshedChunk = record.chunks.find((entry) => entry.chunkIndex === chunkIndex);
-      if (refreshedChunk) {
-        refreshedChunk.completedAt = new Date().toISOString();
-      }
-      record = recalculateRunRecord(record);
+      return record;
+    } catch (error) {
+      record = {
+        ...recalculateRunRecord(record),
+        status: "interrupted",
+        updatedAt: new Date().toISOString(),
+        runError: {
+          phase: failurePhase,
+          message: error instanceof Error ? error.message : String(error),
+          name: error instanceof Error ? error.name : undefined,
+          chunkIndex: failureChunkIndex,
+          sourceId: failureSource?.sourceId,
+          displayPath: failureSource?.displayPath,
+          occurredAt: new Date().toISOString(),
+        },
+      };
       await input.recordStore?.save(record);
+      throw error;
     }
-
-    record = recalculateRunRecord(record);
-    await input.recordStore?.save(record);
-
-    await input.onProgress?.({
-      type: "phase",
-      phase: "complete",
-      message: `document ingestion run ${input.runId} complete: completed=${record.totals.docsCompleted} failed=${record.totals.docsFailed}`,
-    });
-
-    return record;
   }
 
   private async processSource(input: {

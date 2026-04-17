@@ -155,15 +155,62 @@ function buildSkillsSection(params: { skillsPrompt?: string; readToolName: strin
   }
   return [
     "## Skills (mandatory)",
-    "Before replying: scan <available_skills> <description> entries.",
+    "Before replying: scan <available_skills> <description> entries unless a higher-priority exception below says to skip skill scanning.",
     `- If exactly one skill clearly applies: read its SKILL.md at <location> with \`${params.readToolName}\`, then follow it.`,
     "- If multiple could apply: choose the most specific one, then read/follow it.",
     "- If none clearly apply: do not read any SKILL.md.",
+    "- Absolute override for external URL, public webpage, or visible page-content tasks: skip skill scanning entirely. Do not treat bundled or local skills as applicable by default, do not read local `/app/skills/*.md`, and do not synthesize skill-doc paths from tool names such as `web_fetch`, `web_search`, or `browser`. The only exception is when the user explicitly asks about internal skills/tools or the task is specifically about local skill or tool behavior.",
     "Constraints: never read more than one skill up front; only read after selecting.",
     "- When a skill drives external API writes, assume rate limits: prefer fewer larger writes, avoid tight one-item loops, serialize bursts when possible, and respect 429/Retry-After.",
     trimmed,
     "",
   ];
+}
+
+function buildWebBrowsingSection(params: { isMinimal: boolean; availableTools: Set<string> }) {
+  if (params.isMinimal) {
+    return [];
+  }
+  const hasWebFetch = params.availableTools.has("web_fetch");
+  const hasBrowser = params.availableTools.has("browser");
+  const hasWebSearch = params.availableTools.has("web_search");
+  const hasBrowsingTools = hasWebFetch || hasBrowser || hasWebSearch;
+  const hasSessionsSend = params.availableTools.has("sessions_send");
+  if (!hasBrowsingTools && !hasSessionsSend) {
+    return [];
+  }
+
+  const lines = [
+    "## Web Browsing",
+    "- For any external URL, public webpage, or visible page-content task, never read local `/app/skills/*.md` and never construct a local skill-doc path from a tool name. Tool names are tools, not skills.",
+    "- When the user asked for specific visible page facts such as title, version number, hero text, visible items, rendered labels, or exact dates, do not answer from memory, prior runs, or general knowledge. Use a current-session retrieval path first.",
+    "- Do not answer requested page facts unless an actual retrieval trace exists in the current session.",
+    "- If the first retrieval path does not clearly recover the requested visible fields, retry with the next stronger path before answering.",
+    "- Do not stop at a partially useful fetch or render result when a requested visible field is still missing and a stronger retrieval path remains available.",
+  ];
+
+  if (hasBrowsingTools) {
+    lines.splice(
+      1,
+      0,
+      "- If the target public URL is already known, do not use `web_search` first just to search.",
+      "- For known public non-interactive pages, do not escalate to browser first.",
+      "- Preferred order for public-page retrieval: `web_fetch` first; if the result is thin, shell-like, or clearly client-rendered, use the render-aware path; use `browser` only when interaction is needed or fetch or render still fails.",
+      "- Never conclude a public JS-heavy page is empty from one thin fetch alone.",
+    );
+  }
+
+  if (hasSessionsSend) {
+    lines.push(
+      "- For exploratory external public-web research, prefer bounded delegation to canonical `agent:web-researcher:main` and finish from its result instead of independently re-browsing.",
+      "- For explicit URL or “read this page/site” tasks, prefer a fresh temporary `web-researcher` session rather than the long-lived canonical session so stale research context cannot leak into exact field reads.",
+      "- Send bounded delegation requests that include at least `objective`, `why_this_matters`, `required_fields`, `adjacent_context_to_collect`, and `desired_output_shape`.",
+      "- After a delegated `web-researcher` result returns, do not independently re-browse unless the result is incomplete or stronger evidence is still required.",
+    );
+  }
+
+  lines.push("");
+  return lines;
 }
 
 function buildMemorySection(params: {
@@ -616,6 +663,10 @@ export function buildAgentSystemPrompt(params: {
     availableTools,
     citationsMode: params.memoryCitationsMode,
   });
+  const webBrowsingSection = buildWebBrowsingSection({
+    isMinimal,
+    availableTools,
+  });
   const docsSection = buildDocsSection({
     docsPath: params.docsPath,
     isMinimal,
@@ -711,6 +762,7 @@ export function buildAgentSystemPrompt(params: {
     "If unsure, ask the user to run `openclaw help` (or `openclaw gateway --help`) and paste the output.",
     "",
     ...skillsSection,
+    ...webBrowsingSection,
     ...memorySection,
     // Skip self-update for subagent/none modes
     hasGateway && !isMinimal ? "## OpenClaw Self-Update" : "",

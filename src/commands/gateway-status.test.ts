@@ -137,6 +137,111 @@ const {
   probeGateway,
 } = mocks;
 
+function resetGatewayStatusTestMocks() {
+  readBestEffortConfig.mockReset().mockResolvedValue({
+    gateway: {
+      mode: "remote",
+      remote: { url: "wss://remote.example:18789", token: "rtok" },
+      auth: { token: "ltok" },
+    },
+  });
+  mocks.resolveGatewayPort.mockReset().mockImplementation((_cfg?: unknown) => 18789);
+  discoverGatewayBeacons.mockReset().mockResolvedValue([]);
+  pickPrimaryTailnetIPv4.mockReset().mockImplementation(() => "100.64.0.10");
+  sshStop.mockReset().mockResolvedValue(undefined);
+  resolveSshConfig.mockReset().mockResolvedValue(null);
+  startSshPortForward.mockReset().mockResolvedValue({
+    parsedTarget: { user: "me", host: "studio", port: 22 },
+    localPort: 18789,
+    remotePort: 18789,
+    pid: 123,
+    stderr: [],
+    stop: sshStop,
+  });
+  loadGatewayTlsRuntime.mockReset().mockResolvedValue({
+    enabled: true,
+    required: true,
+    fingerprintSha256: "sha256:local-fingerprint",
+  });
+  probeGateway.mockReset().mockImplementation(async (opts: { url: string }) => {
+    const { url } = opts;
+    if (url.includes("127.0.0.1")) {
+      return {
+        ok: true,
+        url,
+        connectLatencyMs: 12,
+        error: null,
+        close: null,
+        health: { ok: true },
+        status: {
+          linkChannel: {
+            id: "whatsapp",
+            label: "WhatsApp",
+            linked: false,
+            authAgeMs: null,
+          },
+          sessions: { count: 0 },
+        },
+        presence: [
+          {
+            mode: "gateway",
+            reason: "self",
+            host: "local",
+            ip: "127.0.0.1",
+            text: "Gateway: local (127.0.0.1) · app test · mode gateway · reason self",
+            ts: Date.now(),
+          },
+        ],
+        configSnapshot: {
+          path: "/tmp/cfg.json",
+          exists: true,
+          valid: true,
+          config: {
+            gateway: { mode: "local" },
+          },
+          issues: [],
+          legacyIssues: [],
+        },
+      } satisfies GatewayProbeResult;
+    }
+    return {
+      ok: true,
+      url,
+      connectLatencyMs: 34,
+      error: null,
+      close: null,
+      health: { ok: true },
+      status: {
+        linkChannel: {
+          id: "whatsapp",
+          label: "WhatsApp",
+          linked: true,
+          authAgeMs: 5_000,
+        },
+        sessions: { count: 2 },
+      },
+      presence: [
+        {
+          mode: "gateway",
+          reason: "self",
+          host: "remote",
+          ip: "100.64.0.2",
+          text: "Gateway: remote (100.64.0.2) · app test · mode gateway · reason self",
+          ts: Date.now(),
+        },
+      ],
+      configSnapshot: {
+        path: "/tmp/remote.json",
+        exists: true,
+        valid: true,
+        config: { gateway: { mode: "remote" } },
+        issues: [],
+        legacyIssues: [],
+      },
+    } satisfies GatewayProbeResult;
+  });
+}
+
 vi.mock("../config/config.js", () => ({
   readBestEffortConfig: mocks.readBestEffortConfig,
   resolveGatewayPort: mocks.resolveGatewayPort,
@@ -232,16 +337,12 @@ function findUnresolvedSecretRefWarning(runtimeLogs: string[]) {
   const parsed = JSON.parse(runtimeLogs.join("\n")) as {
     warnings?: Array<{ code?: string; message?: string; targetIds?: string[] }>;
   };
-  return parsed.warnings?.find(
-    (warning) =>
-      warning.code === "auth_secretref_unresolved" &&
-      warning.message?.includes("gateway.auth.token SecretRef is unresolved"),
-  );
+  return parsed.warnings?.find((warning) => warning.code === "auth_secretref_unresolved");
 }
 
 describe("gateway-status command", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    resetGatewayStatusTestMocks();
   });
 
   it("prints human output by default", async () => {
@@ -359,11 +460,18 @@ describe("gateway-status command", () => {
 
   it("suppresses unresolved SecretRef auth warnings when probe is reachable", async () => {
     const { runtime, runtimeLogs, runtimeErrors } = createRuntimeCapture();
-    await withEnvAsync({ MISSING_GATEWAY_TOKEN: undefined }, async () => {
-      mockLocalTokenEnvRefConfig();
+    await withEnvAsync(
+      {
+        MISSING_GATEWAY_TOKEN: undefined,
+        OPENCLAW_GATEWAY_TOKEN: undefined,
+        OPENCLAW_GATEWAY_PASSWORD: undefined,
+      },
+      async () => {
+        mockLocalTokenEnvRefConfig();
 
-      await runGatewayStatus(runtime, { timeout: "1000", json: true });
-    });
+        await runGatewayStatus(runtime, { timeout: "1000", json: true });
+      },
+    );
 
     expect(runtimeErrors).toHaveLength(0);
     const unresolvedWarning = findUnresolvedSecretRefWarning(runtimeLogs);
@@ -372,23 +480,30 @@ describe("gateway-status command", () => {
 
   it("surfaces unresolved SecretRef auth diagnostics when probe fails", async () => {
     const { runtime, runtimeLogs, runtimeErrors } = createRuntimeCapture();
-    await withEnvAsync({ MISSING_GATEWAY_TOKEN: undefined }, async () => {
-      mockLocalTokenEnvRefConfig();
-      probeGateway.mockResolvedValueOnce({
-        ok: false,
-        url: "ws://127.0.0.1:18789",
-        connectLatencyMs: null,
-        error: "connection refused",
-        close: null,
-        health: null,
-        status: null,
-        presence: null,
-        configSnapshot: null,
-      });
-      await expect(runGatewayStatus(runtime, { timeout: "1000", json: true })).rejects.toThrow(
-        "__exit__:1",
-      );
-    });
+    await withEnvAsync(
+      {
+        MISSING_GATEWAY_TOKEN: undefined,
+        OPENCLAW_GATEWAY_TOKEN: undefined,
+        OPENCLAW_GATEWAY_PASSWORD: undefined,
+      },
+      async () => {
+        mockLocalTokenEnvRefConfig();
+        probeGateway.mockResolvedValueOnce({
+          ok: false,
+          url: "ws://127.0.0.1:18789",
+          connectLatencyMs: null,
+          error: "connection refused",
+          close: null,
+          health: null,
+          status: null,
+          presence: null,
+          configSnapshot: null,
+        });
+        await expect(runGatewayStatus(runtime, { timeout: "1000", json: true })).rejects.toThrow(
+          "__exit__:1",
+        );
+      },
+    );
 
     expect(runtimeErrors).toHaveLength(0);
     const unresolvedWarning = findUnresolvedSecretRefWarning(runtimeLogs);

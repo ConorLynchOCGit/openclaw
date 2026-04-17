@@ -83,8 +83,11 @@ export function stripThoughtSignatures<T>(
   }) as T;
 }
 
-export const DEFAULT_BOOTSTRAP_MAX_CHARS = 12_000;
-export const DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS = 60_000;
+// Runtime-facing bootstrap surfaces now carry materially richer canonicalized
+// operational content. Keep the defaults high enough that AGENTS.md and
+// MEMORY.md fit without truncation in the normal case.
+export const DEFAULT_BOOTSTRAP_MAX_CHARS = 30_000;
+export const DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS = 150_000;
 export const DEFAULT_BOOTSTRAP_PROMPT_TRUNCATION_WARNING_MODE = "once";
 const MIN_BOOTSTRAP_FILE_BUDGET_CHARS = 64;
 const BOOTSTRAP_HEAD_RATIO = 0.7;

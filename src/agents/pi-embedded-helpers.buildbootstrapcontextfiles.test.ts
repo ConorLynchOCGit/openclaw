@@ -87,6 +87,21 @@ describe("buildBootstrapContextFiles", () => {
     expect(result?.content).not.toContain("[...truncated, read AGENTS.md for full content...]");
   });
 
+  it("keeps live-scale AGENTS.md and MEMORY.md content under the default limits", () => {
+    const files = [
+      makeFile({ name: "AGENTS.md", content: "a".repeat(15_159) }),
+      makeFile({ name: "MEMORY.md", path: "/tmp/MEMORY.md", content: "b".repeat(24_875) }),
+    ];
+
+    const result = buildBootstrapContextFiles(files);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]?.content).toHaveLength(15_159);
+    expect(result[1]?.content).toHaveLength(24_875);
+    expect(result[0]?.content).not.toContain("[...truncated, read AGENTS.md for full content...]");
+    expect(result[1]?.content).not.toContain("[...truncated, read MEMORY.md for full content...]");
+  });
+
   it("keeps total injected bootstrap characters under the new default total cap", () => {
     const files = createLargeBootstrapFiles();
     const result = buildBootstrapContextFiles(files);

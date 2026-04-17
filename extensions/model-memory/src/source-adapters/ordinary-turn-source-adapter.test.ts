@@ -49,4 +49,16 @@ describe("ordinary-turn-source-adapter", () => {
       "assistant: Keep rollback pointed at native no-memory mode.",
     );
   });
+
+  it("uses current timestamps by default instead of epoch placeholders", () => {
+    const before = Date.now();
+    const result = adaptOrdinaryTurnSource({
+      currentTurnText: "Track this as a recent live turn.",
+    });
+    const after = Date.now();
+
+    expect(result.source.createdAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(result.source.createdAt.getTime()).toBeLessThanOrEqual(after);
+    expect(result.windows[0]?.createdAt.getTime()).toBe(result.source.createdAt.getTime());
+  });
 });

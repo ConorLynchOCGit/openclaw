@@ -366,5 +366,25 @@
   {
     "source": "Testing",
     "target": "测试"
+  },
+  {
+    "source": "Model Memory Ops Reporting Lane",
+    "target": "Model Memory 运维报告通道"
+  },
+  {
+    "source": "QA Program",
+    "target": "QA 项目"
+  },
+  {
+    "source": "Scenario Pack Architecture",
+    "target": "场景包架构"
+  },
+  {
+    "source": "Frontier Harness Tuning",
+    "target": "前沿 Harness 调优"
+  },
+  {
+    "source": "Scenario Expansion Round 2",
+    "target": "场景扩展第 2 轮"
   }
 ]

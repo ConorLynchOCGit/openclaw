@@ -282,6 +282,7 @@ describe("browser client", () => {
     expect(calls.some((c) => c.url.endsWith("/tabs"))).toBe(true);
     const open = calls.find((c) => c.url.endsWith("/tabs/open"));
     expect(open?.init?.method).toBe("POST");
+    expect((open?.init as { timeoutMs?: number } | undefined)?.timeoutMs).toBe(45_000);
 
     const screenshot = calls.find((c) => c.url.endsWith("/screenshot"));
     expect(screenshot?.init?.method).toBe("POST");

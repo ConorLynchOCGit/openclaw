@@ -1,11 +1,12 @@
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
-import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
 import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/text-runtime";
 import { formatCliCommand } from "../cli/command-format.js";
 import { loadConfig } from "../config/config.js";
 import { isLoopbackHost } from "../gateway/net.js";
 import { getBridgeAuthForPort } from "./bridge-auth-registry.js";
+import { resolveBrowserConfig } from "./config.js";
 import { resolveBrowserControlAuth } from "./control-auth.js";
+import { startBrowserControlServiceFromConfig } from "./control-service.js";
 import { resolveBrowserRateLimitMessage } from "./rate-limit-message.js";
 
 // Application-level error from the browser control service (service is reachable
@@ -21,6 +22,12 @@ type LoopbackBrowserAuthDeps = {
   loadConfig: typeof loadConfig;
   resolveBrowserControlAuth: typeof resolveBrowserControlAuth;
   getBridgeAuthForPort: typeof getBridgeAuthForPort;
+};
+
+type RelativeBrowserControlDeps = {
+  loadConfig: typeof loadConfig;
+  resolveBrowserConfig: typeof resolveBrowserConfig;
+  startBrowserControlServiceFromConfig: typeof startBrowserControlServiceFromConfig;
 };
 
 function isAbsoluteHttp(url: string): boolean {
@@ -97,6 +104,26 @@ function withLoopbackBrowserAuth(
   });
 }
 
+async function resolveRelativeBrowserControlUrlImpl(
+  deps: RelativeBrowserControlDeps,
+): Promise<string> {
+  const cfg = deps.loadConfig();
+  const resolved = deps.resolveBrowserConfig(cfg.browser, cfg);
+  const started = await deps.startBrowserControlServiceFromConfig();
+  if (!started || !resolved.enabled) {
+    throw new Error("browser control disabled");
+  }
+  return `http://127.0.0.1:${resolved.controlPort}`;
+}
+
+async function resolveRelativeBrowserControlUrl(): Promise<string> {
+  return await resolveRelativeBrowserControlUrlImpl({
+    loadConfig,
+    resolveBrowserConfig,
+    startBrowserControlServiceFromConfig,
+  });
+}
+
 const BROWSER_TOOL_MODEL_HINT =
   "Do NOT retry the browser tool — it will keep failing. " +
   "Use an alternative approach or inform the user that the browser is currently unavailable.";
@@ -112,14 +139,6 @@ function resolveBrowserFetchOperatorHint(url: string): string {
     : "If this is a sandboxed session, ensure the sandbox browser is running.";
 }
 
-function normalizeErrorMessage(err: unknown): string {
-  const message = err instanceof Error ? normalizeOptionalString(err.message) : undefined;
-  if (message) {
-    return message;
-  }
-  return String(err);
-}
-
 function appendBrowserToolModelHint(message: string): string {
   if (message.includes(BROWSER_TOOL_MODEL_HINT)) {
     return message;
@@ -133,13 +152,6 @@ async function discardResponseBody(res: Response): Promise<void> {
   } catch {
     // Best effort only; we're already returning a stable error message.
   }
-}
-
-function enhanceDispatcherPathError(url: string, err: unknown): Error {
-  const msg = normalizeErrorMessage(err);
-  const suffix = `${resolveBrowserFetchOperatorHint(url)} ${BROWSER_TOOL_MODEL_HINT}`;
-  const normalized = msg.endsWith(".") ? msg : `${msg}.`;
-  return new Error(`${normalized} ${suffix}`, err instanceof Error ? { cause: err } : undefined);
 }
 
 function enhanceBrowserFetchError(url: string, err: unknown, timeoutMs: number): Error {
@@ -221,100 +233,18 @@ export async function fetchBrowserJson<T>(
   init?: RequestInit & { timeoutMs?: number },
 ): Promise<T> {
   const timeoutMs = init?.timeoutMs ?? 5000;
-  let isDispatcherPath = false;
   try {
     if (isAbsoluteHttp(url)) {
       const httpInit = withLoopbackBrowserAuth(url, init);
       return await fetchHttpJson<T>(url, { ...httpInit, timeoutMs });
     }
-    isDispatcherPath = true;
-    const { dispatchBrowserControlRequest } = await import("./local-dispatch.runtime.js");
-    const parsed = new URL(url, "http://localhost");
-    const query: Record<string, unknown> = {};
-    for (const [key, value] of parsed.searchParams.entries()) {
-      query[key] = value;
-    }
-    let body = init?.body;
-    if (typeof body === "string") {
-      try {
-        body = JSON.parse(body);
-      } catch {
-        // keep as string
-      }
-    }
-
-    const abortCtrl = new AbortController();
-    const upstreamSignal = init?.signal;
-    let upstreamAbortListener: (() => void) | undefined;
-    if (upstreamSignal) {
-      if (upstreamSignal.aborted) {
-        abortCtrl.abort(upstreamSignal.reason);
-      } else {
-        upstreamAbortListener = () => abortCtrl.abort(upstreamSignal.reason);
-        upstreamSignal.addEventListener("abort", upstreamAbortListener, { once: true });
-      }
-    }
-
-    let abortListener: (() => void) | undefined;
-    const abortPromise: Promise<never> = abortCtrl.signal.aborted
-      ? Promise.reject(abortCtrl.signal.reason ?? new Error("aborted"))
-      : new Promise((_, reject) => {
-          abortListener = () => reject(abortCtrl.signal.reason ?? new Error("aborted"));
-          abortCtrl.signal.addEventListener("abort", abortListener, { once: true });
-        });
-
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    if (timeoutMs) {
-      timer = setTimeout(() => abortCtrl.abort(new Error("timed out")), timeoutMs);
-    }
-
-    const dispatchPromise = dispatchBrowserControlRequest({
-      method:
-        init?.method?.toUpperCase() === "DELETE"
-          ? "DELETE"
-          : init?.method?.toUpperCase() === "POST"
-            ? "POST"
-            : "GET",
-      path: parsed.pathname,
-      query,
-      body,
-      signal: abortCtrl.signal,
-    });
-
-    const result = await Promise.race([dispatchPromise, abortPromise]).finally(() => {
-      if (timer) {
-        clearTimeout(timer);
-      }
-      if (abortListener) {
-        abortCtrl.signal.removeEventListener("abort", abortListener);
-      }
-      if (upstreamSignal && upstreamAbortListener) {
-        upstreamSignal.removeEventListener("abort", upstreamAbortListener);
-      }
-    });
-
-    if (result.status >= 400) {
-      if (isRateLimitStatus(result.status)) {
-        // Do not reflect upstream response text into the error surface (log/agent injection risk)
-        throw new BrowserServiceError(
-          `${resolveBrowserRateLimitMessage(url)} ${BROWSER_TOOL_MODEL_HINT}`,
-        );
-      }
-      const message =
-        result.body && typeof result.body === "object" && "error" in result.body
-          ? String((result.body as { error?: unknown }).error)
-          : `HTTP ${result.status}`;
-      throw new BrowserServiceError(message);
-    }
-    return result.body as T;
+    const controlBaseUrl = await resolveRelativeBrowserControlUrl();
+    const absoluteUrl = new URL(url, `${controlBaseUrl}/`).toString();
+    const httpInit = withLoopbackBrowserAuth(absoluteUrl, init);
+    return await fetchHttpJson<T>(absoluteUrl, { ...httpInit, timeoutMs });
   } catch (err) {
     if (err instanceof BrowserServiceError) {
       throw err;
-    }
-    // Dispatcher-path failures are service-operation failures, not network
-    // reachability failures. Keep the original context, but retain anti-retry hints.
-    if (isDispatcherPath) {
-      throw enhanceDispatcherPathError(url, err);
     }
     throw enhanceBrowserFetchError(url, err, timeoutMs);
   }
@@ -322,4 +252,5 @@ export async function fetchBrowserJson<T>(
 
 export const __test = {
   withLoopbackBrowserAuth: withLoopbackBrowserAuthImpl,
+  resolveRelativeBrowserControlUrl: resolveRelativeBrowserControlUrlImpl,
 };

@@ -262,7 +262,7 @@ describe("trigger handling", () => {
     });
   });
 
-  it("prepends runtime-loaded daily memory context on bare /new", async () => {
+  it("injects runtime-loaded daily memory context into system prompt space on bare /new", async () => {
     await withTempHome(async (home) => {
       const workspaceDir = join(home, "openclaw");
       const timeZone = "America/Chicago";
@@ -309,13 +309,18 @@ describe("trigger handling", () => {
 
       const text = Array.isArray(res) ? res[0]?.text : res?.text;
       expect(text).toBe("hello");
-      const prompt = runEmbeddedPiAgentMock.mock.calls.at(-1)?.[0]?.prompt ?? "";
-      expect(prompt).toContain("[Startup context loaded by runtime]");
-      expect(prompt).toContain(`[Untrusted daily memory: memory/${todayStamp}.md]`);
-      expect(prompt).toContain("BEGIN_QUOTED_NOTES");
-      expect(prompt).toContain("today startup note");
-      expect(prompt).toContain(`[Untrusted daily memory: memory/${yesterdayStamp}.md]`);
-      expect(prompt).toContain("yesterday startup note");
+      const call = runEmbeddedPiAgentMock.mock.calls.at(-1)?.[0];
+      expect(call?.prompt ?? "").not.toContain("[Startup context loaded by runtime]");
+      expect(call?.extraSystemPrompt ?? "").toContain("[Startup context loaded by runtime]");
+      expect(call?.extraSystemPrompt ?? "").toContain(
+        `[Untrusted daily memory: memory/${todayStamp}.md]`,
+      );
+      expect(call?.extraSystemPrompt ?? "").toContain("BEGIN_QUOTED_NOTES");
+      expect(call?.extraSystemPrompt ?? "").toContain("today startup note");
+      expect(call?.extraSystemPrompt ?? "").toContain(
+        `[Untrusted daily memory: memory/${yesterdayStamp}.md]`,
+      );
+      expect(call?.extraSystemPrompt ?? "").toContain("yesterday startup note");
     });
   });
 
@@ -363,9 +368,12 @@ describe("trigger handling", () => {
 
       const text = Array.isArray(res) ? res[0]?.text : res?.text;
       expect(text).toBe("hello");
-      const prompt = runEmbeddedPiAgentMock.mock.calls.at(-1)?.[0]?.prompt ?? "";
-      expect(prompt).toContain(`[Untrusted daily memory: memory/${todayStamp}.md]`);
-      expect(prompt).toContain("reset startup note");
+      const call = runEmbeddedPiAgentMock.mock.calls.at(-1)?.[0];
+      expect(call?.prompt ?? "").not.toContain(`[Untrusted daily memory: memory/${todayStamp}.md]`);
+      expect(call?.extraSystemPrompt ?? "").toContain(
+        `[Untrusted daily memory: memory/${todayStamp}.md]`,
+      );
+      expect(call?.extraSystemPrompt ?? "").toContain("reset startup note");
     });
   });
 

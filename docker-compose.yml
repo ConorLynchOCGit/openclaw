@@ -2,15 +2,22 @@ services:
   openclaw-gateway:
     container_name: openclaw-runtime
     image: ${OPENCLAW_IMAGE:-openclaw:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ${OPENCLAW_CONFIG_DIR}/.env
     labels:
       io.openclaw.stack: live
       io.openclaw.role: runtime
       io.openclaw.surface: gateway
     environment:
       HOME: /home/node
+      CODEX_HOME: /home/node/.openclaw/external-auth/codex
       TERM: xterm-256color
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
       OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
+      PLAYWRIGHT_BROWSERS_PATH: ${PLAYWRIGHT_BROWSERS_PATH:-/home/node/.openclaw/.cache/ms-playwright}
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
@@ -66,6 +73,11 @@ services:
 
   openclaw-cli:
     image: ${OPENCLAW_IMAGE:-openclaw:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ${OPENCLAW_CONFIG_DIR}/.env
     network_mode: "service:openclaw-gateway"
     cap_drop:
       - NET_RAW
@@ -74,9 +86,11 @@ services:
       - no-new-privileges:true
     environment:
       HOME: /home/node
+      CODEX_HOME: /home/node/.openclaw/external-auth/codex
       TERM: xterm-256color
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
       OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
+      PLAYWRIGHT_BROWSERS_PATH: ${PLAYWRIGHT_BROWSERS_PATH:-/home/node/.openclaw/.cache/ms-playwright}
       BROWSER: echo
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}

@@ -5,6 +5,38 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-17 - Phase 2 uses kind-primary semantics, project-state capsules first, and operator-visible review surfacing
+
+Decision:
+
+- Phase 2 should treat `kind` as the preferred primary semantic axis
+- `canonicalClass` should be treated as a secondary or derived facet
+- the first capsule flavor should be `project_state`
+- planner and synthesis review items must surface through ordinary OpenClaw
+  workflow:
+  - relevant turns
+  - heartbeat
+  - daily operator review
+- surfacing should use three lanes:
+  - `must_surface`
+  - `context_surface`
+  - `background_only`
+- third-party skill recommendations should resolve to:
+  - `install`
+  - `inspire`
+  - `reject`
+- approved `install` means real install under the current unrestricted-skills
+  posture
+
+Reasoning:
+
+- observed runtime behavior shows `kind` is more stable than `canonicalClass`
+- project-state capsules are easier to verify than a generic subject capsule
+- hidden review queues are operationally weak; surfacing must occur in the
+  operator channels the user already consumes
+- ClawHub evaluation needs a clear recommendation contract and explicit review
+  before adoption
+
 ## 2026-04-15 - production cutover flip executed with native no-memory rollback
 
 Decision:

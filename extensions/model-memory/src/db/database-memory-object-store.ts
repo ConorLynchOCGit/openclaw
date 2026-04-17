@@ -868,14 +868,24 @@ export function toBoundedCandidateAdjudicationCandidatesFromRetained(input: {
 }
 
 export class DatabaseMemoryObjectStore {
-  private counter = 1;
+  private lastCreatedAtMs = 0;
+  private readonly createdAtFactory: () => Date;
 
   constructor(
     private readonly repository: ModelMemoryCanonicalRepository,
     private readonly collisionAdjudicator?: SemanticCollisionAdjudicator,
-    private readonly createdAtFactory: () => Date = () => new Date(this.counter++ * 1000),
+    createdAtFactory?: () => Date,
     private readonly observer?: DatabaseMemoryObjectStoreObserver,
-  ) {}
+  ) {
+    this.createdAtFactory = createdAtFactory ?? (() => this.createMonotonicNow());
+  }
+
+  private createMonotonicNow(): Date {
+    const nowMs = Date.now();
+    const nextMs = Math.max(nowMs, this.lastCreatedAtMs + 1);
+    this.lastCreatedAtMs = nextMs;
+    return new Date(nextMs);
+  }
 
   async writeCapturedObject(input: StoredCaptureInput): Promise<StoreWriteResult> {
     const [result] = await this.writeCapturedObjects([input]);

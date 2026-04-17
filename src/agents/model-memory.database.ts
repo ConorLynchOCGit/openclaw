@@ -24,10 +24,7 @@ export type ModelMemoryDatabaseResolution = {
   databaseMode?: ModelMemoryDatabaseMode;
   source:
     | "env:MODEL_MEMORY_DATABASE_URL"
-    | "config:plugins.entries.model-memory.config.database.url"
-    | "env:MEMORY_MIDDLEWARE_DATABASE_URL"
-    | "config:plugins.entries.memory-middleware.config.database.url";
-  derivedFromSharedServer: boolean;
+    | "config:plugins.entries.model-memory.config.database.url";
 };
 
 export type ModelMemoryDatabaseRuntime = {
@@ -135,7 +132,6 @@ export function resolveModelMemoryDatabaseResolution(
   const env = input.env ?? process.env;
   const config = input.config ?? loadConfig();
   const modelMemoryConfig = readPluginDatabaseConfig(config, "model-memory");
-  const sharedMemoryConfig = readPluginDatabaseConfig(config, "memory-middleware");
   const modeDatabaseName = input.databaseMode
     ? resolveModelMemoryDatabaseNameForMode({
         databaseMode: input.databaseMode,
@@ -161,38 +157,14 @@ export function resolveModelMemoryDatabaseResolution(
       source: readTrimmedString(env.MODEL_MEMORY_DATABASE_URL)
         ? "env:MODEL_MEMORY_DATABASE_URL"
         : "config:plugins.entries.model-memory.config.database.url",
-      derivedFromSharedServer: false,
     };
   }
-
-  const targetDatabaseName =
-    modeDatabaseName ??
-    readTrimmedString(env.MODEL_MEMORY_DATABASE_NAME) ??
-    modelMemoryConfig.databaseName ??
-    input.defaultDatabaseName ??
-    DEFAULT_MODEL_MEMORY_DATABASE_NAME;
-  const sharedConnectionString =
-    readTrimmedString(env.MEMORY_MIDDLEWARE_DATABASE_URL) ?? sharedMemoryConfig.url;
-
-  if (!sharedConnectionString) {
-    throw new Error(
-      [
-        "model-memory database URL is not configured.",
-        "Set MODEL_MEMORY_DATABASE_URL, set plugins.entries.model-memory.config.database.url,",
-        "or provide the shared memory middleware URL so model-memory can derive a same-server database connection.",
-      ].join(" "),
-    );
-  }
-
-  return {
-    connectionString: retargetDatabase(sharedConnectionString, targetDatabaseName),
-    databaseName: targetDatabaseName,
-    databaseMode: input.databaseMode,
-    source: readTrimmedString(env.MEMORY_MIDDLEWARE_DATABASE_URL)
-      ? "env:MEMORY_MIDDLEWARE_DATABASE_URL"
-      : "config:plugins.entries.memory-middleware.config.database.url",
-    derivedFromSharedServer: true,
-  };
+  throw new Error(
+    [
+      "model-memory database URL is not configured.",
+      "Set MODEL_MEMORY_DATABASE_URL or set plugins.entries.model-memory.config.database.url.",
+    ].join(" "),
+  );
 }
 
 export async function createModelMemoryDatabaseRuntime(

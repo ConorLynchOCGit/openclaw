@@ -1,5 +1,9 @@
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
+import {
+  isCronSessionKey as isCanonicalCronSessionKey,
+  isDefaultHiddenUiSessionKey,
+} from "../../../src/sessions/session-key-utils.js";
 import { t } from "../i18n/index.ts";
 import { refreshChat, refreshChatAvatar } from "./app-chat.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
@@ -845,19 +849,53 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+function resolveKnownSessionClassName(key: string): string | null {
+  if (key === "main" || key === "agent:main:main") {
+    return "Main Session";
+  }
+  if (key === "agent:chief:main") {
+    return "Chief Session";
+  }
+  if (key === "agent:builder:main") {
+    return "Builder Session";
+  }
+  if (key === "agent:x-manager:main") {
+    return "X Manager Session";
+  }
+  if (key === "agent:web-researcher:main") {
+    return "Web Researcher";
+  }
+  if (key === "agent:writer:main") {
+    return "Writer Session";
+  }
+  const proofMatch = key.match(/^agent:[^:]+:proof-([a-z-]+)(?::|-|$)/i);
+  if (!proofMatch) {
+    return null;
+  }
+  switch (proofMatch[1].toLowerCase()) {
+    case "conor":
+      return "Proof / Conor";
+    case "american":
+      return "Proof / American Atomics";
+    case "boundary":
+      return "Proof / Boundary";
+    default:
+      return null;
+  }
+}
+
 /**
  * Parse a session key to extract type information and a human-readable
  * fallback display name.  Exported for testing.
  */
 export function parseSessionKey(key: string): SessionKeyInfo {
   const normalized = normalizeLowercaseStringOrEmpty(key);
-
-  // ── Main session ─────────────────────────────────
-  if (key === "main" || key === "agent:main:main") {
-    return { prefix: "", fallbackName: "Main Session" };
+  const knownName = resolveKnownSessionClassName(key);
+  if (knownName) {
+    return { prefix: "", fallbackName: knownName };
   }
 
-  // ── Subagent ─────────────────────────────────────
+  // ── Main session ─────────────────────────────────
   if (key.includes(":subagent:")) {
     return { prefix: "Subagent:", fallbackName: "Subagent:" };
   }
@@ -902,11 +940,9 @@ export function resolveSessionDisplayName(
   const label = normalizeOptionalString(row?.label) ?? "";
   const displayName = normalizeOptionalString(row?.displayName) ?? "";
   const { prefix, fallbackName } = parseSessionKey(key);
-
-  // Canonical main-session keys should always render as "Main Session",
-  // even if the row metadata carries a stale or misleading displayName.
-  if (key === "main" || key === "agent:main:main") {
-    return fallbackName;
+  const knownName = resolveKnownSessionClassName(key);
+  if (knownName) {
+    return knownName;
   }
 
   const applyTypedPrefix = (name: string): string => {
@@ -927,22 +963,7 @@ export function resolveSessionDisplayName(
 }
 
 export function isCronSessionKey(key: string): boolean {
-  const normalized = normalizeLowercaseStringOrEmpty(key);
-  if (!normalized) {
-    return false;
-  }
-  if (normalized.startsWith("cron:")) {
-    return true;
-  }
-  if (!normalized.startsWith("agent:")) {
-    return false;
-  }
-  const parts = normalized.split(":").filter(Boolean);
-  if (parts.length < 3) {
-    return false;
-  }
-  const rest = parts.slice(2).join(":");
-  return rest.startsWith("cron:");
+  return isCanonicalCronSessionKey(key);
 }
 
 type SessionOptionEntry = {
@@ -1014,6 +1035,9 @@ export function resolveSessionOptionGroups(
       continue;
     }
     if (hideCron && row.key !== sessionKey && isCronSessionKey(row.key)) {
+      continue;
+    }
+    if (row.key !== sessionKey && isDefaultHiddenUiSessionKey(row.key)) {
       continue;
     }
     addOption(row.key);
@@ -1115,7 +1139,28 @@ function resolveAgentGroupLabel(state: AppViewState, agentIdRaw: string): string
   );
   const name =
     normalizeOptionalString(agent?.identity?.name) ?? normalizeOptionalString(agent?.name) ?? "";
-  return name && name !== agentIdRaw ? `${name} (${agentIdRaw})` : agentIdRaw;
+  if (name) {
+    return name;
+  }
+  switch (normalized) {
+    case "main":
+      return "Main";
+    case "chief":
+      return "Chief";
+    case "builder":
+      return "Builder";
+    case "x-manager":
+      return "X Manager";
+    case "web-researcher":
+      return "Web Researcher";
+    case "writer":
+      return "Writer";
+    default:
+      return agentIdRaw
+        .split("-")
+        .map((part) => capitalize(part))
+        .join(" ");
+  }
 }
 
 function resolveSessionScopedOptionLabel(
@@ -1124,12 +1169,16 @@ function resolveSessionScopedOptionLabel(
   rest?: string,
 ) {
   const base = normalizeOptionalString(rest) ?? key;
+  const knownName = resolveKnownSessionClassName(key);
   if (!row) {
-    return base;
+    return knownName ?? base;
   }
 
   const label = normalizeOptionalString(row.label) ?? "";
   const displayName = normalizeOptionalString(row.displayName) ?? "";
+  if (knownName) {
+    return knownName;
+  }
   if ((label && label !== key) || (displayName && displayName !== key)) {
     return resolveSessionDisplayName(key, row);
   }

@@ -7,6 +7,8 @@ This document explains the current state and direction of the project.
 We are still early, so iteration is fast.
 Project overview and developer docs: [`README.md`](README.md)
 Contribution guide: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+Canonical roadmap pointers: [`docs/system/roadmap.md`](docs/system/roadmap.md)
+Loose roadmap ideas: [`docs/system/roadmap-ideas.md`](docs/system/roadmap-ideas.md)
 
 OpenClaw started as a personal playground to learn AI and build something genuinely useful:
 an assistant that can run real tasks on a real computer.

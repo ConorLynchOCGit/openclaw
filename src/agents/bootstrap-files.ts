@@ -4,12 +4,9 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
 import { resolveSessionAgentIds } from "./agent-scope.js";
 import { getOrLoadBootstrapFiles } from "./bootstrap-cache.js";
+import { materializeCanonicalBootstrapCompatibilityFiles } from "./bootstrap-canonicalization.js";
 import { applyBootstrapHookOverrides } from "./bootstrap-hooks.js";
 import { shouldIncludeHeartbeatGuidanceForSystemPrompt } from "./heartbeat-system-prompt.js";
-import {
-  mergeBootstrapFilesWithModelMemoryOverlay,
-  resolveModelMemoryBootstrapOverlay,
-} from "./model-memory.live-runtime.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
 import {
   buildBootstrapContextFiles,
@@ -210,10 +207,18 @@ async function resolveBootstrapArtifactsForRun(params: {
   runKind?: BootstrapContextRunKind;
 }): Promise<{
   bootstrapFiles: WorkspaceBootstrapFile[];
-  modelMemoryOverlay: Awaited<ReturnType<typeof resolveModelMemoryBootstrapOverlay>>;
+  modelMemoryOverlay: Awaited<
+    ReturnType<typeof import("./model-memory.live-runtime.js").resolveModelMemoryBootstrapOverlay>
+  >;
 }> {
   const excludeHeartbeatBootstrapFile = shouldExcludeHeartbeatBootstrapFile(params);
   const sessionKey = params.sessionKey ?? params.sessionId;
+  const canonicalized = await materializeCanonicalBootstrapCompatibilityFiles({
+    workspaceDir: params.workspaceDir,
+    config: params.config,
+    sessionId: params.sessionId,
+    agentId: params.agentId,
+  });
   const rawFiles = params.sessionKey
     ? await getOrLoadBootstrapFiles({
         workspaceDir: params.workspaceDir,
@@ -225,20 +230,9 @@ async function resolveBootstrapArtifactsForRun(params: {
     contextMode: params.contextMode,
     runKind: params.runKind,
   });
-  const modelMemoryOverlay = await resolveModelMemoryBootstrapOverlay({
-    config: params.config,
-    sessionId: params.sessionId,
-    agentId: params.agentId,
-  });
-  const overlayAdjustedFiles = modelMemoryOverlay
-    ? mergeBootstrapFilesWithModelMemoryOverlay({
-        baseFiles: bootstrapFiles,
-        overlayFiles: modelMemoryOverlay.bootstrapFiles,
-      })
-    : bootstrapFiles;
 
   const updated = await applyBootstrapHookOverrides({
-    files: overlayAdjustedFiles,
+    files: bootstrapFiles,
     workspaceDir: params.workspaceDir,
     config: params.config,
     sessionKey: params.sessionKey,
@@ -250,7 +244,7 @@ async function resolveBootstrapArtifactsForRun(params: {
       filterHeartbeatBootstrapFile(updated, excludeHeartbeatBootstrapFile),
       params.warn,
     ),
-    modelMemoryOverlay,
+    modelMemoryOverlay: canonicalized.modelMemoryOverlay,
   };
 }
 

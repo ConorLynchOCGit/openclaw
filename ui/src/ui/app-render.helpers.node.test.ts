@@ -35,6 +35,7 @@ import {
   parseSessionKey,
   resolveAssistantAttachmentAuthToken,
   resolveSessionDisplayName,
+  resolveSessionOptionGroups,
   switchChatSession,
 } from "./app-render.helpers.ts";
 import type { AppViewState } from "./app-view-state.ts";
@@ -77,6 +78,17 @@ describe("parseSessionKey", () => {
     expect(parseSessionKey("cron:daily-briefing-uuid")).toEqual({
       prefix: "Cron:",
       fallbackName: "Cron Job:",
+    });
+  });
+
+  it("identifies known specialist main sessions", () => {
+    expect(parseSessionKey("agent:web-researcher:main")).toEqual({
+      prefix: "",
+      fallbackName: "Web Researcher",
+    });
+    expect(parseSessionKey("agent:x-manager:main")).toEqual({
+      prefix: "",
+      fallbackName: "X Manager Session",
     });
   });
 
@@ -198,6 +210,19 @@ describe("resolveSessionDisplayName", () => {
 
   it("returns raw key for unknown patterns", () => {
     expect(resolveSessionDisplayName("something-custom")).toBe("something-custom");
+  });
+
+  it("prefers canonical specialist session names over stale row metadata", () => {
+    expect(
+      resolveSessionDisplayName(
+        "agent:web-researcher:main",
+        row({
+          key: "agent:web-researcher:main",
+          label: "Telegram · stale",
+          displayName: "Old Label",
+        }),
+      ),
+    ).toBe("Web Researcher");
   });
 
   // ── With row data (label / displayName) ──────────
@@ -345,6 +370,68 @@ describe("isCronSessionKey", () => {
     expect(isCronSessionKey("main")).toBe(false);
     expect(isCronSessionKey("discord:group:eng")).toBe(false);
     expect(isCronSessionKey("agent:main:slack:cron:job:run:uuid")).toBe(false);
+  });
+});
+
+describe("resolveSessionOptionGroups", () => {
+  it("hides default ephemeral sessions while keeping visible operational sessions", () => {
+    const state = {
+      sessionsHideCron: true,
+      agentsList: {
+        agents: [
+          { id: "main", name: "Main" },
+          { id: "web-researcher", name: "Web Researcher" },
+        ],
+      },
+    } as unknown as AppViewState;
+
+    const sessions = {
+      sessions: [
+        row({ key: "agent:main:main" }),
+        row({ key: "agent:web-researcher:main" }),
+        row({ key: "agent:main:proof-conor:run-1" }),
+        row({ key: "agent:main:delegate:temp-1" }),
+        row({ key: "agent:main:cron:daily-digest" }),
+      ],
+    } as SessionsListResult;
+
+    const groups = resolveSessionOptionGroups(state, "agent:main:main", sessions);
+    const labels = groups.flatMap((group) => group.options.map((option) => option.label));
+
+    expect(labels).toContain("Main Session");
+    expect(labels).toContain("Web Researcher");
+    expect(labels).not.toContain("Proof / Conor");
+    expect(labels.join(" | ")).not.toContain("delegate");
+    expect(labels.join(" | ")).not.toContain("Cron Job:");
+  });
+
+  it("hides heartbeat, unknown-direct, and chief telegram control sessions by default", () => {
+    const state = {
+      sessionsHideCron: true,
+      agentsList: {
+        agents: [
+          { id: "main", name: "Main" },
+          { id: "chief", name: "Chief" },
+        ],
+      },
+    } as unknown as AppViewState;
+
+    const sessions = {
+      sessions: [
+        row({ key: "agent:main:main" }),
+        row({ key: "agent:main:main:heartbeat", kind: null as never }),
+        row({ key: "agent:chief:unknown:direct:+15555550123", kind: null as never }),
+        row({ key: "agent:chief:telegram:direct:7756506076", kind: null as never }),
+      ],
+    } as SessionsListResult;
+
+    const groups = resolveSessionOptionGroups(state, "agent:main:main", sessions);
+    const keys = groups.flatMap((group) => group.options.map((option) => option.key));
+
+    expect(keys).toContain("agent:main:main");
+    expect(keys).not.toContain("agent:main:main:heartbeat");
+    expect(keys).not.toContain("agent:chief:unknown:direct:+15555550123");
+    expect(keys).not.toContain("agent:chief:telegram:direct:7756506076");
   });
 });
 

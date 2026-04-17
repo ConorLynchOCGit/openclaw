@@ -30,6 +30,7 @@ export type OrdinaryTurnSourceInput = {
   sessionId?: string;
   sourceMetadata?: Record<string, unknown>;
   maxWordsPerWindow?: number;
+  createdAt?: Date;
 };
 
 export type OrdinaryTurnSourceWindow = Omit<ModelMemorySourceWindowRecord, "blockDescriptors"> & {
@@ -89,6 +90,7 @@ function buildWindowRecord(
   sourceId: string,
   windowIndex: number,
   blockDescriptors: TurnBlockDescriptor[],
+  createdAt: Date,
 ): OrdinaryTurnSourceWindow {
   const normalizedText = blockDescriptors.map((block) => block.text).join("\n");
   const normalizedFingerprint = hashValue(
@@ -111,13 +113,14 @@ function buildWindowRecord(
     blockDescriptors,
     lineStart: blockDescriptors[0]?.lineStart,
     lineEnd: blockDescriptors[blockDescriptors.length - 1]?.lineEnd,
-    createdAt: new Date(0),
+    createdAt,
   };
 }
 
 export function adaptOrdinaryTurnSource(
   input: OrdinaryTurnSourceInput,
 ): OrdinaryTurnSourceEnvelope {
+  const createdAt = input.createdAt ?? new Date();
   const blocks = buildMessageBlocks(input);
   const normalizedText = blocks.map((block) => block.text).join("\n");
   const sourceFingerprint = hashValue(
@@ -137,7 +140,7 @@ export function adaptOrdinaryTurnSource(
     projectId: input.projectId,
     sessionId: input.sessionId,
     sourceMetadata: input.sourceMetadata ?? {},
-    createdAt: new Date(0),
+    createdAt,
   };
 
   const maxWordsPerWindow = input.maxWordsPerWindow ?? DEFAULT_MAX_WORDS_PER_WINDOW;
@@ -149,7 +152,7 @@ export function adaptOrdinaryTurnSource(
     if (currentBlocks.length === 0) {
       return;
     }
-    windows.push(buildWindowRecord(sourceId, windows.length, currentBlocks));
+    windows.push(buildWindowRecord(sourceId, windows.length, currentBlocks, createdAt));
     currentBlocks = [];
     currentWordCount = 0;
   };

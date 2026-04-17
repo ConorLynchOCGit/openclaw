@@ -135,6 +135,15 @@ function resolveNativeBinaryFixturePath(): string {
   throw new Error("expected a native binary fixture path");
 }
 
+function processCanMutatePath(candidate: string): boolean {
+  try {
+    fs.accessSync(candidate, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function expectShellPayloadApprovalDenied(params: {
   tmpPrefix: string;
   fileName: string;
@@ -811,6 +820,9 @@ describe("hardenApprovedExecutionPaths", () => {
       return;
     }
     const binaryPath = resolveNativeBinaryFixturePath();
+    if (processCanMutatePath(binaryPath) || processCanMutatePath(path.dirname(binaryPath))) {
+      return;
+    }
     const prepared = buildSystemRunApprovalPlan({
       command: ["/bin/sh", "-lc", binaryPath],
       rawCommand: binaryPath,

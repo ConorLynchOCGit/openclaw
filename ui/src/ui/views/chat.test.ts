@@ -1250,8 +1250,8 @@ describe("chat view", () => {
       option.textContent?.trim(),
     );
 
-    expect(labels).toContain("Deep Chat (alpha) / main");
-    expect(labels).toContain("Coding (beta) / main");
+    expect(labels).toContain("Deep Chat / main");
+    expect(labels).toContain("Coding / main");
     expect(labels).not.toContain("main");
   });
 
@@ -1300,9 +1300,9 @@ describe("chat view", () => {
       option.textContent?.trim(),
     );
 
-    expect(labels.filter((label) => label === "Deep Chat (alpha) / main")).toHaveLength(1);
-    expect(labels).toContain("Deep Chat (alpha) / main · named-main");
-    expect(labels).toContain("Coding (beta) / main");
+    expect(labels.filter((label) => label === "Deep Chat / main")).toHaveLength(1);
+    expect(labels).toContain("Deep Chat (alpha) / main");
+    expect(labels).toContain("Coding / main");
   });
 
   it("keeps tool cards collapsed by default and expands them inline on demand", async () => {

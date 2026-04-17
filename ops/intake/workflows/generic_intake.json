@@ -1,0 +1,266 @@
+{
+  "name": "Generic Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "id": "48076cb2-a044-4cc4-973c-97e5b766717d",
+      "name": "Webhook",
+      "webhookId": "76376d5e-94ba-40ba-99f2-a537ef1a2f1d"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "90d56524-91b5-446c-91dd-e95561d13628",
+              "leftValue": "={{ $json.headers[\"x-intake-secret\"] }}",
+              "rightValue": "80a051c2c890ad31157583b7b660e95b4629793b13d47f412e879ea011055fd8",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [208, 0],
+      "id": "aa298c5c-d6df-41f8-84f4-c011d7209d5d",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "{\"ok\":false,\"error\":\"unauthorized\"}",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [448, 80],
+      "id": "440b1fd0-5bd9-4d79-8cca-4f5367688beb",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into intake_events (\n  source,\n  project,\n  event_type,\n  route_key,\n  received_at,\n  authenticated,\n  payload\n)\nvalues (\n  $1,\n  $2,\n  $3,\n  $4,\n  $5::timestamptz,\n  $6,\n  $7::jsonb\n);",
+        "options": {
+          "queryReplacement": "{{$json.source}}, {{$json.project}}, {{$json.event_type}}, {{$json.route_key}}, {{$json.received_at}}, {{$json.authenticated}}, {{ JSON.stringify($json.payload) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [656, -96],
+      "id": "1efde6e0-bb47-4634-9024-d2c73d84aa12",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "XCUoaSgpUvIweNYr",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [1072, -96],
+      "id": "d3b9863a-aade-4666-a4a4-b83f386048b1",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2373487a-279a-48ee-9849-eb76e6420943",
+              "name": "source",
+              "value": "={{ $json.body.source \n\n 'unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "452810a1-7e1c-4346-8d04-c701026de4ee",
+              "name": "project",
+              "value": "={{ $json.body.project \n\n '' }}",
+              "type": "string"
+            },
+            {
+              "id": "93f6ecb5-26e0-4f61-a5f4-502852c4d015",
+              "name": "event_type",
+              "value": "={{ $json.body.event_type \n\n $json.body.type \n\n '' }}",
+              "type": "string"
+            },
+            {
+              "id": "84f01510-aca3-4c1a-8f82-782afa82a4c6",
+              "name": "route_key",
+              "value": "={{ ($json.body.source || 'unknown') + ':' + ($json.body.project || 'none') + ':' + ($json.body.event_type || $json.body.type || 'none') }}",
+              "type": "string"
+            },
+            {
+              "id": "bdbe1cf5-344a-4d4d-a4a4-46a8152f2ab4",
+              "name": "received_at",
+              "value": "={{ new Date().toISOString() }}",
+              "type": "string"
+            },
+            {
+              "id": "68e3baae-6ffd-4048-aa03-2139a57772e4",
+              "name": "authenticated",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "a6fd5ac9-9f8a-494c-8158-a003198faf40",
+              "name": "payload",
+              "value": "={{ $json.body }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [448, -96],
+      "id": "9e570b14-cea1-43c5-9d5e-d925bd7c58ad",
+      "name": "Normalize Intake"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e554e66f-95b0-4b32-9558-f1b7033bc82c",
+              "name": "status",
+              "value": "ok",
+              "type": "string"
+            },
+            {
+              "id": "efde0d50-9133-48ff-8822-f318d1ed5b76",
+              "name": "route_key",
+              "value": "={{ $('Normalize Intake').first().json.route_key }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [864, -96],
+      "id": "9f4a91a3-42a7-4cca-b13f-af65b64a1f5b",
+      "name": "Build Response"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Normalize Intake",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Build Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Intake": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "43d1e647-e49d-4507-a5aa-4f10a3d9586b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ab9a13f53f56cb7d04947ee58877ed99f12ca606dea663b2cafd914cded4f144"
+  },
+  "id": "ZazLfgLRjAp7bYo4",
+  "tags": []
+}

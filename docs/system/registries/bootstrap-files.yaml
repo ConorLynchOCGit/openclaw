@@ -1,0 +1,89 @@
+version: 1
+fileClasses:
+  - id: agents_md
+    runtimePath: AGENTS.md
+    structuralMode: rich_operational_document
+    currentOwnership: runtime_primary_transitional
+    targetOwnership: canonical_derived_compatibility_artifact
+    projectionMode: assembled_document_with_stable_sections
+    seedMode: eager_seed_with_runtime_refresh
+    seedTiming: workspace_sync_and_pre_bootstrap
+    canonicalSourceClass:
+      - docs_system
+      - docs_agents
+      - docs_projects
+  - id: soul_md
+    runtimePath: SOUL.md
+    structuralMode: lean_identity_document
+    currentOwnership: runtime_primary_transitional
+    targetOwnership: canonical_derived_compatibility_artifact
+    projectionMode: lean_derived_file
+    seedMode: eager_seed
+    seedTiming: workspace_sync
+    canonicalSourceClass:
+      - docs_agents
+  - id: identity_md
+    runtimePath: IDENTITY.md
+    structuralMode: lean_identity_document
+    currentOwnership: runtime_primary_transitional
+    targetOwnership: canonical_derived_compatibility_artifact
+    projectionMode: lean_derived_file
+    seedMode: eager_seed
+    seedTiming: workspace_sync
+    canonicalSourceClass:
+      - docs_agents
+  - id: user_md
+    runtimePath: USER.md
+    structuralMode: user_profile_document
+    currentOwnership: runtime_primary_transitional
+    targetOwnership: canonical_derived_compatibility_artifact
+    projectionMode: generated_or_assembled_file
+    seedMode: selective_seed_with_projection_overlay
+    seedTiming: workspace_sync_then_runtime_overlay
+    canonicalSourceClass:
+      - docs_agents
+      - generated_memory_projection
+  - id: tools_md
+    runtimePath: TOOLS.md
+    structuralMode: lean_operational_document
+    currentOwnership: runtime_primary_transitional
+    targetOwnership: canonical_derived_compatibility_artifact
+    projectionMode: lean_derived_file
+    seedMode: eager_seed
+    seedTiming: workspace_sync
+    canonicalSourceClass:
+      - docs_agents
+      - docs_projects
+  - id: bootstrap_md
+    runtimePath: BOOTSTRAP.md
+    structuralMode: startup_compatibility_document
+    currentOwnership: runtime_owned
+    targetOwnership: runtime_compatibility_artifact
+    projectionMode: runtime_seeded_file
+    seedMode: runtime_only_seed
+    seedTiming: session_start
+    canonicalSourceClass:
+      - runtime_policy
+  - id: memory_md
+    runtimePath: MEMORY.md
+    structuralMode: runtime_memory_artifact
+    currentOwnership: mixed_durable_and_generated
+    targetOwnership: canonical_derived_compatibility_artifact
+    projectionMode: generated_or_assembled_memory_artifact
+    seedMode: selective_seed_with_projection_overlay
+    seedTiming: pre_bootstrap_then_runtime_refresh
+    canonicalSourceClass:
+      - docs_system
+      - docs_projects
+      - docs_agents
+      - generated_memory_projection
+  - id: daily_memory_files
+    runtimePath: memory/*.md
+    structuralMode: episodic_ingestion_layer
+    currentOwnership: runtime_meaningful_source
+    targetOwnership: runtime_meaningful_source
+    projectionMode: direct_runtime_input
+    seedMode: no_seed_runtime_source
+    seedTiming: direct_runtime_read
+    canonicalSourceClass:
+      - daily_memory_layer

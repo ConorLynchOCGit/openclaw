@@ -1,0 +1,112 @@
+version: 1
+allowedStatuses:
+  - active
+  - queued
+  - dormant
+  - archived
+  - superseded
+projects:
+  - id: workspace-topology
+    title: Workspace Topology
+    status: active
+    workspacePath: docs/projects/workspace-topology
+    indexPath: docs/projects/workspace-topology/index.md
+    startupPath: docs/projects/workspace-topology/STARTUP.md
+    statusPath: docs/projects/workspace-topology/STATUS.md
+    currentSlicePath: docs/projects/workspace-topology/CURRENT_SLICE.md
+    decisionsPath: docs/projects/workspace-topology/DECISIONS.md
+    roadmapPath: docs/projects/workspace-topology/roadmap.md
+    specsIndexPath: docs/projects/workspace-topology/specs/index.md
+    ownerClass: project_workspace
+    priority: 1
+  - id: agent-foundation
+    title: Agent Foundation
+    status: queued
+    workspacePath: docs/projects/agent-foundation
+    indexPath: docs/projects/agent-foundation/index.md
+    startupPath: docs/projects/agent-foundation/STARTUP.md
+    statusPath: docs/projects/agent-foundation/STATUS.md
+    currentSlicePath: docs/projects/agent-foundation/CURRENT_SLICE.md
+    decisionsPath: docs/projects/agent-foundation/DECISIONS.md
+    roadmapPath: docs/projects/agent-foundation/roadmap.md
+    specsIndexPath: docs/projects/agent-foundation/specs/index.md
+    ownerClass: project_workspace
+    priority: 2
+  - id: model-memory
+    title: Model Memory
+    status: active
+    workspacePath: docs/projects/model-memory
+    indexPath: docs/projects/model-memory/index.md
+    startupPath: docs/projects/model-memory/STARTUP.md
+    statusPath: docs/projects/model-memory/STATUS.md
+    currentSlicePath: docs/projects/model-memory/CURRENT_SLICE.md
+    decisionsPath: docs/projects/model-memory/DECISIONS.md
+    roadmapPath: docs/projects/model-memory/roadmap.md
+    specsIndexPath: docs/projects/model-memory/specs/index.md
+    ownerClass: project_workspace
+    priority: 3
+  - id: deployment-topology
+    title: Deployment Topology
+    status: active
+    workspacePath: docs/projects/deployment-topology
+    indexPath: docs/projects/deployment-topology/index.md
+    startupPath: docs/projects/deployment-topology/STARTUP.md
+    statusPath: docs/projects/deployment-topology/STATUS.md
+    currentSlicePath: docs/projects/deployment-topology/CURRENT_SLICE.md
+    decisionsPath: docs/projects/deployment-topology/DECISIONS.md
+    roadmapPath: docs/projects/deployment-topology/roadmap.md
+    specsIndexPath: docs/projects/deployment-topology/specs/index.md
+    ownerClass: project_workspace
+    priority: 4
+  - id: qa-program
+    title: QA Program
+    status: active
+    workspacePath: docs/projects/qa-program
+    indexPath: docs/projects/qa-program/index.md
+    startupPath: docs/projects/qa-program/STARTUP.md
+    statusPath: docs/projects/qa-program/STATUS.md
+    currentSlicePath: docs/projects/qa-program/CURRENT_SLICE.md
+    decisionsPath: docs/projects/qa-program/DECISIONS.md
+    roadmapPath: docs/projects/qa-program/roadmap.md
+    specsIndexPath: docs/projects/qa-program/specs/index.md
+    ownerClass: project_workspace
+    priority: 5
+  - id: maintenance
+    title: Maintenance
+    status: active
+    workspacePath: docs/projects/maintenance
+    indexPath: docs/projects/maintenance/index.md
+    startupPath: docs/projects/maintenance/STARTUP.md
+    statusPath: docs/projects/maintenance/STATUS.md
+    currentSlicePath: docs/projects/maintenance/CURRENT_SLICE.md
+    decisionsPath: docs/projects/maintenance/DECISIONS.md
+    roadmapPath: docs/projects/maintenance/roadmap.md
+    specsIndexPath: docs/projects/maintenance/specs/index.md
+    ownerClass: project_workspace
+    priority: 6
+  - id: turborepo
+    title: Turborepo
+    status: queued
+    workspacePath: docs/projects/turborepo
+    indexPath: docs/projects/turborepo/index.md
+    startupPath: docs/projects/turborepo/STARTUP.md
+    statusPath: docs/projects/turborepo/STATUS.md
+    currentSlicePath: docs/projects/turborepo/CURRENT_SLICE.md
+    decisionsPath: docs/projects/turborepo/DECISIONS.md
+    roadmapPath: docs/projects/turborepo/roadmap.md
+    specsIndexPath: docs/projects/turborepo/specs/index.md
+    ownerClass: project_workspace
+    priority: 7
+  - id: intake-routing
+    title: Intake Routing
+    status: queued
+    workspacePath: docs/projects/intake-routing
+    indexPath: docs/projects/intake-routing/index.md
+    startupPath: docs/projects/intake-routing/STARTUP.md
+    statusPath: docs/projects/intake-routing/STATUS.md
+    currentSlicePath: docs/projects/intake-routing/CURRENT_SLICE.md
+    decisionsPath: docs/projects/intake-routing/DECISIONS.md
+    roadmapPath: docs/projects/intake-routing/roadmap.md
+    specsIndexPath: docs/projects/intake-routing/specs/index.md
+    ownerClass: project_workspace
+    priority: 8

@@ -41,6 +41,7 @@ import {
   createSandboxedReadTool,
   createSandboxedWriteTool,
   getToolParamsRecord,
+  wrapReadToolWithDocumentIngestArbitration,
   wrapToolMemoryFlushAppendOnlyWrite,
   wrapToolWorkspaceRootGuard,
   wrapToolWorkspaceRootGuardWithOptions,
@@ -686,9 +687,25 @@ export function createOpenClawCodingTools(options?: {
   const withDeferredFollowupDescriptions = applyDeferredFollowupToolDescriptions(withAbort, {
     agentId,
   });
+  const finalReadTool = withDeferredFollowupDescriptions.find((tool) => tool.name === "read");
+  const finalDocumentIngestTool = withDeferredFollowupDescriptions.find(
+    (tool) => tool.name === "model_memory_document_ingest",
+  );
+  const withDocumentArbitration =
+    !finalReadTool || !finalDocumentIngestTool
+      ? withDeferredFollowupDescriptions
+      : withDeferredFollowupDescriptions.map((tool) =>
+          tool === finalReadTool
+            ? wrapReadToolWithDocumentIngestArbitration(tool, {
+                workspaceRoot,
+                ingestTool: finalDocumentIngestTool,
+                warn: logWarn,
+              })
+            : tool,
+        );
 
   // NOTE: Keep canonical (lowercase) tool names here.
   // pi-ai's Anthropic OAuth transport remaps tool names to Claude Code-style names
   // on the wire and maps them back for tool dispatch.
-  return withDeferredFollowupDescriptions;
+  return withDocumentArbitration;
 }

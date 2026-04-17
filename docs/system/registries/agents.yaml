@@ -1,0 +1,124 @@
+version: 2
+status: live_runtime_reconciled
+notes:
+  - This registry now reflects the actual live runtime agent set on the VPS.
+  - docs/agents/ now has bounded runtime-source footholds for main, builder, researcher, web-researcher, writer, and x-manager.
+requiredDurableRoot: docs/agents
+runtimeRoots:
+  - .agents
+  - live-runtime:/home/node/.openclaw
+liveRuntimeSource:
+  container: openclaw-runtime
+  configPath: /home/node/.openclaw/openclaw.json
+  evidenceCommand: docker exec openclaw-runtime openclaw agents list --json
+liveRuntimeAgents:
+  - id: main
+    title: OpenClaw
+    lifecycle: live
+    configured: true
+    workspacePath: /home/node/.openclaw/workspace
+    workspaceStatus: present_shared_canonicalized
+    sessionStorePath: /home/node/.openclaw/agents/main/sessions/sessions.json
+    sessionState: present
+    uiVisibility:
+      agentsList: true
+      sessionSelector: true
+    docsStatus: canonical_runtime_sources_present
+    status: live_and_initialized
+  - id: chief
+    title: OpenClaw
+    lifecycle: live
+    configured: true
+    workspacePath: /home/node/.openclaw/workspace
+    workspaceStatus: present_shared_intentional
+    sessionStorePath: /home/node/.openclaw/agents/chief/sessions/sessions.json
+    sessionState: present
+    uiVisibility:
+      agentsList: true
+      sessionSelector: true
+    docsStatus: shared_main_runtime_sources_present
+    status: live_and_initialized
+  - id: builder
+    title: Builder
+    lifecycle: live
+    configured: true
+    workspacePath: /home/node/.openclaw/agent-workspaces/builder
+    workspaceStatus: present
+    sessionStorePath: /home/node/.openclaw/agents/builder/sessions/sessions.json
+    sessionState: present
+    uiVisibility:
+      agentsList: true
+      sessionSelector: true
+    docsStatus: canonical_runtime_sources_present
+    status: live_and_initialized
+  - id: researcher
+    title: Researcher
+    lifecycle: live
+    configured: true
+    workspacePath: /home/node/.openclaw/agent-workspaces/researcher
+    workspaceStatus: present
+    sessionStorePath: /home/node/.openclaw/agents/researcher/sessions/sessions.json
+    sessionState: absent
+    uiVisibility:
+      agentsList: true
+      sessionSelector: false
+    docsStatus: canonical_runtime_sources_present
+    status: configured_but_uninitialized
+  - id: web-researcher
+    title: Web Researcher
+    lifecycle: live
+    configured: true
+    workspacePath: /home/node/.openclaw/agent-workspaces/web-researcher
+    workspaceStatus: restored_after_drift
+    sessionStorePath: /home/node/.openclaw/agents/web-researcher/sessions/sessions.json
+    sessionState: present
+    uiVisibility:
+      agentsList: true
+      sessionSelector: true
+    docsStatus: canonical_runtime_sources_present
+    status: configured_but_broken_workspace_repaired
+  - id: writer
+    title: Writer
+    lifecycle: live
+    configured: true
+    workspacePath: /home/node/.openclaw/agent-workspaces/writer
+    workspaceStatus: present
+    sessionStorePath: /home/node/.openclaw/agents/writer/sessions/sessions.json
+    sessionState: present
+    uiVisibility:
+      agentsList: true
+      sessionSelector: true
+    docsStatus: canonical_runtime_sources_present
+    status: live_and_initialized
+  - id: x-manager
+    title: X Manager
+    lifecycle: live
+    configured: true
+    workspacePath: /home/node/.openclaw/agent-workspaces/x-manager
+    workspaceStatus: restored_after_drift
+    sessionStorePath: /home/node/.openclaw/agents/x-manager/sessions/sessions.json
+    sessionState: present
+    uiVisibility:
+      agentsList: true
+      sessionSelector: true
+    docsStatus: canonical_runtime_sources_present
+    status: configured_but_broken_workspace_repaired
+futureDurableDescriptors:
+  - id: qa-test-openai
+    title: QA Test OpenClaw
+    status: queued
+    runtimeConfigPath: .agents/skills/openclaw-qa-testing/agents/openai.yaml
+    docsPath: docs/agents/qa-test-openai
+    primarySkills:
+      - openclaw-qa-testing
+    toolPolicyClass: skill_scoped
+    permissionClass: operator_scoped
+  - id: test-heap-leaks-openai
+    title: Test Heap Leaks
+    status: queued
+    runtimeConfigPath: .agents/skills/openclaw-test-heap-leaks/agents/openai.yaml
+    docsPath: docs/agents/test-heap-leaks-openai
+    primarySkills:
+      - openclaw-test-heap-leaks
+    toolPolicyClass: skill_scoped
+    permissionClass: operator_scoped

@@ -1,0 +1,308 @@
+---
+summary: "Phase 2 design for project and subject capsules plus dense ingestion on top of canonical model-memory objects."
+title: "Subject Capsules And Dense Ingestion"
+---
+
+# Subject Capsules And Dense Ingestion
+
+## Status
+
+This is an approved Phase 2 direction document.
+
+The capsule concept is approved.
+
+The first capsule flavor is now chosen:
+
+- Phase 2 starts with `project_state`
+- broader `subject_state` comes after the first project-state proof
+
+## Objective
+
+Add one derived artifact layer for dense subject understanding without replacing
+canonical memory objects or turning long-context ingestion into a second memory
+system.
+
+The new artifact family is the capsule family.
+
+A capsule is a bounded, compiled, provenance-bearing runtime artifact for a
+recurring topic, project, workflow, or external subject.
+
+## Core rule
+
+Capsules are compiled artifacts.
+
+They are not canonical truth.
+
+Canonical memory objects remain the primary store.
+
+The graph runtime remains the structural substrate.
+
+Capsules are consumable views built on top of both.
+
+## Why this exists
+
+The current memory system captures atomic objects well.
+
+That is necessary but not sufficient for:
+
+- broad planning prompts
+- multi-objective retrieval
+- high-context operator reviews
+- dense corpus ingestion
+- proactive memory behavior
+
+Those tasks need a middle layer between atomic objects and whole-document
+reingestion.
+
+That middle layer is the capsule.
+
+## Capsule family
+
+Phase 2 should eventually allow several capsule flavors with one shared
+structural model.
+
+Candidate capsule types:
+
+- `project_state`
+- `subject_state`
+- `workflow_state`
+- `tool_or_skill_state`
+- `external_entity_state`
+- `operator_lane_state`
+
+The shared structure matters more than the flavor name.
+
+## First capsule flavor
+
+The first capsule to implement should be `project_state`.
+
+Reason:
+
+- project boundaries already exist in authored docs and runtime topology
+- project state is easier to verify against durable sources
+- operator review already thinks in project terms
+- evaluation can compare capsule output against authored project truth more
+  reliably than a generic subject capsule
+
+`subject_state` should follow only after `project_state` proves useful.
+
+## What a capsule is
+
+A capsule should answer:
+
+- what this subject or project currently is
+- what matters about it right now
+- which rules, facts, procedures, and references are active
+- which documents, tools, skills, workflows, and projects are connected
+- what changed recently
+- what confidence and authority each element has
+- what open contradictions or unresolved states remain
+
+The capsule should be bounded enough to inject into live context and legible
+enough for operator inspection.
+
+## Primary use cases
+
+Capsules should support both:
+
+- live context injection
+- operator reporting and inspection
+
+The first-pass design should treat both as first-class rather than optimizing
+only for one.
+
+## Capsule contents
+
+Each capsule should compile from:
+
+- canonical memory objects
+- derived graph relationships
+- selected supporting source artifacts
+- active runtime artifacts where relevant
+- bounded episodic evidence where allowed
+
+The capsule should not be a raw document summary.
+
+It should be a structured, evidence-backed compilation.
+
+## Suggested capsule sections
+
+Each capsule may expose sections such as:
+
+- identity
+- current state
+- standing rules
+- current procedures
+- supporting facts
+- trusted references
+- related tools and skills
+- related projects and workflows
+- open contradictions or uncertainty
+- recent changes
+- provenance summary
+
+These sections may later be selectively packed depending on the consumer.
+
+## Authority model
+
+Capsules must compile under an explicit authority policy.
+
+Initial authority ordering should be:
+
+1. canonical authored or repo-backed durable sources
+2. canonical memory objects derived from trusted sources
+3. operator-approved derived artifacts
+4. prompt-turn capture
+5. daily summary and episodic continuity artifacts
+
+The capsule builder must not allow a lower-authority source to silently
+override a higher-authority source.
+
+If tension exists, the capsule should surface it as:
+
+- contradiction
+- provisional note
+- confidence reduction
+- explicit unresolved state
+
+## Relationship to ingestion modes
+
+The system currently has at least three ingestion modes:
+
+- prompt-turn ingestion
+- document ingestion
+- daily summary ingestion
+
+Phase 2 should make those ingestion modes capsule-aware without making them
+equal.
+
+Document ingestion is the main dense-knowledge substrate.
+
+Prompt-turn ingestion is important for user- and workflow-specific continuity.
+
+Daily summary ingestion is continuity support, not primary truth.
+
+## Dense ingestion
+
+Dense ingestion is not simply "ingest more files."
+
+Dense ingestion means:
+
+- the system learns a recurring subject or project deeply enough to compile a
+  useful capsule
+- the system can connect multiple documents and memory objects under that
+  target
+- retrieval can fetch a capsule instead of only many disconnected atoms
+
+Dense ingestion should target:
+
+- project-centered corpora
+- recurring operational seams
+- frequently revisited projects
+- external domains that the user returns to repeatedly
+
+## Capsule compilation triggers
+
+Suggested triggers:
+
+- enough new memory objects land on one target
+- document-ingest batches materially expand a target neighborhood
+- the planner marks a project or subject as frequently queried
+- the operator explicitly requests capsule build
+- a scheduled maintenance or review lane asks for refreshed state
+
+## Retrieval interaction
+
+Capsules should not replace object-native retrieval for all prompts.
+
+The system should choose between:
+
+- atomic object retrieval
+- capsule retrieval
+- hybrid retrieval
+
+Suggested default:
+
+- narrow factual or preference lookups -> atomic retrieval
+- broad status, planning, or topic prompts -> capsule retrieval or hybrid
+- long multi-objective prompts -> hierarchical retrieval with capsule-aware
+  packing
+
+## Hierarchical retrieval interaction
+
+Capsules are a major input to post-cutover hierarchical retrieval.
+
+They reduce the need to:
+
+- repeatedly pull many loosely connected objects
+- repeatedly summarize the same subject from scratch
+- overpack raw documents into the prompt
+
+They should become one of the primary retrieval-pack shapes for broad prompts.
+
+## Schema posture
+
+Phase 2 should make capsule compilation align with the new schema posture:
+
+- `kind` is primary
+- `canonicalClass` is secondary or derived
+
+Capsules should group first by:
+
+- target identity
+- active kinds
+- provenance and authority
+- graph relationships
+
+They should not be organized around the four canonical classes as if those are
+the semantic center.
+
+## Privacy, trust, and prompt injection
+
+Capsules should record privacy and trust metadata in the first pass.
+
+However, first-pass enforcement should stay soft.
+
+That means the capsule may expose:
+
+- visibility level
+- sensitivity hints
+- trust tier
+- source authority notes
+
+In the first pass, these fields should help:
+
+- operator review
+- pack selection
+- future redaction planning
+
+They should not yet hard-block core capsule construction unless a source is
+explicitly forbidden from model use.
+
+No capsule should smuggle imperative external text into a privileged planning or
+tool-execution lane as if it were runtime instruction.
+
+## Evaluation criteria
+
+`project_state` capsule evaluation should check:
+
+- alignment with authored project docs
+- correct capture of active rules, procedures, and references
+- bounded token shape
+- usefulness in operator review
+- usefulness in live context injection
+- contradiction surfacing quality
+
+## Rollout sequence
+
+1. derive graph support for project targets
+2. define project-state capsule schema
+3. build and inspect one `project_state` capsule per active project
+4. route broad project prompts through project-state retrieval
+5. only after that, expand into generic `subject_state`
+
+## Related specs
+
+- [Project State Capsule Schema](/projects/model-memory/specs/project-state-capsule-schema)
+- [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
+- [Kind Primary Schema Migration](/projects/model-memory/specs/kind-primary-schema-migration)

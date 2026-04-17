@@ -32,6 +32,61 @@ the post-cutover stabilization window:
   - fast-follow fixes
   - time-bounded legacy retirement
 
+The current pre-test preparation package is now also canonized:
+
+- [Deep Document Ingest Targets 2026-04](/projects/model-memory/document-ingest-targets-2026-04-deep-pass)
+- [Deep Document Ingest Runbook](/projects/model-memory/deep-document-ingest-runbook)
+- [Deep Ingest Verification Plan](/projects/model-memory/deep-ingest-verification-plan)
+- [Deep Memory Soak Human Tests](/projects/model-memory/deep-memory-soak-human-tests)
+- bundled operator skill:
+  - `skills/model-memory-deep-ingest/SKILL.md`
+
+The first-pass post-soak Phase 2 conceptual spec pack now also exists:
+
+- [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
+- [Subject Capsules And Dense Ingestion](/projects/model-memory/specs/subject-capsules-and-dense-ingestion)
+- [Proactive Memory Planner](/projects/model-memory/specs/proactive-memory-planner)
+- [Skill And Tool Synthesis](/projects/model-memory/specs/skill-and-tool-synthesis)
+- [Cache And Projection Policy](/projects/model-memory/specs/cache-and-projection-policy)
+- [Kind Primary Schema Migration](/projects/model-memory/specs/kind-primary-schema-migration)
+- [Graph Schema And Runtime Dependencies](/projects/model-memory/specs/graph-schema-and-runtime-dependencies)
+- [Project State Capsule Schema](/projects/model-memory/specs/project-state-capsule-schema)
+- [Planner Review Artifacts And Surfacing](/projects/model-memory/specs/planner-review-artifacts-and-surfacing)
+- [Skill And Tool Candidate Evaluation](/projects/model-memory/specs/skill-and-tool-candidate-evaluation)
+- [Prompt Contract Phase 2 Migration](/projects/model-memory/specs/prompt-contract-phase2-migration)
+- [Phase 2 Execution Roadmap](/projects/model-memory/phase-2-execution-roadmap)
+- [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
+
+That spec pack carries the current reviewed posture:
+
+- `kind` is the preferred primary semantic axis for Phase 2 review
+- `canonicalClass` is under review as a secondary or derived facet
+- the first capsule flavor is `project_state`
+- self-improvement candidates must surface through ordinary OpenClaw operator
+  channels rather than a hidden queue
+- third-party synthesis recommendations now use:
+  - `install`
+  - `inspire`
+  - `reject`
+- privacy and trust metadata should be specified now but enforced gradually in a
+  second pass after the base graph and capsule system is tested
+
+The current runtime overlap between long-document reads and document ingest is
+now narrower and explicit:
+
+- [Document Read And Ingest Arbitration](/projects/model-memory/specs/document-read-and-ingest-arbitration)
+- host-side workspace text reads can now auto-schedule deduped background
+  ingest for capped, continued, or repeated reads
+- the read result records `details.documentArbitration` for traceability
+
+The current long-running ingest posture is now also clearer:
+
+- the original Main-driven deep ingest interruption is recorded as a
+  derived-runtime rebuild collision, not a generic heartbeat cancel
+- derived-runtime rebuilds are now being serialized across overlapping lanes
+- long-running ingest checkpoints are being hardened to persist `interrupted`
+  state instead of being left at `running` after a rebuild crash
+
 Day-0 cutover verification:
 
 - `openclaw status` now reports:
@@ -911,6 +966,8 @@ scope:
   - the document-ingestion operator surface has now also been smoke-verified on
     the exact roadmap doc the user wants to test manually:
     - [Roadmap Document Ingestion Tool Smoke](/projects/model-memory/evidence/roadmap-document-ingestion-tool-smoke-2)
+    - the next broader operator-facing run is now explicitly packaged:
+      - [Deep Document Ingest Runbook](/projects/model-memory/deep-document-ingest-runbook)
     - observed totals:
       - `1 / 1` docs completed
       - `6` captured claims on the latest rerun

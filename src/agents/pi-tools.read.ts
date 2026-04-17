@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { URL } from "node:url";
@@ -53,6 +54,49 @@ type OpenClawReadToolOptions = {
   imageSanitization?: ImageSanitizationLimits;
 };
 
+type ReadDocumentIngestArbitrationTrigger = "capped_output" | "continued_read" | "repeated_read";
+
+type ReadDocumentIngestArbitrationSkipReason =
+  | "missing_path"
+  | "missing_ingest_tool"
+  | "outside_workspace"
+  | "non_text_document"
+  | "non_text_result"
+  | "no_auto_ingest_trigger"
+  | "fingerprint_unavailable"
+  | "prior_auto_ingest_failed";
+
+type ReadDocumentIngestArbitrationOutcome =
+  | "read_only"
+  | "read_then_ingest"
+  | "reuse_existing_ingest";
+
+type ReadDocumentIngestArbitrationDetails = {
+  outcome: ReadDocumentIngestArbitrationOutcome;
+  workspaceRelativePath?: string;
+  fingerprint?: string;
+  triggers?: ReadDocumentIngestArbitrationTrigger[];
+  ingestStatus: "skipped" | "scheduled" | "pending" | "completed" | "failed";
+  skipReason?: ReadDocumentIngestArbitrationSkipReason;
+  runId?: string;
+  recordPath?: string;
+  projectId?: string;
+};
+
+type ReadDocumentIngestArbitrationCacheEntry = {
+  fingerprint: string;
+  runId: string;
+  recordPath: string;
+  projectId?: string;
+  status: "pending" | "completed" | "failed";
+};
+
+type ReadDocumentIngestArbitrationOptions = {
+  workspaceRoot: string;
+  ingestTool?: AnyAgentTool | null;
+  warn?: (message: string) => void;
+};
+
 type ReadTruncationDetails = {
   truncated: boolean;
   outputLines: number;
@@ -61,6 +105,73 @@ type ReadTruncationDetails = {
 
 const READ_CONTINUATION_NOTICE_RE =
   /\n\n\[(?:Showing lines [^\]]*?Use offset=\d+ to continue\.|\d+ more lines in file\. Use offset=\d+ to continue\.)\]\s*$/;
+const READ_OUTPUT_CAPPED_NOTICE_RE =
+  /\[Read output capped at [^\]]+ Use offset=\d+ to continue\.\]\s*$/;
+const AUTO_INGEST_TEXT_EXTENSIONS = new Set([
+  ".c",
+  ".cc",
+  ".cfg",
+  ".conf",
+  ".cpp",
+  ".css",
+  ".csv",
+  ".cts",
+  ".env",
+  ".go",
+  ".h",
+  ".hpp",
+  ".html",
+  ".ini",
+  ".java",
+  ".js",
+  ".json",
+  ".jsx",
+  ".kt",
+  ".less",
+  ".log",
+  ".lua",
+  ".markdown",
+  ".md",
+  ".mdx",
+  ".mjs",
+  ".mts",
+  ".py",
+  ".rb",
+  ".rs",
+  ".scss",
+  ".sh",
+  ".sql",
+  ".svg",
+  ".swift",
+  ".text",
+  ".toml",
+  ".ts",
+  ".tsx",
+  ".txt",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".zsh",
+]);
+const AUTO_INGEST_TEXT_BASENAMES = new Set([
+  "AGENTS.md",
+  "CURRENT_SLICE.md",
+  "DECISIONS.md",
+  "Dockerfile",
+  "HEARTBEAT.md",
+  "IDENTITY.md",
+  "Makefile",
+  "MEMORY.md",
+  "README",
+  "README.md",
+  "ROADMAP.md",
+  "SOUL.md",
+  "STARTUP.md",
+  "STATUS.md",
+  "TOOLS.md",
+  "USER.md",
+  "roadmap.md",
+]);
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -202,6 +313,296 @@ function stripReadTruncationContentDetails(
     details: {
       ...detailsRecord,
       truncation: restTruncation,
+    },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeReadToolDetails<TDetails extends Record<string, unknown>>(
+  result: AgentToolResult<unknown>,
+  details: TDetails,
+): AgentToolResult<unknown> {
+  const existingDetails = (result as { details?: unknown }).details;
+  return {
+    ...result,
+    details: {
+      ...(isRecord(existingDetails) ? existingDetails : {}),
+      ...details,
+    },
+  };
+}
+
+function isLikelyTextDocumentPath(filePath: string): boolean {
+  const basename = path.basename(filePath);
+  if (AUTO_INGEST_TEXT_BASENAMES.has(basename)) {
+    return true;
+  }
+  return AUTO_INGEST_TEXT_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function resolveWorkspaceRelativeReadPath(params: {
+  filePath: string;
+  workspaceRoot: string;
+}): { absolutePath: string; workspaceRelativePath: string } | null {
+  const absolutePath = resolveToolPathAgainstWorkspaceRoot({
+    filePath: params.filePath,
+    root: params.workspaceRoot,
+  });
+  const relativePath = path.relative(params.workspaceRoot, absolutePath);
+  if (
+    !relativePath ||
+    relativePath === "." ||
+    relativePath.startsWith("..") ||
+    path.isAbsolute(relativePath)
+  ) {
+    return null;
+  }
+  return {
+    absolutePath,
+    workspaceRelativePath: relativePath.split(path.sep).join("/"),
+  };
+}
+
+async function buildAutoIngestFingerprint(params: {
+  absolutePath: string;
+  workspaceRelativePath: string;
+}): Promise<string | null> {
+  try {
+    const stat = await fs.stat(params.absolutePath);
+    return createHash("sha256")
+      .update(params.workspaceRelativePath)
+      .update("\0")
+      .update(String(stat.size))
+      .update("\0")
+      .update(String(Math.floor(stat.mtimeMs)))
+      .digest("hex")
+      .slice(0, 24);
+  } catch {
+    return null;
+  }
+}
+
+function deriveAutoIngestProjectId(workspaceRelativePath: string): string | undefined {
+  const match = /^docs\/projects\/([^/]+)\//.exec(workspaceRelativePath);
+  return match?.[1];
+}
+
+function resolveAutoIngestTriggerSet(params: {
+  resultText: string;
+  offset: unknown;
+  readCount: number;
+}): ReadDocumentIngestArbitrationTrigger[] {
+  const triggers: ReadDocumentIngestArbitrationTrigger[] = [];
+  if (READ_OUTPUT_CAPPED_NOTICE_RE.test(params.resultText)) {
+    triggers.push("capped_output");
+  }
+  if (
+    typeof params.offset === "number" &&
+    Number.isFinite(params.offset) &&
+    Math.floor(params.offset) > 1
+  ) {
+    triggers.push("continued_read");
+  }
+  if (params.readCount >= 2) {
+    triggers.push("repeated_read");
+  }
+  return triggers;
+}
+
+export function wrapReadToolWithDocumentIngestArbitration(
+  readTool: AnyAgentTool,
+  options: ReadDocumentIngestArbitrationOptions,
+): AnyAgentTool {
+  const pathReadCounts = new Map<string, number>();
+  const autoIngestCache = new Map<string, ReadDocumentIngestArbitrationCacheEntry>();
+
+  return {
+    ...readTool,
+    execute: async (toolCallId, params, signal, onUpdate) => {
+      const result = await readTool.execute(toolCallId, params, signal, onUpdate);
+      const record = getToolParamsRecord(params);
+      const filePath = typeof record?.path === "string" ? record.path.trim() : "";
+      if (!filePath) {
+        return mergeReadToolDetails(result, {
+          documentArbitration: {
+            outcome: "read_only",
+            ingestStatus: "skipped",
+            skipReason: "missing_path",
+          } satisfies ReadDocumentIngestArbitrationDetails,
+        });
+      }
+
+      if (!options.ingestTool) {
+        return mergeReadToolDetails(result, {
+          documentArbitration: {
+            outcome: "read_only",
+            ingestStatus: "skipped",
+            skipReason: "missing_ingest_tool",
+          } satisfies ReadDocumentIngestArbitrationDetails,
+        });
+      }
+
+      const resolvedPath = resolveWorkspaceRelativeReadPath({
+        filePath,
+        workspaceRoot: options.workspaceRoot,
+      });
+      if (!resolvedPath) {
+        return mergeReadToolDetails(result, {
+          documentArbitration: {
+            outcome: "read_only",
+            ingestStatus: "skipped",
+            skipReason: "outside_workspace",
+          } satisfies ReadDocumentIngestArbitrationDetails,
+        });
+      }
+
+      if (!isLikelyTextDocumentPath(resolvedPath.workspaceRelativePath)) {
+        return mergeReadToolDetails(result, {
+          documentArbitration: {
+            outcome: "read_only",
+            workspaceRelativePath: resolvedPath.workspaceRelativePath,
+            ingestStatus: "skipped",
+            skipReason: "non_text_document",
+          } satisfies ReadDocumentIngestArbitrationDetails,
+        });
+      }
+
+      const resultText = getToolResultText(result);
+      if (typeof resultText !== "string" || !resultText.trim()) {
+        return mergeReadToolDetails(result, {
+          documentArbitration: {
+            outcome: "read_only",
+            workspaceRelativePath: resolvedPath.workspaceRelativePath,
+            ingestStatus: "skipped",
+            skipReason: "non_text_result",
+          } satisfies ReadDocumentIngestArbitrationDetails,
+        });
+      }
+
+      const readCount = (pathReadCounts.get(resolvedPath.workspaceRelativePath) ?? 0) + 1;
+      pathReadCounts.set(resolvedPath.workspaceRelativePath, readCount);
+      const triggers = resolveAutoIngestTriggerSet({
+        resultText,
+        offset: record?.offset,
+        readCount,
+      });
+      if (triggers.length === 0) {
+        return mergeReadToolDetails(result, {
+          documentArbitration: {
+            outcome: "read_only",
+            workspaceRelativePath: resolvedPath.workspaceRelativePath,
+            ingestStatus: "skipped",
+            skipReason: "no_auto_ingest_trigger",
+          } satisfies ReadDocumentIngestArbitrationDetails,
+        });
+      }
+
+      const fingerprint = await buildAutoIngestFingerprint({
+        absolutePath: resolvedPath.absolutePath,
+        workspaceRelativePath: resolvedPath.workspaceRelativePath,
+      });
+      if (!fingerprint) {
+        return mergeReadToolDetails(result, {
+          documentArbitration: {
+            outcome: "read_only",
+            workspaceRelativePath: resolvedPath.workspaceRelativePath,
+            ingestStatus: "skipped",
+            skipReason: "fingerprint_unavailable",
+            triggers,
+          } satisfies ReadDocumentIngestArbitrationDetails,
+        });
+      }
+
+      const existing = autoIngestCache.get(fingerprint);
+      if (existing?.status === "failed") {
+        return mergeReadToolDetails(result, {
+          documentArbitration: {
+            outcome: "read_only",
+            workspaceRelativePath: resolvedPath.workspaceRelativePath,
+            fingerprint,
+            triggers,
+            ingestStatus: "failed",
+            skipReason: "prior_auto_ingest_failed",
+            runId: existing.runId,
+            recordPath: existing.recordPath,
+            projectId: existing.projectId,
+          } satisfies ReadDocumentIngestArbitrationDetails,
+        });
+      }
+
+      if (existing) {
+        return mergeReadToolDetails(result, {
+          documentArbitration: {
+            outcome: "reuse_existing_ingest",
+            workspaceRelativePath: resolvedPath.workspaceRelativePath,
+            fingerprint,
+            triggers,
+            ingestStatus: existing.status,
+            runId: existing.runId,
+            recordPath: existing.recordPath,
+            projectId: existing.projectId,
+          } satisfies ReadDocumentIngestArbitrationDetails,
+        });
+      }
+
+      const runId = `model-memory-auto-read-${fingerprint}`;
+      const recordPath = `checkpoints/model-memory/auto-read-ingest/${runId}.json`;
+      const projectId = deriveAutoIngestProjectId(resolvedPath.workspaceRelativePath);
+      autoIngestCache.set(fingerprint, {
+        fingerprint,
+        runId,
+        recordPath,
+        projectId,
+        status: "pending",
+      });
+
+      if (!signal?.aborted) {
+        void options.ingestTool
+          .execute(`${toolCallId}::auto_ingest`, {
+            source: resolvedPath.workspaceRelativePath,
+            runId,
+            recordPath,
+            projectId,
+            resume: true,
+          })
+          .then(() => {
+            autoIngestCache.set(fingerprint, {
+              fingerprint,
+              runId,
+              recordPath,
+              projectId,
+              status: "completed",
+            });
+          })
+          .catch((error) => {
+            autoIngestCache.set(fingerprint, {
+              fingerprint,
+              runId,
+              recordPath,
+              projectId,
+              status: "failed",
+            });
+            options.warn?.(
+              `[read-auto-ingest] ${resolvedPath.workspaceRelativePath} failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          });
+      }
+
+      return mergeReadToolDetails(result, {
+        documentArbitration: {
+          outcome: "read_then_ingest",
+          workspaceRelativePath: resolvedPath.workspaceRelativePath,
+          fingerprint,
+          triggers,
+          ingestStatus: signal?.aborted ? "skipped" : "scheduled",
+          runId,
+          recordPath,
+          projectId,
+        } satisfies ReadDocumentIngestArbitrationDetails,
+      });
     },
   };
 }

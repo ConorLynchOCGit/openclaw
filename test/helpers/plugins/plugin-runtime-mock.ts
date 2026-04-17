@@ -412,7 +412,6 @@ export function createPluginRuntimeMock(overrides: DeepPartial<PluginRuntime> = 
               connectionString: "postgres://localhost/model_memory",
               databaseName: "model_memory",
               source: "env:MODEL_MEMORY_DATABASE_URL",
-              derivedFromSharedServer: false,
             },
             pool: { end: vi.fn(async () => undefined) },
             sqlClient: {
@@ -432,7 +431,6 @@ export function createPluginRuntimeMock(overrides: DeepPartial<PluginRuntime> = 
             connectionString: "postgres://localhost/model_memory",
             databaseName: "model_memory",
             source: "env:MODEL_MEMORY_DATABASE_URL",
-            derivedFromSharedServer: false,
           }) as never,
       ) as unknown as PluginRuntime["modelMemory"]["resolveDatabaseResolution"],
       createLiveJsonExecutor: vi.fn(

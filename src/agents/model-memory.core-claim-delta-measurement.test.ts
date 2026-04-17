@@ -331,7 +331,6 @@ describe("model-memory core claim delta measurement", () => {
           databaseName: "model_memory",
           databaseMode: "full_corpus_proof_db",
           source: "env:MODEL_MEMORY_DATABASE_URL",
-          derivedFromSharedServer: false,
         },
         canonicalRepository: {
           async snapshot() {

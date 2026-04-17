@@ -212,12 +212,20 @@ describe("fetchBrowserJson loopback auth", () => {
   });
 
   it("preserves dispatcher error context while keeping no-retry hint", async () => {
-    mocks.dispatch.mockRejectedValueOnce(new Error("Chrome CDP handshake timeout"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("Chrome CDP handshake timeout");
+      }),
+    );
 
     await expectThrownBrowserFetchError(() => fetchBrowserJson<{ ok: boolean }>("/tabs"), {
-      contains: ["Chrome CDP handshake timeout", "Do NOT retry the browser tool"],
-      omits: ["Can't reach the OpenClaw browser control service"],
+      contains: [
+        "Can't reach the OpenClaw browser control service",
+        "Do NOT retry the browser tool",
+      ],
     });
+    expect(mocks.startBrowserControlServiceFromConfig).toHaveBeenCalledOnce();
   });
 
   it("surfaces 429 from HTTP URL as rate-limit error with no-retry hint", async () => {
@@ -284,16 +292,17 @@ describe("fetchBrowserJson loopback auth", () => {
     );
   });
 
-  it("surfaces 429 from dispatcher path as rate-limit error", async () => {
-    mocks.dispatch.mockResolvedValueOnce({
-      status: 429,
-      body: { error: "too many sessions" },
-    });
+  it("surfaces 429 from relative host path as rate-limit error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("too many sessions", { status: 429 })),
+    );
 
     await expectThrownBrowserFetchError(() => fetchBrowserJson<{ ok: boolean }>("/tabs"), {
       contains: ["Browser service rate limit reached", "Do NOT retry the browser tool"],
       omits: ["too many sessions"],
     });
+    expect(mocks.startBrowserControlServiceFromConfig).toHaveBeenCalledOnce();
   });
 
   it("keeps absolute URL failures wrapped as reachability errors", async () => {
