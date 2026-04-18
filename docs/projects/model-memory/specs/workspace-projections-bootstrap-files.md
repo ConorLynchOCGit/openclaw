@@ -11,9 +11,14 @@ Define how canonical memory truth becomes runtime-consumable bootstrap files and
 
 ## Core rule
 
-The projection compiler is deterministic and code-driven.
+Bootstrap projection ownership is code-driven and auditable.
 
-It must not use the model to rewrite bootstrap files.
+The compiler may use deterministic render or model-assisted render depending on
+packet policy, but:
+
+- semantic truth still comes from canonical memory objects
+- the generated file boundary remains code-owned
+- every build must preserve provenance and dropped-item accounting
 
 ## Source of truth
 
@@ -109,6 +114,15 @@ Compile into bootstrap files only when the memory is:
 - low-churn
 - worth the token cost on repeated runs
 
+Bootstrap packets should be built through the shared packet compiler, with
+packet-specific policy for each file:
+
+- `MEMORY.md` requires strong basket shaping, section caps, and explicit
+  dropped-item accounting
+- `USER.md` favors stable standing preferences and constraints
+- generated `AGENTS.md` sections favor critical rules and operational
+  procedures that delegated runs must inherit
+
 ## What belongs in dynamic packs
 
 Use dynamic packs when the memory is:
@@ -149,6 +163,9 @@ The compiler should accept:
 - ranking policy
 - token budget
 - formatting template
+- packet class
+- compiler mode
+- section caps
 
 ## Projection compiler outputs
 
@@ -161,3 +178,5 @@ Each generated projection version should record:
 - token estimate
 - built timestamp
 - canonical artifact path under `.openclaw/model-memory/`
+- dropped source ids when any were excluded during compile
+- compiler version and packet policy version

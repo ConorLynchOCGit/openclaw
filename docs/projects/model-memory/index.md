@@ -97,6 +97,11 @@ Current status:
 38. [Prompt Contract Phase 2 Migration](/projects/model-memory/specs/prompt-contract-phase2-migration)
 39. [Phase 2 Execution Roadmap](/projects/model-memory/phase-2-execution-roadmap)
 40. [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
+41. [Model Driven Packet Assembly Evaluation](/projects/model-memory/specs/model-driven-packet-assembly-evaluation)
+42. [Packet Compiler And Budgeting](/projects/model-memory/specs/packet-compiler-and-budgeting)
+43. [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)
+44. [Model Memory Evidence](/projects/model-memory/evidence)
+45. [Memory Residue Audit](/projects/model-memory/memory-residue-audit)
 
 ## Scope
 
@@ -125,7 +130,17 @@ Current operational scope:
   - proactive planner
   - skill and tool synthesis
   - cache and projection policy
+- the immediate memory priority before those broader waves is now:
+  - packet compiler quality and packet-system unification
+  - `kind`-primary migration
+  - kind-balance repair, especially the missing active `rule` problem
 - the reviewed implementation order now exists in:
   - [Phase 2 Execution Roadmap](/projects/model-memory/phase-2-execution-roadmap)
 - the original Main-run interruption record now exists in:
   - [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
+- the current packet and kind-balance proof obligations now live in:
+  - [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)
+- retained evidence for the packet-quality lane is now normalized in:
+  - [Model Memory Evidence](/projects/model-memory/evidence)
+- the current residue/debt boundary is now recorded in:
+  - [Memory Residue Audit](/projects/model-memory/memory-residue-audit)

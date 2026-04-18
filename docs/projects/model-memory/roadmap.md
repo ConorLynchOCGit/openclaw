@@ -27,6 +27,18 @@ title: "Model Memory Roadmap"
 - Phase 6 is complete.
 - Phase 7 is active as the post-cutover stabilization window.
 
+## Current top priorities
+
+1. packet compiler quality and packet-system unification
+2. `kind`-primary migration with `canonicalClass` demotion
+3. kind-balance repair, especially the missing active `rule` problem
+
+These are one linked effort, not three unrelated cleanup items.
+
+Packet quality is currently constrained by both corpus shape and packet
+shaping. That makes kind balance a packet-quality issue as well as an ingestion
+issue.
+
 ## Phase 0: Specs and scaffolding
 
 Goals:
@@ -78,6 +90,18 @@ Exit criteria:
 - generated bootstrap surfaces are derived from canonical memory objects
 - canonical generated artifacts live under `.openclaw/model-memory/`
 - no repo-tracked docs are treated as volatile runtime cache
+
+The immediate follow-on priority inside this already-landed phase is no longer
+simple deterministic projection tuning.
+
+It is:
+
+- shared packet compiler rollout
+- `MEMORY.md` packet quality repair as the first proof lane
+- retrieval-pack budgeting and packing rules
+- prompt-contract migration toward `kind` primary
+- explicit investigation into why active `rule` generation is absent in the
+  live corpus
 
 ## Phase 3: Context engine and usage/cache ledger
 

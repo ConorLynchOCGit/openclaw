@@ -46,6 +46,15 @@ Phase 2 should use that information to decide:
 - which projections are causing churn
 - which segments repeatedly break prompt-cache stability
 
+The packet compiler is now a first-class input to this policy layer.
+
+Policy should observe:
+
+- which packet classes repeatedly overflow
+- which packet sections churn most
+- which packet shaping rules preserve stable-prefix reuse best
+- which packet families degrade quality when budgets are too tight
+
 ## Priority goals
 
 Phase 2 should optimize for all three goals:
@@ -79,6 +88,9 @@ Suggested policy outputs:
 - segment trim priority suggestions
 - cache invalidation scopes
 - operator-visible cost hot spots
+- packet budget tuning candidates
+- packet section-cap tuning candidates
+- packet family escalation candidates for stronger compile modes
 
 ## Stable-prefix preservation
 
@@ -129,6 +141,13 @@ The policy layer should help decide:
 - which projections belong in semi-stable packs
 - which projections should remain volatile
 - which projections are too expensive or too noisy to keep rebuilding
+
+That includes deciding when:
+
+- a deterministic packet renderer is sufficient
+- a model-assisted packet renderer is justified
+- packet section caps need adjustment
+- packet family-specific shaping policies need review
 
 This should feed directly into context-engine layering.
 

@@ -150,6 +150,9 @@ The reranker must not:
 
 Context injection is a packaging layer on top of retrieval.
 
+That packaging layer should use the shared packet compiler rails rather than a
+one-off retrieval formatter.
+
 It should package:
 
 - the semantic object
@@ -163,6 +166,16 @@ It should not package:
 - rendered memory statements as the only representation
 
 Consumers should receive object-native context first, with optional rendered text only as a secondary presentation aid.
+
+The first-class packaged output is `retrieval_pack`.
+
+`retrieval_pack` must declare:
+
+- total packet budget
+- per-result budget
+- result-count cap
+- packing policy version
+- dropped-result accounting when more candidates were relevant than fit
 
 ## Result contract
 
@@ -188,6 +201,24 @@ Each retrieval result should carry:
 They must not carry concrete memory content.
 
 They are explanatory audit metadata only and must not become ranking or semantic truth in a later pipeline stage.
+
+## Retrieval-pack compile rules
+
+The retrieval system decides which objects are candidate truth for the query.
+
+The packet compiler decides how those candidates fit into one bounded
+`retrieval_pack`.
+
+Required shared rails:
+
+- basket shaping before render
+- per-result compression rules
+- total packet ceilings
+- provenance summary per result
+- dropped-result accounting
+
+This keeps retrieval packaging aligned with bootstrap and dynamic-pack assembly
+instead of creating a separate hidden packet system.
 
 ## Proof policy
 

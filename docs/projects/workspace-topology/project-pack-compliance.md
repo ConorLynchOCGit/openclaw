@@ -16,30 +16,22 @@ required base pack:
 - `roadmap.md`
 - `specs/index.md`
 
-## Results before normalization
-
-| Project               | Result        | Missing      |
-| --------------------- | ------------- | ------------ |
-| `workspace-topology`  | compliant     | none         |
-| `agent-foundation`    | compliant     | none         |
-| `deployment-topology` | non-compliant | all files    |
-| `qa-program`          | non-compliant | all files    |
-| `turborepo`           | compliant     | none         |
-| `model-memory`        | non-compliant | `STARTUP.md` |
-
-## Normalization performed in this sprint
-
-- added `docs/projects/deployment-topology/` with the required project pack
-- added `docs/projects/qa-program/` with the required project pack
-- added `docs/projects/model-memory/STARTUP.md`
-
-## Results after normalization
+## Current registered-project results
 
 | Project               | Result    | Missing |
 | --------------------- | --------- | ------- |
 | `workspace-topology`  | compliant | none    |
 | `agent-foundation`    | compliant | none    |
+| `model-memory`        | compliant | none    |
 | `deployment-topology` | compliant | none    |
 | `qa-program`          | compliant | none    |
+| `maintenance`         | compliant | none    |
 | `turborepo`           | compliant | none    |
-| `model-memory`        | compliant | none    |
+| `intake-routing`      | compliant | none    |
+| `skills-system`       | compliant | none    |
+
+## Notes
+
+- nested workstreams such as `docs/projects/skills-system/skill-vetting/` are
+  not separate top-level registry entries
+- they may keep local packs when they stay owned by their parent project

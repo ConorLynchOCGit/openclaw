@@ -81,6 +81,16 @@ rather than a model-memory side lane.
   - compatibility-source migration into richer per-agent packs
   - bootstrap pre-render seeding policy expansion
   - stronger topology enforcement beyond the current checks
+- the current repo tranche now also contains two operator/runtime hardening
+  fixes that still need live rerun proof after rollout:
+  - isolated cron jobs now honor explicit `sessionKey` values when persisting
+    their base session identity, which is the required fix for named daily and
+    weekly operator-review sessions
+  - direct-chat long-running work now emits bounded live progress summaries from
+    native runtime events instead of looking silently stalled
+- the current proof residue is now tracked explicitly instead of staying spread
+  across status notes:
+  - [Incomplete And Follow-On Proof Pack](/projects/deployment-topology/incomplete-and-follow-on-proof-pack)
 
 ## Immediate next move
 
@@ -89,6 +99,8 @@ rather than a model-memory side lane.
   live runtime
 - keep the repaired GitHub lane monitored for the next organic canonical repo
   event
+- rerun the remaining incomplete human-validation prompts and the new
+  session-identity/chat-progress proofs after rollout
 - hand the richer per-agent pack expansion off to
   [Agent Foundation](/projects/agent-foundation)
 - use `post-restoration-cleanup.md` only for later hardening and verification,

@@ -7,12 +7,11 @@ title: "Deployment Topology Current Slice"
 
 ## Active slice
 
-`github-source-repair-and-pre-agent-hardening`
+`operator-runtime-hardening-and-proof-pack`
 
 ## Goals
 
-1. keep repo-owned project surfaces aligned with the live runtime container
-2. repair and prove the live GitHub digest source path
-3. turn the next topology and bootstrap concerns into planned-and-started work
-4. identify any remaining non-testing prerequisites before the next
-   agent-focused slice
+1. keep named operator-review sessions stable and discoverable
+2. add bounded chat-visible progress for long-running direct-chat work
+3. retire bounded stale assumptions and external review residue safely
+4. centralize the remaining incomplete proofs for deployment/runtime follow-up

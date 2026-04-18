@@ -79,6 +79,7 @@ type RunCronTurnOptions = {
   cfgOverrides?: Parameters<typeof makeCfg>[2];
   deps?: CliDeps;
   delivery?: CronJob["delivery"];
+  job?: CronJob;
   jobPayload?: CronJob["payload"];
   message?: string;
   mockTexts?: string[] | null;
@@ -107,13 +108,16 @@ export async function runCronTurn(home: string, options: RunCronTurnOptions = {}
   }
 
   const jobPayload = options.jobPayload ?? DEFAULT_AGENT_TURN_PAYLOAD;
+  const job =
+    options.job ??
+    ({
+      ...makeJob(jobPayload),
+      delivery: options.delivery ?? { mode: "none" },
+    } satisfies CronJob);
   const res = await runCronIsolatedAgentTurn({
     cfg: makeCfg(home, storePath, options.cfgOverrides),
     deps,
-    job: {
-      ...makeJob(jobPayload),
-      delivery: options.delivery ?? { mode: "none" },
-    },
+    job,
     message:
       options.message ?? (jobPayload.kind === "agentTurn" ? jobPayload.message : DEFAULT_MESSAGE),
     sessionKey: options.sessionKey ?? DEFAULT_SESSION_KEY,

@@ -110,3 +110,16 @@ projects:
     specsIndexPath: docs/projects/intake-routing/specs/index.md
     ownerClass: project_workspace
     priority: 8
+  - id: skills-system
+    title: Skills System
+    status: active
+    workspacePath: docs/projects/skills-system
+    indexPath: docs/projects/skills-system/index.md
+    startupPath: docs/projects/skills-system/STARTUP.md
+    statusPath: docs/projects/skills-system/STATUS.md
+    currentSlicePath: docs/projects/skills-system/CURRENT_SLICE.md
+    decisionsPath: docs/projects/skills-system/DECISIONS.md
+    roadmapPath: docs/projects/skills-system/roadmap.md
+    specsIndexPath: docs/projects/skills-system/specs/index.md
+    ownerClass: project_workspace
+    priority: 9

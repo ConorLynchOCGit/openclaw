@@ -7,6 +7,11 @@ title: "System Projects"
 
 Canonical project workspaces live only under `docs/projects/`.
 
+Registered top-level projects live directly under `docs/projects/<project-id>/`.
+Project-owned nested workstreams may keep their own local packs under that
+parent project when they remain owned by the parent and are not treated as
+separate registry entries.
+
 Use the project registry and the project index together:
 
 - [Projects Index](/projects)

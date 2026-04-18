@@ -46,3 +46,5 @@ This project owns:
 27. [Repo File Container Visibility Audit](/projects/deployment-topology/repo-file-container-visibility-audit)
 28. [Topology Enforcement Hardening Plan](/projects/deployment-topology/topology-enforcement-hardening-plan)
 29. [Final Human Validation Prompts](/projects/deployment-topology/final-human-validation-prompts)
+30. [Chat Progress Visibility](/projects/deployment-topology/chat-progress-visibility)
+31. [Incomplete And Follow-On Proof Pack](/projects/deployment-topology/incomplete-and-follow-on-proof-pack)

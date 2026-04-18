@@ -631,6 +631,7 @@ export async function dispatchReplyFromConfig(
 
     const shouldSendToolSummaries = ctx.ChatType !== "group" || ctx.IsForum === true;
     const shouldSendToolStartStatuses = ctx.ChatType !== "group" || ctx.IsForum === true;
+    const shouldSendLiveProgress = ctx.ChatType !== "group" || ctx.IsForum === true;
     const sendFinalPayload = async (
       payload: ReplyPayload,
     ): Promise<{ queuedFinal: boolean; routedFinalCount: number }> => {
@@ -741,6 +742,10 @@ export async function dispatchReplyFromConfig(
 
     const toolStartStatusesSent = new Set<string>();
     let toolStartStatusCount = 0;
+    const liveProgressStatusSentAt = new Map<string, number>();
+    let liveProgressStatusCount = 0;
+    const LIVE_PROGRESS_STATUS_LIMIT = 8;
+    const LIVE_PROGRESS_DEDUPE_MS = 3_000;
     const normalizeWorkingLabel = (label: string) => {
       const collapsed = label.replace(/\s+/g, " ").trim();
       if (collapsed.length <= 80) {
@@ -762,6 +767,14 @@ export async function dispatchReplyFromConfig(
       }
       return parts.join("\n\n").trim() || "Planning next steps.";
     };
+    const sendProgressPayload = async (text: string): Promise<void> => {
+      const replyPayload: ReplyPayload = { text };
+      if (shouldRouteToOriginating) {
+        await sendPayloadAsync(replyPayload, undefined, false);
+        return;
+      }
+      dispatcher.sendToolResult(replyPayload);
+    };
     const maybeSendWorkingStatus = async (label: string): Promise<void> => {
       if (suppressDelivery) {
         return;
@@ -778,14 +791,24 @@ export async function dispatchReplyFromConfig(
       }
       toolStartStatusesSent.add(normalizedLabel);
       toolStartStatusCount += 1;
-      const payload: ReplyPayload = {
-        text: `Working: ${normalizedLabel}`,
-      };
-      if (shouldRouteToOriginating) {
-        await sendPayloadAsync(payload, undefined, false);
+      await sendProgressPayload(`Working: ${normalizedLabel}`);
+    };
+    const maybeSendLiveProgressStatus = async (label: string): Promise<void> => {
+      if (suppressDelivery || !shouldSendLiveProgress) {
         return;
       }
-      dispatcher.sendToolResult(payload);
+      const normalizedLabel = normalizeWorkingLabel(label);
+      if (!normalizedLabel || liveProgressStatusCount >= LIVE_PROGRESS_STATUS_LIMIT) {
+        return;
+      }
+      const nowMs = Date.now();
+      const lastSentAt = liveProgressStatusSentAt.get(normalizedLabel);
+      if (typeof lastSentAt === "number" && nowMs - lastSentAt < LIVE_PROGRESS_DEDUPE_MS) {
+        return;
+      }
+      liveProgressStatusSentAt.set(normalizedLabel, nowMs);
+      liveProgressStatusCount += 1;
+      await sendProgressPayload(normalizedLabel);
     };
     const sendPlanUpdate = async (payload: {
       explanation?: string;
@@ -794,14 +817,7 @@ export async function dispatchReplyFromConfig(
       if (suppressDelivery || !shouldEmitVerboseProgress()) {
         return;
       }
-      const replyPayload: ReplyPayload = {
-        text: formatPlanUpdateText(payload),
-      };
-      if (shouldRouteToOriginating) {
-        await sendPayloadAsync(replyPayload, undefined, false);
-        return;
-      }
-      dispatcher.sendToolResult(replyPayload);
+      await sendProgressPayload(formatPlanUpdateText(payload));
     };
     const summarizeApprovalLabel = (payload: {
       status?: string;
@@ -834,6 +850,56 @@ export async function dispatchReplyFromConfig(
         return normalizeWorkingLabel(title);
       }
       return "";
+    };
+    const summarizeItemProgress = (payload: {
+      phase?: string;
+      status?: string;
+      title?: string;
+      name?: string;
+      summary?: string;
+      progressText?: string;
+    }) => {
+      const detail = normalizeOptionalString(
+        payload.progressText ?? payload.summary ?? payload.title ?? payload.name,
+      );
+      if (!detail) {
+        return "";
+      }
+      const phase = normalizeOptionalString(payload.phase)?.toLowerCase();
+      const status = normalizeOptionalString(payload.status)?.toLowerCase();
+      if (status === "queued" || status === "pending") {
+        return `Queued: ${detail}`;
+      }
+      if (status === "failed" || status === "error") {
+        return `Failed: ${detail}`;
+      }
+      if (status === "completed" || phase === "end") {
+        return `Completed: ${detail}`;
+      }
+      return `Working: ${detail}`;
+    };
+    const summarizeCommandProgress = (payload: {
+      phase?: string;
+      status?: string;
+      title?: string;
+      name?: string;
+      exitCode?: number | null;
+    }) => {
+      const detail = normalizeOptionalString(payload.title ?? payload.name);
+      if (!detail) {
+        return "";
+      }
+      const phase = normalizeOptionalString(payload.phase)?.toLowerCase();
+      const status = normalizeOptionalString(payload.status)?.toLowerCase();
+      if (status === "failed" || status === "error") {
+        return `Failed: ${detail}`;
+      }
+      if (status === "completed" || phase === "end") {
+        return payload.exitCode === 0 || payload.exitCode == null
+          ? `Completed: ${detail}`
+          : `Failed (${payload.exitCode}): ${detail}`;
+      }
+      return `Working: ${detail}`;
     };
     // Track accumulated block text for TTS generation after streaming completes.
     // When block streaming succeeds, there's no final reply, so we need to generate
@@ -929,6 +995,33 @@ export async function dispatchReplyFromConfig(
             return;
           }
           await maybeSendWorkingStatus(label);
+        },
+        onItemEvent: async ({ phase, status, title, name, summary, progressText }) => {
+          const label = summarizeItemProgress({
+            phase,
+            status,
+            title,
+            name,
+            summary,
+            progressText,
+          });
+          if (!label) {
+            return;
+          }
+          await maybeSendLiveProgressStatus(label);
+        },
+        onCommandOutput: async ({ phase, status, title, name, exitCode }) => {
+          const label = summarizeCommandProgress({
+            phase,
+            status,
+            title,
+            name,
+            exitCode,
+          });
+          if (!label) {
+            return;
+          }
+          await maybeSendLiveProgressStatus(label);
         },
         onPatchSummary: async ({ phase, summary, title }) => {
           if (phase !== "end") {

@@ -18,6 +18,7 @@ import { setupRunCronIsolatedAgentTurnSuite } from "./isolated-agent/run.suite-h
 import {
   mockRunCronFallbackPassthrough,
   runEmbeddedPiAgentMock,
+  updateSessionStoreMock,
 } from "./isolated-agent/run.test-harness.js";
 
 setupRunCronIsolatedAgentTurnSuite();
@@ -169,6 +170,33 @@ describe("runCronIsolatedAgentTurn session identity", () => {
       const entry = await readSessionEntry(storePath, "agent:main:cron:job-1");
 
       expect(entry?.label).toBe("Nightly digest");
+    });
+  });
+
+  it("uses the job name as the label for explicit isolated session keys", async () => {
+    await withTempHome(async (home) => {
+      await runCronTurn(home, {
+        job: {
+          ...makeJob({
+            kind: "agentTurn",
+            message: "ping",
+          }),
+          name: "Daily Operator Review",
+        },
+        message: "ping",
+        sessionKey: "daily-operator-review",
+        mockTexts: ["ok"],
+      });
+
+      const storeUpdate = updateSessionStoreMock.mock.calls.at(-1)?.[1] as
+        | ((store: Record<string, Record<string, unknown>>) => void)
+        | undefined;
+      expect(storeUpdate).toBeTypeOf("function");
+      const persistedStore: Record<string, Record<string, unknown>> = {};
+      storeUpdate?.(persistedStore);
+      expect(persistedStore["agent:main:daily-operator-review"]).toMatchObject({
+        label: "Daily Operator Review",
+      });
     });
   });
 });

@@ -43,4 +43,7 @@ Each project should keep its own:
   <Card title="Intake Routing" href="/projects/intake-routing" icon="inbox">
     Retained generic intake ingress, DB-first routing, and committed workflow assets.
   </Card>
+  <Card title="Skills System" href="/projects/skills-system" icon="badge-plus">
+    Canonical skill-system ownership, marketplace posture, and skill-vetting workflow.
+  </Card>
 </Columns>

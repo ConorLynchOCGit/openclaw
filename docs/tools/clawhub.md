@@ -92,6 +92,11 @@ If you want to add new capabilities to your OpenClaw agent, ClawHub is the easie
 4. If you want to publish or manage registry auth, install the separate
    `clawhub` CLI too.
 
+Before installing an unreviewed third-party skill, use the formal
+[Skill Vetting](/projects/skills-system/skill-vetting) workflow. Native
+`openclaw skills install` is the trusted install path, not the quarantine
+review path.
+
 ## Install the ClawHub CLI
 
 You only need this for registry-authenticated workflows such as publish/sync:
@@ -120,6 +125,10 @@ falls back to that workspace unless you override `--workdir` (or
 `CLAWHUB_WORKDIR`). OpenClaw loads workspace skills from `<workspace>/skills`
 and will pick them up in the **next** session. If you already use
 `~/.openclaw/skills` or bundled skills, workspace skills take precedence.
+
+For third-party review, do not acquire into the active workspace first. Use the
+quarantine-first workflow under
+[Skill Vetting](/projects/skills-system/skill-vetting/specs/quarantine-review-workflow).
 
 For more detail on how skills are loaded, shared, and gated, see
 [Skills](/tools/skills).

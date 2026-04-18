@@ -1,0 +1,417 @@
+{
+  "basketPolicy": "kind-quotas",
+  "selected": [
+    {
+      "id": "eb4cd248-95ec-5056-a170-89c31314cdd5",
+      "sourceType": "slot",
+      "sourceKey": "slot_421630907db4f088e2cb1b39",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:10:15.000Z",
+      "summary": "Required artifacts: benchmark reports by prompt version and by model id; sampled write traces with provenance; shadow-mode comparison reports when shadow mode exists; usage and cache ledger reports by stable, semi-stable, and volatile segment hashes",
+      "payload": {
+        "value": "benchmark reports by prompt version and by model id; sampled write traces with provenance; shadow-mode comparison reports when shadow mode exists; usage and cache ledger reports by stable, semi-stable, and volatile segment hashes",
+        "subject": "Required artifacts"
+      }
+    },
+    {
+      "id": "b0bfcf33-1760-57b0-ad48-bbea9258b732",
+      "sourceType": "slot",
+      "sourceKey": "slot_b142f8a9bd0a86b82f5a3b0c",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:10:13.000Z",
+      "summary": "Required telemetry captured by the observability layer: capture rate, ignore rate, false positive rate from audited review, duplicate rate, supersession rate, retrieval request volume, retrieval candidate-set size, retrieval hit rate against audited cases, retrieval packing size, and distributions for canonical-class, kind, confidence, review-mode, contract-name, contract-version, and model-version",
+      "payload": {
+        "value": "capture rate, ignore rate, false positive rate from audited review, duplicate rate, supersession rate, retrieval request volume, retrieval candidate-set size, retrieval hit rate against audited cases, retrieval packing size, and distributions for canonical-class, kind, confidence, review-mode, contract-name, contract-version, and model-version",
+        "subject": "Required telemetry captured by the observability layer"
+      }
+    },
+    {
+      "id": "4ef76249-72b4-521b-b04b-330b559cda5d",
+      "sourceType": "slot",
+      "sourceKey": "slot_ead53cf5632b4dfad554b2d8",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:10:11.000Z",
+      "summary": "model-memory project specs: The Model Memory Spec Index defines the clean-room `model-memory` project specs before any implementation code is written.",
+      "payload": {
+        "value": "The Model Memory Spec Index defines the clean-room `model-memory` project specs before any implementation code is written.",
+        "subject": "model-memory project specs"
+      }
+    },
+    {
+      "id": "1c851a0f-f9b0-564d-ba07-fb28c0e76d9c",
+      "sourceType": "slot",
+      "sourceKey": "slot_ad3e1100495bba85b9615adf",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "medium",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:10:01.000Z",
+      "summary": "Collision adjudication outcomes: Allowed collision adjudication outcomes are attach_support, supersedes, distinct, and conflict_hold.",
+      "payload": {
+        "value": "Allowed collision adjudication outcomes are attach_support, supersedes, distinct, and conflict_hold.",
+        "subject": "Collision adjudication outcomes"
+      }
+    },
+    {
+      "id": "4c8cf321-1940-586a-a32f-33c942e5ed58",
+      "sourceType": "slot",
+      "sourceKey": "slot_15528d8801af5ecab653a3ba",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:09:54.000Z",
+      "summary": "V1 live write path merge authority: V1 does not allow similarity search or thresholds to become merge authority in the live write path (no embedding-only merge, no similarity-threshold merge, no “close enough” merge logic, no rendered-text-first merge authority).",
+      "payload": {
+        "value": "V1 does not allow similarity search or thresholds to become merge authority in the live write path (no embedding-only merge, no similarity-threshold merge, no “close enough” merge logic, no rendered-text-first merge authority).",
+        "subject": "V1 live write path merge authority"
+      }
+    },
+    {
+      "id": "4977204a-e271-57ff-9d44-670ef642c3c5",
+      "sourceType": "set",
+      "sourceKey": "feedback:procedure:scope_44136fa355b3678a",
+      "canonicalClass": "feedback",
+      "kind": "procedure",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "medium",
+      "durability": "durable",
+      "createdAt": "2026-04-17T22:31:18.231Z",
+      "summary": "HEARTBEAT handling when no attention needed: If HEARTBEAT.md indicates nothing needs attention, reply with HEARTBEAT_OK.",
+      "payload": {
+        "steps": ["If HEARTBEAT.md indicates nothing needs attention, reply with HEARTBEAT_OK."],
+        "title": "HEARTBEAT handling when no attention needed"
+      }
+    },
+    {
+      "id": "1de94194-bb82-5dc5-991e-a149c952c5a8",
+      "sourceType": "set",
+      "sourceKey": "feedback:procedure:scope_44136fa355b3678a",
+      "canonicalClass": "feedback",
+      "kind": "procedure",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "2026-04-17T18:31:29.609Z",
+      "summary": "HEARTBEAT.md handling procedure: Check whether the workspace file /home/node/.openclaw/workspace/HEARTBEAT.md exists. -> If HEARTBEAT.md exists, read it and follow its instructions strictly. -> Do not infer or repeat old tasks from prior chats. -> If nothing needs attention, reply HEARTBEAT_OK. -> When reading HEARTBEAT.md, use the workspace file /home/node/.openclaw/workspace/HEARTBEAT.md (exact case). -> Do not read docs/heartbeat.md.",
+      "payload": {
+        "steps": [
+          "Check whether the workspace file /home/node/.openclaw/workspace/HEARTBEAT.md exists.",
+          "If HEARTBEAT.md exists, read it and follow its instructions strictly.",
+          "Do not infer or repeat old tasks from prior chats.",
+          "If nothing needs attention, reply HEARTBEAT_OK.",
+          "When reading HEARTBEAT.md, use the workspace file /home/node/.openclaw/workspace/HEARTBEAT.md (exact case).",
+          "Do not read docs/heartbeat.md."
+        ],
+        "title": "HEARTBEAT.md handling procedure"
+      }
+    },
+    {
+      "id": "b8ae0287-91ab-53d7-974e-b8efc91bd9bc",
+      "sourceType": "set",
+      "sourceKey": "feedback:procedure:scope_44136fa355b3678a",
+      "canonicalClass": "feedback",
+      "kind": "procedure",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "medium",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:00:29.000Z",
+      "summary": "HEARTBEAT_OK response condition: If HEARTBEAT.md exists and indicates no attention is needed, reply exactly HEARTBEAT_OK.",
+      "payload": {
+        "steps": [
+          "If HEARTBEAT.md exists and indicates no attention is needed, reply exactly HEARTBEAT_OK."
+        ],
+        "title": "HEARTBEAT_OK response condition"
+      }
+    },
+    {
+      "id": "399e01e4-bd79-525c-9509-068d890773fa",
+      "sourceType": "set",
+      "sourceKey": "feedback:procedure:scope_44136fa355b3678a",
+      "canonicalClass": "feedback",
+      "kind": "procedure",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:00:02.000Z",
+      "summary": "Follow HEARTBEAT.md workspace instructions: Check whether the workspace file /home/node/.openclaw/workspace/HEARTBEAT.md exists. -> If HEARTBEAT.md exists, read it and follow its instructions strictly. -> If nothing needs attention, reply with HEARTBEAT_OK.",
+      "payload": {
+        "steps": [
+          "Check whether the workspace file /home/node/.openclaw/workspace/HEARTBEAT.md exists.",
+          "If HEARTBEAT.md exists, read it and follow its instructions strictly.",
+          "If nothing needs attention, reply with HEARTBEAT_OK."
+        ],
+        "title": "Follow HEARTBEAT.md workspace instructions"
+      }
+    },
+    {
+      "id": "f0ce7dee-10b8-5fa0-aa6b-67da2649d214",
+      "sourceType": "slot",
+      "sourceKey": "slot_851edc7d334832f71d45bff4",
+      "canonicalClass": "user",
+      "kind": "preference",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "2026-04-17T22:31:17.853Z",
+      "summary": "Heartbeat file handling: Read /home/node/.openclaw/workspace/HEARTBEAT.md if it exists and follow it strictly.",
+      "payload": {
+        "subject": "Heartbeat file handling",
+        "operation": "Use exact case: /home/node/.openclaw/workspace/HEARTBEAT.md; do not read docs/heartbeat.md.",
+        "instruction": "Read /home/node/.openclaw/workspace/HEARTBEAT.md if it exists and follow it strictly."
+      }
+    },
+    {
+      "id": "ca0ff90d-7041-5966-9c14-51faf4347eb7",
+      "sourceType": "slot",
+      "sourceKey": "slot_d4efbdd758612ad12f7485ee",
+      "canonicalClass": "user",
+      "kind": "preference",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "medium",
+      "durability": "durable",
+      "createdAt": "2026-04-17T19:31:16.147Z",
+      "summary": "When nothing needs attention, reply HEARTBEAT_OK.: If nothing needs attention, reply exactly HEARTBEAT_OK.",
+      "payload": {
+        "subject": "When nothing needs attention, reply HEARTBEAT_OK.",
+        "operation": "Reply HEARTBEAT_OK when appropriate.",
+        "instruction": "If nothing needs attention, reply exactly HEARTBEAT_OK."
+      }
+    },
+    {
+      "id": "2650d5a3-d53b-596c-9f68-c90271c013b0",
+      "sourceType": "slot",
+      "sourceKey": "slot_8fe64d0120b1cf26437ae3c5",
+      "canonicalClass": "user",
+      "kind": "preference",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "2026-04-17T16:31:25.488Z",
+      "summary": "Heartbeat behavior: Read /home/node/.openclaw/workspace/HEARTBEAT.md if it exists; follow it strictly; if nothing needs attention, reply with HEARTBEAT_OK.",
+      "payload": {
+        "subject": "Heartbeat behavior",
+        "operation": "reply HEARTBEAT_OK when HEARTBEAT.md indicates no attention needed",
+        "instruction": "Read /home/node/.openclaw/workspace/HEARTBEAT.md if it exists; follow it strictly; if nothing needs attention, reply with HEARTBEAT_OK."
+      }
+    },
+    {
+      "id": "9d89ef85-f14e-5677-8970-5e7a403632d0",
+      "sourceType": "slot",
+      "sourceKey": "slot_09458d1b40b7dd2c59681ba5",
+      "canonicalClass": "user",
+      "kind": "preference",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "2026-04-17T14:15:58.959Z",
+      "summary": "explanations: Keep explanations high level by default.",
+      "payload": {
+        "subject": "explanations",
+        "operation": "default",
+        "instruction": "Keep explanations high level by default."
+      }
+    },
+    {
+      "id": "d98b04dc-474a-578d-b253-4f6695e07681",
+      "sourceType": "slot",
+      "sourceKey": "slot_8f2158528c354bbb7052669e",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_a336ba1d56512a04",
+      "confidence": "medium",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:09:52.000Z",
+      "summary": "Read tool instrumentation details.documentArbitration fields: The read tool writes details.documentArbitration with outcome, workspaceRelativePath, fingerprint, triggers, ingestStatus, runId, recordPath, and projectId when derivable from docs/projects/<id>/...",
+      "payload": {
+        "value": "The read tool writes details.documentArbitration with outcome, workspaceRelativePath, fingerprint, triggers, ingestStatus, runId, recordPath, and projectId when derivable from docs/projects/<id>/...",
+        "subject": "Read tool instrumentation details.documentArbitration fields"
+      }
+    },
+    {
+      "id": "32fdbf5a-88d6-5acc-89cd-b7951e94ecba",
+      "sourceType": "slot",
+      "sourceKey": "slot_2c747a2b01159db9105067b6",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_a336ba1d56512a04",
+      "confidence": "medium",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:09:51.000Z",
+      "summary": "Telemetry for document arbitration: Each document access records arbitration outcome, document identity fingerprint, whether cache bytes were reused, and whether ingest was skipped and why (including whether memory projection was emitted and why).",
+      "payload": {
+        "value": "Each document access records arbitration outcome, document identity fingerprint, whether cache bytes were reused, and whether ingest was skipped and why (including whether memory projection was emitted and why).",
+        "subject": "Telemetry for document arbitration"
+      }
+    },
+    {
+      "id": "363b550c-319c-5f98-b687-8483d81b4026",
+      "sourceType": "slot",
+      "sourceKey": "slot_4b5037a8f579e51a6bd14aa1",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "medium",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:09:36.000Z",
+      "summary": "Document Ingestion Runner Service: intended to promote batch document ingestion from proof-script behavior into a first-class clean-room operational surface",
+      "payload": {
+        "value": "intended to promote batch document ingestion from proof-script behavior into a first-class clean-room operational surface",
+        "subject": "Document Ingestion Runner Service"
+      }
+    },
+    {
+      "id": "0cea5343-8915-564d-8eba-6550a5e92f3c",
+      "sourceType": "slot",
+      "sourceKey": "slot_c92cf8c12d59516b24c2ed68",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:09:33.000Z",
+      "summary": "model_memory.memory_support_items: model_memory.memory_support_items attaches one or more source-backed supports to a durable memory object and is unique on (memory_object_id, support_fingerprint).",
+      "payload": {
+        "value": "model_memory.memory_support_items attaches one or more source-backed supports to a durable memory object and is unique on (memory_object_id, support_fingerprint).",
+        "subject": "model_memory.memory_support_items"
+      }
+    },
+    {
+      "id": "37d30ebb-8900-574c-ba4b-c84d56dce16b",
+      "sourceType": "slot",
+      "sourceKey": "slot_36981fbbe0655f0dd000f6f9",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:09:32.000Z",
+      "summary": "model_memory.memory_objects: model_memory.memory_objects has a unique constraint on identity_key.",
+      "payload": {
+        "value": "model_memory.memory_objects has a unique constraint on identity_key.",
+        "subject": "model_memory.memory_objects"
+      }
+    },
+    {
+      "id": "0805e8d7-fbf7-5404-acf9-af4d834f0d74",
+      "sourceType": "slot",
+      "sourceKey": "slot_fb2f4c5334380b939c4d3c75",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:09:31.000Z",
+      "summary": "model_memory.source_windows: model_memory.source_windows stores one row per normalized bounded source window and has a unique constraint on (source_id, window_index).",
+      "payload": {
+        "value": "model_memory.source_windows stores one row per normalized bounded source window and has a unique constraint on (source_id, window_index).",
+        "subject": "model_memory.source_windows"
+      }
+    },
+    {
+      "id": "a7971cc1-3f5a-5792-94ca-f1154874e739",
+      "sourceType": "slot",
+      "sourceKey": "slot_0f07879bb394d25a370887a2",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:09:30.000Z",
+      "summary": "model_memory.sources: model_memory.sources stores one row per ingested source envelope and has a unique constraint on (source_kind, source_fingerprint).",
+      "payload": {
+        "value": "model_memory.sources stores one row per ingested source envelope and has a unique constraint on (source_kind, source_fingerprint).",
+        "subject": "model_memory.sources"
+      }
+    },
+    {
+      "id": "5b60d479-16f4-5f3f-8937-3b9cdda6bab6",
+      "sourceType": "slot",
+      "sourceKey": "slot_67fc60c25f1cbc47eec53d03",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "medium",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:09:20.000Z",
+      "summary": "runtime pipeline uniformity: The runtime pipeline is identical for all supported source types after source adaptation; the only differences are the source envelope, chunking policy, and write-policy constraints.",
+      "payload": {
+        "value": "The runtime pipeline is identical for all supported source types after source adaptation; the only differences are the source envelope, chunking policy, and write-policy constraints.",
+        "subject": "runtime pipeline uniformity"
+      }
+    },
+    {
+      "id": "f9f5db1f-3734-546c-8beb-a146b1d6c0c5",
+      "sourceType": "slot",
+      "sourceKey": "slot_9572d3b0477b9c6e75ec7159",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "strong",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:09:15.000Z",
+      "summary": "Phase 7 exit criteria: model-memory is the only active memory authority; legacy memory plugins/runtime/hooks/docs are removed; legacy memory state is purged from deployed hosts after export/snapshot where needed.",
+      "payload": {
+        "value": "model-memory is the only active memory authority; legacy memory plugins/runtime/hooks/docs are removed; legacy memory state is purged from deployed hosts after export/snapshot where needed.",
+        "subject": "Phase 7 exit criteria"
+      }
+    },
+    {
+      "id": "5842e1a2-fb00-587b-be0c-46e98c4afc55",
+      "sourceType": "slot",
+      "sourceKey": "slot_fb2e18cfd6bb4c9e0b5482e4",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "medium",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:09:14.000Z",
+      "summary": "Replay-versus-live parity status: Cleaner structurally but still unresolved; remaining divergence localized to trace_match.",
+      "payload": {
+        "value": "Cleaner structurally but still unresolved; remaining divergence localized to trace_match.",
+        "subject": "Replay-versus-live parity status"
+      }
+    },
+    {
+      "id": "f1ba8a36-6124-5f5f-8641-8b1627cd8188",
+      "sourceType": "slot",
+      "sourceKey": "slot_e954e951649de626ced98d5c",
+      "canonicalClass": "project",
+      "kind": "fact",
+      "scopeKey": "scope_44136fa355b3678a",
+      "confidence": "medium",
+      "durability": "durable",
+      "createdAt": "1970-01-01T00:09:11.000Z",
+      "summary": "Core-claim/delta safety after Slice 23: After Slice 23, measured core-claim/delta safety is implemented, with the measured-safe deterministic attach shape having one dominant core-claim candidate with packaging_only_drift.",
+      "payload": {
+        "value": "After Slice 23, measured core-claim/delta safety is implemented, with the measured-safe deterministic attach shape having one dominant core-claim candidate with packaging_only_drift.",
+        "subject": "Core-claim/delta safety after Slice 23"
+      }
+    }
+  ],
+  "sourceTokenEstimate": 4303,
+  "countsByKind": {
+    "fact": 16,
+    "procedure": 4,
+    "preference": 4
+  },
+  "countsByClass": {
+    "project": 16,
+    "feedback": 4,
+    "user": 4
+  }
+}

@@ -11,6 +11,10 @@ after the remaining rescue cases are migrated or canonized.
 These items are intentionally separated from the strict rescue manifest so the
 restoration backlog stays focused on missing or runtime-only functionality.
 
+Active current-pass proof follow-through now lives separately in:
+
+- [Incomplete And Follow-On Proof Pack](/projects/deployment-topology/incomplete-and-follow-on-proof-pack)
+
 Before any landing push, run the canonical human validation matrix:
 
 - [Push Validation Human Checklist](/projects/deployment-topology/push-validation-human-checklist)

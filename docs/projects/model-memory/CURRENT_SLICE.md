@@ -7,17 +7,13 @@ title: "Model Memory Current Slice"
 
 ## Slice
 
-`post-cutover-72-hour-stabilization`
+`packet-compiler-and-kind-balance-priority-shift`
 
 ## Goal
 
-Run the first 72 hours after the aggressive full cutover from the legacy memory
-stack to `model-memory`:
-
-- `model-memory` becomes the primary memory authority
-- rollback goes to native no-memory behavior, not back to the legacy stack
-- observability and sampled review become the main safety controls
-- legacy memory retirement is explicit and time-bounded
+Turn the successful `MEMORY.md` packet experiments into one shared packet
+compiler design, and make packet quality plus kind-primary/kind-balance the top
+memory priority before broader Phase 2 implementation.
 
 ## Current outcome
 
@@ -79,6 +75,16 @@ stack to `model-memory`:
     - strong enforcement delayed to a second pass after base-system testing
 - the reviewed execution order is now recorded in:
   - [Phase 2 Execution Roadmap](/projects/model-memory/phase-2-execution-roadmap)
+- the next implementation priority is now explicit:
+  - [Packet Compiler And Budgeting](/projects/model-memory/specs/packet-compiler-and-budgeting)
+  - packet-system rollout across bootstrap, dynamic packs, and retrieval packs
+  - `kind`-primary prompt and schema migration
+  - investigation and repair of missing active `rule` generation
+  - proof tracking in:
+    - [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)
+  - retained evidence and bounded residue tracking in:
+    - [Model Memory Evidence](/projects/model-memory/evidence)
+    - [Memory Residue Audit](/projects/model-memory/memory-residue-audit)
 - the original Main-run deep ingest interruption is now recorded in:
   - [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
 - the current ingest hardening posture is:
@@ -90,14 +96,11 @@ stack to `model-memory`:
 ## Current judgment
 
 - current project judgment:
-  - `production_cutover_flip_executed`
-- this is now an operating judgment:
-  - the live runtime is on `model-memory`
-  - the next step is the active 72-hour watch plus the deep ingest and human
-    soak verification flow
-  - parallel to that operational work, the next architectural review lane is
-    the Phase 2 spec pack above
-  - the next topology hardening item immediately after the deep ingest pass is:
-    - [Canonical Path Resolution And Runtime Arbitration](/projects/workspace-topology/specs/canonical-path-resolution-and-runtime-arbitration)
-  - read-versus-ingest overlap is now narrowed by runtime arbitration instead
-    of leaving both tools fully independent
+  - `production_cutover_live_with_packet-quality-priority`
+- the live runtime remains on `model-memory`
+- operational soak and ingest work continues, but the next architecture slice
+  is no longer vague:
+  - unify packet assembly
+  - improve packet quality at build time rather than trimming late
+  - migrate toward `kind` primary
+  - repair kind balance so packets do not reflect a distorted corpus

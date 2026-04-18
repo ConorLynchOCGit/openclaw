@@ -274,6 +274,46 @@ describe("buildGatewayCronService", () => {
     }
   });
 
+  it("passes explicit isolated session keys through to named cron sessions", async () => {
+    const cfg = createCronConfig("server-cron-isolated-explicit-key");
+    loadConfigMock.mockReturnValue(cfg);
+
+    const state = buildGatewayCronService({
+      cfg,
+      deps: {} as CliDeps,
+      broadcast: () => {},
+    });
+    try {
+      const job = await state.cron.add({
+        name: "named-operator-review",
+        enabled: true,
+        schedule: { kind: "at", at: new Date(1).toISOString() },
+        sessionTarget: "isolated",
+        sessionKey: "daily-operator-review",
+        wakeMode: "next-heartbeat",
+        payload: {
+          kind: "agentTurn",
+          message: "produce daily operator review",
+        },
+      });
+
+      await state.cron.run(job.id, "force");
+
+      expect(runCronIsolatedAgentTurnMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          job: expect.objectContaining({ id: job.id }),
+          sessionKey: "daily-operator-review",
+        }),
+      );
+      expect(cleanupBrowserSessionsForLifecycleEndMock).toHaveBeenCalledWith({
+        sessionKeys: ["daily-operator-review"],
+        onWarn: expect.any(Function),
+      });
+    } finally {
+      state.cron.stop();
+    }
+  });
+
   it("preserves explicit isolated agent workspace when runtime reload config is stale", async () => {
     const tmpDir = path.join(os.tmpdir(), `server-cron-agent-workspace-${Date.now()}`);
     const startupCfg = {

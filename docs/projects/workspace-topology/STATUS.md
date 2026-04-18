@@ -27,6 +27,7 @@ now live in the repo.
   - `docs/projects/qa-program/`
   - `docs/projects/turborepo/`
   - `docs/projects/intake-routing/`
+  - `docs/projects/skills-system/`
 - canonical `docs/system/` root now exists
 - canonical `docs/agents/` root now exists
 - scattered project-like material has now been explicitly classified for later
@@ -59,6 +60,8 @@ now live in the repo.
   gate
 - deployment-topology extraction is no longer a roadmap gap; it now has its own
   canonical project workspace
+- project-owned nested workstreams can now keep local packs under a registered
+  parent project without becoming separate top-level registry entries
 
 ## Delivered in this slice
 

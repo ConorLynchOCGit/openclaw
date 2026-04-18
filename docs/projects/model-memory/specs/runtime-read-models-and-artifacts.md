@@ -107,13 +107,29 @@ Examples:
 Each artifact should record:
 
 - artifact type
+- packet class when applicable
 - scope key
 - source object ids or slot keys
+- dropped source ids when packet shaping occurred
 - content hash
 - rendered text or structured packed form
 - token estimate
 - built timestamp
 - build policy version
+- compiler mode
+- compiler version
+
+Packet artifacts must use the shared audit and budgeting rails in
+[Packet Compiler And Budgeting](/projects/model-memory/specs/packet-compiler-and-budgeting).
+
+That includes:
+
+- `user_memory_pack`
+- `project_memory_pack`
+- `procedure_memory_pack`
+- `session_summary_pack`
+- `retrieval_pack`
+- generated bootstrap packet artifacts before file projection
 
 ## Projection target records
 

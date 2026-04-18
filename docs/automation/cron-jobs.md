@@ -36,7 +36,10 @@ openclaw cron runs --id <job-id>
 - Jobs persist at `~/.openclaw/cron/jobs.json` so restarts do not lose schedules.
 - All cron executions create [background task](/automation/tasks) records.
 - One-shot jobs (`--at`) auto-delete after success by default.
-- Isolated cron runs best-effort close tracked browser tabs/processes for their `cron:<jobId>` session when the run completes, so detached browser automation does not leave orphaned processes behind.
+- Isolated cron runs best-effort close tracked browser tabs/processes for their
+  base cron session when the run completes. By default that base session is
+  `cron:<jobId>`, but jobs with an explicit `sessionKey` keep that named base
+  identity instead.
 - Isolated cron runs also guard against stale acknowledgement replies. If the
   first result is just an interim status update (`on it`, `pulling everything
 together`, and similar hints) and no descendant subagent run is still
@@ -76,14 +79,20 @@ This fires ~5–6 times per month instead of 0–1 times per month. OpenClaw use
 
 ## Execution styles
 
-| Style           | `--session` value   | Runs in                  | Best for                        |
-| --------------- | ------------------- | ------------------------ | ------------------------------- |
-| Main session    | `main`              | Next heartbeat turn      | Reminders, system events        |
-| Isolated        | `isolated`          | Dedicated `cron:<jobId>` | Reports, background chores      |
-| Current session | `current`           | Bound at creation time   | Context-aware recurring work    |
-| Custom session  | `session:custom-id` | Persistent named session | Workflows that build on history |
+| Style           | `--session` value   | Runs in                                                                           | Best for                        |
+| --------------- | ------------------- | --------------------------------------------------------------------------------- | ------------------------------- |
+| Main session    | `main`              | Next heartbeat turn                                                               | Reminders, system events        |
+| Isolated        | `isolated`          | Dedicated isolated session; default `cron:<jobId>` or explicit named `sessionKey` | Reports, background chores      |
+| Current session | `current`           | Bound at creation time                                                            | Context-aware recurring work    |
+| Custom session  | `session:custom-id` | Persistent named session                                                          | Workflows that build on history |
 
-**Main session** jobs enqueue a system event and optionally wake the heartbeat (`--wake now` or `--wake next-heartbeat`). **Isolated** jobs run a dedicated agent turn with a fresh session. **Custom sessions** (`session:xxx`) persist context across runs, enabling workflows like daily standups that build on previous summaries.
+**Main session** jobs enqueue a system event and optionally wake the heartbeat
+(`--wake now` or `--wake next-heartbeat`). **Isolated** jobs run a dedicated
+agent turn with a fresh isolated session; if the job also has an explicit
+`sessionKey`, that named base session is preserved instead of falling back to an
+opaque `cron:<jobId>` alias. **Custom sessions** (`session:xxx`) persist context
+across runs, enabling workflows like daily standups that build on previous
+summaries.
 
 For isolated jobs, runtime teardown now includes best-effort browser cleanup for that cron session. Cleanup failures are ignored so the actual cron result still wins.
 

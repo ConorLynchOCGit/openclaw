@@ -32,6 +32,11 @@ Phase 2 currently assumes:
   stronger enforcement lands in a second pass after the base graph and capsule
   system is proven
 
+Before the larger graph/capsule waves proceed, the project now treats packet
+compiler quality and kind balance as the immediate priority substrate.
+
+That work sits at the front of Wave 0.
+
 ## Execution order
 
 ### Wave 0: substrate and contract cleanup
@@ -43,9 +48,13 @@ Goal:
 
 Includes:
 
+- shared packet compiler and budgeting rails
+- `MEMORY.md` proof lane generalized into packet-family policy
+- retrieval-pack budgeting and shaping contract
 - deep ingest stabilization and substrate population
 - `kind`-primary schema review
 - prompt-contract review for ingestion and capture prompts
+- missing `rule` generation investigation and kind-balance repair
 - runbook/runtime alignment for long-running ingest and runtime rebuild
 
 Validation gate:

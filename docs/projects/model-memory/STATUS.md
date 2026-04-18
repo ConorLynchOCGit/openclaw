@@ -87,6 +87,27 @@ The current long-running ingest posture is now also clearer:
 - long-running ingest checkpoints are being hardened to persist `interrupted`
   state instead of being left at `running` after a rebuild crash
 
+The current top-priority memory work is now:
+
+- shared packet compiler design across bootstrap, dynamic, and retrieval packs
+- `kind`-primary migration
+- repair of live kind balance, especially the missing active `rule` class of
+  memory objects
+
+These are treated as one linked quality lane because packet usefulness depends
+on corpus shape and packet shaping together.
+
+The current proof obligations for that lane are now tracked in:
+
+- [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)
+
+The current evidence and residue boundary is now explicit:
+
+- retained canonical evidence:
+  - [Model Memory Evidence](/projects/model-memory/evidence)
+- bounded cleanup and remaining debt:
+  - [Memory Residue Audit](/projects/model-memory/memory-residue-audit)
+
 Day-0 cutover verification:
 
 - `openclaw status` now reports:

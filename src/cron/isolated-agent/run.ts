@@ -341,12 +341,14 @@ async function prepareCronRunContext(params: {
     sessionId: runSessionId,
     sessionKey: runSessionKey,
   });
-  if (!cronSession.sessionEntry.label?.trim() && baseSessionKey.startsWith("cron:")) {
-    const labelSuffix =
-      typeof input.job.name === "string" && input.job.name.trim()
-        ? input.job.name.trim()
-        : input.job.id;
-    cronSession.sessionEntry.label = `Cron: ${labelSuffix}`;
+  if (!cronSession.sessionEntry.label?.trim()) {
+    const jobName =
+      typeof input.job.name === "string" && input.job.name.trim() ? input.job.name.trim() : "";
+    if (baseSessionKey.startsWith("cron:")) {
+      cronSession.sessionEntry.label = `Cron: ${jobName || input.job.id}`;
+    } else if (jobName) {
+      cronSession.sessionEntry.label = jobName;
+    }
   }
 
   const resolvedModelSelection = await resolveCronModelSelection({

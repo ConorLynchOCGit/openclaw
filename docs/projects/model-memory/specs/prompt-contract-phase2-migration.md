@@ -21,6 +21,12 @@ The following contracts must be reviewed:
 - `semantic_extraction`
 - `semantic_collision_adjudication`
 - `retrieval_request_interpretation`
+- packet-compiler render contracts for:
+  - `memory-md`
+  - `user_memory_pack`
+  - `project_memory_pack`
+  - `procedure_memory_pack`
+  - `retrieval_pack`
 - any new capsule compilation prompt if introduced later
 - any planner candidate ranking prompt if introduced later
 
@@ -35,6 +41,17 @@ It should instead:
 - preserve provenance and structure
 - allow `canonicalClass` to become secondary or derived
 
+The extraction audit must also investigate why live capture is not presently
+yielding active `rule` records.
+
+That review should test whether the issue is caused by:
+
+- prompt framing
+- schema/output bias
+- adjudication or write-path filtering
+- activation/materialization loss
+- or real source-corpus imbalance
+
 ## Injection and trust rule
 
 External ingested text must be treated as untrusted evidence, not instructions,
@@ -45,3 +62,19 @@ in all Phase 2 prompt contracts.
 This spec does not itself redefine the live prompts.
 
 It defines the migration work that must happen before a full Phase 2 rollout.
+
+## Packet-contract migration
+
+Packet generation must stop behaving like one prompt per artifact with bespoke
+rules hidden in each surface.
+
+Phase 2 prompt migration should move packet prompts toward one shared contract:
+
+- explicit packet purpose
+- explicit target budget
+- section caps
+- kind-aware basket shaping when relevant
+- included-source accounting
+- dropped-source accounting
+
+The `MEMORY.md` experiment is the first evidence lane for this migration.

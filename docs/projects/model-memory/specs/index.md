@@ -40,6 +40,8 @@ These specs define the clean-room `model-memory` project before any implementati
 29. [Planner Review Artifacts And Surfacing](/projects/model-memory/specs/planner-review-artifacts-and-surfacing)
 30. [Skill And Tool Candidate Evaluation](/projects/model-memory/specs/skill-and-tool-candidate-evaluation)
 31. [Prompt Contract Phase 2 Migration](/projects/model-memory/specs/prompt-contract-phase2-migration)
+32. [Model Driven Packet Assembly Evaluation](/projects/model-memory/specs/model-driven-packet-assembly-evaluation)
+33. [Packet Compiler And Budgeting](/projects/model-memory/specs/packet-compiler-and-budgeting)
 
 ## Companion project docs
 
@@ -55,3 +57,4 @@ These specs define the clean-room `model-memory` project before any implementati
 - [Implementation Guardrails](/projects/model-memory/implementation-guardrails)
 - [Validation Loop](/projects/model-memory/validation-loop)
 - [Bootstrap Input Audit](/projects/model-memory/bootstrap-input-audit)
+- [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)

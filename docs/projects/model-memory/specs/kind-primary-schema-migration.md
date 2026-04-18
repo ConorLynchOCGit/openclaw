@@ -76,6 +76,25 @@ The extraction prompt contract should be reviewed so that:
 That audit should be treated as a required Phase 2 migration seam, not an
 optional cleanup.
 
+## Open investigation
+
+Before the system can rely on `kind` as the primary semantic axis, it needs an
+explicit investigation into why live capture is not currently producing `rule`
+objects in the active runtime corpus.
+
+That investigation should distinguish between:
+
+- extraction-prompt bias
+- adjudication/write-path loss
+- activation/materialization loss
+- source-corpus skew that genuinely offers few rule-shaped memories
+
+This is a migration-critical question because a `kind`-primary posture is
+weaker if one of the core kinds is systematically absent in practice.
+
+Because packet quality now depends directly on corpus shape, this missing-rule
+investigation is also a packet-quality blocker, not only a schema question.
+
 ## Database consequence
 
 The database does not need an immediate destructive migration.

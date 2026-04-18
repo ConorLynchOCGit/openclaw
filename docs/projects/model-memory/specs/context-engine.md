@@ -15,6 +15,9 @@ The context engine assembles context.
 
 It does not define semantic truth.
 
+It also does not own packet-shaping logic that should already have happened in
+the shared packet compiler.
+
 ## Input layers
 
 The context engine consumes:
@@ -35,6 +38,9 @@ The engine should treat context in three layers:
 - volatile live-run layer
 
 This layering exists to support prompt budgeting and cache stability.
+
+Each layer should arrive as one or more bounded packet artifacts built under
+[Packet Compiler And Budgeting](/projects/model-memory/specs/packet-compiler-and-budgeting).
 
 ## Bootstrap
 
@@ -73,6 +79,14 @@ It must not invent a second semantic write path.
 8. trim lower-priority segments when required
 9. return ordered messages plus, at most, a very small `systemPromptAddition`
 
+The engine may choose which packet artifacts to include and in what order.
+
+It should not:
+
+- invent per-packet section caps
+- improvise ad hoc synthesis rules
+- rebuild retrieval results into a second custom mini-packet
+
 ## Phase boundary
 
 Phase 3 context assembly must work without retrieval.
@@ -97,6 +111,11 @@ When the budget is exceeded, the default trim order should be:
 4. older turns already covered by summary
 
 The engine should preserve the stable prefix when practical to support prompt caching.
+
+Packet-first budgeting is the primary control.
+
+Context-engine trimming is the fallback after packet compilation, not the main
+strategy.
 
 ## Compaction
 
@@ -137,7 +156,8 @@ After cutover, the project may extend retrieval to support hierarchical or
 multi-pass query decomposition for long multi-objective prompts.
 
 If that happens, context assembly must still treat the output as one bounded
-retrieval-pack input and must not become a second semantic planner.
+`retrieval_pack` input and must not become a second semantic planner or packet
+compiler.
 
 That deferred extension is specified in
 [Post-Cutover Hierarchical Retrieval](/projects/model-memory/specs/post-cutover-hierarchical-retrieval).
