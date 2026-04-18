@@ -1,0 +1,43 @@
+--- a/openclaw.json
++++ b/openclaw.json
+@@
+       {
+         "id": "builder",
+-        "workspace": "/home/node/.openclaw/agent-workspaces/builder"
++        "workspace": "/home/node/.openclaw/agent-workspaces/builder",
++        "tools": {
++          "profile": "coding",
++          "deny": [
++            "sessions_spawn",
++            "subagents"
++          ],
++          "fs": {
++            "workspaceOnly": true
++          },
++          "exec": {
++            "host": "gateway",
++            "security": "full",
++            "ask": "always"
++          },
++          "alsoAllow": [
++            "exec"
++          ]
++        }
+       },
+@@
+-  "tools": {
+-    "profile": "messaging"
+-  },
++  "tools": {
++    "profile": "messaging",
++    "agentToAgent": {
++      "enabled": true,
++      "allow": [
++        "main",
++        "builder"
++      ]
++    },
++    "sessions": {
++      "visibility": "all"
++    }
++  },

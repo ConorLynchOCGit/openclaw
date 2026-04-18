@@ -1,0 +1,188 @@
+diff --git a/ui/src/ui/app-render.helpers.ts b/ui/src/ui/app-render.helpers.ts
+index c46d10903f..6f2a50a96d 100644
+--- a/ui/src/ui/app-render.helpers.ts
++++ b/ui/src/ui/app-render.helpers.ts
+@@ -608,19 +608,59 @@ function capitalize(s: string): string {
+   return s.charAt(0).toUpperCase() + s.slice(1);
+ }
+
++function resolveKnownSessionClassName(key: string): string | null {
++  if (key === "main" || key === "agent:main:main") {
++    return "Main Session";
++  }
++  if (key === "agent:chief:main") {
++    return "Chief Session";
++  }
++  if (key === "agent:builder:main") {
++    return "Builder Session";
++  }
++  if (key === "agent:x-manager:main") {
++    return "X Manager Session";
++  }
++  if (key === "agent:web-researcher:main") {
++    return "Web Researcher";
++  }
++
++  const proofMatch = key.match(/^agent:[^:]+:proof-([a-z-]+)(?::|-|$)/i);
++  if (proofMatch) {
++    const proofTarget = proofMatch[1].toLowerCase();
++    if (proofTarget === "conor") {
++      return "Proof / Conor";
++    }
++    if (proofTarget === "american") {
++      return "Proof / American Atomics";
++    }
++    if (proofTarget === "boundary") {
++      return "Proof / Boundary";
++    }
++  }
++
++  const directMatch = key.match(/^agent:[^:]+:([^:]+):direct:(.+)$/);
++  if (directMatch) {
++    const channel = directMatch[1];
++    const channelLabel = CHANNEL_LABELS[channel] ?? capitalize(channel);
++    return `${channelLabel} Direct`;
++  }
++
++  return null;
++}
++
+ /**
+  * Parse a session key to extract type information and a human-readable
+  * fallback display name.  Exported for testing.
+  */
+ export function parseSessionKey(key: string): SessionKeyInfo {
+   const normalized = key.toLowerCase();
+-
+-  // ── Main session ─────────────────────────────────
+-  if (key === "main" || key === "agent:main:main") {
+-    return { prefix: "", fallbackName: "Main Session" };
++  const knownName = resolveKnownSessionClassName(key);
++  if (knownName) {
++    return { prefix: "", fallbackName: knownName };
+   }
+
+-  // ── Subagent ─────────────────────────────────────
++  // ── Main session ─────────────────────────────────
+   if (key.includes(":subagent:")) {
+     return { prefix: "Subagent:", fallbackName: "Subagent:" };
+   }
+@@ -634,9 +674,8 @@ export function parseSessionKey(key: string): SessionKeyInfo {
+   const directMatch = key.match(/^agent:[^:]+:([^:]+):direct:(.+)$/);
+   if (directMatch) {
+     const channel = directMatch[1];
+-    const identifier = directMatch[2];
+     const channelLabel = CHANNEL_LABELS[channel] ?? capitalize(channel);
+-    return { prefix: "", fallbackName: `${channelLabel} · ${identifier}` };
++    return { prefix: "", fallbackName: `${channelLabel} Direct` };
+   }
+
+   // ── Group chat  (agent:<x>:<channel>:group:<id>) ────
+@@ -665,6 +704,13 @@ export function resolveSessionDisplayName(
+   const label = row?.label?.trim() || "";
+   const displayName = row?.displayName?.trim() || "";
+   const { prefix, fallbackName } = parseSessionKey(key);
++  const knownName = resolveKnownSessionClassName(key);
++
++  // Known session classes should always use UI-derived naming,
++  // even if stale metadata still carries older transport/display labels.
++  if (knownName) {
++    return knownName;
++  }
+
+   const applyTypedPrefix = (name: string): string => {
+     if (!prefix) {
+@@ -702,6 +748,37 @@ export function isCronSessionKey(key: string): boolean {
+   return rest.startsWith("cron:");
+ }
+
++const DEFAULT_VISIBLE_SESSION_KEYS = new Set([
++  "agent:main:main",
++  "agent:chief:main",
++  "agent:chief:telegram:direct:7756506076",
++  "agent:builder:main",
++  "agent:x-manager:main",
++  "agent:web-researcher:main",
++]);
++
++const DEFAULT_HIDDEN_SESSION_PATTERNS = [
++  /:proof-[^:]+/i,
++  /:dashboard:w[0-9a-z-]*(?:[:.-]|$)/i,
++  /(^|[:.-])w(?:5|6|6d|8|9|10|11|14|15|16)[0-9a-z-]*(?:[:.-]|$)/i,
++  /:delegate(?:[:.-]|$)/i,
++  /:main-smoke:/i,
++  /:xmanager-smoke:/i,
++  /:fresh(?:[:.-]|$)/i,
++  /:(?:example|clawhub|react|docs)(?:[:.-]|$)/i,
++  /:routing-verification(?:[:.-]|$)/i,
++  /^webchat:g-agent-[^-]+-w[0-9a-z-]+/i,
++  /:g-agent-[^:]*-w[0-9a-z-]+/i,
++];
++
++function isDefaultHiddenSessionKey(key: string): boolean {
++  const normalized = key.trim().toLowerCase();
++  if (!normalized || DEFAULT_VISIBLE_SESSION_KEYS.has(normalized)) {
++    return false;
++  }
++  return DEFAULT_HIDDEN_SESSION_PATTERNS.some((pattern) => pattern.test(normalized));
++}
++
+ type SessionOptionEntry = {
+   key: string;
+   label: string;
+@@ -773,6 +850,9 @@ export function resolveSessionOptionGroups(
+     if (hideCron && row.key !== sessionKey && isCronSessionKey(row.key)) {
+       continue;
+     }
++    if (row.key !== sessionKey && isDefaultHiddenSessionKey(row.key)) {
++      continue;
++    }
+     addOption(row.key);
+   }
+   addOption(sessionKey);
+@@ -871,7 +951,26 @@ function resolveAgentGroupLabel(state: AppViewState, agentIdRaw: string): string
+     (entry) => entry.id.trim().toLowerCase() === normalized,
+   );
+   const name = agent?.identity?.name?.trim() || agent?.name?.trim() || "";
+-  return name && name !== agentIdRaw ? `${name} (${agentIdRaw})` : agentIdRaw;
++  if (name) {
++    return name;
++  }
++  switch (normalized) {
++    case "main":
++      return "Main";
++    case "chief":
++      return "Chief";
++    case "builder":
++      return "Builder";
++    case "x-manager":
++      return "X Manager";
++    case "web-researcher":
++      return "Web Researcher";
++    default:
++      return agentIdRaw
++        .split("-")
++        .map((part) => capitalize(part))
++        .join(" ");
++  }
+ }
+
+ function resolveSessionScopedOptionLabel(
+@@ -880,12 +979,16 @@ function resolveSessionScopedOptionLabel(
+   rest?: string,
+ ) {
+   const base = rest?.trim() || key;
++  const knownName = resolveKnownSessionClassName(key);
+   if (!row) {
+-    return base;
++    return knownName ?? base;
+   }
+
+   const label = row.label?.trim() || "";
+   const displayName = row.displayName?.trim() || "";
++  if (knownName) {
++    return knownName;
++  }
+   if ((label && label !== key) || (displayName && displayName !== key)) {
+     return resolveSessionDisplayName(key, row);
+   }

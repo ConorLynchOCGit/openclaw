@@ -1,0 +1,69 @@
+diff --git a/src/agents/system-prompt.ts b/src/agents/system-prompt.ts
+index fc043effed..7a377dcb06 100644
+--- a/src/agents/system-prompt.ts
++++ b/src/agents/system-prompt.ts
+@@ -25,10 +25,11 @@ function buildSkillsSection(params: { skillsPrompt?: string; readToolName: strin
+   }
+   return [
+     "## Skills (mandatory)",
+-    "Before replying: scan <available_skills> <description> entries.",
++    "Before replying: scan <available_skills> <description> entries unless a higher-priority exception below says to skip skill scanning.",
+     `- If exactly one skill clearly applies: read its SKILL.md at <location> with \`${params.readToolName}\`, then follow it.`,
+     "- If multiple could apply: choose the most specific one, then read/follow it.",
+     "- If none clearly apply: do not read any SKILL.md.",
++    "- Absolute override for external URL, public webpage, or visible page-content tasks: skip skill scanning entirely. Do not treat bundled/local skills as applicable, do not read any local `/app/skills/*.md`, and do not invent or synthesize skill-doc paths from tool names such as `web_fetch`, `web_search`, or `browser`. The only exception is when the user explicitly asks about internal skills/tools or the task is specifically about local skill or tool behavior.",
+     "Constraints: never read more than one skill up front; only read after selecting.",
+     "- When a skill drives external API writes, assume rate limits: prefer fewer larger writes, avoid tight one-item loops, serialize bursts when possible, and respect 429/Retry-After.",
+     trimmed,
+@@ -36,6 +37,32 @@ function buildSkillsSection(params: { skillsPrompt?: string; readToolName: strin
+   ];
+ }
+
++function buildWebBrowsingSection(params: { isMinimal: boolean; availableTools: Set<string> }) {
++  if (params.isMinimal) {
++    return [];
++  }
++  const hasWebFetch = params.availableTools.has("web_fetch");
++  const hasBrowser = params.availableTools.has("browser");
++  const hasWebSearch = params.availableTools.has("web_search");
++  if (!hasWebFetch && !hasBrowser && !hasWebSearch) {
++    return [];
++  }
++  return [
++    "## Web Browsing",
++    "- If the target public URL is already known, do not use web_search first just to search.",
++    "- For known public non-interactive pages, do not escalate to browser first.",
++    "- Preferred order for public-page retrieval: web_fetch first; if the result is thin, shell-like, or clearly client-rendered, use the render-aware fetch path; use browser only when interaction is needed or fetch/render still fails.",
++    "- Never conclude a public JS-heavy page is empty from one thin fetch alone.",
++    "- For any external URL, public webpage, or visible page-content task, never call read on `/app/skills/*.md` and never construct a local skill-doc path from a tool name. Tool names are tools, not skills.",
++    "- When the user asked for specific visible page facts (for example title, version number, hero text, visible items, or rendered labels), do not answer from memory, prior runs, or general knowledge. Use a web/browser retrieval tool in this current session first.",
++    "- Do not answer requested page facts unless an actual retrieval trace exists in the current session.",
++    "- When the user asked for specific visible page facts (for example title, version number, hero text, visible items, or rendered labels), do not answer until those requested fields are either recovered or confidently absent.",
++    "- If the first retrieval path does not clearly recover the requested visible fields, retry with the next stronger path before answering.",
++    "- Do not stop at a partially useful fetch/render result when a requested visible field is still missing and a stronger retrieval path remains available. If the field still cannot be recovered, say it was not confidently found instead of guessing.",
++    "",
++  ];
++}
++
+ function buildMemorySection(params: {
+   isMinimal: boolean;
+   availableTools: Set<string>;
+@@ -392,6 +419,10 @@ export function buildAgentSystemPrompt(params: {
+     availableTools,
+     citationsMode: params.memoryCitationsMode,
+   });
++  const webBrowsingSection = buildWebBrowsingSection({
++    isMinimal,
++    availableTools,
++  });
+   const docsSection = buildDocsSection({
+     docsPath: params.docsPath,
+     isMinimal,
+@@ -464,6 +495,7 @@ export function buildAgentSystemPrompt(params: {
+     "If unsure, ask the user to run `openclaw help` (or `openclaw gateway --help`) and paste the output.",
+     "",
+     ...skillsSection,
++    ...webBrowsingSection,
+     ...memorySection,
+     // Skip self-update for subagent/none modes
+     hasGateway && !isMinimal ? "## OpenClaw Self-Update" : "",

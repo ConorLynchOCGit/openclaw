@@ -1,0 +1,17 @@
+diff --git a/ui/src/ui/app-render.helpers.ts b/ui/src/ui/app-render.helpers.ts
+index c46d10903f..cf32d241f1 100644
+--- a/ui/src/ui/app-render.helpers.ts
++++ b/ui/src/ui/app-render.helpers.ts
+@@ -666,6 +666,12 @@ export function resolveSessionDisplayName(
+   const displayName = row?.displayName?.trim() || "";
+   const { prefix, fallbackName } = parseSessionKey(key);
+
++  // Canonical main-session keys should always render as "Main Session",
++  // even if stale session metadata still carries displayName="heartbeat".
++  if (key === "agent:main:main") {
++    return "Main Session";
++  }
++
+   const applyTypedPrefix = (name: string): string => {
+     if (!prefix) {
+       return name;

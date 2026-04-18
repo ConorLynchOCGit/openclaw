@@ -1,0 +1,10 @@
+--- /root/backups/openclaw-json-pre-browser-runtime-fix-2026-03-30T004751Z.json
++++ /root/.openclaw/openclaw.json
+@@ -231,6 +231,6 @@
+     "defaultProfile": "openclaw",
+     "headless": true,
+     "noSandbox": true,
+-    "executablePath": "/ms-playwright/chromium-1208/chrome-linux64/chrome"
++    "executablePath": "/home/node/.openclaw/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome"
+   }
+ }

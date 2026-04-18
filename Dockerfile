@@ -82,12 +82,12 @@ RUN echo "==> Verifying critical native addons..." && \
 
 COPY . .
 
-# Normalize extension paths now so runtime COPY preserves safe modes
-# without adding a second full extensions layer.
+# Normalize repo-owned extension and agent paths now so runtime COPY preserves
+# safe modes without walking vendored dependency trees on every build.
 RUN for dir in /app/${OPENCLAW_BUNDLED_PLUGIN_DIR} /app/.agent /app/.agents; do \
       if [ -d "$dir" ]; then \
-        find "$dir" -type d -exec chmod 755 {} +; \
-        find "$dir" -type f -exec chmod 644 {} +; \
+        find "$dir" \( -path '*/node_modules' -o -path '*/node_modules/*' \) -prune -o -type d -exec chmod 755 {} +; \
+        find "$dir" \( -path '*/node_modules' -o -path '*/node_modules/*' \) -prune -o -type f -exec chmod 644 {} +; \
       fi; \
     done
 

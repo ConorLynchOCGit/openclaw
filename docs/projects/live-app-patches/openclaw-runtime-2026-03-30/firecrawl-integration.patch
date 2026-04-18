@@ -1,0 +1,41 @@
+--- /root/backups/openclaw-json-pre-firecrawl-integration-2026-03-30T011000Z.json
++++ /root/.openclaw/openclaw.json
+@@ -160,6 +160,19 @@
+       ]
+     },
+     "web": {
++      "fetch": {
++        "firecrawl": {
++          "enabled": true,
++          "apiKey": {
++            "source": "env",
++            "provider": "default",
++            "id": "FIRECRAWL_API_KEY"
++          },
++          "onlyMainContent": true,
++          "maxAgeMs": 172800000,
++          "timeoutSeconds": 60
++        }
++      },
+       "search": {
+         "provider": "brave"
+       }
+@@ -245,6 +258,18 @@
+             }
+           }
+         }
++      },
++      "firecrawl": {
++        "enabled": true,
++        "config": {
++          "webSearch": {
++            "apiKey": {
++              "source": "env",
++              "provider": "default",
++              "id": "FIRECRAWL_API_KEY"
++            }
++          }
++        }
++      }
+     }
+   },

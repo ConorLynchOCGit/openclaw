@@ -1,0 +1,99 @@
+--- /root/backups/openclaw-json-pre-web-researcher-delegation-2026-03-30T030827Z.json	2026-03-30 03:08:27.203808502 +0000
++++ /root/.openclaw/openclaw.json	2026-03-30 03:13:34.671199154 +0000
+@@ -153,11 +153,7 @@
+             "sessions_spawn",
+             "subagents",
+             "exec",
+-            "message",
+-            "sessions_send",
+-            "sessions_list",
+-            "sessions_history",
+-            "session_status"
++            "message"
+           ],
+           "fs": {
+             "workspaceOnly": true
+@@ -176,7 +172,10 @@
+       "enabled": true,
+       "allow": [
+         "main",
+-        "builder"
++        "builder",
++        "chief",
++        "x-manager",
++        "web-researcher"
+       ]
+     },
+     "web": {
+--- /root/backups/workspace-AGENTS-pre-web-researcher-delegation-2026-03-30T030827Z.md	2026-03-30 03:08:27.208808459 +0000
++++ /root/.openclaw/workspace/AGENTS.md	2026-03-30 03:09:12.287425167 +0000
+@@ -133,6 +133,8 @@
+ - During ordinary public web research, do not read local `/app/skills/*.md` or other local skill docs.
+ - Only read local skill docs when the task is explicitly about internal skills/tools or local skill behavior.
+ - For known public pages, do not escalate to browser first unless the task clearly needs interaction, login, clicking, or fetch/render has already failed.
++- When session delegation is available, delegate external public web research to `web-researcher` and finish from its result instead of independently re-browsing.
++- Follow `projects/web_stack/web_research_delegation_spec.md` for the bounded delegation shape.
+
+ **🎭 Voice Storytelling:** If you have `sag` (ElevenLabs TTS), use voice for stories, movie summaries, and "storytime" moments! Way more engaging than walls of text. Surprise people with funny voices.
+
+--- /root/backups/workspace-TOOLS-pre-web-researcher-delegation-2026-03-30T030827Z.md	2026-03-30 03:08:27.211808433 +0000
++++ /root/.openclaw/workspace/TOOLS.md	2026-03-30 03:09:12.288425159 +0000
+@@ -64,10 +64,13 @@
+
+ ## Browsing Routing Rule
+ - Follow `projects/web_stack/browsing_routing_spec.md` for detailed browsing policy.
++- Follow `projects/web_stack/web_research_delegation_spec.md` for agent-to-agent web retrieval delegation.
+ - Intended order:
++  - for external public web research, prefer delegating to `web-researcher` when available
+   - `web_search` for discovery only
+   - `web_fetch` first for clearly public non-interactive pages
+   - Firecrawl-backed render/extraction when fetch is thin or clearly client-rendered
+   - browser for interactive pages or final escalation
+ - Do not conclude a page is empty from thin fetch alone on a JS-heavy site.
+ - Do not use local `/app/skills/*.md` as part of ordinary external web browsing.
++- Do not re-browse unnecessarily after a sufficient `web-researcher` result.
+--- /dev/null	2026-02-24 20:39:56.601000000 +0000
++++ /root/.openclaw/workspace/projects/web_stack/web_research_delegation_spec.md	2026-03-30 03:09:12.287425167 +0000
+@@ -0,0 +1,42 @@
++# Web Research Delegation Spec
++
++Purpose:
++
++- `web-researcher` is the designated external public-web retrieval surface.
++
++When to delegate:
++
++- external public web research
++- page-fact retrieval
++- JS-heavy site retrieval
++- comparison or research tasks grounded in public pages
++
++When not to delegate:
++
++- local workspace or file reading
++- internal skill or tool questions
++- purely internal reasoning with no web retrieval need
++
++Standard delegation behavior:
++
++- caller sends a bounded research request to `web-researcher`
++- `web-researcher` returns an evidence-based retrieval result
++- caller finishes with that result instead of independently browsing again
++
++Standard request fields:
++
++- objective
++- target URLs if known
++- required fields
++- desired output shape
++
++Standard response fields:
++
++- sources or URLs used
++- retrieval path used
++- answer
++- confidence or missing fields
++
++Practical rule:
++
++- do not duplicate browsing if `web-researcher` already retrieved what is needed

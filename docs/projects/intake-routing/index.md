@@ -29,3 +29,5 @@ This project owns:
 - `ops/intake/INTAKE_ROUTING_SCHEMA.sql`
 - `ops/intake/workflows/generic_intake.json`
 - `ops/intake/workflows/intake_router.json`
+- `docs/projects/intake-routing/ROUTING_SPEC.md`
+- `docs/projects/intake-routing/ROUTING_IMPLEMENTATION_CHECKLIST.md`

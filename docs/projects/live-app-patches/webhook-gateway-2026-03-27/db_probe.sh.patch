@@ -1,0 +1,35 @@
+--- /root/backups/phase5-initial-rollout-freeze-2026-03-25-151728/host-cron/db_probe.sh	2026-03-25 15:17:28.405284136 +0000
++++ /root/services/webhook-gateway/db_probe.sh	2026-03-27 00:15:41.644039445 +0000
+@@ -3,13 +3,10 @@
+
+ cd /root/services/webhook-gateway
+
+-TG_TOKEN="$(cat /root/.openclaw/credentials/telegram-bot-token)"
+-TG_CHAT="7756506076"
++SEND_HELPER="/root/.openclaw/workspace/projects/ops/send_chief_telegram.sh"
+
+-send_tg() {
+-  curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+-    -d "chat_id=${TG_CHAT}" \
+-    --data-urlencode "text=$1" >/dev/null
++send_alert() {
++  "${SEND_HELPER}" "$1" >/dev/null
+ }
+
+ set +e
+@@ -38,14 +35,14 @@
+ echo "${OUTPUT}"
+
+ if [ "${STATUS}" -ne 0 ]; then
+-  send_tg "OpenClaw DB probe alert: direct DB probe failed on $(hostname) at $(date -Is)."
++  send_alert "OpenClaw DB probe alert: direct DB probe failed on $(hostname) at $(date -Is)."
+   exit 1
+ fi
+
+ RESULT="$(printf '%s\n' "${OUTPUT}" | tail -n1 | tr -d '[:space:]')"
+
+ if [ "${RESULT}" != "1|1|1" ]; then
+-  send_tg "OpenClaw DB probe alert on $(hostname): expected 1|1|1 but got ${RESULT}."
++  send_alert "OpenClaw DB probe alert on $(hostname): expected 1|1|1 but got ${RESULT}."
+   exit 1
+ fi

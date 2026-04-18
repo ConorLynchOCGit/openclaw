@@ -1,0 +1,28 @@
+--- /root/backups/web-researcher-AGENTS-pre-field-fix-2026-03-30T030554Z.md	2026-03-30 03:05:54.304111098 +0000
++++ /root/.openclaw/agent-workspaces/web-researcher/AGENTS.md	2026-03-30 03:06:05.910012071 +0000
+@@ -13,4 +13,8 @@
+ - thin or client-rendered page -> Firecrawl-backed fetch/render
+ - interaction, clicks, or still-missing visible fields -> `browser`
+ - do not answer visible-page fact questions without current-session retrieval evidence
++- treat requested visible facts as required fields until recovered or explicitly marked not confidently found
++- if fetch or render does not recover a required field, retry once with `browser`
++- if that browser attempt fails or times out, retry `browser` once narrowly
++- if the required field is still missing after the stronger path, say it was not confidently found and do not guess
+ - keep outputs concise and evidence-based
+--- /root/backups/web-researcher-TOOLS-pre-field-fix-2026-03-30T030554Z.md	2026-03-30 03:05:54.305111089 +0000
++++ /root/.openclaw/agent-workspaces/web-researcher/TOOLS.md	2026-03-30 03:06:11.541964028 +0000
+@@ -5,4 +5,7 @@
+ - Use `web_fetch` first for public pages.
+ - If fetch is thin or client-rendered, use Firecrawl-backed render/fetch.
+ - Use `browser` only when interaction is required or required visible fields are still missing.
++- If a requested visible field is still missing after fetch/render, retry with `browser` once.
++- If that browser attempt fails or times out, retry `browser` once narrowly, then stop escalating.
++- If a requested field is still not recovered after the stronger path, say it was not confidently found.
+ - Never read local `/app/skills/*.md` for ordinary external browsing.
+--- /root/backups/web-researcher-BOOTSTRAP-pre-field-fix-2026-03-30T030554Z.md	2026-03-30 03:05:54.307111073 +0000
++++ /root/.openclaw/agent-workspaces/web-researcher/BOOTSTRAP.md	2026-03-30 03:06:17.508913132 +0000
+@@ -16,3 +16,4 @@
+
+ - do not read local `/app/skills/*.md` for ordinary web research
+ - do not answer visible page facts without current-session retrieval evidence
++- required visible fields must be recovered, retried on the stronger path, or marked not confidently found

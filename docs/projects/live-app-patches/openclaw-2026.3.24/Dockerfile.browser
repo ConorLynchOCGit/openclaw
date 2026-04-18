@@ -1,0 +1,9 @@
+FROM openclaw:base-2026.3.24
+
+USER root
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN node /app/node_modules/playwright-core/cli.js install chromium --with-deps && \
+    chown -R node:node /ms-playwright
+
+USER node
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright

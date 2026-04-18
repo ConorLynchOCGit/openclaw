@@ -1,0 +1,109 @@
+diff --git a/ui/src/ui/app-render.helpers.ts b/ui/src/ui/app-render.helpers.ts
+index c46d10903f..7dac8918d6 100644
+--- a/ui/src/ui/app-render.helpers.ts
++++ b/ui/src/ui/app-render.helpers.ts
+@@ -608,19 +608,56 @@ function capitalize(s: string): string {
+   return s.charAt(0).toUpperCase() + s.slice(1);
+ }
+
++function resolveKnownSessionClassName(key: string): string | null {
++  if (key === "main" || key === "agent:main:main") {
++    return "Main Session";
++  }
++  if (key === "agent:chief:main") {
++    return "Chief Session";
++  }
++  if (key === "agent:builder:main") {
++    return "Builder Session";
++  }
++  if (key === "agent:x-manager:main") {
++    return "X Manager Session";
++  }
++
++  const proofMatch = key.match(/^agent:[^:]+:proof-([a-z-]+)(?::|-|$)/i);
++  if (proofMatch) {
++    const proofTarget = proofMatch[1].toLowerCase();
++    if (proofTarget === "conor") {
++      return "Proof / Conor";
++    }
++    if (proofTarget === "american") {
++      return "Proof / American Atomics";
++    }
++    if (proofTarget === "boundary") {
++      return "Proof / Boundary";
++    }
++  }
++
++  const directMatch = key.match(/^agent:[^:]+:([^:]+):direct:(.+)$/);
++  if (directMatch) {
++    const channel = directMatch[1];
++    const channelLabel = CHANNEL_LABELS[channel] ?? capitalize(channel);
++    return `${channelLabel} Direct`;
++  }
++
++  return null;
++}
++
+ /**
+  * Parse a session key to extract type information and a human-readable
+  * fallback display name.  Exported for testing.
+  */
+ export function parseSessionKey(key: string): SessionKeyInfo {
+   const normalized = key.toLowerCase();
+-
+-  // ── Main session ─────────────────────────────────
+-  if (key === "main" || key === "agent:main:main") {
+-    return { prefix: "", fallbackName: "Main Session" };
++  const knownName = resolveKnownSessionClassName(key);
++  if (knownName) {
++    return { prefix: "", fallbackName: knownName };
+   }
+
+-  // ── Subagent ─────────────────────────────────────
++  // ── Main session ─────────────────────────────────
+   if (key.includes(":subagent:")) {
+     return { prefix: "Subagent:", fallbackName: "Subagent:" };
+   }
+@@ -634,9 +671,8 @@ export function parseSessionKey(key: string): SessionKeyInfo {
+   const directMatch = key.match(/^agent:[^:]+:([^:]+):direct:(.+)$/);
+   if (directMatch) {
+     const channel = directMatch[1];
+-    const identifier = directMatch[2];
+     const channelLabel = CHANNEL_LABELS[channel] ?? capitalize(channel);
+-    return { prefix: "", fallbackName: `${channelLabel} · ${identifier}` };
++    return { prefix: "", fallbackName: `${channelLabel} Direct` };
+   }
+
+   // ── Group chat  (agent:<x>:<channel>:group:<id>) ────
+@@ -665,6 +701,13 @@ export function resolveSessionDisplayName(
+   const label = row?.label?.trim() || "";
+   const displayName = row?.displayName?.trim() || "";
+   const { prefix, fallbackName } = parseSessionKey(key);
++  const knownName = resolveKnownSessionClassName(key);
++
++  // Known session classes should always use UI-derived naming,
++  // even if stale metadata still carries older transport/display labels.
++  if (knownName) {
++    return knownName;
++  }
+
+   const applyTypedPrefix = (name: string): string => {
+     if (!prefix) {
+@@ -880,12 +923,16 @@ function resolveSessionScopedOptionLabel(
+   rest?: string,
+ ) {
+   const base = rest?.trim() || key;
++  const knownName = resolveKnownSessionClassName(key);
+   if (!row) {
+-    return base;
++    return knownName ?? base;
+   }
+
+   const label = row.label?.trim() || "";
+   const displayName = row.displayName?.trim() || "";
++  if (knownName) {
++    return knownName;
++  }
+   if ((label && label !== key) || (displayName && displayName !== key)) {
+     return resolveSessionDisplayName(key, row);
+   }

@@ -1,0 +1,40 @@
+--- /root/backups/x-manager-phase10-6-proof-20260328T000720Z/openclaw.json	2026-03-28 00:07:20.270840084 +0000
++++ /root/.openclaw/openclaw.json	2026-03-28 00:13:02.762495571 +0000
+@@ -116,6 +116,37 @@
+       {
+         "id": "writer",
+         "workspace": "/home/node/.openclaw/agent-workspaces/writer"
++      },
++      {
++        "id": "x-manager",
++        "workspace": "/home/node/.openclaw/agent-workspaces/x-manager",
++        "model": {
++          "primary": "openrouter/x-ai/grok-4.20-beta",
++          "fallbacks": [
++            "openrouter/x-ai/grok-4.1-fast",
++            "openrouter/x-ai/grok-4-fast"
++          ]
++        },
++        "tools": {
++          "profile": "messaging",
++          "deny": [
++            "sessions_spawn",
++            "subagents",
++            "exec",
++            "message",
++            "sessions_send",
++            "sessions_list",
++            "sessions_history",
++            "session_status"
++          ],
++          "fs": {
++            "workspaceOnly": true
++          },
++          "alsoAllow": [
++            "group:web",
++            "browser"
++          ]
++        }
+       }
+     ]
+   },

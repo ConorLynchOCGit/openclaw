@@ -123,3 +123,107 @@ projects:
     specsIndexPath: docs/projects/skills-system/specs/index.md
     ownerClass: project_workspace
     priority: 9
+  - id: build-performance
+    title: Build Performance
+    status: active
+    workspacePath: docs/projects/build-performance
+    indexPath: docs/projects/build-performance/index.md
+    startupPath: docs/projects/build-performance/STARTUP.md
+    statusPath: docs/projects/build-performance/STATUS.md
+    currentSlicePath: docs/projects/build-performance/CURRENT_SLICE.md
+    decisionsPath: docs/projects/build-performance/DECISIONS.md
+    roadmapPath: docs/projects/build-performance/roadmap.md
+    specsIndexPath: docs/projects/build-performance/specs/index.md
+    ownerClass: project_workspace
+    priority: 10
+  - id: channel-identity
+    title: Channel Identity
+    status: active
+    workspacePath: docs/projects/channel-identity
+    indexPath: docs/projects/channel-identity/index.md
+    startupPath: docs/projects/channel-identity/STARTUP.md
+    statusPath: docs/projects/channel-identity/STATUS.md
+    currentSlicePath: docs/projects/channel-identity/CURRENT_SLICE.md
+    decisionsPath: docs/projects/channel-identity/DECISIONS.md
+    roadmapPath: docs/projects/channel-identity/roadmap.md
+    specsIndexPath: docs/projects/channel-identity/specs/index.md
+    ownerClass: project_workspace
+    priority: 11
+  - id: github
+    title: GitHub
+    status: active
+    workspacePath: docs/projects/github
+    indexPath: docs/projects/github/index.md
+    startupPath: docs/projects/github/STARTUP.md
+    statusPath: docs/projects/github/STATUS.md
+    currentSlicePath: docs/projects/github/CURRENT_SLICE.md
+    decisionsPath: docs/projects/github/DECISIONS.md
+    roadmapPath: docs/projects/github/roadmap.md
+    specsIndexPath: docs/projects/github/specs/index.md
+    ownerClass: project_workspace
+    priority: 12
+  - id: live-app-patches
+    title: Live App Patches
+    status: active
+    workspacePath: docs/projects/live-app-patches
+    indexPath: docs/projects/live-app-patches/index.md
+    startupPath: docs/projects/live-app-patches/STARTUP.md
+    statusPath: docs/projects/live-app-patches/STATUS.md
+    currentSlicePath: docs/projects/live-app-patches/CURRENT_SLICE.md
+    decisionsPath: docs/projects/live-app-patches/DECISIONS.md
+    roadmapPath: docs/projects/live-app-patches/roadmap.md
+    specsIndexPath: docs/projects/live-app-patches/specs/index.md
+    ownerClass: project_workspace
+    priority: 13
+  - id: ops
+    title: Ops
+    status: active
+    workspacePath: docs/projects/ops
+    indexPath: docs/projects/ops/index.md
+    startupPath: docs/projects/ops/STARTUP.md
+    statusPath: docs/projects/ops/STATUS.md
+    currentSlicePath: docs/projects/ops/CURRENT_SLICE.md
+    decisionsPath: docs/projects/ops/DECISIONS.md
+    roadmapPath: docs/projects/ops/roadmap.md
+    specsIndexPath: docs/projects/ops/specs/index.md
+    ownerClass: project_workspace
+    priority: 14
+  - id: roles
+    title: Roles
+    status: active
+    workspacePath: docs/projects/roles
+    indexPath: docs/projects/roles/index.md
+    startupPath: docs/projects/roles/STARTUP.md
+    statusPath: docs/projects/roles/STATUS.md
+    currentSlicePath: docs/projects/roles/CURRENT_SLICE.md
+    decisionsPath: docs/projects/roles/DECISIONS.md
+    roadmapPath: docs/projects/roles/roadmap.md
+    specsIndexPath: docs/projects/roles/specs/index.md
+    ownerClass: project_workspace
+    priority: 15
+  - id: web-stack
+    title: Web Stack
+    status: active
+    workspacePath: docs/projects/web-stack
+    indexPath: docs/projects/web-stack/index.md
+    startupPath: docs/projects/web-stack/STARTUP.md
+    statusPath: docs/projects/web-stack/STATUS.md
+    currentSlicePath: docs/projects/web-stack/CURRENT_SLICE.md
+    decisionsPath: docs/projects/web-stack/DECISIONS.md
+    roadmapPath: docs/projects/web-stack/roadmap.md
+    specsIndexPath: docs/projects/web-stack/specs/index.md
+    ownerClass: project_workspace
+    priority: 16
+  - id: workflows
+    title: Workflows
+    status: active
+    workspacePath: docs/projects/workflows
+    indexPath: docs/projects/workflows/index.md
+    startupPath: docs/projects/workflows/STARTUP.md
+    statusPath: docs/projects/workflows/STATUS.md
+    currentSlicePath: docs/projects/workflows/CURRENT_SLICE.md
+    decisionsPath: docs/projects/workflows/DECISIONS.md
+    roadmapPath: docs/projects/workflows/roadmap.md
+    specsIndexPath: docs/projects/workflows/specs/index.md
+    ownerClass: project_workspace
+    priority: 17

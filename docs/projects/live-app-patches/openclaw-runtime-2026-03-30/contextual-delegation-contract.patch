@@ -1,0 +1,110 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 7be4c04..46cffd3 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -133,7 +133,9 @@ For web research and public-page retrieval, follow `projects/web_stack/browsing_
+ - During ordinary public web research, do not read local `/app/skills/*.md` or other local skill docs.
+ - Only read local skill docs when the task is explicitly about internal skills/tools or local skill behavior.
+ - For known public pages, do not escalate to browser first unless the task clearly needs interaction, login, clicking, or fetch/render has already failed.
+-- When session delegation is available, delegate external public web research to `web-researcher` and finish from its result instead of independently re-browsing.
++- When session delegation is available, delegate external public web research to `agent:web-researcher:main` and finish from its result instead of independently re-browsing. Do not rely on the friendly label alone.
++- Send a bounded delegation request that includes at least: `objective`, `why_this_matters`, `required_fields`, `adjacent_context_to_collect`, and `desired_output_shape`.
++- Do not delegate as a thin “find X” request when the caller actually needs context, reliability judgment, or adjacent findings.
+ - Follow `projects/web_stack/web_research_delegation_spec.md` for the bounded delegation shape.
+
+ **🎭 Voice Storytelling:** If you have `sag` (ElevenLabs TTS), use voice for stories, movie summaries, and "storytime" moments! Way more engaging than walls of text. Surprise people with funny voices.
+diff --git a/TOOLS.md b/TOOLS.md
+index 68f27d7..d07e620 100644
+--- a/TOOLS.md
++++ b/TOOLS.md
+@@ -66,11 +66,18 @@ Policy:
+ - Follow `projects/web_stack/browsing_routing_spec.md` for detailed browsing policy.
+ - Follow `projects/web_stack/web_research_delegation_spec.md` for agent-to-agent web retrieval delegation.
+ - Intended order:
+-  - for external public web research, prefer delegating to `web-researcher` when available
++  - for external public web research, prefer delegating to `agent:web-researcher:main` when available
+   - `web_search` for discovery only
+   - `web_fetch` first for clearly public non-interactive pages
+   - Firecrawl-backed render/extraction when fetch is thin or clearly client-rendered
+   - browser for interactive pages or final escalation
+ - Do not conclude a page is empty from thin fetch alone on a JS-heavy site.
+ - Do not use local `/app/skills/*.md` as part of ordinary external web browsing.
+-- Do not re-browse unnecessarily after a sufficient `web-researcher` result.
++- Do not rely on the friendly label `web-researcher` alone for delegation targeting.
++- Send delegation requests with enough context to make the retrieval useful:
++  - `objective`
++  - `why_this_matters`
++  - `required_fields`
++  - `adjacent_context_to_collect`
++  - `desired_output_shape`
++- Do not re-browse unnecessarily after a sufficient `agent:web-researcher:main` result.
+diff --git a/projects/web_stack/web_research_delegation_spec.md b/projects/web_stack/web_research_delegation_spec.md
+index bd5a7c7..1c51d43 100644
+--- a/projects/web_stack/web_research_delegation_spec.md
++++ b/projects/web_stack/web_research_delegation_spec.md
+@@ -3,6 +3,8 @@
+ Purpose:
+
+ - `web-researcher` is the designated external public-web retrieval surface.
++- Canonical delegation target: `agent:web-researcher:main`
++- Do not rely on the friendly label `web-researcher` alone.
+
+ When to delegate:
+
+@@ -19,23 +21,34 @@ When not to delegate:
+
+ Standard delegation behavior:
+
+-- caller sends a bounded research request to `web-researcher`
+-- `web-researcher` returns an evidence-based retrieval result
++- caller sends a bounded research request to `agent:web-researcher:main`
++- `web-researcher` returns an evidence-based structured retrieval package
+ - caller finishes with that result instead of independently browsing again
+
+ Standard request fields:
+
+ - objective
+-- target URLs if known
+-- required fields
+-- desired output shape
++- why_this_matters
++- target_urls_if_known
++- required_fields
++- adjacent_context_to_collect
++- strictness
++  - `fact_only`
++  - `fact_plus_context`
++  - `exploratory`
++- stop_rule
++- desired_output_shape
+
+ Standard response fields:
+
+-- sources or URLs used
+-- retrieval path used
+-- answer
+-- confidence or missing fields
++- direct_answer
++- confidence
++- required_fields_status
++- retrieval_path
++- supporting_evidence
++- adjacent_findings
++- open_questions
++- recommended_next_step
+
+ Practical rule:
+
+--- /root/backups/web-researcher-TOOLS.md.pre-w16b2r-20260330T150741Z	2026-03-30 15:07:41.135953725 +0000
++++ /root/.openclaw/agent-workspaces/web-researcher/TOOLS.md	2026-03-30 15:07:58.170806640 +0000
+@@ -5,7 +5,10 @@
+ - Use `web_fetch` first for public pages.
+ - If fetch is thin or client-rendered, use Firecrawl-backed render/fetch.
+ - Use `browser` only when interaction is required or required visible fields are still missing.
++- Read the caller contract, including `objective`, `why_this_matters`, `required_fields`, `adjacent_context_to_collect`, `strictness`, and `stop_rule`.
+ - If a requested visible field is still missing after fetch/render, retry with `browser` once.
+ - If that browser attempt fails or times out, retry `browser` once narrowly, then stop escalating.
+ - If a requested field is still not recovered after the stronger path, say it was not confidently found.
++- For `fact_plus_context`, collect adjacent findings that help the caller judge reliability or next steps.
++- Return a structured package with `direct_answer`, `confidence`, `required_fields_status`, `retrieval_path`, `supporting_evidence`, `adjacent_findings`, `open_questions`, and `recommended_next_step`.
+ - Never read local `/app/skills/*.md` for ordinary external browsing.

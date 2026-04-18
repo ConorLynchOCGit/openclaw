@@ -1,0 +1,1055 @@
+diff --git a/src/agents/agent-command.ts b/src/agents/agent-command.ts
+index 5db40b13a2..5cb47464f9 100644
+--- a/src/agents/agent-command.ts
++++ b/src/agents/agent-command.ts
+@@ -1,3 +1,4 @@
++import { randomUUID } from "node:crypto";
+ import fs from "node:fs/promises";
+ import { SessionManager } from "@mariozechner/pi-coding-agent";
+ import { getAcpSessionManager } from "../acp/control-plane/manager.js";
+@@ -5,6 +6,15 @@ import { resolveAcpAgentPolicyError, resolveAcpDispatchPolicyError } from "../ac
+ import { toAcpRuntimeError } from "../acp/runtime/errors.js";
+ import { resolveAcpSessionCwd } from "../acp/runtime/session-identifiers.js";
+ import { createSubsystemLogger } from "../logging/subsystem.js";
++import {
++  browserNavigate,
++} from "../browser/client-actions.js";
++import {
++  browserOpenTab,
++  browserSnapshot,
++  browserStart,
++  browserStatus,
++} from "../browser/client.js";
+
+ const log = createSubsystemLogger("agents/agent-command");
+ import { normalizeReplyPayload } from "../auto-reply/reply/normalize-reply.js";
+@@ -95,6 +105,9 @@ import { getSkillsSnapshotVersion } from "./skills/refresh.js";
+ import { normalizeSpawnedRunMetadata } from "./spawned-context.js";
+ import { resolveAgentTimeoutMs } from "./timeout.js";
+ import { ensureAgentWorkspace } from "./workspace.js";
++import { runAgentStep } from "./tools/agent-step.js";
++import { createWebFetchTool } from "./tools/web-fetch.js";
++import { createAgentToAgentPolicy } from "./tools/sessions-helpers.js";
+
+ type PersistSessionEntryParams = {
+   sessionStore: Record<string, SessionEntry>;
+@@ -377,6 +390,31 @@ function runAgentAttempt(params: {
+   storePath?: string;
+   allowTransientCooldownProbe?: boolean;
+ }) {
++  const deterministicPageRead = maybeRunDeterministicWebResearchPageRead({
++    body: params.body,
++    currentAgentId: params.sessionAgentId,
++    sessionKey: params.sessionKey,
++    cfg: params.cfg,
++    providerOverride: params.providerOverride,
++    modelOverride: params.modelOverride,
++  });
++  if (deterministicPageRead) {
++    return deterministicPageRead;
++  }
++  const forcedFreshDelegation = maybeForceFreshWebResearchDelegation({
++    body: params.body,
++    currentAgentId: params.sessionAgentId,
++    requesterSessionKey: params.sessionKey,
++    requesterChannel: params.messageChannel,
++    cfg: params.cfg,
++    inputProvenance: params.opts.inputProvenance,
++    timeoutMs: params.timeoutMs,
++    providerOverride: params.providerOverride,
++    modelOverride: params.modelOverride,
++  });
++  if (forcedFreshDelegation) {
++    return forcedFreshDelegation;
++  }
+   const effectivePrompt = resolveFallbackRetryPrompt({
+     body: params.body,
+     isFallbackRetry: params.isFallbackRetry,
+@@ -533,6 +571,519 @@ function runAgentAttempt(params: {
+   });
+ }
+
++const EXPLICIT_PAGE_READ_RE =
++  /\b(read (this )?(page|site)|from this page|on this page|visible (page )?(facts?|fields?)|page (title|heading)|hero text|rendered labels?|exact (count|total|version|date)|how many|what (does|is) .* page)\b/i;
++const RECAP_REUSE_RE =
++  /\b(recap|reuse|re-use|already[- ]retrieved|previous result|from earlier|from before)\b/i;
++const COUNT_REQUEST_RE = /\b(how many|count|total|number of)\b/i;
++const HEADING_REQUEST_RE = /\b(heading|title|hero|header)\b/i;
++const VERSION_REQUEST_RE = /\bversion\b/i;
++const DATE_REQUEST_RE = /\bdate\b/i;
++
++function extractPublicHttpUrls(text: string): string[] {
++  const matches = text.match(/\bhttps?:\/\/[^\s<>()]+/gi) ?? [];
++  const urls: string[] = [];
++  for (const raw of matches) {
++    try {
++      const parsed = new URL(raw);
++      const host = parsed.hostname.toLowerCase();
++      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
++        continue;
++      }
++      if (
++        host === "localhost" ||
++        host === "127.0.0.1" ||
++        host === "::1" ||
++        host.endsWith(".local") ||
++        /^10\./.test(host) ||
++        /^192\.168\./.test(host) ||
++        /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
++      ) {
++        continue;
++      }
++      urls.push(parsed.toString());
++    } catch {
++      continue;
++    }
++  }
++  return [...new Set(urls)];
++}
++
++function shouldForceFreshWebResearch(params: {
++  body: string;
++  currentAgentId: string;
++  cfg: ReturnType<typeof loadConfig>;
++  inputProvenance?: AgentCommandOpts["inputProvenance"];
++}): { urls: string[] } | undefined {
++  if (normalizeAgentId(params.currentAgentId) === "web-researcher") {
++    return undefined;
++  }
++  if (params.inputProvenance?.kind === "inter_session") {
++    return undefined;
++  }
++  if (RECAP_REUSE_RE.test(params.body)) {
++    return undefined;
++  }
++  const urls = extractPublicHttpUrls(params.body);
++  if (urls.length === 0) {
++    return undefined;
++  }
++  if (!EXPLICIT_PAGE_READ_RE.test(params.body)) {
++    return undefined;
++  }
++  const a2aPolicy = createAgentToAgentPolicy(params.cfg);
++  if (!a2aPolicy.isAllowed(normalizeAgentId(params.currentAgentId), "web-researcher")) {
++    return undefined;
++  }
++  return { urls };
++}
++
++function buildFreshWebResearchDelegationPrompt(params: {
++  userBody: string;
++  urls: string[];
++}): string {
++  const targetList = params.urls.map((url) => `- ${url}`).join("\n");
++  return [
++    `objective: Read the exact public page requested by the user and answer the explicit page-read task.`,
++    "",
++    `why_this_matters: This is an explicit external URL/page-read task, so the caller must use fresh current-session retrieval evidence instead of memory, prior delegated output, or prior session context.`,
++    "",
++    "target_urls_if_known:",
++    targetList,
++    "",
++    "required_fields:",
++    "- answer the user's explicit requested page fact(s) from the exact URL",
++    "- if an exact visible field is not confidently recoverable, say that explicitly",
++    "- confidence",
++    "- required_fields_status",
++    "- retrieval_path",
++    "- supporting_evidence",
++    "",
++    "adjacent_context_to_collect:",
++    "- any visible count, total, pagination, or completeness signal relevant to the request",
++    "- whether the page appears truncated or client-rendered",
++    "- any visible evidence that affects reliability",
++    "",
++    "strictness:",
++    "- fact_plus_context",
++    "",
++    "stop_rule:",
++    "- do not stop at a weak first fetch if the requested visible field may still be recoverable from a stronger page-retrieval path",
++    "- never guess",
++    "",
++    "desired_output_shape:",
++    "- direct_answer",
++    "- confidence",
++    "- required_fields_status",
++    "- retrieval_path",
++    "- supporting_evidence",
++    "- adjacent_findings",
++    "- open_questions",
++    "- recommended_next_step",
++    "",
++    "original_user_request:",
++    params.userBody,
++  ].join("\n");
++}
++
++function maybeForceFreshWebResearchDelegation(params: {
++  body: string;
++  currentAgentId: string;
++  requesterSessionKey?: string;
++  requesterChannel?: string;
++  cfg: ReturnType<typeof loadConfig>;
++  inputProvenance?: AgentCommandOpts["inputProvenance"];
++  timeoutMs: number;
++  providerOverride: string;
++  modelOverride: string;
++}): Promise<Awaited<ReturnType<typeof runEmbeddedPiAgent>>> | undefined {
++  const match = shouldForceFreshWebResearch({
++    body: params.body,
++    currentAgentId: params.currentAgentId,
++    cfg: params.cfg,
++    inputProvenance: params.inputProvenance,
++  });
++  if (!match) {
++    return undefined;
++  }
++  return (async () => {
++    const delegatedSessionKey = `agent:web-researcher:page-read:${randomUUID()}`;
++    const delegatedReply = await runAgentStep({
++      sessionKey: delegatedSessionKey,
++      message: buildFreshWebResearchDelegationPrompt({
++        userBody: params.body,
++        urls: match.urls,
++      }),
++      extraSystemPrompt:
++        "Fresh external page-read delegation. Use this fresh session as self-contained retrieval scope. Do not rely on previous session context.",
++      timeoutMs: params.timeoutMs,
++      sourceSessionKey: params.requesterSessionKey,
++      sourceChannel: params.requesterChannel,
++      sourceTool: "fresh_web_delegation_gate",
++    });
++    const text =
++      delegatedReply?.trim() ||
++      "Fresh delegation to web-researcher did not produce a usable result, so I am not answering this explicit external page-read task from memory or prior context.";
++    return {
++      payloads: [{ text }],
++      meta: {
++        durationMs: 0,
++        stopReason: "delegated",
++        agentMeta: {
++          sessionId: params.requesterSessionKey ?? "delegated",
++          provider: params.providerOverride,
++          model: params.modelOverride,
++        },
++      },
++    };
++  })();
++}
++
++type DeterministicFieldKind = "count" | "heading" | "version" | "date";
++
++function shouldUseDeterministicPageRead(params: {
++  currentAgentId: string;
++  sessionKey?: string;
++  body: string;
++}): boolean {
++  if (normalizeAgentId(params.currentAgentId) !== "web-researcher") {
++    return false;
++  }
++  if (!params.sessionKey?.startsWith("agent:web-researcher:page-read:")) {
++    return false;
++  }
++  if (extractPublicHttpUrls(params.body).length === 0) {
++    return false;
++  }
++  return EXPLICIT_PAGE_READ_RE.test(params.body) || COUNT_REQUEST_RE.test(params.body);
++}
++
++function inferDeterministicFieldKinds(text: string): DeterministicFieldKind[] {
++  const kinds = new Set<DeterministicFieldKind>();
++  if (COUNT_REQUEST_RE.test(text)) {
++    kinds.add("count");
++  }
++  if (HEADING_REQUEST_RE.test(text)) {
++    kinds.add("heading");
++  }
++  if (VERSION_REQUEST_RE.test(text)) {
++    kinds.add("version");
++  }
++  if (DATE_REQUEST_RE.test(text)) {
++    kinds.add("date");
++  }
++  if (kinds.size === 0) {
++    kinds.add("count");
++  }
++  return [...kinds];
++}
++
++function stripWrappedExternalContent(text: string): string {
++  return text
++    .replace(/^SECURITY NOTICE:[\s\S]*?<<<EXTERNAL_UNTRUSTED_CONTENT[^>]*>>>\nSource: [^\n]+\n---\n/m, "")
++    .replace(/<<<END_EXTERNAL_UNTRUSTED_CONTENT[^>]*>>>/g, "")
++    .replace(/<<<EXTERNAL_UNTRUSTED_CONTENT[^>]*>>>/g, "")
++    .replace(/^Source: [^\n]+\n---\n/gm, "")
++    .trim();
++}
++
++function uniqueLines(text: string, limit = 12): string[] {
++  const seen = new Set<string>();
++  const lines: string[] = [];
++  for (const raw of text.split("\n")) {
++    const line = raw.replace(/\s+/g, " ").trim();
++    if (!line || seen.has(line)) {
++      continue;
++    }
++    seen.add(line);
++    lines.push(line);
++    if (lines.length >= limit) {
++      break;
++    }
++  }
++  return lines;
++}
++
++function extractEvidenceLine(text: string, pattern: RegExp): string | undefined {
++  return uniqueLines(text, 60).find((line) => pattern.test(line));
++}
++
++function extractExactFieldFromText(params: {
++  text: string;
++  requestedKinds: DeterministicFieldKind[];
++}): {
++  directAnswer?: string;
++  evidenceLines: string[];
++  recoveredKinds: DeterministicFieldKind[];
++} {
++  const cleaned = stripWrappedExternalContent(params.text);
++  const evidenceLines: string[] = [];
++  const recoveredKinds = new Set<DeterministicFieldKind>();
++  let directAnswer: string | undefined;
++
++  if (params.requestedKinds.includes("count")) {
++    const countPatterns = [
++      /\bSkills\s*\(([\d,]+)\)/i,
++      /\b([A-Z][A-Za-z0-9 .:_/-]{1,80})\s*\(([\d,]+)\)/,
++      /\b([\d,]+)\s+(skills|results|items|entries)\b/i,
++    ];
++    for (const pattern of countPatterns) {
++      const match = cleaned.match(pattern);
++      if (!match) {
++        continue;
++      }
++      const count = match[1] && /\d/.test(match[1]) ? match[1] : match[2];
++      const label = match[2] && /\d/.test(match[2]) ? match[1] : match[2];
++      const evidenceLine = extractEvidenceLine(cleaned, pattern);
++      if (evidenceLine) {
++        evidenceLines.push(evidenceLine);
++      }
++      recoveredKinds.add("count");
++      if (label && /^skills$/i.test(label)) {
++        directAnswer = `ClawHub.AI shows ${count} skills on that page.`;
++      } else if (label) {
++        directAnswer = `${label} shows ${count}.`;
++      } else {
++        directAnswer = `The page shows ${count}.`;
++      }
++      break;
++    }
++  }
++
++  if (!directAnswer && params.requestedKinds.includes("heading")) {
++    const headingLine = uniqueLines(cleaned, 20).find((line) =>
++      /^[A-Z][A-Za-z0-9 .:_/()-]{2,120}$/.test(line),
++    );
++    if (headingLine) {
++      evidenceLines.push(headingLine);
++      recoveredKinds.add("heading");
++      directAnswer = `The visible page heading is "${headingLine}".`;
++    }
++  }
++
++  if (!directAnswer && params.requestedKinds.includes("version")) {
++    const versionMatch = cleaned.match(/\bv?\d+\.\d+(?:\.\d+)?(?:-[A-Za-z0-9.-]+)?\b/);
++    if (versionMatch) {
++      const evidenceLine = extractEvidenceLine(cleaned, new RegExp(versionMatch[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
++      if (evidenceLine) {
++        evidenceLines.push(evidenceLine);
++      }
++      recoveredKinds.add("version");
++      directAnswer = `The visible version on the page is ${versionMatch[0]}.`;
++    }
++  }
++
++  if (!directAnswer && params.requestedKinds.includes("date")) {
++    const dateMatch =
++      cleaned.match(/\b\d{4}-\d{2}-\d{2}\b/) ??
++      cleaned.match(
++        /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2}, \d{4}\b/i,
++      );
++    if (dateMatch) {
++      const evidenceLine = extractEvidenceLine(cleaned, new RegExp(dateMatch[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
++      if (evidenceLine) {
++        evidenceLines.push(evidenceLine);
++      }
++      recoveredKinds.add("date");
++      directAnswer = `The visible date on the page is ${dateMatch[0]}.`;
++    }
++  }
++
++  return {
++    directAnswer,
++    evidenceLines: [...new Set(evidenceLines)],
++    recoveredKinds: [...recoveredKinds],
++  };
++}
++
++async function runDeterministicExactPageRead(params: {
++  body: string;
++  cfg: ReturnType<typeof loadConfig>;
++}): Promise<string> {
++  const url = extractPublicHttpUrls(params.body)[0];
++  if (!url) {
++    return JSON.stringify(
++      {
++        direct_answer: "I could not identify a public HTTP(S) URL in the page-read request.",
++        confidence: "low",
++        required_fields_status: "missing_url",
++        retrieval_path: ["no explicit external URL found in delegated request"],
++        supporting_evidence: [],
++        adjacent_findings: [],
++        open_questions: ["Which exact public page URL should be read?"],
++        recommended_next_step: "Provide the exact external page URL.",
++      },
++      null,
++      2,
++    );
++  }
++
++  const requestedKinds = inferDeterministicFieldKinds(params.body);
++  const retrievalPath: string[] = [`web_fetch exact URL: ${url}`];
++  const supportingEvidence: string[] = [];
++  const adjacentFindings: string[] = [];
++
++  const webFetchTool = createWebFetchTool({ config: params.cfg });
++  if (!webFetchTool?.execute) {
++    retrievalPath.push("web_fetch unavailable");
++  } else {
++    try {
++      const fetchResult = await webFetchTool.execute("deterministic_page_read_fetch", {
++        url,
++        extractMode: "text",
++        maxChars: 20000,
++      });
++      const fetchDetails =
++        fetchResult.details && typeof fetchResult.details === "object"
++          ? (fetchResult.details as Record<string, unknown>)
++          : undefined;
++      const fetchText = typeof fetchDetails?.text === "string" ? fetchDetails.text : "";
++      const fetchMatch = extractExactFieldFromText({ text: fetchText, requestedKinds });
++      supportingEvidence.push(...fetchMatch.evidenceLines);
++      if (typeof fetchDetails?.title === "string" && fetchDetails.title.trim()) {
++        adjacentFindings.push(`fetch title: ${stripWrappedExternalContent(fetchDetails.title)}`);
++      }
++      if (fetchMatch.directAnswer) {
++        return JSON.stringify(
++          {
++            direct_answer: fetchMatch.directAnswer,
++            confidence: "high",
++            required_fields_status: "recovered_from_fetch",
++            retrieval_path: retrievalPath,
++            supporting_evidence: [...new Set(supportingEvidence)],
++            adjacent_findings: [...new Set(adjacentFindings)],
++            open_questions: [],
++            recommended_next_step: "No stronger retrieval path needed because the requested visible field was recovered from the exact URL fetch output.",
++          },
++          null,
++          2,
++        );
++      }
++      retrievalPath.push("fetch did not clearly recover the requested visible field");
++    } catch (err) {
++      retrievalPath.push(`web_fetch failed: ${String(err)}`);
++    }
++  }
++
++  let browserAttempted = false;
++  let browserRecovered = false;
++  let browserAttemptError: string | undefined;
++
++  for (let attempt = 1; attempt <= 2; attempt++) {
++    try {
++      browserAttempted = true;
++      if (attempt === 1) {
++        retrievalPath.push("browser exact-URL escalation");
++      } else {
++        retrievalPath.push("browser narrow retry");
++      }
++      const status = await browserStatus();
++      if (!status.running) {
++        await browserStart();
++        retrievalPath.push("browser auto-started");
++      }
++      const tab = await browserOpenTab(undefined, url);
++      if (attempt > 1) {
++        await browserNavigate(undefined, { url, targetId: tab.targetId });
++      }
++      const snapshot = await browserSnapshot(undefined, {
++        format: "ai",
++        targetId: tab.targetId,
++        maxChars: 12000,
++      });
++      if (snapshot.format !== "ai") {
++        retrievalPath.push("browser snapshot returned non-ai format");
++        continue;
++      }
++      const snapshotText = snapshot.snapshot ?? "";
++      const snapshotMatch = extractExactFieldFromText({
++        text: snapshotText,
++        requestedKinds,
++      });
++      supportingEvidence.push(...snapshotMatch.evidenceLines);
++      adjacentFindings.push(
++        ...uniqueLines(snapshotText, 8).slice(0, 3).map((line) => `browser visible: ${line}`),
++      );
++      if (snapshotMatch.directAnswer) {
++        browserRecovered = true;
++        return JSON.stringify(
++          {
++            direct_answer: snapshotMatch.directAnswer,
++            confidence: "high",
++            required_fields_status: "recovered_from_browser_visible_field",
++            retrieval_path: retrievalPath,
++            supporting_evidence: [...new Set(supportingEvidence)],
++            adjacent_findings: [...new Set(adjacentFindings)],
++            open_questions: [],
++            recommended_next_step:
++              "No stronger path needed because the exact visible field was recovered from the rendered page.",
++          },
++          null,
++          2,
++        );
++      }
++      browserAttemptError = "browser snapshot still did not clearly expose the requested visible field";
++    } catch (err) {
++      browserAttemptError = String(err);
++      retrievalPath.push(`browser attempt ${String(attempt)} failed: ${browserAttemptError}`);
++    }
++  }
++
++  return JSON.stringify(
++    {
++      direct_answer:
++        "I did not confidently recover the exact requested visible field from the live page.",
++      confidence: browserAttempted && !browserRecovered ? "low" : "low",
++      required_fields_status: "not_confidently_recovered",
++      retrieval_path: retrievalPath,
++      supporting_evidence: [...new Set(supportingEvidence)],
++      adjacent_findings: [...new Set(adjacentFindings)],
++      open_questions: browserAttemptError ? [browserAttemptError] : [],
++      recommended_next_step:
++        "Use the retrieval_path to inspect the stronger exact-URL attempts that were made before giving up; do not guess the value.",
++    },
++    null,
++    2,
++  );
++}
++
++function maybeRunDeterministicWebResearchPageRead(params: {
++  body: string;
++  currentAgentId: string;
++  sessionKey?: string;
++  cfg: ReturnType<typeof loadConfig>;
++  providerOverride: string;
++  modelOverride: string;
++}): Promise<Awaited<ReturnType<typeof runEmbeddedPiAgent>>> | undefined {
++  if (
++    !shouldUseDeterministicPageRead({
++      currentAgentId: params.currentAgentId,
++      sessionKey: params.sessionKey,
++      body: params.body,
++    })
++  ) {
++    return undefined;
++  }
++  return (async () => {
++    const text = await runDeterministicExactPageRead({
++      body: params.body,
++      cfg: params.cfg,
++    });
++    return {
++      payloads: [{ text }],
++      meta: {
++        durationMs: 0,
++        stopReason: "deterministic_page_read",
++        agentMeta: {
++          sessionId: params.sessionKey ?? "deterministic_page_read",
++          provider: params.providerOverride,
++          model: params.modelOverride,
++        },
++      },
++    };
++  })();
++}
++
+ async function prepareAgentCommandExecution(
+   opts: AgentCommandOpts & { senderIsOwner: boolean },
+   runtime: RuntimeEnv,
+diff --git a/src/agents/system-prompt.ts b/src/agents/system-prompt.ts
+index fc043effed..88133c0612 100644
+--- a/src/agents/system-prompt.ts
++++ b/src/agents/system-prompt.ts
+@@ -25,10 +25,11 @@ function buildSkillsSection(params: { skillsPrompt?: string; readToolName: strin
+   }
+   return [
+     "## Skills (mandatory)",
+-    "Before replying: scan <available_skills> <description> entries.",
++    "Before replying: scan <available_skills> <description> entries unless a higher-priority exception below says to skip skill scanning.",
+     `- If exactly one skill clearly applies: read its SKILL.md at <location> with \`${params.readToolName}\`, then follow it.`,
+     "- If multiple could apply: choose the most specific one, then read/follow it.",
+     "- If none clearly apply: do not read any SKILL.md.",
++    "- Absolute override for external URL, public webpage, or visible page-content tasks: skip skill scanning entirely. Do not treat bundled/local skills as applicable, do not read any local `/app/skills/*.md`, and do not invent or synthesize skill-doc paths from tool names such as `web_fetch`, `web_search`, or `browser`. The only exception is when the user explicitly asks about internal skills/tools or the task is specifically about local skill or tool behavior.",
+     "Constraints: never read more than one skill up front; only read after selecting.",
+     "- When a skill drives external API writes, assume rate limits: prefer fewer larger writes, avoid tight one-item loops, serialize bursts when possible, and respect 429/Retry-After.",
+     trimmed,
+@@ -36,6 +37,51 @@ function buildSkillsSection(params: { skillsPrompt?: string; readToolName: strin
+   ];
+ }
+
++function buildWebBrowsingSection(params: { isMinimal: boolean; availableTools: Set<string> }) {
++  if (params.isMinimal) {
++    return [];
++  }
++  const hasWebFetch = params.availableTools.has("web_fetch");
++  const hasBrowser = params.availableTools.has("browser");
++  const hasWebSearch = params.availableTools.has("web_search");
++  const hasBrowsingTools = hasWebFetch || hasBrowser || hasWebSearch;
++  const hasSessionsSend = params.availableTools.has("sessions_send");
++  if (!hasBrowsingTools && !hasSessionsSend) {
++    return [];
++  }
++  const lines = [
++    "## Web Browsing",
++    "- For any external URL, public webpage, or visible page-content task, never call read on `/app/skills/*.md` and never construct a local skill-doc path from a tool name. Tool names are tools, not skills.",
++    "- When the user asked for specific visible page facts (for example title, version number, hero text, visible items, or rendered labels), do not answer from memory, prior runs, or general knowledge. Use a web/browser retrieval tool in this current session first.",
++    "- Do not answer requested page facts unless an actual retrieval trace exists in the current session.",
++    "- When the user asked for specific visible page facts (for example title, version number, hero text, visible items, or rendered labels), do not answer until those requested fields are either recovered or confidently absent.",
++    "- If the first retrieval path does not clearly recover the requested visible fields, retry with the next stronger path before answering.",
++    "- Do not stop at a partially useful fetch/render result when a requested visible field is still missing and a stronger retrieval path remains available. If the field still cannot be recovered, say it was not confidently found instead of guessing.",
++  ];
++  if (hasBrowsingTools) {
++    lines.splice(
++      1,
++      0,
++      "- If the target public URL is already known, do not use web_search first just to search.",
++      "- For known public non-interactive pages, do not escalate to browser first.",
++      "- Preferred order for public-page retrieval: web_fetch first; if the result is thin, shell-like, or clearly client-rendered, use the render-aware fetch path; use browser only when interaction is needed or fetch/render still fails.",
++      "- Never conclude a public JS-heavy page is empty from one thin fetch alone.",
++    );
++  }
++  if (!hasBrowsingTools && hasSessionsSend) {
++    lines.splice(
++      1,
++      0,
++      "- If you are not the browsing specialist and delegation is available, explicit external URL, “read this page/site”, and exact visible-page fact tasks require fresh current-session retrieval evidence before you answer.",
++      "- For those explicit URL/page-read tasks, your first substantive action must be `sessions_send`. Do not answer from memory, prior delegated results, or prior session context before that tool call succeeds or clearly fails.",
++      "- Use a fresh temporary `web-researcher` session key for explicit URL/page-read tasks, for example `agent:web-researcher:page-read:<unique-suffix>`. Do not default to canonical `agent:web-researcher:main` for those tasks; reserve the canonical session for exploratory follow-up where prior research context is useful.",
++      "- After the fresh delegated result returns, finish from that result without independently re-browsing.",
++    );
++  }
++  lines.push("");
++  return lines;
++}
++
+ function buildMemorySection(params: {
+   isMinimal: boolean;
+   availableTools: Set<string>;
+@@ -392,6 +438,10 @@ export function buildAgentSystemPrompt(params: {
+     availableTools,
+     citationsMode: params.memoryCitationsMode,
+   });
++  const webBrowsingSection = buildWebBrowsingSection({
++    isMinimal,
++    availableTools,
++  });
+   const docsSection = buildDocsSection({
+     docsPath: params.docsPath,
+     isMinimal,
+@@ -464,6 +514,7 @@ export function buildAgentSystemPrompt(params: {
+     "If unsure, ask the user to run `openclaw help` (or `openclaw gateway --help`) and paste the output.",
+     "",
+     ...skillsSection,
++    ...webBrowsingSection,
+     ...memorySection,
+     // Skip self-update for subagent/none modes
+     hasGateway && !isMinimal ? "## OpenClaw Self-Update" : "",
+diff --git a/src/agents/tools/agent-step.ts b/src/agents/tools/agent-step.ts
+index f1307442d1..c05e1f2403 100644
+--- a/src/agents/tools/agent-step.ts
++++ b/src/agents/tools/agent-step.ts
+@@ -1,5 +1,12 @@
+ import crypto from "node:crypto";
++import fs from "node:fs/promises";
++import {
++  loadSessionStore,
++  resolveSessionTranscriptFile,
++  resolveStorePath,
++} from "../../config/sessions.js";
+ import { callGateway } from "../../gateway/call.js";
++import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
+ import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
+ import { AGENT_LANE_NESTED } from "../lanes.js";
+ import { extractAssistantText, stripToolMessages } from "./sessions-helpers.js";
+@@ -14,6 +21,52 @@ let agentStepDeps: {
+   callGateway: GatewayCaller;
+ } = defaultAgentStepDeps;
+
++async function sleep(ms: number) {
++  await new Promise((resolve) => setTimeout(resolve, ms));
++}
++
++async function readLatestAssistantReplyFromTranscript(sessionKey: string): Promise<string | undefined> {
++  const agentId = resolveAgentIdFromSessionKey(sessionKey);
++  const storePath = resolveStorePath(agentId);
++  const store = loadSessionStore(storePath);
++  const sessionEntry = (store[sessionKey] ?? {}) as { sessionId?: string };
++  if (!sessionEntry.sessionId) {
++    return undefined;
++  }
++  const { sessionFile } = await resolveSessionTranscriptFile({
++    sessionId: sessionEntry.sessionId,
++    sessionKey,
++    sessionEntry,
++    sessionStore: store,
++    storePath,
++    agentId,
++  });
++  const content = await fs.readFile(sessionFile, "utf8").catch(() => "");
++  if (!content.trim()) {
++    return undefined;
++  }
++  const lines = content.trim().split("\n");
++  for (let i = lines.length - 1; i >= 0; i -= 1) {
++    const line = lines[i]?.trim();
++    if (!line) {
++      continue;
++    }
++    try {
++      const parsed = JSON.parse(line) as { type?: unknown; message?: unknown };
++      if (parsed.type !== "message") {
++        continue;
++      }
++      const text = extractAssistantText(parsed.message);
++      if (text?.trim()) {
++        return text;
++      }
++    } catch {
++      continue;
++    }
++  }
++  return undefined;
++}
++
+ export async function readLatestAssistantReply(params: {
+   sessionKey: string;
+   limit?: number;
+@@ -37,7 +90,7 @@ export async function readLatestAssistantReply(params: {
+     }
+     return text;
+   }
+-  return undefined;
++  return await readLatestAssistantReplyFromTranscript(params.sessionKey);
+ }
+
+ export async function runAgentStep(params: {
+@@ -83,10 +136,23 @@ export async function runAgentStep(params: {
+     },
+     timeoutMs: stepWaitMs + 2000,
+   });
+-  if (wait?.status !== "ok") {
++  if (wait?.status === "error") {
+     return undefined;
+   }
+-  return await readLatestAssistantReply({ sessionKey: params.sessionKey });
++  // Fresh delegated sessions can report completion slightly before chat history
++  // has indexed the final assistant message. Poll briefly before treating the
++  // step as empty.
++  for (let attempt = 0; attempt < 10; attempt += 1) {
++    const reply = await readLatestAssistantReply({ sessionKey: params.sessionKey });
++    if (reply?.trim()) {
++      return reply;
++    }
++    if (wait?.status === "timeout") {
++      return undefined;
++    }
++    await sleep(300);
++  }
++  return undefined;
+ }
+
+ export const __testing = {
+diff --git a/src/sessions/session-key-utils.ts b/src/sessions/session-key-utils.ts
+index c405df3a5f..61c4432860 100644
+--- a/src/sessions/session-key-utils.ts
++++ b/src/sessions/session-key-utils.ts
+@@ -74,6 +74,54 @@ export function isCronSessionKey(sessionKey: string | undefined | null): boolean
+   return parsed.rest.toLowerCase().startsWith("cron:");
+ }
+
++const DEFAULT_VISIBLE_SESSION_KEYS = new Set([
++  "agent:main:main",
++  "agent:chief:main",
++  "agent:chief:telegram:direct:7756506076",
++  "agent:builder:main",
++  "agent:x-manager:main",
++  "agent:web-researcher:main",
++  "agent:writer:main",
++]);
++
++const DEFAULT_HIDDEN_SESSION_PATTERNS = [
++  /:proof-[^:]+/i,
++  /:dashboard:w[0-9a-z-]*(?:[:.-]|$)/i,
++  /(^|[:.-])w(?:5|6|6d|8|9|10|11|14|15|16)[0-9a-z-]*(?:[:.-]|$)/i,
++  /:delegate(?:[:.-]|$)/i,
++  /:main-smoke:/i,
++  /:xmanager-smoke:/i,
++  /:fresh(?:[:.-]|$)/i,
++  /:(?:example|clawhub|react|docs)(?:[:.-]|$)/i,
++  /:routing-verification(?:[:.-]|$)/i,
++  /^webchat:g-agent-[a-z0-9-]+-w[0-9a-z-]+/i,
++  /^webchat:g-agent-[a-z0-9-]+-main$/i,
++  /:g-agent-[^:]*-w[0-9a-z-]+/i,
++];
++
++export function isDefaultVisibleOperationalSessionKey(
++  sessionKey: string | undefined | null,
++): boolean {
++  const normalized = (sessionKey ?? "").trim().toLowerCase();
++  if (!normalized) {
++    return false;
++  }
++  return DEFAULT_VISIBLE_SESSION_KEYS.has(normalized);
++}
++
++export function isDefaultHiddenUiSessionKey(
++  sessionKey: string | undefined | null,
++): boolean {
++  const normalized = (sessionKey ?? "").trim().toLowerCase();
++  if (!normalized || isDefaultVisibleOperationalSessionKey(normalized)) {
++    return false;
++  }
++  if (isCronSessionKey(normalized)) {
++    return true;
++  }
++  return DEFAULT_HIDDEN_SESSION_PATTERNS.some((pattern) => pattern.test(normalized));
++}
++
+ export function isSubagentSessionKey(sessionKey: string | undefined | null): boolean {
+   const raw = (sessionKey ?? "").trim();
+   if (!raw) {
+diff --git a/ui/src/ui/app-render.helpers.ts b/ui/src/ui/app-render.helpers.ts
+index c46d10903f..a35eb8c130 100644
+--- a/ui/src/ui/app-render.helpers.ts
++++ b/ui/src/ui/app-render.helpers.ts
+@@ -1,6 +1,10 @@
+ import { html, nothing } from "lit";
+ import { repeat } from "lit/directives/repeat.js";
+-import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js";
++import {
++  isCronSessionKey,
++  isDefaultHiddenUiSessionKey,
++  parseAgentSessionKey,
++} from "../../../src/sessions/session-key-utils.js";
+ import { t } from "../i18n/index.ts";
+ import { refreshChat } from "./app-chat.ts";
+ import { syncUrlWithSessionKey } from "./app-settings.ts";
+@@ -608,19 +612,62 @@ function capitalize(s: string): string {
+   return s.charAt(0).toUpperCase() + s.slice(1);
+ }
+
++function resolveKnownSessionClassName(key: string): string | null {
++  if (key === "main" || key === "agent:main:main") {
++    return "Main Session";
++  }
++  if (key === "agent:chief:main") {
++    return "Chief Session";
++  }
++  if (key === "agent:builder:main") {
++    return "Builder Session";
++  }
++  if (key === "agent:x-manager:main") {
++    return "X Manager Session";
++  }
++  if (key === "agent:web-researcher:main") {
++    return "Web Researcher";
++  }
++  if (key === "agent:writer:main") {
++    return "Writer Session";
++  }
++
++  const proofMatch = key.match(/^agent:[^:]+:proof-([a-z-]+)(?::|-|$)/i);
++  if (proofMatch) {
++    const proofTarget = proofMatch[1].toLowerCase();
++    if (proofTarget === "conor") {
++      return "Proof / Conor";
++    }
++    if (proofTarget === "american") {
++      return "Proof / American Atomics";
++    }
++    if (proofTarget === "boundary") {
++      return "Proof / Boundary";
++    }
++  }
++
++  const directMatch = key.match(/^agent:[^:]+:([^:]+):direct:(.+)$/);
++  if (directMatch) {
++    const channel = directMatch[1];
++    const channelLabel = CHANNEL_LABELS[channel] ?? capitalize(channel);
++    return `${channelLabel} Direct`;
++  }
++
++  return null;
++}
++
+ /**
+  * Parse a session key to extract type information and a human-readable
+  * fallback display name.  Exported for testing.
+  */
+ export function parseSessionKey(key: string): SessionKeyInfo {
+   const normalized = key.toLowerCase();
+-
+-  // ── Main session ─────────────────────────────────
+-  if (key === "main" || key === "agent:main:main") {
+-    return { prefix: "", fallbackName: "Main Session" };
++  const knownName = resolveKnownSessionClassName(key);
++  if (knownName) {
++    return { prefix: "", fallbackName: knownName };
+   }
+
+-  // ── Subagent ─────────────────────────────────────
++  // ── Main session ─────────────────────────────────
+   if (key.includes(":subagent:")) {
+     return { prefix: "Subagent:", fallbackName: "Subagent:" };
+   }
+@@ -634,9 +681,8 @@ export function parseSessionKey(key: string): SessionKeyInfo {
+   const directMatch = key.match(/^agent:[^:]+:([^:]+):direct:(.+)$/);
+   if (directMatch) {
+     const channel = directMatch[1];
+-    const identifier = directMatch[2];
+     const channelLabel = CHANNEL_LABELS[channel] ?? capitalize(channel);
+-    return { prefix: "", fallbackName: `${channelLabel} · ${identifier}` };
++    return { prefix: "", fallbackName: `${channelLabel} Direct` };
+   }
+
+   // ── Group chat  (agent:<x>:<channel>:group:<id>) ────
+@@ -665,6 +711,13 @@ export function resolveSessionDisplayName(
+   const label = row?.label?.trim() || "";
+   const displayName = row?.displayName?.trim() || "";
+   const { prefix, fallbackName } = parseSessionKey(key);
++  const knownName = resolveKnownSessionClassName(key);
++
++  // Known session classes should always use UI-derived naming,
++  // even if stale metadata still carries older transport/display labels.
++  if (knownName) {
++    return knownName;
++  }
+
+   const applyTypedPrefix = (name: string): string => {
+     if (!prefix) {
+@@ -683,25 +736,6 @@ export function resolveSessionDisplayName(
+   return fallbackName;
+ }
+
+-export function isCronSessionKey(key: string): boolean {
+-  const normalized = key.trim().toLowerCase();
+-  if (!normalized) {
+-    return false;
+-  }
+-  if (normalized.startsWith("cron:")) {
+-    return true;
+-  }
+-  if (!normalized.startsWith("agent:")) {
+-    return false;
+-  }
+-  const parts = normalized.split(":").filter(Boolean);
+-  if (parts.length < 3) {
+-    return false;
+-  }
+-  const rest = parts.slice(2).join(":");
+-  return rest.startsWith("cron:");
+-}
+-
+ type SessionOptionEntry = {
+   key: string;
+   label: string;
+@@ -773,6 +807,9 @@ export function resolveSessionOptionGroups(
+     if (hideCron && row.key !== sessionKey && isCronSessionKey(row.key)) {
+       continue;
+     }
++    if (row.key !== sessionKey && isDefaultHiddenUiSessionKey(row.key)) {
++      continue;
++    }
+     addOption(row.key);
+   }
+   addOption(sessionKey);
+@@ -871,7 +908,26 @@ function resolveAgentGroupLabel(state: AppViewState, agentIdRaw: string): string
+     (entry) => entry.id.trim().toLowerCase() === normalized,
+   );
+   const name = agent?.identity?.name?.trim() || agent?.name?.trim() || "";
+-  return name && name !== agentIdRaw ? `${name} (${agentIdRaw})` : agentIdRaw;
++  if (name) {
++    return name;
++  }
++  switch (normalized) {
++    case "main":
++      return "Main";
++    case "chief":
++      return "Chief";
++    case "builder":
++      return "Builder";
++    case "x-manager":
++      return "X Manager";
++    case "web-researcher":
++      return "Web Researcher";
++    default:
++      return agentIdRaw
++        .split("-")
++        .map((part) => capitalize(part))
++        .join(" ");
++  }
+ }
+
+ function resolveSessionScopedOptionLabel(
+@@ -880,12 +936,16 @@ function resolveSessionScopedOptionLabel(
+   rest?: string,
+ ) {
+   const base = rest?.trim() || key;
++  const knownName = resolveKnownSessionClassName(key);
+   if (!row) {
+-    return base;
++    return knownName ?? base;
+   }
+
+   const label = row.label?.trim() || "";
+   const displayName = row.displayName?.trim() || "";
++  if (knownName) {
++    return knownName;
++  }
+   if ((label && label !== key) || (displayName && displayName !== key)) {
+     return resolveSessionDisplayName(key, row);
+   }
+diff --git a/ui/src/ui/views/sessions.ts b/ui/src/ui/views/sessions.ts
+index 89838bce20..17f71c0a7f 100644
+--- a/ui/src/ui/views/sessions.ts
++++ b/ui/src/ui/views/sessions.ts
+@@ -1,4 +1,5 @@
+ import { html, nothing } from "lit";
++import { isDefaultHiddenUiSessionKey } from "../../../../src/sessions/session-key-utils.js";
+ import { formatRelativeTimestamp } from "../format.ts";
+ import { icons } from "../icons.ts";
+ import { pathForTab } from "../navigation.ts";
+@@ -131,11 +132,12 @@ function resolveThinkLevelPatchValue(value: string, isBinary: boolean): string |
+ }
+
+ function filterRows(rows: GatewaySessionRow[], query: string): GatewaySessionRow[] {
++  const visibleRows = rows.filter((row) => !isDefaultHiddenUiSessionKey(row.key));
+   const q = query.trim().toLowerCase();
+   if (!q) {
+-    return rows;
++    return visibleRows;
+   }
+-  return rows.filter((row) => {
++  return visibleRows.filter((row) => {
+     const key = (row.key ?? "").toLowerCase();
+     const label = (row.label ?? "").toLowerCase();
+     const kind = (row.kind ?? "").toLowerCase();

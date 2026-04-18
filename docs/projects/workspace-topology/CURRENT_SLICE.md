@@ -20,10 +20,12 @@ title: "Workspace Topology Current Slice"
 7. keep runtime repo-import parity directly checkable
 8. queue canonical path resolution and runtime arbitration as the immediate
    post-document-ingest hardening slice
-9. explicitly reconcile canonical repo project workspaces versus workspace-native
-   operator project packs
-10. normalize workspace-native operator packs so they follow a predictable pack
-    shape without becoming a second canonical registry
+9. explicitly reconcile canonical repo project workspaces versus lingering
+   workspace project paths
+10. convert legacy workspace project packs into canonical import-backed aliases
+    wherever runtime-generated writable state is not required
+11. keep only the narrow justified writable compatibility surfaces, starting
+    with `workspace/projects/ops/generated_current/`
 
 ## Exit criteria
 
@@ -43,3 +45,5 @@ title: "Workspace Topology Current Slice"
   path-resolution, runtime arbitration, and read/write ownership
 - runtime project-surface ownership is written down clearly enough to prevent
   “two project systems” drift
+- legacy workspace project names resolve back to the canonical repo-owned
+  project tree rather than acting as a parallel registry

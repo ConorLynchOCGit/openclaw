@@ -1,0 +1,7 @@
+live host path: /root/services/webhook-gateway
+date: 2026-03-27
+note: these scripts are executed from /root/services/webhook-gateway
+note: the current behavior adds failure/drift-triggered Telegram alerting via chief
+logs remain the source of truth:
+- /root/backups/cron-logs/n8n_sync_check.log
+- /root/backups/cron-logs/db_probe.log

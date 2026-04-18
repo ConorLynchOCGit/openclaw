@@ -1,0 +1,210 @@
+diff --git a/src/agents/agent-command.ts b/src/agents/agent-command.ts
+index 5db40b13a2..648f6e6fdd 100644
+--- a/src/agents/agent-command.ts
++++ b/src/agents/agent-command.ts
+@@ -1,3 +1,4 @@
++import { randomUUID } from "node:crypto";
+ import fs from "node:fs/promises";
+ import { SessionManager } from "@mariozechner/pi-coding-agent";
+ import { getAcpSessionManager } from "../acp/control-plane/manager.js";
+@@ -95,6 +96,8 @@ import { getSkillsSnapshotVersion } from "./skills/refresh.js";
+ import { normalizeSpawnedRunMetadata } from "./spawned-context.js";
+ import { resolveAgentTimeoutMs } from "./timeout.js";
+ import { ensureAgentWorkspace } from "./workspace.js";
++import { runAgentStep } from "./tools/agent-step.js";
++import { createAgentToAgentPolicy } from "./tools/sessions-helpers.js";
+
+ type PersistSessionEntryParams = {
+   sessionStore: Record<string, SessionEntry>;
+@@ -377,6 +380,20 @@ function runAgentAttempt(params: {
+   storePath?: string;
+   allowTransientCooldownProbe?: boolean;
+ }) {
++  const forcedFreshDelegation = maybeForceFreshWebResearchDelegation({
++    body: params.body,
++    currentAgentId: params.sessionAgentId,
++    requesterSessionKey: params.sessionKey,
++    requesterChannel: params.messageChannel,
++    cfg: params.cfg,
++    inputProvenance: params.opts.inputProvenance,
++    timeoutMs: params.timeoutMs,
++    providerOverride: params.providerOverride,
++    modelOverride: params.modelOverride,
++  });
++  if (forcedFreshDelegation) {
++    return forcedFreshDelegation;
++  }
+   const effectivePrompt = resolveFallbackRetryPrompt({
+     body: params.body,
+     isFallbackRetry: params.isFallbackRetry,
+@@ -533,6 +550,170 @@ function runAgentAttempt(params: {
+   });
+ }
+
++const EXPLICIT_PAGE_READ_RE =
++  /\b(read (this )?(page|site)|from this page|on this page|visible (page )?(facts?|fields?)|page (title|heading)|hero text|rendered labels?|exact (count|total|version|date)|how many|what (does|is) .* page)\b/i;
++const RECAP_REUSE_RE =
++  /\b(recap|reuse|re-use|already[- ]retrieved|previous result|from earlier|from before)\b/i;
++
++function extractPublicHttpUrls(text: string): string[] {
++  const matches = text.match(/\bhttps?:\/\/[^\s<>()]+/gi) ?? [];
++  const urls: string[] = [];
++  for (const raw of matches) {
++    try {
++      const parsed = new URL(raw);
++      const host = parsed.hostname.toLowerCase();
++      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
++        continue;
++      }
++      if (
++        host === "localhost" ||
++        host === "127.0.0.1" ||
++        host === "::1" ||
++        host.endsWith(".local") ||
++        /^10\./.test(host) ||
++        /^192\.168\./.test(host) ||
++        /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
++      ) {
++        continue;
++      }
++      urls.push(parsed.toString());
++    } catch {
++      continue;
++    }
++  }
++  return [...new Set(urls)];
++}
++
++function shouldForceFreshWebResearch(params: {
++  body: string;
++  currentAgentId: string;
++  cfg: ReturnType<typeof loadConfig>;
++  inputProvenance?: AgentCommandOpts["inputProvenance"];
++}): { urls: string[] } | undefined {
++  if (normalizeAgentId(params.currentAgentId) === "web-researcher") {
++    return undefined;
++  }
++  if (params.inputProvenance?.kind === "inter_session") {
++    return undefined;
++  }
++  if (RECAP_REUSE_RE.test(params.body)) {
++    return undefined;
++  }
++  const urls = extractPublicHttpUrls(params.body);
++  if (urls.length === 0) {
++    return undefined;
++  }
++  if (!EXPLICIT_PAGE_READ_RE.test(params.body)) {
++    return undefined;
++  }
++  const a2aPolicy = createAgentToAgentPolicy(params.cfg);
++  if (!a2aPolicy.isAllowed(normalizeAgentId(params.currentAgentId), "web-researcher")) {
++    return undefined;
++  }
++  return { urls };
++}
++
++function buildFreshWebResearchDelegationPrompt(params: {
++  userBody: string;
++  urls: string[];
++}): string {
++  const targetList = params.urls.map((url) => `- ${url}`).join("\n");
++  return [
++    `objective: Read the exact public page requested by the user and answer the explicit page-read task.`,
++    "",
++    `why_this_matters: This is an explicit external URL/page-read task, so the caller must use fresh current-session retrieval evidence instead of memory, prior delegated output, or prior session context.`,
++    "",
++    "target_urls_if_known:",
++    targetList,
++    "",
++    "required_fields:",
++    "- answer the user's explicit requested page fact(s) from the exact URL",
++    "- if an exact visible field is not confidently recoverable, say that explicitly",
++    "- confidence",
++    "- required_fields_status",
++    "- retrieval_path",
++    "- supporting_evidence",
++    "",
++    "adjacent_context_to_collect:",
++    "- any visible count, total, pagination, or completeness signal relevant to the request",
++    "- whether the page appears truncated or client-rendered",
++    "- any visible evidence that affects reliability",
++    "",
++    "strictness:",
++    "- fact_plus_context",
++    "",
++    "stop_rule:",
++    "- do not stop at a weak first fetch if the requested visible field may still be recoverable from a stronger page-retrieval path",
++    "- never guess",
++    "",
++    "desired_output_shape:",
++    "- direct_answer",
++    "- confidence",
++    "- required_fields_status",
++    "- retrieval_path",
++    "- supporting_evidence",
++    "- adjacent_findings",
++    "- open_questions",
++    "- recommended_next_step",
++    "",
++    "original_user_request:",
++    params.userBody,
++  ].join("\n");
++}
++
++function maybeForceFreshWebResearchDelegation(params: {
++  body: string;
++  currentAgentId: string;
++  requesterSessionKey?: string;
++  requesterChannel?: string;
++  cfg: ReturnType<typeof loadConfig>;
++  inputProvenance?: AgentCommandOpts["inputProvenance"];
++  timeoutMs: number;
++  providerOverride: string;
++  modelOverride: string;
++}): Promise<Awaited<ReturnType<typeof runEmbeddedPiAgent>>> | undefined {
++  const match = shouldForceFreshWebResearch({
++    body: params.body,
++    currentAgentId: params.currentAgentId,
++    cfg: params.cfg,
++    inputProvenance: params.inputProvenance,
++  });
++  if (!match) {
++    return undefined;
++  }
++  return (async () => {
++    const delegatedSessionKey = `agent:web-researcher:page-read:${randomUUID()}`;
++    const delegatedReply = await runAgentStep({
++      sessionKey: delegatedSessionKey,
++      message: buildFreshWebResearchDelegationPrompt({
++        userBody: params.body,
++        urls: match.urls,
++      }),
++      extraSystemPrompt:
++        "Fresh external page-read delegation. Use this fresh session as self-contained retrieval scope. Do not rely on previous session context.",
++      timeoutMs: params.timeoutMs,
++      sourceSessionKey: params.requesterSessionKey,
++      sourceChannel: params.requesterChannel,
++      sourceTool: "fresh_web_delegation_gate",
++    });
++    const text =
++      delegatedReply?.trim() ||
++      "Fresh delegation to web-researcher did not produce a usable result, so I am not answering this explicit external page-read task from memory or prior context.";
++    return {
++      payloads: [{ text }],
++      meta: {
++        durationMs: 0,
++        stopReason: "delegated",
++        agentMeta: {
++          sessionId: params.requesterSessionKey ?? "delegated",
++          provider: params.providerOverride,
++          model: params.modelOverride,
++        },
++      },
++    };
++  })();
++}
++
+ async function prepareAgentCommandExecution(
+   opts: AgentCommandOpts & { senderIsOwner: boolean },
+   runtime: RuntimeEnv,

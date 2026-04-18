@@ -64,8 +64,11 @@ now live in the repo.
   parent project without becoming separate top-level registry entries
 - the live runtime project split is now explicit:
   - `docs/projects/*` is the canonical engineering project layer
-  - `workspace/projects/*` is a distinct operator coordination layer
-  - overlapping names do not create dual canonical ownership
+  - most `workspace/projects/*` paths are now compatibility aliases into the
+    canonical import-mounted repo tree
+  - `workspace/projects/ops/` remains the one justified writable compatibility
+    surface because it still owns `generated_current/` and a few stable host
+    script paths
 
 ## Delivered in this slice
 
@@ -86,7 +89,7 @@ now live in the repo.
 
 Keep topology enforcement and runtime adoption aligned, then land the canonical
 path-resolution and runtime-arbitration slice immediately after the current
-workspace-project normalization and continuity-hook restore.
+workspace-project alias reconciliation and continuity-hook restore.
 
 That slice must:
 

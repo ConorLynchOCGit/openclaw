@@ -1,0 +1,116 @@
+--- /root/backups/openclaw-json-pre-c2b-20260330T140856Z.json	2026-03-30 14:08:56.055394114 +0000
++++ /root/.openclaw/openclaw.json	2026-03-30 14:10:20.198779191 +0000
+@@ -59,8 +59,11 @@
+         "tools": {
+           "profile": "coding",
+           "deny": [
++            "browser",
+             "sessions_spawn",
+-            "subagents"
++            "subagents",
++            "web_fetch",
++            "web_search"
+           ],
+           "fs": {
+             "workspaceOnly": true
+@@ -71,9 +74,7 @@
+             "ask": "always"
+           },
+           "alsoAllow": [
+-            "exec",
+-            "group:web",
+-            "browser"
++            "exec"
+           ]
+         }
+       },
+@@ -85,6 +86,24 @@
+           "fallbacks": [
+             "openrouter/anthropic/claude-haiku-4.5"
+           ]
++        },
++        "tools": {
++          "profile": "messaging",
++          "deny": [
++            "browser",
++            "edit",
++            "exec",
++            "process",
++            "web_fetch",
++            "web_search",
++            "write"
++          ],
++          "fs": {
++            "workspaceOnly": true
++          },
++          "alsoAllow": [
++            "read"
++          ]
+         }
+       },
+       {
+@@ -94,7 +113,9 @@
+           "profile": "coding",
+           "deny": [
+             "sessions_spawn",
+-            "subagents"
++            "subagents",
++            "web_fetch",
++            "web_search"
+           ],
+           "fs": {
+             "workspaceOnly": true
+@@ -135,7 +156,28 @@
+       },
+       {
+         "id": "writer",
+-        "workspace": "/home/node/.openclaw/agent-workspaces/writer"
++        "workspace": "/home/node/.openclaw/agent-workspaces/writer",
++        "tools": {
++          "profile": "messaging",
++          "deny": [
++            "browser",
++            "exec",
++            "message",
++            "process",
++            "sessions_spawn",
++            "subagents",
++            "web_fetch",
++            "web_search"
++          ],
++          "fs": {
++            "workspaceOnly": true
++          },
++          "alsoAllow": [
++            "edit",
++            "read",
++            "write"
++          ]
++        }
+       },
+       {
+         "id": "x-manager",
+@@ -150,18 +192,17 @@
+         "tools": {
+           "profile": "messaging",
+           "deny": [
++            "browser",
+             "sessions_spawn",
+             "subagents",
+             "exec",
+-            "message"
++            "message",
++            "web_fetch",
++            "web_search"
+           ],
+           "fs": {
+             "workspaceOnly": true
+-          },
+-          "alsoAllow": [
+-            "group:web",
+-            "browser"
+-          ]
++          }
+         }
+       }
+     ]

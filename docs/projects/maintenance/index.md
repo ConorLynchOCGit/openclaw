@@ -25,3 +25,5 @@ This workspace owns:
 7. [Debt Register](/projects/maintenance/DEBT_REGISTER)
 8. [Test Matrix](/projects/maintenance/TEST_MATRIX)
 9. [Workspace Refactor Foundation](/projects/maintenance/WORKSPACE_REFACTOR_FOUNDATION)
+10. [Built-In Skills Audit](/projects/maintenance/BUILT_IN_SKILLS_AUDIT)
+11. [Memory Push Spec](/projects/maintenance/MEMORY_PUSH_SPEC)

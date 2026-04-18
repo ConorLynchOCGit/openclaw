@@ -1,0 +1,37 @@
+--- /root/backups/openclaw-json-pre-brave-explicit-provider-2026-03-30T010000Z.json
++++ /root/.openclaw/openclaw.json
+@@ -159,6 +159,11 @@
+         "builder"
+       ]
+     },
++    "web": {
++      "search": {
++        "provider": "brave"
++      }
++    },
+     "sessions": {
+       "visibility": "all"
+     }
+@@ -227,6 +232,22 @@
+       }
+     }
+   ],
++  "plugins": {
++    "entries": {
++      "brave": {
++        "enabled": true,
++        "config": {
++          "webSearch": {
++            "apiKey": {
++              "source": "env",
++              "provider": "default",
++              "id": "BRAVE_API_KEY"
++            }
++          }
++        }
++      }
++    }
++  },
+   "browser": {
+     "defaultProfile": "openclaw",
+     "headless": true,
