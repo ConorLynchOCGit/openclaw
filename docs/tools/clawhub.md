@@ -97,6 +97,12 @@ Before installing an unreviewed third-party skill, use the formal
 `openclaw skills install` is the trusted install path, not the quarantine
 review path.
 
+The current live environment may split capabilities across surfaces. For
+example, native `openclaw skills search` can be available inside the runtime
+container while `clawhub` search and quarantine acquisition run on the host.
+Record the actual surface used in the vetting report instead of assuming one
+uniform runtime.
+
 ## Install the ClawHub CLI
 
 You only need this for registry-authenticated workflows such as publish/sync:

@@ -117,6 +117,8 @@ OpenClaw picks that up as `<workspace>/skills` on the next session.
 - Treat third-party skills as **untrusted code**. Read them before enabling.
 - Use [Skill Vetting](/projects/skills-system/skill-vetting) before installing
   third-party ClawHub skills into a live workspace.
+- Skill Vetting now records durable operator-facing review artifacts under
+  `docs/projects/skills-system/skill-vetting/reports/`.
 - Prefer sandboxed runs for untrusted inputs and risky tools. See [Sandboxing](/gateway/sandboxing).
 - Workspace and extra-dir skill discovery only accepts skill roots and `SKILL.md` files whose resolved realpath stays inside the configured root.
 - Gateway-backed skill dependency installs (`skills.install`, onboarding, and the Skills settings UI) run the built-in dangerous-code scanner before executing installer metadata. `critical` findings block by default unless the caller explicitly sets the dangerous override; suspicious findings still warn only.

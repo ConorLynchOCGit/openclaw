@@ -7,7 +7,7 @@ title: "Model Memory Current Slice"
 
 ## Slice
 
-`packet-compiler-and-kind-balance-priority-shift`
+`packet-compiler-kind-balance-and-retirement-execution`
 
 ## Goal
 
@@ -85,6 +85,19 @@ memory priority before broader Phase 2 implementation.
   - retained evidence and bounded residue tracking in:
     - [Model Memory Evidence](/projects/model-memory/evidence)
     - [Memory Residue Audit](/projects/model-memory/memory-residue-audit)
+- the retirement-execution boundary is now explicit:
+  - [Legacy Memory Retirement Execution](/projects/model-memory/legacy-memory-retirement-execution)
+  - [Continuity Preservation And Retirement](/projects/model-memory/continuity-preservation-and-retirement)
+  - [USER.md And Projected Context Contract](/projects/model-memory/user-md-and-projected-context-contract)
+  - [Legacy Continuity Export And Ingest](/projects/model-memory/legacy-continuity-export-and-ingest)
+  - [Legacy Retirement Proof](/projects/model-memory/final-legacy-retirement-proof)
+- the first execution cuts in that retirement tranche are now complete:
+  - bundled `session-memory` hook restored and retained as continuity
+    production
+  - direct hook docs/tests restored and authority wording corrected
+  - gateway startup no longer arms legacy QMD/plugin memory
+  - top-level memory concept and CLI docs now point at model-memory as the live
+    authority
 - the original Main-run deep ingest interruption is now recorded in:
   - [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
 - the current ingest hardening posture is:
@@ -98,6 +111,8 @@ memory priority before broader Phase 2 implementation.
 - current project judgment:
   - `production_cutover_live_with_packet-quality-priority`
 - the live runtime remains on `model-memory`
+- live runtime authority is proven; full repo-side deletion of `memory-core` /
+  `memorySearch` seams is still a blocker set, not a completed fact
 - operational soak and ingest work continues, but the next architecture slice
   is no longer vague:
   - unify packet assembly

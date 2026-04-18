@@ -58,17 +58,16 @@ These files remain part of the canonical retained proof and should stay.
 These surfaces are still open retirement debt and should be tracked, not
 deleted blindly in this sprint.
 
-| Path or surface                                                             | Why it remains open                                                                     | Action                                                                | Safe now | Preserve elsewhere first |
-| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | -------- | ------------------------ |
-| `src/memory/`                                                               | large legacy runtime surface still present in repo                                      | retire later through cutover plan                                     | no       | yes                      |
-| `extensions/memory-core/`                                                   | legacy bundled plugin still present and user explicitly said not to weaken it mid-slice | retire later after bounded deletion tranche                           | no       | yes                      |
-| `extensions/memory-lancedb/`                                                | legacy bundled memory plugin still present                                              | retire later after explicit deletion slice                            | no       | yes                      |
-| `src/agents/tools/memory-tool.ts`                                           | legacy tool surface still in repo                                                       | retire later with runtime/read-path review                            | no       | yes                      |
-| `src/agents/memory-search.ts`                                               | legacy retrieval seam still present                                                     | retire later with cutover deletion tranche                            | no       | yes                      |
-| `src/cli/memory-cli.ts`                                                     | legacy CLI surface still present                                                        | retire later with CLI deprecation removal                             | no       | yes                      |
-| `src/gateway/server-startup-memory.ts`                                      | legacy startup seam still present                                                       | retire later with full startup cleanup                                | no       | yes                      |
-| `src/hooks/bundled/session-memory/handler.ts`                               | legacy workspace-memory automation still present                                        | retire later after daily-summary and continuity posture are finalized | no       | yes                      |
-| `docs/concepts/memory.md`, `docs/cli/memory.md`, `docs/automation/hooks.md` | legacy docs still need rewrite/removal in the final retirement tranche                  | retire later                                                          | no       | yes                      |
+| Path or surface                                                             | Why it remains open                                                                     | Action                                         | Safe now | Preserve elsewhere first |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------- | -------- | ------------------------ |
+| `src/memory/`                                                               | large legacy runtime surface still present in repo                                      | retire later through cutover plan              | no       | yes                      |
+| `extensions/memory-core/`                                                   | legacy bundled plugin still present and user explicitly said not to weaken it mid-slice | retire later after bounded deletion tranche    | no       | yes                      |
+| `extensions/memory-lancedb/`                                                | legacy bundled memory plugin still present                                              | retire later after explicit deletion slice     | no       | yes                      |
+| `src/agents/tools/memory-tool.ts`                                           | legacy tool surface still in repo                                                       | retire later with runtime/read-path review     | no       | yes                      |
+| `src/agents/memory-search.ts`                                               | legacy retrieval seam still present                                                     | retire later with cutover deletion tranche     | no       | yes                      |
+| `src/cli/memory-cli.ts`                                                     | legacy CLI surface still present                                                        | retire later with CLI deprecation removal      | no       | yes                      |
+| `src/gateway/server-startup-memory.ts`                                      | startup seam remains, but legacy QMD/plugin fallback was removed in this sprint         | continue retirement with status/doctor cleanup | yes      | no                       |
+| `docs/concepts/memory.md`, `docs/cli/memory.md`, `docs/automation/hooks.md` | legacy docs still need rewrite/removal in the final retirement tranche                  | retire later                                   | no       | yes                      |
 
 ## 4. Config/runtime residue still needing cleanup
 
@@ -89,6 +88,10 @@ This sprint is authorized to:
 - delete the safe packet-experiment intermediates listed in section 1
 - keep and normalize the retained experiment artifacts listed in section 2
 - record the still-open retirement and config/runtime debt from sections 3 and 4
+- preserve the `session-memory` hook as a continuity producer and keep docs
+  clear that it is not the semantic memory authority
+- rewrite the highest-signal legacy docs to point at model-memory
+- remove the gateway startup fallback to legacy QMD/plugin memory
 
 This sprint is not authorized to:
 

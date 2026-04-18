@@ -40,6 +40,8 @@ The current slice formalizes two previously fuzzy areas:
 - the skill system now has a first-class canonical project home
 - Skill Vetting is now treated as a durable system lane instead of an ad hoc
   operator habit
+- Skill Vetting now also has an operator-facing artifact contract and a runtime
+  proof matrix rather than only a thin checklist
 
 ## Relationship to other projects
 

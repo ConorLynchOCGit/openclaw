@@ -23,6 +23,8 @@ It owns:
 4. [Decisions](/projects/skills-system/skill-vetting/DECISIONS)
 5. [Roadmap](/projects/skills-system/skill-vetting/roadmap)
 6. [Spec Index](/projects/skills-system/skill-vetting/specs)
+7. [Runtime Surface Proof](/projects/skills-system/skill-vetting/runtime-surface-proof)
+8. [Reports](/projects/skills-system/skill-vetting/reports)
 
 ## Repo-owned skill surface
 
@@ -33,3 +35,7 @@ The workstream now has a bundled repo-owned skill:
 That skill is the runtime-facing operator workflow.
 
 These docs are the durable system design and policy source behind it.
+
+The operator-facing report artifacts live under:
+
+- `docs/projects/skills-system/skill-vetting/reports/`

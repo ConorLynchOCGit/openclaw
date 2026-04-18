@@ -13,6 +13,9 @@ fi
 
 slug="$1"
 version="${2:-}"
+if [[ "${version}" == "latest" ]]; then
+  version=""
+fi
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 root="${TMPDIR:-/tmp}/openclaw-skill-vetting"
 workdir="${root}/${slug}-${timestamp}"

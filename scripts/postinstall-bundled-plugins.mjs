@@ -612,10 +612,16 @@ function applyBundledPluginRuntimeHotfixes(params = {}) {
 
 export function isSourceCheckoutRoot(params) {
   const pathExists = params.existsSync ?? existsSync;
-  return (
-    pathExists(join(params.packageRoot, ".git")) &&
+  const hasSourceTree =
     pathExists(join(params.packageRoot, "src")) &&
-    pathExists(join(params.packageRoot, "extensions"))
+    pathExists(join(params.packageRoot, "extensions"));
+  if (!hasSourceTree) {
+    return false;
+  }
+  return (
+    pathExists(join(params.packageRoot, ".git")) ||
+    pathExists(join(params.packageRoot, "pnpm-workspace.yaml")) ||
+    pathExists(join(params.packageRoot, "tsconfig.json"))
   );
 }
 

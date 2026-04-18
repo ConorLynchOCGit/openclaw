@@ -153,6 +153,37 @@ describe("bundled plugin postinstall", () => {
     expect(spawnSync).not.toHaveBeenCalled();
   });
 
+  it("treats Docker source contexts without .git as source checkouts", async () => {
+    const packageRoot = await createTempDirAsync("openclaw-docker-source-context-");
+    const extensionsDir = path.join(packageRoot, "extensions");
+    await fs.mkdir(path.join(packageRoot, "src"), { recursive: true });
+    await fs.mkdir(extensionsDir, { recursive: true });
+    await fs.writeFile(path.join(packageRoot, "pnpm-workspace.yaml"), "packages:\\n  - .\\n");
+    await writePluginPackage(extensionsDir, "acpx", {
+      dependencies: {
+        acpx: "0.5.2",
+      },
+    });
+    await fs.mkdir(path.join(extensionsDir, "acpx", "node_modules", "acpx"), { recursive: true });
+    await fs.writeFile(
+      path.join(extensionsDir, "acpx", "node_modules", "acpx", "package.json"),
+      JSON.stringify({ name: "acpx", version: "0.4.1" }),
+    );
+    const spawnSync = vi.fn();
+
+    runBundledPluginPostinstall({
+      env: { HOME: "/tmp/home" },
+      packageRoot,
+      spawnSync,
+      log: { log: vi.fn(), warn: vi.fn() },
+    });
+
+    await expect(fs.stat(path.join(extensionsDir, "acpx", "node_modules"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(spawnSync).not.toHaveBeenCalled();
+  });
+
   it("keeps source-checkout prune non-fatal", async () => {
     const packageRoot = await createTempDirAsync("openclaw-source-checkout-prune-error-");
     const extensionsDir = path.join(packageRoot, "extensions");

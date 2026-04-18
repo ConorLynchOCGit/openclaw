@@ -12,6 +12,10 @@ Project-owned nested workstreams may keep their own local packs under that
 parent project when they remain owned by the parent and are not treated as
 separate registry entries.
 
+Workspace-native operator packs under `/root/.openclaw/workspace/projects/` are
+allowed as a separate coordination layer, but they are not canonical project
+workspaces and must never be registered as if they were `docs/projects/*`.
+
 Use the project registry and the project index together:
 
 - [Projects Index](/projects)

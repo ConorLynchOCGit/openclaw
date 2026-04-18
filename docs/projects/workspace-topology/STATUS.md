@@ -62,6 +62,10 @@ now live in the repo.
   canonical project workspace
 - project-owned nested workstreams can now keep local packs under a registered
   parent project without becoming separate top-level registry entries
+- the live runtime project split is now explicit:
+  - `docs/projects/*` is the canonical engineering project layer
+  - `workspace/projects/*` is a distinct operator coordination layer
+  - overlapping names do not create dual canonical ownership
 
 ## Delivered in this slice
 
@@ -82,7 +86,7 @@ now live in the repo.
 
 Keep topology enforcement and runtime adoption aligned, then land the canonical
 path-resolution and runtime-arbitration slice immediately after the current
-deep document-ingest pass.
+workspace-project normalization and continuity-hook restore.
 
 That slice must:
 
@@ -90,6 +94,7 @@ That slice must:
 - patch the document-ingest lane first
 - separate read-target ownership from write-target ownership
 - remove the need for prompt-level import-path remembering
+- keep repo-owned project truth and workspace operator packs distinct by policy
 
 After that, [Agent Foundation](/projects/agent-foundation) can own the richer
 per-agent pack population slice on a more stable runtime floor.

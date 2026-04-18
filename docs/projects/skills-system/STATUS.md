@@ -20,10 +20,17 @@ The current outcomes are:
   - native OpenClaw search/install/update when available
   - quarantine-only acquisition for third-party review
 - the host now has `clawhub` available on `PATH`
+- the current runtime proof is now explicit:
+  - host `clawhub` available
+  - runtime-container `openclaw` available
+  - host `openclaw` absent
+  - runtime-container `clawhub` absent
 - bounded proof now exists for:
   - `clawhub search "task-progress-stream"`
   - quarantine acquisition of `task-progress-stream` into
     `/tmp/openclaw-skill-vetting/...`
+  - native `openclaw skills search "task-progress-stream"` inside the runtime
+    container
 
 ## Current judgment
 

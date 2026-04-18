@@ -20,6 +20,10 @@ title: "Workspace Topology Current Slice"
 7. keep runtime repo-import parity directly checkable
 8. queue canonical path resolution and runtime arbitration as the immediate
    post-document-ingest hardening slice
+9. explicitly reconcile canonical repo project workspaces versus workspace-native
+   operator project packs
+10. normalize workspace-native operator packs so they follow a predictable pack
+    shape without becoming a second canonical registry
 
 ## Exit criteria
 
@@ -37,3 +41,5 @@ title: "Workspace Topology Current Slice"
 - topology/bootstrap enforcement is part of the default repo gate
 - the next topology hardening slice is explicitly defined for canonical
   path-resolution, runtime arbitration, and read/write ownership
+- runtime project-surface ownership is written down clearly enough to prevent
+  “two project systems” drift

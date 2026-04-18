@@ -7,7 +7,7 @@ title: "Skill Vetting Status"
 
 ## Overall
 
-State: `formalized_quarantine_first_review_lane`
+State: `formalized_quarantine_review_with_operator_artifacts`
 
 The system now has a durable review lane for external skills.
 
@@ -18,10 +18,15 @@ Current delivered outputs:
 - explicit search/acquisition separation
 - explicit quarantine contract
 - explicit install / inspire / reject outcomes
+- explicit operator-facing report contract
+- runtime surface proof matrix
+- canonical example report artifact
 - local proof that:
   - `clawhub search "task-progress-stream"` returns live marketplace results
   - `skills/skill-vetting/scripts/quarantine_clawhub_skill.sh task-progress-stream`
     acquires into `/tmp/openclaw-skill-vetting/...`
+  - `docker exec openclaw-runtime openclaw skills search "task-progress-stream"`
+    returns live marketplace results
 
 ## Current risk posture
 
@@ -37,4 +42,7 @@ The current review lane is conservative on purpose:
 
 - verify runtime search availability on the intended host surfaces
 - verify quarantine acquisition on the intended host surfaces
-- exercise the repo-owned `skill-vetting` skill on a fresh candidate bundle
+- resolve the current runtime-image rebuild blocker so the running container
+  also carries baked `/app/docs/projects/skills-system` docs and
+  `/app/skills/skill-vetting/SKILL.md`, not only the canonical repo import
+  mount

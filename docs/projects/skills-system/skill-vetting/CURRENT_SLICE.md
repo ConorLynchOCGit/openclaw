@@ -7,7 +7,7 @@ title: "Skill Vetting Current Slice"
 
 ## Slice
 
-`formalization-and-quarantine-acquisition-contract`
+`operator-artifact-contract-and-runtime-surface-proof`
 
 ## Goal
 
@@ -23,6 +23,10 @@ as a repo-owned skill.
   - `install`
   - `inspire`
   - `reject`
+- operator-facing review artifacts now have:
+  - a concrete report template
+  - a runtime-surface proof matrix
+  - a canonical example report
 
 ## Current judgment
 

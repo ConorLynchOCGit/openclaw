@@ -7,7 +7,7 @@ title: "Model Memory Status"
 
 ## Overall
 
-State: `production_cutover_flip_executed`
+State: `production_cutover_live_retirement_execution_in_progress`
 
 The clean-room parallel package now exists at `extensions/model-memory/` with
 implementation slices 1 through 19 completed on fast lanes. The package now
@@ -107,6 +107,23 @@ The current evidence and residue boundary is now explicit:
   - [Model Memory Evidence](/projects/model-memory/evidence)
 - bounded cleanup and remaining debt:
   - [Memory Residue Audit](/projects/model-memory/memory-residue-audit)
+- explicit retirement execution / preservation docs:
+  - [Legacy Memory Retirement Execution](/projects/model-memory/legacy-memory-retirement-execution)
+  - [Continuity Preservation And Retirement](/projects/model-memory/continuity-preservation-and-retirement)
+  - [USER.md And Projected Context Contract](/projects/model-memory/user-md-and-projected-context-contract)
+  - [Legacy Continuity Export And Ingest](/projects/model-memory/legacy-continuity-export-and-ingest)
+  - [Legacy Retirement Proof](/projects/model-memory/final-legacy-retirement-proof)
+
+The first real repo-side retirement cuts and corrections now recorded are:
+
+- bundled `session-memory` hook retained as a continuity producer for canonical
+  daily markdown artifacts
+- `docs/automation/hooks.md` and `docs/cli/hooks.md` no longer advertise that
+  hook as a semantic authority
+- `docs/concepts/memory.md` and `docs/cli/memory.md` now describe the legacy
+  stack as retired or retiring, not canonical
+- gateway startup no longer falls back to QMD or plugin memory warmup when
+  `model-memory` live runtime is off
 
 Day-0 cutover verification:
 

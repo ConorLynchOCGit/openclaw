@@ -83,7 +83,9 @@ After completion:
 - memory truth lives in the new logical database and derived runtime layers
 - agent memory tooling reads from `model-memory`
 - runtime bootstrap projections and packs replace legacy workspace-memory authority
-- the legacy memory plugins, managers, hooks, docs, and config surfaces are removed
+- the legacy semantic memory plugins, managers, docs, and config surfaces are removed
+- continuity-producing markdown hooks are either preserved or replaced by an
+  equivalent daily-artifact contract before removal
 - old memory runtime state is exported if needed, then deleted from the VPS
 
 ## Legacy surface inventory
@@ -96,7 +98,8 @@ After completion:
 - `src/cli/memory-cli.ts`
 - `src/gateway/server-startup-memory.ts`
 - `src/gateway/server-methods/doctor.ts`
-- `src/hooks/bundled/session-memory/handler.ts`
+- `src/hooks/bundled/session-memory/handler.ts` unless an equivalent canonical
+  daily-artifact producer replaces it first
 
 ### Bundled plugins to retire
 
@@ -124,7 +127,8 @@ After completion:
 
 ### Runtime state to delete from hosts later
 
-- legacy workspace memory files:
+- legacy workspace memory files or continuity surfaces that may later move or
+  change ownership:
   - `MEMORY.md`
   - `memory/*.md`
 - legacy search state such as:
@@ -238,7 +242,10 @@ Replacement order:
 6. startup services and background initialization
    - remove legacy QMD/sqlite startup behavior
 7. session-memory hook behavior
-   - replace or remove the legacy markdown-write hook if the new architecture no longer needs it
+   - preserve the markdown-write hook while canonical daily continuity artifacts
+     still depend on it
+   - only replace or remove it after a proven equivalent daily-artifact
+     producer exists
 
 Rule:
 

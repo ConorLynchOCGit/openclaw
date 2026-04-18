@@ -50,6 +50,10 @@ Current status:
   - `model-memory` is live
   - rollback is native no-memory mode
   - legacy slot remains off
+- the first repo-side retirement cuts are now also done:
+  - bundled `session-memory` hook retained as continuity-producing automation
+  - startup fallback to legacy QMD/plugin memory removed
+  - legacy top-level memory docs rewritten away from canonical status
 - remaining work is operational:
   - run the 72-hour watch
   - perform sampled review and fast-follow fixes
@@ -102,6 +106,11 @@ Current status:
 43. [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)
 44. [Model Memory Evidence](/projects/model-memory/evidence)
 45. [Memory Residue Audit](/projects/model-memory/memory-residue-audit)
+46. [Legacy Memory Retirement Execution](/projects/model-memory/legacy-memory-retirement-execution)
+47. [Continuity Preservation And Retirement](/projects/model-memory/continuity-preservation-and-retirement)
+48. [USER.md And Projected Context Contract](/projects/model-memory/user-md-and-projected-context-contract)
+49. [Legacy Continuity Export And Ingest](/projects/model-memory/legacy-continuity-export-and-ingest)
+50. [Legacy Retirement Proof](/projects/model-memory/final-legacy-retirement-proof)
 
 ## Scope
 
@@ -144,3 +153,9 @@ Current operational scope:
   - [Model Memory Evidence](/projects/model-memory/evidence)
 - the current residue/debt boundary is now recorded in:
   - [Memory Residue Audit](/projects/model-memory/memory-residue-audit)
+- the current retirement-execution and continuity-preservation record now live in:
+  - [Legacy Memory Retirement Execution](/projects/model-memory/legacy-memory-retirement-execution)
+  - [Continuity Preservation And Retirement](/projects/model-memory/continuity-preservation-and-retirement)
+  - [USER.md And Projected Context Contract](/projects/model-memory/user-md-and-projected-context-contract)
+  - [Legacy Continuity Export And Ingest](/projects/model-memory/legacy-continuity-export-and-ingest)
+  - [Legacy Retirement Proof](/projects/model-memory/final-legacy-retirement-proof)

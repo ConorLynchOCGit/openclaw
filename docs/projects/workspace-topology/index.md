@@ -44,6 +44,7 @@ This project also owns:
 13. [Bootstrap File Canonical Mapping](/projects/workspace-topology/specs/bootstrap-file-canonical-mapping)
 14. [Bootstrap Pre-Render Seeding Plan](/projects/workspace-topology/bootstrap-pre-render-seeding-plan)
 15. [Canonical Path Resolution And Runtime Arbitration](/projects/workspace-topology/specs/canonical-path-resolution-and-runtime-arbitration)
+16. [Runtime Project Surfaces](/projects/workspace-topology/runtime-project-surfaces)
 
 ## Relationship to other projects
 

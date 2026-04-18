@@ -27,6 +27,8 @@ with:
 - normalized ClawHub usage around:
   - search and workspace installs when the runtime supports them
   - quarantine-only acquisition for third-party review
+- added explicit operator-facing reporting and runtime-surface proof so the
+  vetting lane can produce durable artifacts instead of only chat prose
 - updated project discovery and registry surfaces so the new project is
   topology-visible
 
