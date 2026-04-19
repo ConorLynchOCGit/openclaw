@@ -16,6 +16,7 @@ import type {
   CanonicalCandidateBatch,
   CaptureRoutingBatch,
   CompositeExtractionBatch,
+  ExistingMemorySummary,
   PostWriteAudit,
   RawIngestEvent,
   ReconciliationDecision,
@@ -31,12 +32,15 @@ export type DocumentV2ShadowIngestionInput = {
   document: DocumentSourceInput;
   modelId: string;
   interpreter: SemanticInterpreter;
+  reconciliationNeighbors?: ExistingMemorySummary[];
+  reconciliationNeighborsByCandidateId?: Record<string, ExistingMemorySummary[]>;
 };
 
 export type DocumentV2ShadowIngestionResult = {
   rawEvent: RawIngestEvent;
   segmented: SegmentedIngestEvent;
   routing: CaptureRoutingBatch;
+  atomicExtractionRaw: Awaited<ReturnType<typeof extractAtomicCandidates>>;
   atomicExtraction: ReturnType<typeof suppressAtomicCandidatesOwnedByComposites>;
   compositeExtraction: CompositeExtractionBatch;
   canonicalization: CanonicalCandidateBatch;
@@ -140,11 +144,15 @@ export async function ingestDocumentV2Shadow(
     if (!decision || decision.decision !== "admit") {
       continue;
     }
+    const neighbors =
+      input.reconciliationNeighborsByCandidateId?.[candidate.candidate_id] ??
+      input.reconciliationNeighbors ??
+      [];
     reconciliation.push(
       await reconcileCandidate({
         eventId: rawEvent.event_id,
         candidate,
-        neighbors: [],
+        neighbors,
         sourceKind: "document",
         sourceId: envelope.source.id,
         sourceWindow,
@@ -168,6 +176,7 @@ export async function ingestDocumentV2Shadow(
     rawEvent,
     segmented,
     routing,
+    atomicExtractionRaw,
     atomicExtraction,
     compositeExtraction,
     canonicalization,

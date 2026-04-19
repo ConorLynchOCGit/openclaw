@@ -111,6 +111,20 @@ memory priority before broader Phase 2 implementation.
     generated artifact path under `.openclaw/model-memory/projections/*`
   - current-run bootstrap resolution now overlays canonicalized files over any
     stale session snapshot by filename
+- the first MMV2 document-only corpus-evaluation lane is now the active proving
+  surface for ingestion-v2 draft work:
+  - corpus contract:
+    - `extensions/model-memory/src/mmv2/proof-corpus.ts`
+  - phase-aware proof runner:
+    - `extensions/model-memory/src/mmv2/proof-runner.ts`
+  - disposable report script:
+    - `scripts/run-mmv2-document-corpus.mjs`
+  - artifact output root:
+    - `.artifacts/model-memory/mmv2/`
+  - current proof boundary:
+    - seeded-neighbor reconciliation covered
+    - ordinary-turn MMV2 still out of scope
+    - live DB writes still out of scope
 - the original Main-run deep ingest interruption is now recorded in:
   - [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
 - the current ingest hardening posture is:

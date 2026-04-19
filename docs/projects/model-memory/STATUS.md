@@ -100,6 +100,27 @@ The current bootstrap-memory posture is now also cleaner:
 - current runs now overlay freshly canonicalized bootstrap files over stale
   session-scoped bootstrap snapshots by filename
 
+The current MMV2 execution posture is now also clearer:
+
+- the first MMV2 document-only shadow ingest lane exists under:
+  - `extensions/model-memory/src/mmv2/`
+- the first MMV2 corpus-evaluation lane now targets document ingestion only
+- the MMV2 proof contract is phase-aware rather than final-output-only:
+  - segmentation
+  - routing
+  - atomic extraction
+  - composite extraction
+  - suppression
+  - canonicalization
+  - admission
+  - seeded-neighbor reconciliation
+  - shadow recording
+  - post-write audit
+- the MMV2 proof runner remains separate from the v1 proof runner
+- corpus reports write to disposable filesystem artifacts, not the live
+  durable-memory database
+- ordinary-turn MMV2 evaluation remains intentionally out of scope in this pass
+
 The current top-priority memory work is now:
 
 - shared packet compiler design across bootstrap, dynamic, and retrieval packs

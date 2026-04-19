@@ -127,6 +127,7 @@ Current status:
 64. [Memory Bootstrap Semantics Contract](/projects/model-memory/memory-bootstrap-semantics-contract)
 65. [MMV2 Ingestion Draft Specs](/projects/model-memory/specs/mmv2)
 66. [MMV2 First Execution Sprint Checklist](/projects/model-memory/mmv2-first-execution-sprint-checklist)
+67. [MMV2 Corpus Evaluation Baseline 2026-04](/projects/model-memory/mmv2-corpus-evaluation-baseline-2026-04)
 
 ## Scope
 
@@ -193,3 +194,15 @@ Current operational scope:
 - the follow-on bootstrap-semantics restoration for `memory-md` now lives in:
   - [Memory Bootstrap Semantics Restoration Baseline 2026-04](/projects/model-memory/memory-bootstrap-semantics-restoration-baseline-2026-04)
   - [Memory Bootstrap Semantics Contract](/projects/model-memory/memory-bootstrap-semantics-contract)
+- the MMV2 document-only evaluation lane now lives beside the shadow ingest path:
+  - corpus contract:
+    - `extensions/model-memory/src/mmv2/proof-corpus.ts`
+  - phase-aware runner:
+    - `extensions/model-memory/src/mmv2/proof-runner.ts`
+  - disposable script/report entrypoint:
+    - `scripts/run-mmv2-document-corpus.mjs`
+  - disposable artifacts:
+    - `.artifacts/model-memory/mmv2/`
+  - still intentionally out of scope:
+    - ordinary-turn MMV2 evaluation
+    - live DB writes from MMV2 corpus runs

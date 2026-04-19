@@ -65,3 +65,4 @@ These specs define the clean-room `model-memory` project before any implementati
 - [Rule Vs Fact Variant Design](/projects/model-memory/rule-vs-fact-variant-design)
 - [Rule Vs Fact Benchmark Findings](/projects/model-memory/rule-vs-fact-benchmark-findings)
 - [Rule Vs Fact Next Change Recommendation](/projects/model-memory/rule-vs-fact-next-change-recommendation)
+- [MMV2 Corpus Evaluation Baseline 2026-04](/projects/model-memory/mmv2-corpus-evaluation-baseline-2026-04)

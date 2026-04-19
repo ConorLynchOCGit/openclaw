@@ -14,8 +14,23 @@ Status:
 
 - draft proposal only
 - not the live runtime contract
-- not yet implemented
+- partially implemented in a document-only shadow lane
 - intended to preserve the GPT phase structure before any code changes begin
+
+Current evaluation lane:
+
+- document-only MMV2 corpus contract:
+  - `extensions/model-memory/src/mmv2/proof-corpus.ts`
+- document-only MMV2 proof runner:
+  - `extensions/model-memory/src/mmv2/proof-runner.ts`
+- disposable report entrypoint:
+  - `scripts/run-mmv2-document-corpus.mjs`
+- current artifact output root:
+  - `.artifacts/model-memory/mmv2/`
+- still out of scope:
+  - ordinary-turn MMV2 evaluation
+  - live DB writes
+  - v1 cutover
 
 ## Pack contents
 
