@@ -29,3 +29,11 @@ Primary entry points:
 7. [Decisions](/system/decisions)
 8. [Deployment](/system/deployment)
 9. [Authentication](/system/authentication)
+
+Current cross-project live seam to note:
+
+- memory bootstrap ownership and `memory-md` bootstrap projection are now split
+  intentionally:
+  - curated continuity remains in workspace `MEMORY.md`
+  - generated bootstrap projection lives under
+    `.openclaw/model-memory/projections/*`

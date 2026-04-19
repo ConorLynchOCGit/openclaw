@@ -13,7 +13,9 @@ Generalize the existing model-memory projection idea into a repo-wide contract.
 
 - durable content is human-owned
 - generated content is machine-owned
-- generated content must live in bounded generated zones by default
+- generated content must live in bounded generated zones by default, or in
+  explicit runtime-owned generated artifact paths when a continuity file must
+  stay fully human-owned
 - whole-file replacement is not the default
 
 ## Default rule
@@ -64,6 +66,8 @@ This policy generalizes the seed contract already recorded in:
 That seed direction remains valid:
 
 - create generated zones rather than overwriting whole files
+- or use an explicit generated artifact path when the live contract forbids a
+  mixed file
 - ingest or preserve durable content before projection
 - keep projection bounded and explicit
 

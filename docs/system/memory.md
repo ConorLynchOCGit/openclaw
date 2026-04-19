@@ -127,6 +127,10 @@ generated memory into authored docs.
 - DB-backed generated memory projection and recall/pointer scaffolding must flow
   through separate runtime overlays or owning docs, not be materialized back
   into curated `MEMORY.md`
+- the compiled `memory-md` bootstrap packet now reaches runtime bootstrap
+  context through its generated artifact path under
+  `.openclaw/model-memory/projections/`, not through an on-disk generated zone
+  inside workspace `MEMORY.md`
 - active and queued project emphasis should follow
   `docs/system/registries/projects.yaml`, not ad hoc edits here
 - DB-backed `model-memory` projections remain part of the architecture

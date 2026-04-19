@@ -99,6 +99,28 @@ Why:
 - it keeps proof authority explicit
 - it avoids paying the full plugin/transform stack for tiny behavioral seams
 
+Additional immediate landing now completed:
+
+- `scripts/model-memory-bootstrap-projection.test.ts`
+- package entrypoint:
+  - `pnpm test:model-memory:bootstrap-projection`
+- scope proven there:
+  - latest `memory-md` projection selection for bootstrap
+  - separate generated artifact-path injection
+  - exclusion of non-bootstrap projection targets from that narrow seam
+
+Additional immediate landing now completed:
+
+- `scripts/bootstrap-context-assembly.test.ts`
+- package entrypoint:
+  - `pnpm test:bootstrap:context-assembly`
+- scope proven there:
+  - curated workspace bootstrap files stay first in the injected order
+  - the separate generated `memory-md` bootstrap artifact appends after curated
+    files
+  - generated standing context no longer rewrites curated workspace
+    `MEMORY.md`
+
 Good candidates:
 
 - script-only parsing/formatting helpers

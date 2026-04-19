@@ -62,8 +62,10 @@ Editing boundary:
 Default bootstrap memory grounding now comes from separate layers:
 
 1. curated workspace `MEMORY.md`
-2. separate DB-backed `model-memory` runtime overlay context files
-3. recall/index docs in their owning durable docs, not in curated memory
+2. separate compiled `memory-md` bootstrap projection artifact path under
+   `.openclaw/model-memory/projections/*`
+3. separate DB-backed `model-memory` runtime overlay context files
+4. recall/index docs in their owning durable docs, not in curated memory
 
 Implementation rule:
 
@@ -73,6 +75,9 @@ Implementation rule:
   into `MEMORY.md`
 - generated recall scaffolding belongs in separate docs/overlays, not in the
   curated file
+- compiled `memory-md` projection output may still reach bootstrap context, but
+  only as a separate generated runtime artifact rather than an on-disk
+  `MEMORY.md` rewrite
 
 ## Cache rule
 

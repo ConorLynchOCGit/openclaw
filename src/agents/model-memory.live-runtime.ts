@@ -23,6 +23,7 @@ const MODEL_MEMORY_PLUGIN_ID = "model-memory";
 const LIVE_MODEL_MEMORY_ENABLED_ENV = "MODEL_MEMORY_LIVE_ENABLED";
 const DEFAULT_LIVE_MODEL_REF = "openrouter/openai/gpt-5.4-nano";
 const MODEL_MEMORY_CONTEXT_PATH_PREFIX = ".openclaw/model-memory/context";
+const BOOTSTRAP_PROJECTION_TARGET_IDS = new Set(["memory-md"]);
 
 type JsonRecord = Record<string, unknown>;
 
@@ -74,6 +75,8 @@ type LiveRuntimeReadModels = {
     ReturnType<LiveRuntimeDeps["runtimeRepository"]["getSessionContextState"]>
   >;
 };
+
+type ProjectionVersionRecord = ReturnType<typeof compileProjection>["version"];
 
 let runtimeCache:
   | {
@@ -342,6 +345,42 @@ function buildExtraContextFiles(params: {
   }));
 }
 
+export function buildProjectionBootstrapContextFiles(params: {
+  projectionVersions: ProjectionVersionRecord[];
+  projectionOutputs: Record<string, string>;
+}): Array<{ path: string; content: string }> {
+  const latestProjectionByTarget = new Map<string, ProjectionVersionRecord>();
+  for (const version of [...params.projectionVersions].toSorted((left, right) => {
+    const byBuiltAt = right.builtAt.getTime() - left.builtAt.getTime();
+    if (byBuiltAt !== 0) {
+      return byBuiltAt;
+    }
+    return right.id.localeCompare(left.id);
+  })) {
+    if (!BOOTSTRAP_PROJECTION_TARGET_IDS.has(version.targetId)) {
+      continue;
+    }
+    if (!latestProjectionByTarget.has(version.targetId)) {
+      latestProjectionByTarget.set(version.targetId, version);
+    }
+  }
+
+  return [...latestProjectionByTarget.values()]
+    .toSorted((left, right) => left.targetId.localeCompare(right.targetId))
+    .flatMap((version) => {
+      const content = params.projectionOutputs[version.targetId]?.trim();
+      if (!content) {
+        return [];
+      }
+      return [
+        {
+          path: version.canonicalArtifactPath,
+          content,
+        },
+      ];
+    });
+}
+
 export async function resolveModelMemoryBootstrapOverlay(params: {
   config?: OpenClawConfig;
   sessionId?: string;
@@ -361,10 +400,16 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
     });
 
     return {
-      contextFiles: buildExtraContextFiles({
-        artifacts: readModels.contextArtifacts,
-        sessionSummaryArtifactId: readModels.sessionState?.sessionSummaryArtifactId,
-      }),
+      contextFiles: [
+        ...buildProjectionBootstrapContextFiles({
+          projectionVersions: readModels.projectionVersions,
+          projectionOutputs: readModels.projectionOutputs,
+        }),
+        ...buildExtraContextFiles({
+          artifacts: readModels.contextArtifacts,
+          sessionSummaryArtifactId: readModels.sessionState?.sessionSummaryArtifactId,
+        }),
+      ],
       projectionOutputs: readModels.projectionOutputs,
       projectionVersions: readModels.projectionVersions,
       status,

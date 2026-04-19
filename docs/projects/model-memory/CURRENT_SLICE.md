@@ -107,6 +107,8 @@ memory priority before broader Phase 2 implementation.
   - curated `MEMORY.md` is again a human-owned durable memory surface
   - generated recall/pointer scaffolding is no longer materialized back into
     curated `MEMORY.md`
+  - compiled `memory-md` bootstrap semantics are restored through a separate
+    generated artifact path under `.openclaw/model-memory/projections/*`
   - current-run bootstrap resolution now overlays canonicalized files over any
     stale session snapshot by filename
 - the original Main-run deep ingest interruption is now recorded in:

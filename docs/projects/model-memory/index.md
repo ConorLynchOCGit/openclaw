@@ -123,6 +123,8 @@ Current status:
 60. [Memory Bootstrap Ownership Split Baseline 2026-04](/projects/model-memory/memory-bootstrap-ownership-split-baseline-2026-04)
 61. [Memory Bootstrap Ownership Contract](/projects/model-memory/memory-bootstrap-ownership-contract)
 62. [MEMORY.md Bootstrap Review 2026-04](/projects/model-memory/memory-md-bootstrap-review-2026-04)
+63. [Memory Bootstrap Semantics Restoration Baseline 2026-04](/projects/model-memory/memory-bootstrap-semantics-restoration-baseline-2026-04)
+64. [Memory Bootstrap Semantics Contract](/projects/model-memory/memory-bootstrap-semantics-contract)
 
 ## Scope
 
@@ -186,3 +188,6 @@ Current operational scope:
   - [Memory Bootstrap Ownership Split Baseline 2026-04](/projects/model-memory/memory-bootstrap-ownership-split-baseline-2026-04)
   - [Memory Bootstrap Ownership Contract](/projects/model-memory/memory-bootstrap-ownership-contract)
   - [MEMORY.md Bootstrap Review 2026-04](/projects/model-memory/memory-md-bootstrap-review-2026-04)
+- the follow-on bootstrap-semantics restoration for `memory-md` now lives in:
+  - [Memory Bootstrap Semantics Restoration Baseline 2026-04](/projects/model-memory/memory-bootstrap-semantics-restoration-baseline-2026-04)
+  - [Memory Bootstrap Semantics Contract](/projects/model-memory/memory-bootstrap-semantics-contract)

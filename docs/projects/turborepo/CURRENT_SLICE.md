@@ -30,6 +30,10 @@ title: "Turborepo Current Slice"
 - the root gates themselves no longer depend on opaque monolithic shell bodies
 - the repo has at least one concrete lightweight narrow-seam lane that reduces
   repeated focused Vitest startup churn without weakening proof authority
+- the repo has at least one additional lightweight lane for deterministic
+  model-memory bootstrap projection selection without using a full Vitest boot
+- the repo has a deterministic lightweight lane for resolved bootstrap context
+  assembly, including appended generated `memory-md` artifact ordering
 
 ## Immediate next slice
 

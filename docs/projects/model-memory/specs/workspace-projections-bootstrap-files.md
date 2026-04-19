@@ -1,5 +1,5 @@
 ---
-summary: "Deterministic projection of model-memory into workspace bootstrap files."
+summary: "Deterministic projection of model-memory into workspace bootstrap files and runtime bootstrap artifacts."
 title: "Workspace Projections And Bootstrap Files"
 ---
 
@@ -7,7 +7,8 @@ title: "Workspace Projections And Bootstrap Files"
 
 ## Objective
 
-Define how canonical memory truth becomes runtime-consumable bootstrap files and generated workspace sections.
+Define how canonical memory truth becomes runtime-consumable bootstrap files,
+runtime projection artifacts, and generated workspace sections.
 
 ## Core rule
 
@@ -34,7 +35,7 @@ They are not themselves semantic truth.
 
 V1 allowed targets:
 
-- generated `MEMORY.md`
+- `memory-md` as a generated bootstrap projection artifact
 - generated `USER.md`
 - generated sections inside `AGENTS.md`
 
@@ -50,7 +51,8 @@ Not owned by projection by default:
 
 ## Existing file ingestion requirement
 
-Before replacing existing `MEMORY.md` or `USER.md` content with generated projections, current human-authored content must be:
+Before replacing existing `MEMORY.md` or `USER.md` content with generated
+projections, current human-authored content must be:
 
 - audited
 - ingested into canonical memory storage where appropriate
@@ -60,7 +62,8 @@ The system must not blindly overwrite previously hand-authored memory content.
 
 ## Ownership zones
 
-Mixed files should use explicit generated and human-owned sections.
+Mixed files should use explicit generated and human-owned sections when the live
+contract still permits a mixed file.
 
 Example:
 
@@ -80,9 +83,20 @@ Example:
 
 The compiler owns only the generated zone.
 
-If an allowed projection target file already exists, only the generated zone may be rewritten.
+If an allowed projection target file already exists, only the generated zone may
+be rewritten.
 
-If an allowed projection target file does not yet exist, the compiler may create it in accordance with the target policy.
+If an allowed projection target file does not yet exist, the compiler may
+create it in accordance with the target policy.
+
+Current explicit exception:
+
+- workspace `MEMORY.md` is no longer a mixed generated file in the live
+  contract
+- curated `MEMORY.md` remains human-owned
+- `memory-md` still exists as a projection target, but it now reaches bootstrap
+  context through its separate generated artifact path under
+  `.openclaw/model-memory/projections/`
 
 ## Runtime-owned output location
 
@@ -98,11 +112,15 @@ Recommended subdirectories:
 - `.openclaw/model-memory/projections/`
 - `.openclaw/model-memory/session/`
 
-Projection into top-level bootstrap files should happen through controlled generated zones, not by treating repo docs as a cache surface.
+Projection into top-level bootstrap files should happen through controlled
+generated zones or separate generated runtime artifact paths, not by treating
+repo docs as a cache surface.
 
 Canonical generated storage lives under `.openclaw/model-memory/`.
 
 Top-level bootstrap files are rendered views, not the primary generated store.
+For `memory-md`, the current live rendered view is the generated runtime
+artifact path, not the curated workspace file.
 
 ## What belongs in bootstrap files
 
@@ -117,7 +135,7 @@ Compile into bootstrap files only when the memory is:
 Bootstrap packets should be built through the shared packet compiler, with
 packet-specific policy for each file:
 
-- `MEMORY.md` requires strong basket shaping, section caps, and explicit
+- `memory-md` requires strong basket shaping, section caps, and explicit
   dropped-item accounting
 - `USER.md` favors stable standing preferences and constraints
 - generated `AGENTS.md` sections favor critical rules and operational
@@ -147,7 +165,8 @@ Keep retrieval-only when the memory is:
 
 Typical projection outputs may include:
 
-- `MEMORY.md` executive digest
+- `memory-md` executive digest surfaced as a generated runtime bootstrap
+  artifact
 - `USER.md` standing user preferences
 - `AGENTS.md` generated critical standing rules
 - project-local projection artifacts later

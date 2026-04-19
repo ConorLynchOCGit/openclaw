@@ -62,6 +62,14 @@ What exists now:
   ownership proof:
   - `pnpm test:bootstrap:memory`
   - `node --import tsx --test scripts/bootstrap-memory-ownership.test.ts`
+- a second lightweight repo-owned narrow-seam lane now exists for
+  model-memory bootstrap projection restoration:
+  - `pnpm test:model-memory:bootstrap-projection`
+  - `node --import tsx --test scripts/model-memory-bootstrap-projection.test.ts`
+- a third lightweight repo-owned narrow-seam lane now exists for bootstrap
+  context assembly:
+  - `pnpm test:bootstrap:context-assembly`
+  - `node --import tsx --test scripts/bootstrap-context-assembly.test.ts`
 
 What does not exist yet:
 

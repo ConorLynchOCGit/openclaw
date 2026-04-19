@@ -56,3 +56,5 @@ Current supporting lane:
 
 - lightweight repo-owned proof can now cover narrow bootstrap-memory seams
   without paying a fresh Vitest environment for each tiny iteration
+- that lane now also covers the deterministic `memory-md` bootstrap projection
+  selection seam

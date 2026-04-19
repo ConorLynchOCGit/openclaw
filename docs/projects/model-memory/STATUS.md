@@ -95,6 +95,8 @@ The current bootstrap-memory posture is now also cleaner:
   curated file
 - the runtime keeps DB-backed generated memory as a separate overlay instead of
   writing it back into curated `MEMORY.md`
+- the compiled `memory-md` packet is now restored as a separate generated
+  bootstrap context artifact under `.openclaw/model-memory/projections/*`
 - current runs now overlay freshly canonicalized bootstrap files over stale
   session-scoped bootstrap snapshots by filename
 

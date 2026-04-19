@@ -13,11 +13,12 @@ the old runtime wrote to some of the same file names.
 The following surfaces remain human-owned continuity until an explicit future
 cut is approved:
 
-| Surface                 | Ownership                                            | Current role                                               |
-| ----------------------- | ---------------------------------------------------- | ---------------------------------------------------------- |
-| workspace `MEMORY.md`   | human-owned with generated projection zone preserved | curated long-term continuity and bootstrap memory artifact |
-| workspace `memory/*.md` | human-owned daily continuity                         | daily notes, operator continuity, daily-summary input      |
-| workspace `USER.md`     | human-owned                                          | durable operator preferences and identity/context notes    |
+| Surface                                   | Ownership                    | Current role                                             |
+| ----------------------------------------- | ---------------------------- | -------------------------------------------------------- |
+| workspace `MEMORY.md`                     | human-owned                  | curated long-term continuity and bootstrap memory source |
+| workspace `memory/*.md`                   | human-owned daily continuity | daily notes, operator continuity, daily-summary input    |
+| workspace `USER.md`                       | human-owned                  | durable operator preferences and identity/context notes  |
+| `.openclaw/model-memory/projections/*.md` | runtime/model-memory         | generated bootstrap projection artifacts with provenance |
 
 ## Preservation rules
 
@@ -32,23 +33,25 @@ cut is approved:
 
 ## Overwrite policy
 
-| Surface       | Policy                          |
-| ------------- | ------------------------------- |
-| `MEMORY.md`   | `merge_only_via_generated_zone` |
-| `memory/*.md` | `no_overwrite`                  |
-| `USER.md`     | `no_overwrite`                  |
+| Surface       | Policy         |
+| ------------- | -------------- |
+| `MEMORY.md`   | `no_overwrite` |
+| `memory/*.md` | `no_overwrite` |
+| `USER.md`     | `no_overwrite` |
 
-### `merge_only_via_generated_zone`
+### Separate generated artifact path
 
-`MEMORY.md` may contain both:
+Generated projections may still exist, but for workspace continuity files the
+generated output should prefer a separate artifact path when the file is meant
+to remain fully human-owned.
 
-- human-authored long-term notes
-- a generated or canonicalized zone owned by runtime projection logic
+Current live example:
 
-The generated zone may be refreshed.
+- workspace `MEMORY.md` stays human-authored
+- compiled `memory-md` output is injected through
+  `.openclaw/model-memory/projections/<target>-<hash>.md`
 
-The surrounding human-authored sections may not be replaced by projection logic
-or by bulk ingest tooling.
+That preserves continuity ownership without discarding bootstrap semantics.
 
 ### `no_overwrite`
 

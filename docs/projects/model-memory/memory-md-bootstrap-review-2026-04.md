@@ -152,6 +152,8 @@ This landing adds the structural fix:
 After the landing:
 
 - curated `MEMORY.md` stays curated on disk
+- compiled `memory-md` projection now reaches bootstrap context as a separate
+  generated artifact under `.openclaw/model-memory/projections/*`
 - DB-backed generated memory remains available through the separate live
   `model-memory` bootstrap overlay path
 - recall/index routing remains owned by `docs/system/memory.md`
@@ -212,9 +214,11 @@ Recommended secondary fix:
 1. `MEMORY.md` is now human-curated and structurally clean again.
 2. Generated standing-context material no longer gets materialized back into
    the curated file.
-3. DB-backed generated memory remains a separate runtime overlay surface.
-4. Project/runbook routing remains in owning docs instead of curated memory.
-5. Bootstrap budgets were left unchanged because the post-split file now fits
+3. The compiled `memory-md` bootstrap packet is injected through its separate
+   generated artifact path instead of the workspace file.
+4. DB-backed generated memory remains a separate runtime overlay surface.
+5. Project/runbook routing remains in owning docs instead of curated memory.
+6. Bootstrap budgets were left unchanged because the post-split file now fits
    cleanly.
 
 ## Bottom line

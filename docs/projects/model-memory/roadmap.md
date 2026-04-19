@@ -89,7 +89,8 @@ Goals:
 - implement `active_memory_slots` and `active_memory_sets`
 - implement `session_context_state`
 - implement `context_artifacts`
-- implement projection compiler for generated `MEMORY.md`, `USER.md`, and `AGENTS.md` sections
+- implement projection compiler for the separate `memory-md` bootstrap
+  artifact plus generated `USER.md` and `AGENTS.md` sections
 - audit and ingest existing human-authored `MEMORY.md` and `USER.md` content before replacement
 
 Exit criteria:

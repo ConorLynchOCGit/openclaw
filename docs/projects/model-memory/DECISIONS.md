@@ -1325,6 +1325,38 @@ Reasoning:
 - projections are downstream runtime artifacts, not permission to overwrite project docs wholesale
 - the generated-zone boundary keeps bootstrap projection practical without turning workspace files into unsafe cache surfaces
 
+## 2026-04-19 - curated workspace MEMORY.md stays human-owned
+
+Decision:
+
+- workspace `MEMORY.md` is no longer a live generated-zone target
+- curated `MEMORY.md` remains fully human-owned and `no_overwrite`
+
+Reasoning:
+
+- the mixed-purpose file had become structurally wrong for a continuity surface
+- generated standing context and recall scaffolding were crowding out the
+  actual human-curated durable memory
+- continuity ownership is clearer and safer when the workspace file is not also
+  acting as a generated cache surface
+
+## 2026-04-19 - memory-md bootstrap semantics survive as a separate generated artifact
+
+Decision:
+
+- `memory-md` remains a valid projection target
+- its rendered output is injected into bootstrap context through the generated
+  artifact path recorded in `canonicalArtifactPath`
+- it is not written back into workspace `MEMORY.md`
+
+Reasoning:
+
+- startup grounding still needs the bounded stable packet that `memory-md`
+  provides
+- separating the generated projection artifact from the curated workspace file
+  preserves both ownership and bootstrap semantics
+- the artifact path itself keeps provenance visible at runtime
+
 ## 2026-04-13 - v1 context engine delegates compaction
 
 Decision:

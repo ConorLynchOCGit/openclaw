@@ -214,6 +214,22 @@ export function overlayBootstrapFilesByName(
   return merged;
 }
 
+export function buildResolvedBootstrapContextFiles(params: {
+  bootstrapFiles: WorkspaceBootstrapFile[];
+  modelMemoryOverlay?: { contextFiles: EmbeddedContextFile[] } | null;
+  config?: OpenClawConfig;
+  warn?: (message: string) => void;
+}): EmbeddedContextFile[] {
+  const contextFiles = buildBootstrapContextFiles(params.bootstrapFiles, {
+    maxChars: resolveBootstrapMaxChars(params.config),
+    totalMaxChars: resolveBootstrapTotalMaxChars(params.config),
+    warn: params.warn,
+  });
+  return params.modelMemoryOverlay
+    ? [...contextFiles, ...params.modelMemoryOverlay.contextFiles]
+    : contextFiles;
+}
+
 export async function resolveBootstrapFilesForRun(params: {
   workspaceDir: string;
   config?: OpenClawConfig;
@@ -295,13 +311,13 @@ export async function resolveBootstrapContextForRun(params: {
   contextFiles: EmbeddedContextFile[];
 }> {
   const { bootstrapFiles, modelMemoryOverlay } = await resolveBootstrapArtifactsForRun(params);
-  const contextFiles = buildBootstrapContextFiles(bootstrapFiles, {
-    maxChars: resolveBootstrapMaxChars(params.config),
-    totalMaxChars: resolveBootstrapTotalMaxChars(params.config),
-    warn: params.warn,
-  });
-  const mergedContextFiles = modelMemoryOverlay
-    ? [...contextFiles, ...modelMemoryOverlay.contextFiles]
-    : contextFiles;
-  return { bootstrapFiles, contextFiles: mergedContextFiles };
+  return {
+    bootstrapFiles,
+    contextFiles: buildResolvedBootstrapContextFiles({
+      bootstrapFiles,
+      modelMemoryOverlay,
+      config: params.config,
+      warn: params.warn,
+    }),
+  };
 }
