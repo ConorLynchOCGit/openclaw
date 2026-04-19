@@ -18,6 +18,7 @@ export * from "./live-daily-continuity-recovery-service.ts";
 export * from "./live-ordinary-turn-capture-service.ts";
 export * from "./live-shadow-adapters.ts";
 export * from "./memory-object-store.ts";
+export * from "./mmv2/index.ts";
 export * from "./model-execution.ts";
 export * from "./ordinary-turn-capture.ts";
 export * from "./operator-inspection.ts";

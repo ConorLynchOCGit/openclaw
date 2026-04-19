@@ -9,6 +9,7 @@ describe("prompt-contracts", () => {
   it("exposes the supported contract names", () => {
     expect(MODEL_CONTRACT_NAMES).toEqual([
       "semantic_extraction",
+      "semantic_collision_adjudication",
       "retrieval_request_interpretation",
       "retrieval_reranking",
       "session_summary_generation",

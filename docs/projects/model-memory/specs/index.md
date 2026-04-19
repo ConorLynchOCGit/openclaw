@@ -42,6 +42,7 @@ These specs define the clean-room `model-memory` project before any implementati
 31. [Prompt Contract Phase 2 Migration](/projects/model-memory/specs/prompt-contract-phase2-migration)
 32. [Model Driven Packet Assembly Evaluation](/projects/model-memory/specs/model-driven-packet-assembly-evaluation)
 33. [Packet Compiler And Budgeting](/projects/model-memory/specs/packet-compiler-and-budgeting)
+34. [MMV2 Ingestion Draft Specs](/projects/model-memory/specs/mmv2)
 
 ## Companion project docs
 
