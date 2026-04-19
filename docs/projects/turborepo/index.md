@@ -32,6 +32,7 @@ keep the final landing bar coherent.
 5. [Roadmap](/projects/turborepo/roadmap)
 6. [Spec Index](/projects/turborepo/specs)
 7. [Root Gate Decomposition Audit](/projects/turborepo/root-gate-decomposition-audit)
+8. [Vitest Optimization Audit 2026-04](/projects/turborepo/vitest-optimization-audit-2026-04)
 
 ## Scope
 
@@ -50,3 +51,8 @@ This project does not cover:
 - fake Turbo adoption for optics
 - unrelated product architecture changes
 - weakening required landing gates
+
+Current supporting lane:
+
+- lightweight repo-owned proof can now cover narrow bootstrap-memory seams
+  without paying a fresh Vitest environment for each tiny iteration

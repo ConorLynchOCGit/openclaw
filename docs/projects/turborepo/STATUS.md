@@ -58,6 +58,10 @@ What exists now:
 - durable project docs under `docs/projects/turborepo/`
 - retained build-performance planning now folded into
   `docs/projects/turborepo/specs/legacy-build-performance-surface.md`
+- a lightweight repo-owned narrow-seam lane now exists for bootstrap-memory
+  ownership proof:
+  - `pnpm test:bootstrap:memory`
+  - `node --import tsx --test scripts/bootstrap-memory-ownership.test.ts`
 
 What does not exist yet:
 
@@ -86,3 +90,9 @@ Execute the project specs in order:
    newly extracted owners, not for the already-decomposed root gates
 4. expand [Turbo Workspace Graph](/projects/turborepo/specs/turbo-workspace-graph) only where
    package ownership becomes real
+
+Immediate optimization posture after this landing:
+
+- keep live UI/operator truth in the authenticated browser harness
+- keep tiny bootstrap/helper seams in lightweight node-owned harnesses
+- keep true unit/integration ownership in Vitest

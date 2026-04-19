@@ -120,6 +120,9 @@ Current status:
 57. [Memory Build Status And Next Steps](/projects/model-memory/memory-build-status-and-next-steps)
 58. [Daily Memory Grounding Repair](/projects/model-memory/daily-memory-grounding-repair)
 59. [Daily Continuity Health](/projects/model-memory/daily-continuity-health)
+60. [Memory Bootstrap Ownership Split Baseline 2026-04](/projects/model-memory/memory-bootstrap-ownership-split-baseline-2026-04)
+61. [Memory Bootstrap Ownership Contract](/projects/model-memory/memory-bootstrap-ownership-contract)
+62. [MEMORY.md Bootstrap Review 2026-04](/projects/model-memory/memory-md-bootstrap-review-2026-04)
 
 ## Scope
 
@@ -178,3 +181,8 @@ Current operational scope:
   - [Legacy Retirement Proof](/projects/model-memory/final-legacy-retirement-proof)
   - [Daily Memory Grounding Repair](/projects/model-memory/daily-memory-grounding-repair)
   - [Daily Continuity Health](/projects/model-memory/daily-continuity-health)
+- the current bootstrap-memory ownership split for curated `MEMORY.md` now
+  lives in:
+  - [Memory Bootstrap Ownership Split Baseline 2026-04](/projects/model-memory/memory-bootstrap-ownership-split-baseline-2026-04)
+  - [Memory Bootstrap Ownership Contract](/projects/model-memory/memory-bootstrap-ownership-contract)
+  - [MEMORY.md Bootstrap Review 2026-04](/projects/model-memory/memory-md-bootstrap-review-2026-04)

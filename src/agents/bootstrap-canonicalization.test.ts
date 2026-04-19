@@ -87,26 +87,38 @@ describe("assembleBootstrapCompatibilityContent", () => {
     expect(content).toContain("current slice docs/projects/workspace-topology/CURRENT_SLICE.md");
   });
 
-  it("assembles MEMORY.md with both model-memory output and the generated pointer layer", () => {
+  it("keeps MEMORY.md human-owned by stripping generated overlays and recall scaffolding", () => {
     const content = assembleBootstrapCompatibilityContent({
       fileName: "MEMORY.md",
       filePath: "MEMORY.md",
-      existingContent: ["# MEMORY.md", "", "## Human Notes", "- keep this around"].join("\n"),
+      existingContent: [
+        "<!-- BEGIN GENERATED: model-memory -->",
+        "# MEMORY.md",
+        "",
+        "## Standing Context",
+        "- deployment region: region-001",
+        "<!-- END GENERATED: model-memory -->",
+        "",
+        "<!-- BEGIN GENERATED: openclaw-canonical -->",
+        "## Workspace Recall Index",
+        "- Read first: docs/system/roadmap.md",
+        "<!-- END GENERATED: openclaw-canonical -->",
+        "",
+        "# MEMORY.md",
+        "",
+        "## Human Notes",
+        "- keep this around",
+      ].join("\n"),
       registryEntry: {
         id: "memory_md",
         runtimePath: "MEMORY.md",
         structuralMode: "runtime_memory_artifact",
-        currentOwnership: "mixed_durable_and_generated",
-        targetOwnership: "canonical_derived_compatibility_artifact",
-        projectionMode: "generated_or_assembled_memory_artifact",
-        seedMode: "bootstrap_materialized",
-        seedTiming: "startup",
-        canonicalSourceClass: [
-          "docs_system",
-          "docs_projects",
-          "docs_agents",
-          "generated_memory_projection",
-        ],
+        currentOwnership: "human_curated_durable_memory",
+        targetOwnership: "human_curated_runtime_source",
+        projectionMode: "direct_curated_runtime_input",
+        seedMode: "eager_seed_without_generated_overlay",
+        seedTiming: "workspace_sync_and_pre_bootstrap_cleanup",
+        canonicalSourceClass: ["docs_projects", "docs_agents"],
       },
       canonicalSources,
       projectionText: [
@@ -128,26 +140,8 @@ describe("assembleBootstrapCompatibilityContent", () => {
       },
     });
 
-    expect(content).toContain("<!-- BEGIN GENERATED: model-memory -->");
-    expect(content).toContain("## Standing Context");
-    expect(content).toContain("<!-- BEGIN GENERATED: openclaw-canonical -->");
-    expect(content).toContain("## Workspace Recall Index");
-    expect(content).toContain("Read first: docs/system/roadmap.md");
-    expect(content).toContain("Active workspace: Workspace Topology");
-    expect(content).toContain("Queued workspace: Agent Foundation");
-    expect(content).toContain("## User-Facing Scheduled Flows");
-    expect(content).toContain("Automation overview: docs/automation/index.md");
-    expect(content).toContain("Scheduled tasks: docs/automation/cron-jobs.md");
-    expect(content).toContain("Heartbeat: docs/gateway/heartbeat.md");
-    expect(content).toContain(
-      "DB-backed generated memory projection: .openclaw/model-memory/projections/memory-md-hash-001.md",
-    );
-    expect(content).toContain("Daily memory ingestion layer: memory/YYYY-MM-DD.md");
-    expect(content.indexOf("<!-- BEGIN GENERATED: model-memory -->")).toBeLessThan(
-      content.indexOf("## Human Notes"),
-    );
-    expect(content.indexOf("<!-- BEGIN GENERATED: openclaw-canonical -->")).toBeLessThan(
-      content.indexOf("## Human Notes"),
+    expect(content).toBe(
+      ["# MEMORY.md", "", "## Human Notes", "- keep this around", ""].join("\n"),
     );
   });
 });

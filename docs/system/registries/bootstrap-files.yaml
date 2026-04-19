@@ -67,16 +67,16 @@ fileClasses:
   - id: memory_md
     runtimePath: MEMORY.md
     structuralMode: runtime_memory_artifact
-    currentOwnership: mixed_durable_and_generated
-    targetOwnership: canonical_derived_compatibility_artifact
-    projectionMode: generated_or_assembled_memory_artifact
-    seedMode: selective_seed_with_projection_overlay
-    seedTiming: pre_bootstrap_then_runtime_refresh
+    currentOwnership: human_curated_durable_memory
+    targetOwnership: human_curated_runtime_source
+    projectionMode: direct_curated_runtime_input
+    seedMode: eager_seed_without_generated_overlay
+    seedTiming: workspace_sync_and_pre_bootstrap_cleanup
     canonicalSourceClass:
       - docs_system
       - docs_projects
       - docs_agents
-      - generated_memory_projection
+      - daily_memory_layer
   - id: daily_memory_files
     runtimePath: memory/*.md
     structuralMode: episodic_ingestion_layer

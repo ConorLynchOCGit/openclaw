@@ -182,6 +182,38 @@ function filterHeartbeatBootstrapFile(
   return files.filter((file) => file.name !== DEFAULT_HEARTBEAT_FILENAME);
 }
 
+export function overlayBootstrapFilesByName(
+  baseFiles: WorkspaceBootstrapFile[],
+  overrideFiles: WorkspaceBootstrapFile[],
+): WorkspaceBootstrapFile[] {
+  if (overrideFiles.length === 0) {
+    return baseFiles;
+  }
+
+  const overrides = new Map(overrideFiles.map((file) => [file.name, file] as const));
+  const merged: WorkspaceBootstrapFile[] = [];
+
+  for (const file of baseFiles) {
+    const override = overrides.get(file.name);
+    if (override) {
+      merged.push(override);
+      overrides.delete(file.name);
+      continue;
+    }
+    merged.push(file);
+  }
+
+  for (const file of overrideFiles) {
+    if (!overrides.has(file.name)) {
+      continue;
+    }
+    merged.push(file);
+    overrides.delete(file.name);
+  }
+
+  return merged;
+}
+
 export async function resolveBootstrapFilesForRun(params: {
   workspaceDir: string;
   config?: OpenClawConfig;
@@ -225,8 +257,9 @@ async function resolveBootstrapArtifactsForRun(params: {
         sessionKey: params.sessionKey,
       })
     : await loadWorkspaceBootstrapFiles(params.workspaceDir);
+  const effectiveFiles = overlayBootstrapFilesByName(rawFiles, canonicalized.files);
   const bootstrapFiles = applyContextModeFilter({
-    files: filterBootstrapFilesForSession(rawFiles, sessionKey),
+    files: filterBootstrapFilesForSession(effectiveFiles, sessionKey),
     contextMode: params.contextMode,
     runKind: params.runKind,
   });

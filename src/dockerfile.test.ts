@@ -79,8 +79,12 @@ describe("Dockerfile", () => {
     expect(dockerfile).toContain(
       "RUN for dir in /app/${OPENCLAW_BUNDLED_PLUGIN_DIR} /app/.agent /app/.agents; do \\",
     );
-    expect(dockerfile).toContain('find "$dir" -type d -exec chmod 755 {} +');
-    expect(dockerfile).toContain('find "$dir" -type f -exec chmod 644 {} +');
+    expect(dockerfile).toContain(
+      `find "$dir" \\( -path '*/node_modules' -o -path '*/node_modules/*' \\) -prune -o -type d -exec chmod 755 {} +`,
+    );
+    expect(dockerfile).toContain(
+      `find "$dir" \\( -path '*/node_modules' -o -path '*/node_modules/*' \\) -prune -o -type f -exec chmod 644 {} +`,
+    );
   });
 
   it("Docker GPG fingerprint awk uses correct quoting for OPENCLAW_SANDBOX=1 build", async () => {

@@ -87,6 +87,17 @@ The current long-running ingest posture is now also clearer:
 - long-running ingest checkpoints are being hardened to persist `interrupted`
   state instead of being left at `running` after a rebuild crash
 
+The current bootstrap-memory posture is now also cleaner:
+
+- curated workspace `MEMORY.md` is no longer treated as a mixed-purpose
+  generated compatibility artifact
+- generated standing-context and recall-index scaffolding now stay out of the
+  curated file
+- the runtime keeps DB-backed generated memory as a separate overlay instead of
+  writing it back into curated `MEMORY.md`
+- current runs now overlay freshly canonicalized bootstrap files over stale
+  session-scoped bootstrap snapshots by filename
+
 The current top-priority memory work is now:
 
 - shared packet compiler design across bootstrap, dynamic, and retrieval packs

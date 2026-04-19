@@ -122,10 +122,11 @@ generated memory into authored docs.
 
 - `docs/system/memory.md` is the durable workspace recall index
 - detailed project content belongs in project workspaces, not in this file
-- runtime-facing `MEMORY.md` remains a memory artifact, not a replacement for
-  this durable recall index
-- assembled runtime `MEMORY.md` must include a high-priority pointer to the
-  DB-backed generated memory projection layer
+- curated runtime-facing `MEMORY.md` remains a human-owned durable memory
+  source, not a replacement for this durable recall index
+- DB-backed generated memory projection and recall/pointer scaffolding must flow
+  through separate runtime overlays or owning docs, not be materialized back
+  into curated `MEMORY.md`
 - active and queued project emphasis should follow
   `docs/system/registries/projects.yaml`, not ad hoc edits here
 - DB-backed `model-memory` projections remain part of the architecture

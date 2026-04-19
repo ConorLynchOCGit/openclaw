@@ -19,6 +19,8 @@ title: "Turborepo Current Slice"
 - avoid double-running newly package-owned lanes inside the root full-suite test
   path
 - record exactly what is still root-owned by design
+- extract tiny high-frequency proof seams out of ad hoc focused Vitest runs
+  when they do not need the full Vitest fixture stack
 
 ## Exit criteria
 
@@ -26,6 +28,8 @@ title: "Turborepo Current Slice"
 - the repo has a durable audit separating real Turbo value from still-root-owned
   work
 - the root gates themselves no longer depend on opaque monolithic shell bodies
+- the repo has at least one concrete lightweight narrow-seam lane that reduces
+  repeated focused Vitest startup churn without weakening proof authority
 
 ## Immediate next slice
 

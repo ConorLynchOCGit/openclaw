@@ -103,6 +103,12 @@ memory priority before broader Phase 2 implementation.
   - exact repair record:
     - [Daily Memory Grounding Repair](/projects/model-memory/daily-memory-grounding-repair)
     - [Daily Continuity Health](/projects/model-memory/daily-continuity-health)
+- the bootstrap-memory ownership split is now explicit and landed:
+  - curated `MEMORY.md` is again a human-owned durable memory surface
+  - generated recall/pointer scaffolding is no longer materialized back into
+    curated `MEMORY.md`
+  - current-run bootstrap resolution now overlays canonicalized files over any
+    stale session snapshot by filename
 - the original Main-run deep ingest interruption is now recorded in:
   - [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
 - the current ingest hardening posture is:

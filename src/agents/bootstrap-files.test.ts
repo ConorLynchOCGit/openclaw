@@ -7,6 +7,7 @@ import {
   type AgentBootstrapHookContext,
 } from "../hooks/internal-hooks.js";
 import { makeTempWorkspace } from "../test-helpers/workspace.js";
+import { clearAllBootstrapSnapshots, getOrLoadBootstrapFiles } from "./bootstrap-cache.js";
 import {
   FULL_BOOTSTRAP_COMPLETED_CUSTOM_TYPE,
   hasCompletedBootstrapTurn,
@@ -60,7 +61,10 @@ function registerMalformedBootstrapFileHook() {
 
 describe("resolveBootstrapFilesForRun", () => {
   beforeEach(() => clearInternalHooks());
-  afterEach(() => clearInternalHooks());
+  afterEach(() => {
+    clearInternalHooks();
+    clearAllBootstrapSnapshots();
+  });
 
   it("applies bootstrap hook overrides", async () => {
     registerExtraBootstrapFileHook();
@@ -110,11 +114,64 @@ describe("resolveBootstrapFilesForRun", () => {
     expect(agents?.content).toContain("## Session Startup");
     expect(diskContent).toContain("<!-- BEGIN GENERATED: openclaw-canonical -->");
   });
+
+  it("overlays fresh canonicalized MEMORY.md over stale session bootstrap snapshots", async () => {
+    const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    const memoryPath = path.join(workspaceDir, "MEMORY.md");
+    await fs.writeFile(
+      memoryPath,
+      [
+        "<!-- BEGIN GENERATED: model-memory -->",
+        "# MEMORY.md",
+        "",
+        "## Standing Context",
+        "- generated",
+        "<!-- END GENERATED: model-memory -->",
+        "",
+        "<!-- BEGIN GENERATED: openclaw-canonical -->",
+        "## Workspace Recall Index",
+        "- generated",
+        "<!-- END GENERATED: openclaw-canonical -->",
+        "",
+        "# MEMORY.md",
+        "",
+        "## Long-Term Context",
+        "- durable note",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const stale = await getOrLoadBootstrapFiles({
+      workspaceDir,
+      sessionKey: "session-1",
+    });
+    expect(stale.find((file) => file.name === "MEMORY.md")?.content).toContain(
+      "## Workspace Recall Index",
+    );
+
+    const files = await resolveBootstrapFilesForRun({
+      workspaceDir,
+      sessionKey: "session-1",
+    });
+    const memory = files.find((file) => file.name === "MEMORY.md");
+    const diskContent = await fs.readFile(memoryPath, "utf8");
+
+    expect(memory?.content).toBe(
+      ["# MEMORY.md", "", "## Long-Term Context", "- durable note", ""].join("\n"),
+    );
+    expect(memory?.content).not.toContain("## Workspace Recall Index");
+    expect(diskContent).toBe(
+      ["# MEMORY.md", "", "## Long-Term Context", "- durable note", ""].join("\n"),
+    );
+  });
 });
 
 describe("resolveBootstrapContextForRun", () => {
   beforeEach(() => clearInternalHooks());
-  afterEach(() => clearInternalHooks());
+  afterEach(() => {
+    clearInternalHooks();
+    clearAllBootstrapSnapshots();
+  });
 
   it("returns context files for hook-adjusted bootstrap files", async () => {
     registerExtraBootstrapFileHook();

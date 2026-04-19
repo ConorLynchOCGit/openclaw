@@ -107,52 +107,11 @@ function removeGeneratedZone(existingContent: string | undefined, blockId: strin
   return combined.length > 0 ? `${combined}\n` : "";
 }
 
-function extractGeneratedZone(
-  existingContent: string | undefined,
-  blockId: string,
-): { zone?: string; remaining: string } {
-  if (!existingContent || existingContent.trim().length === 0) {
-    return { remaining: "" };
-  }
-  const markers = getGeneratedZoneMarkers(blockId);
-  const begin = existingContent.indexOf(markers.begin);
-  const end = existingContent.indexOf(markers.end);
-  if (begin < 0 || end <= begin) {
-    return { remaining: existingContent };
-  }
-
-  const zoneEnd = end + markers.end.length;
-  const zone = existingContent.slice(begin, zoneEnd).trim();
-  const before = existingContent.slice(0, begin).trimEnd();
-  const after = existingContent.slice(zoneEnd).trimStart();
-  const remaining = [before, after].filter((value) => value.length > 0).join("\n\n");
-  return {
-    zone: zone.length > 0 ? zone : undefined,
-    remaining: remaining.length > 0 ? `${remaining}\n` : "",
-  };
-}
-
-function prioritizeGeneratedZones(existingContent: string | undefined, blockIds: string[]): string {
-  if (!existingContent || existingContent.trim().length === 0) {
-    return "";
-  }
-
-  let remaining = existingContent;
-  const zones: string[] = [];
-  for (const blockId of blockIds) {
-    const extracted = extractGeneratedZone(remaining, blockId);
-    if (extracted.zone) {
-      zones.push(extracted.zone);
-    }
-    remaining = extracted.remaining;
-  }
-
-  if (zones.length === 0) {
-    return existingContent;
-  }
-
-  const segments = [...zones, remaining.trim()].filter((value) => value.length > 0);
-  return `${segments.join("\n\n")}\n`;
+export function stripMemoryCompatibilityScaffolding(existingContent: string | undefined): string {
+  const withoutModelMemory = removeGeneratedZone(existingContent, MODEL_MEMORY_ZONE_BLOCK_ID);
+  const withoutCanonicalPointers = removeGeneratedZone(withoutModelMemory, CANONICAL_ZONE_BLOCK_ID);
+  const trimmed = withoutCanonicalPointers.trim();
+  return trimmed.length > 0 ? `${trimmed}\n` : "";
 }
 
 function extractBulletLines(markdown: string, heading: string): string[] {
@@ -355,47 +314,6 @@ function renderCanonicalBlock(params: {
     return lines.join("\n");
   }
 
-  if (
-    params.fileName === DEFAULT_MEMORY_FILENAME ||
-    params.fileName === DEFAULT_MEMORY_ALT_FILENAME
-  ) {
-    lines.push("## Workspace Recall Index");
-    lines.push("- Read first: docs/system/roadmap.md");
-    lines.push("- Read first: docs/system/build-plan.md");
-    lines.push("- Read first: docs/system/projects.md");
-    lines.push("- Read first: docs/system/agents.md");
-    lines.push("- Read first: docs/system/deployment.md");
-    lines.push(
-      ...renderProjectPointers("Active workspace", params.canonicalSources.activeProjects),
-    );
-    lines.push(
-      ...renderProjectPointers("Queued workspace", params.canonicalSources.queuedProjects),
-    );
-    lines.push("- Loose roadmap ideas: docs/system/roadmap-ideas.md");
-    lines.push("## User-Facing Scheduled Flows");
-    lines.push("- Automation overview: docs/automation/index.md");
-    lines.push("- Scheduled tasks: docs/automation/cron-jobs.md");
-    lines.push("- Heartbeat: docs/gateway/heartbeat.md");
-    lines.push("- Background tasks ledger: docs/automation/tasks.md");
-    lines.push("- Cron CLI: docs/cli/cron.md");
-    lines.push("## Generated Memory Pointers");
-    if (params.projectionVersion?.canonicalArtifactPath) {
-      lines.push(
-        `- DB-backed generated memory projection: ${params.projectionVersion.canonicalArtifactPath}`,
-      );
-    } else {
-      lines.push("- DB-backed generated memory projection: .openclaw/model-memory/projections/");
-    }
-    lines.push("- Daily memory ingestion layer: memory/YYYY-MM-DD.md");
-    for (const layer of params.canonicalSources.memoryLayers) {
-      lines.push(`- Memory layer: ${layer}`);
-    }
-    for (const rule of params.canonicalSources.memoryRules) {
-      lines.push(`- ${rule}`);
-    }
-    return lines.join("\n");
-  }
-
   if (params.fileName === DEFAULT_SOUL_FILENAME) {
     lines.push("- Keep this file lean and identity-focused rather than procedural.");
     lines.push(
@@ -481,6 +399,16 @@ export function assembleBootstrapCompatibilityContent(params: {
   projectionText?: string;
   projectionVersion?: WorkspaceProjectionVersionRecord;
 }): string {
+  if (
+    params.fileName === DEFAULT_MEMORY_FILENAME ||
+    params.fileName === DEFAULT_MEMORY_ALT_FILENAME
+  ) {
+    // MEMORY.md now stays human-owned. Generated model-memory projections and
+    // pointer/index scaffolding flow through separate runtime overlays instead
+    // of being materialized back into the curated file.
+    return stripMemoryCompatibilityScaffolding(params.existingContent);
+  }
+
   let assembled = params.existingContent ?? "";
   if (params.projectionText) {
     assembled = upsertGeneratedZone(assembled, params.projectionText, MODEL_MEMORY_ZONE_BLOCK_ID);
@@ -498,18 +426,6 @@ export function assembleBootstrapCompatibilityContent(params: {
     }),
     CANONICAL_ZONE_BLOCK_ID,
   );
-
-  if (
-    params.fileName === DEFAULT_MEMORY_FILENAME ||
-    params.fileName === DEFAULT_MEMORY_ALT_FILENAME
-  ) {
-    // Keep the live memory digest and canonical recall index above the large
-    // legacy body so they survive prompt-budget truncation.
-    assembled = prioritizeGeneratedZones(assembled, [
-      MODEL_MEMORY_ZONE_BLOCK_ID,
-      CANONICAL_ZONE_BLOCK_ID,
-    ]);
-  }
   return assembled;
 }
 
