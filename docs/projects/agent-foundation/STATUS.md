@@ -7,44 +7,60 @@ title: "Agent Foundation Status"
 
 ## Overall
 
-State: `runtime_inventory_reconciled`
+State: `live_agent_packs_populated_and_runtime_aligned`
 
-The durable agent-workspace structure is still a future slice, but the live
-runtime agent set has now been reconciled into repo truth and the bounded live
-runtime-source packs are now canonized under `docs/agents/`.
+The durable agent layer is no longer just a future slice. The live runtime
+agent set is now mirrored by a real durable pack system under `docs/agents/`,
+with registry alignment and an explicit browsing-safety hardening pass for
+`web-researcher`.
 
 ## Confirmed current state
 
-- skill definitions exist under `.agents/skills/**`
-- a few lightweight agent descriptors exist under skill-local `agents/*.yaml`
-- bounded canonical `docs/agents/` footholds now exist for:
-  - `builder`
+- the live VPS runtime currently includes seven configured agents:
   - `main`
+  - `chief`
+  - `builder`
   - `researcher`
   - `web-researcher`
   - `writer`
   - `x-manager`
-- the retained subset of the old role-library adaptation surface now lives
-  under `docs/projects/agent-foundation/specs/role-library-adaptations.md`
-- the live VPS runtime currently includes seven configured agents
-- two specialized live agents (`web-researcher`, `x-manager`) had drifted into
-  missing dedicated workspace dirs before this reconciliation slice repaired
-  them
-- `researcher` remains configured but uninitialized
-- the next richer pack-population slice now has an explicit ownership map in
-  [Compatibility Source Migration Plan](/projects/agent-foundation/compatibility-source-migration-plan)
-- the stricter recovery pass now shows that richer durable agent-pack content
-  beyond the runtime-source seeds still needs later population, but the live
-  non-main runtime packs are no longer repo-missing
+- each live agent now has a durable base pack under `docs/agents/<agent-id>/`
+- `docs/agents/registry.yaml` is now the durable machine-checkable map for the
+  live set
+- `chief` is no longer an undocumented live agent; it now has an explicit pack
+  while intentionally sharing the main runtime compatibility source surface
+- `.agents/` remains the machine/runtime root rather than carrying durable role
+  meaning by itself
+- repeatable executable workflows remain skill-first by policy rather than
+  spawning a second workflow-doc system
+- `web-researcher` now has an explicit prompt-injection defense contract in
+  both durable docs and the runtime prompt/tool seam
+- `web-researcher` now also has a layered defense posture rather than a prompt
+  warning only:
+  - external page content is classified as untrusted external content
+  - runtime fetch results now surface suspicion outcomes for blocked,
+    suspicious, or escalate-for-review content
+  - the durable design now lives in:
+    - [Web Researcher Prompt Injection Defense](/projects/agent-foundation/web-researcher-prompt-injection-defense)
+    - [Web Researcher Layered Defense](/projects/agent-foundation/web-researcher-layered-defense)
+- first-pass pack population is no longer the only quality bar:
+  - the core agent packs now have a dedicated improvement rubric in
+    [Agent Pack Quality Rubric](/projects/agent-foundation/agent-pack-quality-rubric)
+- `researcher` remains configured but uninitialized, and that is now recorded
+  explicitly in both the durable inventory and registry
 
 ## Immediate next move
 
-Use the reconciled live runtime inventory and the canonized runtime-source packs
-as the entry point for the later agent-pack population slice, then:
+Keep the new pack system honest and maintained, then:
 
-1. extend `docs/agents/` beyond the current runtime-source footholds
-2. define the registry-backed durable pack per live agent
-3. fully populate the highest-priority remaining agent packs first
-4. decide whether `researcher` should be initialized or retired explicitly
-5. use [Exhaustive Agent Pack Diff](/projects/agent-foundation/exhaustive-agent-pack-diff)
-   as the recovery baseline instead of rediscovering the pack drift later
+1. keep the registry and the durable packs in lock-step through
+   `scripts/check-agent-packs.mjs`
+2. keep runtime compatibility files aligned without collapsing durable meaning
+   back into `.agents/`
+3. decide whether `researcher` should be initialized or retired explicitly
+4. extend agent-specific examples/interfaces only where they carry real durable
+   value
+5. keep the `web-researcher` browsing defense aligned with the real live
+   browsing toolset
+6. keep improving high-authority packs against the new quality rubric rather
+   than treating file existence as sufficient

@@ -1,0 +1,806 @@
+{
+  "generatedAt": "2026-04-18T16:17:40.455Z",
+  "repoRoot": "/root/services/openclaw-roles/live",
+  "modelId": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 120000,
+  "maxWordsPerWindow": 1500,
+  "corpus": [
+    {
+      "id": "system-memory",
+      "relativePath": "docs/system/memory.md",
+      "rationale": "System recall index with explicit memory-layer policy and workspace inventory.",
+      "semanticMix": "Topology facts plus durable memory-layer rules.",
+      "expectedDominantKinds": ["fact", "rule", "reference"],
+      "mustCaptureClaims": [
+        "System Memory is the workspace recall index for OpenClaw.",
+        "Generated memory must not flatten authored docs.",
+        "The memory layers include human-owned sources, DB-backed model-memory projection, and daily memory files as an ingestion layer."
+      ]
+    },
+    {
+      "id": "system-deployment",
+      "relativePath": "docs/system/deployment.md",
+      "rationale": "Deployment policy surface with strong normative language and stable operational facts.",
+      "semanticMix": "Rules first, then deployment facts and references.",
+      "expectedDominantKinds": ["rule", "fact", "reference"],
+      "mustCaptureClaims": [
+        "OpenClaw should converge toward one canonical repo checkout, runtime container, and runtime image.",
+        "Deployment sprawl is drift, not harmless clutter.",
+        "Active runtime assets must not be pruned casually."
+      ]
+    },
+    {
+      "id": "architecture-overview",
+      "relativePath": "docs/projects/model-memory/specs/architecture-overview.md",
+      "rationale": "Core model-memory architecture doc that mixes descriptive pipeline facts with explicit non-goals.",
+      "semanticMix": "Architecture facts plus some boundary rules.",
+      "expectedDominantKinds": ["fact", "rule", "reference"],
+      "mustCaptureClaims": [
+        "The runtime pipeline is identical for supported source types after source adaptation.",
+        "Semantic truth lives only in canonical memory objects.",
+        "Detector-era modules and family registries are non-goals."
+      ]
+    },
+    {
+      "id": "kind-primary-schema-migration",
+      "relativePath": "docs/projects/model-memory/specs/kind-primary-schema-migration.md",
+      "rationale": "Direct test of class-vs-kind semantics and migration rules.",
+      "semanticMix": "Schema migration rules with supporting facts.",
+      "expectedDominantKinds": ["rule", "fact"],
+      "mustCaptureClaims": [
+        "Kind should become the primary semantic discriminator.",
+        "CanonicalClass should be secondary or derived.",
+        "Phase 2 should begin by keeping both fields while demoting class logically."
+      ]
+    },
+    {
+      "id": "document-read-ingest-arbitration",
+      "relativePath": "docs/projects/model-memory/specs/document-read-and-ingest-arbitration.md",
+      "rationale": "Strong normative contract around read-vs-ingest arbitration with bounded scope rules.",
+      "semanticMix": "Rules, procedures, and system-behavior facts.",
+      "expectedDominantKinds": ["rule", "procedure", "fact"],
+      "mustCaptureClaims": [
+        "Use the paginated reader first for immediate answerability.",
+        "Trigger ingest only when there is clear value beyond the current answer.",
+        "The current implementation only applies to host-side reads inside the active workspace root."
+      ]
+    },
+    {
+      "id": "runtime-project-surfaces",
+      "relativePath": "docs/projects/workspace-topology/runtime-project-surfaces.md",
+      "rationale": "Topology policy with canonical project list and compatibility-alias rules.",
+      "semanticMix": "Project-structure facts and resolution rules.",
+      "expectedDominantKinds": ["fact", "rule", "reference"],
+      "mustCaptureClaims": [
+        "Docs/projects surfaces are the only canonical project workspaces.",
+        "Workspace projects should usually be import-backed compatibility aliases.",
+        "Projects/ops is the justified writable exception."
+      ]
+    },
+    {
+      "id": "github-automation",
+      "relativePath": "docs/projects/deployment-topology/github-automation.md",
+      "rationale": "Automation lane with stable asset references and live-contract rules.",
+      "semanticMix": "Automation facts and operational rules.",
+      "expectedDominantKinds": ["fact", "rule", "reference"],
+      "mustCaptureClaims": [
+        "The GitHub digest lane is scoped to openclaw/openclaw.",
+        "The live webhook-ingest workflow is published and active on the public Funnel endpoint.",
+        "Future restoration work should extend this lane from committed assets rather than runtime-only host survival."
+      ]
+    },
+    {
+      "id": "skill-vetting-report-contract",
+      "relativePath": "docs/projects/skills-system/skill-vetting/specs/operator-vetting-report-contract.md",
+      "rationale": "Dense normative contract with explicit required fields and required sections.",
+      "semanticMix": "Rules first, with some reference facts.",
+      "expectedDominantKinds": ["rule", "reference"],
+      "mustCaptureClaims": [
+        "Every external skill review must end in a durable operator-facing report.",
+        "The report must live under docs/projects/skills-system/skill-vetting/reports.",
+        "Runtime surface proof must record availability and proof commands for openclaw and clawhub surfaces."
+      ]
+    },
+    {
+      "id": "web-research-delegation",
+      "relativePath": "docs/projects/web-stack/web_research_delegation_spec.md",
+      "rationale": "Delegation policy doc with clear when-to / when-not-to routing rules.",
+      "semanticMix": "Delegation rules, procedural request shape, and a few reference facts.",
+      "expectedDominantKinds": ["rule", "procedure", "reference"],
+      "mustCaptureClaims": [
+        "Web-researcher is the designated external public-web retrieval surface.",
+        "Explicit URL or read-this-page tasks should default to a fresh temporary web-researcher session.",
+        "Delegation requests should be bounded and include objective, required_fields, and desired_output_shape."
+      ]
+    },
+    {
+      "id": "routing-implementation-checklist",
+      "relativePath": "docs/projects/intake-routing/ROUTING_IMPLEMENTATION_CHECKLIST.md",
+      "rationale": "Checklist-heavy document that should stress procedure capture and rule vs fact separation.",
+      "semanticMix": "Procedures with some gating rules and deployment facts.",
+      "expectedDominantKinds": ["procedure", "rule", "fact"],
+      "mustCaptureClaims": [
+        "The checklist must be executed in order with verification gates before proceeding.",
+        "Step 1 requires applying and verifying the intake routing schema SQL.",
+        "Step 2 requires importing the Intake Router workflow into n8n but not activating it yet."
+      ]
+    }
+  ],
+  "variants": [
+    {
+      "variantId": "variant_b_schema_plus_prompt_simplification",
+      "hypothesis": "A bounded canonicalization simplification helps beyond prompt-only changes by removing the model burden of class assignment and normalizing brittle rule payload output.",
+      "simplificationTested": "Prompt simplification plus a canonicalization normalizer that derives canonicalClass from kind/sourceKind and repairs minimal rule payload shape.",
+      "filesChanged": [
+        "semantic_extraction prompt contract at candidate stage",
+        "semantic_extraction prompt contract at canonicalization stage",
+        "benchmark-only canonicalization normalizer"
+      ],
+      "intentionallyNotChanged": [
+        "No production schema migration.",
+        "No database write-policy changes.",
+        "No collision-logic changes.",
+        "No new deterministic heuristics beyond bounded canonicalization normalization."
+      ],
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+      "requestSeed": 7,
+      "requestTimeoutMs": 120000,
+      "maxWordsPerWindow": 1500,
+      "documents": [
+        {
+          "sourcePath": "docs/system/memory.md",
+          "rationale": "System recall index with explicit memory-layer policy and workspace inventory.",
+          "semanticMix": "Topology facts plus durable memory-layer rules.",
+          "expectedDominantKinds": ["fact", "rule", "reference"],
+          "mustCaptureClaims": [
+            "System Memory is the workspace recall index for OpenClaw.",
+            "Generated memory must not flatten authored docs.",
+            "The memory layers include human-owned sources, DB-backed model-memory projection, and daily memory files as an ingestion layer."
+          ],
+          "lineCount": 134,
+          "windowCount": 1,
+          "candidateCountByType": {},
+          "canonicalizedCountByKind": {},
+          "canonicalizedCountByCanonicalClass": {},
+          "validationRejectCount": 1,
+          "validationRejectReasons": [
+            "interpreter error: Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+          ],
+          "repairInvocations": {},
+          "writeDecisionCounts": {},
+          "adjudicationOutcomeCounts": {},
+          "collisionGateTotals": {
+            "rawCandidateCount": 0,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 0
+          },
+          "boundedAdjudicationRoutes": {},
+          "finalActiveObjectDeltaByKind": {},
+          "finalActiveObjectDeltaByCanonicalClass": {},
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate@pass_1_candidate@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 10645
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 10207,
+              "error": "Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [],
+          "boundedAdjudications": [],
+          "writeDecisions": []
+        },
+        {
+          "sourcePath": "docs/system/deployment.md",
+          "rationale": "Deployment policy surface with strong normative language and stable operational facts.",
+          "semanticMix": "Rules first, then deployment facts and references.",
+          "expectedDominantKinds": ["rule", "fact", "reference"],
+          "mustCaptureClaims": [
+            "OpenClaw should converge toward one canonical repo checkout, runtime container, and runtime image.",
+            "Deployment sprawl is drift, not harmless clutter.",
+            "Active runtime assets must not be pruned casually."
+          ],
+          "lineCount": 51,
+          "windowCount": 1,
+          "candidateCountByType": {},
+          "canonicalizedCountByKind": {},
+          "canonicalizedCountByCanonicalClass": {},
+          "validationRejectCount": 1,
+          "validationRejectReasons": [
+            "interpreter error: Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+          ],
+          "repairInvocations": {},
+          "writeDecisionCounts": {},
+          "adjudicationOutcomeCounts": {},
+          "collisionGateTotals": {
+            "rawCandidateCount": 0,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 0
+          },
+          "boundedAdjudicationRoutes": {},
+          "finalActiveObjectDeltaByKind": {},
+          "finalActiveObjectDeltaByCanonicalClass": {},
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/system/deployment.md",
+              "sourceWindowId": "302fc71b-ba9b-5809-b10f-5084d9e7349e",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate@pass_1_candidate@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 5991
+            },
+            {
+              "sourcePath": "docs/system/deployment.md",
+              "sourceWindowId": "302fc71b-ba9b-5809-b10f-5084d9e7349e",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 5553,
+              "error": "Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [],
+          "boundedAdjudications": [],
+          "writeDecisions": []
+        },
+        {
+          "sourcePath": "docs/projects/model-memory/specs/architecture-overview.md",
+          "rationale": "Core model-memory architecture doc that mixes descriptive pipeline facts with explicit non-goals.",
+          "semanticMix": "Architecture facts plus some boundary rules.",
+          "expectedDominantKinds": ["fact", "rule", "reference"],
+          "mustCaptureClaims": [
+            "The runtime pipeline is identical for supported source types after source adaptation.",
+            "Semantic truth lives only in canonical memory objects.",
+            "Detector-era modules and family registries are non-goals."
+          ],
+          "lineCount": 169,
+          "windowCount": 1,
+          "candidateCountByType": {},
+          "canonicalizedCountByKind": {},
+          "canonicalizedCountByCanonicalClass": {},
+          "validationRejectCount": 1,
+          "validationRejectReasons": [
+            "interpreter error: Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+          ],
+          "repairInvocations": {},
+          "writeDecisionCounts": {},
+          "adjudicationOutcomeCounts": {},
+          "collisionGateTotals": {
+            "rawCandidateCount": 0,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 0
+          },
+          "boundedAdjudicationRoutes": {},
+          "finalActiveObjectDeltaByKind": {},
+          "finalActiveObjectDeltaByCanonicalClass": {},
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/projects/model-memory/specs/architecture-overview.md",
+              "sourceWindowId": "e0cac3d6-00f1-5828-8d89-c57366616fac",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate@pass_1_candidate@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 10211
+            },
+            {
+              "sourcePath": "docs/projects/model-memory/specs/architecture-overview.md",
+              "sourceWindowId": "e0cac3d6-00f1-5828-8d89-c57366616fac",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 9773,
+              "error": "Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [],
+          "boundedAdjudications": [],
+          "writeDecisions": []
+        },
+        {
+          "sourcePath": "docs/projects/model-memory/specs/kind-primary-schema-migration.md",
+          "rationale": "Direct test of class-vs-kind semantics and migration rules.",
+          "semanticMix": "Schema migration rules with supporting facts.",
+          "expectedDominantKinds": ["rule", "fact"],
+          "mustCaptureClaims": [
+            "Kind should become the primary semantic discriminator.",
+            "CanonicalClass should be secondary or derived.",
+            "Phase 2 should begin by keeping both fields while demoting class logically."
+          ],
+          "lineCount": 115,
+          "windowCount": 1,
+          "candidateCountByType": {},
+          "canonicalizedCountByKind": {},
+          "canonicalizedCountByCanonicalClass": {},
+          "validationRejectCount": 1,
+          "validationRejectReasons": [
+            "interpreter error: Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+          ],
+          "repairInvocations": {},
+          "writeDecisionCounts": {},
+          "adjudicationOutcomeCounts": {},
+          "collisionGateTotals": {
+            "rawCandidateCount": 0,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 0
+          },
+          "boundedAdjudicationRoutes": {},
+          "finalActiveObjectDeltaByKind": {},
+          "finalActiveObjectDeltaByCanonicalClass": {},
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/projects/model-memory/specs/kind-primary-schema-migration.md",
+              "sourceWindowId": "c5bc50cb-43d4-5809-aa96-16b7025c5e8b",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate@pass_1_candidate@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 9033
+            },
+            {
+              "sourcePath": "docs/projects/model-memory/specs/kind-primary-schema-migration.md",
+              "sourceWindowId": "c5bc50cb-43d4-5809-aa96-16b7025c5e8b",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 8595,
+              "error": "Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [],
+          "boundedAdjudications": [],
+          "writeDecisions": []
+        },
+        {
+          "sourcePath": "docs/projects/model-memory/specs/document-read-and-ingest-arbitration.md",
+          "rationale": "Strong normative contract around read-vs-ingest arbitration with bounded scope rules.",
+          "semanticMix": "Rules, procedures, and system-behavior facts.",
+          "expectedDominantKinds": ["rule", "procedure", "fact"],
+          "mustCaptureClaims": [
+            "Use the paginated reader first for immediate answerability.",
+            "Trigger ingest only when there is clear value beyond the current answer.",
+            "The current implementation only applies to host-side reads inside the active workspace root."
+          ],
+          "lineCount": 224,
+          "windowCount": 1,
+          "candidateCountByType": {},
+          "canonicalizedCountByKind": {},
+          "canonicalizedCountByCanonicalClass": {},
+          "validationRejectCount": 1,
+          "validationRejectReasons": [
+            "interpreter error: Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+          ],
+          "repairInvocations": {},
+          "writeDecisionCounts": {},
+          "adjudicationOutcomeCounts": {},
+          "collisionGateTotals": {
+            "rawCandidateCount": 0,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 0
+          },
+          "boundedAdjudicationRoutes": {},
+          "finalActiveObjectDeltaByKind": {},
+          "finalActiveObjectDeltaByCanonicalClass": {},
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/projects/model-memory/specs/document-read-and-ingest-arbitration.md",
+              "sourceWindowId": "4de3de14-878e-55c0-aa7e-2949399a79ba",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate@pass_1_candidate@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 14442
+            },
+            {
+              "sourcePath": "docs/projects/model-memory/specs/document-read-and-ingest-arbitration.md",
+              "sourceWindowId": "4de3de14-878e-55c0-aa7e-2949399a79ba",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 14004,
+              "error": "Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [],
+          "boundedAdjudications": [],
+          "writeDecisions": []
+        },
+        {
+          "sourcePath": "docs/projects/workspace-topology/runtime-project-surfaces.md",
+          "rationale": "Topology policy with canonical project list and compatibility-alias rules.",
+          "semanticMix": "Project-structure facts and resolution rules.",
+          "expectedDominantKinds": ["fact", "rule", "reference"],
+          "mustCaptureClaims": [
+            "Docs/projects surfaces are the only canonical project workspaces.",
+            "Workspace projects should usually be import-backed compatibility aliases.",
+            "Projects/ops is the justified writable exception."
+          ],
+          "lineCount": 134,
+          "windowCount": 1,
+          "candidateCountByType": {},
+          "canonicalizedCountByKind": {},
+          "canonicalizedCountByCanonicalClass": {},
+          "validationRejectCount": 1,
+          "validationRejectReasons": [
+            "interpreter error: Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+          ],
+          "repairInvocations": {},
+          "writeDecisionCounts": {},
+          "adjudicationOutcomeCounts": {},
+          "collisionGateTotals": {
+            "rawCandidateCount": 0,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 0
+          },
+          "boundedAdjudicationRoutes": {},
+          "finalActiveObjectDeltaByKind": {},
+          "finalActiveObjectDeltaByCanonicalClass": {},
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/projects/workspace-topology/runtime-project-surfaces.md",
+              "sourceWindowId": "4ea27562-8227-53c9-a597-e3eb1b11f0a2",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate@pass_1_candidate@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 10344
+            },
+            {
+              "sourcePath": "docs/projects/workspace-topology/runtime-project-surfaces.md",
+              "sourceWindowId": "4ea27562-8227-53c9-a597-e3eb1b11f0a2",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 9906,
+              "error": "Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [],
+          "boundedAdjudications": [],
+          "writeDecisions": []
+        },
+        {
+          "sourcePath": "docs/projects/deployment-topology/github-automation.md",
+          "rationale": "Automation lane with stable asset references and live-contract rules.",
+          "semanticMix": "Automation facts and operational rules.",
+          "expectedDominantKinds": ["fact", "rule", "reference"],
+          "mustCaptureClaims": [
+            "The GitHub digest lane is scoped to openclaw/openclaw.",
+            "The live webhook-ingest workflow is published and active on the public Funnel endpoint.",
+            "Future restoration work should extend this lane from committed assets rather than runtime-only host survival."
+          ],
+          "lineCount": 49,
+          "windowCount": 1,
+          "candidateCountByType": {},
+          "canonicalizedCountByKind": {},
+          "canonicalizedCountByCanonicalClass": {},
+          "validationRejectCount": 1,
+          "validationRejectReasons": [
+            "interpreter error: Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+          ],
+          "repairInvocations": {},
+          "writeDecisionCounts": {},
+          "adjudicationOutcomeCounts": {},
+          "collisionGateTotals": {
+            "rawCandidateCount": 0,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 0
+          },
+          "boundedAdjudicationRoutes": {},
+          "finalActiveObjectDeltaByKind": {},
+          "finalActiveObjectDeltaByCanonicalClass": {},
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/projects/deployment-topology/github-automation.md",
+              "sourceWindowId": "739a9a4a-ae4c-5309-88c0-b1c86f2d4823",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate@pass_1_candidate@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 5738
+            },
+            {
+              "sourcePath": "docs/projects/deployment-topology/github-automation.md",
+              "sourceWindowId": "739a9a4a-ae4c-5309-88c0-b1c86f2d4823",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 5300,
+              "error": "Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [],
+          "boundedAdjudications": [],
+          "writeDecisions": []
+        },
+        {
+          "sourcePath": "docs/projects/skills-system/skill-vetting/specs/operator-vetting-report-contract.md",
+          "rationale": "Dense normative contract with explicit required fields and required sections.",
+          "semanticMix": "Rules first, with some reference facts.",
+          "expectedDominantKinds": ["rule", "reference"],
+          "mustCaptureClaims": [
+            "Every external skill review must end in a durable operator-facing report.",
+            "The report must live under docs/projects/skills-system/skill-vetting/reports.",
+            "Runtime surface proof must record availability and proof commands for openclaw and clawhub surfaces."
+          ],
+          "lineCount": 166,
+          "windowCount": 1,
+          "candidateCountByType": {},
+          "canonicalizedCountByKind": {},
+          "canonicalizedCountByCanonicalClass": {},
+          "validationRejectCount": 1,
+          "validationRejectReasons": [
+            "interpreter error: Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+          ],
+          "repairInvocations": {},
+          "writeDecisionCounts": {},
+          "adjudicationOutcomeCounts": {},
+          "collisionGateTotals": {
+            "rawCandidateCount": 0,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 0
+          },
+          "boundedAdjudicationRoutes": {},
+          "finalActiveObjectDeltaByKind": {},
+          "finalActiveObjectDeltaByCanonicalClass": {},
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/projects/skills-system/skill-vetting/specs/operator-vetting-report-contract.md",
+              "sourceWindowId": "808e71c3-5193-5095-90c8-1686b275dfe4",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate@pass_1_candidate@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 9736
+            },
+            {
+              "sourcePath": "docs/projects/skills-system/skill-vetting/specs/operator-vetting-report-contract.md",
+              "sourceWindowId": "808e71c3-5193-5095-90c8-1686b275dfe4",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 9298,
+              "error": "Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [],
+          "boundedAdjudications": [],
+          "writeDecisions": []
+        },
+        {
+          "sourcePath": "docs/projects/web-stack/web_research_delegation_spec.md",
+          "rationale": "Delegation policy doc with clear when-to / when-not-to routing rules.",
+          "semanticMix": "Delegation rules, procedural request shape, and a few reference facts.",
+          "expectedDominantKinds": ["rule", "procedure", "reference"],
+          "mustCaptureClaims": [
+            "Web-researcher is the designated external public-web retrieval surface.",
+            "Explicit URL or read-this-page tasks should default to a fresh temporary web-researcher session.",
+            "Delegation requests should be bounded and include objective, required_fields, and desired_output_shape."
+          ],
+          "lineCount": 72,
+          "windowCount": 1,
+          "candidateCountByType": {},
+          "canonicalizedCountByKind": {},
+          "canonicalizedCountByCanonicalClass": {},
+          "validationRejectCount": 1,
+          "validationRejectReasons": [
+            "interpreter error: Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+          ],
+          "repairInvocations": {},
+          "writeDecisionCounts": {},
+          "adjudicationOutcomeCounts": {},
+          "collisionGateTotals": {
+            "rawCandidateCount": 0,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 0
+          },
+          "boundedAdjudicationRoutes": {},
+          "finalActiveObjectDeltaByKind": {},
+          "finalActiveObjectDeltaByCanonicalClass": {},
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/projects/web-stack/web_research_delegation_spec.md",
+              "sourceWindowId": "99d28d87-874b-511b-953e-ad07e264f23e",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate@pass_1_candidate@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 5647
+            },
+            {
+              "sourcePath": "docs/projects/web-stack/web_research_delegation_spec.md",
+              "sourceWindowId": "99d28d87-874b-511b-953e-ad07e264f23e",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 5209,
+              "error": "Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [],
+          "boundedAdjudications": [],
+          "writeDecisions": []
+        },
+        {
+          "sourcePath": "docs/projects/intake-routing/ROUTING_IMPLEMENTATION_CHECKLIST.md",
+          "rationale": "Checklist-heavy document that should stress procedure capture and rule vs fact separation.",
+          "semanticMix": "Procedures with some gating rules and deployment facts.",
+          "expectedDominantKinds": ["procedure", "rule", "fact"],
+          "mustCaptureClaims": [
+            "The checklist must be executed in order with verification gates before proceeding.",
+            "Step 1 requires applying and verifying the intake routing schema SQL.",
+            "Step 2 requires importing the Intake Router workflow into n8n but not activating it yet."
+          ],
+          "lineCount": 227,
+          "windowCount": 1,
+          "candidateCountByType": {},
+          "canonicalizedCountByKind": {},
+          "canonicalizedCountByCanonicalClass": {},
+          "validationRejectCount": 1,
+          "validationRejectReasons": [
+            "interpreter error: Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+          ],
+          "repairInvocations": {},
+          "writeDecisionCounts": {},
+          "adjudicationOutcomeCounts": {},
+          "collisionGateTotals": {
+            "rawCandidateCount": 0,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 0
+          },
+          "boundedAdjudicationRoutes": {},
+          "finalActiveObjectDeltaByKind": {},
+          "finalActiveObjectDeltaByCanonicalClass": {},
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/projects/intake-routing/ROUTING_IMPLEMENTATION_CHECKLIST.md",
+              "sourceWindowId": "1abd88f9-3282-5c90-bd1d-a1e8041e9d3e",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate@pass_1_candidate@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 14755
+            },
+            {
+              "sourcePath": "docs/projects/intake-routing/ROUTING_IMPLEMENTATION_CHECKLIST.md",
+              "sourceWindowId": "1abd88f9-3282-5c90-bd1d-a1e8041e9d3e",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 14317,
+              "error": "Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [],
+          "boundedAdjudications": [],
+          "writeDecisions": []
+        }
+      ],
+      "totals": {
+        "windowCount": 10,
+        "candidateCountByType": {},
+        "canonicalizedCountByKind": {},
+        "canonicalizedCountByCanonicalClass": {},
+        "validationRejectCount": 10,
+        "writeDecisionCounts": {},
+        "adjudicationOutcomeCounts": {},
+        "finalActiveObjectCountByKind": {}
+      }
+    }
+  ]
+}

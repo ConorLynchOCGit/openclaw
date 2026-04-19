@@ -14,6 +14,7 @@ import {
 } from "../infra/fs-safe.js";
 import { expandHomePrefix, resolveOsHomeDir } from "../infra/home-dir.js";
 import { hasEncodedFileUrlSeparator, trySafeFileURLToPath } from "../infra/local-file-access.js";
+import { resolveRepoCanonicalReadPath } from "../infra/repo-canonical-paths.js";
 import { detectMime } from "../media/mime.js";
 import { sniffMimeFromBase64 } from "../media/sniff-mime-from-base64.js";
 import type { ImageSanitizationLimits } from "./image-sanitization.js";
@@ -52,6 +53,7 @@ const MAX_ADAPTIVE_READ_PAGES = 4;
 type OpenClawReadToolOptions = {
   modelContextWindowTokens?: number;
   imageSanitization?: ImageSanitizationLimits;
+  workspaceRoot?: string;
 };
 
 type ReadDocumentIngestArbitrationTrigger = "capped_output" | "continued_read" | "repeated_read";
@@ -347,6 +349,16 @@ function resolveWorkspaceRelativeReadPath(params: {
   filePath: string;
   workspaceRoot: string;
 }): { absolutePath: string; workspaceRelativePath: string } | null {
+  const canonical = resolveRepoCanonicalReadPath({
+    inputPath: params.filePath,
+    workspaceRoot: params.workspaceRoot,
+  });
+  if (canonical) {
+    return {
+      absolutePath: canonical.absolutePath,
+      workspaceRelativePath: canonical.logicalPath,
+    };
+  }
   const absolutePath = resolveToolPathAgainstWorkspaceRoot({
     filePath: params.filePath,
     root: params.workspaceRoot,
@@ -1036,6 +1048,7 @@ export function createSandboxedReadTool(params: SandboxToolParams) {
   return createOpenClawReadTool(base, {
     modelContextWindowTokens: params.modelContextWindowTokens,
     imageSanitization: params.imageSanitization,
+    workspaceRoot: params.root,
   });
 }
 
@@ -1085,10 +1098,24 @@ export function createOpenClawReadTool(
     execute: async (toolCallId, params, signal) => {
       const record = getToolParamsRecord(params);
       assertRequiredParams(record, REQUIRED_PARAM_GROUPS.read, base.name);
+      let normalizedArgs = record ?? {};
+      const requestedPath = typeof record?.path === "string" ? record.path : undefined;
+      if (requestedPath && options?.workspaceRoot) {
+        const canonical = resolveRepoCanonicalReadPath({
+          inputPath: requestedPath,
+          workspaceRoot: options.workspaceRoot,
+        });
+        if (canonical) {
+          normalizedArgs = {
+            ...normalizedArgs,
+            path: canonical.absolutePath,
+          };
+        }
+      }
       const result = await executeReadWithAdaptivePaging({
         base,
         toolCallId,
-        args: record ?? {},
+        args: normalizedArgs,
         signal,
         maxBytes: resolveAdaptiveReadMaxBytes(options),
       });

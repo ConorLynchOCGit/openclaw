@@ -1,0 +1,125 @@
+version: 1
+providers:
+  - id: openai-codex
+    kind: oauth_runtime_auth
+    owner: openclaw_runtime
+    status: active
+    authSources:
+      - type: runtime_auth_store
+        path: /root/.openclaw/external-auth/codex/auth.json
+        precedence: 1
+      - type: agent_auth_profiles
+        path: /root/.openclaw/agents/main/agent/auth-profiles.json
+        precedence: 2
+      - type: agent_auth_state
+        path: /root/.openclaw/agents/main/agent/auth-state.json
+        precedence: 3
+    proof:
+      checker: node scripts/check-auth-sources.mjs --provider openai-codex
+  - id: openrouter
+    kind: api_key
+    owner: openclaw_runtime
+    status: active
+    authSources:
+      - type: state_env
+        path: /root/.openclaw/.env
+        selector: OPENROUTER_API_KEY
+        precedence: 1
+      - type: generated_runtime_snapshot
+        path: /root/.openclaw/agents/main/agent/models.json
+        selector: providers.openrouter.apiKey
+        precedence: 2
+    proof:
+      checker: node scripts/check-auth-sources.mjs --provider openrouter
+  - id: brave
+    kind: api_key
+    owner: openclaw_runtime
+    status: active
+    authSources:
+      - type: state_env
+        path: /root/.openclaw/.env
+        selector: BRAVE_API_KEY
+        precedence: 1
+      - type: config_secret_ref
+        path: /root/.openclaw/openclaw.json
+        selector: plugins.entries.brave.config.webSearch.apiKey.id
+        precedence: 2
+    proof:
+      checker: node scripts/check-auth-sources.mjs --provider brave
+  - id: firecrawl
+    kind: api_key
+    owner: openclaw_runtime
+    status: active
+    authSources:
+      - type: state_env
+        path: /root/.openclaw/.env
+        selector: FIRECRAWL_API_KEY
+        precedence: 1
+      - type: config_secret_ref
+        path: /root/.openclaw/openclaw.json
+        selector: plugins.entries.firecrawl.config.webSearch.apiKey.id
+        precedence: 2
+    proof:
+      checker: node scripts/check-auth-sources.mjs --provider firecrawl
+  - id: supabase
+    kind: database_url
+    owner: model_memory_runtime
+    status: active
+    authSources:
+      - type: config_value
+        path: /root/.openclaw/openclaw.json
+        selector: plugins.entries.model-memory.config.database.url
+        precedence: 1
+    proof:
+      checker: node scripts/check-auth-sources.mjs --provider supabase
+    notes:
+      - live default resolves to the Supabase pooler host from model-memory plugin config
+      - proof and scratch modes may resolve to dedicated database names on the same provider
+  - id: github
+    kind: external_webhook_and_runtime_credentials
+    owner: github_plus_n8n
+    status: external
+    authSources:
+      - type: external_runtime_surface
+        path: ops/github/workflows/github_webhook_ingest.json
+        selector: n8n crypto credential reference plus GitHub webhook signature lane
+        precedence: 1
+      - type: external_service_state
+        path: webhook-gateway-n8n-1
+        selector: n8n credential store and live workflow bindings
+        precedence: 2
+    proof:
+      checker: node scripts/check-auth-sources.mjs --provider github
+    notes:
+      - no repo-owned GitHub API token file is currently registered under /root/.openclaw
+      - the canonical inbound GitHub auth seam is webhook signature verification through the live n8n workflow
+  - id: n8n
+    kind: external_service_credentials
+    owner: webhook_gateway_runtime
+    status: external
+    authSources:
+      - type: runtime_data_root
+        path: /root/data/n8n
+        precedence: 1
+      - type: external_service_state
+        path: webhook-gateway-n8n-1
+        precedence: 2
+    proof:
+      checker: node scripts/check-auth-sources.mjs --provider n8n
+    notes:
+      - this repo does not own the n8n credential payloads directly
+      - repo-owned workflows and host exports are the discovery surface, not the secret store itself
+  - id: telegram
+    kind: token_file
+    owner: openclaw_runtime
+    status: active
+    authSources:
+      - type: token_file
+        path: /root/.openclaw/credentials/telegram-bot-token
+        precedence: 1
+      - type: config_value
+        path: /root/.openclaw/openclaw.json
+        selector: channels.telegram.tokenFile
+        precedence: 2
+    proof:
+      checker: node scripts/check-auth-sources.mjs --provider telegram

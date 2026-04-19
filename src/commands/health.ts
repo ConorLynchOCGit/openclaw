@@ -6,6 +6,7 @@ import type { ChannelAccountSnapshot } from "../channels/plugins/types.public.js
 import { inspectReadOnlyChannelAccount } from "../channels/read-only-account-inspect.js";
 import { withProgress } from "../cli/progress.js";
 import { resolveStorePath } from "../config/sessions/paths.js";
+import { shouldHideSessionFromOperatorSelector } from "../config/sessions/visibility.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { buildGatewayConnectionDetails, callGateway } from "../gateway/call.js";
 import { info } from "../globals.js";
@@ -108,7 +109,12 @@ const buildSessionSummary = async (storePath: string) => {
   const { loadSessionStore } = await import("../config/sessions/store.js");
   const store = loadSessionStore(storePath);
   const sessions = Object.entries(store)
-    .filter(([key]) => key !== "global" && key !== "unknown")
+    .filter(
+      ([key, entry]) =>
+        key !== "global" &&
+        key !== "unknown" &&
+        !shouldHideSessionFromOperatorSelector({ key, entry }),
+    )
     .map(([key, entry]) => ({ key, updatedAt: entry?.updatedAt ?? 0 }))
     .toSorted((a, b) => b.updatedAt - a.updatedAt);
   const recent = sessions.slice(0, 5).map((s) => ({

@@ -8,7 +8,7 @@ import {
   setupTelegramHeartbeatPluginRuntimeForTests,
   withTempHeartbeatSandbox,
 } from "./heartbeat-runner.test-utils.js";
-import { enqueueSystemEvent, resetSystemEventsForTest } from "./system-events.js";
+import { enqueueSystemEvent, peekSystemEvents, resetSystemEventsForTest } from "./system-events.js";
 
 beforeEach(() => {
   setupTelegramHeartbeatPluginRuntimeForTests();
@@ -274,6 +274,38 @@ describe("Ghost reminder bug (issue #13317)", () => {
     expect(sendTelegram).not.toHaveBeenCalled();
   });
 
+  it("suppresses internal-only exec completion wakes without creating a visible turn", async () => {
+    await withTempHeartbeatSandbox(async ({ tmpDir, storePath }) => {
+      const sendTelegram = vi.fn();
+      const getReplySpy = vi.fn();
+      const { cfg, sessionKey } = await createConfig({
+        tmpDir,
+        storePath,
+        target: "none",
+      });
+
+      enqueueSystemEvent('Exec completed (gentle-h, code 0) :: {"ok":true}', {
+        sessionKey,
+        trusted: false,
+      });
+
+      const result = await runHeartbeatOnce({
+        cfg,
+        agentId: "main",
+        reason: "wake",
+        deps: {
+          getReplyFromConfig: getReplySpy,
+          telegram: sendTelegram,
+        },
+      });
+
+      expect(result).toEqual({ status: "skipped", reason: "no-user-relay-needed" });
+      expect(getReplySpy).not.toHaveBeenCalled();
+      expect(sendTelegram).not.toHaveBeenCalled();
+      expect(peekSystemEvents(sessionKey)).toEqual([]);
+    });
+  });
+
   it("uses an internal-only exec prompt when delivery target is none", async () => {
     const { result, sendTelegram, calledCtx } = await runHeartbeatCase({
       tmpPrefix: "openclaw-exec-internal-",
@@ -285,10 +317,8 @@ describe("Ghost reminder bug (issue #13317)", () => {
       },
     });
 
-    expect(result.status).toBe("ran");
-    expect(calledCtx?.Provider).toBe("exec-event");
-    expect(calledCtx?.ForceSenderIsOwnerFalse).toBe(true);
-    expect(calledCtx?.Body).toContain("Handle the result internally");
+    expect(result).toEqual({ status: "skipped", reason: "no-user-relay-needed" });
+    expect(calledCtx).toBeNull();
     expect(sendTelegram).not.toHaveBeenCalled();
   });
 
@@ -303,10 +333,8 @@ describe("Ghost reminder bug (issue #13317)", () => {
       },
     });
 
-    expect(result.status).toBe("ran");
-    expect(calledCtx?.Provider).toBe("exec-event");
-    expect(calledCtx?.ForceSenderIsOwnerFalse).toBe(true);
-    expect(calledCtx?.Body).toContain("Handle the result internally");
+    expect(result).toEqual({ status: "skipped", reason: "no-user-relay-needed" });
+    expect(calledCtx).toBeNull();
     expect(sendTelegram).not.toHaveBeenCalled();
   });
 

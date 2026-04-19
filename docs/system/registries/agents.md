@@ -12,17 +12,18 @@ Canonical machine-readable source:
 Current scope:
 
 - live runtime agent inventory now reconciled from the actual VPS runtime
-- bounded `docs/agents/` runtime sources now exist for:
+- the live durable pack layer now exists for:
+  - `chief`
   - `main`
   - `builder`
   - `researcher`
   - `web-researcher`
   - `writer`
   - `x-manager`
-- fuller durable `docs/agents/` pack population still remains a later slice
+- each live agent now has the required durable base pack files
 - lightweight skill-local runtime descriptors under `.agents/skills/**/agents/*.yaml`
   still exist, but they are not the whole live agent inventory
 
 Primary live runtime reference:
 
-- [Live Agent Inventory](/projects/agent-foundation/live-agent-inventory)
+- [Current Agent Inventory](/projects/agent-foundation/current-agent-inventory)

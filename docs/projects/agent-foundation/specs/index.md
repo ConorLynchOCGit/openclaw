@@ -11,3 +11,4 @@ title: "Agent Foundation Spec Index"
 4. [Workflows And Skills Policy](/projects/agent-foundation/specs/workflows-and-skills-policy)
 5. [Agent Registry Alignment](/projects/agent-foundation/specs/agent-registry-alignment)
 6. [Role Library Adaptations](/projects/agent-foundation/specs/role-library-adaptations)
+7. [Web Researcher Prompt Injection Defense](/projects/agent-foundation/web-researcher-prompt-injection-defense)

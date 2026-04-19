@@ -12,6 +12,8 @@ import {
   peekSystemEvents,
   resetSystemEventsForTest,
 } from "../infra/system-events.js";
+import { findTaskByRunId, resetTaskRegistryForTests } from "../tasks/task-registry.js";
+import { configureTaskRegistryRuntime } from "../tasks/task-registry.store.js";
 import { captureEnv } from "../test-utils/env.js";
 import { getFinishedSession, resetProcessRegistryForTests } from "./bash-process-registry.js";
 import { createExecTool, createProcessTool } from "./bash-tools.js";
@@ -476,6 +478,23 @@ beforeEach(() => {
   callIdCounter = 0;
   resetProcessRegistryForTests();
   resetSystemEventsForTest();
+  resetTaskRegistryForTests();
+  configureTaskRegistryRuntime({
+    store: {
+      loadSnapshot: () => ({
+        tasks: new Map(),
+        deliveryStates: new Map(),
+      }),
+      saveSnapshot: () => {},
+      upsertTaskWithDeliveryState: () => {},
+      upsertTask: () => {},
+      deleteTaskWithDeliveryState: () => {},
+      deleteTask: () => {},
+      upsertDeliveryState: () => {},
+      deleteDeliveryState: () => {},
+      close: () => {},
+    },
+  });
 });
 
 describe("exec tool backgrounding", () => {
@@ -590,6 +609,30 @@ describe("exec notifyOnExit", () => {
     expect(hasEvent).toBe(true);
     expect(queuedEvent).toMatchObject({ trusted: false });
     expect(formatted).toContain("System (untrusted):");
+  });
+
+  it("tracks backgrounded exec sessions in the task registry for replay and parity", async () => {
+    const tool = createNotifyOnExitExecTool();
+    const sessionId = await startBackgroundCommand(tool, echoAfterDelay("tracked"));
+
+    expect(findTaskByRunId(sessionId)).toMatchObject({
+      runtime: "cli",
+      taskKind: "background_exec",
+      requesterSessionKey: DEFAULT_NOTIFY_SESSION_KEY,
+      ownerKey: DEFAULT_NOTIFY_SESSION_KEY,
+      status: "running",
+      label: "Background exec",
+      progressSummary: expect.stringContaining(sessionId.slice(0, 8)),
+    });
+
+    await expect
+      .poll(() => findTaskByRunId(sessionId)?.status, BACKGROUND_POLL_OPTIONS)
+      .toBe("succeeded");
+
+    expect(findTaskByRunId(sessionId)).toMatchObject({
+      status: "succeeded",
+      terminalSummary: expect.stringContaining(sessionId.slice(0, 8)),
+    });
   });
 
   it("preserves the origin delivery context on background exec completion events", async () => {

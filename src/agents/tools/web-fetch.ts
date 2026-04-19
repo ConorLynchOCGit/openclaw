@@ -3,7 +3,11 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { SsrFBlockedError, type LookupFn } from "../../infra/net/ssrf.js";
 import { logDebug } from "../../logger.js";
 import type { RuntimeWebFetchMetadata } from "../../secrets/runtime-web-tools.types.js";
-import { wrapExternalContent, wrapWebContent } from "../../security/external-content.js";
+import {
+  classifyExternalContentRisk,
+  wrapExternalContent,
+  wrapWebContent,
+} from "../../security/external-content.js";
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalLowercaseString,
@@ -237,6 +241,23 @@ function normalizeContentType(value: string | null | undefined): string | undefi
   return trimmed || undefined;
 }
 
+function buildExternalContentMetadata(text: string, provider?: string): Record<string, unknown> {
+  const classification = classifyExternalContentRisk(text);
+  return {
+    untrusted: true,
+    source: "web_fetch",
+    wrapped: true,
+    trustLabel: classification.trustLabel,
+    suspiciousOutcome: classification.outcome,
+    suspiciousPatternCount: classification.suspiciousPatternCount,
+    ...(classification.suspiciousPatterns.length > 0
+      ? { suspiciousPatterns: classification.suspiciousPatterns.slice(0, 8) }
+      : {}),
+    ...(classification.requiresHumanReview ? { requiresHumanReview: true } : {}),
+    ...(provider ? { provider } : {}),
+  };
+}
+
 type WebFetchRuntimeParams = {
   url: string;
   extractMode: ExtractMode;
@@ -311,12 +332,7 @@ function normalizeProviderWebFetchPayload(params: {
     ...(title ? { title } : {}),
     extractMode: params.extractMode,
     extractor,
-    externalContent: {
-      untrusted: true,
-      source: "web_fetch",
-      wrapped: true,
-      provider: params.providerId,
-    },
+    externalContent: buildExternalContentMetadata(rawText, params.providerId),
     truncated: wrapped.truncated,
     length: wrapped.wrappedLength,
     rawLength: wrapped.rawLength,
@@ -544,11 +560,7 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
       title: wrappedTitle,
       extractMode: params.extractMode,
       extractor,
-      externalContent: {
-        untrusted: true,
-        source: "web_fetch",
-        wrapped: true,
-      },
+      externalContent: buildExternalContentMetadata(text),
       truncated: wrapped.truncated,
       length: wrapped.wrappedLength,
       rawLength: wrapped.rawLength, // Actual content length, not wrapped

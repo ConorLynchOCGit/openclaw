@@ -28,3 +28,4 @@ Primary entry points:
 6. [Agents](/system/agents)
 7. [Decisions](/system/decisions)
 8. [Deployment](/system/deployment)
+9. [Authentication](/system/authentication)

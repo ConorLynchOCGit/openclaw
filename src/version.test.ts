@@ -5,10 +5,12 @@ import { describe, expect, it } from "vitest";
 import { withTempDir } from "./test-helpers/temp-dir.js";
 import {
   VERSION,
+  readBuildInfoForModuleUrl,
   readVersionFromBuildInfoForModuleUrl,
   resolveCompatibilityHostVersion,
   readVersionFromPackageJsonForModuleUrl,
   resolveBinaryVersion,
+  resolveRuntimeBuildInfo,
   resolveRuntimeServiceVersion,
   resolveUsableRuntimeVersion,
   resolveVersionFromModuleUrl,
@@ -59,10 +61,23 @@ describe("version resolution", () => {
 
   it("falls back to build-info when package metadata is unavailable", async () => {
     await withTempDir({ prefix: "openclaw-version-" }, async (root) => {
-      await writeJsonFixture(root, "build-info.json", { version: "4.5.6" });
+      await writeJsonFixture(root, "build-info.json", {
+        version: "4.5.6",
+        commit: "1234567890abcdef",
+        commitShort: "1234567890ab",
+        buildSignature: "4.5.6+1234567890ab",
+        builtAt: "2026-04-19T00:00:00.000Z",
+      });
       const moduleUrl = await ensureModuleFixture(root);
       expect(readVersionFromPackageJsonForModuleUrl(moduleUrl)).toBeNull();
       expect(readVersionFromBuildInfoForModuleUrl(moduleUrl)).toBe("4.5.6");
+      expect(readBuildInfoForModuleUrl(moduleUrl)).toEqual({
+        version: "4.5.6",
+        commit: "1234567890abcdef",
+        commitShort: "1234567890ab",
+        buildSignature: "4.5.6+1234567890ab",
+        builtAt: "2026-04-19T00:00:00.000Z",
+      });
       expect(resolveVersionFromModuleUrl(moduleUrl)).toBe("4.5.6");
     });
   });
@@ -133,6 +148,33 @@ describe("version resolution", () => {
         npm_package_version: "1.1.1",
       }),
     ).toBe("9.9.9");
+  });
+
+  it("resolves runtime build info from build metadata when available", async () => {
+    await withTempDir({ prefix: "openclaw-build-info-" }, async (root) => {
+      await writeJsonFixture(root, "build-info.json", {
+        version: "2026.4.19",
+        commit: "abcdef1234567890",
+        commitShort: "abcdef123456",
+        buildSignature: "2026.4.19+abcdef123456",
+        builtAt: "2026-04-19T12:00:00.000Z",
+        sourceTree: "live-checkout",
+      });
+      const moduleUrl = await ensureModuleFixture(root);
+      expect(
+        resolveRuntimeBuildInfo({
+          moduleUrl,
+          env: {},
+        }),
+      ).toEqual({
+        version: VERSION,
+        commit: "abcdef1234567890",
+        commitShort: "abcdef123456",
+        buildSignature: "2026.4.19+abcdef123456",
+        builtAt: "2026-04-19T12:00:00.000Z",
+        sourceTree: "live-checkout",
+      });
+    });
   });
 
   it("prefers runtime VERSION over stale OPENCLAW_VERSION for compatibility checks", () => {

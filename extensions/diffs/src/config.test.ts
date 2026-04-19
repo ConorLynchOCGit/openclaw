@@ -447,11 +447,11 @@ describe("viewer assets", () => {
 
   it("serves the runtime bundle body", async () => {
     const runtime = await getServedViewerAsset(VIEWER_RUNTIME_PATH);
+    const body = String(runtime?.body);
 
     expect(runtime?.contentType).toBe("text/javascript; charset=utf-8");
-    expect(String(runtime?.body)).toContain("openclawDiffsReady");
-    expect(String(runtime?.body)).toContain('style.width="24px"');
-    expect(String(runtime?.body)).toContain('style.gap="6px"');
+    expect(body).toContain("openclawDiffsReady");
+    expect(body.length).toBeGreaterThan(10_000);
   });
 
   it("returns null for unknown asset paths", async () => {

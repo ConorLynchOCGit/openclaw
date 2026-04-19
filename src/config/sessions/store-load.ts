@@ -9,6 +9,7 @@ import {
 } from "./store-cache.js";
 import { applySessionStoreMigrations } from "./store-migrations.js";
 import { normalizeSessionRuntimeModelFields, type SessionEntry } from "./types.js";
+import { normalizeSessionVisibilityMetadata } from "./visibility.js";
 
 export type LoadSessionStoreOptions = {
   skipCache?: boolean;
@@ -56,7 +57,10 @@ export function normalizeSessionStore(store: Record<string, SessionEntry>): void
     if (!entry) {
       continue;
     }
-    const normalized = normalizeSessionEntryDelivery(normalizeSessionRuntimeModelFields(entry));
+    const normalized = normalizeSessionVisibilityMetadata({
+      key,
+      entry: normalizeSessionEntryDelivery(normalizeSessionRuntimeModelFields(entry)),
+    });
     if (normalized !== entry) {
       store[key] = normalized;
     }

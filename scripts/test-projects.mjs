@@ -280,8 +280,12 @@ async function main() {
           baseEnv: process.env,
           cwd: process.cwd(),
         });
+  const runSpecsWithCachePaths = applyParallelVitestCachePaths(runSpecs, {
+    cwd: process.cwd(),
+    env: process.env,
+  });
 
-  releaseLock = shouldAcquireLocalHeavyCheckLock(runSpecs, process.env)
+  releaseLock = shouldAcquireLocalHeavyCheckLock(runSpecsWithCachePaths, process.env)
     ? acquireLocalHeavyCheckLockSync({
         cwd: process.cwd(),
         env: process.env,
@@ -292,18 +296,18 @@ async function main() {
   const isFullSuiteRun =
     targetArgs.length === 0 &&
     changedTargetArgs === null &&
-    !runSpecs.some((spec) => spec.watchMode);
+    !runSpecsWithCachePaths.some((spec) => spec.watchMode);
   if (isFullSuiteRun) {
-    const concurrency = resolveParallelFullSuiteConcurrency(runSpecs.length, process.env);
+    const concurrency = resolveParallelFullSuiteConcurrency(
+      runSpecsWithCachePaths.length,
+      process.env,
+    );
     if (concurrency > 1) {
       const localFullSuiteProfile = resolveLocalFullSuiteProfile(process.env);
       const parallelSpecs = refreshVitestNodeArgs(
         applyDefaultParallelVitestOldSpaceBudget(
           applyDefaultParallelVitestWorkerBudget(
-            applyParallelVitestCachePaths(orderFullSuiteSpecsForParallelRun(runSpecs), {
-              cwd: process.cwd(),
-              env: process.env,
-            }),
+            orderFullSuiteSpecsForParallelRun(runSpecsWithCachePaths),
             process.env,
           ),
           process.env,
@@ -335,7 +339,7 @@ async function main() {
   }
 
   let exitCode = 0;
-  for (const spec of runSpecs) {
+  for (const spec of runSpecsWithCachePaths) {
     console.error(`[test] starting ${spec.config}`);
     const result = await runVitestSpec(spec);
     if (result.signal) {

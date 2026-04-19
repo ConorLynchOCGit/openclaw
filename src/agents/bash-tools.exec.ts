@@ -16,6 +16,7 @@ import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "../shared/string-coerce.js";
+import { createTaskRecord, markTaskTerminalByRunId } from "../tasks/runtime-internal.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
 import { splitShellArgs } from "../utils/shell-argv.js";
 import { markBackgrounded } from "./bash-process-registry.js";
@@ -85,6 +86,38 @@ function buildExecForegroundResult(params: {
     aggregated: params.outcome.aggregated,
     cwd: params.cwd,
   });
+}
+
+function buildBackgroundExecProgressSummary(params: {
+  sessionId: string;
+  pid?: number;
+  command: string;
+}): string {
+  const sessionSnippet = params.sessionId.slice(0, 8);
+  const commandSnippet = truncateMiddle(params.command.replace(/\s+/g, " ").trim(), 80);
+  if (params.pid != null) {
+    return `session ${sessionSnippet} · pid ${params.pid} · ${commandSnippet}`;
+  }
+  return `session ${sessionSnippet} · ${commandSnippet}`;
+}
+
+function buildBackgroundExecTerminalSummary(params: {
+  sessionId: string;
+  outcome: ExecProcessOutcome;
+}): string {
+  const sessionSnippet = params.sessionId.slice(0, 8);
+  if (params.outcome.status === "completed") {
+    const detail = truncateMiddle(
+      params.outcome.aggregated.replace(/\s+/g, " ").trim() || "command completed",
+      120,
+    );
+    return `session ${sessionSnippet} completed · ${detail}`;
+  }
+  const detail = truncateMiddle(
+    params.outcome.reason.replace(/\s+/g, " ").trim() || "command failed",
+    120,
+  );
+  return `session ${sessionSnippet} failed · ${detail}`;
 }
 
 const PREFLIGHT_ENV_OPTIONS_WITH_VALUES = new Set([
@@ -1706,6 +1739,47 @@ export function createExecTool(
       }
 
       return new Promise<AgentToolResult<ExecToolDetails>>((resolve, reject) => {
+        const registerBackgroundTask = () => {
+          if (!notifySessionKey) {
+            return;
+          }
+          createTaskRecord({
+            runtime: "cli",
+            taskKind: "background_exec",
+            requesterSessionKey: notifySessionKey,
+            ownerKey: notifySessionKey,
+            scopeKind: "session",
+            runId: run.session.id,
+            label: "Background exec",
+            task: truncateMiddle(params.command.replace(/\s+/g, " ").trim(), 120),
+            status: "running",
+            notifyPolicy: "silent",
+            startedAt: run.startedAt,
+            lastEventAt: Date.now(),
+            progressSummary: buildBackgroundExecProgressSummary({
+              sessionId: run.session.id,
+              pid: run.session.pid ?? undefined,
+              command: params.command,
+            }),
+          });
+        };
+        const finalizeBackgroundTask = (outcome: ExecProcessOutcome) => {
+          if (!notifySessionKey) {
+            return;
+          }
+          markTaskTerminalByRunId({
+            runId: run.session.id,
+            runtime: "cli",
+            sessionKey: notifySessionKey,
+            status: outcome.status === "completed" ? "succeeded" : "failed",
+            endedAt: Date.now(),
+            lastEventAt: Date.now(),
+            terminalSummary: buildBackgroundExecTerminalSummary({
+              sessionId: run.session.id,
+              outcome,
+            }),
+          });
+        };
         const resolveRunning = () =>
           resolve({
             content: [
@@ -1735,6 +1809,7 @@ export function createExecTool(
           }
           yielded = true;
           markBackgrounded(run.session);
+          registerBackgroundTask();
           resolveRunning();
         };
 
@@ -1748,6 +1823,7 @@ export function createExecTool(
               }
               yielded = true;
               markBackgrounded(run.session);
+              registerBackgroundTask();
               resolveRunning();
             }, yieldWindow);
           }
@@ -1759,6 +1835,7 @@ export function createExecTool(
               clearTimeout(yieldTimer);
             }
             if (yielded || run.session.backgrounded) {
+              finalizeBackgroundTask(outcome);
               return;
             }
             resolve(
@@ -1774,6 +1851,16 @@ export function createExecTool(
               clearTimeout(yieldTimer);
             }
             if (yielded || run.session.backgrounded) {
+              finalizeBackgroundTask({
+                status: "failed",
+                exitCode: null,
+                exitSignal: null,
+                durationMs: 0,
+                aggregated: "",
+                timedOut: false,
+                failureKind: "runtime-error",
+                reason: err instanceof Error ? err.message : String(err),
+              });
               return;
             }
             reject(err as Error);

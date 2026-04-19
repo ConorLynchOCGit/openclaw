@@ -1,0 +1,86 @@
+version: 1
+status: live_agent_base_pack_enforced
+requiredPackFiles:
+  - index.md
+  - Identity.md
+  - Startup.md
+  - Tools.md
+  - Permissions.md
+  - Skills.md
+  - Status.md
+optionalPackFiles:
+  - Decisions.md
+  - Examples.md
+  - Interfaces.md
+  - Workflows.md
+agents:
+  - id: main
+    displayName: OpenClaw
+    classification: active_system_agent
+    durablePath: docs/agents/main
+    runtimeSourcePath: docs/agents/main/runtime
+    runtimeSurfacePath: /home/node/.openclaw/agents/main/agent
+    status: live_and_initialized
+    primarySkills:
+      - model-memory-deep-ingest
+      - skill-vetting
+      - node-connect
+    basePackComplete: true
+  - id: chief
+    displayName: OpenClaw
+    classification: active_system_agent
+    durablePath: docs/agents/chief
+    sharedRuntimeSourcePath: docs/agents/main/runtime
+    runtimeSurfacePath: /home/node/.openclaw/agents/chief/agent
+    status: live_and_initialized
+    primarySkills: []
+    basePackComplete: true
+  - id: builder
+    displayName: Builder
+    classification: active_operator_agent
+    durablePath: docs/agents/builder
+    runtimeSourcePath: docs/agents/builder/runtime
+    runtimeSurfacePath: /home/node/.openclaw/agents/builder/agent
+    status: live_and_initialized
+    primarySkills:
+      - coding-agent
+    basePackComplete: true
+  - id: researcher
+    displayName: Researcher
+    classification: experimental_agent
+    durablePath: docs/agents/researcher
+    runtimeSourcePath: docs/agents/researcher/runtime
+    runtimeSurfacePath: /home/node/.openclaw/agents/researcher/agent
+    status: configured_but_uninitialized
+    primarySkills:
+      - nano-pdf
+      - summarize
+    basePackComplete: true
+  - id: web-researcher
+    displayName: Web Researcher
+    classification: active_operator_agent
+    durablePath: docs/agents/web-researcher
+    runtimeSourcePath: docs/agents/web-researcher/runtime
+    runtimeSurfacePath: /home/node/.openclaw/agents/web-researcher/agent
+    status: live_and_initialized
+    primarySkills: []
+    basePackComplete: true
+  - id: writer
+    displayName: Writer
+    classification: active_operator_agent
+    durablePath: docs/agents/writer
+    runtimeSourcePath: docs/agents/writer/runtime
+    runtimeSurfacePath: /home/node/.openclaw/agents/writer/agent
+    status: live_and_initialized
+    primarySkills: []
+    basePackComplete: true
+  - id: x-manager
+    displayName: X Manager
+    classification: active_operator_agent
+    durablePath: docs/agents/x-manager
+    runtimeSourcePath: docs/agents/x-manager/runtime
+    runtimeSurfacePath: /home/node/.openclaw/agents/x-manager/agent
+    status: live_and_initialized
+    primarySkills:
+      - xurl
+    basePackComplete: true

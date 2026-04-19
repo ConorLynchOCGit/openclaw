@@ -1557,6 +1557,32 @@ function broadcastChatFinal(params: {
   params.context.agentRunSeq.delete(params.runId);
 }
 
+function broadcastChatDelta(params: {
+  context: Pick<GatewayRequestContext, "broadcast" | "nodeSendToSession" | "agentRunSeq">;
+  runId: string;
+  sessionKey: string;
+  text: string;
+}) {
+  const normalizedText = stripInlineDirectiveTagsForDisplay(params.text).text.trim();
+  if (!normalizedText) {
+    return;
+  }
+  const seq = nextChatSeq({ agentRunSeq: params.context.agentRunSeq }, params.runId);
+  const payload = {
+    runId: params.runId,
+    sessionKey: params.sessionKey,
+    seq,
+    state: "delta" as const,
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: normalizedText }],
+      timestamp: Date.now(),
+    },
+  };
+  params.context.broadcast("chat", payload, { dropIfSlow: true });
+  params.context.nodeSendToSession(params.sessionKey, "chat", payload);
+}
+
 function isBtwReplyPayload(payload: ReplyPayload | undefined): payload is ReplyPayload & {
   btw: { question: string };
   text: string;
@@ -2126,6 +2152,17 @@ export const chatHandlers: GatewayRequestHandlers = {
         deliver: async (payload, info) => {
           switch (info.kind) {
             case "block":
+              if (!isBtwReplyPayload(payload) && typeof payload.text === "string") {
+                broadcastChatDelta({
+                  context,
+                  runId: clientRunId,
+                  sessionKey,
+                  text: payload.text,
+                });
+              }
+              deliveredReplies.push({ payload, kind: info.kind });
+              await appendWebchatAgentAudioTranscriptIfNeeded(payload);
+              break;
             case "final":
               deliveredReplies.push({ payload, kind: info.kind });
               await appendWebchatAgentAudioTranscriptIfNeeded(payload);

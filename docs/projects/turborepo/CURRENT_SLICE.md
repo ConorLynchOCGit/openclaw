@@ -7,32 +7,33 @@ title: "Turborepo Current Slice"
 
 ## Active slice
 
-`slice_1_project_bootstrap_and_spec_definition`
+`slice_4_root_gate_decomposition_live_and_next_owners`
 
 ## In this slice
 
-- create the project workspace under `docs/projects/turborepo/`
-- record the starting truth
-- define the decisions and roadmap
-- write the spec set for:
-  - package task inventory
-  - root gate decomposition
-  - Turbo graph expansion
-  - landing-gate mapping
-- absorb the retained subset of the old build-performance planning surface
+- keep the bounded package graph real:
+  - UI `build` / `test` / `check`
+  - diffs `build` / `test`
+- keep root `check`, `test`, and `build` on the explicit Turbo-managed stage
+  graph now in place
+- avoid double-running newly package-owned lanes inside the root full-suite test
+  path
+- record exactly what is still root-owned by design
 
 ## Exit criteria
 
-- the project docs exist in-repo
-- the planned work is explicit enough to implement without reconstructing the
-  architecture from chat history
+- the root wrappers clearly split Turbo-owned package work from root-global work
+- the repo has a durable audit separating real Turbo value from still-root-owned
+  work
+- the root gates themselves no longer depend on opaque monolithic shell bodies
 
 ## Immediate next slice
 
-`slice_2_workspace_task_inventory`
+`slice_5_workspace_task_inventory_and_broader_package_ownership`
 
 Deliverables:
 
-- enumerate workspace packages
-- record current `build`, `test`, and `check` ownership
-- classify package-task readiness
+- enumerate broader workspace packages
+- record current `build`, `test`, and `check` ownership beyond UI and diffs
+- classify additional package-task readiness
+- identify the next honest candidates for Turbo ownership

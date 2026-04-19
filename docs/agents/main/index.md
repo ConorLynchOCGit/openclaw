@@ -5,9 +5,19 @@ title: "Main"
 
 # Main
 
-`main` is the canonical shared workspace pack for the live deployment.
+`main` is the shared high-trust operator agent for the canonical OpenClaw
+workspace.
 
-Current scope in this tranche:
+## Durable pack
+
+1. [Identity](/agents/main/Identity)
+2. [Startup](/agents/main/Startup)
+3. [Tools](/agents/main/Tools)
+4. [Permissions](/agents/main/Permissions)
+5. [Skills](/agents/main/Skills)
+6. [Status](/agents/main/Status)
+
+## Runtime compatibility sources
 
 - `docs/agents/main/runtime/AGENTS.md`
 - `docs/agents/main/runtime/SOUL.md`
@@ -15,10 +25,10 @@ Current scope in this tranche:
 - `docs/agents/main/runtime/TOOLS.md`
 - `docs/agents/main/runtime/USER.md`
 
-Current rule:
+## Current rule
 
 - these files are the durable authored source for the shared main workspace
 - runtime compatibility assembly still layers generated canonical sections and
   model-memory overlays on top of them
-- Chief intentionally shares this workspace pack unless a later slice creates a
-  dedicated durable Chief pack on purpose
+- `chief` shares the same workspace but now has its own durable identity and
+  control pack

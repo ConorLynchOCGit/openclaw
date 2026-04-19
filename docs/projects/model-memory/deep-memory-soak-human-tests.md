@@ -33,6 +33,8 @@ with explicit failures that were reviewed and accepted.
 | pre_ingest             | fresh bootstrap                    | Start a fresh Main session with `/new`                                                                                                                 | No bootstrap truncation warning; greeting is normal and not hijacked by untrusted notes                   | session transcript                                            | truncation warning or malformed startup context                                            | `no`                             |
 | pre_ingest             | continuity hook artifact           | Trigger a continuity-producing fresh session and inspect today’s `memory/YYYY-MM-DD.md`                                                                | The retained session-memory hook creates or updates the canonical daily continuity artifact               | file timestamp, artifact contents                             | no daily artifact update or missing continuity file                                        | `no`                             |
 | ingest                 | document-ingest pass               | Use the exact prompt from `docs/projects/model-memory/deep-document-ingest-runbook.md`                                                                 | Run reaches `completed` or `completed_with_failures` and writes the checkpoint plus summary artifacts     | final assistant reply, checkpoint JSON, summary Markdown/JSON | silent skips, missing checkpoint, or no durable summary artifact                           | `yes`                            |
+| ingest                 | live ingest progress               | While the deep ingest is running, stay in the active Main session and observe the chat transcript                                                      | Chat shows bounded `Queued:` / `Working:` progress during ingest rather than only a final result          | transcript, screenshot if useful                              | ingest appears dead in chat while work is actually progressing internally                  | `yes`                            |
+| ingest                 | detached ingest replay             | Let the ingest continue after navigating away or after it backgrounds, then return and send a small follow-up                                          | Next active turn replays bounded current ingest state or terminal outcome once                            | transcript                                                    | no replay, stale replay, or duplicate replay every turn                                    | `yes`                            |
 | post_ingest            | project inventory retrieval        | Ask Main: `List the current canonical project workspaces currently tracked in this repo and give one sentence on each.`                                | Returns the rescued canonical projects with reasonable descriptions, including newer canonized workspaces | session transcript, later retrieval trace                     | misses core imported projects or invents stale ones                                        | `yes`                            |
 | post_ingest            | workspace alias resolution         | Ask Main: `If I mention projects/web_stack, projects/channel_identity, or projects/memory, which canonical project docs should you actually read now?` | Resolves the legacy workspace names back to `web-stack`, `channel-identity`, and `model-memory`           | session transcript, later retrieval trace                     | treats the legacy names as separate authoritative project trees                            | `yes`                            |
 | post_ingest            | topology distinction               | Ask Main: `Explain the difference between workspace topology and deployment topology in this repo.`                                                    | Gives the correct ownership boundary between authored structure and live rollout/runtime shape            | session transcript, later retrieval trace                     | collapses the two projects into one or gives a vague answer                                | `yes`                            |
@@ -72,6 +74,7 @@ Then inspect:
 - `docs/projects/model-memory/evidence/retrieval-trace-deep-pass-2026-04.md`
 - `docs/projects/model-memory/evidence/context-trace-deep-pass-2026-04.md`
 - `docs/projects/model-memory/evidence/cache-diff-report.md`
+- live transcript lines showing bounded ingest progress or replay
 
 ## Notes on judgment
 
@@ -80,3 +83,9 @@ Then inspect:
 - passing retrieval alone is not enough
 - the soak is credible only when document ingest, ordinary-turn capture, and
   daily-summary recovery all have visible evidence and later usable reads
+- do not mark the ingest live-progress or detached-replay rows passing unless an
+  active deep ingest or memory benchmark is actually running during the check
+- do not substitute generic shell-task replay proof for ingest replay proof
+- if Main cannot resolve the canonical ingest targets or bundled ingest skill
+  path during the live check, record that as a blocking runtime/path-resolution
+  failure rather than a soak pass

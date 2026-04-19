@@ -7,27 +7,28 @@ title: "Agent Foundation Current Slice"
 
 ## Active slice
 
-`slice_1_runtime_source_pack_canonization`
+`slice_2_durable_pack_population_and_runtime_prereqs`
 
 ## Current task
 
-Carry the runtime reconciliation forward by canonizing the remaining live
-runtime-source packs into repo-owned durable sources that still materialize into
-the live workspaces.
+Finish the durable agent-pack rollout on top of the reconciled live runtime,
+keep `.agents/` and `docs/agents/` aligned, and close the urgent prerequisite
+fixes that had to land before the next agent expansion:
+
+- same-day daily memory grounding repair
+- session-selector internal-session cleanup
+- `web-researcher` prompt-injection defense
 
 ## Immediate future slice
 
-`slice_1_5_richer_agent_pack_population`
+`slice_2_5_agent_drift_enforcement_and_specialist_proof`
 
 Goals:
 
-- extend the bounded runtime-source seeds into richer durable packs where
-  current evidence justifies it
-- align durable packs with `.agents/` machine-readable registry entries
-- decide which still-lightweight packs need authored `USER.md`, `BOOTSTRAP.md`,
-  or role-local context later
-- carry forward the live runtime inventory and the canonized runtime-source
-  packs instead of starting from the older bootstrap-only registry stub
+- keep the new registry and pack rules enforced in the default topology gate
+- add richer direct operator proof for specialist runtime behavior where needed
+- continue shrinking compatibility-only runtime sources in favor of mapped
+  durable authorship
 - use
   [Compatibility Source Migration Plan](/projects/agent-foundation/compatibility-source-migration-plan)
   as the explicit migration order for shared versus per-agent authored sources

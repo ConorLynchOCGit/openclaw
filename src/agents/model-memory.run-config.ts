@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import type { OpenClawConfig } from "../config/config.ts";
 import { parseConfigJson5, resolveConfigPath } from "../config/config.ts";
+import { loadGlobalRuntimeDotEnvFiles } from "../infra/dotenv.ts";
 import type { ModelMemoryDatabaseMode } from "./model-memory.database.ts";
 
 const STALE_RUNNER_PLUGIN_IDS = ["brave", "browser", "firecrawl"] as const;
@@ -45,6 +46,10 @@ export async function loadSanitizedModelMemoryRunnerConfig(input: {
   purpose: string;
 }): Promise<OpenClawConfig> {
   const configPath = resolveConfigPath(process.env);
+  loadGlobalRuntimeDotEnvFiles({
+    quiet: true,
+    stateEnvPath: path.join(path.dirname(configPath), ".env"),
+  });
   const raw = await readFile(configPath, "utf8");
   const parsed = parseConfigJson5(raw);
   if (!parsed.ok || !parsed.parsed || !isRecord(parsed.parsed)) {

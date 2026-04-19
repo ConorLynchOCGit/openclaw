@@ -1,0 +1,118 @@
+{
+  "generatedAt": "2026-04-18T13:05:40.722Z",
+  "repoRoot": "/root/services/openclaw-roles/live",
+  "modelId": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 120000,
+  "maxWordsPerWindow": 1500,
+  "corpus": [
+    {
+      "id": "system-memory",
+      "relativePath": "docs/system/memory.md",
+      "rationale": "System recall index with explicit memory-layer policy and workspace inventory.",
+      "semanticMix": "Topology facts plus durable memory-layer rules.",
+      "expectedDominantKinds": ["fact", "rule", "reference"],
+      "mustCaptureClaims": [
+        "System Memory is the workspace recall index for OpenClaw.",
+        "Generated memory must not flatten authored docs.",
+        "The memory layers include human-owned sources, DB-backed model-memory projection, and daily memory files as an ingestion layer."
+      ]
+    }
+  ],
+  "variants": [
+    {
+      "variantId": "baseline",
+      "hypothesis": "Current live prompts and canonicalization behavior continue to undercapture rules relative to facts.",
+      "simplificationTested": "None. This preserves the current live path.",
+      "filesChanged": [],
+      "intentionallyNotChanged": [
+        "No prompt text changes.",
+        "No canonicalClass derivation.",
+        "No payload normalization.",
+        "No write-path simplification."
+      ],
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+      "requestSeed": 7,
+      "requestTimeoutMs": 120000,
+      "maxWordsPerWindow": 1500,
+      "documents": [
+        {
+          "sourcePath": "docs/system/memory.md",
+          "rationale": "System recall index with explicit memory-layer policy and workspace inventory.",
+          "semanticMix": "Topology facts plus durable memory-layer rules.",
+          "expectedDominantKinds": ["fact", "rule", "reference"],
+          "mustCaptureClaims": [
+            "System Memory is the workspace recall index for OpenClaw.",
+            "Generated memory must not flatten authored docs.",
+            "The memory layers include human-owned sources, DB-backed model-memory projection, and daily memory files as an ingestion layer."
+          ],
+          "lineCount": 134,
+          "windowCount": 1,
+          "candidateCountByType": {},
+          "canonicalizedCountByKind": {},
+          "canonicalizedCountByCanonicalClass": {},
+          "validationRejectCount": 1,
+          "validationRejectReasons": [
+            "interpreter error: Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+          ],
+          "repairInvocations": {},
+          "writeDecisionCounts": {},
+          "adjudicationOutcomeCounts": {},
+          "collisionGateTotals": {
+            "rawCandidateCount": 0,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 0
+          },
+          "boundedAdjudicationRoutes": {},
+          "finalActiveObjectDeltaByKind": {},
+          "finalActiveObjectDeltaByCanonicalClass": {},
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 10207
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 10207,
+              "error": "Error: No API key found for provider \"openrouter\". Auth store: /root/.openclaw/agents/main/agent/auth-profiles.json (agentDir: /root/.openclaw/agents/main/agent). Configure auth for this agent (openclaw agents add <id>) or copy auth-profiles.json from the main agentDir."
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [],
+          "boundedAdjudications": [],
+          "writeDecisions": []
+        }
+      ],
+      "totals": {
+        "windowCount": 1,
+        "candidateCountByType": {},
+        "canonicalizedCountByKind": {},
+        "canonicalizedCountByCanonicalClass": {},
+        "validationRejectCount": 1,
+        "writeDecisionCounts": {},
+        "adjudicationOutcomeCounts": {},
+        "finalActiveObjectCountByKind": {}
+      }
+    }
+  ]
+}

@@ -49,6 +49,9 @@ now live in the repo.
   - durable human-owned sources
   - DB-backed `model-memory` projections
   - daily memory files
+- the canonical daily-note generation and ownership contract is now explicitly
+  written down in
+  [Daily Note Generation Contract](/projects/workspace-topology/daily-note-generation-contract)
 - `MEMORY.md` assembly now includes a generated pointer layer for DB-backed
   memory plus daily-memory references
 - bootstrap-file registry is now consumed by repo code rather than existing as

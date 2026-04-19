@@ -5,19 +5,21 @@ title: "Researcher"
 
 # Researcher
 
-This is the canonical durable source surface for the `researcher` specialist
-agent.
+This is the durable pack for the comparative research specialist.
 
-Runtime-facing compatibility files are derived from:
+## Durable pack
+
+1. [Identity](/agents/researcher/Identity)
+2. [Startup](/agents/researcher/Startup)
+3. [Tools](/agents/researcher/Tools)
+4. [Permissions](/agents/researcher/Permissions)
+5. [Skills](/agents/researcher/Skills)
+6. [Status](/agents/researcher/Status)
+
+## Runtime-facing compatibility files
 
 - `docs/agents/researcher/runtime/AGENTS.md`
 - `docs/agents/researcher/runtime/HEARTBEAT.md`
 - `docs/agents/researcher/runtime/IDENTITY.md`
 - `docs/agents/researcher/runtime/SOUL.md`
 - `docs/agents/researcher/runtime/TOOLS.md`
-
-Current purpose:
-
-- bounded comparative research
-- evidence-first synthesis
-- cited output for delegated intelligence tasks

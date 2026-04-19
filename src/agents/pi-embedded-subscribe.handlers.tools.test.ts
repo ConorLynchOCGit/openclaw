@@ -2,6 +2,7 @@ import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { describe, expect, it, vi } from "vitest";
 import type { MessagingToolSend } from "./pi-embedded-messaging.types.js";
 import {
+  handleToolExecutionUpdate,
   handleToolExecutionEnd,
   handleToolExecutionStart,
 } from "./pi-embedded-subscribe.handlers.tools.js";
@@ -12,6 +13,7 @@ import type {
 
 type ToolExecutionStartEvent = Extract<AgentEvent, { type: "tool_execution_start" }>;
 type ToolExecutionEndEvent = Extract<AgentEvent, { type: "tool_execution_end" }>;
+type ToolExecutionUpdateEvent = Extract<AgentEvent, { type: "tool_execution_update" }>;
 
 function createTestContext(): {
   ctx: ToolHandlerContext;
@@ -406,6 +408,45 @@ describe("handleToolExecutionEnd mutating failure recovery", () => {
       replayInvalid: true,
       hadPotentialSideEffects: true,
     });
+  });
+});
+
+describe("handleToolExecutionUpdate generic tool progress text", () => {
+  it("surfaces text partial results on generic tool item updates", async () => {
+    const { ctx, onAgentEvent } = createTestContext();
+
+    await handleToolExecutionStart(
+      ctx as never,
+      {
+        type: "tool_execution_start",
+        toolName: "model_memory_document_ingest",
+        toolCallId: "tool-progress-1",
+        args: { source: "docs/system/memory.md" },
+      } as never,
+    );
+
+    handleToolExecutionUpdate(
+      ctx as never,
+      {
+        type: "tool_execution_update",
+        toolName: "model_memory_document_ingest",
+        toolCallId: "tool-progress-1",
+        partialResult: {
+          content: [{ type: "text", text: "Document ingest 3/10: docs/system/memory.md" }],
+        },
+      } as ToolExecutionUpdateEvent,
+    );
+
+    expect(onAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: "item",
+        data: expect.objectContaining({
+          itemId: "tool:tool-progress-1",
+          phase: "update",
+          progressText: "Document ingest 3/10: docs/system/memory.md",
+        }),
+      }),
+    );
   });
 });
 

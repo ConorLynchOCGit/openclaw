@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import type { AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool, OpenClawPluginApi } from "openclaw/plugin-sdk/core";
+import { resolveRepoCanonicalReadPath } from "../../../src/infra/repo-canonical-paths.js";
 import {
   JsonFileDocumentIngestionRunRecordStore,
   ModelMemoryDocumentIngestionRunnerService,
@@ -144,20 +146,26 @@ async function buildRunnerSources(input: {
   readTextFile: (filePath: string, encoding: BufferEncoding) => Promise<string>;
 }): Promise<DocumentIngestionRunnerSource[]> {
   const records: DocumentIngestionRunnerSource[] = [];
-  for (const [index, relativePath] of input.sources.entries()) {
-    const absolutePath = assertWorkspaceRelativePath(input.workspaceRoot, relativePath);
+  for (const [index, sourcePath] of input.sources.entries()) {
+    const canonical = resolveRepoCanonicalReadPath({
+      inputPath: sourcePath,
+      workspaceRoot: input.workspaceRoot,
+    });
+    const absolutePath =
+      canonical?.absolutePath ?? assertWorkspaceRelativePath(input.workspaceRoot, sourcePath);
+    const displayPath = canonical?.logicalPath ?? sourcePath;
     const text = await input.readTextFile(absolutePath, "utf8");
     records.push({
       sourceId: `model-memory-tool-source-${index + 1}`,
-      displayPath: relativePath,
+      displayPath,
       chunkIndex: Math.floor(index / input.chunkSize) + 1,
       document: {
-        externalSourceId: relativePath,
+        externalSourceId: displayPath,
         text,
         projectId: input.projectId,
         sourceKind: "document",
         sourceMetadata: {
-          relativePath,
+          relativePath: displayPath,
           sourceSurface: "model_memory_document_ingest_tool",
         },
         maxWordsPerWindow: input.maxWordsPerWindow,
@@ -214,7 +222,12 @@ export function createModelMemoryDocumentIngestionTool(
       projectId: Type.Optional(Type.String({ minLength: 1 })),
     }),
 
-    async execute(_id: string, rawParams: Record<string, unknown>) {
+    async execute(
+      _id: string,
+      rawParams: Record<string, unknown>,
+      _signal?: AbortSignal,
+      onUpdate?: AgentToolUpdateCallback<unknown>,
+    ) {
       const params = rawParams as DocumentIngestionToolParams;
       const sources = normalizeSources(params);
       const chunkSize = readPositiveInteger(params.chunkSize, DEFAULT_CHUNK_SIZE);
@@ -237,7 +250,13 @@ export function createModelMemoryDocumentIngestionTool(
       const recordAbsolutePath = assertWorkspaceRelativePath(workspaceRoot, recordRelativePath);
       const resume = typeof params.resume === "boolean" ? params.resume : true;
       for (const sourcePath of sources) {
-        assertWorkspaceRelativePath(workspaceRoot, sourcePath);
+        const canonical = resolveRepoCanonicalReadPath({
+          inputPath: sourcePath,
+          workspaceRoot,
+        });
+        if (!canonical) {
+          assertWorkspaceRelativePath(workspaceRoot, sourcePath);
+        }
       }
 
       const internal = await (
@@ -287,8 +306,33 @@ export function createModelMemoryDocumentIngestionTool(
           maxWordsPerWindow,
           recordStore,
           resume,
-          onProgress: (event) => {
+          onProgress: async (event) => {
             api.logger.info(`[model-memory-tool] ${event.message}`);
+            if (!onUpdate) {
+              return;
+            }
+            let progressText: string | undefined;
+            if (event.type === "source_start" || event.type === "source_complete") {
+              progressText = `Document ingest ${event.index}/${event.total}: ${event.source.displayPath}`;
+            } else if (event.type === "phase" && event.phase === "complete") {
+              progressText = `Document ingest completed: ${recordRelativePath}`;
+            } else if (event.type === "phase" && event.phase === "start") {
+              progressText = `Document ingest started: ${sources.length} sources`;
+            }
+            if (!progressText) {
+              return;
+            }
+            await Promise.resolve(
+              onUpdate({
+                content: [
+                  {
+                    type: "text",
+                    text: progressText,
+                  },
+                ],
+                details: undefined,
+              } satisfies AgentToolResult<unknown>),
+            );
           },
         });
 

@@ -15,6 +15,7 @@ This project owns:
 - agent identity design
 - permissions/tools/skills documentation
 - machine-readable agent registry alignment
+- prompt-injection defense for browsing specialists at the agent/runtime seam
 - the policy that repeatable workflows should canonize into skills instead of
   becoming a second overlapping workflow system by default
 
@@ -26,10 +27,14 @@ This project owns:
 4. [Decisions](/projects/agent-foundation/DECISIONS)
 5. [Roadmap](/projects/agent-foundation/roadmap)
 6. [Spec Index](/projects/agent-foundation/specs)
-7. [Live Agent Inventory](/projects/agent-foundation/live-agent-inventory)
-8. [Exhaustive Agent Pack Diff](/projects/agent-foundation/exhaustive-agent-pack-diff)
-9. [Compatibility Source Migration Plan](/projects/agent-foundation/compatibility-source-migration-plan)
-10. [Agents](/agents)
+7. [Current Agent Inventory](/projects/agent-foundation/current-agent-inventory)
+8. [Identity And Agent Pack Research](/projects/agent-foundation/identity-and-agent-pack-research)
+9. [Web Researcher Prompt Injection Defense](/projects/agent-foundation/web-researcher-prompt-injection-defense)
+10. [Web Researcher Layered Defense](/projects/agent-foundation/web-researcher-layered-defense)
+11. [Agent Pack Quality Rubric](/projects/agent-foundation/agent-pack-quality-rubric)
+12. [Exhaustive Agent Pack Diff](/projects/agent-foundation/exhaustive-agent-pack-diff)
+13. [Compatibility Source Migration Plan](/projects/agent-foundation/compatibility-source-migration-plan)
+14. [Agents](/agents)
 
 ## Relationship to other projects
 

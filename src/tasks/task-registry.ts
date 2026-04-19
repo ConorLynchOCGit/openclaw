@@ -39,6 +39,7 @@ import type {
   TaskEventKind,
   TaskEventRecord,
   TaskNotifyPolicy,
+  TaskProgressReplayCandidate,
   TaskRecord,
   TaskRegistrySummary,
   TaskRegistrySnapshot,
@@ -47,6 +48,11 @@ import type {
   TaskStatus,
   TaskTerminalOutcome,
 } from "./task-registry.types.js";
+import {
+  buildTaskStatusSnapshot,
+  formatTaskStatusDetail,
+  formatTaskStatusTitle,
+} from "./task-status.js";
 
 const log = createSubsystemLogger("tasks/registry");
 const DEFAULT_TASK_RETENTION_MS = 7 * 24 * 60 * 60_000;
@@ -185,6 +191,33 @@ function cloneTaskDeliveryState(state: TaskDeliveryState): TaskDeliveryState {
     ...state,
     ...(state.requesterOrigin ? { requesterOrigin: { ...state.requesterOrigin } } : {}),
   };
+}
+
+function looksStalledTaskDetail(detail: string | undefined): boolean {
+  if (!detail) {
+    return false;
+  }
+  return /no output for|waiting for input|stalled/i.test(detail);
+}
+
+function resolveTaskReplayEventAt(task: TaskRecord): number {
+  return task.endedAt ?? task.lastEventAt ?? task.startedAt ?? task.createdAt;
+}
+
+function formatTaskReplayText(task: TaskRecord): string {
+  const title = formatTaskStatusTitle(task);
+  const detail = formatTaskStatusDetail(task);
+  const prefix =
+    task.status === "queued"
+      ? "Queued"
+      : task.status === "running"
+        ? looksStalledTaskDetail(detail)
+          ? "Stalled"
+          : "Working"
+        : task.status === "succeeded"
+          ? "Completed"
+          : "Failed";
+  return detail ? `${prefix}: ${title}. ${detail}` : `${prefix}: ${title}`;
 }
 
 function snapshotTaskRecords(source: ReadonlyMap<string, TaskRecord>): TaskRecord[] {
@@ -946,12 +979,26 @@ function upsertTaskDeliveryState(state: TaskDeliveryState): TaskDeliveryState {
     taskId: state.taskId,
     ...(state.requesterOrigin
       ? { requesterOrigin: normalizeDeliveryContext(state.requesterOrigin) }
-      : {}),
+      : current?.requesterOrigin
+        ? { requesterOrigin: { ...current.requesterOrigin } }
+        : {}),
     ...(state.lastNotifiedEventAt != null
       ? { lastNotifiedEventAt: state.lastNotifiedEventAt }
-      : {}),
+      : current?.lastNotifiedEventAt != null
+        ? { lastNotifiedEventAt: current.lastNotifiedEventAt }
+        : {}),
+    ...(state.lastReplayedEventAt != null
+      ? { lastReplayedEventAt: state.lastReplayedEventAt }
+      : current?.lastReplayedEventAt != null
+        ? { lastReplayedEventAt: current.lastReplayedEventAt }
+        : {}),
   };
-  if (!next.requesterOrigin && typeof next.lastNotifiedEventAt !== "number" && !current) {
+  if (
+    !next.requesterOrigin &&
+    typeof next.lastNotifiedEventAt !== "number" &&
+    typeof next.lastReplayedEventAt !== "number" &&
+    !current
+  ) {
     return cloneTaskDeliveryState({ taskId: state.taskId });
   }
   taskDeliveryStates.set(state.taskId, next);
@@ -962,6 +1009,64 @@ function upsertTaskDeliveryState(state: TaskDeliveryState): TaskDeliveryState {
 function getTaskDeliveryState(taskId: string): TaskDeliveryState | undefined {
   const state = taskDeliveryStates.get(taskId);
   return state ? cloneTaskDeliveryState(state) : undefined;
+}
+
+export function listTaskProgressReplayCandidatesForOwnerKey(params: {
+  ownerKey: string;
+  limit?: number;
+}): TaskProgressReplayCandidate[] {
+  ensureTaskRegistryReady();
+  const ownerKey = normalizeOptionalString(params.ownerKey);
+  if (!ownerKey) {
+    return [];
+  }
+  const limit = Math.max(1, params.limit ?? 2);
+  const snapshot = buildTaskStatusSnapshot(
+    listTasksForOwnerKey(ownerKey).filter((task) => {
+      if (task.scopeKind !== "session") {
+        return false;
+      }
+      if (task.status === "succeeded" || task.status === "failed" || task.status === "timed_out") {
+        return task.deliveryStatus !== "delivered" && task.deliveryStatus !== "session_queued";
+      }
+      if (task.status === "cancelled" || task.status === "lost") {
+        return task.deliveryStatus !== "delivered" && task.deliveryStatus !== "session_queued";
+      }
+      return true;
+    }),
+  );
+  const candidates: TaskProgressReplayCandidate[] = [];
+  for (const task of snapshot.visible) {
+    if (candidates.length >= limit) {
+      break;
+    }
+    const replayEventAt = resolveTaskReplayEventAt(task);
+    const deliveryState = getTaskDeliveryState(task.taskId);
+    if ((deliveryState?.lastReplayedEventAt ?? 0) >= replayEventAt) {
+      continue;
+    }
+    candidates.push({
+      taskId: task.taskId,
+      replayEventAt,
+      status: task.status,
+      text: formatTaskReplayText(task),
+    });
+  }
+  return candidates;
+}
+
+export function markTaskProgressReplayDelivered(params: {
+  taskId: string;
+  replayEventAt: number;
+}): TaskDeliveryState | null {
+  ensureTaskRegistryReady();
+  if (!tasks.has(params.taskId)) {
+    return null;
+  }
+  return upsertTaskDeliveryState({
+    taskId: params.taskId,
+    lastReplayedEventAt: params.replayEventAt,
+  });
 }
 
 function canDeliverTaskToRequesterOrigin(task: TaskRecord): boolean {

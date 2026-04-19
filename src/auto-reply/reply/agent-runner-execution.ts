@@ -1093,6 +1093,21 @@ export async function runAgentTurnWithFallback(params: {
                       message: readStringValue(evt.data.message),
                     });
                   }
+                  if (evt.stream === "lifecycle") {
+                    await params.opts?.onLifecycleEvent?.({
+                      phase: readStringValue(evt.data.phase),
+                      startedAt:
+                        typeof evt.data.startedAt === "number" ? evt.data.startedAt : undefined,
+                      endedAt: typeof evt.data.endedAt === "number" ? evt.data.endedAt : undefined,
+                      error: readStringValue(evt.data.error),
+                      selectedProvider: readStringValue(evt.data.selectedProvider),
+                      selectedModel: readStringValue(evt.data.selectedModel),
+                      activeProvider: readStringValue(evt.data.activeProvider),
+                      activeModel: readStringValue(evt.data.activeModel),
+                      previousActiveModel: readStringValue(evt.data.previousActiveModel),
+                      reasonSummary: readStringValue(evt.data.reasonSummary),
+                    });
+                  }
                   if (evt.stream === "command_output") {
                     await params.opts?.onCommandOutput?.({
                       itemId: readStringValue(evt.data.itemId),

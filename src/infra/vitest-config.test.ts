@@ -234,7 +234,7 @@ describe("test scripts", () => {
       "node scripts/run-vitest.mjs run --config test/vitest/vitest.unit-fast.config.ts",
     );
     expect(pkg.scripts?.["test:unit:fast:audit"]).toBe("node scripts/test-unit-fast-audit.mjs");
-    expect(pkg.scripts?.["test"]).toBe("node scripts/test-projects.mjs");
+    expect(pkg.scripts?.["test"]).toBe("node scripts/test-root-gate.mjs");
     expect(pkg.scripts?.["test:force"]).toBe("node --import tsx scripts/test-force.ts");
     expect(pkg.scripts?.["test:gateway"]).toBe(
       "node scripts/run-vitest.mjs run --config test/vitest/vitest.gateway.config.ts",

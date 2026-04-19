@@ -135,4 +135,49 @@ Policy:
 - startup docs/projects/maintenance/STARTUP.md
 - current slice docs/projects/maintenance/CURRENT_SLICE.md
 - status docs/projects/maintenance/STATUS.md
+- Active workspace: Skills System
+- workspace docs/projects/skills-system
+- startup docs/projects/skills-system/STARTUP.md
+- current slice docs/projects/skills-system/CURRENT_SLICE.md
+- status docs/projects/skills-system/STATUS.md
+- Active workspace: Build Performance
+- workspace docs/projects/build-performance
+- startup docs/projects/build-performance/STARTUP.md
+- current slice docs/projects/build-performance/CURRENT_SLICE.md
+- status docs/projects/build-performance/STATUS.md
+- Active workspace: Channel Identity
+- workspace docs/projects/channel-identity
+- startup docs/projects/channel-identity/STARTUP.md
+- current slice docs/projects/channel-identity/CURRENT_SLICE.md
+- status docs/projects/channel-identity/STATUS.md
+- Active workspace: GitHub
+- workspace docs/projects/github
+- startup docs/projects/github/STARTUP.md
+- current slice docs/projects/github/CURRENT_SLICE.md
+- status docs/projects/github/STATUS.md
+- Active workspace: Live App Patches
+- workspace docs/projects/live-app-patches
+- startup docs/projects/live-app-patches/STARTUP.md
+- current slice docs/projects/live-app-patches/CURRENT_SLICE.md
+- status docs/projects/live-app-patches/STATUS.md
+- Active workspace: Ops
+- workspace docs/projects/ops
+- startup docs/projects/ops/STARTUP.md
+- current slice docs/projects/ops/CURRENT_SLICE.md
+- status docs/projects/ops/STATUS.md
+- Active workspace: Roles
+- workspace docs/projects/roles
+- startup docs/projects/roles/STARTUP.md
+- current slice docs/projects/roles/CURRENT_SLICE.md
+- status docs/projects/roles/STATUS.md
+- Active workspace: Web Stack
+- workspace docs/projects/web-stack
+- startup docs/projects/web-stack/STARTUP.md
+- current slice docs/projects/web-stack/CURRENT_SLICE.md
+- status docs/projects/web-stack/STATUS.md
+- Active workspace: Workflows
+- workspace docs/projects/workflows
+- startup docs/projects/workflows/STARTUP.md
+- current slice docs/projects/workflows/CURRENT_SLICE.md
+- status docs/projects/workflows/STATUS.md
 <!-- END GENERATED: openclaw-canonical -->

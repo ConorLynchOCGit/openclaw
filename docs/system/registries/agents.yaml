@@ -1,8 +1,9 @@
-version: 2
-status: live_runtime_reconciled
+version: 3
+status: live_runtime_reconciled_with_durable_packs
 notes:
   - This registry now reflects the actual live runtime agent set on the VPS.
-  - docs/agents/ now has bounded runtime-source footholds for main, builder, researcher, web-researcher, writer, and x-manager.
+  - docs/agents/ now has durable base packs for the live runtime agent set.
+  - Chief intentionally shares the main runtime compatibility source surface while keeping a dedicated durable pack.
 requiredDurableRoot: docs/agents
 runtimeRoots:
   - .agents
@@ -23,7 +24,7 @@ liveRuntimeAgents:
     uiVisibility:
       agentsList: true
       sessionSelector: true
-    docsStatus: canonical_runtime_sources_present
+    docsStatus: durable_pack_and_runtime_sources_present
     status: live_and_initialized
   - id: chief
     title: OpenClaw
@@ -36,7 +37,7 @@ liveRuntimeAgents:
     uiVisibility:
       agentsList: true
       sessionSelector: true
-    docsStatus: shared_main_runtime_sources_present
+    docsStatus: dedicated_durable_pack_plus_shared_main_runtime_sources
     status: live_and_initialized
   - id: builder
     title: Builder
@@ -49,7 +50,7 @@ liveRuntimeAgents:
     uiVisibility:
       agentsList: true
       sessionSelector: true
-    docsStatus: canonical_runtime_sources_present
+    docsStatus: durable_pack_and_runtime_sources_present
     status: live_and_initialized
   - id: researcher
     title: Researcher
@@ -62,7 +63,7 @@ liveRuntimeAgents:
     uiVisibility:
       agentsList: true
       sessionSelector: false
-    docsStatus: canonical_runtime_sources_present
+    docsStatus: durable_pack_and_runtime_sources_present
     status: configured_but_uninitialized
   - id: web-researcher
     title: Web Researcher
@@ -75,7 +76,7 @@ liveRuntimeAgents:
     uiVisibility:
       agentsList: true
       sessionSelector: true
-    docsStatus: canonical_runtime_sources_present
+    docsStatus: durable_pack_and_runtime_sources_present
     status: configured_but_broken_workspace_repaired
   - id: writer
     title: Writer
@@ -88,7 +89,7 @@ liveRuntimeAgents:
     uiVisibility:
       agentsList: true
       sessionSelector: true
-    docsStatus: canonical_runtime_sources_present
+    docsStatus: durable_pack_and_runtime_sources_present
     status: live_and_initialized
   - id: x-manager
     title: X Manager
@@ -101,7 +102,7 @@ liveRuntimeAgents:
     uiVisibility:
       agentsList: true
       sessionSelector: true
-    docsStatus: canonical_runtime_sources_present
+    docsStatus: durable_pack_and_runtime_sources_present
     status: configured_but_broken_workspace_repaired
 futureDurableDescriptors:
   - id: qa-test-openai

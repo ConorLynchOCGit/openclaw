@@ -699,6 +699,41 @@ describe("listSessionsFromStore subagent metadata", () => {
     expect(child?.parentSessionKey).toBe("agent:main:main");
   });
 
+  test("does not surface hidden proof child sessions on operator parent rows", () => {
+    resetSubagentRegistryForTests({ persist: false });
+    const now = Date.now();
+    const store: Record<string, SessionEntry> = {
+      "agent:main:main": {
+        sessionId: "sess-main",
+        updatedAt: now,
+      } as SessionEntry,
+      "agent:main:codex-proof-1": {
+        sessionId: "sess-proof",
+        updatedAt: now - 1_000,
+        spawnedBy: "agent:main:main",
+        origin: { surface: "codex" },
+      } as SessionEntry,
+      "agent:main:dashboard:child": {
+        sessionId: "sess-dashboard-child",
+        updatedAt: now - 500,
+        parentSessionKey: "agent:main:main",
+      } as SessionEntry,
+    };
+
+    const result = listSessionsFromStore({
+      cfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+    });
+
+    const main = result.sessions.find((session) => session.key === "agent:main:main");
+    expect(main?.childSessions).toEqual(["agent:main:dashboard:child"]);
+    expect(result.sessions.some((session) => session.key === "agent:main:codex-proof-1")).toBe(
+      false,
+    );
+  });
+
   test("returns dashboard child sessions when filtering by parentSessionKey owner", () => {
     resetSubagentRegistryForTests({ persist: false });
     const now = Date.now();

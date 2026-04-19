@@ -15,6 +15,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveHookExternalContentSource as resolveHookExternalContentSourceFromSession } from "../security/external-content.js";
 import { safeEqualSecret } from "../security/secret-equal.js";
+import { resolveRuntimeBuildInfo } from "../version.js";
 import { resolveAssistantIdentity } from "./assistant-identity.js";
 import {
   AUTH_RATE_LIMIT_SCOPE_HOOK_AUTH,
@@ -295,6 +296,16 @@ async function handleGatewayProbeRequest(
 
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
+  const buildInfo = resolveRuntimeBuildInfo();
+  if (buildInfo.version) {
+    res.setHeader("X-OpenClaw-Version", buildInfo.version);
+  }
+  if (buildInfo.commit) {
+    res.setHeader("X-OpenClaw-Commit", buildInfo.commit);
+  }
+  if (buildInfo.buildSignature) {
+    res.setHeader("X-OpenClaw-Build-Signature", buildInfo.buildSignature);
+  }
 
   let statusCode: number;
   let body: string;
@@ -308,11 +319,15 @@ async function handleGatewayProbeRequest(
     try {
       const result = getReadiness();
       statusCode = result.ready ? 200 : 503;
-      body = JSON.stringify(includeDetails ? result : { ready: result.ready });
+      body = JSON.stringify(
+        includeDetails ? { ...result, build: buildInfo } : { ready: result.ready },
+      );
     } catch {
       statusCode = 503;
       body = JSON.stringify(
-        includeDetails ? { ready: false, failing: ["internal"], uptimeMs: 0 } : { ready: false },
+        includeDetails
+          ? { ready: false, failing: ["internal"], uptimeMs: 0, build: buildInfo }
+          : { ready: false },
       );
     }
   } else {

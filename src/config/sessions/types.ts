@@ -11,6 +11,8 @@ export type SessionScope = "per-sender" | "global";
 export type SessionChannelId = ChannelId;
 
 export type SessionChatType = ChatType;
+export type SessionVisibilityClass = "operator" | "internal" | "proof" | "system";
+export type SessionRetentionClass = "standard" | "internal_short" | "proof_short" | "system_short";
 
 export type SessionOrigin = {
   label?: string;
@@ -109,6 +111,8 @@ export type SessionPluginDebugEntry = {
 };
 
 export type SessionEntry = {
+  visibilityClass?: SessionVisibilityClass;
+  retentionClass?: SessionRetentionClass;
   /**
    * Last delivered heartbeat payload (used to suppress duplicate heartbeat notifications).
    * Stored on the main session entry.

@@ -1,5 +1,6 @@
 import { resolveConfigPath, resolveGatewayPort } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.js";
+import { resolveDockerComposeGatewayPortOverride } from "../infra/docker-compose-gateway-port.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
 import { isSecureWebSocketUrl } from "./net.js";
 
@@ -34,8 +35,10 @@ export function buildGatewayConnectionDetailsWithResolvers(
   const isRemoteMode = config.gateway?.mode === "remote";
   const remote = isRemoteMode ? config.gateway?.remote : undefined;
   const tlsEnabled = config.gateway?.tls?.enabled === true;
-  const localPort =
+  const configuredLocalPort =
     resolvers.resolveGatewayPort?.(config, process.env) ?? resolveGatewayPort(config);
+  const localPort =
+    resolveDockerComposeGatewayPortOverride({ env: process.env }) ?? configuredLocalPort;
   const bindMode = config.gateway?.bind ?? "loopback";
   const scheme = tlsEnabled ? "wss" : "ws";
   const localUrl = `${scheme}://127.0.0.1:${localPort}`;

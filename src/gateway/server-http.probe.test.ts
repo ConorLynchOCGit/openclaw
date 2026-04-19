@@ -51,7 +51,20 @@ describe("gateway probe endpoints", () => {
         await dispatchRequest(server, req, res);
 
         expect(res.statusCode).toBe(200);
-        expect(JSON.parse(getBody())).toEqual({ ready: true, failing: [], uptimeMs: 45_000 });
+        expect(JSON.parse(getBody())).toMatchObject({
+          ready: true,
+          failing: [],
+          uptimeMs: 45_000,
+          build: {
+            version: expect.any(String),
+            buildSignature: expect.any(String),
+          },
+        });
+        expect(res.setHeader).toHaveBeenCalledWith("X-OpenClaw-Version", expect.any(String));
+        expect(res.setHeader).toHaveBeenCalledWith(
+          "X-OpenClaw-Build-Signature",
+          expect.any(String),
+        );
       },
     });
   });
@@ -104,10 +117,14 @@ describe("gateway probe endpoints", () => {
         await dispatchRequest(server, req, res);
 
         expect(res.statusCode).toBe(503);
-        expect(JSON.parse(getBody())).toEqual({
+        expect(JSON.parse(getBody())).toMatchObject({
           ready: false,
           failing: ["discord", "telegram"],
           uptimeMs: 8_000,
+          build: {
+            version: expect.any(String),
+            buildSignature: expect.any(String),
+          },
         });
       },
     });
@@ -144,11 +161,15 @@ describe("gateway probe endpoints", () => {
 
         await expect(sendReady("Bearer test-token")).resolves.toEqual({
           statusCode: 503,
-          body: {
+          body: expect.objectContaining({
             ready: false,
             failing: ["discord", "telegram"],
             uptimeMs: 8_000,
-          },
+            build: expect.objectContaining({
+              version: expect.any(String),
+              buildSignature: expect.any(String),
+            }),
+          }),
         });
 
         currentAuth = {
@@ -162,11 +183,15 @@ describe("gateway probe endpoints", () => {
         });
         await expect(sendReady("Bearer rotated-token")).resolves.toEqual({
           statusCode: 503,
-          body: {
+          body: expect.objectContaining({
             ready: false,
             failing: ["discord", "telegram"],
             uptimeMs: 8_000,
-          },
+            build: expect.objectContaining({
+              version: expect.any(String),
+              buildSignature: expect.any(String),
+            }),
+          }),
         });
       },
     });
@@ -238,7 +263,15 @@ describe("gateway probe endpoints", () => {
         await dispatchRequest(server, req, res);
 
         expect(res.statusCode).toBe(503);
-        expect(JSON.parse(getBody())).toEqual({ ready: false, failing: ["internal"], uptimeMs: 0 });
+        expect(JSON.parse(getBody())).toMatchObject({
+          ready: false,
+          failing: ["internal"],
+          uptimeMs: 0,
+          build: {
+            version: expect.any(String),
+            buildSignature: expect.any(String),
+          },
+        });
       },
     });
   });

@@ -12,11 +12,12 @@ Current reality:
 
 - `turbo` is installed
 - `turbo.json` exists
-- the current Turbo lane is intentionally narrow
-- root landing gates are still mostly monolithic:
-  - `pnpm check`
-  - `pnpm test`
-  - `pnpm build`
+- the current Turbo lane is still intentionally bounded, but no longer UI-only:
+  - `openclaw-control-ui`
+  - `@openclaw/diffs`
+- root landing gates are now decomposed:
+  - root-owned work runs through explicit Turbo-managed root stages
+  - package-owned UI/diffs work runs through Turbo inside the root wrappers
 
 The goal of this project is not to wrap those monoliths cosmetically. The goal
 is to define real package-owned tasks, expand the workspace graph honestly, and
@@ -30,6 +31,7 @@ keep the final landing bar coherent.
 4. [Decisions](/projects/turborepo/DECISIONS)
 5. [Roadmap](/projects/turborepo/roadmap)
 6. [Spec Index](/projects/turborepo/specs)
+7. [Root Gate Decomposition Audit](/projects/turborepo/root-gate-decomposition-audit)
 
 ## Scope
 

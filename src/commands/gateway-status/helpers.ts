@@ -5,6 +5,7 @@ import { hasConfiguredSecretInput } from "../../config/types.secrets.js";
 import { resolveGatewayProbeSurfaceAuth } from "../../gateway/auth-surface-resolution.js";
 import { isLoopbackHost } from "../../gateway/net.js";
 import type { GatewayProbeResult } from "../../gateway/probe.js";
+import { resolveDockerComposeGatewayPortOverride } from "../../infra/docker-compose-gateway-port.js";
 import { inspectBestEffortPrimaryTailnetIPv4 } from "../../infra/network-discovery-display.js";
 import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { colorize, theme } from "../../terminal/theme.js";
@@ -106,7 +107,8 @@ export function resolveTargets(cfg: OpenClawConfig, explicitUrl?: string): Gatew
     });
   }
 
-  const port = resolveGatewayPort(cfg);
+  const port =
+    resolveDockerComposeGatewayPortOverride({ env: process.env }) ?? resolveGatewayPort(cfg);
   const localScheme = cfg.gateway?.tls?.enabled === true ? "wss" : "ws";
   add({
     id: "localLoopback",
@@ -246,7 +248,8 @@ export function extractConfigSummary(snapshotUnknown: unknown): GatewayConfigSum
 
 export function buildNetworkHints(cfg: OpenClawConfig) {
   const { tailnetIPv4 } = inspectBestEffortPrimaryTailnetIPv4();
-  const port = resolveGatewayPort(cfg);
+  const port =
+    resolveDockerComposeGatewayPortOverride({ env: process.env }) ?? resolveGatewayPort(cfg);
   const localScheme = cfg.gateway?.tls?.enabled === true ? "wss" : "ws";
   return {
     localLoopbackUrl: `${localScheme}://127.0.0.1:${port}`,

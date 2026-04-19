@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import path from "node:path";
+import { isCiLikeEnv } from "./lib/vitest-local-scheduling.mjs";
 import { spawnPnpmRunner } from "./pnpm-runner.mjs";
 import {
   forwardSignalToVitestProcessGroup,
@@ -7,6 +8,7 @@ import {
   shouldUseDetachedVitestProcessGroup,
 } from "./vitest-process-group.mjs";
 
+const FS_MODULE_CACHE_PATH_ENV_KEY = "OPENCLAW_VITEST_FS_MODULE_CACHE_PATH";
 const TRUTHY_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
 const SUPPRESSED_VITEST_STDERR_PATTERNS = ["[PLUGIN_TIMINGS] Warning:"];
 const require = createRequire(import.meta.url);
@@ -18,6 +20,15 @@ function isTruthyEnvValue(value) {
 function parsePositiveInt(value) {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function sanitizeVitestCachePathSegment(value) {
+  return (
+    value
+      .replace(/[^a-zA-Z0-9._-]+/gu, "-")
+      .replace(/^-+|-+$/gu, "")
+      .slice(0, 180) || "default"
+  );
 }
 
 function resolveVitestMaxOldSpaceSizeMb(env = process.env) {
@@ -47,6 +58,59 @@ export function resolveVitestCliEntry() {
 
 export function resolveVitestNoOutputTimeoutMs(env = process.env) {
   return parsePositiveInt(env.OPENCLAW_VITEST_NO_OUTPUT_TIMEOUT_MS);
+}
+
+export function resolveVitestCacheIdentity(argv = []) {
+  const parts = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--config") {
+      const next = argv[index + 1];
+      if (next && !next.startsWith("-")) {
+        parts.push(next);
+        index += 1;
+      }
+      continue;
+    }
+    if (arg.startsWith("--config=")) {
+      parts.push(arg.slice("--config=".length));
+      continue;
+    }
+    if (arg === "run" || arg === "watch" || arg.startsWith("-")) {
+      continue;
+    }
+    parts.push(arg);
+    if (parts.length >= 3) {
+      break;
+    }
+  }
+  return parts.join("--") || "default";
+}
+
+export function resolveVitestFsModuleCachePath(argv = [], options = {}) {
+  const env = options.env ?? process.env;
+  const platform = options.platform ?? process.platform;
+  if (platform === "win32" || isCiLikeEnv(env) || env[FS_MODULE_CACHE_PATH_ENV_KEY]?.trim()) {
+    return null;
+  }
+  const cwd = options.cwd ?? process.cwd();
+  const cacheIdentity = sanitizeVitestCachePathSegment(resolveVitestCacheIdentity(argv));
+  return path.join(cwd, "node_modules", ".experimental-vitest-cache", cacheIdentity);
+}
+
+export function resolveVitestExecutionEnv(argv = [], options = {}) {
+  const env = {
+    ...(options.env ?? process.env),
+  };
+  const cachePath = resolveVitestFsModuleCachePath(argv, {
+    cwd: options.cwd,
+    env,
+    platform: options.platform,
+  });
+  if (cachePath) {
+    env[FS_MODULE_CACHE_PATH_ENV_KEY] = cachePath;
+  }
+  return env;
 }
 
 export function resolveVitestSpawnParams(env = process.env, platform = process.platform) {
@@ -182,15 +246,22 @@ function main(argv = process.argv.slice(2), env = process.env) {
     process.exit(1);
   }
 
-  const spawnParams = resolveVitestSpawnParams(env);
+  const executionEnv = resolveVitestExecutionEnv(argv, { env });
+  const spawnParams = resolveVitestSpawnParams(executionEnv);
   const child = spawnPnpmRunner({
-    pnpmArgs: ["exec", "node", ...resolveVitestNodeArgs(env), resolveVitestCliEntry(), ...argv],
+    pnpmArgs: [
+      "exec",
+      "node",
+      ...resolveVitestNodeArgs(executionEnv),
+      resolveVitestCliEntry(),
+      ...argv,
+    ],
     ...spawnParams,
   });
   const teardownChildCleanup = installVitestProcessGroupCleanup({ child });
   const teardownNoOutputWatchdog = installVitestNoOutputWatchdog({
     streams: [child.stdout, child.stderr],
-    timeoutMs: resolveVitestNoOutputTimeoutMs(env),
+    timeoutMs: resolveVitestNoOutputTimeoutMs(executionEnv),
     label: argv.join(" "),
     log: (message) => {
       console.error(message);

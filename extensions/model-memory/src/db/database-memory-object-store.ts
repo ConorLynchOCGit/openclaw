@@ -911,10 +911,8 @@ export class DatabaseMemoryObjectStore {
       let memoryObjects = await repository.listMemoryObjects();
       let supportItems = await repository.listSupportItems();
       let writeEventCount = (await repository.listWriteEvents()).length;
-      const [sources, sourceWindows] = await Promise.all([
-        repository.listSources(),
-        repository.listSourceWindows(),
-      ]);
+      const sources = await repository.listSources();
+      const sourceWindows = await repository.listSourceWindows();
       const sourceById = new Map(sources.map((source) => [source.id, source] as const));
       const sourceWindowById = new Map(sourceWindows.map((window) => [window.id, window] as const));
 

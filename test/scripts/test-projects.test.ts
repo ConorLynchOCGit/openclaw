@@ -197,6 +197,26 @@ describe("scripts/test-projects changed-target routing", () => {
   });
 });
 
+describe("scripts/test-projects full-suite skips", () => {
+  it("omits configured full-suite configs from the generated shard plan", () => {
+    const previous = process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS;
+    process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS =
+      "test/vitest/vitest.extension-diffs.config.ts";
+    try {
+      const plans = buildFullSuiteVitestRunPlans([], process.cwd());
+      expect(
+        plans.some((plan) => plan.config === "test/vitest/vitest.extension-diffs.config.ts"),
+      ).toBe(false);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS;
+      } else {
+        process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS = previous;
+      }
+    }
+  });
+});
+
 describe("scripts/test-projects local heavy-check lock", () => {
   it("skips the lock for a single scoped tooling run", () => {
     expect(

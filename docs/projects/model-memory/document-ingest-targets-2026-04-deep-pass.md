@@ -165,7 +165,7 @@ Files:
 - `docs/projects/agent-foundation/compatibility-source-migration-plan.md`
 - `docs/projects/agent-foundation/exhaustive-agent-pack-diff.md`
 - `docs/projects/agent-foundation/index.md`
-- `docs/projects/agent-foundation/live-agent-inventory.md`
+- `docs/projects/agent-foundation/current-agent-inventory.md`
 - `docs/projects/agent-foundation/roadmap.md`
 - `docs/projects/agent-foundation/specs/agent-durable-pack.md`
 - `docs/projects/agent-foundation/specs/agent-registry-alignment.md`

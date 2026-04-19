@@ -54,6 +54,76 @@ export function detectSuspiciousPatterns(content: string): string[] {
   return matches;
 }
 
+export type ExternalContentTrustLabel = "untrusted_external";
+export type ExternalContentSuspicionOutcome =
+  | "safe_content"
+  | "suspicious_manipulative_content"
+  | "blocked_hostile_instruction_content"
+  | "escalate_for_human_review";
+
+export type ExternalContentRiskClassification = {
+  trustLabel: ExternalContentTrustLabel;
+  outcome: ExternalContentSuspicionOutcome;
+  suspiciousPatterns: string[];
+  suspiciousPatternCount: number;
+  requiresHumanReview: boolean;
+};
+
+const ESCALATION_PATTERNS = [
+  /\b(api[\s_-]?key|access[\s_-]?token|bearer token|session cookie|password|passcode)\b/i,
+  /\b(ssh key|private key|2fa|one[- ]time code|otp)\b/i,
+  /\b(log ?in|sign ?in|authenticate|enter credentials|wallet)\b/i,
+] as const;
+
+const BLOCKED_HOSTILE_PATTERNS = [
+  /\b(ignore|disregard|forget)\b.{0,80}\b(instructions?|prompt|rules?)\b/i,
+  /\b(system|assistant)\b.{0,40}\b(override|prompt|message|command)\b/i,
+  /\b(exec|run|execute)\b.{0,80}\b(command|shell|terminal)\b/i,
+  /\b(delete|remove|wipe|destroy)\b.{0,80}\b(data|files?|emails?|records?)\b/i,
+] as const;
+
+export function classifyExternalContentRisk(content: string): ExternalContentRiskClassification {
+  const suspiciousPatterns = detectSuspiciousPatterns(content);
+  const hasEscalationPattern = ESCALATION_PATTERNS.some((pattern) => pattern.test(content));
+  const hasBlockedHostilePattern =
+    suspiciousPatterns.length > 0 &&
+    BLOCKED_HOSTILE_PATTERNS.some((pattern) => pattern.test(content));
+  if (hasEscalationPattern) {
+    return {
+      trustLabel: "untrusted_external",
+      outcome: "escalate_for_human_review",
+      suspiciousPatterns,
+      suspiciousPatternCount: suspiciousPatterns.length,
+      requiresHumanReview: true,
+    };
+  }
+  if (hasBlockedHostilePattern) {
+    return {
+      trustLabel: "untrusted_external",
+      outcome: "blocked_hostile_instruction_content",
+      suspiciousPatterns,
+      suspiciousPatternCount: suspiciousPatterns.length,
+      requiresHumanReview: false,
+    };
+  }
+  if (suspiciousPatterns.length > 0) {
+    return {
+      trustLabel: "untrusted_external",
+      outcome: "suspicious_manipulative_content",
+      suspiciousPatterns,
+      suspiciousPatternCount: suspiciousPatterns.length,
+      requiresHumanReview: false,
+    };
+  }
+  return {
+    trustLabel: "untrusted_external",
+    outcome: "safe_content",
+    suspiciousPatterns,
+    suspiciousPatternCount: 0,
+    requiresHumanReview: false,
+  };
+}
+
 /**
  * Unique boundary markers for external content.
  * Using XML-style tags that are unlikely to appear in legitimate content.

@@ -100,6 +100,27 @@ on corpus shape and packet shaping together.
 The current proof obligations for that lane are now tracked in:
 
 - [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)
+- [Memory Build Status And Next Steps](/projects/model-memory/memory-build-status-and-next-steps)
+
+The current rule-vs-fact benchmark tranche now adds:
+
+- [Document Ingest Pipeline Walkthrough](/projects/model-memory/document-ingest-pipeline-walkthrough)
+- [Representative Corpus Rule Vs Fact Benchmark](/projects/model-memory/representative-corpus-rule-vs-fact-benchmark)
+- [Rule Vs Fact Benchmark Scorecard](/projects/model-memory/rule-vs-fact-benchmark-scorecard)
+- [Rule Vs Fact Variant Design](/projects/model-memory/rule-vs-fact-variant-design)
+- [Rule Vs Fact Benchmark Findings](/projects/model-memory/rule-vs-fact-benchmark-findings)
+- [Rule Vs Fact Next Change Recommendation](/projects/model-memory/rule-vs-fact-next-change-recommendation)
+
+That benchmark currently supports this judgment:
+
+- first-order skew is entering at pass-1 candidate extraction
+- class-kind rigidity is a secondary amplifier rather than the dominant seam
+- downstream collision/write behavior is not the main source of fact-heavy
+  capture on the tested corpus
+- the prompt-first production change has now shipped and become the live
+  benchmark reference point
+- the next production move is a narrow pass-2 canonicalization review, not
+  schema rewrites or added deterministic compensation logic
 
 The current evidence and residue boundary is now explicit:
 
@@ -118,12 +139,21 @@ The first real repo-side retirement cuts and corrections now recorded are:
 
 - bundled `session-memory` hook retained as a continuity producer for canonical
   daily markdown artifacts
+- the hook repair now explicitly writes the canonical `memory/YYYY-MM-DD.md`
+  surface instead of only slugged leaf notes
 - `docs/automation/hooks.md` and `docs/cli/hooks.md` no longer advertise that
   hook as a semantic authority
 - `docs/concepts/memory.md` and `docs/cli/memory.md` now describe the legacy
   stack as retired or retiring, not canonical
 - gateway startup no longer falls back to QMD or plugin memory warmup when
   `model-memory` live runtime is off
+- the repair record now lives in
+  [Daily Memory Grounding Repair](/projects/model-memory/daily-memory-grounding-repair)
+- same-day continuity now also has an explicit health-check lane:
+  - `scripts/check-daily-memory-continuity.mjs` validates the canonical
+    `memory/YYYY-MM-DD.md` artifact directly
+  - the health contract now lives in
+    [Daily Continuity Health](/projects/model-memory/daily-continuity-health)
 
 Day-0 cutover verification:
 

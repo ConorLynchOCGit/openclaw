@@ -125,6 +125,72 @@ describe("Integration: saveSessionStore with pruning", () => {
     expect(loaded.fresh).toBeDefined();
   });
 
+  it("prunes proof sessions on the shorter retention window", async () => {
+    applyEnforcedMaintenanceConfig(mockLoadConfig);
+
+    const now = Date.now();
+    const store: Record<string, SessionEntry> = {
+      "agent:main:codex-proof-old": {
+        sessionId: "proof-old",
+        updatedAt: now - 3 * DAY_MS,
+      },
+      "agent:main:codex-proof-fresh": {
+        sessionId: "proof-fresh",
+        updatedAt: now - 12 * 60 * 60 * 1000,
+      },
+      "agent:main:main": {
+        sessionId: "main-fresh",
+        updatedAt: now,
+        displayName: "Main Session",
+      },
+    };
+
+    await saveSessionStore(storePath, store, {
+      maintenanceOverride: ENFORCED_MAINTENANCE_OVERRIDE,
+    });
+
+    const loaded = loadSessionStore(storePath, { skipCache: true });
+    expect(loaded["agent:main:codex-proof-old"]).toBeUndefined();
+    expect(loaded["agent:main:codex-proof-fresh"]).toBeDefined();
+    expect(loaded["agent:main:codex-proof-fresh"]?.visibilityClass).toBe("proof");
+    expect(loaded["agent:main:codex-proof-fresh"]?.retentionClass).toBe("proof_short");
+  });
+
+  it("prunes unnamed internal sessions on the shorter retention window", async () => {
+    applyEnforcedMaintenanceConfig(mockLoadConfig);
+
+    const now = Date.now();
+    const store: Record<string, SessionEntry> = {
+      "agent:builder:worker-old": {
+        sessionId: "internal-old",
+        updatedAt: now - 4 * DAY_MS,
+        spawnedBy: "agent:main:main",
+        subagentRole: "leaf",
+      },
+      "agent:builder:worker-fresh": {
+        sessionId: "internal-fresh",
+        updatedAt: now - 12 * 60 * 60 * 1000,
+        spawnedBy: "agent:main:main",
+        subagentRole: "leaf",
+      },
+      "agent:main:main": {
+        sessionId: "main-fresh",
+        updatedAt: now,
+        displayName: "Main Session",
+      },
+    };
+
+    await saveSessionStore(storePath, store, {
+      maintenanceOverride: ENFORCED_MAINTENANCE_OVERRIDE,
+    });
+
+    const loaded = loadSessionStore(storePath, { skipCache: true });
+    expect(loaded["agent:builder:worker-old"]).toBeUndefined();
+    expect(loaded["agent:builder:worker-fresh"]).toBeDefined();
+    expect(loaded["agent:builder:worker-fresh"]?.visibilityClass).toBe("internal");
+    expect(loaded["agent:builder:worker-fresh"]?.retentionClass).toBe("internal_short");
+  });
+
   it("archives transcript files for stale sessions pruned on write", async () => {
     applyEnforcedMaintenanceConfig(mockLoadConfig);
 
@@ -308,8 +374,8 @@ describe("Integration: saveSessionStore with pruning", () => {
           pruneAfter: "365d",
           maxEntries: 100,
           rotateBytes: 10_485_760,
-          maxDiskBytes: 900,
-          highWaterBytes: 700,
+          maxDiskBytes: 1_200,
+          highWaterBytes: 950,
         },
       },
     });

@@ -1,8 +1,9 @@
 import type { SessionEntry } from "./types.js";
+import { normalizeSessionVisibilityMetadata } from "./visibility.js";
 
 export function applySessionStoreMigrations(store: Record<string, SessionEntry>): void {
   // Best-effort migration: message provider → channel naming.
-  for (const entry of Object.values(store)) {
+  for (const [key, entry] of Object.entries(store)) {
     if (!entry || typeof entry !== "object") {
       continue;
     }
@@ -22,6 +23,14 @@ export function applySessionStoreMigrations(store: Record<string, SessionEntry>)
       delete rec.room;
     } else if ("room" in rec) {
       delete rec.room;
+    }
+
+    const normalized = normalizeSessionVisibilityMetadata({
+      key,
+      entry,
+    });
+    if (normalized !== entry) {
+      store[key] = normalized;
     }
   }
 }

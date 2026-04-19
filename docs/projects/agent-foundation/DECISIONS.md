@@ -24,22 +24,23 @@ Decision:
 
 - the required agent pack is:
   - `index.md`
-  - `STARTUP.md`
   - `Identity.md`
-  - `Memory.md`
+  - `Startup.md`
   - `Permissions.md`
   - `Tools.md`
   - `Skills.md`
-  - `STATUS.md`
-  - `DECISIONS.md`
-  - `roadmap.md`
+  - `Status.md`
 - `Workflows.md` is not required by default
+- `Decisions.md`, `Examples.md`, `Interfaces.md`, and `Workflows.md` are
+  optional
 
 Reasoning:
 
 - repeatable executable workflows should usually become skills
 - forcing both workflow docs and skill docs as parallel first-class systems
   would create avoidable overlap and drift
+- requiring per-agent `Memory.md`, `roadmap.md`, or `Decisions.md` by default
+  would create filler in agents that do not yet own those surfaces
 
 ## 2026-04-16 - agent identity docs require deeper research and richer buildouts
 
@@ -85,3 +86,18 @@ Reasoning:
 - the runtime-source truth should stay under `docs/agents/`
 - the role-library material is still useful context, but it does not justify a
   second standalone project workspace anymore
+
+## 2026-04-19 - browsing specialists require a runtime prompt-injection contract
+
+Decision:
+
+- `web-researcher` must treat page content as untrusted input rather than
+  instruction authority
+- the defense must exist in both durable docs and the live runtime
+  prompt/tool seam
+
+Reasoning:
+
+- docs-only guidance would not actually constrain live role behavior
+- browsing is the clearest lane where hostile content can try to steer tools,
+  exfiltrate privileged context, or push unsafe operational steps

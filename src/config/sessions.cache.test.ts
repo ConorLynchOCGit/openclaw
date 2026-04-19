@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSuiteTempRootTracker } from "../test-helpers/temp-dir.js";
+import { normalizeSessionStore } from "./sessions/store-load.js";
 import {
   clearSessionStoreCacheForTest,
   loadSessionStore,
@@ -23,6 +24,14 @@ function createSingleSessionStore(
   key = "session:1",
 ): Record<string, SessionEntry> {
   return { [key]: entry };
+}
+
+function withNormalizedSessionMetadata(
+  store: Record<string, SessionEntry>,
+): Record<string, SessionEntry> {
+  const next = structuredClone(store);
+  normalizeSessionStore(next);
+  return next;
 }
 
 describe("Session Store Cache", () => {
@@ -126,7 +135,7 @@ describe("Session Store Cache", () => {
 
     // Second load - should return the updated store
     const loaded2 = loadSessionStore(storePath);
-    expect(loaded2).toEqual(modifiedStore);
+    expect(loaded2).toEqual(withNormalizedSessionMetadata(modifiedStore));
   });
 
   it("should invalidate cache on write", async () => {
@@ -175,7 +184,7 @@ describe("Session Store Cache", () => {
 
     // Second load - should read from disk (cache disabled)
     const loaded2 = loadSessionStore(storePath);
-    expect(loaded2).toEqual(modifiedStore); // Should be modified, not cached
+    expect(loaded2).toEqual(withNormalizedSessionMetadata(modifiedStore));
   });
 
   it("should handle non-existent store gracefully", () => {

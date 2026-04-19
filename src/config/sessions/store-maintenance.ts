@@ -7,6 +7,7 @@ import { normalizeStringifiedOptionalString } from "../../shared/string-coerce.j
 import { loadConfig } from "../config.js";
 import type { SessionMaintenanceConfig, SessionMaintenanceMode } from "../types.base.js";
 import type { SessionEntry } from "./types.js";
+import { resolveSessionRetentionMs } from "./visibility.js";
 
 const log = createSubsystemLogger("sessions/store");
 
@@ -169,10 +170,12 @@ export function pruneStaleEntries(
   overrideMaxAgeMs?: number,
   opts: { log?: boolean; onPruned?: (params: { key: string; entry: SessionEntry }) => void } = {},
 ): number {
-  const maxAgeMs = overrideMaxAgeMs ?? resolveMaintenanceConfig().pruneAfterMs;
-  const cutoffMs = Date.now() - maxAgeMs;
+  const defaultMaxAgeMs = overrideMaxAgeMs ?? resolveMaintenanceConfig().pruneAfterMs;
+  const now = Date.now();
   let pruned = 0;
   for (const [key, entry] of Object.entries(store)) {
+    const maxAgeMs = resolveSessionRetentionMs({ key, entry, defaultMs: defaultMaxAgeMs });
+    const cutoffMs = now - maxAgeMs;
     if (entry?.updatedAt != null && entry.updatedAt < cutoffMs) {
       opts.onPruned?.({ key, entry });
       delete store[key];
@@ -180,7 +183,7 @@ export function pruneStaleEntries(
     }
   }
   if (pruned > 0 && opts.log !== false) {
-    log.info("pruned stale session entries", { pruned, maxAgeMs });
+    log.info("pruned stale session entries", { pruned, defaultMaxAgeMs });
   }
   return pruned;
 }

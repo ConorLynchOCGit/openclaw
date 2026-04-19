@@ -790,6 +790,94 @@ describe("gateway server chat", () => {
     });
   });
 
+  test("broadcasts ordinary block replies as chat delta events without transcript injection", async () => {
+    await withMainSessionStore(async (dir) => {
+      await fs.writeFile(
+        path.join(dir, "sess-main.jsonl"),
+        `${JSON.stringify({
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "existing context" }],
+            timestamp: Date.now(),
+          },
+        })}\n`,
+        "utf-8",
+      );
+      dispatchInboundMessageMock.mockImplementationOnce(async (...args: unknown[]) => {
+        const [params] = args as [
+          {
+            dispatcher: {
+              sendBlockReply: (payload: { text: string }) => boolean;
+              sendFinalReply: (payload: { text: string }) => boolean;
+              markComplete: () => void;
+              waitForIdle: () => Promise<void>;
+              getQueuedCounts: () => { final: number; block: number; tool: number };
+            };
+          },
+        ];
+        params.dispatcher.sendBlockReply({
+          text: "Queued: waiting for execution slot",
+        });
+        params.dispatcher.sendBlockReply({
+          text: "Working: long-running shell command",
+        });
+        params.dispatcher.sendFinalReply({
+          text: "DONE",
+        });
+        params.dispatcher.markComplete();
+        await params.dispatcher.waitForIdle();
+        return {
+          queuedFinal: true,
+          counts: params.dispatcher.getQueuedCounts(),
+        };
+      });
+      const deltaPromise = onceMessage(
+        ws,
+        (o) =>
+          o.type === "event" &&
+          o.event === "chat" &&
+          o.payload?.state === "delta" &&
+          extractFirstTextBlock(o.payload?.message) === "Queued: waiting for execution slot",
+        8000,
+      );
+      const finalPromise = onceMessage(
+        ws,
+        (o) =>
+          o.type === "event" &&
+          o.event === "chat" &&
+          o.payload?.state === "final" &&
+          o.payload?.runId === "idem-block-delta-1",
+        8000,
+      );
+
+      const res = await rpcReq(ws, "chat.send", {
+        sessionKey: "main",
+        message: "Run the long command and keep me posted.",
+        idempotencyKey: "idem-block-delta-1",
+      });
+
+      expect(res.ok).toBe(true);
+      const deltaEvent = await deltaPromise;
+      const finalEvent = await finalPromise;
+      expect(extractFirstTextBlock(deltaEvent.payload?.message)).toBe(
+        "Queued: waiting for execution slot",
+      );
+      expect(finalEvent.payload).toMatchObject({
+        runId: "idem-block-delta-1",
+        state: "final",
+      });
+
+      const historyRes = await rpcReq<{ messages?: unknown[] }>(ws, "chat.history", {
+        sessionKey: "main",
+      });
+      expect(historyRes.ok).toBe(true);
+      const historyTexts = collectHistoryTextValues(historyRes.payload?.messages ?? []);
+      expect(historyTexts).toContain("DONE");
+      expect(historyTexts).not.toContain("Queued: waiting for execution slot");
+      expect(historyTexts).not.toContain("Working: long-running shell command");
+    });
+  });
+
   test("chat.history hides assistant NO_REPLY-only entries and keeps mixed-content assistant entries", async () => {
     const historyMessages = await loadChatHistoryWithMessages(buildNoReplyHistoryFixture(true));
     const roleAndText = historyMessages

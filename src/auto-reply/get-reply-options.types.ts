@@ -118,6 +118,19 @@ export type GetReplyOptions = {
     durationMs?: number;
     cwd?: string;
   }) => Promise<void> | void;
+  /** Called when the overall run lifecycle changes state. */
+  onLifecycleEvent?: (payload: {
+    phase?: string;
+    startedAt?: number;
+    endedAt?: number;
+    error?: string;
+    selectedProvider?: string;
+    selectedModel?: string;
+    activeProvider?: string;
+    activeModel?: string;
+    previousActiveModel?: string;
+    reasonSummary?: string;
+  }) => Promise<void> | void;
   /** Called when a patch completes with a file summary. */
   onPatchSummary?: (payload: {
     itemId?: string;

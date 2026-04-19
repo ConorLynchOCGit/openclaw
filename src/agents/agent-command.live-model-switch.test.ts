@@ -180,6 +180,17 @@ vi.mock("../logging/subsystem.js", () => ({
 vi.mock("../routing/session-key.js", () => ({
   normalizeAgentId: (id: string) => id,
   normalizeMainKey: (key?: string | null) => key?.trim() || "main",
+  parseAgentSessionKey: (key?: string | null) => {
+    const value = key?.trim() || "";
+    const match = /^agent:([^:]+)(?::(.*))?$/u.exec(value);
+    if (!match) {
+      return null;
+    }
+    return {
+      agentId: match[1],
+      rest: match[2] ?? "",
+    };
+  },
 }));
 
 vi.mock("../runtime.js", () => ({

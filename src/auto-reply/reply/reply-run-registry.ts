@@ -42,6 +42,19 @@ export type ReplyOperationResult =
   | { kind: "failed"; code: ReplyOperationFailureCode; cause?: unknown }
   | { kind: "aborted"; code: ReplyOperationAbortCode };
 
+export type ReplyRunProgressSnapshot = {
+  text: string;
+  updatedAt: number;
+  final: boolean;
+};
+
+export type ReplyRunProgressReplayCandidate = {
+  sessionKey: string;
+  text: string;
+  replayEventAt: number;
+  source: "active" | "recent";
+};
+
 export type ReplyOperation = {
   readonly key: ReplyRunKey;
   readonly sessionId: string;
@@ -85,6 +98,11 @@ type ReplyRunState = {
   activeKeysBySessionId: Map<string, string>;
   waitKeysBySessionId: Map<string, string>;
   waitersByKey: Map<string, Set<ReplyRunWaiter>>;
+  progressByKey: Map<string, ReplyRunProgressSnapshot & { lastReplayedAt: number }>;
+  recentProgressByKey: Map<
+    string,
+    ReplyRunProgressSnapshot & { lastReplayedAt: number; expiresAt: number }
+  >;
 };
 
 const REPLY_RUN_STATE_KEY = Symbol.for("openclaw.replyRunRegistry");
@@ -95,7 +113,14 @@ const replyRunState = resolveGlobalSingleton<ReplyRunState>(REPLY_RUN_STATE_KEY,
   activeKeysBySessionId: new Map<string, string>(),
   waitKeysBySessionId: new Map<string, string>(),
   waitersByKey: new Map<string, Set<ReplyRunWaiter>>(),
+  progressByKey: new Map<string, ReplyRunProgressSnapshot & { lastReplayedAt: number }>(),
+  recentProgressByKey: new Map<
+    string,
+    ReplyRunProgressSnapshot & { lastReplayedAt: number; expiresAt: number }
+  >(),
 }));
+
+const RECENT_REPLY_PROGRESS_TTL_MS = 5 * 60 * 1000;
 
 export class ReplyRunAlreadyActiveError extends Error {
   constructor(sessionKey: string) {
@@ -174,7 +199,95 @@ function getAttachedBackend(operation: ReplyOperation): ReplyBackendHandle | und
   return attachedBackendByOperation.get(operation);
 }
 
+function formatReplyPhaseProgressText(phase: ReplyOperationPhase): string | undefined {
+  switch (phase) {
+    case "queued":
+      return "Queued: request queued";
+    case "preflight_compacting":
+      return "Working: compacting context";
+    case "memory_flushing":
+      return "Working: flushing memory";
+    case "running":
+      return "Working: processing request";
+    default:
+      return undefined;
+  }
+}
+
+function stripProgressPrefix(text: string): string {
+  return text.replace(/^(Queued|Working|Stalled|Completed|Failed(?: \([^)]*\))?):\s*/u, "").trim();
+}
+
+function upsertReplyRunProgress(
+  sessionKey: string,
+  snapshot: ReplyRunProgressSnapshot,
+): ReplyRunProgressSnapshot & { lastReplayedAt: number } {
+  const current = replyRunState.progressByKey.get(sessionKey);
+  const next = {
+    ...snapshot,
+    lastReplayedAt: current?.lastReplayedAt ?? 0,
+  };
+  replyRunState.progressByKey.set(sessionKey, next);
+  return next;
+}
+
+function setReplyRunPhaseProgress(sessionKey: string, phase: ReplyOperationPhase): void {
+  const text = formatReplyPhaseProgressText(phase);
+  if (!text) {
+    return;
+  }
+  upsertReplyRunProgress(sessionKey, {
+    text,
+    updatedAt: Date.now(),
+    final: false,
+  });
+}
+
+function persistRecentReplyRunProgress(params: {
+  sessionKey: string;
+  result: ReplyOperationResult | null;
+}): void {
+  const active = replyRunState.progressByKey.get(params.sessionKey);
+  replyRunState.progressByKey.delete(params.sessionKey);
+  if (!params.result) {
+    return;
+  }
+  let text = active?.text;
+  if (params.result.kind === "completed") {
+    const detail = text ? stripProgressPrefix(text) : "request completed";
+    text = `Completed: ${detail || "request completed"}`;
+  } else if (params.result.kind === "failed") {
+    const detail = text ? stripProgressPrefix(text) : "request failed";
+    text = `Failed: ${detail || "request failed"}`;
+  } else if (params.result.kind === "aborted") {
+    const detail = text ? stripProgressPrefix(text) : "request aborted";
+    text = `Failed: ${detail || "request aborted"}`;
+  }
+  if (!text) {
+    return;
+  }
+  replyRunState.recentProgressByKey.set(params.sessionKey, {
+    text,
+    updatedAt: Date.now(),
+    final: true,
+    lastReplayedAt: active?.lastReplayedAt ?? 0,
+    expiresAt: Date.now() + RECENT_REPLY_PROGRESS_TTL_MS,
+  });
+}
+
+function purgeExpiredRecentReplyRunProgress(now = Date.now()): void {
+  for (const [sessionKey, progress] of replyRunState.recentProgressByKey.entries()) {
+    if (progress.expiresAt <= now) {
+      replyRunState.recentProgressByKey.delete(sessionKey);
+    }
+  }
+}
+
 function clearReplyRunState(params: { sessionKey: string; sessionId: string }): void {
+  persistRecentReplyRunProgress({
+    sessionKey: params.sessionKey,
+    result: replyRunState.activeRunsByKey.get(params.sessionKey)?.result ?? null,
+  });
   replyRunState.activeRunsByKey.delete(params.sessionKey);
   if (replyRunState.activeSessionIdsByKey.get(params.sessionKey) === params.sessionId) {
     replyRunState.activeSessionIdsByKey.delete(params.sessionKey);
@@ -363,6 +476,7 @@ export function createReplyOperation(params: {
   replyRunState.activeSessionIdsByKey.set(sessionKey, currentSessionId);
   replyRunState.activeKeysBySessionId.set(currentSessionId, sessionKey);
   registerWaitSessionId(sessionKey, currentSessionId);
+  setReplyRunPhaseProgress(sessionKey, "queued");
 
   return operation;
 }
@@ -510,12 +624,87 @@ export function listActiveReplyRunSessionIds(): string[] {
   return [...replyRunState.activeSessionIdsByKey.values()];
 }
 
+export function setReplyRunProgressForSessionKey(params: {
+  sessionKey: string;
+  text: string;
+  updatedAt?: number;
+}): void {
+  const sessionKey = normalizeOptionalString(params.sessionKey);
+  const text = normalizeOptionalString(params.text);
+  if (!sessionKey || !text) {
+    return;
+  }
+  if (!replyRunState.activeRunsByKey.has(sessionKey)) {
+    return;
+  }
+  replyRunState.recentProgressByKey.delete(sessionKey);
+  upsertReplyRunProgress(sessionKey, {
+    text,
+    updatedAt: params.updatedAt ?? Date.now(),
+    final: false,
+  });
+}
+
+export function listReplyRunProgressReplayCandidates(params: {
+  sessionKey: string;
+  limit?: number;
+}): ReplyRunProgressReplayCandidate[] {
+  const sessionKey = normalizeOptionalString(params.sessionKey);
+  if (!sessionKey) {
+    return [];
+  }
+  purgeExpiredRecentReplyRunProgress();
+  const limit = Math.max(1, params.limit ?? 1);
+  const candidates: ReplyRunProgressReplayCandidate[] = [];
+  const active = replyRunState.progressByKey.get(sessionKey);
+  if (active && active.updatedAt > active.lastReplayedAt) {
+    candidates.push({
+      sessionKey,
+      text: active.text,
+      replayEventAt: active.updatedAt,
+      source: "active",
+    });
+  }
+  if (candidates.length < limit) {
+    const recent = replyRunState.recentProgressByKey.get(sessionKey);
+    if (recent && recent.updatedAt > recent.lastReplayedAt) {
+      candidates.push({
+        sessionKey,
+        text: recent.text,
+        replayEventAt: recent.updatedAt,
+        source: "recent",
+      });
+    }
+  }
+  return candidates.slice(0, limit);
+}
+
+export function markReplyRunProgressReplayDelivered(params: {
+  sessionKey: string;
+  replayEventAt: number;
+}): void {
+  const sessionKey = normalizeOptionalString(params.sessionKey);
+  if (!sessionKey || !Number.isFinite(params.replayEventAt)) {
+    return;
+  }
+  const active = replyRunState.progressByKey.get(sessionKey);
+  if (active && active.updatedAt <= params.replayEventAt) {
+    active.lastReplayedAt = Math.max(active.lastReplayedAt, params.replayEventAt);
+  }
+  const recent = replyRunState.recentProgressByKey.get(sessionKey);
+  if (recent && recent.updatedAt <= params.replayEventAt) {
+    recent.lastReplayedAt = Math.max(recent.lastReplayedAt, params.replayEventAt);
+  }
+}
+
 export const __testing = {
   resetReplyRunRegistry(): void {
     replyRunState.activeRunsByKey.clear();
     replyRunState.activeSessionIdsByKey.clear();
     replyRunState.activeKeysBySessionId.clear();
     replyRunState.waitKeysBySessionId.clear();
+    replyRunState.progressByKey.clear();
+    replyRunState.recentProgressByKey.clear();
     for (const waiters of replyRunState.waitersByKey.values()) {
       for (const waiter of waiters) {
         clearTimeout(waiter.timer);

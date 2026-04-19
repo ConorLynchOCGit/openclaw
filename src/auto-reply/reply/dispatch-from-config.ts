@@ -47,6 +47,10 @@ import {
   normalizeOptionalString,
 } from "../../shared/string-coerce.js";
 import {
+  listTaskProgressReplayCandidatesForOwnerKey,
+  markTaskProgressReplayDelivered,
+} from "../../tasks/runtime-internal.js";
+import {
   normalizeTtsAutoMode,
   resolveConfiguredTtsMode,
   shouldAttemptTtsPayload,
@@ -68,6 +72,11 @@ import type {
   DispatchFromConfigResult,
 } from "./dispatch-from-config.types.js";
 import { claimInboundDedupe, commitInboundDedupe, releaseInboundDedupe } from "./inbound-dedupe.js";
+import {
+  listReplyRunProgressReplayCandidates,
+  markReplyRunProgressReplayDelivered,
+  setReplyRunProgressForSessionKey,
+} from "./reply-run-registry.js";
 import { resolveReplyRoutingDecision } from "./routing-policy.js";
 import { resolveRunTypingPolicy } from "./typing-policy.js";
 
@@ -773,13 +782,20 @@ export async function dispatchReplyFromConfig(
         await sendPayloadAsync(replyPayload, undefined, false);
         return;
       }
-      dispatcher.sendToolResult(replyPayload);
+      dispatcher.sendBlockReply(replyPayload);
     };
     const maybeSendWorkingStatus = async (label: string): Promise<void> => {
+      const normalizedLabel = normalizeWorkingLabel(label);
+      const progressSessionKey = normalizeOptionalString(acpDispatchSessionKey);
+      if (progressSessionKey && normalizedLabel) {
+        setReplyRunProgressForSessionKey({
+          sessionKey: progressSessionKey,
+          text: `Working: ${normalizedLabel}`,
+        });
+      }
       if (suppressDelivery) {
         return;
       }
-      const normalizedLabel = normalizeWorkingLabel(label);
       if (
         !shouldEmitVerboseProgress() ||
         !shouldSendToolStartStatuses ||
@@ -793,11 +809,24 @@ export async function dispatchReplyFromConfig(
       toolStartStatusCount += 1;
       await sendProgressPayload(`Working: ${normalizedLabel}`);
     };
-    const maybeSendLiveProgressStatus = async (label: string): Promise<void> => {
+    const maybeSendLiveProgressStatus = async (
+      label: string,
+      options?: { persistUpdatedAt?: number },
+    ): Promise<void> => {
+      const normalizedLabel = normalizeWorkingLabel(label);
+      const progressSessionKey = normalizeOptionalString(acpDispatchSessionKey);
+      if (progressSessionKey && normalizedLabel) {
+        setReplyRunProgressForSessionKey({
+          sessionKey: progressSessionKey,
+          text: normalizedLabel,
+          ...(typeof options?.persistUpdatedAt === "number"
+            ? { updatedAt: options.persistUpdatedAt }
+            : {}),
+        });
+      }
       if (suppressDelivery || !shouldSendLiveProgress) {
         return;
       }
-      const normalizedLabel = normalizeWorkingLabel(label);
       if (!normalizedLabel || liveProgressStatusCount >= LIVE_PROGRESS_STATUS_LIMIT) {
         return;
       }
@@ -809,6 +838,39 @@ export async function dispatchReplyFromConfig(
       liveProgressStatusSentAt.set(normalizedLabel, nowMs);
       liveProgressStatusCount += 1;
       await sendProgressPayload(normalizedLabel);
+    };
+    const replayDetachedTaskProgress = async (): Promise<void> => {
+      if (suppressDelivery || !shouldSendLiveProgress) {
+        return;
+      }
+      const ownerKey = normalizeOptionalString(acpDispatchSessionKey);
+      if (!ownerKey) {
+        return;
+      }
+      const candidates = listTaskProgressReplayCandidatesForOwnerKey({
+        ownerKey,
+        limit: 2,
+      });
+      for (const candidate of candidates) {
+        await maybeSendLiveProgressStatus(candidate.text);
+        markTaskProgressReplayDelivered({
+          taskId: candidate.taskId,
+          replayEventAt: candidate.replayEventAt,
+        });
+      }
+      const replyCandidates = listReplyRunProgressReplayCandidates({
+        sessionKey: ownerKey,
+        limit: 1,
+      });
+      for (const candidate of replyCandidates) {
+        await maybeSendLiveProgressStatus(candidate.text, {
+          persistUpdatedAt: candidate.replayEventAt,
+        });
+        markReplyRunProgressReplayDelivered({
+          sessionKey: ownerKey,
+          replayEventAt: candidate.replayEventAt,
+        });
+      }
     };
     const sendPlanUpdate = async (payload: {
       explanation?: string;
@@ -901,6 +963,45 @@ export async function dispatchReplyFromConfig(
       }
       return `Working: ${detail}`;
     };
+    const summarizeLifecycleProgress = (payload: {
+      phase?: string;
+      error?: string;
+      activeProvider?: string;
+      activeModel?: string;
+      reasonSummary?: string;
+    }) => {
+      const phase = normalizeOptionalString(payload.phase)?.toLowerCase();
+      if (!phase) {
+        return "";
+      }
+      if (phase === "start") {
+        return "Working: processing request";
+      }
+      if (phase === "fallback") {
+        const modelLabel = normalizeOptionalString(
+          [payload.activeProvider, payload.activeModel].filter(Boolean).join("/"),
+        );
+        const reason = normalizeOptionalString(payload.reasonSummary);
+        if (modelLabel && reason) {
+          return `Working: retrying with fallback model ${modelLabel} (${reason})`;
+        }
+        if (modelLabel) {
+          return `Working: retrying with fallback model ${modelLabel}`;
+        }
+        if (reason) {
+          return `Working: retrying with fallback model (${reason})`;
+        }
+        return "Working: retrying with fallback model";
+      }
+      if (phase === "fallback_cleared") {
+        return "Working: fallback cleared";
+      }
+      if (phase === "error") {
+        const error = normalizeOptionalString(payload.error);
+        return error ? `Failed: ${error}` : "Failed: request failed";
+      }
+      return "";
+    };
     // Track accumulated block text for TTS generation after streaming completes.
     // When block streaming succeeds, there's no final reply, so we need to generate
     // TTS audio separately from the accumulated block content.
@@ -948,6 +1049,7 @@ export async function dispatchReplyFromConfig(
 
     const replyResolver =
       params.replyResolver ?? (await loadGetReplyFromConfigRuntime()).getReplyFromConfig;
+    await replayDetachedTaskProgress();
     const replyResult = await replyResolver(
       ctx,
       {
@@ -995,6 +1097,19 @@ export async function dispatchReplyFromConfig(
             return;
           }
           await maybeSendWorkingStatus(label);
+        },
+        onLifecycleEvent: async ({ phase, error, activeProvider, activeModel, reasonSummary }) => {
+          const label = summarizeLifecycleProgress({
+            phase,
+            error,
+            activeProvider,
+            activeModel,
+            reasonSummary,
+          });
+          if (!label) {
+            return;
+          }
+          await maybeSendLiveProgressStatus(label);
         },
         onItemEvent: async ({ phase, status, title, name, summary, progressText }) => {
           const label = summarizeItemProgress({

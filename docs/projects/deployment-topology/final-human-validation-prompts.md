@@ -38,6 +38,18 @@ Use it when you want one operator-facing script that covers:
 | Path-resolution behavior       | Ask Main: `When a runbook names docs/** or ops/**, how should runtime path resolution behave now?`                                                     | Explains canonical repo-first read behavior and explicit write locations              | transcript                 | vague answer or workspace-only path guessing                                   | `pre_push` |
 | Workspace project alias map    | Ask Main: `Which legacy workspace project paths are now compatibility aliases into canonical docs/projects, and which one remains writable by design?` | Names the alias set and identifies `projects/ops` as the justified writable exception | transcript                 | still describes two competing project registries or misses the `ops` exception | `pre_push` |
 
+## Live progress and replay UI
+
+| Surface                       | Prompt or operator action                                                                                                                                           | Expected result                                                                                 | Evidence to collect                  | Failure sign                                                                | Stage                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------- | ---------------------- |
+| Foreground live progress      | In Main, start a deliberately long-running task such as: `Run a bounded document-ingest or benchmark task and keep me posted through normal runtime progress only.` | Chat shows bounded `Queued:` or `Working:` updates while the task is still active               | transcript plus screenshot if useful | chat looks dead until final answer, or only internal tool rows move         | `pre_push`             |
+| Lifecycle progress visibility | Start a task likely to cross fallback or lifecycle transitions                                                                                                      | Chat-visible progress shows lifecycle labels rather than silent waiting                         | transcript                           | long pause with no bounded progress labels                                  | `pre_push`             |
+| Detached replay on return     | Start a long-running task, navigate away or wait until it detaches/backgrounds, then return to the same Main session and send: `Status?`                            | Next active turn replays bounded current-state status from task or reply-run state              | transcript, screenshot if useful     | no replay, stale replay, or only final completion appears                   | `pre_push`             |
+| Completed replay recap        | Let a detached task finish before returning, then send a small follow-up in the same session                                                                        | One bounded `Completed:` recap appears once on return                                           | transcript                           | no recap, repeated duplicate recap, or raw log dump                         | `pre_push`             |
+| Replay dedupe                 | After the bounded replay appears, send another small follow-up without new work                                                                                     | The same replay state is not emitted again                                                      | transcript                           | repeated duplicate `Working:` or `Completed:` replay on each turn           | `pre_push`             |
+| Session UI vs chat parity     | While a long-running task is active, compare the session UI task/chokepoint view with the chat transcript                                                           | Chat and session UI agree on whether work is queued/running/completed                           | screenshot or operator notes         | session UI shows active work while chat provides no bounded replay/progress | `pre_push`             |
+| Non-session work boundary     | Inspect a native cron run or background job that never attached to the current direct chat                                                                          | Operator understands that status is visible through artifacts/session surfaces, not chat replay | operator note                        | expectation mismatch where chat is assumed broken instead of out-of-scope   | `post_push_monitoring` |
+
 ## Restored browsing and delegation
 
 | Surface                   | Prompt or operator action                                                                                                                        | Expected result                                                 | Evidence to collect          | Failure sign                                            | Stage      |
@@ -94,12 +106,14 @@ Use it when you want one operator-facing script that covers:
 
 ## Full-stack operator-facing behavior
 
-| Surface                           | Prompt or operator action                                                                                             | Expected result                                                                                 | Evidence to collect | Failure sign                                                                   | Stage      |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------ | ---------- |
-| Canonical docs grounding          | Ask Main: `For daily and weekly operator review, what sources should grounding come from now?`                        | Names canonical docs under `docs/projects/`, `docs/system/`, and daily summaries where intended | transcript          | references old `core/ROADMAP.md` or workspace `MEMORY.md` as primary grounding | `pre_push` |
-| Topology rule awareness           | Ask Main: `What is the canonical project root, and what is the canonical global durable-doc root?`                    | Correctly answers `docs/projects/` and `docs/system/`                                           | transcript          | stale or inconsistent topology answer                                          | `pre_push` |
-| Ingest interruption understanding | Ask Main: `Why did the original deep ingest appear to be interrupted by heartbeat, and what was the real root cause?` | Explains overlap-versus-cause distinction accurately                                            | transcript          | says heartbeat simply canceled the run without mentioning rebuild collision    | `pre_push` |
-| Ingest hardening understanding    | Ask Main: `What changed so long-running model-memory ingest is safer now?`                                            | Mentions serialized rebuilds and truthful interrupted checkpoints                               | transcript          | vague answer or operator-superstition answer                                   | `pre_push` |
+| Surface                           | Prompt or operator action                                                                                                   | Expected result                                                                                 | Evidence to collect                   | Failure sign                                                                   | Stage           |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------ | --------------- |
+| Canonical docs grounding          | Ask Main: `For daily and weekly operator review, what sources should grounding come from now?`                              | Names canonical docs under `docs/projects/`, `docs/system/`, and daily summaries where intended | transcript                            | references old `core/ROADMAP.md` or workspace `MEMORY.md` as primary grounding | `pre_push`      |
+| Topology rule awareness           | Ask Main: `What is the canonical project root, and what is the canonical global durable-doc root?`                          | Correctly answers `docs/projects/` and `docs/system/`                                           | transcript                            | stale or inconsistent topology answer                                          | `pre_push`      |
+| Ingest interruption understanding | Ask Main: `Why did the original deep ingest appear to be interrupted by heartbeat, and what was the real root cause?`       | Explains overlap-versus-cause distinction accurately                                            | transcript                            | says heartbeat simply canceled the run without mentioning rebuild collision    | `pre_push`      |
+| Ingest hardening understanding    | Ask Main: `What changed so long-running model-memory ingest is safer now?`                                                  | Mentions serialized rebuilds and truthful interrupted checkpoints                               | transcript                            | vague answer or operator-superstition answer                                   | `pre_push`      |
+| Root gate execution explanation   | Ask Main: `How do pnpm check, pnpm test, and pnpm build execute now after the Turbo decomposition work?`                    | Explains explicit Turbo-managed root stages plus package-owned stages accurately                | transcript                            | still describes one opaque root shell chain                                    | `pre_push`      |
+| Root gate dry-run operator check  | Run `pnpm exec turbo run check:root:all --filter=openclaw --dry=json` and the same for `test:root:all` and `build:root:all` | Output shows explicit root-stage tasks rather than one monolithic command body                  | saved command output or operator note | dry-run only shows a single opaque root step                                   | `before_commit` |
 
 ## Evidence follow-through after prompt execution
 
@@ -119,6 +133,49 @@ Inspect at minimum:
 - `docs/projects/model-memory/evidence/retrieval-trace-deep-pass-2026-04.md`
 - `docs/projects/model-memory/evidence/context-trace-deep-pass-2026-04.md`
 - `docs/projects/model-memory/evidence/cache-diff-report.md`
+
+For the replay and root-gate work, also inspect:
+
+- live Main transcript showing bounded `Queued:` / `Working:` / `Completed:` UI text
+- session UI screenshot while a long-running task is active
+- `pnpm exec turbo run check:root:all --filter=openclaw --dry=json`
+- `pnpm exec turbo run test:root:all --filter=openclaw --dry=json`
+- `pnpm exec turbo run build:root:all --filter=openclaw --dry=json`
+
+## Current observed gap notes
+
+- The replay prompts below remain the right strict checks, but this validation
+  run did not prove bounded `Queued:` / `Working:` transcript updates for
+  generic shell-backed long-running work. Tool rows and final completion were
+  visible; bounded chat progress was not.
+- Detached/background replay proved partially rather than ideally: one
+  completion recap surfaced back into chat on return, and it did not duplicate
+  on the second follow-up.
+- Ingest-specific replay is still pending live proof. No deep ingest or memory
+  benchmark run was active during this pass, and Main-side ingest validation is
+  still blocked by canonical repo path resolution and bundled-skill path
+  handling.
+
+## Focused operator closeout checklist
+
+Use this when you want the shortest human pass for the new replay and
+root-gate work.
+
+1. Start a deliberately long-running Main task and confirm chat shows bounded
+   `Queued:` / `Working:` updates.
+2. Leave and return to that session, send `Status?`, and confirm one bounded
+   replay appears.
+3. Send one more small follow-up and confirm the replay does not duplicate.
+4. Compare the active session UI/chokepoint view against chat and confirm they
+   agree.
+5. Run:
+   - `pnpm exec turbo run check:root:all --filter=openclaw --dry=json`
+   - `pnpm exec turbo run test:root:all --filter=openclaw --dry=json`
+   - `pnpm exec turbo run build:root:all --filter=openclaw --dry=json`
+     and confirm each shows explicit root stages rather than one opaque root
+     body.
+6. During the next deep ingest or memory benchmark run, confirm live progress
+   appears in chat and detached replay works after return.
 
 ## Use with the narrower checklists
 

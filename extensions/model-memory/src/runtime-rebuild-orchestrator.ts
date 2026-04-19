@@ -42,14 +42,13 @@ export async function rebuildDerivedRuntimeState(input: {
     }
 
     const existingTargets = await runtimeRepository.listProjectionTargets();
-    const projectionTargets =
-      existingTargets.length > 0
-        ? existingTargets
-        : await Promise.all(
-            DEFAULT_WORKSPACE_PROJECTION_TARGETS.map((target) =>
-              runtimeRepository.upsertProjectionTarget(target),
-            ),
-          );
+    let projectionTargets = existingTargets;
+    if (projectionTargets.length === 0) {
+      projectionTargets = [];
+      for (const target of DEFAULT_WORKSPACE_PROJECTION_TARGETS) {
+        projectionTargets.push(await runtimeRepository.upsertProjectionTarget(target));
+      }
+    }
     const projectionOutputs: Record<string, string> = {};
     for (const target of projectionTargets.filter((entry) => entry.enabled)) {
       const compiled = compileProjection({

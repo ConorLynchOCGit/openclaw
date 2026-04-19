@@ -111,6 +111,15 @@ Current status:
 48. [USER.md And Projected Context Contract](/projects/model-memory/user-md-and-projected-context-contract)
 49. [Legacy Continuity Export And Ingest](/projects/model-memory/legacy-continuity-export-and-ingest)
 50. [Legacy Retirement Proof](/projects/model-memory/final-legacy-retirement-proof)
+51. [Document Ingest Pipeline Walkthrough](/projects/model-memory/document-ingest-pipeline-walkthrough)
+52. [Representative Corpus Rule Vs Fact Benchmark](/projects/model-memory/representative-corpus-rule-vs-fact-benchmark)
+53. [Rule Vs Fact Benchmark Scorecard](/projects/model-memory/rule-vs-fact-benchmark-scorecard)
+54. [Rule Vs Fact Variant Design](/projects/model-memory/rule-vs-fact-variant-design)
+55. [Rule Vs Fact Benchmark Findings](/projects/model-memory/rule-vs-fact-benchmark-findings)
+56. [Rule Vs Fact Next Change Recommendation](/projects/model-memory/rule-vs-fact-next-change-recommendation)
+57. [Memory Build Status And Next Steps](/projects/model-memory/memory-build-status-and-next-steps)
+58. [Daily Memory Grounding Repair](/projects/model-memory/daily-memory-grounding-repair)
+59. [Daily Continuity Health](/projects/model-memory/daily-continuity-health)
 
 ## Scope
 
@@ -149,6 +158,14 @@ Current operational scope:
   - [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
 - the current packet and kind-balance proof obligations now live in:
   - [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)
+- the current rule-vs-fact benchmark lane now lives in:
+  - [Document Ingest Pipeline Walkthrough](/projects/model-memory/document-ingest-pipeline-walkthrough)
+  - [Representative Corpus Rule Vs Fact Benchmark](/projects/model-memory/representative-corpus-rule-vs-fact-benchmark)
+  - [Rule Vs Fact Benchmark Scorecard](/projects/model-memory/rule-vs-fact-benchmark-scorecard)
+  - [Rule Vs Fact Variant Design](/projects/model-memory/rule-vs-fact-variant-design)
+  - [Rule Vs Fact Benchmark Findings](/projects/model-memory/rule-vs-fact-benchmark-findings)
+  - [Rule Vs Fact Next Change Recommendation](/projects/model-memory/rule-vs-fact-next-change-recommendation)
+  - [Memory Build Status And Next Steps](/projects/model-memory/memory-build-status-and-next-steps)
 - retained evidence for the packet-quality lane is now normalized in:
   - [Model Memory Evidence](/projects/model-memory/evidence)
 - the current residue/debt boundary is now recorded in:
@@ -159,3 +176,5 @@ Current operational scope:
   - [USER.md And Projected Context Contract](/projects/model-memory/user-md-and-projected-context-contract)
   - [Legacy Continuity Export And Ingest](/projects/model-memory/legacy-continuity-export-and-ingest)
   - [Legacy Retirement Proof](/projects/model-memory/final-legacy-retirement-proof)
+  - [Daily Memory Grounding Repair](/projects/model-memory/daily-memory-grounding-repair)
+  - [Daily Continuity Health](/projects/model-memory/daily-continuity-health)

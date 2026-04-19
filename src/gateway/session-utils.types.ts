@@ -23,6 +23,8 @@ export type GatewaySessionRow = {
   spawnDepth?: number;
   subagentRole?: SessionEntry["subagentRole"];
   subagentControlScope?: SessionEntry["subagentControlScope"];
+  visibilityClass?: SessionEntry["visibilityClass"];
+  retentionClass?: SessionEntry["retentionClass"];
   kind: "direct" | "group" | "global" | "unknown";
   label?: string;
   displayName?: string;

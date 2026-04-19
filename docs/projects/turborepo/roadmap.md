@@ -11,19 +11,28 @@ title: "Turborepo Roadmap"
 - document the starting truth
 - inventory workspace package task ownership
 
-## Phase 2 - decompose root monoliths
+## Phase 2 - bounded package graph activation
 
+- convert Turbo from a narrow wrapper into standard package `build` and `test`
+  tasks
+- keep the first graph limited to packages that already own real work
+- prove cache reuse and repeated-loop value before broader expansion
+
+## Phase 3 - decompose root monoliths
+
+- expose explicit Turbo-managed root stages for still-root-owned work
 - identify which root-owned tasks can move to package ownership
 - separate truly root-global checks from package-local checks
-- define transitional wrappers where necessary
+- keep newly package-owned lanes from being double-run inside root wrappers
 
-## Phase 3 - expand the Turbo graph
+## Phase 4 - expand the Turbo graph
 
 - grow `turbo.json` beyond the UI lane
 - define real package task inputs and outputs
 - adopt caching only where outputs are real and stable
+- expand package ownership only after the root-stage graph is already explicit
 
-## Phase 4 - validate landing-gate mapping
+## Phase 5 - validate landing-gate mapping
 
 - prove how:
   - `pnpm check`
@@ -32,7 +41,7 @@ title: "Turborepo Roadmap"
     map onto the expanded graph
 - keep CI and local landing expectations explicit
 
-## Phase 5 - operationalize on the VPS
+## Phase 6 - operationalize on the VPS
 
 - measure actual time and cache wins
 - align PNPM hygiene with the new task graph

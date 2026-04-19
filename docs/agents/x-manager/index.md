@@ -5,10 +5,18 @@ title: "X Manager"
 
 # X Manager
 
-This is the canonical durable source surface for the `x-manager` specialist
-agent.
+This is the durable pack for the X drafting and approval-packaging specialist.
 
-Runtime-facing compatibility files and context are derived from:
+## Durable pack
+
+1. [Identity](/agents/x-manager/Identity)
+2. [Startup](/agents/x-manager/Startup)
+3. [Tools](/agents/x-manager/Tools)
+4. [Permissions](/agents/x-manager/Permissions)
+5. [Skills](/agents/x-manager/Skills)
+6. [Status](/agents/x-manager/Status)
+
+## Runtime-facing compatibility files and context
 
 - `docs/agents/x-manager/runtime/AGENTS.md`
 - `docs/agents/x-manager/runtime/HEARTBEAT.md`
@@ -17,12 +25,3 @@ Runtime-facing compatibility files and context are derived from:
 - `docs/agents/x-manager/runtime/USER.md`
 - `docs/agents/x-manager/runtime/TOOLS.md`
 - `docs/agents/x-manager/runtime/context/**`
-
-Current purpose:
-
-- X drafting only
-- approval packaging only
-- account-specific voice and risk control for the supported operator accounts
-- the still-live subset of the old standalone channel-identity surface has now
-  been absorbed into this account-context layer rather than revived as a second
-  separate project

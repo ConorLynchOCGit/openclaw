@@ -38,6 +38,11 @@ import {
   type SessionStoreTarget,
   type SessionScope,
 } from "../config/sessions.js";
+import {
+  deriveSessionRetentionClass,
+  deriveSessionVisibilityClass,
+  shouldHideSessionFromOperatorSelector,
+} from "../config/sessions/visibility.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { openBoundaryFileSync } from "../infra/boundary-file-read.js";
 import {
@@ -182,6 +187,10 @@ function truncateTitle(text: string, maxLen: number): string {
   return cut + "…";
 }
 
+function shouldHideInternalSelectorSession(key: string, entry?: SessionEntry): boolean {
+  return shouldHideSessionFromOperatorSelector({ key, entry });
+}
+
 export function deriveSessionTitle(
   entry: SessionEntry | undefined,
   firstUserMessage?: string | null,
@@ -302,6 +311,10 @@ function resolveChildSessionKeys(
     if (latestControllerSessionKey !== controllerSessionKey) {
       continue;
     }
+    const childEntry = store[childSessionKey];
+    if (shouldHideInternalSelectorSession(childSessionKey, childEntry)) {
+      continue;
+    }
     childSessionKeys.add(childSessionKey);
   }
   for (const [key, entry] of Object.entries(store)) {
@@ -321,6 +334,9 @@ function resolveChildSessionKeys(
       if (latestControllerSessionKey !== controllerSessionKey) {
         continue;
       }
+    }
+    if (shouldHideInternalSelectorSession(key, entry)) {
+      continue;
     }
     childSessionKeys.add(key);
   }
@@ -1258,6 +1274,8 @@ export function buildGatewaySessionRow(params: {
     spawnDepth: entry?.spawnDepth,
     subagentRole: entry?.subagentRole,
     subagentControlScope: entry?.subagentControlScope,
+    visibilityClass: deriveSessionVisibilityClass({ key, entry }),
+    retentionClass: deriveSessionRetentionClass({ key, entry }),
     kind: classifySessionKey(key, entry),
     label: entry?.label,
     displayName,
@@ -1348,8 +1366,11 @@ export function listSessionsFromStore(params: {
       : undefined;
 
   let sessions = Object.entries(store)
-    .filter(([key]) => {
+    .filter(([key, entry]) => {
       if (isCronRunSessionKey(key)) {
+        return false;
+      }
+      if (shouldHideInternalSelectorSession(key, entry)) {
         return false;
       }
       if (!includeGlobal && key === "global") {

@@ -152,6 +152,16 @@ const BROAD_CHANGED_RERUN_PATTERNS = [
   /^scripts\/test-projects(?:\.test-support)?\.mjs$/u,
 ];
 
+function resolveSkippedVitestConfigs(env = process.env) {
+  const raw = env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS ?? "";
+  return new Set(
+    raw
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+}
+
 function normalizePathPattern(value) {
   return value.replaceAll("\\", "/");
 }
@@ -616,6 +626,7 @@ export function buildVitestRunPlans(
 
 export function buildFullSuiteVitestRunPlans(args, cwd = process.cwd()) {
   const { forwardedArgs, watchMode } = parseTestProjectsArgs(args, cwd);
+  const skippedConfigs = resolveSkippedVitestConfigs(process.env);
   if (watchMode) {
     return [
       {
@@ -640,12 +651,14 @@ export function buildFullSuiteVitestRunPlans(args, cwd = process.cwd()) {
     }
     const expandShard = expandToProjectConfigs || shard.config === FULL_EXTENSIONS_VITEST_CONFIG;
     const configs = expandShard ? shard.projects : [shard.config];
-    return configs.map((config) => ({
-      config,
-      forwardedArgs,
-      includePatterns: null,
-      watchMode: false,
-    }));
+    return configs
+      .filter((config) => !skippedConfigs.has(config))
+      .map((config) => ({
+        config,
+        forwardedArgs,
+        includePatterns: null,
+        watchMode: false,
+      }));
   });
 }
 

@@ -15,7 +15,12 @@ import {
 } from "./paths.js";
 import { evaluateSessionFreshness, resolveSessionResetPolicy } from "./reset.js";
 import { resolveAndPersistSessionFile } from "./session-file.js";
-import { clearSessionStoreCacheForTest, loadSessionStore, updateSessionStore } from "./store.js";
+import {
+  clearSessionStoreCacheForTest,
+  loadSessionStore,
+  saveSessionStore,
+  updateSessionStore,
+} from "./store.js";
 import { useTempSessionsFixture } from "./test-helpers.js";
 import { mergeSessionEntry, type SessionEntry } from "./types.js";
 
@@ -197,7 +202,8 @@ describe("session store lock (Promise chain mutex)", () => {
 
   it("skips session store disk writes when payload is unchanged", async () => {
     const key = "agent:main:no-op-save";
-    const { storePath } = await makeTmpStore({
+    const { storePath } = await makeTmpStore();
+    await saveSessionStore(storePath, {
       [key]: { sessionId: "s-noop", updatedAt: Date.now() },
     });
 

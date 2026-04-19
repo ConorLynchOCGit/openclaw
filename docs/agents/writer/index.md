@@ -5,18 +5,21 @@ title: "Writer"
 
 # Writer
 
-This is the canonical durable source surface for the `writer` specialist agent.
+This is the durable pack for the publication-ready writing specialist.
 
-Runtime-facing compatibility files are derived from:
+## Durable pack
+
+1. [Identity](/agents/writer/Identity)
+2. [Startup](/agents/writer/Startup)
+3. [Tools](/agents/writer/Tools)
+4. [Permissions](/agents/writer/Permissions)
+5. [Skills](/agents/writer/Skills)
+6. [Status](/agents/writer/Status)
+
+## Runtime-facing compatibility files
 
 - `docs/agents/writer/runtime/AGENTS.md`
 - `docs/agents/writer/runtime/HEARTBEAT.md`
 - `docs/agents/writer/runtime/IDENTITY.md`
 - `docs/agents/writer/runtime/SOUL.md`
 - `docs/agents/writer/runtime/TOOLS.md`
-
-Current purpose:
-
-- publication-ready copy generation
-- voice adaptation from user context
-- bounded writing support for orchestrated tasks

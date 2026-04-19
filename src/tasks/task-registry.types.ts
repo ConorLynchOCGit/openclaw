@@ -48,6 +48,14 @@ export type TaskDeliveryState = {
   taskId: string;
   requesterOrigin?: DeliveryContext;
   lastNotifiedEventAt?: number;
+  lastReplayedEventAt?: number;
+};
+
+export type TaskProgressReplayCandidate = {
+  taskId: string;
+  replayEventAt: number;
+  status: TaskStatus;
+  text: string;
 };
 
 export type TaskRecord = {

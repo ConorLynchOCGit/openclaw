@@ -7,7 +7,7 @@ title: "System Agents"
 
 The agent layer is split on purpose.
 
-- `docs/agents/` is the future durable human-owned agent root
+- `docs/agents/` is the durable human-owned agent root
 - `.agents/` remains the machine-readable runtime and skill root
 - runtime bootstrap compatibility files still remain active today:
   - `AGENTS.md`
@@ -33,24 +33,31 @@ Current pointers:
   [Agents](/agents)
 - shared live workspace pack:
   [Main](/agents/main)
+- current live agent inventory:
+  [Current Agent Inventory](/projects/agent-foundation/current-agent-inventory)
+- research and pack rationale:
+  [Identity And Agent Pack Research](/projects/agent-foundation/identity-and-agent-pack-research)
 - canonized dedicated runtime-source packs:
   [Builder](/agents/builder),
+  [Chief](/agents/chief),
   [Researcher](/agents/researcher),
   [Writer](/agents/writer),
   [Web Researcher](/agents/web-researcher),
   [X Manager](/agents/x-manager)
-- live runtime reconciliation:
-  [Live Agent Inventory](/projects/agent-foundation/live-agent-inventory)
 - current runtime machine root:
   `.agents/`
 - registry bootstrap surface:
   [Agent Registry](/system/registries/agents)
+- durable pack registry:
+  [Agents Registry](/system/registries/agents)
 - runtime bootstrap inventory:
   [Runtime Bootstrap File Inventory](/projects/workspace-topology/runtime-bootstrap-file-inventory)
 - bootstrap mapping spec:
   [Bootstrap File Canonical Mapping](/projects/workspace-topology/specs/bootstrap-file-canonical-mapping)
 - next compatibility-source migration slice:
   [Compatibility Source Migration Plan](/projects/agent-foundation/compatibility-source-migration-plan)
+- browsing safety hardening:
+  [Web Researcher Prompt Injection Defense](/projects/agent-foundation/web-researcher-prompt-injection-defense)
 - active machine registry:
   [Bootstrap Files Registry](/system/registries/bootstrap-files)
 - broader post-consolidation recovery audit:
@@ -64,12 +71,10 @@ Current rule:
 - `AGENTS.md` must remain a runtime-facing operational document rather than a
   shallow pointer page
 - the shared main workspace pack is now canonized under `docs/agents/main/`
-- the bounded runtime-source packs for Builder, Researcher, and Writer are now
-  canonized under `docs/agents/` and should no longer be treated as host-only
-  truth
-- Chief intentionally shares the main workspace pack unless a later slice
-  promotes a dedicated Chief pack explicitly
+- the live agent set now has durable packs under `docs/agents/`
+- Chief now has a dedicated durable pack while still intentionally sharing the
+  main runtime compatibility source surface
 - durable sources and runtime compatibility files must be mapped explicitly and
   assembled through one repo path
-- live runtime agents must be inventoried honestly even before the later
-  `docs/agents/` pack-population slice is complete
+- live runtime agents must stay machine-checkable through the durable registry
+  and the agent-pack check

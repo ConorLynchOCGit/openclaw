@@ -39,6 +39,15 @@ Packet quality is currently constrained by both corpus shape and packet
 shaping. That makes kind balance a packet-quality issue as well as an ingestion
 issue.
 
+The current benchmark result also clarifies sequencing inside that lane:
+
+- first production move:
+  - prompt simplification for pass 1 and pass 2
+- not the first production move:
+  - schema rewrites
+  - collision rewrites
+  - deterministic fact-to-rule compensation logic
+
 ## Phase 0: Specs and scaffolding
 
 Goals:

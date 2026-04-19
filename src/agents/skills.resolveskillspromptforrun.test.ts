@@ -27,7 +27,7 @@ describe("resolveSkillsPromptForRun", () => {
       workspaceDir: "/tmp/openclaw",
     });
     expect(prompt).toContain("<available_skills>");
-    expect(prompt).toContain("/app/skills/demo-skill/SKILL.md");
+    expect(prompt).toContain("skills/demo-skill/SKILL.md");
   });
 
   it("keeps legacy entries with disableModelInvocation hidden when exposure metadata is absent", () => {

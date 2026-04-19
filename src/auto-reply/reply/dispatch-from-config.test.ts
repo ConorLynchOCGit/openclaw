@@ -14,6 +14,9 @@ import type {
   PluginTargetedInboundClaimOutcome,
 } from "../../plugins/hooks.js";
 import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { createQueuedTaskRun, createRunningTaskRun } from "../../tasks/task-executor.js";
+import { resetTaskRegistryForTests, setTaskProgressById } from "../../tasks/task-registry.js";
+import { configureTaskRegistryRuntime } from "../../tasks/task-registry.store.js";
 import {
   createChannelTestPluginBase,
   createTestRegistry,
@@ -22,6 +25,11 @@ import { createInternalHookEventPayload } from "../../test-utils/internal-hook-e
 import type { MsgContext } from "../templating.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
 import type { ReplyDispatcher } from "./reply-dispatcher.js";
+import {
+  __testing as replyRunRegistryTesting,
+  createReplyOperation,
+  setReplyRunProgressForSessionKey,
+} from "./reply-run-registry.js";
 import { buildTestCtx } from "./test-ctx.js";
 
 type AbortResult = { handled: boolean; aborted: boolean; stoppedSubagents?: number };
@@ -387,6 +395,25 @@ function createDispatcher(): ReplyDispatcher {
   };
 }
 
+function configureInMemoryTaskRegistryStoreForTests(): void {
+  configureTaskRegistryRuntime({
+    store: {
+      loadSnapshot: () => ({
+        tasks: new Map(),
+        deliveryStates: new Map(),
+      }),
+      saveSnapshot: () => {},
+      upsertTaskWithDeliveryState: () => {},
+      upsertTask: () => {},
+      deleteTaskWithDeliveryState: () => {},
+      deleteTask: () => {},
+      upsertDeliveryState: () => {},
+      deleteDeliveryState: () => {},
+      close: () => {},
+    },
+  });
+}
+
 function shouldUseAcpReplyDispatchHook(eventUnknown: unknown): boolean {
   const event = eventUnknown as {
     sessionKey?: string;
@@ -560,6 +587,9 @@ async function dispatchTwiceWithFreshDispatchers(params: Omit<DispatchReplyArgs,
 
 describe("dispatchReplyFromConfig", () => {
   beforeEach(() => {
+    resetTaskRegistryForTests({ persist: false });
+    replyRunRegistryTesting.resetReplyRunRegistry();
+    configureInMemoryTaskRegistryStoreForTests();
     const discordTestPlugin = {
       ...createChannelTestPluginBase({
         id: "discord",
@@ -1263,17 +1293,17 @@ describe("dispatchReplyFromConfig", () => {
 
     await dispatchReplyFromConfig({ ctx, cfg, dispatcher, replyResolver });
 
-    expect(dispatcher.sendToolResult).toHaveBeenNthCalledWith(
+    expect(dispatcher.sendBlockReply).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
         text: "Inspect code, patch it, run tests.\n\n1. Inspect code\n2. Patch code\n3. Run tests",
       }),
     );
-    expect(dispatcher.sendToolResult).toHaveBeenNthCalledWith(
+    expect(dispatcher.sendBlockReply).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ text: "Working: awaiting approval: pnpm test" }),
     );
-    expect(dispatcher.sendToolResult).toHaveBeenCalledTimes(2);
+    expect(dispatcher.sendBlockReply).toHaveBeenCalledTimes(2);
     expect(dispatcher.sendFinalReply).toHaveBeenCalledWith({ text: "done" });
   });
 
@@ -1308,11 +1338,11 @@ describe("dispatchReplyFromConfig", () => {
 
     await dispatchReplyFromConfig({ ctx, cfg, dispatcher, replyResolver });
 
-    expect(dispatcher.sendToolResult).toHaveBeenNthCalledWith(
+    expect(dispatcher.sendBlockReply).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ text: "Working: 1 added, 2 modified" }),
     );
-    expect(dispatcher.sendToolResult).toHaveBeenCalledTimes(1);
+    expect(dispatcher.sendBlockReply).toHaveBeenCalledTimes(1);
     expect(dispatcher.sendFinalReply).toHaveBeenCalledWith({ text: "done" });
   });
 
@@ -1361,7 +1391,7 @@ describe("dispatchReplyFromConfig", () => {
 
     await dispatchReplyFromConfig({ ctx, cfg, dispatcher, replyResolver });
 
-    expect(dispatcher.sendToolResult).not.toHaveBeenCalled();
+    expect(dispatcher.sendBlockReply).not.toHaveBeenCalled();
     expect(dispatcher.sendFinalReply).toHaveBeenCalledWith({ text: "done" });
   });
 
@@ -1401,10 +1431,220 @@ describe("dispatchReplyFromConfig", () => {
 
     await dispatchReplyFromConfig({ ctx, cfg, dispatcher, replyResolver });
 
-    expect(dispatcher.sendToolResult).toHaveBeenCalledWith(
+    expect(dispatcher.sendBlockReply).toHaveBeenCalledWith(
       expect.objectContaining({ text: "Working: Document ingest 42/221" }),
     );
     expect(dispatcher.sendFinalReply).toHaveBeenCalledWith({ text: "done" });
+  });
+
+  it("emits bounded lifecycle progress when a run is active without tool events", async () => {
+    setNoAbort();
+    sessionStoreMocks.currentEntry = {
+      verboseLevel: "off",
+    };
+    const cfg = {
+      ...emptyConfig,
+      agents: {
+        defaults: {
+          verboseDefault: "off",
+        },
+      },
+    } satisfies OpenClawConfig;
+    const dispatcher = createDispatcher();
+    const ctx = buildTestCtx({
+      Provider: "telegram",
+      ChatType: "direct",
+      SessionKey: "agent:main:main",
+    });
+
+    const replyResolver = async (
+      _ctx: MsgContext,
+      opts?: GetReplyOptions,
+      _cfg?: OpenClawConfig,
+    ) => {
+      await opts?.onLifecycleEvent?.({
+        phase: "start",
+      });
+      await opts?.onLifecycleEvent?.({
+        phase: "fallback",
+        activeProvider: "openrouter",
+        activeModel: "openai/gpt-5.4-mini",
+        reasonSummary: "rate limit",
+      });
+      return { text: "done" } satisfies ReplyPayload;
+    };
+
+    await dispatchReplyFromConfig({ ctx, cfg, dispatcher, replyResolver });
+
+    expect(dispatcher.sendBlockReply).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ text: "Working: processing request" }),
+    );
+    expect(dispatcher.sendBlockReply).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        text: "Working: retrying with fallback model openrouter/openai/gpt-5.4-mini (rate li...",
+      }),
+    );
+    expect(dispatcher.sendFinalReply).toHaveBeenCalledWith({ text: "done" });
+  });
+
+  it("replays bounded detached task progress into the active direct chat turn", async () => {
+    setNoAbort();
+    sessionStoreMocks.currentEntry = {
+      verboseLevel: "off",
+    };
+    createRunningTaskRun({
+      runtime: "acp",
+      requesterSessionKey: "agent:main:main",
+      ownerKey: "agent:main:main",
+      childSessionKey: "agent:main:acp:child",
+      runId: "run-detached-progress",
+      task: "Deep document ingest",
+      progressSummary: "Document ingest 42/221",
+    });
+    const dispatcher = createDispatcher();
+    const ctx = buildTestCtx({
+      Provider: "telegram",
+      ChatType: "direct",
+      SessionKey: "agent:main:main",
+    });
+    const replyResolver = async () => ({ text: "done" }) satisfies ReplyPayload;
+
+    await dispatchReplyFromConfig({ ctx, cfg: emptyConfig, dispatcher, replyResolver });
+
+    expect(dispatcher.sendBlockReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Working: Deep document ingest. Document ingest 42/221",
+      }),
+    );
+    expect(dispatcher.sendFinalReply).toHaveBeenCalledWith({ text: "done" });
+  });
+
+  it("does not replay the same detached task progress repeatedly without a newer event", async () => {
+    setNoAbort();
+    sessionStoreMocks.currentEntry = {
+      verboseLevel: "off",
+    };
+    const queuedTask = createQueuedTaskRun({
+      runtime: "acp",
+      requesterSessionKey: "agent:main:main",
+      ownerKey: "agent:main:main",
+      childSessionKey: "agent:main:acp:child",
+      runId: "run-detached-dedupe",
+      task: "Queued review sync",
+    });
+    setTaskProgressById({
+      taskId: queuedTask.taskId,
+      progressSummary: "Waiting for execution slot",
+    });
+    const ctx = buildTestCtx({
+      Provider: "telegram",
+      ChatType: "direct",
+      SessionKey: "agent:main:main",
+    });
+    const replyResolver = async () => ({ text: "done" }) satisfies ReplyPayload;
+
+    const firstDispatcher = createDispatcher();
+    await dispatchReplyFromConfig({
+      ctx,
+      cfg: emptyConfig,
+      dispatcher: firstDispatcher,
+      replyResolver,
+    });
+    expect(firstDispatcher.sendBlockReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Queued: Queued review sync. Waiting for execution slot",
+      }),
+    );
+
+    const secondDispatcher = createDispatcher();
+    await dispatchReplyFromConfig({
+      ctx,
+      cfg: emptyConfig,
+      dispatcher: secondDispatcher,
+      replyResolver,
+    });
+    expect(secondDispatcher.sendBlockReply).not.toHaveBeenCalled();
+    expect(secondDispatcher.sendFinalReply).toHaveBeenCalledWith({ text: "done" });
+  });
+
+  it("replays bounded detached reply-run progress into the active direct chat turn", async () => {
+    setNoAbort();
+    sessionStoreMocks.currentEntry = {
+      verboseLevel: "off",
+    };
+    createReplyOperation({
+      sessionKey: "agent:main:main",
+      sessionId: "session-detached-progress",
+      resetTriggered: false,
+    }).setPhase("running");
+    setReplyRunProgressForSessionKey({
+      sessionKey: "agent:main:main",
+      text: "Working: Deep benchmark ingest 7/10",
+    });
+    const dispatcher = createDispatcher();
+    const ctx = buildTestCtx({
+      Provider: "telegram",
+      ChatType: "direct",
+      SessionKey: "agent:main:main",
+    });
+    const replyResolver = async () => ({ text: "done" }) satisfies ReplyPayload;
+
+    await dispatchReplyFromConfig({ ctx, cfg: emptyConfig, dispatcher, replyResolver });
+
+    expect(dispatcher.sendBlockReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Working: Deep benchmark ingest 7/10",
+      }),
+    );
+    expect(dispatcher.sendFinalReply).toHaveBeenCalledWith({ text: "done" });
+  });
+
+  it("replays a recent completed detached reply-run outcome once", async () => {
+    setNoAbort();
+    sessionStoreMocks.currentEntry = {
+      verboseLevel: "off",
+    };
+    const operation = createReplyOperation({
+      sessionKey: "agent:main:main",
+      sessionId: "session-detached-complete",
+      resetTriggered: false,
+    });
+    operation.setPhase("running");
+    setReplyRunProgressForSessionKey({
+      sessionKey: "agent:main:main",
+      text: "Working: Deep benchmark ingest 10/10",
+    });
+    operation.complete();
+    const ctx = buildTestCtx({
+      Provider: "telegram",
+      ChatType: "direct",
+      SessionKey: "agent:main:main",
+    });
+    const replyResolver = async () => ({ text: "done" }) satisfies ReplyPayload;
+
+    const firstDispatcher = createDispatcher();
+    await dispatchReplyFromConfig({
+      ctx,
+      cfg: emptyConfig,
+      dispatcher: firstDispatcher,
+      replyResolver,
+    });
+    expect(firstDispatcher.sendBlockReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Completed: Deep benchmark ingest 10/10",
+      }),
+    );
+
+    const secondDispatcher = createDispatcher();
+    await dispatchReplyFromConfig({
+      ctx,
+      cfg: emptyConfig,
+      dispatcher: secondDispatcher,
+      replyResolver,
+    });
+    expect(secondDispatcher.sendBlockReply).not.toHaveBeenCalled();
   });
   it("delivers deterministic exec approval tool payloads for native commands", async () => {
     setNoAbort();

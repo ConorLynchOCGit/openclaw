@@ -2,6 +2,9 @@ import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import {
   installVitestNoOutputWatchdog,
+  resolveVitestCacheIdentity,
+  resolveVitestExecutionEnv,
+  resolveVitestFsModuleCachePath,
   resolveVitestNodeArgs,
   resolveVitestNoOutputTimeoutMs,
   resolveVitestSpawnParams,
@@ -68,6 +71,48 @@ describe("scripts/run-vitest", () => {
       ),
     ).toBe(true);
     expect(shouldSuppressVitestStderrLine("real failure output\n")).toBe(false);
+  });
+
+  it("derives a stable cache identity from config and targets", () => {
+    expect(
+      resolveVitestCacheIdentity([
+        "run",
+        "--config",
+        "test/vitest/vitest.tooling.config.ts",
+        "test/scripts/run-vitest.test.ts",
+      ]),
+    ).toBe("test/vitest/vitest.tooling.config.ts--test/scripts/run-vitest.test.ts");
+  });
+
+  it("assigns a stable direct-run fs module cache path outside CI", () => {
+    expect(
+      resolveVitestFsModuleCachePath(
+        [
+          "run",
+          "--config",
+          "test/vitest/vitest.tooling.config.ts",
+          "test/scripts/run-vitest.test.ts",
+        ],
+        {
+          cwd: "/repo",
+          env: {},
+          platform: "linux",
+        },
+      ),
+    ).toBe(
+      "/repo/node_modules/.experimental-vitest-cache/test-vitest-vitest.tooling.config.ts--test-scripts-run-vitest.test.ts",
+    );
+  });
+
+  it("leaves explicit fs module cache paths alone", () => {
+    const executionEnv = resolveVitestExecutionEnv(["run", "foo.test.ts"], {
+      env: {
+        OPENCLAW_VITEST_FS_MODULE_CACHE_PATH: "/tmp/cache",
+      },
+      cwd: "/repo",
+      platform: "linux",
+    });
+    expect(executionEnv.OPENCLAW_VITEST_FS_MODULE_CACHE_PATH).toBe("/tmp/cache");
   });
 
   it("kills silent vitest runs after the configured idle timeout", () => {

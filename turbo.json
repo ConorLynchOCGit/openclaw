@@ -1,12 +1,224 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["package.json", "pnpm-lock.yaml", "turbo.json"],
   "tasks": {
-    "turbo:build": {
-      "outputs": ["../dist/control-ui/**"]
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "assets/viewer-runtime.js", "../dist/control-ui/**"]
     },
-    "turbo:test": {
+    "build:root:all": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:write-cli-compat"]
+    },
+    "build:root:build-stamp": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:write-npm-update-compat-sidecars"]
+    },
+    "build:root:canvas-a2ui-bundle": {
       "cache": false,
       "outputs": []
+    },
+    "build:root:canvas-a2ui-copy": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:check-plugin-sdk-exports"]
+    },
+    "build:root:check-plugin-sdk-exports": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:write-plugin-sdk-entry-dts"]
+    },
+    "build:root:copy-export-html-templates": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:copy-hook-metadata"]
+    },
+    "build:root:copy-hook-metadata": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:canvas-a2ui-copy"]
+    },
+    "build:root:plugin-sdk-dts": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:build-stamp"]
+    },
+    "build:root:runtime-postbuild": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:tsdown"]
+    },
+    "build:root:tsdown": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:canvas-a2ui-bundle"]
+    },
+    "build:root:write-build-info": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:copy-export-html-templates"]
+    },
+    "build:root:write-cli-compat": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:write-cli-startup-metadata"]
+    },
+    "build:root:write-cli-startup-metadata": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:write-build-info"]
+    },
+    "build:root:write-npm-update-compat-sidecars": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:runtime-postbuild"]
+    },
+    "build:root:write-plugin-sdk-entry-dts": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": ["build:root:plugin-sdk-dts"]
+    },
+    "check": {
+      "cache": true,
+      "outputs": []
+    },
+    "check:no-conflict-markers": {
+      "cache": true,
+      "outputs": []
+    },
+    "check:topology": {
+      "cache": true,
+      "outputs": []
+    },
+    "tool-display:check": {
+      "cache": true,
+      "outputs": []
+    },
+    "check:host-env-policy:swift": {
+      "cache": true,
+      "outputs": []
+    },
+    "check:import-cycles": {
+      "cache": true,
+      "outputs": []
+    },
+    "check:madge-import-cycles": {
+      "cache": true,
+      "outputs": []
+    },
+    "tsgo": {
+      "cache": true,
+      "outputs": []
+    },
+    "check:root:prepare-extension-package-boundary-artifacts": {
+      "cache": true,
+      "outputs": []
+    },
+    "lint": {
+      "cache": true,
+      "outputs": []
+    },
+    "lint:webhook:no-low-level-body-read": {
+      "cache": true,
+      "outputs": []
+    },
+    "lint:auth:no-pairing-store-group": {
+      "cache": true,
+      "outputs": []
+    },
+    "lint:auth:pairing-account-scope": {
+      "cache": true,
+      "outputs": []
+    },
+    "check:root:all": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": [
+        "check:no-conflict-markers",
+        "check:topology",
+        "tool-display:check",
+        "check:host-env-policy:swift",
+        "check:import-cycles",
+        "check:madge-import-cycles",
+        "tsgo",
+        "check:root:prepare-extension-package-boundary-artifacts",
+        "lint",
+        "lint:webhook:no-low-level-body-read",
+        "lint:auth:no-pairing-store-group",
+        "lint:auth:pairing-account-scope"
+      ]
+    },
+    "test": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:agentic": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:auto-reply": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:core-bundled": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:core-contracts": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:core-runtime": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:core-support-boundary": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:core-unit-fast": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:core-unit-security": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:core-unit-src": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:core-unit-support": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:core-unit-ui": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:all": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": [
+        "test:root:core-unit-fast",
+        "test:root:core-unit-src",
+        "test:root:core-unit-security",
+        "test:root:core-unit-ui",
+        "test:root:core-unit-support",
+        "test:root:core-support-boundary",
+        "test:root:core-contracts",
+        "test:root:core-bundled",
+        "test:root:core-runtime",
+        "test:root:agentic",
+        "test:root:auto-reply",
+        "test:root:extensions"
+      ]
     }
   }
 }

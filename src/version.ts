@@ -65,6 +65,49 @@ export function readVersionFromBuildInfoForModuleUrl(moduleUrl: string): string 
   return readVersionFromJsonCandidates(moduleUrl, BUILD_INFO_CANDIDATES);
 }
 
+export function readBuildInfoForModuleUrl(moduleUrl: string): RuntimeBuildInfo | null {
+  try {
+    const require = createRequire(moduleUrl);
+    for (const candidate of BUILD_INFO_CANDIDATES) {
+      try {
+        const parsed = require(candidate) as RuntimeBuildInfo;
+        const version = normalizeOptionalString(parsed.version);
+        const commit = normalizeOptionalString(parsed.commit);
+        const commitShort = normalizeOptionalString(parsed.commitShort);
+        const sourceFingerprint = normalizeOptionalString(parsed.sourceFingerprint);
+        const buildSignature = normalizeOptionalString(parsed.buildSignature);
+        const builtAt = normalizeOptionalString(parsed.builtAt);
+        const sourceTree = normalizeOptionalString(parsed.sourceTree);
+        if (
+          !version &&
+          !commit &&
+          !commitShort &&
+          !sourceFingerprint &&
+          !buildSignature &&
+          !builtAt &&
+          !sourceTree
+        ) {
+          continue;
+        }
+        return {
+          ...(version ? { version } : {}),
+          ...(commit ? { commit } : {}),
+          ...(commitShort ? { commitShort } : {}),
+          ...(sourceFingerprint ? { sourceFingerprint } : {}),
+          ...(buildSignature ? { buildSignature } : {}),
+          ...(builtAt ? { builtAt } : {}),
+          ...(sourceTree ? { sourceTree } : {}),
+        };
+      } catch {
+        // ignore missing or unreadable candidate
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveVersionFromModuleUrl(moduleUrl: string): string | null {
   return (
     readVersionFromPackageJsonForModuleUrl(moduleUrl) ||
@@ -89,6 +132,16 @@ export function resolveBinaryVersion(params: {
 
 export type RuntimeVersionEnv = {
   [key: string]: string | undefined;
+};
+
+export type RuntimeBuildInfo = {
+  version?: string;
+  commit?: string;
+  commitShort?: string;
+  sourceFingerprint?: string;
+  buildSignature?: string;
+  builtAt?: string;
+  sourceTree?: string;
 };
 
 export const RUNTIME_SERVICE_VERSION_FALLBACK = "unknown";
@@ -149,6 +202,38 @@ export function resolveCompatibilityHostVersion(
     fallback,
     preference: env === (process.env as RuntimeVersionEnv) ? "runtime-first" : "env-first",
   });
+}
+
+export function resolveRuntimeBuildInfo(params?: {
+  env?: RuntimeVersionEnv;
+  moduleUrl?: string;
+}): RuntimeBuildInfo {
+  const env = params?.env ?? (process.env as RuntimeVersionEnv);
+  const buildInfo = readBuildInfoForModuleUrl(params?.moduleUrl ?? import.meta.url) ?? {};
+  const version = resolveRuntimeServiceVersion(env);
+  const commit = firstNonEmpty(env.GIT_COMMIT, env.GIT_SHA, buildInfo.commit);
+  const commitShort =
+    firstNonEmpty(env.GIT_COMMIT_SHORT, buildInfo.commitShort) ||
+    (commit ? commit.slice(0, 12) : undefined);
+  const sourceFingerprint = firstNonEmpty(
+    env.OPENCLAW_SOURCE_FINGERPRINT,
+    buildInfo.sourceFingerprint,
+  );
+  const buildSignature =
+    firstNonEmpty(env.OPENCLAW_BUILD_SIGNATURE, buildInfo.buildSignature) ||
+    [version, sourceFingerprint?.slice(0, 12) ?? commitShort].filter(Boolean).join("+") ||
+    undefined;
+  const builtAt = firstNonEmpty(env.OPENCLAW_BUILT_AT, buildInfo.builtAt);
+  const sourceTree = firstNonEmpty(env.OPENCLAW_SOURCE_TREE, buildInfo.sourceTree);
+  return {
+    version,
+    ...(commit ? { commit } : {}),
+    ...(commitShort ? { commitShort } : {}),
+    ...(sourceFingerprint ? { sourceFingerprint } : {}),
+    ...(buildSignature ? { buildSignature } : {}),
+    ...(builtAt ? { builtAt } : {}),
+    ...(sourceTree ? { sourceTree } : {}),
+  };
 }
 
 // Single source of truth for the current OpenClaw version.

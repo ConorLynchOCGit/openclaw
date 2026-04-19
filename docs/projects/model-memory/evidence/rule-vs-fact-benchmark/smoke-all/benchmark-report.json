@@ -1,0 +1,2196 @@
+{
+  "generatedAt": "2026-04-18T12:57:05.895Z",
+  "repoRoot": "/root/services/openclaw-roles/live",
+  "modelId": "openrouter/openai/gpt-5.4-nano",
+  "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+  "requestSeed": 7,
+  "requestTimeoutMs": 120000,
+  "maxWordsPerWindow": 1500,
+  "corpus": [
+    {
+      "id": "system-memory",
+      "relativePath": "docs/system/memory.md",
+      "rationale": "System recall index with explicit memory-layer policy and workspace inventory.",
+      "semanticMix": "Topology facts plus durable memory-layer rules.",
+      "expectedDominantKinds": ["fact", "rule", "reference"],
+      "mustCaptureClaims": [
+        "System Memory is the workspace recall index for OpenClaw.",
+        "Generated memory must not flatten authored docs.",
+        "The memory layers include human-owned sources, DB-backed model-memory projection, and daily memory files as an ingestion layer."
+      ]
+    }
+  ],
+  "variants": [
+    {
+      "variantId": "baseline",
+      "hypothesis": "Current live prompts and canonicalization behavior continue to undercapture rules relative to facts.",
+      "simplificationTested": "None. This preserves the current live path.",
+      "filesChanged": [],
+      "intentionallyNotChanged": [
+        "No prompt text changes.",
+        "No canonicalClass derivation.",
+        "No payload normalization.",
+        "No write-path simplification."
+      ],
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+      "requestSeed": 7,
+      "requestTimeoutMs": 120000,
+      "maxWordsPerWindow": 1500,
+      "documents": [
+        {
+          "sourcePath": "docs/system/memory.md",
+          "rationale": "System recall index with explicit memory-layer policy and workspace inventory.",
+          "semanticMix": "Topology facts plus durable memory-layer rules.",
+          "expectedDominantKinds": ["fact", "rule", "reference"],
+          "mustCaptureClaims": [
+            "System Memory is the workspace recall index for OpenClaw.",
+            "Generated memory must not flatten authored docs.",
+            "The memory layers include human-owned sources, DB-backed model-memory projection, and daily memory files as an ingestion layer."
+          ],
+          "lineCount": 134,
+          "windowCount": 1,
+          "candidateCountByType": {
+            "rule": 10
+          },
+          "canonicalizedCountByKind": {
+            "rule": 5
+          },
+          "canonicalizedCountByCanonicalClass": {
+            "project": 5
+          },
+          "validationRejectCount": 0,
+          "validationRejectReasons": [],
+          "repairInvocations": {
+            "pass_1_repair": 2
+          },
+          "writeDecisionCounts": {
+            "write": 5
+          },
+          "adjudicationOutcomeCounts": {
+            "no_candidates": 5
+          },
+          "collisionGateTotals": {
+            "rawCandidateCount": 10,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 10
+          },
+          "boundedAdjudicationRoutes": {
+            "no_candidates": 5
+          },
+          "finalActiveObjectDeltaByKind": {
+            "rule": 5
+          },
+          "finalActiveObjectDeltaByCanonicalClass": {
+            "project": 5
+          },
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [
+            {
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "docs/system/memory.md as durable workspace recall index",
+                "recommendedAction": "Use docs/system/memory.md as the durable workspace recall index."
+              }
+            },
+            {
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Detailed project content location",
+                "avoidAction": "Do not put detailed project content in docs/system/memory.md; place it in project workspaces instead."
+              }
+            },
+            {
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Runtime MEMORY.md pointer to DB-backed projection layer",
+                "recommendedAction": "Ensure assembled runtime MEMORY.md includes a high-priority pointer to the DB-backed generated memory projection layer."
+              }
+            },
+            {
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Project emphasis source",
+                "recommendedAction": "Set active and queued project emphasis using docs/system/registries/projects.yaml rather than ad hoc edits."
+              }
+            },
+            {
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Daily memory files ingestion inputs",
+                "avoidAction": "Do not treat daily memory files as disposable residue; treat them as official ingestion inputs."
+              }
+            }
+          ],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 10207
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 10207,
+              "action": "capture",
+              "objectCount": 5,
+              "candidateTypeCounts": {
+                "rule": 5
+              },
+              "rawObjects": [
+                {
+                  "candidateType": "rule",
+                  "claim": "docs/system/memory.md is the durable workspace recall index.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 121,
+                      "lineEnd": 124
+                    }
+                  ],
+                  "confidence": 0.97,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Detailed project content belongs in project workspaces, not in this file.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 124,
+                      "lineEnd": 125
+                    }
+                  ],
+                  "confidence": 0.95,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Assembled runtime MEMORY.md must include a high-priority pointer to the DB-backed generated memory projection layer.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 127,
+                      "lineEnd": 129
+                    }
+                  ],
+                  "confidence": 0.93,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Active and queued project emphasis should follow docs/system/registries/projects.yaml, not ad hoc edits here.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 129,
+                      "lineEnd": 131
+                    }
+                  ],
+                  "confidence": 0.92,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Daily memory files remain official ingestion inputs and must not be treated as disposable residue.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 132,
+                      "lineEnd": 133
+                    }
+                  ],
+                  "confidence": 0.9,
+                  "shouldStore": true
+                }
+              ]
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "windowIndex": 0,
+              "stage": "pass_1_repair",
+              "contractVersion": "v2-candidate-repair",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 11700
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "windowIndex": 0,
+              "stage": "pass_1_repair",
+              "contractVersion": "v2-candidate-repair",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 11700,
+              "action": "capture",
+              "objectCount": 5,
+              "candidateTypeCounts": {
+                "rule": 5
+              },
+              "rawObjects": [
+                {
+                  "candidateType": "rule",
+                  "claim": "docs/system/memory.md is the durable workspace recall index.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 121,
+                      "lineEnd": 124
+                    }
+                  ],
+                  "confidence": "strong",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Detailed project content belongs in project workspaces, not in this file.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 123,
+                      "lineEnd": 125
+                    }
+                  ],
+                  "confidence": "strong",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Assembled runtime MEMORY.md must include a high-priority pointer to the DB-backed generated memory projection layer.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 126,
+                      "lineEnd": 129
+                    }
+                  ],
+                  "confidence": "strong",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Active and queued project emphasis should follow docs/system/registries/projects.yaml, not ad hoc edits here.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 129,
+                      "lineEnd": 131
+                    }
+                  ],
+                  "confidence": "medium",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Daily memory files remain official ingestion inputs and must not be treated as disposable residue.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 132,
+                      "lineEnd": 133
+                    }
+                  ],
+                  "confidence": "medium",
+                  "shouldStore": true
+                }
+              ]
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "windowIndex": 0,
+              "stage": "pass_2_canonicalization",
+              "contractVersion": "v2-canonicalization",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 7816
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "windowIndex": 0,
+              "stage": "pass_2_canonicalization",
+              "contractVersion": "v2-canonicalization",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 7816,
+              "action": "capture",
+              "objectCount": 5,
+              "kindCounts": {
+                "rule": 5
+              },
+              "canonicalClassCounts": {
+                "project": 5
+              },
+              "rawObjects": [
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "docs/system/memory.md as durable workspace recall index",
+                    "recommendedAction": "Use docs/system/memory.md as the durable workspace recall index."
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+                      "headingPathRef": "hp_9",
+                      "lineStart": 121,
+                      "lineEnd": 124
+                    }
+                  ],
+                  "confidence": "strong",
+                  "durability": "durable",
+                  "reviewMode": "auto_accept"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Detailed project content location",
+                    "avoidAction": "Do not put detailed project content in docs/system/memory.md; place it in project workspaces instead."
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+                      "headingPathRef": "hp_9",
+                      "lineStart": 123,
+                      "lineEnd": 125
+                    }
+                  ],
+                  "confidence": "strong",
+                  "durability": "durable",
+                  "reviewMode": "auto_accept"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Runtime MEMORY.md pointer to DB-backed projection layer",
+                    "recommendedAction": "Ensure assembled runtime MEMORY.md includes a high-priority pointer to the DB-backed generated memory projection layer."
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+                      "headingPathRef": "hp_9",
+                      "lineStart": 126,
+                      "lineEnd": 129
+                    }
+                  ],
+                  "confidence": "strong",
+                  "durability": "durable",
+                  "reviewMode": "auto_accept"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Project emphasis source",
+                    "recommendedAction": "Set active and queued project emphasis using docs/system/registries/projects.yaml rather than ad hoc edits."
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+                      "headingPathRef": "hp_9",
+                      "lineStart": 129,
+                      "lineEnd": 131
+                    }
+                  ],
+                  "confidence": "medium",
+                  "durability": "durable",
+                  "reviewMode": "manual_review"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Daily memory files ingestion inputs",
+                    "avoidAction": "Do not treat daily memory files as disposable residue; treat them as official ingestion inputs."
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+                      "headingPathRef": "hp_9",
+                      "lineStart": 132,
+                      "lineEnd": 133
+                    }
+                  ],
+                  "confidence": "medium",
+                  "durability": "durable",
+                  "reviewMode": "manual_review"
+                }
+              ]
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "candidateId": "candidate-0",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 0,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 0,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "candidateId": "candidate-1",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 1,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 1,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "candidateId": "candidate-2",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 2,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 2,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "candidateId": "candidate-3",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 3,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 3,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "candidateId": "candidate-4",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 4,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 4,
+              "disposition": "zero_candidate_skip"
+            }
+          ],
+          "boundedAdjudications": [
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "candidateId": "candidate-0",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "candidateId": "candidate-1",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "candidateId": "candidate-2",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "candidateId": "candidate-3",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "7e7dcdba-7da5-53f7-8c10-5f751df52645",
+              "candidateId": "candidate-4",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            }
+          ],
+          "writeDecisions": [
+            {
+              "decision": "write",
+              "decisionCodes": ["write_structural_accept", "collision_distinct"],
+              "memoryObjectId": "c1e856d8-67f6-5f72-91b5-af500aa779fd",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": ["write_structural_accept", "collision_distinct"],
+              "memoryObjectId": "076bd0e7-5cef-502d-9e6d-5049f01e8bff",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": ["write_structural_accept", "collision_distinct"],
+              "memoryObjectId": "bf6207e9-b530-5fd0-a90c-7177d9f56dc8",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": [
+                "write_structural_accept",
+                "collision_distinct",
+                "review_mode_overridden"
+              ],
+              "memoryObjectId": "97f1df3e-dd78-5b37-99b6-012661033f8a",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": [
+                "write_structural_accept",
+                "collision_distinct",
+                "review_mode_overridden"
+              ],
+              "memoryObjectId": "cfb8672d-bc49-56b5-8a7a-b9605bb0afeb",
+              "lifecycleState": "active"
+            }
+          ]
+        }
+      ],
+      "totals": {
+        "windowCount": 1,
+        "candidateCountByType": {
+          "rule": 10
+        },
+        "canonicalizedCountByKind": {
+          "rule": 5
+        },
+        "canonicalizedCountByCanonicalClass": {
+          "project": 5
+        },
+        "validationRejectCount": 0,
+        "writeDecisionCounts": {
+          "write": 5
+        },
+        "adjudicationOutcomeCounts": {
+          "no_candidates": 5
+        },
+        "finalActiveObjectCountByKind": {
+          "rule": 5
+        }
+      }
+    },
+    {
+      "variantId": "variant_a_prompt_simplification",
+      "hypothesis": "Rule undercapture is primarily upstream and improves if candidate extraction and canonicalization treat kind as primary and normativity as first-class.",
+      "simplificationTested": "Prompt-only simplification: classify by kind first, prefer rule for normative text, and treat canonicalClass as secondary bookkeeping.",
+      "filesChanged": [
+        "semantic_extraction prompt contract at candidate stage",
+        "semantic_extraction prompt contract at canonicalization stage"
+      ],
+      "intentionallyNotChanged": [
+        "No schema changes.",
+        "No validator changes.",
+        "No write-policy changes.",
+        "No collision-logic changes."
+      ],
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+      "requestSeed": 7,
+      "requestTimeoutMs": 120000,
+      "maxWordsPerWindow": 1500,
+      "documents": [
+        {
+          "sourcePath": "docs/system/memory.md",
+          "rationale": "System recall index with explicit memory-layer policy and workspace inventory.",
+          "semanticMix": "Topology facts plus durable memory-layer rules.",
+          "expectedDominantKinds": ["fact", "rule", "reference"],
+          "mustCaptureClaims": [
+            "System Memory is the workspace recall index for OpenClaw.",
+            "Generated memory must not flatten authored docs.",
+            "The memory layers include human-owned sources, DB-backed model-memory projection, and daily memory files as an ingestion layer."
+          ],
+          "lineCount": 134,
+          "windowCount": 1,
+          "candidateCountByType": {
+            "rule": 15
+          },
+          "canonicalizedCountByKind": {
+            "rule": 7
+          },
+          "canonicalizedCountByCanonicalClass": {
+            "project": 7
+          },
+          "validationRejectCount": 0,
+          "validationRejectReasons": [],
+          "repairInvocations": {
+            "pass_1_repair": 2
+          },
+          "writeDecisionCounts": {
+            "write": 7
+          },
+          "adjudicationOutcomeCounts": {
+            "no_candidates": 5,
+            "local_conflict_hold_ambiguous": 2
+          },
+          "collisionGateTotals": {
+            "rawCandidateCount": 12,
+            "retainedCandidateCount": 2,
+            "prunedCandidateCount": 10
+          },
+          "boundedAdjudicationRoutes": {
+            "no_candidates": 5,
+            "local_conflict_hold_ambiguous": 2
+          },
+          "finalActiveObjectDeltaByKind": {
+            "rule": 5
+          },
+          "finalActiveObjectDeltaByCanonicalClass": {
+            "project": 5
+          },
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - No projected standing context. ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [
+            {
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "`docs/system/memory.md` is the durable workspace recall index",
+                "recommendedAction": "Use `docs/system/memory.md` as the durable workspace recall index.",
+                "avoidAction": "Do not treat this file as a place for detailed project content; detailed project content belongs in project workspaces, not in this file.",
+                "neededCapability": "Ability to route detailed project content to the appropriate project workspaces."
+              }
+            },
+            {
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Detailed project content placement",
+                "recommendedAction": "Place detailed project content in project workspaces.",
+                "avoidAction": "Do not put detailed project content in `docs/system/memory.md`."
+              }
+            },
+            {
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Runtime-facing MEMORY.md vs durable recall index",
+                "recommendedAction": "Treat runtime-facing `MEMORY.md` as a memory artifact.",
+                "avoidAction": "Do not use `MEMORY.md` as a replacement for the durable recall index."
+              }
+            },
+            {
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Assembled runtime MEMORY.md must include a high-priority pointer",
+                "recommendedAction": "Ensure assembled runtime `MEMORY.md` includes a high-priority pointer to the DB-backed generated memory projection layer.",
+                "neededCapability": "Ability to include a high-priority DB-backed generated memory projection layer pointer in assembled runtime `MEMORY.md`."
+              }
+            },
+            {
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Project emphasis source of truth",
+                "recommendedAction": "For active and queued project emphasis, follow `docs/system/registries/projects.yaml`.",
+                "avoidAction": "Do not make ad hoc edits here."
+              }
+            },
+            {
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "DB-backed model-memory projections architecture",
+                "recommendedAction": "Keep DB-backed `model-memory` projections as part of the architecture.",
+                "neededCapability": "Ability to treat `model-memory` projections as architectural components."
+              }
+            },
+            {
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Daily memory files ingestion inputs",
+                "recommendedAction": "Treat daily memory files as official ingestion inputs.",
+                "avoidAction": "Do not treat daily memory files as disposable residue."
+              }
+            }
+          ],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate@pass_1_candidate@variant-a",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 10645
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 10207,
+              "action": "capture",
+              "objectCount": 8,
+              "candidateTypeCounts": {
+                "rule": 8
+              },
+              "rawObjects": [
+                {
+                  "candidateType": "rule",
+                  "claim": "The file docs/system/memory.md is the durable workspace recall index.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 121,
+                      "lineEnd": 126
+                    }
+                  ],
+                  "confidence": 0.96,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Do not place detailed project content in this file; keep it in project workspaces.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 123,
+                      "lineEnd": 125
+                    }
+                  ],
+                  "confidence": 0.9,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Runtime-facing MEMORY.md remains a memory artifact and must not replace this durable recall index.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 125,
+                      "lineEnd": 126
+                    }
+                  ],
+                  "confidence": 0.9,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Assembled runtime MEMORY.md must include a high-priority pointer to the DB-backed generated memory projection layer.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 127,
+                      "lineEnd": 128
+                    }
+                  ],
+                  "confidence": 0.88,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Active and queued project emphasis should follow docs/system/registries/projects.yaml, not ad hoc edits here.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 129,
+                      "lineEnd": 130
+                    }
+                  ],
+                  "confidence": 0.84,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "DB-backed model-memory projections remain part of the architecture.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 131,
+                      "lineEnd": 132
+                    }
+                  ],
+                  "confidence": 0.8,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Daily memory files are official ingestion inputs and must not be treated as disposable residue.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 132,
+                      "lineEnd": 133
+                    }
+                  ],
+                  "confidence": 0.85,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "This workspace recall index must not collapse all work into one project and must not flatten generated memory into authored docs.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_1",
+                      "lineStart": 14,
+                      "lineEnd": 16
+                    }
+                  ],
+                  "confidence": 0.7,
+                  "shouldStore": false
+                }
+              ]
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "windowIndex": 0,
+              "stage": "pass_1_repair",
+              "contractVersion": "v2-candidate-repair@pass_1_repair@variant-a",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 13211
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "windowIndex": 0,
+              "stage": "pass_1_repair",
+              "contractVersion": "v2-candidate-repair",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 12773,
+              "action": "capture",
+              "objectCount": 7,
+              "candidateTypeCounts": {
+                "rule": 7
+              },
+              "rawObjects": [
+                {
+                  "candidateType": "rule",
+                  "claim": "`docs/system/memory.md` is the durable workspace recall index",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 121,
+                      "lineEnd": 124
+                    }
+                  ],
+                  "confidence": "strong",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Detailed project content belongs in project workspaces, not in this file",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 124,
+                      "lineEnd": 125
+                    }
+                  ],
+                  "confidence": "strong",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Runtime-facing `MEMORY.md` remains a memory artifact, not a replacement for this durable recall index",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 125,
+                      "lineEnd": 126
+                    }
+                  ],
+                  "confidence": "strong",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Assembled runtime `MEMORY.md` must include a high-priority pointer to the DB-backed generated memory projection layer",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 127,
+                      "lineEnd": 128
+                    }
+                  ],
+                  "confidence": "medium",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Active and queued project emphasis should follow `docs/system/registries/projects.yaml`, not ad hoc edits here",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 129,
+                      "lineEnd": 130
+                    }
+                  ],
+                  "confidence": "medium",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "DB-backed `model-memory` projections remain part of the architecture",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 131,
+                      "lineEnd": 132
+                    }
+                  ],
+                  "confidence": "medium",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Daily memory files are official ingestion inputs and must not be treated as disposable residue",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 132,
+                      "lineEnd": 133
+                    }
+                  ],
+                  "confidence": "medium",
+                  "shouldStore": true
+                }
+              ]
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "windowIndex": 0,
+              "stage": "pass_2_canonicalization",
+              "contractVersion": "v2-canonicalization@pass_2_canonicalization@variant-a",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 9085
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "windowIndex": 0,
+              "stage": "pass_2_canonicalization",
+              "contractVersion": "v2-canonicalization",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 8699,
+              "action": "capture",
+              "objectCount": 7,
+              "kindCounts": {
+                "rule": 7
+              },
+              "canonicalClassCounts": {
+                "project": 7
+              },
+              "rawObjects": [
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "`docs/system/memory.md` is the durable workspace recall index",
+                    "recommendedAction": "Use `docs/system/memory.md` as the durable workspace recall index.",
+                    "avoidAction": "Do not treat this file as a place for detailed project content; detailed project content belongs in project workspaces, not in this file.",
+                    "neededCapability": "Ability to route detailed project content to the appropriate project workspaces."
+                  },
+                  "scope": {
+                    "projectScope": "system memory rules"
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+                      "headingPathRef": "hp_9",
+                      "lineStart": 121,
+                      "lineEnd": 125
+                    }
+                  ],
+                  "confidence": "strong",
+                  "durability": "durable",
+                  "reviewMode": "manual_review"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Detailed project content placement",
+                    "recommendedAction": "Place detailed project content in project workspaces.",
+                    "avoidAction": "Do not put detailed project content in `docs/system/memory.md`."
+                  },
+                  "scope": {
+                    "projectScope": "system memory rules"
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+                      "headingPathRef": "hp_9",
+                      "lineStart": 124,
+                      "lineEnd": 125
+                    }
+                  ],
+                  "confidence": "strong",
+                  "durability": "durable",
+                  "reviewMode": "manual_review"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Runtime-facing MEMORY.md vs durable recall index",
+                    "recommendedAction": "Treat runtime-facing `MEMORY.md` as a memory artifact.",
+                    "avoidAction": "Do not use `MEMORY.md` as a replacement for the durable recall index."
+                  },
+                  "scope": {
+                    "projectScope": "system memory rules"
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+                      "headingPathRef": "hp_9",
+                      "lineStart": 125,
+                      "lineEnd": 126
+                    }
+                  ],
+                  "confidence": "strong",
+                  "durability": "durable",
+                  "reviewMode": "manual_review"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Assembled runtime MEMORY.md must include a high-priority pointer",
+                    "recommendedAction": "Ensure assembled runtime `MEMORY.md` includes a high-priority pointer to the DB-backed generated memory projection layer.",
+                    "neededCapability": "Ability to include a high-priority DB-backed generated memory projection layer pointer in assembled runtime `MEMORY.md`."
+                  },
+                  "scope": {
+                    "projectScope": "system memory rules"
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+                      "headingPathRef": "hp_9",
+                      "lineStart": 127,
+                      "lineEnd": 128
+                    }
+                  ],
+                  "confidence": "medium",
+                  "durability": "durable",
+                  "reviewMode": "manual_review"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Project emphasis source of truth",
+                    "recommendedAction": "For active and queued project emphasis, follow `docs/system/registries/projects.yaml`.",
+                    "avoidAction": "Do not make ad hoc edits here."
+                  },
+                  "scope": {
+                    "projectScope": "system memory rules"
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+                      "headingPathRef": "hp_9",
+                      "lineStart": 129,
+                      "lineEnd": 130
+                    }
+                  ],
+                  "confidence": "medium",
+                  "durability": "durable",
+                  "reviewMode": "manual_review"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "DB-backed model-memory projections architecture",
+                    "recommendedAction": "Keep DB-backed `model-memory` projections as part of the architecture.",
+                    "neededCapability": "Ability to treat `model-memory` projections as architectural components."
+                  },
+                  "scope": {
+                    "projectScope": "system memory rules"
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+                      "headingPathRef": "hp_9",
+                      "lineStart": 131,
+                      "lineEnd": 132
+                    }
+                  ],
+                  "confidence": "medium",
+                  "durability": "durable",
+                  "reviewMode": "manual_review"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Daily memory files ingestion inputs",
+                    "recommendedAction": "Treat daily memory files as official ingestion inputs.",
+                    "avoidAction": "Do not treat daily memory files as disposable residue."
+                  },
+                  "scope": {
+                    "projectScope": "system memory rules"
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+                      "headingPathRef": "hp_9",
+                      "lineStart": 132,
+                      "lineEnd": 133
+                    }
+                  ],
+                  "confidence": "medium",
+                  "durability": "durable",
+                  "reviewMode": "manual_review"
+                }
+              ]
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "collision-adjudication",
+              "windowIndex": -1,
+              "stage": "write_path_collision_adjudication",
+              "contractVersion": "v1-batch@write_path_collision_adjudication@variant-a",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 11372
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-0",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 0,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 0,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-1",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 1,
+              "retainedCandidateCount": 1,
+              "prunedCandidateCount": 0,
+              "disposition": "admitted_to_batch"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-2",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 1,
+              "retainedCandidateCount": 1,
+              "prunedCandidateCount": 0,
+              "disposition": "admitted_to_batch"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-3",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 1,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 1,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-4",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 2,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 2,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-5",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 3,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 3,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-6",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 4,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 4,
+              "disposition": "zero_candidate_skip"
+            }
+          ],
+          "boundedAdjudications": [
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-0",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-3",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-4",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-5",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-6",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-1",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "retained_structural",
+              "adjudicationCandidateCount": 1,
+              "adjudicationBatchAdmitted": true,
+              "finalLocalRouting": "local_conflict_hold_ambiguous",
+              "modelOutput": {
+                "candidateId": "candidate-1",
+                "sameCoreMemory": "ambiguous",
+                "matchedCandidateId": "candidate_1",
+                "deltaType": "additive"
+              }
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "d995f924-3e94-5fc2-be8d-eb280fb14de7",
+              "candidateId": "candidate-2",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "retained_structural",
+              "adjudicationCandidateCount": 1,
+              "adjudicationBatchAdmitted": true,
+              "finalLocalRouting": "local_conflict_hold_ambiguous",
+              "modelOutput": {
+                "candidateId": "candidate-2",
+                "sameCoreMemory": "ambiguous",
+                "matchedCandidateId": "candidate_1",
+                "deltaType": "additive"
+              }
+            }
+          ],
+          "writeDecisions": [
+            {
+              "decision": "write",
+              "decisionCodes": [
+                "write_structural_accept",
+                "collision_distinct",
+                "review_mode_overridden"
+              ],
+              "memoryObjectId": "b2689e61-23e1-524f-8fe4-a9f5d665d291",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": [
+                "write_structural_accept",
+                "collision_distinct",
+                "review_mode_overridden"
+              ],
+              "memoryObjectId": "b6d62a97-6518-5d2c-8227-5d5c0b06689d",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": [
+                "write_structural_accept",
+                "collision_distinct",
+                "review_mode_overridden"
+              ],
+              "memoryObjectId": "07926b62-c726-5e37-b4c4-b5264e07d68f",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": [
+                "write_structural_accept",
+                "collision_distinct",
+                "review_mode_overridden"
+              ],
+              "memoryObjectId": "e363b887-54d8-59fb-9866-bdb049065390",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": [
+                "write_structural_accept",
+                "collision_distinct",
+                "review_mode_overridden"
+              ],
+              "memoryObjectId": "fbfbec00-5ecc-5a72-9f17-a1e3e024a90b",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": ["collision_conflict_hold", "review_mode_overridden"],
+              "memoryObjectId": "4aa8ba07-bcc3-56ce-85ac-d51080da2f34",
+              "lifecycleState": "conflict_hold"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": ["collision_conflict_hold", "review_mode_overridden"],
+              "memoryObjectId": "b56b3afd-172c-58fd-a4fb-0d0261904ceb",
+              "lifecycleState": "conflict_hold"
+            }
+          ]
+        }
+      ],
+      "totals": {
+        "windowCount": 1,
+        "candidateCountByType": {
+          "rule": 15
+        },
+        "canonicalizedCountByKind": {
+          "rule": 7
+        },
+        "canonicalizedCountByCanonicalClass": {
+          "project": 7
+        },
+        "validationRejectCount": 0,
+        "writeDecisionCounts": {
+          "write": 7
+        },
+        "adjudicationOutcomeCounts": {
+          "no_candidates": 5,
+          "local_conflict_hold_ambiguous": 2
+        },
+        "finalActiveObjectCountByKind": {
+          "rule": 5
+        }
+      }
+    },
+    {
+      "variantId": "variant_b_schema_plus_prompt_simplification",
+      "hypothesis": "A bounded canonicalization simplification helps beyond prompt-only changes by removing the model burden of class assignment and normalizing brittle rule payload output.",
+      "simplificationTested": "Prompt simplification plus a canonicalization normalizer that derives canonicalClass from kind/sourceKind and repairs minimal rule payload shape.",
+      "filesChanged": [
+        "semantic_extraction prompt contract at candidate stage",
+        "semantic_extraction prompt contract at canonicalization stage",
+        "benchmark-only canonicalization normalizer"
+      ],
+      "intentionallyNotChanged": [
+        "No production schema migration.",
+        "No database write-policy changes.",
+        "No collision-logic changes.",
+        "No new deterministic heuristics beyond bounded canonicalization normalization."
+      ],
+      "modelId": "openrouter/openai/gpt-5.4-nano",
+      "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+      "requestSeed": 7,
+      "requestTimeoutMs": 120000,
+      "maxWordsPerWindow": 1500,
+      "documents": [
+        {
+          "sourcePath": "docs/system/memory.md",
+          "rationale": "System recall index with explicit memory-layer policy and workspace inventory.",
+          "semanticMix": "Topology facts plus durable memory-layer rules.",
+          "expectedDominantKinds": ["fact", "rule", "reference"],
+          "mustCaptureClaims": [
+            "System Memory is the workspace recall index for OpenClaw.",
+            "Generated memory must not flatten authored docs.",
+            "The memory layers include human-owned sources, DB-backed model-memory projection, and daily memory files as an ingestion layer."
+          ],
+          "lineCount": 134,
+          "windowCount": 1,
+          "candidateCountByType": {
+            "fact": 2,
+            "rule": 10
+          },
+          "canonicalizedCountByKind": {
+            "fact": 1,
+            "rule": 5
+          },
+          "canonicalizedCountByCanonicalClass": {
+            "project": 6
+          },
+          "validationRejectCount": 0,
+          "validationRejectReasons": [],
+          "repairInvocations": {
+            "pass_1_repair": 2
+          },
+          "writeDecisionCounts": {
+            "write": 6
+          },
+          "adjudicationOutcomeCounts": {
+            "no_candidates": 5,
+            "local_conflict_hold_ambiguous": 1
+          },
+          "collisionGateTotals": {
+            "rawCandidateCount": 7,
+            "retainedCandidateCount": 0,
+            "prunedCandidateCount": 7
+          },
+          "boundedAdjudicationRoutes": {
+            "no_candidates": 5,
+            "local_conflict_hold_ambiguous": 1
+          },
+          "finalActiveObjectDeltaByKind": {
+            "fact": 1,
+            "rule": 4
+          },
+          "finalActiveObjectDeltaByCanonicalClass": {
+            "project": 5
+          },
+          "memoryProjection": {
+            "relativePath": "MEMORY.md",
+            "changed": true,
+            "lineCount": 7,
+            "bulletCount": 2,
+            "contentExcerpt": "# MEMORY.md ## Standing Context - docs/system/memory.md: is the durable workspace recall index ## Procedures - No projected procedures."
+          },
+          "acceptedObjects": [
+            {
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "kind": "fact",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "docs/system/memory.md",
+                "value": "is the durable workspace recall index"
+              }
+            },
+            {
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Project content placement",
+                "recommendedAction": "Place detailed project content in project workspaces, not in docs/system/memory.md."
+              }
+            },
+            {
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Runtime MEMORY.md artifact status",
+                "recommendedAction": "Keep runtime-facing MEMORY.md as a memory artifact, not a replacement for the durable recall index at docs/system/memory.md."
+              }
+            },
+            {
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Runtime MEMORY.md pointer requirement",
+                "recommendedAction": "Ensure assembled runtime MEMORY.md includes a high-priority pointer to the DB-backed generated memory projection layer."
+              }
+            },
+            {
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Active/queued project emphasis source",
+                "recommendedAction": "Set active and queued project emphasis based on docs/system/registries/projects.yaml, not on ad hoc edits here."
+              }
+            },
+            {
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "kind": "rule",
+              "canonicalClass": "project",
+              "payload": {
+                "subject": "Daily memory files ingestion importance",
+                "recommendedAction": "Treat daily memory files as official ingestion inputs and do not treat them as disposable residue."
+              }
+            }
+          ],
+          "stageTraces": [
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate@pass_1_candidate@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 10645
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "windowIndex": 0,
+              "stage": "pass_1_candidate",
+              "contractVersion": "v2-candidate",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 10207,
+              "action": "capture",
+              "objectCount": 6,
+              "candidateTypeCounts": {
+                "fact": 1,
+                "rule": 5
+              },
+              "rawObjects": [
+                {
+                  "candidateType": "fact",
+                  "claim": "docs/system/memory.md is the durable workspace recall index for OpenClaw.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 121,
+                      "lineEnd": 124
+                    }
+                  ],
+                  "confidence": 0.98,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Detailed project content must belong in project workspaces, not in docs/system/memory.md.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 123,
+                      "lineEnd": 125
+                    }
+                  ],
+                  "confidence": 0.97,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "runtime-facing MEMORY.md must remain a memory artifact and not replace the durable recall index.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 125,
+                      "lineEnd": 127
+                    }
+                  ],
+                  "confidence": 0.95,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Assembled runtime MEMORY.md must include a high-priority pointer to the DB-backed generated memory projection layer.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 127,
+                      "lineEnd": 128
+                    }
+                  ],
+                  "confidence": 0.96,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Active and queued project emphasis must follow docs/system/registries/projects.yaml, not ad hoc edits in docs/system/memory.md.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 129,
+                      "lineEnd": 130
+                    }
+                  ],
+                  "confidence": 0.94,
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Daily memory files remain official ingestion inputs and must not be treated as disposable residue.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 131,
+                      "lineEnd": 133
+                    }
+                  ],
+                  "confidence": 0.93,
+                  "shouldStore": true
+                }
+              ]
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "windowIndex": 0,
+              "stage": "pass_1_repair",
+              "contractVersion": "v2-candidate-repair@pass_1_repair@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 12538
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "windowIndex": 0,
+              "stage": "pass_1_repair",
+              "contractVersion": "v2-candidate-repair",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 12100,
+              "action": "capture",
+              "objectCount": 6,
+              "candidateTypeCounts": {
+                "fact": 1,
+                "rule": 5
+              },
+              "rawObjects": [
+                {
+                  "candidateType": "fact",
+                  "claim": "docs/system/memory.md is the durable workspace recall index.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 123,
+                      "lineEnd": 124
+                    }
+                  ],
+                  "confidence": "strong",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "Detailed project content must belong in project workspaces, not in docs/system/memory.md.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 124,
+                      "lineEnd": 125
+                    }
+                  ],
+                  "confidence": "strong",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "runtime-facing MEMORY.md must remain a memory artifact, not a replacement for docs/system/memory.md.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 125,
+                      "lineEnd": 127
+                    }
+                  ],
+                  "confidence": "strong",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "assembled runtime MEMORY.md must include a high-priority pointer to the DB-backed generated memory projection layer.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 127,
+                      "lineEnd": 129
+                    }
+                  ],
+                  "confidence": "strong",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "active and queued project emphasis should follow docs/system/registries/projects.yaml, not ad hoc edits here.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 129,
+                      "lineEnd": 131
+                    }
+                  ],
+                  "confidence": "strong",
+                  "shouldStore": true
+                },
+                {
+                  "candidateType": "rule",
+                  "claim": "daily memory files remain official ingestion inputs and must not be treated as disposable residue.",
+                  "supportingSpans": [
+                    {
+                      "headingPathRef": "hp_9",
+                      "lineStart": 131,
+                      "lineEnd": 133
+                    }
+                  ],
+                  "confidence": "strong",
+                  "shouldStore": true
+                }
+              ]
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "windowIndex": 0,
+              "stage": "pass_2_canonicalization",
+              "contractVersion": "v2-canonicalization@pass_2_canonicalization@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 8799
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "windowIndex": 0,
+              "stage": "pass_2_canonicalization",
+              "contractVersion": "v2-canonicalization",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 8413,
+              "action": "capture",
+              "objectCount": 6,
+              "kindCounts": {
+                "fact": 1,
+                "rule": 5
+              },
+              "canonicalClassCounts": {
+                "project": 6
+              },
+              "rawObjects": [
+                {
+                  "canonicalClass": "project",
+                  "kind": "fact",
+                  "payload": {
+                    "subject": "docs/system/memory.md",
+                    "value": "is the durable workspace recall index"
+                  },
+                  "scope": {},
+                  "provenance": [
+                    {
+                      "sourceId": "86b2615a-1880-5c33-be94-7da044142b77",
+                      "headingPath": ["System Memory", "Current rule"],
+                      "headingPathRef": "hp_9",
+                      "lineStart": 123,
+                      "lineEnd": 124
+                    }
+                  ],
+                  "confidence": "strong",
+                  "durability": "durable",
+                  "reviewMode": "auto_accept"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Project content placement",
+                    "recommendedAction": "Place detailed project content in project workspaces, not in docs/system/memory.md."
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "86b2615a-1880-5c33-be94-7da044142b77",
+                      "headingPath": ["System Memory", "Current rule"],
+                      "headingPathRef": "hp_9",
+                      "lineStart": 124,
+                      "lineEnd": 125
+                    }
+                  ],
+                  "confidence": "strong",
+                  "durability": "durable",
+                  "reviewMode": "auto_accept"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Runtime MEMORY.md artifact status",
+                    "recommendedAction": "Keep runtime-facing MEMORY.md as a memory artifact, not a replacement for the durable recall index at docs/system/memory.md."
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "86b2615a-1880-5c33-be94-7da044142b77",
+                      "headingPath": ["System Memory", "Current rule"],
+                      "headingPathRef": "hp_9",
+                      "lineStart": 125,
+                      "lineEnd": 127
+                    }
+                  ],
+                  "confidence": "strong",
+                  "durability": "durable",
+                  "reviewMode": "auto_accept"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Runtime MEMORY.md pointer requirement",
+                    "recommendedAction": "Ensure assembled runtime MEMORY.md includes a high-priority pointer to the DB-backed generated memory projection layer."
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "86b2615a-1880-5c33-be94-7da044142b77",
+                      "headingPath": ["System Memory", "Current rule"],
+                      "headingPathRef": "hp_9",
+                      "lineStart": 127,
+                      "lineEnd": 129
+                    }
+                  ],
+                  "confidence": "strong",
+                  "durability": "durable",
+                  "reviewMode": "auto_accept"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Active/queued project emphasis source",
+                    "recommendedAction": "Set active and queued project emphasis based on docs/system/registries/projects.yaml, not on ad hoc edits here."
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "86b2615a-1880-5c33-be94-7da044142b77",
+                      "headingPath": ["System Memory", "Current rule"],
+                      "headingPathRef": "hp_9",
+                      "lineStart": 129,
+                      "lineEnd": 131
+                    }
+                  ],
+                  "confidence": "strong",
+                  "durability": "durable",
+                  "reviewMode": "auto_accept"
+                },
+                {
+                  "canonicalClass": "project",
+                  "kind": "rule",
+                  "payload": {
+                    "subject": "Daily memory files ingestion importance",
+                    "recommendedAction": "Treat daily memory files as official ingestion inputs and do not treat them as disposable residue."
+                  },
+                  "provenance": [
+                    {
+                      "sourceId": "86b2615a-1880-5c33-be94-7da044142b77",
+                      "headingPath": ["System Memory", "Current rule"],
+                      "headingPathRef": "hp_9",
+                      "lineStart": 131,
+                      "lineEnd": 133
+                    }
+                  ],
+                  "confidence": "strong",
+                  "durability": "durable",
+                  "reviewMode": "auto_accept"
+                }
+              ]
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "collision-adjudication",
+              "windowIndex": -1,
+              "stage": "write_path_collision_adjudication",
+              "contractVersion": "v1-batch@write_path_collision_adjudication@variant-b",
+              "modelId": "openrouter/openai/gpt-5.4-nano",
+              "promptChars": 5209
+            }
+          ],
+          "collisionTraces": [],
+          "collisionGates": [
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "candidateId": "candidate-0",
+              "canonicalClass": "project",
+              "kind": "fact",
+              "rawCandidateCount": 0,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 0,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "candidateId": "candidate-1",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 0,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 0,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "candidateId": "candidate-2",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 1,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 1,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "candidateId": "candidate-3",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 1,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 1,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "candidateId": "candidate-4",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 2,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 2,
+              "disposition": "zero_candidate_skip"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "candidateId": "candidate-5",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "rawCandidateCount": 3,
+              "retainedCandidateCount": 0,
+              "prunedCandidateCount": 3,
+              "disposition": "zero_candidate_skip"
+            }
+          ],
+          "boundedAdjudications": [
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "candidateId": "candidate-0",
+              "canonicalClass": "project",
+              "kind": "fact",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "candidateId": "candidate-1",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "candidateId": "candidate-3",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "candidateId": "candidate-4",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "candidateId": "candidate-5",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 0,
+              "adjudicationBatchAdmitted": false,
+              "finalLocalRouting": "no_candidates"
+            },
+            {
+              "sourcePath": "docs/system/memory.md",
+              "sourceWindowId": "86b2615a-1880-5c33-be94-7da044142b77",
+              "candidateId": "candidate-2",
+              "canonicalClass": "project",
+              "kind": "rule",
+              "candidateSource": "raw_text_fallback",
+              "adjudicationCandidateCount": 1,
+              "adjudicationBatchAdmitted": true,
+              "finalLocalRouting": "local_conflict_hold_ambiguous",
+              "modelOutput": {
+                "candidateId": "candidate-2",
+                "sameCoreMemory": "ambiguous",
+                "matchedCandidateId": "none",
+                "deltaType": "unclear"
+              }
+            }
+          ],
+          "writeDecisions": [
+            {
+              "decision": "write",
+              "decisionCodes": ["write_structural_accept", "collision_distinct"],
+              "memoryObjectId": "f74ed8ea-c92f-5dd2-b6d8-41d5d686211e",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": ["write_structural_accept", "collision_distinct"],
+              "memoryObjectId": "e561ca18-65a6-5588-8599-50899a11a610",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": ["write_structural_accept", "collision_distinct"],
+              "memoryObjectId": "62f3de86-2f14-538f-8d6d-090e509de4b8",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": ["write_structural_accept", "collision_distinct"],
+              "memoryObjectId": "b5e25b2f-69aa-5505-9a11-77bcb1e996c7",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": ["write_structural_accept", "collision_distinct"],
+              "memoryObjectId": "53608fdf-d4b0-5929-abbe-524247732151",
+              "lifecycleState": "active"
+            },
+            {
+              "decision": "write",
+              "decisionCodes": ["collision_conflict_hold"],
+              "memoryObjectId": "0b4f8796-7191-5325-8b02-59ef651cddd3",
+              "lifecycleState": "conflict_hold"
+            }
+          ]
+        }
+      ],
+      "totals": {
+        "windowCount": 1,
+        "candidateCountByType": {
+          "fact": 2,
+          "rule": 10
+        },
+        "canonicalizedCountByKind": {
+          "fact": 1,
+          "rule": 5
+        },
+        "canonicalizedCountByCanonicalClass": {
+          "project": 6
+        },
+        "validationRejectCount": 0,
+        "writeDecisionCounts": {
+          "write": 6
+        },
+        "adjudicationOutcomeCounts": {
+          "no_candidates": 5,
+          "local_conflict_hold_ambiguous": 1
+        },
+        "finalActiveObjectCountByKind": {
+          "fact": 1,
+          "rule": 4
+        }
+      }
+    }
+  ]
+}

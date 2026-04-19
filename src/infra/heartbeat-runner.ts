@@ -686,6 +686,9 @@ After completing all due tasks, reply HEARTBEAT_OK.`;
   }
 
   // Fallback to original behavior
+  if (hasExecCompletion && !params.canRelayToUser && !hasCronEvents) {
+    return { prompt: null, hasExecCompletion: true, hasCronEvents: false };
+  }
   const basePrompt = hasExecCompletion
     ? buildExecEventPrompt({ deliverToUser: params.canRelayToUser })
     : hasCronEvents
@@ -825,14 +828,20 @@ export async function runHeartbeatOnce(opts: {
 
   // If no tasks are due, skip heartbeat entirely
   if (prompt === null) {
+    const suppressingInternalExecCompletion =
+      hasExecCompletion && preflight.shouldInspectPendingEvents && !canRelayToUser;
     // Wake-triggered events should stay queued when the run short-circuits:
     // no reply turn ran, so there is nothing that actually consumed that wake payload.
     const shouldConsumeInspectedEvents =
-      !preflight.isWakeReason && preflight.shouldInspectPendingEvents;
+      preflight.shouldInspectPendingEvents &&
+      (suppressingInternalExecCompletion || !preflight.isWakeReason);
     if (shouldConsumeInspectedEvents && preflight.pendingEventEntries.length > 0) {
       consumeSystemEventEntries(sessionKey, preflight.pendingEventEntries);
     }
-    return { status: "skipped", reason: "no-tasks-due" };
+    return {
+      status: "skipped",
+      reason: suppressingInternalExecCompletion ? "no-user-relay-needed" : "no-tasks-due",
+    };
   }
 
   let runSessionKey = sessionKey;

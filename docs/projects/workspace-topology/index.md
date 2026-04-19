@@ -45,6 +45,7 @@ This project also owns:
 14. [Bootstrap Pre-Render Seeding Plan](/projects/workspace-topology/bootstrap-pre-render-seeding-plan)
 15. [Canonical Path Resolution And Runtime Arbitration](/projects/workspace-topology/specs/canonical-path-resolution-and-runtime-arbitration)
 16. [Runtime Project Surfaces](/projects/workspace-topology/runtime-project-surfaces)
+17. [Daily Note Generation Contract](/projects/workspace-topology/daily-note-generation-contract)
 
 ## Relationship to other projects
 

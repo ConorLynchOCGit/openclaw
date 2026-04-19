@@ -63,6 +63,36 @@ describe("model-memory database resolution", () => {
     expect(resolution.connectionString).toContain("/model_memory_prod");
   });
 
+  it("retargets generic postgres plugin URLs to the dedicated default model-memory database", () => {
+    const resolution = resolveModelMemoryDatabaseResolution({
+      config: createConfig({
+        modelMemoryUrl:
+          "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require",
+      }),
+    });
+
+    expect(resolution.source).toBe("config:plugins.entries.model-memory.config.database.url");
+    expect(resolution.databaseName).toBe("model_memory");
+    expect(resolution.connectionString).toContain("/model_memory");
+    expect(resolution.connectionString).toContain("sslmode=require");
+    expect(resolution.connectionString).toContain("application_name=model-memory");
+  });
+
+  it("lets explicit live database names override a generic postgres connection string", () => {
+    const resolution = resolveModelMemoryDatabaseResolution({
+      env: {
+        MODEL_MEMORY_DATABASE_URL:
+          "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require",
+        MODEL_MEMORY_DATABASE_NAME: "model_memory_live",
+      },
+      config: createConfig({}),
+    });
+
+    expect(resolution.source).toBe("env:MODEL_MEMORY_DATABASE_URL");
+    expect(resolution.databaseName).toBe("model_memory_live");
+    expect(resolution.connectionString).toContain("/model_memory_live");
+  });
+
   it("retargets explicit model-memory URLs by mode so dedicated lanes stay separated", () => {
     const resolution = resolveModelMemoryDatabaseResolution({
       databaseMode: "targeted_trace_scratch_db",

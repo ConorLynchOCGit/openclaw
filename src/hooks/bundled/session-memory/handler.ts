@@ -27,6 +27,65 @@ import { generateSlugViaLLM } from "../../llm-slug-generator.js";
 import { findPreviousSessionFile, getRecentSessionContentWithResetFallback } from "./transcript.js";
 
 const log = createSubsystemLogger("hooks/session-memory");
+const SESSION_ID_LINE_PREFIX = "- **Session ID**: ";
+
+async function readUtf8IfExists(filePath: string): Promise<string | null> {
+  try {
+    return await fs.readFile(filePath, "utf-8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function buildCanonicalDailyMemoryEntry(params: {
+  timeStr: string;
+  displaySessionKey: string;
+  sessionId: string;
+  source: string;
+  sessionContent: string | null;
+  sessionLeafRelativePath: string;
+}): string {
+  const lines = [
+    `## ${params.timeStr} UTC`,
+    "",
+    `- **Session Key**: ${params.displaySessionKey}`,
+    `${SESSION_ID_LINE_PREFIX}${params.sessionId}`,
+    `- **Source**: ${params.source}`,
+    `- **Session Leaf**: ${params.sessionLeafRelativePath}`,
+    "",
+  ];
+  if (params.sessionContent) {
+    lines.push("### Conversation Summary", "", params.sessionContent, "");
+  }
+  return lines.join("\n");
+}
+
+async function appendCanonicalDailyMemory(params: {
+  memoryDir: string;
+  dateStr: string;
+  entry: string;
+  sessionId: string;
+}): Promise<{ relativePath: string; updated: boolean }> {
+  const filename = `${params.dateStr}.md`;
+  const absolutePath = path.join(params.memoryDir, filename);
+  const existing = await readUtf8IfExists(absolutePath);
+  if (existing?.includes(`${SESSION_ID_LINE_PREFIX}${params.sessionId}`)) {
+    return { relativePath: path.join("memory", filename), updated: false };
+  }
+  const nextContent = existing?.trim().length
+    ? `${existing.trimEnd()}\n\n${params.entry.trim()}\n`
+    : `# ${params.dateStr}\n\n${params.entry.trim()}\n`;
+  await writeFileWithinRoot({
+    rootDir: params.memoryDir,
+    relativePath: filename,
+    data: nextContent,
+    encoding: "utf-8",
+  });
+  return { relativePath: path.join("memory", filename), updated: true };
+}
 
 function resolveDisplaySessionKey(params: {
   cfg?: OpenClawConfig;
@@ -205,6 +264,21 @@ const saveSessionToMemory: HookHandler = async (event) => {
       encoding: "utf-8",
     });
     log.debug("Memory file written successfully");
+
+    const canonicalDailyWrite = await appendCanonicalDailyMemory({
+      memoryDir,
+      dateStr,
+      entry: buildCanonicalDailyMemoryEntry({
+        timeStr,
+        displaySessionKey,
+        sessionId,
+        source,
+        sessionContent,
+        sessionLeafRelativePath: path.join("memory", filename),
+      }),
+      sessionId,
+    });
+    log.debug("Canonical daily memory updated", canonicalDailyWrite);
 
     // Log completion (but don't send user-visible confirmation - it's internal housekeeping)
     const relPath = memoryFilePath.replace(os.homedir(), "~");

@@ -212,6 +212,109 @@ describe("listSessionsFromStore search", () => {
     expect(result.sessions.map((session) => session.key)).toEqual(["agent:main:cron:job-1"]);
   });
 
+  test("hides internal codex proof sessions without user-facing metadata", () => {
+    const now = Date.now();
+    const store: Record<string, SessionEntry> = {
+      "agent:main:main": {
+        sessionId: "sess-main",
+        updatedAt: now,
+        displayName: "Main Session",
+      } as SessionEntry,
+      "agent:main:codex-live-progress-generic": {
+        sessionId: "sess-hidden",
+        updatedAt: now - 1000,
+      } as SessionEntry,
+      "agent:main:codex-workbench": {
+        sessionId: "sess-visible",
+        updatedAt: now - 2000,
+        displayName: "codex-workbench",
+      } as SessionEntry,
+    };
+
+    const result = listSessionsFromStore({
+      cfg: baseCfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+    });
+
+    expect(result.sessions.map((session) => session.key)).toEqual([
+      "agent:main:main",
+      "agent:main:codex-workbench",
+    ]);
+  });
+
+  test("honors stored visibility metadata over selector heuristics", () => {
+    const now = Date.now();
+    const store: Record<string, SessionEntry> = {
+      "agent:main:main": {
+        sessionId: "sess-main",
+        updatedAt: now,
+        displayName: "Main Session",
+      } as SessionEntry,
+      "agent:main:proof-visible": {
+        sessionId: "sess-proof-hidden",
+        updatedAt: now - 1000,
+        displayName: "Named Proof Session",
+        visibilityClass: "proof",
+      } as SessionEntry,
+      "agent:main:normal-session": {
+        sessionId: "sess-visible",
+        updatedAt: now - 2000,
+        displayName: "Operator Session",
+        visibilityClass: "operator",
+      } as SessionEntry,
+    };
+
+    const result = listSessionsFromStore({
+      cfg: baseCfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+    });
+
+    expect(result.sessions.map((session) => session.key)).toEqual([
+      "agent:main:main",
+      "agent:main:normal-session",
+    ]);
+  });
+
+  test("hides unnamed internal subagent sessions even when the key is not codex-prefixed", () => {
+    const now = Date.now();
+    const store: Record<string, SessionEntry> = {
+      "agent:main:main": {
+        sessionId: "sess-main",
+        updatedAt: now,
+        displayName: "Main Session",
+      } as SessionEntry,
+      "agent:builder:worker-173": {
+        sessionId: "sess-internal",
+        updatedAt: now - 1000,
+        spawnedBy: "agent:main:main",
+        subagentRole: "leaf",
+      } as SessionEntry,
+      "agent:builder:review-worker": {
+        sessionId: "sess-visible-child",
+        updatedAt: now - 2000,
+        spawnedBy: "agent:main:main",
+        subagentRole: "leaf",
+        displayName: "Review Worker",
+      } as SessionEntry,
+    };
+
+    const result = listSessionsFromStore({
+      cfg: baseCfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+    });
+
+    expect(result.sessions.map((session) => session.key)).toEqual([
+      "agent:main:main",
+      "agent:builder:review-worker",
+    ]);
+  });
+
   test.each([
     {
       name: "does not guess provider for legacy runtime model without modelProvider",

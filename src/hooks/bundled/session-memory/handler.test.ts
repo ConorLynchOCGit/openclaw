@@ -71,7 +71,13 @@ async function runNewWithPreviousSessionEntry(params: {
   action?: "new" | "reset";
   sessionKey?: string;
   workspaceDirOverride?: string;
-}): Promise<{ files: string[]; memoryContent: string }> {
+}): Promise<{
+  files: string[];
+  dailyFile?: string;
+  sessionLeafFile?: string;
+  dailyContent: string;
+  sessionLeafContent: string;
+}> {
   const event = createHookEvent(
     "command",
     params.action ?? "new",
@@ -91,16 +97,27 @@ async function runNewWithPreviousSessionEntry(params: {
 
   const memoryDir = path.join(params.tempDir, "memory");
   const files = await fs.readdir(memoryDir);
-  const memoryContent =
-    files.length > 0 ? await fs.readFile(path.join(memoryDir, files[0]), "utf-8") : "";
-  return { files, memoryContent };
+  const dailyFile = files.find((file) => /^\d{4}-\d{2}-\d{2}\.md$/.test(file));
+  const sessionLeafFile = files.find((file) => /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(file));
+  const dailyContent = dailyFile ? await fs.readFile(path.join(memoryDir, dailyFile), "utf-8") : "";
+  const sessionLeafContent = sessionLeafFile
+    ? await fs.readFile(path.join(memoryDir, sessionLeafFile), "utf-8")
+    : "";
+  return { files, dailyFile, sessionLeafFile, dailyContent, sessionLeafContent };
 }
 
 async function runNewWithPreviousSession(params: {
   sessionContent: string;
   cfg?: (tempDir: string) => OpenClawConfig;
   action?: "new" | "reset";
-}): Promise<{ tempDir: string; files: string[]; memoryContent: string }> {
+}): Promise<{
+  tempDir: string;
+  files: string[];
+  dailyFile?: string;
+  sessionLeafFile?: string;
+  dailyContent: string;
+  sessionLeafContent: string;
+}> {
   const tempDir = await createCaseWorkspace("workspace");
   const sessionsDir = path.join(tempDir, "sessions");
   await fs.mkdir(sessionsDir, { recursive: true });
@@ -117,16 +134,17 @@ async function runNewWithPreviousSession(params: {
       agents: { defaults: { workspace: tempDir } },
     } satisfies OpenClawConfig);
 
-  const { files, memoryContent } = await runNewWithPreviousSessionEntry({
-    tempDir,
-    cfg,
-    action: params.action,
-    previousSessionEntry: {
-      sessionId: "test-123",
-      sessionFile,
-    },
-  });
-  return { tempDir, files, memoryContent };
+  const { files, dailyFile, sessionLeafFile, dailyContent, sessionLeafContent } =
+    await runNewWithPreviousSessionEntry({
+      tempDir,
+      cfg,
+      action: params.action,
+      previousSessionEntry: {
+        sessionId: "test-123",
+        sessionFile,
+      },
+    });
+  return { tempDir, files, dailyFile, sessionLeafFile, dailyContent, sessionLeafContent };
 }
 
 async function createSessionMemoryWorkspace(params?: {
@@ -214,7 +232,7 @@ describe("session-memory hook", () => {
     await expect(fs.access(memoryDir)).rejects.toThrow();
   });
 
-  it("creates memory file with session content on /new command", async () => {
+  it("creates session leaf and canonical daily memory on /new command", async () => {
     // Create a mock session file with user/assistant messages
     const sessionContent = createMockSessionContent([
       { role: "user", content: "Hello there" },
@@ -222,29 +240,38 @@ describe("session-memory hook", () => {
       { role: "user", content: "What is 2+2?" },
       { role: "assistant", content: "2+2 equals 4" },
     ]);
-    const { files, memoryContent } = await runNewWithPreviousSession({ sessionContent });
-    expect(files.length).toBe(1);
+    const { files, dailyContent, sessionLeafContent } = await runNewWithPreviousSession({
+      sessionContent,
+    });
+    expect(files.length).toBe(2);
 
-    // Read the memory file and verify content
-    expect(memoryContent).toContain("user: Hello there");
-    expect(memoryContent).toContain("assistant: Hi! How can I help?");
-    expect(memoryContent).toContain("user: What is 2+2?");
-    expect(memoryContent).toContain("assistant: 2+2 equals 4");
+    expect(sessionLeafContent).toContain("user: Hello there");
+    expect(sessionLeafContent).toContain("assistant: Hi! How can I help?");
+    expect(sessionLeafContent).toContain("user: What is 2+2?");
+    expect(sessionLeafContent).toContain("assistant: 2+2 equals 4");
+
+    expect(dailyContent).toContain("# ");
+    expect(dailyContent).toContain("## ");
+    expect(dailyContent).toContain("- **Session Leaf**: memory/");
+    expect(dailyContent).toContain("user: Hello there");
+    expect(dailyContent).toContain("assistant: 2+2 equals 4");
   });
 
-  it("creates memory file with session content on /reset command", async () => {
+  it("creates canonical daily memory on /reset command", async () => {
     const sessionContent = createMockSessionContent([
       { role: "user", content: "Please reset and keep notes" },
       { role: "assistant", content: "Captured before reset" },
     ]);
-    const { files, memoryContent } = await runNewWithPreviousSession({
+    const { files, dailyContent, sessionLeafContent } = await runNewWithPreviousSession({
       sessionContent,
       action: "reset",
     });
 
-    expect(files.length).toBe(1);
-    expect(memoryContent).toContain("user: Please reset and keep notes");
-    expect(memoryContent).toContain("assistant: Captured before reset");
+    expect(files.length).toBe(2);
+    expect(sessionLeafContent).toContain("user: Please reset and keep notes");
+    expect(sessionLeafContent).toContain("assistant: Captured before reset");
+    expect(dailyContent).toContain("user: Please reset and keep notes");
+    expect(dailyContent).toContain("assistant: Captured before reset");
   });
 
   it("prefers workspaceDir from hook context when sessionKey points at main", async () => {
@@ -262,7 +289,7 @@ describe("session-memory hook", () => {
       ]),
     });
 
-    const { files, memoryContent } = await runNewWithPreviousSessionEntry({
+    const { files, dailyContent, sessionLeafContent } = await runNewWithPreviousSessionEntry({
       tempDir: naviWorkspace,
       cfg: {
         agents: {
@@ -278,11 +305,85 @@ describe("session-memory hook", () => {
       },
     });
 
-    expect(files.length).toBe(1);
-    expect(memoryContent).toContain("user: Remember this under Navi");
-    expect(memoryContent).toContain("assistant: Stored in the bound workspace");
-    expect(memoryContent).toContain("- **Session Key**: agent:navi:main");
+    expect(files.length).toBe(2);
+    expect(sessionLeafContent).toContain("user: Remember this under Navi");
+    expect(sessionLeafContent).toContain("assistant: Stored in the bound workspace");
+    expect(sessionLeafContent).toContain("- **Session Key**: agent:navi:main");
+    expect(dailyContent).toContain("- **Session Key**: agent:navi:main");
     await expect(fs.access(path.join(mainWorkspace, "memory"))).rejects.toThrow();
+  });
+
+  it("appends to an existing canonical daily note without overwriting operator content", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-18T15:30:00Z"));
+    try {
+      const tempDir = await createCaseWorkspace("workspace");
+      const memoryDir = path.join(tempDir, "memory");
+      await fs.mkdir(memoryDir, { recursive: true });
+      await fs.writeFile(path.join(memoryDir, "2026-04-18.md"), "# 2026-04-18\n\nOperator note.\n");
+      const sessionsDir = path.join(tempDir, "sessions");
+      await fs.mkdir(sessionsDir, { recursive: true });
+      const sessionFile = await writeWorkspaceFile({
+        dir: sessionsDir,
+        name: "existing-day.jsonl",
+        content: createMockSessionContent([
+          { role: "user", content: "Capture this into the daily note" },
+          { role: "assistant", content: "Recorded without overwrite" },
+        ]),
+      });
+
+      const { dailyContent } = await runNewWithPreviousSessionEntry({
+        tempDir,
+        previousSessionEntry: {
+          sessionId: "existing-day-session",
+          sessionFile,
+        },
+      });
+
+      expect(dailyContent).toContain("Operator note.");
+      expect(dailyContent).toContain("Capture this into the daily note");
+      expect(dailyContent).toContain("Recorded without overwrite");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("dedupes canonical daily entries by session id", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-18T16:00:00Z"));
+    try {
+      const tempDir = await createCaseWorkspace("workspace");
+      const sessionsDir = path.join(tempDir, "sessions");
+      await fs.mkdir(sessionsDir, { recursive: true });
+      const sessionFile = await writeWorkspaceFile({
+        dir: sessionsDir,
+        name: "dedupe.jsonl",
+        content: createMockSessionContent([
+          { role: "user", content: "Keep only one daily entry" },
+          { role: "assistant", content: "Deduped by session id" },
+        ]),
+      });
+
+      await runNewWithPreviousSessionEntry({
+        tempDir,
+        previousSessionEntry: {
+          sessionId: "dedupe-session",
+          sessionFile,
+        },
+      });
+      const secondRun = await runNewWithPreviousSessionEntry({
+        tempDir,
+        previousSessionEntry: {
+          sessionId: "dedupe-session",
+          sessionFile,
+        },
+      });
+
+      const matches = secondRun.dailyContent.match(/- \*\*Session ID\*\*: dedupe-session/g) ?? [];
+      expect(matches).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("filters out non-message entries (tool calls, system)", async () => {
@@ -530,7 +631,7 @@ describe("session-memory hook", () => {
   it("handles empty session files gracefully", async () => {
     // Should not throw
     const { files } = await runNewWithPreviousSession({ sessionContent: "" });
-    expect(files.length).toBe(1);
+    expect(files.length).toBe(2);
   });
 
   it("uses agent-specific workspace when workspaceDir is provided for non-default agent (gateway path regression)", async () => {
@@ -553,7 +654,7 @@ describe("session-memory hook", () => {
     // gateway path omitted workspaceDir, causing the handler to fall back to
     // the default workspace via resolveAgentWorkspaceDir — which for a
     // default-agent sessionKey would resolve to the shared default workspace.
-    const { files, memoryContent } = await runNewWithPreviousSessionEntry({
+    const { files, dailyContent, sessionLeafContent } = await runNewWithPreviousSessionEntry({
       tempDir: customAgentWorkspace,
       cfg: {
         agents: {
@@ -569,9 +670,11 @@ describe("session-memory hook", () => {
       },
     });
 
-    expect(files.length).toBe(1);
-    expect(memoryContent).toContain("user: Custom agent conversation");
-    expect(memoryContent).toContain("assistant: Stored in agent workspace");
+    expect(files.length).toBe(2);
+    expect(sessionLeafContent).toContain("user: Custom agent conversation");
+    expect(sessionLeafContent).toContain("assistant: Stored in agent workspace");
+    expect(dailyContent).toContain("user: Custom agent conversation");
+    expect(dailyContent).toContain("assistant: Stored in agent workspace");
     // Verify memory did NOT leak to the default workspace
     await expect(fs.access(path.join(defaultWorkspace, "memory"))).rejects.toThrow();
   });

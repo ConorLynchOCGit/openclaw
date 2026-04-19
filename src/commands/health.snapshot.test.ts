@@ -6,7 +6,7 @@ import type { ChannelPlugin } from "../channels/plugins/types.js";
 import type { HealthSummary } from "./health.js";
 
 let testConfig: Record<string, unknown> = {};
-let testStore: Record<string, { updatedAt?: number }> = {};
+let testStore: Record<string, { updatedAt?: number; spawnedBy?: string }> = {};
 
 let setActivePluginRegistry: typeof import("../plugins/runtime.js").setActivePluginRegistry;
 let createChannelTestPluginBase: typeof import("../test-utils/channel-plugins.js").createChannelTestPluginBase;
@@ -320,7 +320,12 @@ describe("getHealthSnapshot", () => {
   });
 
   it("skips telegram probe when not configured", async () => {
-    testConfig = { session: { store: "/tmp/x" } };
+    testConfig = {
+      session: { store: "/tmp/x" },
+      agents: {
+        list: [{ id: "main", default: true }, { id: "builder" }],
+      },
+    };
     testStore = {
       global: { updatedAt: Date.now() },
       unknown: { updatedAt: Date.now() },
@@ -341,6 +346,39 @@ describe("getHealthSnapshot", () => {
     expect(telegram.probe).toBeUndefined();
     expect(snap.sessions.count).toBe(2);
     expect(snap.sessions.recent[0]?.key).toBe("foo");
+  });
+
+  it("hides proof and internal sessions from health recent-session summaries", async () => {
+    testConfig = { session: { store: "/tmp/x" } };
+    testStore = {
+      global: { updatedAt: Date.now() },
+      unknown: { updatedAt: Date.now() },
+      "agent:main:main": { updatedAt: 1000 },
+      "agent:main:codex-live-progress-generic4": { updatedAt: 4000 },
+      "agent:main:codex-call-proof": { updatedAt: 3000 },
+      "agent:builder:subagent:leaf-one": {
+        updatedAt: 2000,
+        spawnedBy: "agent:builder:main",
+      },
+      "agent:builder:main": { updatedAt: 5000 },
+    };
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
+    vi.stubEnv("DISCORD_BOT_TOKEN", "");
+
+    const snap = await getHealthSnapshot({ timeoutMs: 10 });
+
+    expect(snap.sessions.count).toBe(2);
+    expect(snap.sessions.recent.map((entry) => entry.key)).toEqual([
+      "agent:builder:main",
+      "agent:main:main",
+    ]);
+
+    const builder = snap.agents.find((agent) => agent.agentId === "builder");
+    expect(builder?.sessions.count).toBe(2);
+    expect(builder?.sessions.recent.map((entry) => entry.key)).toEqual([
+      "agent:builder:main",
+      "agent:main:main",
+    ]);
   });
 
   it("probes telegram getMe + webhook info when configured", async () => {

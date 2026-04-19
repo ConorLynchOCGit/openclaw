@@ -710,6 +710,7 @@ export function handleToolExecutionUpdate(
   const toolCallId = evt.toolCallId;
   const partial = evt.partialResult;
   const sanitized = sanitizeToolResult(partial);
+  const progressText = extractToolResultText(sanitized);
   emitAgentEvent({
     runId: ctx.params.runId,
     stream: "tool",
@@ -729,6 +730,7 @@ export function handleToolExecutionUpdate(
     name: toolName,
     meta: ctx.state.toolMetaById.get(toolCallId)?.meta,
     toolCallId,
+    ...(progressText ? { progressText } : {}),
   };
   emitTrackedItemEvent(ctx, itemData);
   void ctx.params.onAgentEvent?.({
@@ -740,7 +742,7 @@ export function handleToolExecutionUpdate(
     },
   });
   if (isExecToolName(toolName)) {
-    const output = extractToolResultText(sanitized);
+    const output = progressText;
     const commandData: AgentItemEventData = {
       itemId: buildCommandItemId(toolCallId),
       phase: "update",

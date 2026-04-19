@@ -90,6 +90,10 @@ describe("real-semantic-interpreter", () => {
     expect(requests[0]?.systemPrompt).toContain(
       "Emit user/preference only when the source window explicitly states a durable user-owned standing preference or standing instruction.",
     );
+    expect(requests[0]?.systemPrompt).toContain("Classify by kind first, not by canonicalClass");
+    expect(requests[0]?.systemPrompt).toContain(
+      "If text is normative and durable, prefer rule over fact.",
+    );
     const promptPayload = JSON.parse(requests[0]?.userPrompt ?? "{}") as {
       sourceWindow?: {
         availableHeadingPaths?: string[][];
@@ -177,6 +181,12 @@ describe("real-semantic-interpreter", () => {
     );
     expect(requests[0]?.systemPrompt).toContain(
       "Final kind must match the candidateType for the candidate being canonicalized.",
+    );
+    expect(requests[0]?.systemPrompt).toContain(
+      "Choose kind first and treat canonicalClass as secondary bookkeeping.",
+    );
+    expect(requests[0]?.systemPrompt).toContain(
+      "If candidateType=rule and the cited evidence is normative, imperative, prohibitive, default-setting, or gate-setting, keep kind=rule.",
     );
     expect(requests[0]?.systemPrompt).toContain(
       "Do not emit keys such as optional scope or optional companionResources.",

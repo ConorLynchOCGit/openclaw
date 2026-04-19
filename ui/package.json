@@ -4,11 +4,10 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "check": "node --import tsx ../scripts/control-ui-i18n.ts check && node ../scripts/check-no-raw-window-open.mjs",
     "dev": "vite",
     "preview": "vite preview",
-    "test": "vitest run --config vitest.config.ts",
-    "turbo:build": "pnpm --filter openclaw-control-ui exec vite build",
-    "turbo:test": "pnpm --filter openclaw-control-ui exec vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "@create-markdown/preview": "^2.0.3",

@@ -94,10 +94,15 @@ memory priority before broader Phase 2 implementation.
 - the first execution cuts in that retirement tranche are now complete:
   - bundled `session-memory` hook restored and retained as continuity
     production
+  - canonical daily-note generation repaired so the hook now writes
+    `memory/YYYY-MM-DD.md` again
   - direct hook docs/tests restored and authority wording corrected
   - gateway startup no longer arms legacy QMD/plugin memory
   - top-level memory concept and CLI docs now point at model-memory as the live
     authority
+  - exact repair record:
+    - [Daily Memory Grounding Repair](/projects/model-memory/daily-memory-grounding-repair)
+    - [Daily Continuity Health](/projects/model-memory/daily-continuity-health)
 - the original Main-run deep ingest interruption is now recorded in:
   - [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
 - the current ingest hardening posture is:
@@ -105,6 +110,21 @@ memory priority before broader Phase 2 implementation.
     batch ingest
   - interrupted ingest runs must persist truthful checkpoint state and run-level
     error metadata
+- the current rule-vs-fact benchmark tranche is now recorded in:
+  - [Document Ingest Pipeline Walkthrough](/projects/model-memory/document-ingest-pipeline-walkthrough)
+  - [Representative Corpus Rule Vs Fact Benchmark](/projects/model-memory/representative-corpus-rule-vs-fact-benchmark)
+  - [Rule Vs Fact Benchmark Scorecard](/projects/model-memory/rule-vs-fact-benchmark-scorecard)
+  - [Rule Vs Fact Variant Design](/projects/model-memory/rule-vs-fact-variant-design)
+  - [Rule Vs Fact Benchmark Findings](/projects/model-memory/rule-vs-fact-benchmark-findings)
+  - [Rule Vs Fact Next Change Recommendation](/projects/model-memory/rule-vs-fact-next-change-recommendation)
+- current benchmark judgment:
+  - pass-1 candidate extraction was the first production seam to change
+  - the prompt-first production change is now shipped
+  - prompt-only simplification beat the schema-plus-prompt experimental variant
+  - collision/write simplification is not the first move on this corpus
+  - the next narrow seam is pass-2 canonicalization review
+  - current re-entry handoff lives in:
+    - [Memory Build Status And Next Steps](/projects/model-memory/memory-build-status-and-next-steps)
 
 ## Current judgment
 
@@ -119,3 +139,5 @@ memory priority before broader Phase 2 implementation.
   - improve packet quality at build time rather than trimming late
   - migrate toward `kind` primary
   - repair kind balance so packets do not reflect a distorted corpus
+  - begin with prompt-contract simplification before schema surgery
+  - review pass-2 canonicalization before any broader schema rewrite

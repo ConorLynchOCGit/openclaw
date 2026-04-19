@@ -132,6 +132,10 @@ export function resolveModelMemoryDatabaseResolution(
   const env = input.env ?? process.env;
   const config = input.config ?? loadConfig();
   const modelMemoryConfig = readPluginDatabaseConfig(config, "model-memory");
+  const explicitLiveDatabaseName =
+    readTrimmedString(env.MODEL_MEMORY_DATABASE_NAME) ??
+    modelMemoryConfig.databaseName ??
+    input.defaultDatabaseName;
   const modeDatabaseName = input.databaseMode
     ? resolveModelMemoryDatabaseNameForMode({
         databaseMode: input.databaseMode,
@@ -146,12 +150,16 @@ export function resolveModelMemoryDatabaseResolution(
   const explicitConnectionString =
     readTrimmedString(env.MODEL_MEMORY_DATABASE_URL) ?? modelMemoryConfig.url;
   if (explicitConnectionString) {
+    const pathDatabaseName = readDatabaseNameFromConnectionString(explicitConnectionString);
+    const implicitDefaultDatabaseName =
+      pathDatabaseName === "postgres" ? DEFAULT_MODEL_MEMORY_DATABASE_NAME : pathDatabaseName;
     const databaseName =
-      modeDatabaseName ?? readDatabaseNameFromConnectionString(explicitConnectionString);
+      modeDatabaseName ?? explicitLiveDatabaseName ?? implicitDefaultDatabaseName;
     return {
-      connectionString: modeDatabaseName
-        ? retargetDatabase(explicitConnectionString, databaseName)
-        : withApplicationName(explicitConnectionString),
+      connectionString:
+        modeDatabaseName || databaseName !== pathDatabaseName
+          ? retargetDatabase(explicitConnectionString, databaseName)
+          : withApplicationName(explicitConnectionString),
       databaseName,
       databaseMode: input.databaseMode,
       source: readTrimmedString(env.MODEL_MEMORY_DATABASE_URL)

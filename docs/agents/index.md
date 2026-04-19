@@ -10,20 +10,18 @@ source material.
 
 Current tranche status:
 
-- `main` now has a canonical shared runtime-source pack for the live shared
-  workspace
-- `builder`, `researcher`, and `writer` now also have canonical runtime-source
-  footholds that match the current live runtime packs
-- `web-researcher` and `x-manager` now have canonical runtime-source footholds
-- their runtime-facing compatibility files are materialized from
-  `docs/agents/<agent-id>/runtime/**`
-- the later broader agent slice still owns richer pack population beyond these
-  canonized runtime-source seeds
+- the live runtime agent set is now mirrored here explicitly
+- each live agent now has a durable base pack
+- runtime compatibility files still live under `docs/agents/<agent-id>/runtime/**`
+  where applicable while the bootstrap layer still consumes those names
+- `docs/agents/registry.yaml` is the durable machine-checkable map for the
+  live agent set
 
-## Current agents with canonical runtime sources
+## Current agents
 
-- [Builder](/agents/builder)
 - [Main](/agents/main)
+- [Chief](/agents/chief)
+- [Builder](/agents/builder)
 - [Researcher](/agents/researcher)
 - [Web Researcher](/agents/web-researcher)
 - [Writer](/agents/writer)

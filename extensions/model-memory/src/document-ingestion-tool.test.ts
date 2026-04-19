@@ -199,6 +199,218 @@ describe("model-memory document ingestion tool", () => {
     );
   });
 
+  it("resolves repo-canonical source paths through the product_live import", async () => {
+    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "model-memory-tool-import-"));
+    tempDirs.push(workspaceDir);
+    const importDoc = path.join(
+      workspaceDir,
+      "imports",
+      "product_live",
+      "content",
+      "docs",
+      "projects",
+      "model-memory",
+      "roadmap.md",
+    );
+    await import("node:fs/promises").then(({ mkdir }) =>
+      mkdir(path.dirname(importDoc), { recursive: true }),
+    );
+    await writeFile(importDoc, "# Imported roadmap\n", "utf8");
+
+    const executeRun = vi.fn(async (input: Record<string, unknown>) => ({
+      runId: input.runId,
+      status: "completed",
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:01.000Z",
+      modelId: "openrouter/openai/gpt-5.4-nano",
+      candidateModelId: "openrouter/openai/gpt-5.4-nano",
+      chunkSize: 10,
+      maxConcurrency: 1,
+      maxWordsPerWindow: 1500,
+      sources: [],
+      chunks: [],
+      totals: {
+        docsAttempted: 1,
+        docsCompleted: 1,
+        docsFailed: 0,
+        capturedClaimCount: 2,
+        ignoredWindowCount: 0,
+        rejectedWindowCount: 0,
+        writeDecisionCounts: { write: 2 },
+        rejectReasons: [],
+      },
+    }));
+
+    const tool = createModelMemoryDocumentIngestionTool(fakeApi(), fakeCtx(workspaceDir), {
+      loadInternalRuntimeDeps: async () => ({
+        createDatabaseRuntime: vi.fn(async () => ({
+          canonicalRepository: {},
+          runtimeRepository: {},
+          pool: { end: vi.fn(async () => undefined) },
+        })) as never,
+        createLiveJsonExecutor: vi.fn(
+          async () =>
+            ({
+              execute: vi.fn(),
+              getRequestTimeoutMs: () => 180_000,
+              getRequestSeed: () => 7,
+            }) as never,
+        ),
+      }),
+      createRunnerService: () =>
+        ({
+          executeRun,
+        }) as never,
+    });
+
+    await tool.execute("tool-call-import", {
+      source: "docs/projects/model-memory/roadmap.md",
+      runId: "repo-import-run",
+    });
+
+    expect(executeRun).toHaveBeenCalledOnce();
+    const firstCall = executeRun.mock.calls[0]?.[0] as {
+      sources?: Array<Record<string, unknown>>;
+    };
+    expect(firstCall.sources?.[0]).toMatchObject({
+      displayPath: "docs/projects/model-memory/roadmap.md",
+      document: {
+        externalSourceId: "docs/projects/model-memory/roadmap.md",
+        sourceMetadata: {
+          relativePath: "docs/projects/model-memory/roadmap.md",
+        },
+      },
+    });
+  });
+
+  it("emits bounded tool updates for ingest progress", async () => {
+    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "model-memory-tool-progress-"));
+    tempDirs.push(workspaceDir);
+    await writeFile(path.join(workspaceDir, "roadmap.md"), "# Roadmap\n", "utf8");
+
+    const tool = createModelMemoryDocumentIngestionTool(fakeApi(), fakeCtx(workspaceDir), {
+      loadInternalRuntimeDeps: async () => ({
+        createDatabaseRuntime: vi.fn(async () => ({
+          canonicalRepository: {},
+          runtimeRepository: {},
+          pool: { end: vi.fn(async () => undefined) },
+        })) as never,
+        createLiveJsonExecutor: vi.fn(
+          async (_options: unknown) =>
+            ({
+              execute: vi.fn(),
+              getRequestTimeoutMs: () => 180_000,
+              getRequestSeed: () => 7,
+            }) as never,
+        ),
+      }),
+      createRunnerService: () =>
+        ({
+          executeRun: async (input: {
+            onProgress?: (event: {
+              type: string;
+              phase?: string;
+              index?: number;
+              total?: number;
+              source?: { displayPath: string };
+              message: string;
+            }) => Promise<void> | void;
+            runId: string;
+          }) => {
+            await input.onProgress?.({
+              type: "phase",
+              phase: "start",
+              message: "starting run",
+            });
+            await input.onProgress?.({
+              type: "source_start",
+              index: 1,
+              total: 1,
+              source: { displayPath: "roadmap.md" },
+              message: "ingesting source",
+            });
+            await input.onProgress?.({
+              type: "source_complete",
+              index: 1,
+              total: 1,
+              source: { displayPath: "roadmap.md" },
+              message: "completed source",
+            });
+            await input.onProgress?.({
+              type: "phase",
+              phase: "complete",
+              message: "complete",
+            });
+            return {
+              runId: input.runId,
+              status: "completed",
+              createdAt: "2026-04-15T00:00:00.000Z",
+              updatedAt: "2026-04-15T00:00:01.000Z",
+              modelId: "openrouter/openai/gpt-5.4-nano",
+              candidateModelId: "openrouter/openai/gpt-5.4-nano",
+              chunkSize: 10,
+              maxConcurrency: 1,
+              maxWordsPerWindow: 1500,
+              sources: [],
+              chunks: [],
+              totals: {
+                docsAttempted: 1,
+                docsCompleted: 1,
+                docsFailed: 0,
+                capturedClaimCount: 2,
+                ignoredWindowCount: 0,
+                rejectedWindowCount: 0,
+                writeDecisionCounts: { write: 2 },
+                rejectReasons: [],
+              },
+            };
+          },
+        }) as never,
+    });
+
+    const onUpdate = vi.fn();
+    await tool.execute(
+      "tool-call-progress",
+      {
+        source: "roadmap.md",
+        runId: "progress-run",
+      },
+      undefined,
+      onUpdate,
+    );
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: [
+          {
+            type: "text",
+            text: "Document ingest started: 1 sources",
+          },
+        ],
+      }),
+    );
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: [
+          {
+            type: "text",
+            text: "Document ingest 1/1: roadmap.md",
+          },
+        ],
+      }),
+    );
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: [
+          {
+            type: "text",
+            text: "Document ingest completed: checkpoints/model-memory/progress-run.json",
+          },
+        ],
+      }),
+    );
+  });
+
   it("rejects absolute or escaping paths", async () => {
     const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "model-memory-tool-"));
     tempDirs.push(workspaceDir);
