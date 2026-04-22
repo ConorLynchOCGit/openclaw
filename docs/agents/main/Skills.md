@@ -8,6 +8,8 @@
   - use before trusting or installing external skills
 - `node-connect`
   - use first for pairing, route, or mobile/node connectivity diagnosis
+- `openclaw-host-operator`
+  - use for canonical live repo or operator workspace document access through scoped host-operator tools
 
 ## Optional Skills
 

@@ -41,6 +41,25 @@ describe("workspace topology resolver", () => {
     expect(result.allowedEditSurface).toBe("direct");
   });
 
+  it("resolves explicit operator workspace project surfaces", () => {
+    const docsResult = resolveOpenClawPath("operator_workspace docs/projects", {
+      liveRepoRoot,
+      workspaceRoot,
+      actorProfile: "host-operator",
+    });
+    const legacyProjectsResult = resolveOpenClawPath("projects", {
+      liveRepoRoot,
+      workspaceRoot,
+      ownerHint: "operator_workspace",
+    });
+
+    expect(docsResult.canonicalOwner).toBe("operator_workspace");
+    expect(docsResult.canonicalPath).toBe("/root/.openclaw/workspace/docs/projects");
+    expect(docsResult.allowedEditSurface).toBe("direct");
+    expect(legacyProjectsResult.canonicalOwner).toBe("operator_workspace");
+    expect(legacyProjectsResult.canonicalPath).toBe("/root/.openclaw/workspace/projects");
+  });
+
   it("identifies generated projection paths as generated non-truth artifacts", () => {
     const result = resolveOpenClawPath(
       "/root/.openclaw/workspace/.openclaw/model-memory/projections/memory-md-a.json",

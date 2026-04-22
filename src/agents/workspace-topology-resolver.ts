@@ -1,6 +1,7 @@
 import path from "node:path";
 
 export type OpenClawPathActorProfile = "ordinary-main" | "host-operator" | "repo-executor";
+export type OpenClawPathOwnerHint = "product_repo" | "operator_workspace";
 
 export type OpenClawPathResolution = {
   requested: string;
@@ -42,6 +43,7 @@ export type OpenClawPathResolverOptions = {
   liveRepoRoot?: string;
   workspaceRoot?: string;
   actorProfile?: OpenClawPathActorProfile;
+  ownerHint?: OpenClawPathOwnerHint;
 };
 
 const DEFAULT_LIVE_REPO_ROOT = "/root/services/openclaw-roles/live";
@@ -91,6 +93,44 @@ function resolveProductRepoPathFromQuery(query: string, liveRepoRoot: string): s
   return null;
 }
 
+function resolveWorkspacePathFromQuery(query: string, workspaceRoot: string): string | null {
+  const normalized = normalizePath(query);
+  if (pathWithin(normalized, workspaceRoot)) {
+    return normalized;
+  }
+  if (
+    normalized === "core" ||
+    normalized === "docs" ||
+    normalized === "projects" ||
+    normalized === "runbooks" ||
+    normalized === "memory" ||
+    normalized.startsWith("core/") ||
+    normalized.startsWith("docs/") ||
+    normalized.startsWith("projects/") ||
+    normalized.startsWith("runbooks/") ||
+    normalized.startsWith("memory/")
+  ) {
+    return normalizePath(path.posix.join(workspaceRoot, normalized));
+  }
+  return null;
+}
+
+function parseOwnerHintFromRequest(requested: string): {
+  ownerHint: OpenClawPathOwnerHint | null;
+  requested: string;
+} {
+  const trimmed = requested.trim();
+  const workspaceMatch = trimmed.match(/^(?:operator_workspace|workspace)\s*[: ]\s*(?<path>.+)$/iu);
+  if (workspaceMatch?.groups?.path) {
+    return { ownerHint: "operator_workspace", requested: workspaceMatch.groups.path };
+  }
+  const repoMatch = trimmed.match(/^(?:live_repo|product_repo|repo)\s*[: ]\s*(?<path>.+)$/iu);
+  if (repoMatch?.groups?.path) {
+    return { ownerHint: "product_repo", requested: repoMatch.groups.path };
+  }
+  return { ownerHint: null, requested };
+}
+
 export function resolveOpenClawPath(
   requested: string,
   options: OpenClawPathResolverOptions = {},
@@ -98,7 +138,10 @@ export function resolveOpenClawPath(
   const liveRepoRoot = normalizePath(options.liveRepoRoot ?? DEFAULT_LIVE_REPO_ROOT);
   const workspaceRoot = normalizePath(options.workspaceRoot ?? DEFAULT_WORKSPACE_ROOT);
   const actorProfile = options.actorProfile ?? "ordinary-main";
-  const normalized = normalizePath(requested);
+  const parsedRequest = parseOwnerHintFromRequest(requested);
+  const ownerHint = options.ownerHint ?? parsedRequest.ownerHint;
+  const effectiveRequested = parsedRequest.requested;
+  const normalized = normalizePath(effectiveRequested);
   const productImportRoot = normalizePath(
     path.posix.join(workspaceRoot, "imports/product_live/content"),
   );
@@ -237,7 +280,31 @@ export function resolveOpenClawPath(
     };
   }
 
-  const productPath = resolveProductRepoPathFromQuery(requested, liveRepoRoot);
+  if (ownerHint === "operator_workspace") {
+    const workspacePath = resolveWorkspacePathFromQuery(effectiveRequested, workspaceRoot);
+    if (workspacePath) {
+      return {
+        requested,
+        canonicalOwner: "operator_workspace",
+        canonicalPath: workspacePath,
+        writablePath: workspacePath,
+        readOnlyMirrorPaths: [],
+        classification: {
+          repoVsWorkspace: "workspace",
+          generated: false,
+          humanOwned: true,
+        },
+        allowedEditSurface: "direct",
+        requiredEscalation: null,
+        reason: "Path is inside the canonical operator workspace.",
+      };
+    }
+  }
+
+  const productPath =
+    ownerHint === "operator_workspace"
+      ? null
+      : resolveProductRepoPathFromQuery(effectiveRequested, liveRepoRoot);
   if (productPath) {
     const mirror = normalizePath(
       path.posix.join(productImportRoot, relativeTo(liveRepoRoot, productPath)),

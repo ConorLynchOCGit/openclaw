@@ -25,6 +25,7 @@ agents:
       - model-memory-deep-ingest
       - skill-vetting
       - node-connect
+      - openclaw-host-operator
     basePackComplete: true
   - id: chief
     displayName: OpenClaw

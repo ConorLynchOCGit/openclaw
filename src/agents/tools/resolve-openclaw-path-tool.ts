@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import {
   buildSafeWorkspaceSearchCommand,
   resolveOpenClawPath,
+  type OpenClawPathOwnerHint,
   type OpenClawPathActorProfile,
 } from "../workspace-topology-resolver.js";
 import type { AnyAgentTool } from "./common.js";
@@ -19,11 +20,22 @@ const ResolveOpenClawPathToolSchema = Type.Object({
       Type.Literal("repo-executor"),
     ]),
   ),
+  scope: Type.Optional(Type.Union([Type.Literal("live_repo"), Type.Literal("operator_workspace")])),
 });
 
 function readActorProfile(value: string | undefined): OpenClawPathActorProfile | undefined {
   if (value === "ordinary-main" || value === "host-operator" || value === "repo-executor") {
     return value;
+  }
+  return undefined;
+}
+
+function readOwnerHint(value: string | undefined): OpenClawPathOwnerHint | undefined {
+  if (value === "operator_workspace") {
+    return value;
+  }
+  if (value === "live_repo") {
+    return "product_repo";
   }
   return undefined;
 }
@@ -50,10 +62,16 @@ export function createResolveOpenClawPathTool(opts?: {
           required: false,
         }),
       );
+      const ownerHint = readOwnerHint(
+        readStringParam(params as Record<string, unknown>, "scope", {
+          required: false,
+        }),
+      );
       const resolution = resolveOpenClawPath(requested, {
         workspaceRoot: opts?.workspaceDir,
         liveRepoRoot: opts?.liveRepoRoot,
         actorProfile,
+        ownerHint,
       });
       return jsonResult({
         ...resolution,

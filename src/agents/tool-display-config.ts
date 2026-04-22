@@ -464,7 +464,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
     resolve_openclaw_path: {
       emoji: "🧭",
       title: "Resolve Path",
-      detailKeys: ["path", "actorProfile"],
+      detailKeys: ["path", "scope", "actorProfile"],
     },
     host_operator_repo: {
       emoji: "🔐",

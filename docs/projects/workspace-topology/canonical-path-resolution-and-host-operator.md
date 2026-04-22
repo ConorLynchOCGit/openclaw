@@ -24,10 +24,20 @@ The `resolve_openclaw_path` tool resolves a requested path or topic into:
 
 Before creating docs or editing implementation-owned files, Main should call the resolver. If the resolver returns `needs repo executor / host write bridge`, Main must stop or switch to an approved executor profile. It must not create a parallel workspace tree.
 
+The resolver accepts explicit workspace scoping for ambiguous document paths:
+
+- `scope: "live_repo"` means `docs/...` resolves under `/root/services/openclaw-roles/live`.
+- `scope: "operator_workspace"` means `docs/...`, `projects/...`, and bare `projects` resolve under `/root/.openclaw/workspace`.
+- Prefix forms such as `operator_workspace docs/projects` and `live_repo docs/agents/web-researcher` are accepted for agents that cannot pass structured scope arguments.
+
 ## Canonical examples
 
 - `/root/services/openclaw-roles/live`: live product repo; writable only in repo-executor or host-operator mode.
 - `/root/.openclaw/workspace`: canonical operator workspace; writable for human-owned workspace docs.
+- `/root/services/openclaw-roles/live/docs/projects`: implementation-owned project docs in the product repo.
+- `/root/services/openclaw-roles/live/docs/agents`: implementation-owned agent-pack docs, including Web Researcher.
+- `/root/.openclaw/workspace/docs/projects`: operator workspace continuity/project docs.
+- `/root/.openclaw/workspace/projects`: legacy/live operator workspace project docs still approved for scoped edits.
 - `/root/.openclaw/workspace/imports/product_live/content`: read-only mirror of the live product repo; never an edit target.
 - `/root/.openclaw/workspace/system/hostfs`: broad host visibility mirror; read-only and pruned by default.
 - `.artifacts`: proof/output surface, not durable memory or canonical docs.
@@ -104,8 +114,8 @@ Allowed tool actions:
 Workspace write access is intentionally narrower than workspace read access. The host-operator tool may edit:
 
 - `core/**`
-- `docs/**`
-- `projects/**`
+- `docs/**`, including `docs/projects/**`
+- `projects/**`, including legacy/live project workspaces
 - `runbooks/**`
 - `memory/**`
 - `AGENTS.md`
@@ -131,6 +141,11 @@ The workspace scope blocks noisy or sensitive roots by default:
 - `audits/**`
 
 This gives Main direct canonical document access for operator/project work without granting broad host filesystem access or turning memory compatibility files into generic write targets.
+
+Main should use:
+
+- `live_repo` for implementation-owned docs, source, tests, scripts, `.agents/skills/**`, and product agent packs.
+- `operator_workspace` for continuity docs, workspace project planning, roadmap/status/current-slice docs, daily notes, and workspace runbooks.
 
 The current allowlist is intentionally narrow: `git status/diff/log/remote/show`,
 `rg`, `pwd`, `ls`, `pnpm tsgo`, `pnpm build`, and `pnpm vitest run ...`.

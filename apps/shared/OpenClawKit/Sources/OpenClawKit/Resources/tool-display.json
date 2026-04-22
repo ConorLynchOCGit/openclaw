@@ -700,6 +700,7 @@
       "title": "Resolve Path",
       "detailKeys": [
         "path",
+        "scope",
         "actorProfile"
       ]
     },

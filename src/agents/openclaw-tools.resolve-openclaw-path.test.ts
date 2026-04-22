@@ -17,4 +17,21 @@ describe("resolve_openclaw_path tool", () => {
     expect(parsed.allowedEditSurface).toBe("repo_executor_required");
     expect(parsed.requiredEscalation).toBe("needs repo executor / host write bridge");
   });
+
+  it("uses explicit operator workspace scope for project documents", async () => {
+    const tool = createResolveOpenClawPathTool({
+      workspaceDir: "/root/.openclaw/workspace",
+    });
+
+    const result = await tool.execute("resolve-path", {
+      path: "docs/projects",
+      scope: "operator_workspace",
+    });
+
+    const text = result?.content?.find((entry) => entry.type === "text")?.text ?? "";
+    const parsed = JSON.parse(text);
+    expect(parsed.canonicalOwner).toBe("operator_workspace");
+    expect(parsed.canonicalPath).toBe("/root/.openclaw/workspace/docs/projects");
+    expect(parsed.allowedEditSurface).toBe("direct");
+  });
 });

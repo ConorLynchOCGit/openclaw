@@ -193,6 +193,8 @@ export function findTranscriptTerminalEvidenceFromEvents(events, params = {}) {
       timestampMs: readEventTimestampMs(event),
       role: typeof event?.message?.role === "string" ? event.message.role : "",
       text: readMessageText(event?.message),
+      openclawKind:
+        typeof event?.message?.__openclaw?.kind === "string" ? event.message.__openclaw.kind : "",
     }))
     .filter((entry) => entry.role && entry.text);
 
@@ -216,7 +218,12 @@ export function findTranscriptTerminalEvidenceFromEvents(events, params = {}) {
   }
   const assistant = messages
     .slice(userIndex + 1)
-    .find((entry) => entry.role === "assistant" && entry.text.trim().length > 0);
+    .find(
+      (entry) =>
+        entry.role === "assistant" &&
+        entry.openclawKind !== "model_memory_activity" &&
+        entry.text.trim().length > 0,
+    );
   if (!assistant) {
     return null;
   }
