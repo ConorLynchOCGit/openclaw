@@ -178,6 +178,43 @@ Memory Retrieval Runtime artifacts additionally must record:
 - exclusion reasons
 - injection target
 - source authority level
+
+## Rich projection catalog pages
+
+The 2026-04-22 partial-corpus architecture pass adds rich materialized
+projection pages for the full v1 projection catalog:
+
+- `user_profile_page`
+- `project_page`
+- `procedure_page`
+- `source_page`
+- `decision_log`
+- `timeline_page`
+- `entity_page`
+- `dashboard`
+- `agent_digest`
+- `projection_digest`
+
+Each materialized page is a compiled view, not truth. It must include:
+
+- projection id
+- projection type
+- scope
+- source memory ids
+- source event ids
+- source edge ids where applicable
+- content hash
+- compiled timestamp
+- freshness state and reason
+- stale markers
+- conflict markers
+- artifact path
+- retrieval digest metadata
+
+Generated projection pages materialize only under the projection artifact root,
+currently `/root/.openclaw/workspace/.openclaw/model-memory/projections/`.
+They must never be written back into root `USER.md` or `MEMORY.md`.
+
 - whether the artifact can satisfy MMV2 recall proof
 
 Workspace-file-only artifacts cannot satisfy MMV2 recall proof.

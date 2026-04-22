@@ -1,3 +1,4 @@
+import { summarizeModelMemoryPayload } from "./payload-summary.ts";
 import type {
   ActiveMemorySetRecord,
   ActiveMemorySlotRecord,
@@ -42,6 +43,14 @@ export type ProjectionCompileResult = {
   target: WorkspaceProjectionTargetRecord;
   renderedText: string;
   outputFileContent: string;
+  version: WorkspaceProjectionVersionRecord;
+  digest: ProjectionDigestArtifact;
+};
+
+export type ProjectionCatalogCompileResult = {
+  targetId: string;
+  registryEntry: ProjectionRegistryEntry;
+  renderedText: string;
   version: WorkspaceProjectionVersionRecord;
   digest: ProjectionDigestArtifact;
 };
@@ -218,6 +227,36 @@ function summarizeProjectionSources(
   return `${projectionType} compiled from ${memoryObjects.length} active MMV2 source memories${kinds.length ? ` (${kinds.join(", ")})` : ""}.`;
 }
 
+function renderList(values: string[]): string {
+  if (values.length === 0) {
+    return "- none";
+  }
+  return values.map((value) => `- ${value}`).join("\n");
+}
+
+function renderSourceMemorySummary(memoryObjects: RuntimeMemoryRecord[]): string {
+  if (memoryObjects.length === 0) {
+    return "- none";
+  }
+  return memoryObjects
+    .toSorted((left, right) => left.id.localeCompare(right.id))
+    .slice(0, 25)
+    .map((object) => {
+      const summary = summarizeModelMemoryPayload({
+        kind: object.kind,
+        payload: object.payload,
+      });
+      return [
+        `- ${object.id}`,
+        `  class: ${object.canonicalClass}`,
+        `  kind: ${object.kind}`,
+        `  subject: ${object.normalizedSubject || object.normalizedTitle || "unspecified"}`,
+        `  summary: ${summary}`,
+      ].join("\n");
+    })
+    .join("\n");
+}
+
 function buildProjectionDigestArtifact(input: {
   projectionType: MemoryProjectionType;
   title: string;
@@ -356,6 +395,61 @@ export function compileProjection(input: ProjectionCompilerInput): ProjectionCom
   };
 }
 
+function renderProjectionCatalogPage(input: {
+  registryEntry: ProjectionRegistryEntry;
+  digest: ProjectionDigestArtifact;
+  activeSourceObjects: RuntimeMemoryRecord[];
+}): string {
+  const { registryEntry, digest } = input;
+  return [
+    `# ${digest.title}`,
+    "",
+    "This projection is a compiled MMV2 view. It is not canonical truth.",
+    "",
+    "## Metadata",
+    "",
+    `- projection_id: ${digest.projectionId}`,
+    `- projection_type: ${digest.projectionType}`,
+    `- schema_version: ${digest.schemaVersion}`,
+    `- retrieval_role: ${registryEntry.retrievalRole}`,
+    `- content_hash: ${digest.contentHash}`,
+    `- compiled_at: ${digest.compiledAt}`,
+    `- freshness: ${digest.freshness.status}`,
+    `- freshness_reason: ${digest.freshness.reason ?? "none"}`,
+    `- artifact_path: ${digest.artifactPaths.markdownPath ?? "pending"}`,
+    "",
+    "## Source Memory IDs",
+    "",
+    renderList(digest.sourceMemoryIds),
+    "",
+    "## Source Event IDs",
+    "",
+    renderList(digest.sourceEventIds),
+    "",
+    "## Source Edge IDs",
+    "",
+    renderList(digest.sourceEdgeIds),
+    "",
+    "## Stale Markers",
+    "",
+    renderList(digest.staleMarkers),
+    "",
+    "## Conflict Markers",
+    "",
+    renderList(digest.conflictMarkers),
+    "",
+    "## Retrieval Digest",
+    "",
+    `- title: ${digest.retrievalDigest.title}`,
+    `- summary: ${digest.retrievalDigest.summary}`,
+    `- content_hash: ${digest.retrievalDigest.contentHash}`,
+    "",
+    "## Source Summaries",
+    "",
+    renderSourceMemorySummary(input.activeSourceObjects),
+  ].join("\n");
+}
+
 function selectProjectionSources(
   projectionType: MemoryProjectionType,
   memoryObjects: RuntimeMemoryRecord[],
@@ -418,5 +512,58 @@ export function compileProjectionCatalogDigests(input: {
       artifactPath: `${entry.artifactPathPrefix}/digest-${hashRuntimeValue(entry.projectionType).slice(0, 12)}.json`,
       builtAt,
     });
+  });
+}
+
+export function compileProjectionCatalogPages(input: {
+  memoryObjects: RuntimeCompatibleMemoryRecord[];
+  builtAt?: Date;
+  registry?: readonly ProjectionRegistryEntry[];
+}): ProjectionCatalogCompileResult[] {
+  const builtAt = input.builtAt ?? new Date(0);
+  const memoryObjects = input.memoryObjects.map(projectLegacyRecordToRuntimeMemoryRecord);
+  return (input.registry ?? PROJECTION_REGISTRY).map((registryEntry) => {
+    const sourceObjects = selectProjectionSources(registryEntry.projectionType, memoryObjects);
+    const activeSourceObjects = sourceObjects.filter(isActiveProjectionSource);
+    const digest = buildProjectionDigestArtifact({
+      projectionType: registryEntry.projectionType,
+      title: registryEntry.projectionType.replace(/_/gu, " "),
+      summary: summarizeProjectionSources(activeSourceObjects, registryEntry.projectionType),
+      sourceObjects,
+      builtAt,
+    });
+    const targetId = `catalog-${registryEntry.projectionType}`;
+    const canonicalArtifactPath = `${registryEntry.artifactPathPrefix}/page.md`;
+    digest.artifactPaths.markdownPath = canonicalArtifactPath;
+    digest.artifactPaths.digestPath = canonicalArtifactPath.replace(/\.md$/u, ".json");
+    const renderedText = renderProjectionCatalogPage({
+      registryEntry,
+      digest,
+      activeSourceObjects,
+    });
+    const version = buildWorkspaceProjectionVersion({
+      targetId,
+      projectionType: registryEntry.projectionType,
+      renderedText,
+      sourceObjectIds: digest.sourceMemoryIds,
+      sourceEventIds: digest.sourceEventIds,
+      sourceEdgeIds: digest.sourceEdgeIds,
+      sourceSlotKeys: [],
+      sourceSetKeys: [],
+      freshness: digest.freshness,
+      staleMarkers: digest.staleMarkers,
+      conflictMarkers: digest.conflictMarkers,
+      retrievalDigest: digest.retrievalDigest,
+      canonicalArtifactPath,
+      builtAt,
+    });
+
+    return {
+      targetId,
+      registryEntry,
+      renderedText,
+      version,
+      digest,
+    };
   });
 }

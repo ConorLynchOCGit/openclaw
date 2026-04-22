@@ -39,7 +39,7 @@ Accepted baseline evidence:
 | `extensions/model-memory/src/retrieval-request-interpreter.ts`   | `read_only_retrieval`                                                    | live context fallback emits baseline retrieval telemetry without soak-specific forced classes/kinds                                                        |
 | `extensions/model-memory/src/runtime/retrieval/`                 | `read_only_retrieval`                                                    | ranking may use fielded, lexical, recency, source-lineage, and projection-digest evidence; it cannot mutate truth                                          |
 | `extensions/model-memory/src/runtime-read-models.ts`             | `read_only_retrieval`                                                    | MMV2-derived runtime records only; default retrieval identity projection is deterministic field-based and does not import legacy semantic-family code      |
-| `extensions/model-memory/src/mmv2/storage-compatibility.ts`      | `legacy_fallback`                                                        | temporary shape bridge only, not canonical truth                                                                                                           |
+| `extensions/model-memory/src/mmv2/storage-compatibility.ts`      | `structural_compatibility_bridge`                                        | temporary shape bridge only; fallback identity is derived from MMV2 canonical fields/payload/scope and must not import legacy semantic-family identity     |
 
 ## Current Enforcement
 
@@ -86,6 +86,14 @@ and reconciliation. It does not add topic-specific parsing, fuzzy
 supersession, semantic-family matching, or semantic-forest fallback. Batch
 prefixes remain allowed only as collision protection for true multi-batch
 extraction.
+
+The 2026-04-22 partial-corpus architecture pass retires one more fallback
+surface: `extensions/model-memory/src/mmv2/storage-compatibility.ts` no longer
+imports legacy `semantic-identity.ts` or calls `deriveMemoryIdentity`. Its
+temporary legacy-shaped projection now derives scope, identity, and slot keys
+from the durable MMV2 record structure only. This keeps rollback/read-shape
+compatibility available without allowing legacy semantic-family identity to
+re-enter the default MMV2 hot path.
 
 ## Forbidden Write-Path Inference
 

@@ -96,6 +96,42 @@ Current authority:
 - old v1/spec-closure language is historical design provenance, not current
   live implementation authority
 
+Current 2026-04-22 partial-corpus proof state:
+
+- document ingest remains paused; the current proof deliberately uses the
+  already-ingested partial corpus rather than waiting for full corpus
+  completion
+- disk cleanup preserved live durable data and reduced root disk usage from
+  about `274GB used` to about `89GB used`; Docker build cache was pruned from
+  about `222.8GB` to `0B`
+- partial-corpus retrieval proof is recorded at
+  `.artifacts/model-memory/current-runtime-partial-corpus/2026-04-22/partial-corpus-retrieval-proof.json`
+  and selected all five expected document-derived MMV2 memory ids through an
+  in-memory retrieval run with query hashes and no same-session transcript or
+  root workspace memory file dependency
+- rich projection expansion now materializes the full v1 projection catalog:
+  `user_profile_page`, `project_page`, `procedure_page`, `source_page`,
+  `decision_log`, `timeline_page`, `entity_page`, `dashboard`,
+  `agent_digest`, and `projection_digest`
+- rich projection materialization proof is recorded at
+  `.artifacts/model-memory/current-runtime-partial-corpus/2026-04-22/rich-projection-materialization-proof.json`
+  with artifact-only output under
+  `/root/.openclaw/workspace/.openclaw/model-memory/projections/`
+- fresh capture seam runtime proof is recorded at
+  `.artifacts/model-memory/current-runtime-partial-corpus/2026-04-22/capture-seam-runtime-proof.json`
+  and shows production-runtime hook/capture records for the eight currently
+  eligible seams with zero raw prompt/transcript/tool-log flags
+- Memory Ops latest report remains observe/report-only with auto-fix disabled;
+  fixture findings remain separated from production hook/capture evidence
+- final current-runtime partial-corpus soak is not clean:
+  `.artifacts/model-memory/final-current-runtime-soak/2026-04-22-partial-corpus/soak-report.json`
+  shows the UI prompt pass completed and no-store/privacy leakage checks stayed
+  clean, but ordinary-turn durable capture produced no new DB rows because the
+  live capture path hit DB connection/statement timeouts
+- storage compatibility fallback identity now stays structural inside
+  `extensions/model-memory/src/mmv2/storage-compatibility.ts` and no longer
+  imports legacy `semantic-identity.ts`
+
 Accepted clean-soak baseline:
 
 - artifact root:
@@ -239,9 +275,13 @@ Remaining from the active pass:
 - keep live retrieval availability under observation: the hardening recall
   rerun had projection-backed fresh-id evidence, but also logged one
   retrieval-context timeout before the final answer
-- run a post-ingest retrieval/projection proof after the paused corpus
-  completes so corpus recall is proven from MMV2/projection evidence rather
-  than root files or same-session context
+- partial-corpus retrieval/projection proof has passed against the current
+  paused corpus; run the full post-ingest proof again after the paused corpus
+  completes so global corpus recall is proven from MMV2/projection evidence
+  rather than root files or same-session context
+- fix live ordinary-turn durable capture availability before claiming the
+  current-runtime soak clean; current evidence points to DB connection and
+  statement-timeout failures on the async capture path, not no-store leakage
 - ordinary-turn/proof-runner coverage is no longer blocked by the scripted
   project-fact canonical-candidate failure:
   - single-batch extraction candidate ids are preserved through

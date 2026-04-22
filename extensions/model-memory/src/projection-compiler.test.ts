@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { compileProjection, compileProjectionCatalogDigests } from "./projection-compiler.ts";
+import {
+  compileProjection,
+  compileProjectionCatalogDigests,
+  compileProjectionCatalogPages,
+} from "./projection-compiler.ts";
 import type { RuntimeMemoryRecord } from "./runtime-read-models.ts";
 import { PROJECTION_REGISTRY } from "./runtime/projections/registry.ts";
 
@@ -145,6 +149,81 @@ describe("projection compiler", () => {
     ).toEqual(["memory-decision"]);
     expect(
       digests.find((digest) => digest.projectionType === "projection_digest")?.conflictMarkers,
+    ).toEqual(["conflicted_source_memory"]);
+  });
+
+  it("compiles rich materialized catalog pages for every projection type", () => {
+    const pages = compileProjectionCatalogPages({
+      memoryObjects: [
+        memory({
+          id: "memory-pref",
+          canonicalClass: "user",
+          kind: "preference",
+          payload: { subject: "validation reports", instruction: "concise status first" },
+        }),
+        memory({
+          id: "memory-project",
+          canonicalClass: "project",
+          kind: "fact",
+          payload: { subject: "model-memory status", value: "runtime hardening landed" },
+        }),
+        memory({
+          id: "memory-proc",
+          kind: "procedure",
+          payload: { title: "release checklist", steps: ["test", "build"] },
+        }),
+        memory({
+          id: "memory-source",
+          canonicalClass: "reference",
+          kind: "reference",
+          payload: { path: "docs/projects/model-memory/STATUS.md" },
+          normalizedSearchText: "source reference docs projects model memory status",
+        }),
+        memory({
+          id: "memory-decision",
+          kind: "fact",
+          payload: { subject: "architecture decision", value: "MMV2 SQL is truth" },
+          normalizedSubject: "architecture decision",
+          normalizedSearchText: "architecture decision MMV2 SQL is truth",
+        }),
+        memory({
+          id: "memory-conflict",
+          lifecycleState: "conflict_hold",
+        }),
+      ],
+      builtAt: new Date(0),
+    });
+
+    expect(pages.map((page) => page.digest.projectionType)).toEqual(
+      PROJECTION_REGISTRY.map((entry) => entry.projectionType),
+    );
+    expect(pages).toHaveLength(10);
+    for (const page of pages) {
+      expect(page.targetId).toBe(`catalog-${page.digest.projectionType}`);
+      expect(page.version.projectionType).toBe(page.digest.projectionType);
+      expect(page.version.canonicalArtifactPath).toBe(
+        `${page.registryEntry.artifactPathPrefix}/page.md`,
+      );
+      expect(page.renderedText).toContain("This projection is a compiled MMV2 view");
+      expect(page.renderedText).toContain(`- projection_id: ${page.digest.projectionId}`);
+      expect(page.renderedText).toContain(`- projection_type: ${page.digest.projectionType}`);
+      expect(page.renderedText).toContain(`- content_hash: ${page.digest.contentHash}`);
+      expect(page.renderedText).toContain(`- artifact_path: ${page.version.canonicalArtifactPath}`);
+      expect(page.version.sourceObjectIds).toEqual(page.digest.sourceMemoryIds);
+      expect(page.version.sourceEventIds).toEqual(page.digest.sourceEventIds);
+      expect(page.version.sourceEdgeIds).toEqual(page.digest.sourceEdgeIds);
+      expect(page.version.retrievalDigest?.contentHash).toBe(page.digest.contentHash);
+    }
+    expect(
+      pages.find((page) => page.digest.projectionType === "user_profile_page")?.digest
+        .sourceMemoryIds,
+    ).toEqual(["memory-pref"]);
+    expect(
+      pages.find((page) => page.digest.projectionType === "project_page")?.digest.sourceMemoryIds,
+    ).toEqual(["memory-decision", "memory-proc", "memory-project"]);
+    expect(
+      pages.find((page) => page.digest.projectionType === "projection_digest")?.digest
+        .conflictMarkers,
     ).toEqual(["conflicted_source_memory"]);
   });
 });

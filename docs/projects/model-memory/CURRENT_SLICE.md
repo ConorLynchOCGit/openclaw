@@ -59,6 +59,14 @@ runtime availability caveat. The affected item was rerun in isolation as
 `0da10fcc-b5a7-5962-9d69-982d748755d6` to exact target memory
 `231bd0a5-2f7c-5f65-af75-397668a2e960`.
 
+The 2026-04-22 current-runtime partial-corpus proof/soak pass intentionally ran
+without resuming document ingest. It freed disk first, proved retrieval against
+the already-ingested partial corpus, materialized rich projection catalog pages,
+and refreshed capture seam/Memory Ops evidence. The final soak is honestly
+classified as `not_clean`: the UI prompts completed and no-store/privacy rows
+did not leak, but ordinary-turn durable capture did not create new memory rows
+because the live capture path hit DB connection/statement timeouts.
+
 ## Current Outcome
 
 - MMV2-native SQL storage is live semantic truth:
@@ -191,6 +199,32 @@ runtime availability caveat. The affected item was rerun in isolation as
     default-disabled behind global plus seam-specific kill switches
   - refreshed the failed-source quarantine report in report-only mode without
     resuming ingest
+- 2026-04-22 current-runtime partial-corpus pass:
+  - aggressively cleaned disk while preserving DB volumes, current gateway
+    image, accepted rollback images, live runtime state, root workspace memory
+    files, and the repo worktree
+  - Docker build cache was reduced from about `222.8GB` to `0B`; root disk
+    usage dropped from about `274GB used` to about `89GB used`
+  - partial-corpus retrieval/projection proof is recorded at
+    `.artifacts/model-memory/current-runtime-partial-corpus/2026-04-22/partial-corpus-retrieval-proof.json`
+    and selected all five expected durable MMV2 document memories using an
+    in-memory retrieval run with query hashes rather than raw query text
+  - rich projection catalog materialization proof is recorded at
+    `.artifacts/model-memory/current-runtime-partial-corpus/2026-04-22/rich-projection-materialization-proof.json`
+    and materialized all ten projection types under the projection artifact
+    directory only
+  - fresh capture seam proof is recorded at
+    `.artifacts/model-memory/current-runtime-partial-corpus/2026-04-22/capture-seam-runtime-proof.json`
+    and confirms production-runtime evidence for `message:preprocessed`,
+    `ContextEngine.assemble`, `tool_result_persist`, `after_tool_call`,
+    `ContextEngine.afterTurn`, `ContextEngine.ingestBatch`,
+    `ContextEngine.ingest`, and `agent_end`
+  - storage compatibility now derives fallback identity structurally from the
+    MMV2 durable record instead of importing legacy `semantic-identity.ts`
+  - final current-runtime partial-corpus soak evidence is recorded at
+    `.artifacts/model-memory/final-current-runtime-soak/2026-04-22-partial-corpus/soak-report.json`
+    and is `not_clean` because durable ordinary-turn capture produced no new
+    DB rows during the soak
 
 ## Current Risks
 
@@ -203,6 +237,10 @@ runtime availability caveat. The affected item was rerun in isolation as
 - live retrieval/context lookup can still transiently time out under UI proof
   load; this should be treated as a runtime availability/diagnostics issue, not
   a reason to add topical write-path heuristics
+- live ordinary-turn durable capture can fail under DB connection/statement
+  timeout while the user-visible turn still completes; the current partial
+  soak must not be treated as clean until capture retry/timeout handling is
+  fixed and rerun
 - file-pack/provider variance still needs seeded stabilization and reporting
 - capture seam wiring remains limited to production-verified/no-dark-data
   surfaces behind kill switches; unverified seams stay blocked

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { compileProjection } from "../../projection-compiler.ts";
+import { compileProjection, compileProjectionCatalogPages } from "../../projection-compiler.ts";
 import type { RuntimeMemoryRecord } from "../../runtime-read-models.ts";
 import {
   buildActiveProjectionSourceIdSet,
@@ -168,5 +168,72 @@ describe("projection artifact materializer", () => {
         activeMemoryIds: buildActiveProjectionSourceIdSet([superseded]),
       }),
     ).rejects.toThrow("inactive source memory ids");
+  });
+
+  it("materializes the full rich projection catalog without root write-back", async () => {
+    const activeProject = memory({
+      id: "memory-project",
+      canonicalClass: "project",
+      kind: "fact",
+      payload: { subject: "runtime state", value: "partial corpus proof enabled" },
+    });
+    const activeUser = memory({
+      id: "memory-user",
+      canonicalClass: "user",
+      kind: "preference",
+      payload: { subject: "validation reports", instruction: "concise status first" },
+    });
+    const activeProcedure = memory({
+      id: "memory-procedure",
+      kind: "procedure",
+      payload: { title: "soak closeout", steps: ["capture proof", "verify root hashes"] },
+    });
+    const activeReference = memory({
+      id: "memory-reference",
+      canonicalClass: "reference",
+      kind: "reference",
+      payload: { path: "docs/projects/model-memory/STATUS.md" },
+    });
+    const memoryObjects = [activeProject, activeUser, activeProcedure, activeReference];
+    const pages = compileProjectionCatalogPages({
+      memoryObjects,
+      builtAt: new Date(0),
+    });
+    const userBefore = sha256(await readFile(path.join(tempDir, "USER.md"), "utf8"));
+    const memoryBefore = sha256(await readFile(path.join(tempDir, "MEMORY.md"), "utf8"));
+
+    const result = await materializeProjectionArtifacts({
+      workspaceRoot: tempDir,
+      entries: pages.map((page) => ({
+        targetId: page.targetId,
+        renderedText: page.renderedText,
+        version: page.version,
+        digest: page.digest,
+      })),
+      activeMemoryIds: buildActiveProjectionSourceIdSet(memoryObjects),
+      generatedAt: new Date(0),
+    });
+
+    expect(result.projection_count).toBe(10);
+    expect(result.root_write_back_status).toBe("disabled");
+    expect(result.artifact_entries.map((entry) => entry.projection_type).toSorted()).toEqual(
+      pages.map((page) => page.digest.projectionType).toSorted(),
+    );
+    const projectEntry = result.artifact_entries.find(
+      (entry) => entry.projection_type === "project_page",
+    );
+    expect(projectEntry?.source_memory_ids).toEqual(
+      expect.arrayContaining(["memory-project", "memory-procedure"]),
+    );
+    const projectMarkdown = await readFile(path.join(tempDir, projectEntry!.markdown_path), "utf8");
+    const projectJson = JSON.parse(
+      await readFile(path.join(tempDir, projectEntry!.json_path), "utf8"),
+    ) as Record<string, unknown>;
+    expect(projectMarkdown).toContain("This projection is a compiled MMV2 view");
+    expect(projectJson.projection_type).toBe("project_page");
+    expect(projectJson.source_memory_ids).toEqual(projectEntry?.source_memory_ids);
+    expect(projectJson.root_write_back_status).toBe("disabled");
+    expect(sha256(await readFile(path.join(tempDir, "USER.md"), "utf8"))).toBe(userBefore);
+    expect(sha256(await readFile(path.join(tempDir, "MEMORY.md"), "utf8"))).toBe(memoryBefore);
   });
 });

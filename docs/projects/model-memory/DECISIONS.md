@@ -5,6 +5,53 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-22 - Partial-corpus proof can proceed before full ingest completes
+
+Decision:
+
+- allow retrieval/projection proof against the already-ingested partial corpus
+  while the full document ingest remains paused
+- label that proof as partial-corpus/current-runtime evidence, not full
+  post-ingest proof
+- allow projection catalog materialization as artifact-only output under the
+  projection artifact root, never as root `USER.md` or `MEMORY.md` write-back
+- treat a final current-runtime soak as not clean if ordinary-turn durable
+  capture does not produce durable rows, even when the UI prompt run itself
+  completes
+
+Reasoning:
+
+- the paused corpus already has enough MMV2 source/segment/memory/event
+  evidence to test retrieval and projection behavior without spending more
+  provider credits
+- partial proof is useful only if it is honestly labeled and cannot be
+  explained by same-session transcript or root workspace memory files
+- soak credibility depends on durable capture evidence, no-store rejection,
+  retrieval/projection proof, and root no-write proof; a DB timeout in the
+  async capture lane is a real blocker, not a cosmetic warning
+
+## 2026-04-22 - Storage compatibility identity is structural only
+
+Decision:
+
+- keep `extensions/model-memory/src/mmv2/storage-compatibility.ts` as a
+  temporary compatibility bridge only
+- remove its dependency on legacy `semantic-identity.ts`
+- derive compatibility identity keys only from MMV2 durable record fields:
+  canonical class, kind, artifact type, scope, payload, canonical text, and
+  source refs
+- preserve rollback/read-shape compatibility without allowing legacy
+  semantic-family identity to re-enter default MMV2 hot paths
+
+Reasoning:
+
+- storage compatibility still has transitional value for fallback/read-shape
+  consumers
+- legacy semantic identity is not acceptable write-path authority for MMV2
+  truth
+- a structural projection keeps the fallback slice reversible and testable
+  without fuzzy collision/family behavior
+
 ## 2026-04-22 - Proof-runner candidate identity stays stable for single batches
 
 Decision:

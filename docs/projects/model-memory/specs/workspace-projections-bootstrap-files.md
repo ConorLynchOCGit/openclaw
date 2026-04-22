@@ -122,6 +122,25 @@ Top-level bootstrap files are rendered views, not the primary generated store.
 For `memory-md`, the current live rendered view is the generated runtime
 artifact path, not the curated workspace file.
 
+The rich projection catalog pages added on 2026-04-22 are artifact-only
+runtime views under `.openclaw/model-memory/projections/`. They cover:
+
+- `user_profile_page`
+- `project_page`
+- `procedure_page`
+- `source_page`
+- `decision_log`
+- `timeline_page`
+- `entity_page`
+- `dashboard`
+- `agent_digest`
+- `projection_digest`
+
+These pages must preserve source memory/event/edge ids, content hashes,
+freshness, stale markers, conflict markers, and retrieval digest metadata.
+They are never allowed to write generated content back into root `USER.md` or
+`MEMORY.md`.
+
 ## Phase 2 knowledge artifact root
 
 Phase 2 graph and capsule artifacts should use a derived knowledge namespace:

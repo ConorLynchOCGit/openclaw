@@ -62,6 +62,7 @@ export type BuildProjectionVersionInput = {
   staleMarkers?: string[];
   conflictMarkers?: string[];
   retrievalDigest?: WorkspaceProjectionVersionRecord["retrievalDigest"];
+  canonicalArtifactPath?: string;
   builtAt?: Date;
 };
 
@@ -107,7 +108,9 @@ export function buildWorkspaceProjectionVersion(
     targetId: input.targetId,
     projectionType: input.projectionType,
     contentHash,
-    canonicalArtifactPath: `.openclaw/model-memory/projections/${input.targetId}-${contentHash.slice(0, 12)}.md`,
+    canonicalArtifactPath:
+      input.canonicalArtifactPath ??
+      `.openclaw/model-memory/projections/${input.targetId}-${contentHash.slice(0, 12)}.md`,
     sourceObjectIds: normalizedSourceObjectIds,
     sourceEventIds: normalizedSourceEventIds,
     sourceEdgeIds: normalizedSourceEdgeIds,

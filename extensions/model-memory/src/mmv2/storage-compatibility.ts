@@ -1,5 +1,4 @@
 import { buildDeterministicUuid } from "../deterministic-uuid.ts";
-import { deriveMemoryIdentity } from "../semantic-identity.ts";
 import type { ModelMemoryObject, MemoryScope, Provenance } from "../semantic-schema.ts";
 import type {
   ModelMemoryLifecycleState,
@@ -17,6 +16,15 @@ import type {
   MemoryEvent,
 } from "./contracts.ts";
 
+type CompatibilityIdentity = {
+  normalizedSubject: string;
+  normalizedTitle?: string;
+  normalizedSearchText: string;
+  scopeKey: string;
+  identityKey: string;
+  slotKey: string;
+};
+
 function cleanText(value: unknown): string {
   if (typeof value !== "string") {
     return "";
@@ -32,6 +40,77 @@ function pickFirstNonEmpty(...values: Array<unknown>): string | undefined {
     }
   }
   return undefined;
+}
+
+function collectPayloadText(value: unknown, out: string[] = []): string[] {
+  if (typeof value === "string") {
+    const cleaned = cleanText(value);
+    if (cleaned.length > 0) {
+      out.push(cleaned);
+    }
+    return out;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry) => collectPayloadText(entry, out));
+    return out;
+  }
+  if (value && typeof value === "object") {
+    Object.keys(value as Record<string, unknown>)
+      .toSorted((left, right) => left.localeCompare(right))
+      .forEach((key) => collectPayloadText((value as Record<string, unknown>)[key], out));
+  }
+  return out;
+}
+
+function stableHash(value: unknown): string {
+  return buildDeterministicUuid("compat-identity", JSON.stringify(value));
+}
+
+function deriveCompatibilityIdentity(object: ModelMemoryObject): CompatibilityIdentity {
+  const payload = object.payload as Record<string, unknown>;
+  const normalizedSubject =
+    pickFirstNonEmpty(
+      payload.subject,
+      payload.title,
+      payload.task,
+      payload.primaryResource,
+      payload.value,
+      object.kind,
+    ) ?? "unknown";
+  const normalizedTitle = pickFirstNonEmpty(payload.title, payload.summary, normalizedSubject);
+  const normalizedSearchText = [
+    normalizedSubject,
+    normalizedTitle,
+    ...collectPayloadText(object.payload),
+  ]
+    .join(" ")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLowerCase();
+  const scopeKey = stableHash({
+    canonicalClass: object.canonicalClass,
+    scope: object.scope ?? {},
+  });
+  const identityKey = stableHash({
+    canonicalClass: object.canonicalClass,
+    kind: object.kind,
+    scope: object.scope ?? {},
+    payload: object.payload,
+  });
+  const slotKey = stableHash({
+    canonicalClass: object.canonicalClass,
+    kind: object.kind,
+    scope: object.scope ?? {},
+    subject: normalizedSubject,
+  });
+  return {
+    normalizedSubject,
+    normalizedTitle,
+    normalizedSearchText,
+    scopeKey,
+    identityKey,
+    slotKey,
+  };
 }
 
 function confidenceFromLegacy(value: ModelMemoryObject["confidence"]): number {
@@ -594,7 +673,7 @@ export function projectDurableMemoryToLegacyRecord(
   record: DurableMemoryRecord,
 ): ModelMemoryObjectRecord {
   const object = projectDurableMemoryToLegacyObject(record);
-  const identity = deriveMemoryIdentity(object);
+  const identity = deriveCompatibilityIdentity(object);
   return {
     id: record.memory_id,
     canonicalClass: object.canonicalClass,

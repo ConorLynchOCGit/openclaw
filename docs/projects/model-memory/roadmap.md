@@ -58,6 +58,17 @@ title: "Model Memory Roadmap"
   prefixing is fixed, and ordinary-turn proof coverage now spans 11
   adjudicated cases without semantic forests, fuzzy supersession, or
   topic-specific parser fixtures.
+- The current-runtime partial-corpus proof is complete against the already
+  ingested corpus slice:
+  - retrieval selected all expected sampled durable document memories without
+    same-session transcript or root workspace memory-file dependency
+  - rich projection catalog pages now materialize for all ten v1 projection
+    types as compiled artifacts
+  - capture seam runtime evidence is fresh for all currently eligible
+    production-verified seams
+  - the current-runtime soak is not clean because ordinary-turn durable
+    capture hit DB connection/statement timeouts and created no new memory
+    rows for the durable capture prompts
 
 ## Current top priorities
 
@@ -68,34 +79,37 @@ title: "Model Memory Roadmap"
    - all writes route through MMV2 admission/reconciliation
 2. keep `message:preprocessed` routing/telemetry-only until no-duplicate and
    no-raw-prompt guarantees are proven
-3. production-verify or block `ContextEngine.ingest` and `ingestBatch`; do not
-   treat synthetic-only canaries as production proof
-4. populate MMV2 with the curated 2026-04 deep document-ingest corpus and
+3. keep fresh production verification for `ContextEngine.ingest` and
+   `ingestBatch`; the 2026-04-22 current-runtime proof shows production
+   runtime evidence, while synthetic-only hooks remain blocked
+4. fix live ordinary-turn durable capture DB timeout handling and rerun the
+   current-runtime soak before calling the soak clean
+5. populate MMV2 with the curated 2026-04 deep document-ingest corpus and
    verify source/segment/memory/event evidence; resume from checkpoint during
    the overnight ingest window, not during build-focused hardening
-5. quarantine legacy captured-object write compatibility behind explicit
+6. quarantine legacy captured-object write compatibility behind explicit
    fallback/rollback flags
-6. harden Retrieval Runtime/projection relevance:
+7. harden Retrieval Runtime/projection relevance:
    - prefer fresh projection digests backed by active MMV2 ids
    - emit stale/superseded/deleted/conflicted/inactive exclusions
    - emit retrieval miss diagnostics when durable memories existed but were
      excluded
    - keep all ranking read-time only
-7. finish quarantine/removal of fallback compatibility after the clean
+8. finish quarantine/removal of fallback compatibility after the clean
    retrieval-runtime soak
-8. continue ordinary-turn MMV2 evaluation coverage where needed; the current
+9. continue ordinary-turn MMV2 evaluation coverage where needed; the current
    scripted matrix covers preference, directive, project fact, structural
    correction, temp/privacy rejects, workspace scope, duplicate prevention,
    source-ref merge, scoped conflict, and no-fuzzy source-ref conflict
-9. stabilize file-pack/provider variance
-10. implement remaining verified primary memory capture seam expansion
-11. keep live memory activity-feed visibility bounded:
+10. stabilize file-pack/provider variance
+11. implement remaining verified primary memory capture seam expansion
+12. keep live memory activity-feed visibility bounded:
     retrieval/capture lifecycle ids, counts, and statuses may appear in the
     main feed, but raw prompts, transcripts, and tool logs must not
-12. maintain the repo-local and Codex global `model-memory-deep-ingest` skill
+13. maintain the repo-local and Codex global `model-memory-deep-ingest` skill
     as the standard entry point for future ingest resume/monitor/pause work
-13. implement `memory-ops-closed-loop` instrumentation
-14. proceed to Phase 2 derived features:
+14. implement `memory-ops-closed-loop` instrumentation
+15. proceed to Phase 2 derived features:
 
 - graph runtime
 - project/subject capsules
