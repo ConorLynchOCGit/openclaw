@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { ModelMemoryCanonicalRepository } from "./db/canonical-repository.ts";
 import { applyModelMemoryMigrations } from "./db/migrations.ts";
 import { MmV2DatabaseMemoryObjectStore } from "./db/mmv2-memory-object-store.ts";
 import { MmV2NativeRepository } from "./db/mmv2-native-repository.ts";
@@ -19,7 +18,7 @@ describe("live-document-ingestion-service", () => {
     const database = await createPgMemTestDatabase();
     try {
       await applyModelMemoryMigrations(database.sql);
-      const canonicalRepository = new ModelMemoryCanonicalRepository(database.sql);
+      const canonicalRepository = new MmV2NativeRepository(database.sql);
       const runtimeRepository = new RuntimeContextRepository(database.sql);
       const readPayload = <T>(input: {
         prompt: { promptPayload?: unknown; userPrompt: string };

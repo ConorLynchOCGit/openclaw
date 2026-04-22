@@ -22,6 +22,7 @@ import {
   type SemanticInterpreterInput,
   type WorkspaceProjectionTargetRecord,
 } from "../plugin-sdk/model-memory.js";
+import { emitModelMemoryActivityFeedEvent } from "./model-memory.activity-feed.js";
 import {
   resolveModelMemoryCaptureSeamSettings,
   type ModelMemoryCaptureSeamName,
@@ -664,6 +665,34 @@ async function buildLiveRetrievalContextArtifact(params: {
     retrieval.retrievalResultSet.id,
     persisted.id,
   );
+  void emitModelMemoryActivityFeedEvent({
+    kind: "retrieval",
+    status: "completed",
+    config: params.config,
+    sessionId: params.sessionId,
+    sessionKey: params.sessionKey,
+    agentId: params.agentId,
+    stableId: retrieval.retrievalResultSet.id,
+    safeLabels: {
+      purpose: retrieval.retrievalRequest.requestPurpose,
+      artifact: "retrieval_pack",
+    },
+    ids: {
+      retrievalRequestId: retrieval.retrievalRequest.id,
+      retrievalResultSetId: retrieval.retrievalResultSet.id,
+      retrievalPackArtifactId: persisted.id,
+      selectedMemoryIds: retrieval.retrievalResultItems
+        .filter((item) => item.selectedForContext)
+        .map((item) => item.memoryObjectId),
+      projectionIds: retrieval.selectedProjectionDigests.map((digest) => digest.projectionId),
+    },
+    metrics: {
+      candidates: retrieval.retrievalCandidates.length,
+      selected: retrieval.retrievalResultItems.filter((item) => item.selectedForContext).length,
+      excluded: retrieval.retrievalExclusions.length,
+      projections: retrieval.selectedProjectionDigests.length,
+    },
+  }).catch(() => undefined);
   return persisted;
 }
 
@@ -810,6 +839,33 @@ export function shouldSkipOrdinaryTurnCaptureForExplicitOptOut(userText: string)
   );
 }
 
+function hasToolCallEvidence(sourceMetadata: Record<string, unknown> | undefined): boolean {
+  const toolCallCount = sourceMetadata?.toolCallCount;
+  return typeof toolCallCount === "number" && toolCallCount > 0;
+}
+
+export function hasExplicitDurableCaptureSignal(userText: string): boolean {
+  const normalized = userText.toLowerCase();
+  return (
+    /\bplease\s+remember\b/.test(normalized) ||
+    /\bremember\s+this\b/.test(normalized) ||
+    /\bstore\s+this\b/.test(normalized) ||
+    /\bdurable\s+(?:workspace\s+)?(?:project\s+)?fact\b/.test(normalized) ||
+    /\bdurable\s+correction\b/.test(normalized) ||
+    /\bstanding\s+(?:instruction|preference|directive)\b/.test(normalized) ||
+    /\bthis\s+is\s+a\s+standing\s+(?:instruction|preference|directive)\b/.test(normalized)
+  );
+}
+
+export function shouldSkipOrdinaryTurnCaptureForToolDedupe(params: {
+  userText: string;
+  sourceMetadata?: Record<string, unknown>;
+}): boolean {
+  return (
+    hasToolCallEvidence(params.sourceMetadata) && !hasExplicitDurableCaptureSignal(params.userText)
+  );
+}
+
 export function buildCompletedAssistantTurnCaptureInput(params: {
   sessionId?: string;
   sessionKey?: string;
@@ -831,6 +887,14 @@ export function buildCompletedAssistantTurnCaptureInput(params: {
     return null;
   }
   if (shouldSkipOrdinaryTurnCaptureForExplicitOptOut(userText)) {
+    return null;
+  }
+  if (
+    shouldSkipOrdinaryTurnCaptureForToolDedupe({
+      userText,
+      sourceMetadata: params.sourceMetadata,
+    })
+  ) {
     return null;
   }
 
@@ -862,11 +926,31 @@ export async function captureModelMemoryAssistantTurn(params: {
 }): Promise<void> {
   const status = resolveModelMemoryLiveRuntimeStatus(params.config);
   if (!status.enabled || !status.captureWritesEnabled || !status.databaseConfigured) {
+    void emitModelMemoryActivityFeedEvent({
+      kind: "ordinary_turn_capture",
+      status: "skipped",
+      config: params.config,
+      sessionId: params.sessionId,
+      sessionKey: params.sessionKey,
+      agentId: params.agentId,
+      stableId: `${params.sessionId ?? "unknown"}:ordinary_turn_capture:disabled`,
+      safeLabels: { reason: "disabled" },
+    }).catch(() => undefined);
     return;
   }
 
   const captureInput = buildCompletedAssistantTurnCaptureInput(params);
   if (!captureInput) {
+    void emitModelMemoryActivityFeedEvent({
+      kind: "ordinary_turn_capture",
+      status: "skipped",
+      config: params.config,
+      sessionId: params.sessionId,
+      sessionKey: params.sessionKey,
+      agentId: params.agentId,
+      stableId: `${params.sessionId ?? "unknown"}:ordinary_turn_capture:no_candidate`,
+      safeLabels: { reason: "no_durable_candidate" },
+    }).catch(() => undefined);
     return;
   }
 
@@ -876,7 +960,7 @@ export async function captureModelMemoryAssistantTurn(params: {
   const canUseMmV2LivePath =
     typeof canonicalRepository.listExistingMemorySummaries === "function" &&
     typeof canonicalRepository.persistLiveMemoryBatch === "function";
-  await captureOrdinaryTurnLive({
+  const result = await captureOrdinaryTurnLive({
     canonicalRepository: runtime.canonicalRepository as never,
     runtimeRepository: runtime.runtimeRepository,
     memoryStore: runtime.memoryStore as never,
@@ -891,6 +975,25 @@ export async function captureModelMemoryAssistantTurn(params: {
     },
     rebuildRuntime: true,
   });
+  void emitModelMemoryActivityFeedEvent({
+    kind: "ordinary_turn_capture",
+    status: "completed",
+    config: params.config,
+    sessionId: params.sessionId,
+    sessionKey: params.sessionKey,
+    agentId: params.agentId,
+    stableId: result.source.id,
+    ids: {
+      sourceId: result.source.id,
+      segmentIds: result.windows.map((window) => window.id),
+      memoryIds: result.writeResults.flatMap((entry) => (entry.memoryId ? [entry.memoryId] : [])),
+    },
+    metrics: {
+      segments: result.windows.length,
+      writeResults: result.writeResults.length,
+      memories: result.writeResults.filter((entry) => entry.memoryId).length,
+    },
+  }).catch(() => undefined);
 }
 
 export async function captureModelMemoryToolResultProof(params: {
@@ -906,6 +1009,41 @@ export async function captureModelMemoryToolResultProof(params: {
   isError?: boolean;
   observedAt?: Date;
 }): Promise<ModelMemoryToolResultProofCaptureResult> {
+  const emitToolCaptureActivity = (
+    result: ModelMemoryToolResultProofCaptureResult,
+  ): ModelMemoryToolResultProofCaptureResult => {
+    void emitModelMemoryActivityFeedEvent({
+      kind: "tool_result_capture",
+      status: result.captured ? "completed" : "skipped",
+      config: params.config,
+      sessionId: params.sessionId,
+      sessionKey: params.sessionKey,
+      runId: params.runId,
+      agentId: params.agentId,
+      stableId: params.toolCallId ?? `${params.hookName}:${params.toolName}`,
+      safeLabels: {
+        hook: params.hookName,
+        tool: params.toolName,
+        ...(result.captured ? {} : { reason: result.reason }),
+      },
+      ids: result.captured
+        ? {
+            sourceId: result.sourceId,
+            segmentIds: result.segmentIds,
+            memoryIds: result.memoryIds,
+            eventIds: result.eventIds,
+          }
+        : undefined,
+      metrics: result.captured
+        ? {
+            segments: result.segmentIds.length,
+            memories: result.memoryIds.length,
+            events: result.eventIds.length,
+          }
+        : undefined,
+    }).catch(() => undefined);
+    return result;
+  };
   const status = resolveModelMemoryLiveRuntimeStatus(params.config);
   const seamSettings = resolveModelMemoryCaptureSeamSettings({
     seamName: params.hookName,
@@ -919,7 +1057,7 @@ export async function captureModelMemoryToolResultProof(params: {
     !seamSettings.seamEnabled ||
     !resolveToolResultProofCaptureEnabled(params.config)
   ) {
-    return { captured: false, reason: "disabled" };
+    return emitToolCaptureActivity({ captured: false, reason: "disabled" });
   }
 
   const built = buildToolResultProofLiveCapture({
@@ -934,18 +1072,18 @@ export async function captureModelMemoryToolResultProof(params: {
     observedAt: params.observedAt,
   });
   if (!built) {
-    return { captured: false, reason: "no_bounded_fact" };
+    return emitToolCaptureActivity({ captured: false, reason: "no_bounded_fact" });
   }
 
   const runtime = await getLiveRuntime(params.config).catch(() => undefined);
   if (!runtime) {
-    return { captured: false, reason: "model_memory_unavailable" };
+    return emitToolCaptureActivity({ captured: false, reason: "model_memory_unavailable" });
   }
   const canonicalRepository = runtime.canonicalRepository as typeof runtime.canonicalRepository &
     MmV2LiveRepositoryCapabilities;
   const persistLiveMemoryBatch = canonicalRepository.persistLiveMemoryBatch;
   if (typeof persistLiveMemoryBatch !== "function") {
-    return { captured: false, reason: "write_unavailable" };
+    return emitToolCaptureActivity({ captured: false, reason: "write_unavailable" });
   }
 
   if (typeof canonicalRepository.withTransaction === "function") {
@@ -973,14 +1111,14 @@ export async function captureModelMemoryToolResultProof(params: {
     runtimeRepository: runtime.runtimeRepository,
   });
 
-  return {
+  return emitToolCaptureActivity({
     captured: true,
     sourceId: built.source.id,
     segmentIds: built.windows.map((window) => window.id),
     memoryIds: built.liveMemoryBatch.durableMemories.map((memory) => memory.memory_id),
     eventIds: built.liveMemoryBatch.memoryEvents.map((event) => event.memory_event_id),
     boundedFact: built.boundedFact as Record<string, unknown>,
-  };
+  });
 }
 
 export function __resetModelMemoryLiveRuntimeForTest() {

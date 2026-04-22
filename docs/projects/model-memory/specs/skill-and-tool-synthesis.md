@@ -16,6 +16,25 @@ The synthesis direction is approved with these boundaries:
 - the recommendation flow is `install`, `inspire`, or `reject`
 - approved install means real install, not a fake placeholder action
 
+2026-04-22 MMV2 alignment:
+
+- synthesis candidates must be grounded in MMV2 durable evidence, bounded tool
+  proof, source refs, or reviewed operator artifacts
+- repeated traces can suggest skills/tools, but generated candidates are
+  review artifacts, not semantic truth or automatic behavior changes
+- third-party skill candidates require `skill-vetter`; install/inspire/reject
+  remains the review vocabulary
+- tool-result capture may contribute bounded facts such as artifact paths,
+  URLs, command status, docs/runbooks found, and non-sensitive error classes;
+  raw logs and transcripts are forbidden inputs
+
+Open decisions before implementation:
+
+- minimum evidence threshold for creating a skill/tool candidate
+- required replay/eval gates before surfacing a candidate
+- approval path for promoting an internal candidate into repo-local and Codex
+  global skills
+
 ## Objective
 
 Turn repeated successful interactions into reusable, auditable candidate skills

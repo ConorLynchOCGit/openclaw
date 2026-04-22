@@ -16,9 +16,9 @@ import {
   type DocumentIngestionRunnerRunRecord,
   type DocumentIngestionRunnerSource,
 } from "./admin/document-ingestion-runner-service.ts";
+import { isLegacyCapturedObjectWriteFallbackEnabled } from "./db/captured-object-write-compatibility.ts";
 import type { JsonModelExecutor } from "./model-execution.ts";
 import { ExecutorBackedSemanticInterpreter } from "./real-semantic-interpreter.ts";
-import { ExecutorBackedSemanticCollisionAdjudicator } from "./semantic-collision-adjudication.ts";
 
 const DEFAULT_MODEL_REF = "openrouter/openai/gpt-5.4-nano";
 const DEFAULT_REQUEST_TIMEOUT_MS = 180_000;
@@ -293,7 +293,13 @@ export function createModelMemoryDocumentIngestionTool(
           requestSeed,
         });
         const interpreter = new ExecutorBackedSemanticInterpreter(executor);
-        const collisionAdjudicator = new ExecutorBackedSemanticCollisionAdjudicator(executor);
+        const collisionAdjudicator = isLegacyCapturedObjectWriteFallbackEnabled({
+          env: process.env,
+        })
+          ? new (
+              await import("./semantic-collision-adjudication.ts")
+            ).ExecutorBackedSemanticCollisionAdjudicator(executor)
+          : undefined;
         const service =
           deps.createRunnerService?.(runtime) ??
           new ModelMemoryDocumentIngestionRunnerService({

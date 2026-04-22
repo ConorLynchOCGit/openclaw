@@ -1288,6 +1288,8 @@ export async function runReplyAgent(params: {
         sourceMetadata: {
           provider: providerUsed,
           model: modelUsed,
+          toolCallCount: runResult.meta?.toolSummary?.calls ?? 0,
+          toolFailureCount: runResult.meta?.toolSummary?.failures ?? 0,
           currentChannelId: sessionCtx.Surface ?? sessionCtx.Provider,
           accountId: sessionCtx.AccountId,
         },

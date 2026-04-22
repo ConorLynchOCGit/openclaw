@@ -135,6 +135,19 @@ relevant failure mode to inspect first is now the checkpoint's own
 That preserves chunk resumability and avoids double-counting a new run as if it
 were a continuation of a different execution.
 
+If individual sources fail because of provider, timeout, or JSON-boundary
+errors and the rest of the run continues, retry only failed sources with the
+same run id and checkpoint by setting:
+
+```text
+MODEL_MEMORY_RUNNER_RETRY_FAILED=1
+```
+
+Keep `resume=true`, keep the same checkpoint path, and prefer conservative
+`maxConcurrency=1` unless the provider and database are already stable. This
+retries failed source records while preserving completed source records and
+avoids manually editing checkpoint or durable-memory DB state.
+
 ## Immediate follow-up
 
 Once the run finishes, move directly to:

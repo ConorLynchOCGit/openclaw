@@ -4,10 +4,12 @@ import {
   buildLiveRetrievalEnvelope,
   buildProjectionBootstrapContextFiles,
   buildCompletedAssistantTurnCaptureInput,
+  hasExplicitDurableCaptureSignal,
   parseMmV2RawJsonOutput,
   resolveModelMemoryLiveRuntimeStatus,
   shouldAttemptLiveRetrievalContext,
   shouldSkipOrdinaryTurnCaptureForExplicitOptOut,
+  shouldSkipOrdinaryTurnCaptureForToolDedupe,
 } from "./model-memory.live-runtime.ts";
 
 describe("resolveModelMemoryLiveRuntimeStatus", () => {
@@ -149,6 +151,43 @@ describe("buildCompletedAssistantTurnCaptureInput", () => {
         }),
       ).toBeNull();
     }
+  });
+
+  it("skips non-durable tool turns so bounded tool-result capture does not duplicate ordinary capture", () => {
+    const userText =
+      "Inspect the projection artifact directory and report only the path and file count.";
+    expect(hasExplicitDurableCaptureSignal(userText)).toBe(false);
+    expect(
+      shouldSkipOrdinaryTurnCaptureForToolDedupe({
+        userText,
+        sourceMetadata: { toolCallCount: 1 },
+      }),
+    ).toBe(true);
+    expect(
+      buildCompletedAssistantTurnCaptureInput({
+        userText,
+        assistantText: "Path: .openclaw/model-memory/projections. File count: 55.",
+        sourceMetadata: { toolCallCount: 1 },
+      }),
+    ).toBeNull();
+  });
+
+  it("still allows explicit durable user capture signals on tool-assisted turns", () => {
+    const userText =
+      "Please remember this durable workspace project fact: projection materialization is artifact-only.";
+    expect(hasExplicitDurableCaptureSignal(userText)).toBe(true);
+    expect(
+      shouldSkipOrdinaryTurnCaptureForToolDedupe({
+        userText,
+        sourceMetadata: { toolCallCount: 1 },
+      }),
+    ).toBe(false);
+    const capture = buildCompletedAssistantTurnCaptureInput({
+      userText,
+      assistantText: "Recorded if durable.",
+      sourceMetadata: { toolCallCount: 1 },
+    });
+    expect(capture?.turn.currentTurnText).toBe(userText);
   });
 });
 

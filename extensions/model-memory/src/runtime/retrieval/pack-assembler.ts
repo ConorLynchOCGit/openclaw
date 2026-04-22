@@ -325,6 +325,16 @@ export function buildRetrievalMetrics(input: {
     injectedCount,
     selectedProjectionIds,
     selectedSourceMemoryIds,
+    missDiagnostics: input.exclusions.map((exclusion) => ({
+      diagnosticType: "memory_existed_but_excluded",
+      id: exclusion.id,
+      idType: exclusion.idType,
+      reason: exclusion.reason,
+      sourceLane: exclusion.sourceLane,
+      status: exclusion.status,
+      scopeMatch: exclusion.scopeMatch,
+      detail: exclusion.detail,
+    })),
     emptyRetrieval: selectedCount === 0,
     estimatedTokens,
   };

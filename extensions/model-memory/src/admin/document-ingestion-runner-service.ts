@@ -1,8 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { ModelMemoryCanonicalRepository } from "../db/canonical-repository.ts";
-import { DatabaseMemoryObjectStore } from "../db/database-memory-object-store.ts";
-import { RuntimeContextRepository } from "../db/runtime-context-repository.ts";
+import type { ModelMemoryCanonicalRepository } from "../db/canonical-repository.ts";
+import type { CapturedObjectWriteStore } from "../db/captured-object-write-compatibility.ts";
+import type { RuntimeContextRepository } from "../db/runtime-context-repository.ts";
 import { ingestDocumentLive } from "../live-document-ingestion-service.ts";
 import { rebuildDerivedRuntimeState } from "../runtime-rebuild-orchestrator.ts";
 import type { SemanticCollisionAdjudicator } from "../semantic-collision-adjudication.ts";
@@ -161,7 +161,7 @@ export class JsonFileDocumentIngestionRunRecordStore implements DocumentIngestio
 export type ModelMemoryDocumentIngestionRunnerServiceDependencies = {
   canonicalRepository?: ModelMemoryCanonicalRepository;
   runtimeRepository?: RuntimeContextRepository;
-  memoryStore?: DatabaseMemoryObjectStore;
+  memoryStore?: CapturedObjectWriteStore;
   collisionAdjudicator?: SemanticCollisionAdjudicator;
   processSource?: (
     source: DocumentIngestionRunnerSource,
@@ -350,7 +350,7 @@ async function runWithConcurrency<T>(
 }
 
 export class ModelMemoryDocumentIngestionRunnerService {
-  private readonly memoryStore?: DatabaseMemoryObjectStore;
+  private readonly memoryStore?: CapturedObjectWriteStore;
 
   constructor(private readonly deps: ModelMemoryDocumentIngestionRunnerServiceDependencies) {
     this.memoryStore = deps.memoryStore;
@@ -367,6 +367,7 @@ export class ModelMemoryDocumentIngestionRunnerService {
     maxWordsPerWindow?: number;
     recordStore?: DocumentIngestionRunRecordStore;
     resume?: boolean;
+    retryFailed?: boolean;
     rebuildRuntime?: boolean;
     onProgress?: (event: DocumentIngestionRunnerProgressEvent) => void | Promise<void>;
   }): Promise<DocumentIngestionRunnerRunRecord> {
@@ -419,7 +420,8 @@ export class ModelMemoryDocumentIngestionRunnerService {
           return (
             !existingSource ||
             existingSource.status === "pending" ||
-            existingSource.status === "running"
+            existingSource.status === "running" ||
+            (input.retryFailed === true && existingSource.status === "failed")
           );
         });
 

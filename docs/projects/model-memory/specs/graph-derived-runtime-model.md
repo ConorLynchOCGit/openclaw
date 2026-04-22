@@ -17,6 +17,24 @@ than merely floated:
 - the graph is derived runtime state, not semantic truth
 - subject capsules are downstream consumers of the graph
 
+2026-04-22 MMV2 alignment:
+
+- graph inputs are MMV2 durable memories, memory events, memory edges, ingest
+  sources, ingest segments, and runtime projection versions
+- graph nodes and edges are derived runtime records only; they do not change
+  durable memory status, admission, reconciliation, or supersession
+- edge authority must come from explicit MMV2 edges, source refs, structural
+  ids, scopes, statuses, and source lineage, not fuzzy topical similarity
+- retrieval may use graph expansion only as a read-time candidate lane with
+  telemetry and exclusion reasons
+
+Open decisions before implementation:
+
+- which MMV2 edge types are high-authority enough for automatic graph edges
+- whether inferred graph edges need operator review before use in retrieval
+- graph retention/invalidation policy when source memories are superseded,
+  deleted, conflicted, or recompiled into projections
+
 ## Objective
 
 Add a graph-shaped derived runtime layer that makes relationships between

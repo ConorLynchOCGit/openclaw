@@ -393,6 +393,17 @@ describe("memory retrieval runtime", () => {
     expect(packs.every((pack) => pack.telemetry.metrics.exclusionReasons.conflicted === 1)).toBe(
       true,
     );
+    expect(packs.every((pack) => pack.telemetry.metrics.missDiagnostics.length > 0)).toBe(true);
+    expect(packs[0]?.telemetry.metrics.missDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          diagnosticType: "memory_existed_but_excluded",
+          id: "memory-conflict",
+          reason: "conflicted",
+          status: "conflicted",
+        }),
+      ]),
+    );
     expect(packs.every((pack) => pack.telemetry.metrics.selectedIds.includes("memory-rule"))).toBe(
       true,
     );

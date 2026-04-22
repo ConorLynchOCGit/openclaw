@@ -2,12 +2,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  DatabaseMemoryObjectStore,
-  ExecutorBackedSemanticCollisionAdjudicator,
-  ExecutorBackedSemanticInterpreter,
   JsonFileDocumentIngestionRunRecordStore,
   ModelMemoryDocumentIngestionRunnerService,
   type DocumentIngestionRunnerSource,
+  type SemanticInterpreter,
+  type SemanticInterpreterInput,
 } from "../extensions/model-memory/runtime-api.js";
 import { createModelMemoryDatabaseRuntime } from "../src/agents/model-memory.database.js";
 import {
@@ -45,6 +44,56 @@ const DEFAULT_RUN_RECORD_PATH =
 const RUNNER_PLAN_PATH = process.env.MODEL_MEMORY_RUNNER_PLAN_PATH?.trim();
 const RUNNER_SOURCES = process.env.MODEL_MEMORY_RUNNER_SOURCES?.trim();
 const RESUME_RUN = process.env.MODEL_MEMORY_RUNNER_RESUME?.trim() !== "0";
+const RETRY_FAILED_SOURCES = process.env.MODEL_MEMORY_RUNNER_RETRY_FAILED?.trim() === "1";
+
+function stripOuterJsonCodeFence(text: string): string {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/iu);
+  return match?.[1]?.trim() ?? trimmed;
+}
+
+function extractStructuredJsonCandidate(text: string): string {
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/iu);
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  const objectStart = text.indexOf("{");
+  const objectEnd = text.lastIndexOf("}");
+  if (objectStart !== -1 && objectEnd > objectStart) {
+    return text.slice(objectStart, objectEnd + 1).trim();
+  }
+
+  const arrayStart = text.indexOf("[");
+  const arrayEnd = text.lastIndexOf("]");
+  if (arrayStart !== -1 && arrayEnd > arrayStart) {
+    return text.slice(arrayStart, arrayEnd + 1).trim();
+  }
+
+  return text.trim();
+}
+
+function parseMmV2RawJsonOutput(outputText: string): unknown {
+  return JSON.parse(extractStructuredJsonCandidate(stripOuterJsonCodeFence(outputText)));
+}
+
+class ExecutorBackedMmV2SemanticInterpreter implements SemanticInterpreter {
+  constructor(private readonly executor: OpenAICompatibleLiveJsonExecutor) {}
+
+  async interpret(input: SemanticInterpreterInput) {
+    const response = await this.executor.execute({
+      contract: input.prompt.contract,
+      systemPrompt: input.prompt.systemPrompt,
+      userPrompt: input.prompt.userPrompt,
+      responseFormat: input.prompt.responseFormat,
+      responseOptions: input.prompt.responseOptions,
+    });
+    return {
+      action: "capture" as const,
+      objects: [parseMmV2RawJsonOutput(response.outputText)],
+    };
+  }
+}
 
 type SourcePlanEntry =
   | string
@@ -133,17 +182,10 @@ async function main() {
       requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
       requestSeed: DEFAULT_REQUEST_SEED,
     });
-    const interpreter = new ExecutorBackedSemanticInterpreter(executor);
-    const collisionAdjudicator = new ExecutorBackedSemanticCollisionAdjudicator(executor);
-    const memoryStore = new DatabaseMemoryObjectStore(
-      runtime.canonicalRepository,
-      collisionAdjudicator,
-    );
+    const interpreter = new ExecutorBackedMmV2SemanticInterpreter(executor);
     const service = new ModelMemoryDocumentIngestionRunnerService({
       canonicalRepository: runtime.canonicalRepository,
       runtimeRepository: runtime.runtimeRepository,
-      memoryStore,
-      collisionAdjudicator,
     });
     const recordStore = new JsonFileDocumentIngestionRunRecordStore(
       path.resolve(repoRoot, DEFAULT_RUN_RECORD_PATH),
@@ -160,6 +202,7 @@ async function main() {
       maxWordsPerWindow: DEFAULT_MAX_WORDS_PER_WINDOW,
       recordStore,
       resume: RESUME_RUN,
+      retryFailed: RETRY_FAILED_SOURCES,
       onProgress: (event) => {
         process.stderr.write(`[model-memory-runner] ${event.message}\n`);
       },

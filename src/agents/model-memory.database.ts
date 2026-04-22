@@ -1,9 +1,12 @@
-import { MmV2DatabaseMemoryObjectStore } from "../../extensions/model-memory/src/db/mmv2-memory-object-store.ts";
+import {
+  DisabledCapturedObjectWriteStore,
+  isLegacyCapturedObjectWriteFallbackEnabled,
+  type CapturedObjectWriteStore,
+} from "../../extensions/model-memory/src/db/captured-object-write-compatibility.ts";
 import { MmV2NativeRepository } from "../../extensions/model-memory/src/db/mmv2-native-repository.ts";
 import { resolveModelMemoryStorageEngine } from "../../extensions/model-memory/src/storage-engine.ts";
 import { loadConfig, type OpenClawConfig } from "../config/config.js";
 import {
-  DatabaseMemoryObjectStore,
   DatabaseRetrievalStore,
   ModelMemoryCanonicalRepository,
   RuntimeContextRepository,
@@ -37,7 +40,7 @@ export type ModelMemoryDatabaseRuntime = {
   sqlClient: SqlClient;
   canonicalRepository: InstanceType<typeof ModelMemoryCanonicalRepository> | MmV2NativeRepository;
   runtimeRepository: InstanceType<typeof RuntimeContextRepository>;
-  memoryStore: InstanceType<typeof DatabaseMemoryObjectStore> | MmV2DatabaseMemoryObjectStore;
+  memoryStore: CapturedObjectWriteStore;
   retrievalStore: InstanceType<typeof DatabaseRetrievalStore>;
   migrationNames: string[];
 };
@@ -230,10 +233,21 @@ export async function createModelMemoryDatabaseRuntime(
   const canonicalRepository =
     storageEngine === "mmv2" ? mmv2CanonicalRepository : legacyCanonicalRepository;
   const runtimeRepository = new RuntimeContextRepository(sqlClient);
-  const memoryStore =
-    storageEngine === "mmv2"
-      ? new MmV2DatabaseMemoryObjectStore(mmv2CanonicalRepository)
-      : new DatabaseMemoryObjectStore(legacyCanonicalRepository);
+  let memoryStore: CapturedObjectWriteStore;
+  if (storageEngine === "mmv2") {
+    if (isLegacyCapturedObjectWriteFallbackEnabled({ env })) {
+      const { MmV2DatabaseMemoryObjectStore } =
+        await import("../../extensions/model-memory/src/db/mmv2-memory-object-store.ts");
+      memoryStore = new MmV2DatabaseMemoryObjectStore(mmv2CanonicalRepository);
+    } else {
+      memoryStore = new DisabledCapturedObjectWriteStore(
+        "MMV2 runtime uses native recording; legacy captured-object compatibility is fallback-only",
+      );
+    }
+  } else {
+    const { DatabaseMemoryObjectStore } = await import("../plugin-sdk/model-memory.js");
+    memoryStore = new DatabaseMemoryObjectStore(legacyCanonicalRepository);
+  }
 
   return {
     resolution,

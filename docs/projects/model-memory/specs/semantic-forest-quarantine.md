@@ -27,19 +27,19 @@ Accepted baseline evidence:
 
 ## Classifications
 
-| Surface                                                          | Classification                                                           | Default live posture                                                                                                                                  |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `extensions/model-memory/src/semantic-identity.ts`               | `legacy_fallback` plus `read_only_retrieval` for text normalization only | not a MMV2 write-path authority                                                                                                                       |
-| `extensions/model-memory/src/semantic-collision-adjudication.ts` | `legacy_fallback`                                                        | not called by default MMV2 live capture/reconciliation                                                                                                |
-| `extensions/model-memory/src/db/database-memory-object-store.ts` | `legacy_fallback`                                                        | fallback only when native MMV2 repository is unavailable or an explicit fallback path is selected                                                     |
-| `extensions/model-memory/src/mmv2/semantic-identity.ts`          | `bounded_structured_identity`                                            | allowed for canonical fields, scope, source refs, status, and explicit user text                                                                      |
-| `extensions/model-memory/src/mmv2/reconciliation.ts`             | `bounded_structured_identity`                                            | exact duplicate and exact field/scope identity only; correction supersession requires structural target resolution                                    |
-| `extensions/model-memory/src/mmv2/atomic-extraction.ts`          | `bounded_structured_identity`                                            | explicit command shapes only; no topic-specific parser                                                                                                |
-| `extensions/model-memory/src/mmv2/admission.ts`                  | `bounded_structured_identity`                                            | deterministic admit only for explicit evidence classes                                                                                                |
-| `extensions/model-memory/src/retrieval-request-interpreter.ts`   | `read_only_retrieval`                                                    | live context fallback emits baseline retrieval telemetry without soak-specific forced classes/kinds                                                   |
-| `extensions/model-memory/src/runtime/retrieval/`                 | `read_only_retrieval`                                                    | ranking may use fielded, lexical, recency, source-lineage, and projection-digest evidence; it cannot mutate truth                                     |
-| `extensions/model-memory/src/runtime-read-models.ts`             | `read_only_retrieval`                                                    | MMV2-derived runtime records only; default retrieval identity projection is deterministic field-based and does not import legacy semantic-family code |
-| `extensions/model-memory/src/mmv2/storage-compatibility.ts`      | `legacy_fallback`                                                        | temporary shape bridge only, not canonical truth                                                                                                      |
+| Surface                                                          | Classification                                                           | Default live posture                                                                                                                                       |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extensions/model-memory/src/semantic-identity.ts`               | `legacy_fallback` plus `read_only_retrieval` for text normalization only | not a MMV2 write-path authority                                                                                                                            |
+| `extensions/model-memory/src/semantic-collision-adjudication.ts` | `legacy_fallback`                                                        | not called by default MMV2 live capture/reconciliation                                                                                                     |
+| `extensions/model-memory/src/db/database-memory-object-store.ts` | `explicit_fallback_only`                                                 | not constructed by default MMV2 live paths; fallback requires `MODEL_MEMORY_LEGACY_CAPTURED_OBJECT_WRITE_FALLBACK_ENABLED=true` or an explicit caller flag |
+| `extensions/model-memory/src/mmv2/semantic-identity.ts`          | `bounded_structured_identity`                                            | allowed for canonical fields, scope, source refs, status, and explicit user text                                                                           |
+| `extensions/model-memory/src/mmv2/reconciliation.ts`             | `bounded_structured_identity`                                            | exact duplicate and exact field/scope identity only; correction supersession requires structural target resolution                                         |
+| `extensions/model-memory/src/mmv2/atomic-extraction.ts`          | `bounded_structured_identity`                                            | explicit command shapes only; no topic-specific parser                                                                                                     |
+| `extensions/model-memory/src/mmv2/admission.ts`                  | `bounded_structured_identity`                                            | deterministic admit only for explicit evidence classes                                                                                                     |
+| `extensions/model-memory/src/retrieval-request-interpreter.ts`   | `read_only_retrieval`                                                    | live context fallback emits baseline retrieval telemetry without soak-specific forced classes/kinds                                                        |
+| `extensions/model-memory/src/runtime/retrieval/`                 | `read_only_retrieval`                                                    | ranking may use fielded, lexical, recency, source-lineage, and projection-digest evidence; it cannot mutate truth                                          |
+| `extensions/model-memory/src/runtime-read-models.ts`             | `read_only_retrieval`                                                    | MMV2-derived runtime records only; default retrieval identity projection is deterministic field-based and does not import legacy semantic-family code      |
+| `extensions/model-memory/src/mmv2/storage-compatibility.ts`      | `legacy_fallback`                                                        | temporary shape bridge only, not canonical truth                                                                                                           |
 
 ## Current Enforcement
 
@@ -56,6 +56,29 @@ covering the default retrieval/read-model path:
 Those files must not import legacy `semantic-identity.ts`, semantic collision
 adjudication, or `database-memory-object-store.ts`. Legacy compatibility can
 remain elsewhere only as documented fallback or read-only adapter code.
+
+The 2026-04-22 hardening pass extends that guard to default write hot paths:
+
+- `extensions/model-memory/src/live-document-ingestion-service.ts`
+- `extensions/model-memory/src/live-ordinary-turn-capture-service.ts`
+- `extensions/model-memory/src/live-daily-continuity-recovery-service.ts`
+- `extensions/model-memory/src/admin/document-ingestion-runner-service.ts`
+- `extensions/model-memory/src/admin/replay-service.ts`
+- `src/agents/model-memory.database.ts`
+
+Those files must not import legacy semantic identity, semantic collision
+adjudication, or `DatabaseMemoryObjectStore` through normal static imports.
+`DatabaseMemoryObjectStore` remains available for legacy storage-engine
+rollback and explicit captured-object write fallback only.
+
+Explicit fallback flag:
+
+```text
+MODEL_MEMORY_LEGACY_CAPTURED_OBJECT_WRITE_FALLBACK_ENABLED=true
+```
+
+Default behavior is fail-closed for legacy captured-object fallback. MMV2
+native recording remains the normal live write path.
 
 ## Forbidden Write-Path Inference
 

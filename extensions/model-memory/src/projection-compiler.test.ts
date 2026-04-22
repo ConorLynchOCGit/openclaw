@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compileProjection, compileProjectionCatalogDigests } from "./projection-compiler.ts";
 import type { RuntimeMemoryRecord } from "./runtime-read-models.ts";
+import { PROJECTION_REGISTRY } from "./runtime/projections/registry.ts";
 
 function memory(
   overrides: Partial<RuntimeMemoryRecord> & Pick<RuntimeMemoryRecord, "id">,
@@ -91,6 +92,26 @@ describe("projection compiler", () => {
           payload: { title: "release checklist", steps: ["test", "build"] },
         }),
         memory({
+          id: "memory-source",
+          canonicalClass: "reference",
+          kind: "reference",
+          payload: { path: "docs/projects/model-memory/STATUS.md" },
+          normalizedSearchText: "source reference docs projects model memory status",
+        }),
+        memory({
+          id: "memory-decision",
+          kind: "fact",
+          payload: { subject: "architecture decision", value: "MMV2 SQL is truth" },
+          normalizedSubject: "architecture decision",
+          normalizedSearchText: "architecture decision MMV2 SQL is truth",
+        }),
+        memory({
+          id: "memory-episode",
+          kind: "fact",
+          activationBasis: "daily_recovery_candidate",
+          payload: { subject: "timeline event", value: "runtime hardening landed" },
+        }),
+        memory({
           id: "memory-conflict",
           lifecycleState: "conflict_hold",
         }),
@@ -99,19 +120,29 @@ describe("projection compiler", () => {
     });
 
     expect(digests.map((digest) => digest.projectionType)).toEqual(
-      expect.arrayContaining([
-        "user_profile_page",
-        "project_page",
-        "procedure_page",
-        "projection_digest",
-      ]),
+      PROJECTION_REGISTRY.map((entry) => entry.projectionType),
     );
+    expect(digests).toHaveLength(10);
+    for (const digest of digests) {
+      expect(digest.schemaVersion).toBe("memory_projection.v1");
+      expect(digest.projectionId).toContain(`projection:${digest.projectionType}:`);
+      expect(digest.contentHash).toHaveLength(64);
+      expect(digest.compiledAt).toBe("1970-01-01T00:00:00.000Z");
+      expect(digest.artifactPaths.digestPath).toContain(".openclaw/model-memory/projections/");
+      expect(digest.retrievalDigest.contentHash).toBe(digest.contentHash);
+    }
     expect(
       digests.find((digest) => digest.projectionType === "user_profile_page")?.sourceMemoryIds,
     ).toEqual(["memory-pref"]);
     expect(
       digests.find((digest) => digest.projectionType === "procedure_page")?.sourceMemoryIds,
     ).toEqual(["memory-proc"]);
+    expect(
+      digests.find((digest) => digest.projectionType === "source_page")?.sourceMemoryIds,
+    ).toEqual(["memory-source"]);
+    expect(
+      digests.find((digest) => digest.projectionType === "decision_log")?.sourceMemoryIds,
+    ).toEqual(["memory-decision"]);
     expect(
       digests.find((digest) => digest.projectionType === "projection_digest")?.conflictMarkers,
     ).toEqual(["conflicted_source_memory"]);

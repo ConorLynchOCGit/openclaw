@@ -8,6 +8,22 @@ function readRepoFile(path: string): string {
   return readFileSync(resolve(repoRoot, path), "utf8");
 }
 
+function expectNoLegacySemanticForestValueImports(source: string, file: string): void {
+  const importDeclarations = [
+    ...source.matchAll(/import\s+([\s\S]*?)\s+from\s+["']([^"']+)["'];/gu),
+  ];
+  for (const [, importBody, importPath] of importDeclarations) {
+    const isTypeOnly = importBody.trimStart().startsWith("type ");
+    if (isTypeOnly) {
+      continue;
+    }
+    expect(`${file}:${importPath}`).not.toMatch(/semantic-identity\.ts$/u);
+    expect(`${file}:${importPath}`).not.toMatch(/semantic-collision-adjudication\.ts$/u);
+  }
+  expect(source, file).not.toMatch(/from\s+["'][^"']*database-memory-object-store\.ts["']/u);
+  expect(source, file).not.toContain("FamilyRecall");
+}
+
 describe("semantic forest quarantine", () => {
   it("keeps default retrieval runtime free of legacy semantic-family modules", () => {
     const retrievalFiles = [
@@ -20,10 +36,37 @@ describe("semantic forest quarantine", () => {
 
     for (const file of retrievalFiles) {
       const source = readRepoFile(file);
-      expect(source, file).not.toMatch(/from\s+["'][^"']*semantic-identity\.ts["']/u);
-      expect(source, file).not.toContain("semantic-collision-adjudication");
-      expect(source, file).not.toContain("database-memory-object-store");
-      expect(source, file).not.toContain("FamilyRecall");
+      expectNoLegacySemanticForestValueImports(source, file);
     }
+  });
+
+  it("keeps default MMV2 write hot paths free of legacy semantic-family modules", () => {
+    const writeHotPathFiles = [
+      "extensions/model-memory/src/live-document-ingestion-service.ts",
+      "extensions/model-memory/src/live-ordinary-turn-capture-service.ts",
+      "extensions/model-memory/src/live-daily-continuity-recovery-service.ts",
+      "extensions/model-memory/src/admin/document-ingestion-runner-service.ts",
+      "extensions/model-memory/src/admin/replay-service.ts",
+      "src/agents/model-memory.database.ts",
+    ];
+
+    for (const file of writeHotPathFiles) {
+      const source = readRepoFile(file);
+      expectNoLegacySemanticForestValueImports(source, file);
+    }
+  });
+
+  it("keeps the document-ingest operator tool from constructing legacy collision fallback by default", () => {
+    const source = readRepoFile("extensions/model-memory/src/document-ingestion-tool.ts");
+
+    expectNoLegacySemanticForestValueImports(
+      source.replace(
+        /await import\(["']\.\/semantic-collision-adjudication\.ts["']\)/gu,
+        'await import("./explicit-fallback-collision.ts")',
+      ),
+      "extensions/model-memory/src/document-ingestion-tool.ts",
+    );
+    expect(source).toContain("isLegacyCapturedObjectWriteFallbackEnabled");
+    expect(source).toContain('await import("./semantic-collision-adjudication.ts")');
   });
 });

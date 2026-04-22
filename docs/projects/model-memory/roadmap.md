@@ -46,13 +46,17 @@ title: "Model Memory Roadmap"
   - `SOAKQUAR-2026-04-21` for the clean MMV2 retrieval-runtime soak
   - `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/`
     for projection materialization and production hook probe evidence
-- The active roadmap is now bounded capture expansion, retrieval/projection
-  quality hardening, fallback quarantine/removal, closed-loop ops, and Phase 2
-  derived features.
+- The active roadmap is now post-landing verification, curated MMV2 substrate
+  ingestion, retrieval/projection quality hardening, fallback
+  quarantine/removal, closed-loop ops, and Phase 2 derived features.
+- The 2026-04-22 deep document ingest is paused at
+  `checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json` for
+  overnight continuation; build-focused hardening should proceed without
+  resuming ingest or running the full regression soak.
 
 ## Current top priorities
 
-1. expand semantic capture through bounded tool-result proof/capture first:
+1. verify the landed bounded tool-result proof/capture lane:
    - `tool_result_persist`
    - `after_tool_call`
    - no raw prompts, transcripts, or tool logs
@@ -61,17 +65,29 @@ title: "Model Memory Roadmap"
    no-raw-prompt guarantees are proven
 3. production-verify or block `ContextEngine.ingest` and `ingestBatch`; do not
    treat synthetic-only canaries as production proof
-4. harden Retrieval Runtime/projection relevance:
+4. populate MMV2 with the curated 2026-04 deep document-ingest corpus and
+   verify source/segment/memory/event evidence; resume from checkpoint during
+   the overnight ingest window, not during build-focused hardening
+5. quarantine legacy captured-object write compatibility behind explicit
+   fallback/rollback flags
+6. harden Retrieval Runtime/projection relevance:
    - prefer fresh projection digests backed by active MMV2 ids
    - emit stale/superseded/deleted/conflicted/inactive exclusions
+   - emit retrieval miss diagnostics when durable memories existed but were
+     excluded
    - keep all ranking read-time only
-5. finish quarantine/removal of fallback compatibility after the clean
+7. finish quarantine/removal of fallback compatibility after the clean
    retrieval-runtime soak
-6. update ordinary-turn MMV2 evaluation coverage where needed
-7. stabilize file-pack/provider variance
-8. implement remaining verified primary memory capture seam expansion
-9. implement `memory-ops-closed-loop` instrumentation
-10. proceed to Phase 2 derived features:
+8. update ordinary-turn MMV2 evaluation coverage where needed
+9. stabilize file-pack/provider variance
+10. implement remaining verified primary memory capture seam expansion
+11. keep live memory activity-feed visibility bounded:
+    retrieval/capture lifecycle ids, counts, and statuses may appear in the
+    main feed, but raw prompts, transcripts, and tool logs must not
+12. maintain the repo-local and Codex global `model-memory-deep-ingest` skill
+    as the standard entry point for future ingest resume/monitor/pause work
+13. implement `memory-ops-closed-loop` instrumentation
+14. proceed to Phase 2 derived features:
 
 - graph runtime
 - project/subject capsules
@@ -107,34 +123,48 @@ the current live authority where it conflicts with MMV2-native durable truth.
 
 ## Next Engineering Sequence
 
-1. Bounded tool-result proof/capture seam expansion.
-2. ContextEngine production verification for `ingest` / `ingestBatch`.
-3. Retrieval/projection relevance and exclusion telemetry hardening:
+1. Post-landing verification for the committed bounded tool-result
+   proof/capture and projection materialization lanes.
+2. Curated deep document-ingest substrate population.
+3. Legacy captured-object write compatibility quarantine.
+4. ContextEngine production verification for `ingest` / `ingestBatch`.
+5. Retrieval/projection relevance, exclusion telemetry, and miss diagnostics:
    - [Memory Retrieval Runtime](/projects/model-memory/specs/memory-retrieval-runtime)
-4. Soak-window compatibility quarantine/removal plan.
-5. Ordinary-turn MMV2 evaluation coverage.
-6. File-pack/provider variance stabilization.
-7. Remaining verified primary memory capture seam expansion:
+6. Soak-window compatibility quarantine/removal plan.
+7. Ordinary-turn MMV2 evaluation coverage.
+8. File-pack/provider variance stabilization.
+9. Remaining verified primary memory capture seam expansion:
    - [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
-8. Closed-loop memory ops instrumentation:
-   - [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
-9. Phase 2 graph runtime:
-   - [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
-10. First project-state capsule:
+10. Live memory activity feed:
+    - bounded visible retrieval/capture status in the main feed
+    - no raw prompt, transcript, or tool-log persistence
+11. Deep-ingest skill maintenance:
+    - repo-local OpenClaw skill
+    - Codex global skill
+    - MMV2 runner/checkpoint workflow
+12. Closed-loop memory ops instrumentation:
+
+- [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
+
+13. Phase 2 graph runtime:
+
+- [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
+
+14. First project-state capsule:
     - [Subject Capsules And Dense Ingestion](/projects/model-memory/specs/subject-capsules-and-dense-ingestion)
-11. Hierarchical retrieval:
+15. Hierarchical retrieval:
 
 - [Post-Cutover Hierarchical Retrieval](/projects/model-memory/specs/post-cutover-hierarchical-retrieval)
 
-11. Proactive planner:
+16. Proactive planner:
 
 - [Proactive Memory Planner](/projects/model-memory/specs/proactive-memory-planner)
 
-12. Skill/tool synthesis:
+17. Skill/tool synthesis:
 
 - [Skill And Tool Synthesis](/projects/model-memory/specs/skill-and-tool-synthesis)
 
-13. Cache/projection policy:
+18. Cache/projection policy:
 
 - [Cache And Projection Policy](/projects/model-memory/specs/cache-and-projection-policy)
 

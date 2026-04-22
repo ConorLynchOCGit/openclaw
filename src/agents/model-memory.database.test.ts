@@ -180,6 +180,32 @@ describe("model-memory database resolution", () => {
     expect(runtime.canonicalRepository).toBeDefined();
     expect(runtime.runtimeRepository).toBeDefined();
     expect(runtime.memoryStore).toBeDefined();
+    await expect(runtime.memoryStore.writeCapturedObjects([])).rejects.toThrow(
+      /legacy captured-object compatibility is fallback-only/i,
+    );
     expect(runtime.retrievalStore).toBeDefined();
+  });
+
+  it("requires the explicit legacy captured-object flag before exposing MMV2 compatibility writes", async () => {
+    const createPool = vi.fn(
+      (config: ModelMemoryPgPoolConfig) => ({ config }) as unknown as ModelMemoryPgPool,
+    );
+    const migrationRunner = vi.fn(async () => ["0001_model_memory_init.sql"]);
+
+    const runtime = await createModelMemoryDatabaseRuntime({
+      config: createConfig({
+        modelMemoryUrl:
+          "postgresql://user:pass@aws-1-us-east-1.pooler.supabase.com:5432/model_memory_runtime?sslmode=require",
+      }),
+      defaultDatabaseName: "model_memory_runtime",
+      env: {
+        MODEL_MEMORY_LEGACY_CAPTURED_OBJECT_WRITE_FALLBACK_ENABLED: "true",
+      } as NodeJS.ProcessEnv,
+      createPool,
+      migrationRunner,
+    });
+
+    expect(runtime.storageEngine).toBe("mmv2");
+    expect(runtime.memoryStore.constructor.name).toBe("MmV2DatabaseMemoryObjectStore");
   });
 });

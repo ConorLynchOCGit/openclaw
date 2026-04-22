@@ -1,6 +1,9 @@
 import { ModelMemoryCanonicalRepository } from "./db/canonical-repository.ts";
-import { DatabaseMemoryObjectStore } from "./db/database-memory-object-store.ts";
-import { createDefaultMemoryObjectStore } from "./db/default-memory-store.ts";
+import {
+  assertLegacyCapturedObjectWriteFallbackEnabled,
+  createLegacyCapturedObjectWriteFallbackStore,
+  type CapturedObjectWriteStore,
+} from "./db/captured-object-write-compatibility.ts";
 import { RuntimeContextRepository } from "./db/runtime-context-repository.ts";
 import type { ExistingMemorySummary } from "./mmv2/contracts.ts";
 import { captureOrdinaryTurnV2ForLiveStorage } from "./mmv2/live-document-ingestion.ts";
@@ -27,10 +30,12 @@ export type LiveOrdinaryTurnCaptureResult = OrdinaryTurnCaptureResult & {
 export async function captureOrdinaryTurnLive(input: {
   canonicalRepository: ModelMemoryCanonicalRepository;
   runtimeRepository?: RuntimeContextRepository;
-  memoryStore?: DatabaseMemoryObjectStore;
+  memoryStore?: CapturedObjectWriteStore;
   collisionAdjudicator?: SemanticCollisionAdjudicator;
   capture: OrdinaryTurnCaptureInput;
   rebuildRuntime?: boolean;
+  allowLegacyCapturedObjectWriteFallback?: boolean;
+  env?: NodeJS.ProcessEnv;
 }): Promise<LiveOrdinaryTurnCaptureResult> {
   const canonicalRepository = input.canonicalRepository as MmV2AwareCanonicalRepository;
   const canUseMmV2LivePath =
@@ -53,39 +58,47 @@ export async function captureOrdinaryTurnLive(input: {
   const writeResults = canUseMmV2LivePath
     ? (await canonicalRepository.persistLiveMemoryBatch!(mmv2Recording!),
       summarizeLiveMemoryWriteResults(mmv2Recording!))
-    : await (
-        input.memoryStore ??
-        createDefaultMemoryObjectStore({
-          canonicalRepository: input.canonicalRepository,
-          collisionAdjudicator: input.collisionAdjudicator,
-        })
-      )
-        .writeCapturedObjects(result.capturedObjects)
-        .then((legacyResults) =>
-          legacyResults.map(
-            (entry): LiveMemoryWriteResult => ({
-              decision:
-                entry.decision === "attach_support" || entry.decision === "supersede"
-                  ? entry.decision
-                  : entry.decision === "ignore"
-                    ? "reject"
-                    : "write",
-              eventType:
-                entry.decision === "attach_support"
-                  ? "memory_merged"
-                  : entry.decision === "ignore"
-                    ? "candidate_rejected"
-                    : "memory_inserted",
-              memoryId: entry.memoryObject?.id,
-              targetMemoryIds: entry.supersessionLink?.priorObjectId
-                ? [entry.supersessionLink.priorObjectId]
-                : [],
-              memoryObject: entry.memoryObject,
-              supportItem: entry.supportItem,
-              writeEvent: entry.writeEvent,
+    : await Promise.resolve(
+        (input.memoryStore
+          ? (assertLegacyCapturedObjectWriteFallbackEnabled({
+              caller: "captureOrdinaryTurnLive",
+              env: input.env,
+              explicit: input.allowLegacyCapturedObjectWriteFallback,
             }),
-          ),
-        );
+            input.memoryStore)
+          : await createLegacyCapturedObjectWriteFallbackStore({
+              canonicalRepository: input.canonicalRepository,
+              collisionAdjudicator: input.collisionAdjudicator,
+              caller: "captureOrdinaryTurnLive",
+              env: input.env,
+              explicit: input.allowLegacyCapturedObjectWriteFallback,
+            })
+        ).writeCapturedObjects(result.capturedObjects),
+      ).then((legacyResults) =>
+        legacyResults.map(
+          (entry): LiveMemoryWriteResult => ({
+            decision:
+              entry.decision === "attach_support" || entry.decision === "supersede"
+                ? entry.decision
+                : entry.decision === "ignore"
+                  ? "reject"
+                  : "write",
+            eventType:
+              entry.decision === "attach_support"
+                ? "memory_merged"
+                : entry.decision === "ignore"
+                  ? "candidate_rejected"
+                  : "memory_inserted",
+            memoryId: entry.memoryObject?.id,
+            targetMemoryIds: entry.supersessionLink?.priorObjectId
+              ? [entry.supersessionLink.priorObjectId]
+              : [],
+            memoryObject: entry.memoryObject,
+            supportItem: entry.supportItem,
+            writeEvent: entry.writeEvent,
+          }),
+        ),
+      );
   const rebuild =
     input.runtimeRepository && (input.rebuildRuntime ?? true)
       ? await rebuildDerivedRuntimeState({

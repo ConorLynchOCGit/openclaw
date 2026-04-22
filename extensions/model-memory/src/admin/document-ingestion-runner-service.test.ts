@@ -173,6 +173,80 @@ describe("document-ingestion-runner-service", () => {
     expect(resumed.totals.docsFailed).toBe(1);
   });
 
+  it("can explicitly retry failed sources on resume", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "model-memory-runner-retry-failed-"));
+    const recordPath = path.join(tempDir, "run.json");
+    const store = new JsonFileDocumentIngestionRunRecordStore(recordPath);
+    const retriedCalls: string[] = [];
+
+    const firstService = new ModelMemoryDocumentIngestionRunnerService({
+      async processSource(source) {
+        if (source.sourceId === "source-002") {
+          throw new Error("temporary provider failure");
+        }
+        return {
+          lineCount: 2,
+          windowCount: 1,
+          capturedClaimCount: 1,
+          writeDecisionCounts: { write: 1 },
+          ignoredWindowCount: 0,
+          rejectedWindowCount: 0,
+          rejectReasons: [],
+        };
+      },
+    });
+
+    await firstService.executeRun({
+      runId: "run-retry-failed",
+      sources: buildSources(),
+      interpreter: {
+        interpret() {
+          throw new Error("unused");
+        },
+      },
+      modelId: "openrouter/openai/gpt-5.4-nano",
+      candidateModelId: "openrouter/openai/gpt-5.4-nano",
+      chunkSize: 2,
+      recordStore: store,
+      resume: true,
+    });
+
+    const secondService = new ModelMemoryDocumentIngestionRunnerService({
+      async processSource(source) {
+        retriedCalls.push(source.sourceId);
+        return {
+          lineCount: 2,
+          windowCount: 1,
+          capturedClaimCount: 1,
+          writeDecisionCounts: { write: 1 },
+          ignoredWindowCount: 0,
+          rejectedWindowCount: 0,
+          rejectReasons: [],
+        };
+      },
+    });
+
+    const resumed = await secondService.executeRun({
+      runId: "run-retry-failed",
+      sources: buildSources(),
+      interpreter: {
+        interpret() {
+          throw new Error("unused");
+        },
+      },
+      modelId: "openrouter/openai/gpt-5.4-nano",
+      candidateModelId: "openrouter/openai/gpt-5.4-nano",
+      chunkSize: 2,
+      recordStore: store,
+      resume: true,
+      retryFailed: true,
+    });
+
+    expect(retriedCalls).toEqual(["source-002"]);
+    expect(resumed.totals.docsCompleted).toBe(3);
+    expect(resumed.totals.docsFailed).toBe(0);
+  });
+
   it("records interrupted status when chunk-end runtime rebuild fails", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "model-memory-runner-interrupted-"));
     const recordPath = path.join(tempDir, "run.json");

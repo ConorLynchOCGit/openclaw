@@ -98,6 +98,55 @@ describe("retrieval", () => {
     expect(store.snapshot().retrievalRequests[0]?.scope.rawQueryPersisted).toBe(false);
   });
 
+  it("hashes raw scope fields before retrieval telemetry persistence", async () => {
+    const store = new InMemoryRetrievalStore();
+    const result = await executeRetrieval({
+      envelope: {
+        queryText: "Find deployment information for project-001",
+        requestPurpose: "context_injection",
+        scope: {
+          projectId: "project-001",
+          sessionKey: "postland-raw-session-key",
+          currentTurnText: "raw prompt text should not persist",
+        },
+        sessionId: "session-scope-redaction",
+        maxResults: 1,
+      },
+      modelId: "retrieval-model-001",
+      interpreter: {
+        async interpret() {
+          return {
+            action: "retrieve",
+            request: {
+              goal: "project facts",
+              canonicalClasses: ["project"],
+              kinds: ["fact"],
+              subjectHints: ["deployment"],
+              contentHints: ["region"],
+              desiredResultCount: 1,
+              requestConfidence: "strong",
+            },
+          };
+        },
+      },
+      memoryObjects: [],
+      store,
+      createdAt: new Date(0),
+    });
+
+    expect(result).toBeDefined();
+    const scope = store.snapshot().retrievalRequests[0]?.scope;
+    expect(scope?.projectId).toBe("project-001");
+    expect(scope?.sessionKey).toBeUndefined();
+    expect(scope?.currentTurnText).toBeUndefined();
+    expect(scope?.sessionKeyHash).toMatch(/^sha256:/);
+    expect(scope?.sessionKeyRawPersisted).toBe(false);
+    expect(scope?.currentTurnTextHash).toMatch(/^sha256:/);
+    expect(scope?.currentTurnTextRawPersisted).toBe(false);
+    expect(JSON.stringify(scope)).not.toContain("postland-raw-session-key");
+    expect(JSON.stringify(scope)).not.toContain("raw prompt text should not persist");
+  });
+
   it("keeps broad workflow queries from collapsing to a single over-constrained result", async () => {
     const store = new InMemoryRetrievalStore();
     const result = await executeRetrieval({

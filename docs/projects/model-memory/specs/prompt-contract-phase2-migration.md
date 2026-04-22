@@ -14,6 +14,25 @@ Capture the prompt-contract changes implied by the Phase 2 move to:
 - capsules
 - planner and synthesis surfaces
 
+2026-04-22 MMV2 alignment:
+
+- prompt-contract updates must preserve MMV2 durable memories/events/edges as
+  truth and projections/retrieval packs as derived artifacts
+- correction/supersession remains structural; prompt examples must not teach
+  fuzzy topical replacement
+- examples must avoid topic-specific shortcuts such as `validation reports`
+  unless the example is explicitly labeled as arbitrary placeholder text
+- runtime diagnostics should prefer ids, hashes, statuses, and reason codes
+  over raw prompt or transcript text
+
+Open decisions before implementation:
+
+- whether `kind` becomes primary in model outputs or only in downstream graph
+  derivation first
+- prompt-injection risk thresholds for document ingest vs ordinary turns
+- how much evidence quoting is allowed in derived prompt artifacts without
+  becoming raw-data capture
+
 ## Required audits
 
 The following contracts must be reviewed:

@@ -5,6 +5,105 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-22 - Hardening landing accepted with explicit correction rerun evidence
+
+Decision:
+
+- treat `.artifacts/model-memory/soak-ui-validation/2026-04-22-hardening-land-soak/`
+  as the hardening landing proof root for the current runtime
+- accept the correction gate only from the targeted rerun:
+  - correction memory `7b3811fb-9613-5443-bc73-dd6799f893f1`
+  - event `9eb0cc1c-aa6a-54cc-8de4-4e7c8e42cb77`
+  - supersession edge `0da10fcc-b5a7-5962-9d69-982d748755d6`
+  - exact target memory `231bd0a5-2f7c-5f65-af75-397668a2e960`
+- record the original correction attempt as a live capture timeout, not a
+  semantic/reconciliation failure
+- accept projection-backed recall evidence only when projection versions list
+  the fresh active MMV2 ids as sources; do not count root `USER.md` /
+  `MEMORY.md`, same-session transcript, or raw workspace-file context as proof
+- keep retrieval timeout evidence visible as runtime availability debt; do not
+  patch it with topic parsers, semantic forests, or fuzzy write-path matching
+- document ingest remains paused and must be resumed later from the checkpoint
+  with the `model-memory-deep-ingest` skill/runbook
+
+Reasoning:
+
+- the correction rerun proved the intended structural target behavior without
+  inventing a topical match
+- the first failed correction attempt exposed runtime DB/connectivity
+  fragility, so the durable lesson is to improve availability/diagnostics, not
+  to weaken memory semantics
+- the hardening patchset can be landed as substrate progress while preserving
+  the honest caveat that global recall quality and prompt-specific live
+  retrieval availability are not solved
+
+## 2026-04-22 - Live memory activity feed is telemetry, not capture
+
+Decision:
+
+- add a bounded main-feed memory activity mirror behind
+  `MODEL_MEMORY_ACTIVITY_FEED_ENABLED`
+- activity-feed messages may show retrieval request/result/pack ids, selected
+  memory ids, projection ids, capture source/event ids, counts, and bounded
+  status labels
+- activity-feed messages must not contain raw prompt text, full transcripts,
+  raw tool logs, secrets, or private phrases
+- activity feed does not change MMV2 truth, capture admission, reconciliation,
+  or retrieval ranking
+- the 2026-04-22 deep ingest remains paused for overnight continuation from
+  checkpoint `checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json`
+- install `model-memory-deep-ingest` as both a repo-local OpenClaw skill and a
+  Codex global skill so future deep-ingest pickup starts from the MMV2 runbook
+  and checkpoint workflow rather than exploratory source spelunking
+
+Reasoning:
+
+- the older semantic-forest path made memory actions visible through tool
+  calls; MMV2 moved memory work into internal runtime paths, which made normal
+  turns opaque to the operator
+- the scalable fix is explicit bounded telemetry in the live feed, not raw
+  prompt/tool-log capture or semantic write-path heuristics
+- ingestion failures from the paused corpus are provider/extraction/
+  canonicalization work items and must not drive topic-specific parsers or
+  fuzzy semantic fallbacks
+
+## 2026-04-22 - Post-landing substrate hardening proceeds without semantic forests
+
+Decision:
+
+- the landed runtime-hardening state at `ee0c093c1a` is the baseline for the
+  next memory pathway push
+- bounded tool-result proof/capture is treated as landed, not future work, but
+  remains constrained to bounded tool evidence and kill switches
+- the next fallback quarantine slice is legacy captured-object write
+  compatibility:
+  - default MMV2 live paths must not silently construct legacy
+    `DatabaseMemoryObjectStore`
+  - rollback/fallback requires an explicit flag
+  - tests must keep default write/retrieval hot paths away from legacy
+    semantic-family and collision modules
+- the 2026-04-22 deep-ingest substrate pass uses a curated 304-source corpus
+  rooted at `.artifacts/model-memory/document-ingest/2026-04-22-corpus/`
+- retrieval/projection quality hardening must stay read-time only:
+  projection-digest preference, lexical/source-lineage/recency ranking,
+  exclusion telemetry, and miss diagnostics cannot mutate canonical truth
+- ordinary-turn eval hardening must fail if topic-specific parsers, fuzzy
+  write-path supersession, duplicate capture, raw-data persistence, or root
+  workspace-memory write-back returns
+
+Reasoning:
+
+- the user accepted the clean soak and runtime-boundary proof; the project now
+  needs substrate depth and regression protection, not another narrow soak
+  workaround
+- fallback quarantine must be small and reversible because legacy
+  compatibility still carries rollback value
+- document ingestion is intentional durable memory ingestion when the corpus is
+  curated docs/runbooks/specs/status material; proof artifacts, raw prompts,
+  transcripts, raw tool logs, and Memory Ops JSONL remain excluded
+- the scalable fix for retrieval misses is observable read-time diagnostics,
+  not semantic forests or marker/topic heuristics
+
 ## 2026-04-21 - Runtime-boundary projection and hook-probe baseline accepted
 
 Decision:

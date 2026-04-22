@@ -68,6 +68,7 @@ function buildRetrievalRequestRecord(input: {
   queryTextHash: string;
 }): RetrievalRequestRecord {
   const redactedQueryText = redactRetrievalQueryForStorage(input.envelope.queryText);
+  const rawScope = input.interpretedRequest.scopeConstraints ?? input.envelope.scope;
   return {
     id: buildRuntimeId(
       "retrieval_request",
@@ -78,7 +79,7 @@ function buildRetrievalRequestRecord(input: {
     queryText: redactedQueryText,
     requestPurpose: input.envelope.requestPurpose,
     scope: {
-      ...(input.interpretedRequest.scopeConstraints ?? input.envelope.scope),
+      ...sanitizeRetrievalScopeForStorage(rawScope),
       retrievalRuntimeQueryHash: input.queryTextHash,
       rawQueryPersisted: false,
     },
@@ -88,6 +89,25 @@ function buildRetrievalRequestRecord(input: {
     modelId: input.modelId,
     createdAt: input.createdAt,
   };
+}
+
+function shouldHashRetrievalScopeField(key: string): boolean {
+  return /(?:sessionkey|prompt|query|text|message|transcript|toollog|raw)/iu.test(key);
+}
+
+function sanitizeRetrievalScopeForStorage(
+  scope: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(scope ?? {})) {
+    if (typeof value === "string" && shouldHashRetrievalScopeField(key)) {
+      sanitized[`${key}Hash`] = `sha256:${hashRuntimeValue(value)}`;
+      sanitized[`${key}RawPersisted`] = false;
+      continue;
+    }
+    sanitized[key] = value;
+  }
+  return sanitized;
 }
 
 function rankBandForIndex(index: number): RetrievalResultItemRecord["rankBand"] {

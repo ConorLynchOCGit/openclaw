@@ -7,14 +7,17 @@ title: "Model Memory Current Slice"
 
 ## Slice
 
-`mmv2-post-clean-soak-hardening`
+`mmv2-hardening-landing-and-paused-ingest`
 
 ## Goal
 
-Use the accepted `SOAKQUAR-2026-04-21` clean soak as the regression baseline
-and proceed through post-soak hardening without reintroducing semantic forests,
-fuzzy write-path correction, root workspace-file write-back, or unverified
-capture hooks.
+Use the accepted `SOAKQUAR-2026-04-21` clean soak, accepted runtime-boundary
+proof, committed runtime-hardening landing at `ee0c093c1a`, and the
+`SOAKLAND-2026-04-22` hardening proof as regression baselines. The active lane
+keeps document ingest paused, lands fallback quarantine/retrieval/projection
+hardening, and prepares the next overnight ingest continuation without
+reintroducing semantic forests, fuzzy write-path correction, root
+workspace-file write-back, or raw-data capture.
 
 The accepted runtime-boundary proof rooted at
 `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/`
@@ -24,6 +27,23 @@ evidence.
 The active slice is no longer the old v1 cutover, five-kind storage, or
 packet-only/kind-balance lane. Those records remain useful history, but the
 current implementation authority is MMV2-native durable truth.
+
+The 2026-04-22 document ingest is intentionally paused for an overnight pickup.
+The checkpoint is
+`checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json` with 100
+attempted, 92 completed, 8 failed, 204 pending, and no running source at pause.
+This pause is not a retrieval/projection hardening failure and must not be
+worked around with semantic forests or topic heuristics.
+
+The 2026-04-22 hardening landing proof is rooted at
+`.artifacts/model-memory/soak-ui-validation/2026-04-22-hardening-land-soak/`.
+The first correction attempt hit a live capture DB timeout and is recorded as a
+runtime availability caveat. The affected item was rerun in isolation as
+`SOAKLAND-2026-04-22-CORRECTION-RERUN`; it created correction memory
+`7b3811fb-9613-5443-bc73-dd6799f893f1`, event
+`9eb0cc1c-aa6a-54cc-8de4-4e7c8e42cb77`, and supersession edge
+`0da10fcc-b5a7-5962-9d69-982d748755d6` to exact target memory
+`231bd0a5-2f7c-5f65-af75-397668a2e960`.
 
 ## Current Outcome
 
@@ -82,6 +102,37 @@ current implementation authority is MMV2-native durable truth.
     token estimates through structured pack/run telemetry
 - hook capture eligibility is now based on production runtime evidence, not
   static registration or synthetic canaries
+- bounded tool-result proof/capture and capture seam infrastructure are landed
+  and must remain bounded to artifact paths, file counts, command status,
+  docs/runbooks, URLs, and non-sensitive error classes
+- bounded live memory activity feed has been added behind
+  `MODEL_MEMORY_ACTIVITY_FEED_ENABLED`; when enabled it mirrors retrieval and
+  capture lifecycle ids/counts into the main feed without raw prompt,
+  transcript, or tool-log content
+- 2026-04-22 hardening landing proof:
+  - gateway was rebuilt/recreated for activity-feed pickup and returned
+    healthy
+  - fallback captured-object writes are explicit-fallback-only by default
+  - an additional document-ingest collision fallback import was quarantined
+    behind the same explicit rollback flag
+  - tool-result dedupe was fixed so non-durable tool turns do not also create
+    duplicate ordinary-turn memories
+  - structural correction passed on rerun with exact memory-id targeting
+  - latest projection versions include the fresh correction, directive, and
+    project-fact ids as source ids
+  - recall proof has projection-backed evidence for the fresh ids; one recall
+    turn also logged a retrieval-context timeout, so future work should keep
+    improving live retrieval availability/diagnostics instead of treating file
+    context alone as proof
+  - Memory Ops observe-only scan stayed clean, auto-fix disabled, with no
+    raw prompt/transcript/tool-log/private phrase leakage
+- post-landing verification for `POSTLAND-2026-04-22` is recorded under
+  `.artifacts/model-memory/post-landing/2026-04-22-verification-baseline/`
+- the fresh curated deep-ingest corpus for `2026-04-22` contains 304 sources
+  and is recorded under
+  `.artifacts/model-memory/document-ingest/2026-04-22-corpus/`
+- the MMV2 deep-ingest operator skill is installed in both repo-local OpenClaw
+  skills and Codex global skills as `model-memory-deep-ingest`
 - legacy compatibility remains only as soak-window fallback:
   - legacy-shaped captured-object write compatibility
   - legacy-style read projection compatibility at edges where still needed
@@ -97,6 +148,9 @@ current implementation authority is MMV2-native durable truth.
 - ordinary-turn MMV2 evaluation coverage lags the live write-path reality
 - retrieval relevance is acceptable for the clean soak but not yet globally
   optimized; future misses must stay observable through retrieval telemetry
+- live retrieval/context lookup can still transiently time out under UI proof
+  load; this should be treated as a runtime availability/diagnostics issue, not
+  a reason to add topical write-path heuristics
 - file-pack/provider variance still needs seeded stabilization and reporting
 - several proposed capture hooks still need production-safe verification before
   any capture wiring
@@ -105,29 +159,31 @@ current implementation authority is MMV2-native durable truth.
 
 ## Current Work Queue
 
-1. Expand semantic capture first through bounded tool-result proof/capture:
-   - eligible seams: `tool_result_persist` and `after_tool_call`
-   - store only artifact paths, file counts, command status, docs/runbooks,
-     URLs, and bounded error classes
-   - never store raw prompts, full transcripts, or raw tool logs
-2. Keep `message:preprocessed` routing/telemetry-only until dedupe and
+1. Keep `message:preprocessed` routing/telemetry-only until dedupe and
    no-raw-prompt guarantees are proven.
-3. Production-verify or honestly block `ContextEngine.ingest` and
-   `ContextEngine.ingestBatch`; do not fake production verification from
-   synthetic tests.
-4. Harden Retrieval Runtime relevance and telemetry without mutating truth:
+2. Treat `ContextEngine.ingest` and `ContextEngine.ingestBatch` hook evidence
+   as production evidence only when it comes from real UI/gateway turns; do not
+   fake production verification from direct internal calls.
+3. Resume the curated 304-source document-ingest corpus later from checkpoint
+   `checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json`; do not
+   resume it during build-focused hardening work.
+4. Continue hardening Retrieval Runtime relevance and telemetry without
+   mutating truth:
    - prefer fresh projection digests backed by active MMV2 ids
    - record stale/superseded/deleted/conflicted/inactive exclusions
+   - emit `memory_existed_but_excluded` diagnostics when candidates are found
+     but not selected
    - emit empty-retrieval telemetry
    - keep lexical/RRF/vector-style ranking read-time only
-5. Add evaluation coverage for:
+5. Add remaining evaluation coverage for:
    - tool-result proof capture
    - projection-backed recall
    - stale/superseded exclusion
    - no raw-data persistence
    - duplicate ordinary-turn capture prevention
    - root `USER.md` / `MEMORY.md` no-write
-6. Inventory and quarantine fallback compatibility in small reversible slices:
+6. Inventory and quarantine remaining fallback compatibility in small
+   reversible slices:
    - no broad deletion without tests
    - no legacy semantic-family/collision behavior in default MMV2 hot paths
    - only explicit fallback flags with tests
@@ -141,13 +197,17 @@ current implementation authority is MMV2-native durable truth.
    - scope and evidence grounding
    - no topic parser or fuzzy write-path supersession regression
 8. Run seeded file-pack/provider variance comparisons and separate:
-   - deterministic regression
-   - provider/model variance
-   - JSON-boundary failure
-   - comparator strictness issue
-   - real semantic regression
+
+- deterministic regression
+- provider/model variance
+- JSON-boundary failure
+- comparator strictness issue
+- real semantic regression
+
 9. Implement the remaining capture seam expansion described in
    [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams).
+   Live feed visibility is separate from capture wiring and must remain
+   bounded operational telemetry only.
 10. Implement the closed-loop ops instrumentation described in
     [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop).
 11. Proceed to Phase 2 derived features in order:

@@ -121,6 +121,20 @@ export type RetrievalExclusion = {
   idType: "memory" | "candidate" | "projection";
   reason: RetrievalExclusionReason;
   detail?: string;
+  sourceLane?: RetrievalCandidateSource;
+  status?: RetrievalCandidateStatus;
+  scopeMatch?: RetrievalCandidate["scopeMatch"];
+};
+
+export type RetrievalMissDiagnostic = {
+  diagnosticType: "memory_existed_but_excluded";
+  id: string;
+  idType: RetrievalExclusion["idType"];
+  reason: RetrievalExclusionReason;
+  sourceLane?: RetrievalCandidateSource;
+  status?: RetrievalCandidateStatus;
+  scopeMatch?: RetrievalCandidate["scopeMatch"];
+  detail?: string;
 };
 
 export type ProjectionDigest = {
@@ -159,6 +173,7 @@ export type RetrievalMetrics = {
   injectedCount: number;
   selectedProjectionIds: string[];
   selectedSourceMemoryIds: string[];
+  missDiagnostics: RetrievalMissDiagnostic[];
   emptyRetrieval: boolean;
   estimatedTokens: number;
 };

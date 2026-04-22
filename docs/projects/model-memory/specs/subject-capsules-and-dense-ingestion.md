@@ -16,6 +16,24 @@ The first capsule flavor is now chosen:
 - Phase 2 starts with `project_state`
 - broader `subject_state` comes after the first project-state proof
 
+2026-04-22 MMV2 alignment:
+
+- capsules compile from active MMV2 durable memories, memory events, memory
+  edges, and projection digests; they are not durable truth
+- every capsule artifact must carry source memory ids, source event ids,
+  source edge ids where available, content hash, freshness, stale markers, and
+  conflict markers
+- capsule recall is acceptable only when backed by active MMV2 ids or fresh
+  projection/capsule digests backed by those ids
+- dense ingestion remains document-ingest into MMV2 durable truth first; capsule
+  generation cannot bypass admission or create hidden semantic summaries
+
+Open decisions before implementation:
+
+- first materialization target for `project_state` capsules
+- review policy for conflicted capsule sections
+- capsule budget and refresh cadence for active projects vs broad subjects
+
 ## Objective
 
 Add one derived artifact layer for dense subject understanding without replacing

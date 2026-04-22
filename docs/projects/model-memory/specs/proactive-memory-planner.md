@@ -15,6 +15,23 @@ The planner concept is approved with one explicit constraint:
 
 Any meaningful candidate must surface inside ordinary OpenClaw operator flow.
 
+2026-04-22 MMV2 alignment:
+
+- the planner may refresh derived artifacts, queue reviews, and emit bounded
+  operational signals; it may not silently write durable semantic truth
+- planner proposals that would change memory state must re-enter MMV2 capture,
+  admission, reconciliation, and structural correction rules
+- planner signals must follow no-dark-data policy: no raw prompts, full
+  transcripts, raw tool logs, secrets, or proof/eval output in durable memory
+- stale projection, capsule, graph, and retrieval-cache repairs are derived
+  maintenance only
+
+Open decisions before implementation:
+
+- which planner recommendations must surface immediately vs daily/heartbeat
+- approval gates for automatic projection/capsule refreshes
+- retention and dedupe policy for repeated planner recommendations
+
 ## Objective
 
 Add a bounded planner that makes the memory system proactive in a controlled

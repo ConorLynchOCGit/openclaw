@@ -7,7 +7,7 @@ title: "Model Memory Status"
 
 ## Overall
 
-State: `mmv2_clean_soak_accepted_post_soak_hardening`
+State: `mmv2_hardening_landed_ingest_paused`
 
 Current authority:
 
@@ -26,6 +26,35 @@ Current authority:
   retrieval-pack evidence selecting relevant fresh MMV2 ids
 - the runtime-boundary proof for projection materialization and production hook
   probes is accepted as the current post-soak baseline
+- runtime hardening and capture-seam infrastructure have landed on `main` at
+  `ee0c093c1a`
+- 2026-04-22 hardening proof has been validated in the live runtime after
+  gateway pickup:
+  - artifact root:
+    `.artifacts/model-memory/soak-ui-validation/2026-04-22-hardening-land-soak/`
+  - correction rerun memory:
+    `7b3811fb-9613-5443-bc73-dd6799f893f1`
+  - correction event:
+    `9eb0cc1c-aa6a-54cc-8de4-4e7c8e42cb77`
+  - correction supersession edge:
+    `0da10fcc-b5a7-5962-9d69-982d748755d6`
+  - exact targeted preference:
+    `231bd0a5-2f7c-5f65-af75-397668a2e960`
+  - latest projection summary:
+    `.artifacts/model-memory/soak-ui-validation/2026-04-22-hardening-land-soak/projection-evidence-summary.json`
+  - latest Memory Ops scan:
+    `.openclaw-memory-ops/reports/latest.md`
+- bounded tool-result proof/capture is landed and must remain no-dark-data:
+  bounded artifact paths, file counts, command status, docs/runbooks, URLs,
+  and non-sensitive error classes only
+- post-landing verification evidence is rooted at
+  `.artifacts/model-memory/post-landing/2026-04-22-verification-baseline/`
+- the current deep-ingest substrate pass uses a curated 304-source corpus
+  rooted at `.artifacts/model-memory/document-ingest/2026-04-22-corpus/`
+- document ingest is paused for overnight continuation at
+  `checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json`
+  with 100 attempted, 92 completed, 8 failed, 204 pending, and no running
+  source at pause
 - legacy-shaped storage/object compatibility remains present only for the
   agreed soak-window fallback posture
 - old v1/spec-closure language is historical design provenance, not current
@@ -86,25 +115,71 @@ Accepted runtime-boundary baseline:
 
 Current near-term engineering sequence:
 
-1. keep `SOAKQUAR-2026-04-21` and the runtime-boundary artifacts as regression
-   baselines
-2. expand capture through bounded tool-result proof/capture first; keep
-   `message:preprocessed` routing/telemetry-only until no-raw-prompt and
+1. keep `SOAKQUAR-2026-04-21`, runtime-boundary artifacts, and
+   `SOAKLAND-2026-04-22` hardening proof as regression baselines
+2. keep `message:preprocessed` routing/telemetry-only until no-raw-prompt and
    duplicate-proof guarantees are proven
-3. production-verify or block `ContextEngine.ingest` and `ingestBatch` before
-   any semantic capture wiring from those seams
-4. quarantine/remove fallback compatibility in small reversible slices
-5. update ordinary-turn MMV2 evaluation coverage where needed
-6. harden Retrieval Runtime relevance, exclusions, and empty-retrieval
-   telemetry without mutating truth
-7. stabilize file-pack/provider variance
-8. implement the primary capture seam expansion specified in
+3. keep hook production verification honest: only real UI/gateway probe
+   evidence makes capture wiring eligible
+4. resume and complete the fresh curated 304-source deep document corpus during
+   the overnight ingest window
+5. update remaining ordinary-turn MMV2 evaluation coverage where needed
+6. harden Retrieval Runtime relevance, exclusions, miss diagnostics, and
+   empty-retrieval telemetry without mutating truth
+7. quarantine/remove remaining fallback compatibility in small reversible
+   slices
+8. stabilize file-pack/provider variance
+9. implement the primary capture seam expansion specified in
    [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
    only for verified seams behind kill switches
-9. implement closed-loop operational instrumentation specified in
-   [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
-10. then proceed to Phase 2 graph, capsule, hierarchical retrieval, planner,
+10. implement closed-loop operational instrumentation specified in
+    [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
+11. then proceed to Phase 2 graph, capsule, hierarchical retrieval, planner,
     synthesis, and cache/projection features
+
+Current 2026-04-22 hardening progress:
+
+- post-landing UI/operator verification for `POSTLAND-2026-04-22` produced
+  retrieval telemetry, projection evidence, hook evidence, and a fresh Memory
+  Ops no-dark-data scan under
+  `.artifacts/model-memory/post-landing/2026-04-22-verification-baseline/`
+- legacy captured-object write compatibility is being moved to explicit
+  fallback-only posture; default MMV2 live paths now fail closed instead of
+  silently constructing legacy captured-object fallback stores
+- the document-ingest runner now uses the MMV2 JSON prompt contract directly
+  and supports explicit failed-source retry on resume
+- retrieval request scope persistence now hashes raw-like scope values instead
+  of storing prompt/session-key/current-turn text fields
+- retrieval pack metrics now include exclusion-backed miss diagnostics such as
+  `memory_existed_but_excluded`
+- ordinary-turn and runner tests now exercise MMV2-native interpreters rather
+  than legacy prompt envelopes
+- live memory activity feed is available behind
+  `MODEL_MEMORY_ACTIVITY_FEED_ENABLED` and emits bounded retrieval/capture
+  lifecycle ids/counts into the visible session feed; it does not persist raw
+  prompt text, transcripts, or raw tool logs
+- live activity feed pickup was validated by rebuilding/recreating only
+  `openclaw-gateway`; health checks passed and `modelMemory.enabled=true`
+  remained active
+- fallback quarantine tests now cover captured-object write fallback and the
+  document-ingestion collision-adjudicator fallback import; both require the
+  explicit rollback flag before legacy behavior is reachable
+- tool-result/ordinary-turn dedupe now skips ordinary-turn capture for
+  non-durable tool-assisted turns while preserving explicit durable user
+  capture signals
+- `model-memory-deep-ingest` is installed as both a repo-local OpenClaw skill
+  and a Codex global skill for future resume/monitor/pause work
+
+Remaining from the active pass:
+
+- keep document ingest paused until the overnight window and resume from the
+  checkpoint with the MMV2 skill/runbook
+- keep live retrieval availability under observation: the hardening recall
+  rerun had projection-backed fresh-id evidence, but also logged one
+  retrieval-context timeout before the final answer
+- run a post-ingest retrieval/projection proof after the paused corpus
+  completes so corpus recall is proven from MMV2/projection evidence rather
+  than root files or same-session context
 
 Current post-soak hardening progress:
 
@@ -122,10 +197,10 @@ Current post-soak hardening progress:
   exclusion reason counts, stale/superseded/deleted/conflicted/inactive
   filtering counts, empty-retrieval state, selected projection ids, selected
   source memory ids, and token estimates
-- latest hook discovery artifact:
-  `.openclaw-memory-ops/hook-discovery/2026-04-21T191432-298Z.json`
-- latest hook discovery remains synthetic/static evidence only for capture
-  seam purposes, so no primary capture seam has been wired in this pass
+- runtime-boundary hook discovery from 2026-04-21 remains a baseline artifact;
+  post-landing hook evidence from
+  `.artifacts/model-memory/post-landing/2026-04-22-verification-baseline/`
+  is the current evidence surface for committed capture-seam behavior
 
 The clean-room parallel package now exists at `extensions/model-memory/` with
 implementation slices 1 through 19 completed on fast lanes. The package now

@@ -45,12 +45,13 @@ authority is MMV2-native durable truth unless a spec explicitly says otherwise.
 30. [Planner Review Artifacts And Surfacing](/projects/model-memory/specs/planner-review-artifacts-and-surfacing)
 31. [Skill And Tool Candidate Evaluation](/projects/model-memory/specs/skill-and-tool-candidate-evaluation)
 32. [Prompt Contract Phase 2 Migration](/projects/model-memory/specs/prompt-contract-phase2-migration)
-33. [Model Driven Packet Assembly Evaluation](/projects/model-memory/specs/model-driven-packet-assembly-evaluation)
-34. [Packet Compiler And Budgeting](/projects/model-memory/specs/packet-compiler-and-budgeting)
-35. [MMV2 Ingestion Specs](/projects/model-memory/specs/mmv2)
-36. [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
-37. [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
-38. [Semantic Forest Quarantine](/projects/model-memory/specs/semantic-forest-quarantine)
+33. [Second-Pass Privacy And Prompt-Injection Hardening](/projects/model-memory/specs/second-pass-privacy-prompt-injection-hardening)
+34. [Model Driven Packet Assembly Evaluation](/projects/model-memory/specs/model-driven-packet-assembly-evaluation)
+35. [Packet Compiler And Budgeting](/projects/model-memory/specs/packet-compiler-and-budgeting)
+36. [MMV2 Ingestion Specs](/projects/model-memory/specs/mmv2)
+37. [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
+38. [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
+39. [Semantic Forest Quarantine](/projects/model-memory/specs/semantic-forest-quarantine)
 
 ## Companion project docs
 

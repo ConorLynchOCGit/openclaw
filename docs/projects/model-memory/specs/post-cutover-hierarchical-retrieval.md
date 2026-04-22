@@ -20,6 +20,24 @@ injection, and direct telemetry.
 This hierarchical spec remains the later multi-pass extension for long,
 multi-objective prompts after the Memory Retrieval Runtime V1 is proven.
 
+2026-04-22 MMV2 alignment:
+
+- hierarchical retrieval decomposes retrieval intent only; it cannot mutate
+  MMV2 truth, admission, reconciliation, correction, or projection state
+- sub-query fan-out must preserve active-only filtering, structural correction
+  posture, projection freshness checks, and no raw query persistence
+- every sub-query emits selected ids, excluded ids, miss diagnostics, pack ids,
+  and query hashes/redacted labels
+- graph/capsule/projection lanes are read-time candidate sources only and must
+  be attributable to active MMV2 source ids
+
+Open decisions before implementation:
+
+- default sub-query budget for broad planning prompts
+- when model-assisted decomposition is allowed vs deterministic-only
+- how to merge duplicate candidates across sub-queries without semantic-family
+  collapse
+
 The V1 retrieval runtime starts with:
 
 - one current turn/task envelope

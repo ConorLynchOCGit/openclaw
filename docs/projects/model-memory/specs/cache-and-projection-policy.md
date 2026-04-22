@@ -12,6 +12,25 @@ This is a Phase 2 design document.
 It is approved as direction, but it remains downstream of the first graph and
 capsule work.
 
+2026-04-22 MMV2 alignment:
+
+- cache/projection policy operates over derived projection versions,
+  materialized artifacts, retrieval packs, context artifacts, graph/capsule
+  artifacts, and usage telemetry
+- policy may mark derived artifacts stale, schedule rebuilds, and adjust
+  read-time priority; it may not mutate canonical MMV2 durable truth
+- projection digests are retrieval-eligible only when backed by active MMV2
+  source memory ids with fresh content hashes and no disqualifying conflict or
+  stale markers
+- root `USER.md` and `MEMORY.md` remain human-owned inputs, not generated
+  projection targets
+
+Open decisions before implementation:
+
+- freshness TTLs for project/page/procedure/source/entity projection families
+- cache invalidation fan-out from memory events and edges
+- operator visibility for stale-but-injected or excluded projection digests
+
 ## Objective
 
 Turn the existing usage and cache ledger into a bounded policy layer that

@@ -1,6 +1,6 @@
-import { ModelMemoryCanonicalRepository } from "../db/canonical-repository.ts";
-import { DatabaseMemoryObjectStore } from "../db/database-memory-object-store.ts";
-import { RuntimeContextRepository } from "../db/runtime-context-repository.ts";
+import type { ModelMemoryCanonicalRepository } from "../db/canonical-repository.ts";
+import type { CapturedObjectWriteStore } from "../db/captured-object-write-compatibility.ts";
+import type { RuntimeContextRepository } from "../db/runtime-context-repository.ts";
 import type { DocumentIngestionInput } from "../document-ingestion.ts";
 import {
   ingestDocumentLive,
@@ -16,7 +16,7 @@ import { rebuildDerivedRuntimeState } from "../runtime-rebuild-orchestrator.ts";
 export type ReplayServiceDependencies = {
   canonicalRepository: ModelMemoryCanonicalRepository;
   runtimeRepository: RuntimeContextRepository;
-  memoryStore?: DatabaseMemoryObjectStore;
+  memoryStore?: CapturedObjectWriteStore;
 };
 
 export class ModelMemoryReplayService {

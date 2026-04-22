@@ -481,6 +481,8 @@ function buildProjectionDigestExclusions(input: {
           idType: "projection" as const,
           reason: "inactive" as const,
           detail: "projection_digest_has_no_active_source_memory_ids",
+          sourceLane: "projection_digest" as const,
+          status: "inactive" as const,
         },
       ];
     }
@@ -492,6 +494,7 @@ function buildProjectionDigestExclusions(input: {
           idType: "projection" as const,
           reason: "stale" as const,
           detail: (version.staleMarkers ?? []).join(",") || version.freshness?.reason || "stale",
+          sourceLane: "projection_digest" as const,
         },
       ];
     }
@@ -572,6 +575,9 @@ export function recallCanonicalCandidates(input: {
         id: object.id,
         idType: "memory",
         reason: exclusionReason,
+        sourceLane: candidate.source,
+        status,
+        scopeMatch: scored.scopeMatch,
       });
       if (status === "conflicted" && scored.scopeMatch !== "mismatch") {
         conflictCandidates.push({
