@@ -80,6 +80,38 @@ describe("model-memory activity feed", () => {
     expect(JSON.stringify(message)).not.toContain("[Memory Activity]");
   });
 
+  it("builds capture job activity events with safe ids and failure classes only", () => {
+    const message = buildModelMemoryActivityTranscriptMessage({
+      kind: "ordinary_turn_capture",
+      status: "failed",
+      eventType: "capture_failed",
+      safeLabels: {
+        failureClass: "timeout",
+        stage: "persistence_boundary",
+        message: "raw prompt-like error text must not persist",
+      },
+      ids: {
+        captureJobId: "capture_job_abc123",
+        sourceId: "source_1",
+      },
+      metrics: {
+        latencyMs: 1200,
+        retryCount: 0,
+      },
+    });
+
+    expect(message.__openclaw.eventType).toBe("capture_failed");
+    expect(message.__openclaw.ids).toMatchObject({
+      captureJobId: ["capture_job_abc123"],
+      sourceId: ["source_1"],
+    });
+    expect(message.__openclaw.labels).toEqual({
+      failureClass: "timeout",
+      stage: "persistence_boundary",
+    });
+    expect(JSON.stringify(message)).not.toContain("raw prompt-like error text");
+  });
+
   it("emits idempotent bounded structured transcript messages when enabled", async () => {
     const appended: Array<{ message?: unknown; idempotencyKey?: string }> = [];
     const result = await emitModelMemoryActivityFeedEvent(

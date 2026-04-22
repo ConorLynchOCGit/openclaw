@@ -878,3 +878,24 @@ Provided source references from the research packet:
 - [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
 - [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
 - [Cache And Projection Policy](/projects/model-memory/specs/cache-and-projection-policy)
+
+## Provider And Cache Preflight
+
+Retrieval/capture providers must be preflighted against the actual structured
+contracts they will execute, not only a generic JSON-object health check.
+
+Contract preflight records should include:
+
+- contract name/version
+- schema name/version
+- requested model/provider
+- resolved model/provider
+- strict-schema status
+- OpenRouter `require_parameters` status when required
+- latency
+- failure class
+
+Prompt-cache telemetry is operational only. It may record prompt-cache key,
+prefix hash, schema hash, prompt tokens, cached tokens, output tokens, latency,
+model, provider, and resolved model. It must not record raw prompt text or
+source/window text.

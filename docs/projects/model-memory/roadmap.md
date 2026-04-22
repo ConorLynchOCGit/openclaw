@@ -69,6 +69,12 @@ title: "Model Memory Roadmap"
   - the current-runtime soak is not clean because ordinary-turn durable
     capture hit DB connection/statement timeouts and created no new memory
     rows for the durable capture prompts
+- Mechanical capture/ingest hardening is now the active stabilization lane:
+  live capture has structured job events, ordinary capture defers rebuilds,
+  rebuild locking is fail-fast by default, reconciliation is scoped, edge
+  endpoint checks are batched, DB pool knobs are configurable, strict-schema
+  preflight is available, prompt-cache usage can be reported, and ordinary-turn
+  source-window persistence is redacted.
 
 ## Current top priorities
 
@@ -82,8 +88,9 @@ title: "Model Memory Roadmap"
 3. keep fresh production verification for `ContextEngine.ingest` and
    `ingestBatch`; the 2026-04-22 current-runtime proof shows production
    runtime evidence, while synthetic-only hooks remain blocked
-4. fix live ordinary-turn durable capture DB timeout handling and rerun the
-   current-runtime soak before calling the soak clean
+4. run a narrow `MEMMECH-2026-04-22` proof after the completed gateway pickup,
+   then rerun the current-runtime soak before calling the soak clean. Do not
+   write synthetic proof/eval content into the live durable DB.
 5. populate MMV2 with the curated 2026-04 deep document-ingest corpus and
    verify source/segment/memory/event evidence; resume from checkpoint during
    the overnight ingest window, not during build-focused hardening

@@ -386,4 +386,56 @@ describe("MmV2NativeRepository", () => {
       await database.close();
     }
   });
+
+  it("lists scoped projected summaries for capture without broad deleted/superseded rows", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const repository = new MmV2NativeRepository(database.sql);
+
+      await repository.upsertDurableMemory({
+        ...buildMinimalDurableMemory("memory-global"),
+        scope: {
+          ...buildMinimalDurableMemory("memory-global").scope,
+          project_id: null,
+        },
+      });
+      await repository.upsertDurableMemory({
+        ...buildMinimalDurableMemory("memory-project"),
+        scope: {
+          ...buildMinimalDurableMemory("memory-project").scope,
+          project_id: "project-001",
+        },
+      });
+      await repository.upsertDurableMemory({
+        ...buildMinimalDurableMemory("memory-other-project"),
+        scope: {
+          ...buildMinimalDurableMemory("memory-other-project").scope,
+          project_id: "project-002",
+        },
+      });
+      await repository.upsertDurableMemory({
+        ...buildMinimalDurableMemory("memory-superseded"),
+        status: "superseded",
+      });
+
+      const summaries = await repository.listExistingMemorySummariesForCapture({
+        projectId: "project-001",
+        limit: 10,
+      });
+
+      expect(summaries.map((entry) => entry.memory_id)).toEqual([
+        "memory-project",
+        "memory-global",
+      ]);
+      expect(JSON.stringify(summaries)).not.toContain("memory-other-project");
+      expect(JSON.stringify(summaries)).not.toContain("memory-superseded");
+      expect(summaries[0]).toMatchObject({
+        memory_id: "memory-project",
+        canonical_text: "The user prefers concise validation reports.",
+      });
+    } finally {
+      await database.close();
+    }
+  });
 });

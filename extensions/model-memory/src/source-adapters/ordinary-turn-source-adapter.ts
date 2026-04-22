@@ -65,6 +65,10 @@ function countWords(text: string): number {
   return trimmed.split(/\s+/).length;
 }
 
+function redactTurnBlockText(block: TurnBlockDescriptor): string {
+  return `${block.speaker}: [redacted ordinary_turn_message sha256=${hashValue(block.text)} chars=${block.text.length}]`;
+}
+
 function buildMessageBlocks(input: OrdinaryTurnSourceInput): TurnBlockDescriptor[] {
   const messages: TurnContextMessage[] = [
     ...(input.recentContext ?? []),
@@ -171,6 +175,50 @@ export function adaptOrdinaryTurnSource(
   return {
     source,
     normalizedText,
+    windows,
+  };
+}
+
+export function redactOrdinaryTurnSourceEnvelopeForPersistence(
+  envelope: OrdinaryTurnSourceEnvelope,
+): OrdinaryTurnSourceEnvelope {
+  const originalNormalizedTextHash = hashValue(envelope.normalizedText);
+  const windows = envelope.windows.map((window) => {
+    const blockDescriptors = window.blockDescriptors.map((block) => ({
+      ...block,
+      text: redactTurnBlockText(block),
+    }));
+    const normalizedText = `[redacted ordinary_turn_window sha256=${hashValue(
+      window.normalizedText,
+    )} blocks=${blockDescriptors.length}]`;
+    return {
+      ...window,
+      normalizedText,
+      normalizedFingerprint: hashValue(
+        JSON.stringify({
+          id: window.id,
+          sourceId: window.sourceId,
+          windowIndex: window.windowIndex,
+          normalizedText,
+        }),
+      ),
+      tokenEstimate: countWords(normalizedText),
+      blockDescriptors,
+    };
+  });
+
+  return {
+    ...envelope,
+    source: {
+      ...envelope.source,
+      sourceMetadata: {
+        ...envelope.source.sourceMetadata,
+        rawContentPersisted: false,
+        ordinaryTurnTextSha256: originalNormalizedTextHash,
+        ordinaryTurnCharCount: envelope.normalizedText.length,
+      },
+    },
+    normalizedText: `[redacted ordinary_turn_source sha256=${originalNormalizedTextHash} windows=${windows.length}]`,
     windows,
   };
 }

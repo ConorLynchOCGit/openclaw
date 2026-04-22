@@ -35,6 +35,14 @@ import {
   readStringArray,
 } from "./row-codecs.ts";
 
+export type ListExistingMemorySummariesForCaptureInput = {
+  projectId?: string | null;
+  workspaceId?: string | null;
+  sessionId?: string | null;
+  kinds?: string[];
+  limit?: number;
+};
+
 function decodeSourceRecord(row: QueryResultRow): ModelMemorySourceRecord {
   return {
     id: readString(row.id),
@@ -130,6 +138,30 @@ function decodeMemoryEdge(row: QueryResultRow): MemoryEdge {
     edge_type: readString(row.edge_type) as MemoryEdge["edge_type"],
     created_at: readDate(row.created_at).toISOString(),
     metadata: readObject(row.metadata),
+  };
+}
+
+function decodeExistingMemorySummary(row: QueryResultRow): ExistingMemorySummary {
+  return {
+    memory_id: readString(row.memory_id),
+    unit_type: readString(row.unit_type),
+    kind: readOptionalString(row.kind) ?? null,
+    artifact_type: readOptionalString(row.artifact_type) ?? null,
+    canonical_text: readString(row.canonical_text),
+    scope: {
+      tenant_id: readString(row.tenant_id),
+      user_id: readString(row.user_id),
+      project_id: readOptionalString(row.project_id) ?? null,
+      workspace_id: readOptionalString(row.workspace_id) ?? null,
+      subject_type: readString(row.subject_type),
+      subject_id: readOptionalString(row.subject_id) ?? null,
+      applies_to: readString(row.applies_to),
+    },
+    payload: readObject(row.payload),
+    validity: readObject(row.validity),
+    confidence: readNumber(row.confidence),
+    created_at: readDate(row.created_at).toISOString(),
+    updated_at: readDate(row.updated_at).toISOString(),
   };
 }
 
@@ -268,6 +300,19 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
       [memoryId],
     );
     return result.rows[0] ? decodeDurableMemory(result.rows[0]) : undefined;
+  }
+
+  async listExistingDurableMemoryIds(memoryIds: string[]): Promise<string[]> {
+    const uniqueMemoryIds = [...new Set(memoryIds.filter((memoryId) => memoryId.trim()))];
+    if (uniqueMemoryIds.length === 0) {
+      return [];
+    }
+    const placeholders = uniqueMemoryIds.map((_, index) => `$${index + 1}`).join(", ");
+    const result = await this.sql.query<{ memory_id: string }>(
+      `SELECT memory_id FROM model_memory.durable_memories WHERE memory_id IN (${placeholders})`,
+      uniqueMemoryIds,
+    );
+    return result.rows.map((row) => readString(row.memory_id));
   }
 
   async upsertDurableMemory(record: DurableMemoryRecord): Promise<DurableMemoryRecord> {
@@ -520,13 +565,14 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
       }
 
       const knownMemoryIds = new Set(batch.durableMemories.map((memory) => memory.memory_id));
-      for (const edge of batch.memoryEdges) {
-        const endpointIds = [edge.from_memory_id, edge.to_memory_id];
-        for (const endpointId of endpointIds) {
-          if (!knownMemoryIds.has(endpointId) && (await repository.getDurableMemory(endpointId))) {
-            knownMemoryIds.add(endpointId);
-          }
-        }
+      const endpointIds = batch.memoryEdges.flatMap((edge) => [
+        edge.from_memory_id,
+        edge.to_memory_id,
+      ]);
+      for (const memoryId of await repository.listExistingDurableMemoryIds(
+        endpointIds.filter((endpointId) => !knownMemoryIds.has(endpointId)),
+      )) {
+        knownMemoryIds.add(memoryId);
       }
 
       const { validEdges, deferredEdges } = partitionMemoryEdgesByKnownEndpoints({
@@ -597,6 +643,66 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
     return records
       .filter((record) => record.status !== "deleted" && record.status !== "superseded")
       .map(buildExistingMemorySummary);
+  }
+
+  async listExistingMemorySummariesForCapture(
+    input: ListExistingMemorySummariesForCaptureInput = {},
+  ): Promise<ExistingMemorySummary[]> {
+    const clauses = ["status <> 'deleted'", "status <> 'superseded'"];
+    const params: unknown[] = [];
+    const pushParam = (value: unknown): string => {
+      params.push(value);
+      return `$${params.length}`;
+    };
+
+    if (input.projectId !== undefined && input.projectId !== null) {
+      clauses.push(`(project_id IS NULL OR project_id = ${pushParam(input.projectId)})`);
+    }
+    if (input.workspaceId !== undefined && input.workspaceId !== null) {
+      clauses.push(`(workspace_id IS NULL OR workspace_id = ${pushParam(input.workspaceId)})`);
+    }
+    if (input.kinds && input.kinds.length > 0) {
+      clauses.push(`kind = ANY(${pushParam(input.kinds)}::text[])`);
+    }
+
+    const limit =
+      Number.isInteger(input.limit) && input.limit !== undefined
+        ? Math.min(Math.max(input.limit, 1), 1_000)
+        : 240;
+    params.push(limit);
+
+    const result = await this.sql.query(
+      `
+        SELECT
+          memory_id,
+          unit_type,
+          kind,
+          artifact_type,
+          canonical_text,
+          tenant_id,
+          user_id,
+          project_id,
+          workspace_id,
+          subject_type,
+          subject_id,
+          applies_to,
+          payload,
+          validity,
+          confidence,
+          created_at,
+          updated_at
+        FROM model_memory.durable_memories
+        WHERE ${clauses.join(" AND ")}
+        ORDER BY
+          CASE WHEN project_id IS NOT NULL THEN 0 ELSE 1 END ASC,
+          updated_at DESC,
+          created_at DESC,
+          memory_id ASC
+        LIMIT $${params.length}
+      `,
+      params,
+    );
+    return result.rows.map(decodeExistingMemorySummary);
   }
 
   async findActiveMemoryObjectByIdentity(

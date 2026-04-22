@@ -18,6 +18,12 @@ export async function createPgMemTestDatabase() {
     returns: DataType.bool,
     implementation: () => true,
   });
+  db.public.registerFunction({
+    name: "pg_try_advisory_xact_lock",
+    args: [DataType.integer, DataType.integer],
+    returns: DataType.bool,
+    implementation: () => true,
+  });
 
   const adapter = db.adapters.createPg();
   const pool = new adapter.Pool() as Pool;

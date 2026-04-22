@@ -737,3 +737,30 @@ Cross-seam tests required before production enablement:
 - source authority and provenance survive into admission and reconciliation
 - hook-health checks detect missing or non-firing secondary hooks
 - ordinary-turn MMV2 evaluation covers the new primary user-input capture seam
+
+## Mechanical Capture Job Policy
+
+Live capture may remain asynchronous relative to the user-visible response, but
+it must not be silent.
+
+Required lifecycle events:
+
+- `capture_queued`
+- `capture_started`
+- `capture_skipped`
+- `capture_written`
+- `capture_failed`
+
+Events may include capture job id, session id, agent id, source id, segment ids,
+memory ids, failure class, stage, latency, retry count, model/provider, and
+bounded counts. They must not include raw prompts, full transcripts, assistant
+turn text, raw tool logs, secrets, or private phrases.
+
+Ordinary-turn capture must not synchronously rebuild runtime projections by
+default. It writes canonical MMV2 evidence, marks runtime/projection state
+dirty, and emits deferred rebuild telemetry. Explicit admin/proof callers may
+request rebuild when needed.
+
+Ordinary-turn source windows persisted as ingest segments must be redacted
+before write. Segment content should retain hashes, counts, source/window ids,
+and bounded evidence needed by admitted memory records, not full turn text.

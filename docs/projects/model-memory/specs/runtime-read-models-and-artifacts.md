@@ -277,3 +277,19 @@ Operator and diagnostic surfaces may inspect those states explicitly.
 Experimental retrieval that includes provisional candidates at lower scores is
 allowed only as an explicit later mode. It is not part of the default runtime
 contract.
+
+## Rebuild Contention Policy
+
+Ordinary-turn capture must not synchronously rebuild the full runtime read
+model by default. Capture writes canonical MMV2 evidence first, then marks
+runtime/projection artifacts dirty with the affected memory ids where known.
+
+Runtime rebuild orchestration should use non-blocking rebuild acquisition by
+default. If the rebuild lock is busy, it should skip, keep dirty state, and
+emit `runtime_rebuild_skipped_lock_busy` rather than waiting until statement
+timeout. Blocking lock behavior is retained only as an explicit rollback mode
+through `MODEL_MEMORY_REBUILD_BLOCKING_LOCK_ENABLED=true`.
+
+Reconciliation reads used by live capture should use scoped projected summaries
+rather than broad full-row durable-memory scans. Broad scans remain acceptable
+for explicit admin/proof jobs where the operator knowingly pays the cost.

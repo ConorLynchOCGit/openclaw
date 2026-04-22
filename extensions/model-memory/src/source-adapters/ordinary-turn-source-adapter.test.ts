@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { adaptOrdinaryTurnSource } from "./ordinary-turn-source-adapter.ts";
+import {
+  adaptOrdinaryTurnSource,
+  redactOrdinaryTurnSourceEnvelopeForPersistence,
+} from "./ordinary-turn-source-adapter.ts";
 
 describe("ordinary-turn-source-adapter", () => {
   it("preserves speaker boundaries in deterministic normalized windows", () => {
@@ -60,5 +63,28 @@ describe("ordinary-turn-source-adapter", () => {
     expect(result.source.createdAt.getTime()).toBeGreaterThanOrEqual(before);
     expect(result.source.createdAt.getTime()).toBeLessThanOrEqual(after);
     expect(result.windows[0]?.createdAt.getTime()).toBe(result.source.createdAt.getTime());
+  });
+
+  it("redacts full ordinary-turn text before persistence while preserving source and window ids", () => {
+    const envelope = adaptOrdinaryTurnSource({
+      recentContext: [{ speaker: "assistant", text: "Private assistant context" }],
+      currentTurnText: "Please remember this private-ish standing preference.",
+      sessionId: "session-redaction",
+    });
+
+    const redacted = redactOrdinaryTurnSourceEnvelopeForPersistence(envelope);
+
+    expect(redacted.source.id).toBe(envelope.source.id);
+    expect(redacted.windows[0]?.id).toBe(envelope.windows[0]?.id);
+    expect(redacted.windows[0]?.normalizedText).toContain("[redacted ordinary_turn_window");
+    expect(redacted.windows[0]?.normalizedText).not.toContain("Please remember");
+    expect(JSON.stringify(redacted.windows[0]?.blockDescriptors)).not.toContain(
+      "Private assistant context",
+    );
+    expect(redacted.source.sourceMetadata).toMatchObject({
+      rawContentPersisted: false,
+      ordinaryTurnCharCount: envelope.normalizedText.length,
+    });
+    expect(typeof redacted.source.sourceMetadata.ordinaryTurnTextSha256).toBe("string");
   });
 });

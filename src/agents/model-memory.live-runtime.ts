@@ -11,6 +11,7 @@ import {
   buildRetrievalPackArtifact,
   buildToolResultProofLiveCapture,
   captureOrdinaryTurnLive,
+  classifyMemoryIngestionFailure,
   compileProjection,
   executeRetrieval,
   listRuntimeMemoryRecords,
@@ -20,6 +21,7 @@ import {
   type RuntimeMemoryRecord,
   type SemanticInterpreter,
   type SemanticInterpreterInput,
+  type MemoryIngestionFailureClass,
   type WorkspaceProjectionTargetRecord,
 } from "../plugin-sdk/model-memory.js";
 import { emitModelMemoryActivityFeedEvent } from "./model-memory.activity-feed.js";
@@ -48,6 +50,7 @@ const BOOTSTRAP_PROJECTION_TARGET_IDS = new Set(["memory-md", "user-md"]);
 type JsonRecord = Record<string, unknown>;
 type MmV2LiveRepositoryCapabilities = {
   listExistingMemorySummaries?: unknown;
+  listExistingMemorySummariesForCapture?: unknown;
   persistLiveMemoryBatch?: (batch: unknown) => Promise<unknown>;
   withTransaction?: (
     work: (repository: MmV2LiveRepositoryCapabilities) => Promise<unknown>,
@@ -828,6 +831,96 @@ function sha256Text(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
+export type ModelMemoryRuntimeDirtySnapshot = {
+  dirty: boolean;
+  reason?: string;
+  affectedMemoryIds: string[];
+  writeCountSinceLastRebuild: number;
+  markedAt?: string;
+  lastRebuildAt?: string;
+};
+
+const runtimeDirtyState: {
+  dirty: boolean;
+  reason?: string;
+  affectedMemoryIds: Set<string>;
+  writeCountSinceLastRebuild: number;
+  markedAt?: Date;
+  lastRebuildAt?: Date;
+} = {
+  dirty: false,
+  affectedMemoryIds: new Set(),
+  writeCountSinceLastRebuild: 0,
+};
+
+function snapshotRuntimeDirtyState(): ModelMemoryRuntimeDirtySnapshot {
+  return {
+    dirty: runtimeDirtyState.dirty,
+    reason: runtimeDirtyState.reason,
+    affectedMemoryIds: [...runtimeDirtyState.affectedMemoryIds].toSorted(),
+    writeCountSinceLastRebuild: runtimeDirtyState.writeCountSinceLastRebuild,
+    markedAt: runtimeDirtyState.markedAt?.toISOString(),
+    lastRebuildAt: runtimeDirtyState.lastRebuildAt?.toISOString(),
+  };
+}
+
+export function markModelMemoryRuntimeDirty(input: {
+  reason: string;
+  memoryIds?: string[];
+  markedAt?: Date;
+}): ModelMemoryRuntimeDirtySnapshot {
+  runtimeDirtyState.dirty = true;
+  runtimeDirtyState.reason = input.reason;
+  runtimeDirtyState.markedAt = input.markedAt ?? new Date();
+  runtimeDirtyState.writeCountSinceLastRebuild += 1;
+  for (const memoryId of input.memoryIds ?? []) {
+    if (memoryId.trim()) {
+      runtimeDirtyState.affectedMemoryIds.add(memoryId);
+    }
+  }
+  return snapshotRuntimeDirtyState();
+}
+
+export function getModelMemoryRuntimeDirtySnapshot(): ModelMemoryRuntimeDirtySnapshot {
+  return snapshotRuntimeDirtyState();
+}
+
+export function resetModelMemoryRuntimeDirtyStateForTests(): void {
+  runtimeDirtyState.dirty = false;
+  runtimeDirtyState.reason = undefined;
+  runtimeDirtyState.affectedMemoryIds.clear();
+  runtimeDirtyState.writeCountSinceLastRebuild = 0;
+  runtimeDirtyState.markedAt = undefined;
+  runtimeDirtyState.lastRebuildAt = undefined;
+}
+
+function buildCaptureJobId(params: {
+  sessionId?: string;
+  sessionKey?: string;
+  agentId?: string;
+  userText: string;
+  assistantText: string;
+}): string {
+  const digest = sha256Text(
+    JSON.stringify({
+      sessionId: params.sessionId ?? null,
+      sessionKey: params.sessionKey ?? null,
+      agentId: params.agentId ?? null,
+      userSha256: sha256Text(params.userText),
+      assistantSha256: sha256Text(params.assistantText),
+    }),
+  ).slice(0, 24);
+  return `capture_job_${digest}`;
+}
+
+function classifyCaptureFailure(error: unknown): MemoryIngestionFailureClass {
+  return classifyMemoryIngestionFailure(error instanceof Error ? error.message : String(error));
+}
+
+function safeStringLabel(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
 export function shouldSkipOrdinaryTurnCaptureForExplicitOptOut(userText: string): boolean {
   const normalized = userText.toLowerCase();
   return (
@@ -924,17 +1017,20 @@ export async function captureModelMemoryAssistantTurn(params: {
   assistantText: string;
   sourceMetadata?: Record<string, unknown>;
 }): Promise<void> {
+  const captureJobId = buildCaptureJobId(params);
   const status = resolveModelMemoryLiveRuntimeStatus(params.config);
   if (!status.enabled || !status.captureWritesEnabled || !status.databaseConfigured) {
     void emitModelMemoryActivityFeedEvent({
       kind: "ordinary_turn_capture",
       status: "skipped",
+      eventType: "capture_skipped",
       config: params.config,
       sessionId: params.sessionId,
       sessionKey: params.sessionKey,
       agentId: params.agentId,
-      stableId: `${params.sessionId ?? "unknown"}:ordinary_turn_capture:disabled`,
+      stableId: captureJobId,
       safeLabels: { reason: "disabled" },
+      ids: { captureJobId },
     }).catch(() => undefined);
     return;
   }
@@ -944,56 +1040,134 @@ export async function captureModelMemoryAssistantTurn(params: {
     void emitModelMemoryActivityFeedEvent({
       kind: "ordinary_turn_capture",
       status: "skipped",
+      eventType: "capture_skipped",
       config: params.config,
       sessionId: params.sessionId,
       sessionKey: params.sessionKey,
       agentId: params.agentId,
-      stableId: `${params.sessionId ?? "unknown"}:ordinary_turn_capture:no_candidate`,
+      stableId: captureJobId,
       safeLabels: { reason: "no_durable_candidate" },
+      ids: { captureJobId },
     }).catch(() => undefined);
     return;
   }
 
-  const runtime = await getLiveRuntime(params.config);
-  const canonicalRepository = runtime.canonicalRepository as typeof runtime.canonicalRepository &
-    MmV2LiveRepositoryCapabilities;
-  const canUseMmV2LivePath =
-    typeof canonicalRepository.listExistingMemorySummaries === "function" &&
-    typeof canonicalRepository.persistLiveMemoryBatch === "function";
-  const result = await captureOrdinaryTurnLive({
-    canonicalRepository: runtime.canonicalRepository as never,
-    runtimeRepository: runtime.runtimeRepository,
-    memoryStore: runtime.memoryStore as never,
-    collisionAdjudicator: runtime.collisionAdjudicator,
-    capture: {
-      turn: captureInput.turn,
-      modelId: resolveLiveModelRef(params.config),
-      candidateModelId: resolveCandidateModelRef(params.config),
-      interpreter: canUseMmV2LivePath
-        ? runtime.mmv2SemanticInterpreter
-        : runtime.semanticInterpreter,
-    },
-    rebuildRuntime: true,
-  });
-  void emitModelMemoryActivityFeedEvent({
-    kind: "ordinary_turn_capture",
-    status: "completed",
-    config: params.config,
-    sessionId: params.sessionId,
-    sessionKey: params.sessionKey,
-    agentId: params.agentId,
-    stableId: result.source.id,
-    ids: {
-      sourceId: result.source.id,
-      segmentIds: result.windows.map((window) => window.id),
-      memoryIds: result.writeResults.flatMap((entry) => (entry.memoryId ? [entry.memoryId] : [])),
-    },
-    metrics: {
-      segments: result.windows.length,
-      writeResults: result.writeResults.length,
-      memories: result.writeResults.filter((entry) => entry.memoryId).length,
+  const captureStartedAt = Date.now();
+  const modelId = resolveLiveModelRef(params.config);
+  const candidateModelId = resolveCandidateModelRef(params.config);
+  const emitCaptureEvent = (
+    event: Omit<
+      Parameters<typeof emitModelMemoryActivityFeedEvent>[0],
+      "kind" | "config" | "sessionId" | "sessionKey" | "agentId" | "stableId"
+    >,
+  ) =>
+    emitModelMemoryActivityFeedEvent({
+      kind: "ordinary_turn_capture",
+      config: params.config,
+      sessionId: params.sessionId,
+      sessionKey: params.sessionKey,
+      agentId: params.agentId,
+      stableId: captureJobId,
+      ...event,
+      ids: {
+        captureJobId,
+        ...event.ids,
+      },
+    });
+
+  void emitCaptureEvent({
+    status: "queued",
+    eventType: "capture_queued",
+    safeLabels: {
+      provider: safeStringLabel(params.sourceMetadata?.provider, "unknown"),
+      model: safeStringLabel(params.sourceMetadata?.model, modelId),
     },
   }).catch(() => undefined);
+
+  try {
+    await emitCaptureEvent({
+      status: "started",
+      eventType: "capture_started",
+      safeLabels: {
+        provider: safeStringLabel(params.sourceMetadata?.provider, "unknown"),
+        model: safeStringLabel(params.sourceMetadata?.model, modelId),
+      },
+    }).catch(() => undefined);
+
+    const runtime = await getLiveRuntime(params.config);
+    const canonicalRepository = runtime.canonicalRepository as typeof runtime.canonicalRepository &
+      MmV2LiveRepositoryCapabilities;
+    const canUseMmV2LivePath =
+      typeof canonicalRepository.listExistingMemorySummaries === "function" &&
+      typeof canonicalRepository.persistLiveMemoryBatch === "function";
+    const result = await captureOrdinaryTurnLive({
+      canonicalRepository: runtime.canonicalRepository as never,
+      runtimeRepository: runtime.runtimeRepository,
+      memoryStore: runtime.memoryStore as never,
+      collisionAdjudicator: runtime.collisionAdjudicator,
+      capture: {
+        turn: captureInput.turn,
+        modelId,
+        candidateModelId,
+        interpreter: canUseMmV2LivePath
+          ? runtime.mmv2SemanticInterpreter
+          : runtime.semanticInterpreter,
+      },
+      rebuildRuntime: false,
+    });
+    const memoryIds = result.writeResults.flatMap((entry) =>
+      entry.memoryId ? [entry.memoryId] : [],
+    );
+    const dirtyState = markModelMemoryRuntimeDirty({
+      reason: "ordinary_turn_capture_written",
+      memoryIds,
+    });
+    await emitCaptureEvent({
+      status: "completed",
+      eventType: "capture_written",
+      ids: {
+        sourceId: result.source.id,
+        segmentIds: result.windows.map((window) => window.id),
+        memoryIds,
+      },
+      metrics: {
+        latencyMs: Date.now() - captureStartedAt,
+        retryCount: 0,
+        segments: result.windows.length,
+        writeResults: result.writeResults.length,
+        memories: memoryIds.length,
+      },
+    }).catch(() => undefined);
+    await emitCaptureEvent({
+      status: "deferred",
+      eventType: "runtime_rebuild_deferred",
+      safeLabels: { reason: dirtyState.reason ?? "ordinary_turn_capture_written" },
+      ids: {
+        memoryIds: dirtyState.affectedMemoryIds,
+      },
+      metrics: {
+        writeCountSinceLastRebuild: dirtyState.writeCountSinceLastRebuild,
+      },
+    }).catch(() => undefined);
+  } catch (error) {
+    const failureClass = classifyCaptureFailure(error);
+    await emitCaptureEvent({
+      status: "failed",
+      eventType: "capture_failed",
+      safeLabels: {
+        failureClass,
+        stage:
+          failureClass === "db_persistence" || failureClass === "timeout"
+            ? "persistence_boundary"
+            : "execution",
+      },
+      metrics: {
+        latencyMs: Date.now() - captureStartedAt,
+        retryCount: 0,
+      },
+    }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function captureModelMemoryToolResultProof(params: {

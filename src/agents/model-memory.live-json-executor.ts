@@ -43,6 +43,10 @@ export type ModelMemoryLiveExecutionTrace = {
   promptTokenCount?: number;
   outputTokenCount?: number;
   cachedInputTokenCount?: number;
+  promptCacheKey?: string;
+  promptCacheRetention?: string;
+  prefixHash?: string;
+  schemaHash?: string;
   failureStage?: ModelMemoryLiveExecutionFailureStage;
   errorMessage?: string;
 };
@@ -70,6 +74,10 @@ export type ModelMemoryProviderPreflightResult = {
   provider: string;
   providerModel: string;
   requestUrl: string;
+  contractName?: string;
+  contractVersion?: string;
+  schemaName?: string;
+  strictSchema?: boolean;
   httpStatus?: number;
   resolvedModelId?: string;
   failureStage?: ModelMemoryLiveExecutionFailureStage;
@@ -195,6 +203,14 @@ function buildProviderOptions(
   return { require_parameters: true };
 }
 
+function buildPromptCacheOptions(request: JsonModelExecutionRequest): Record<string, unknown> {
+  const promptCache = request.responseOptions?.promptCache;
+  return {
+    ...(promptCache?.key ? { prompt_cache_key: promptCache.key } : {}),
+    ...(promptCache?.retention ? { prompt_cache_retention: promptCache.retention } : {}),
+  };
+}
+
 function resolveRequestModel(modelId: string, defaultProvider: string): ModelRef {
   const parsed = parseModelRef(modelId, defaultProvider);
   if (!parsed) {
@@ -237,6 +253,14 @@ function buildExcerpt(value: string | undefined, maxLength = 400): string | unde
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function buildSchemaHash(request: JsonModelExecutionRequest): string | undefined {
+  const transport = request.responseOptions?.transport;
+  if (transport?.type !== "json_schema") {
+    return undefined;
+  }
+  return sha256(JSON.stringify(transport.schema));
 }
 
 function buildTraceRequestBody(requestBody: Record<string, unknown>): Record<string, unknown> {
@@ -458,6 +482,138 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
     }
   }
 
+  async preflightContract(
+    request: JsonModelExecutionRequest,
+  ): Promise<ModelMemoryProviderPreflightResult> {
+    const model = resolveRequestModel(request.contract.modelId, this.defaultProvider);
+    const auth = await this.resolveAuthImpl(model.provider, this.config);
+    const baseUrl = resolveProviderBaseUrl(this.config, model.provider);
+    const requestUrl = `${baseUrl}/chat/completions`;
+    const transport = request.responseOptions?.transport;
+
+    if (!auth.apiKey) {
+      return {
+        ok: false,
+        requestedModelId: request.contract.modelId,
+        provider: model.provider,
+        providerModel: model.model,
+        requestUrl,
+        contractName: request.contract.contractName,
+        contractVersion: request.contract.contractVersion,
+        schemaName: transport?.type === "json_schema" ? transport.name : undefined,
+        strictSchema: transport?.type === "json_schema" ? (transport.strict ?? true) : false,
+        failureStage: "request_time",
+        errorMessage: `model-memory live execution for provider "${model.provider}" requires an API key or OAuth token`,
+      };
+    }
+
+    const requestBody = {
+      model: model.model,
+      temperature: 0,
+      max_tokens: Math.min(resolveMaxOutputTokens(request.responseOptions?.maxOutputTokens), 64),
+      messages: [
+        {
+          role: "system",
+          content:
+            "Preflight this exact structured-output contract. Return one minimal valid JSON object for the provided response format.",
+        },
+        {
+          role: "user",
+          content: '{"preflight":true}',
+        },
+      ],
+      response_format: buildResponseFormat(request),
+      ...(buildProviderOptions(request, model.provider)
+        ? { provider: buildProviderOptions(request, model.provider) }
+        : {}),
+      ...buildPromptCacheOptions(request),
+    } satisfies Record<string, unknown>;
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(requestUrl, {
+        method: "POST",
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
+        headers: {
+          Authorization: `Bearer ${auth.apiKey}`,
+          "Content-Type": "application/json",
+          ...(model.provider === "openrouter"
+            ? {
+                "HTTP-Referer": "https://openclaw.ai",
+                "X-Title": "OpenClaw model-memory",
+              }
+            : {}),
+        },
+        body: JSON.stringify(requestBody),
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        requestedModelId: request.contract.modelId,
+        provider: model.provider,
+        providerModel: model.model,
+        requestUrl,
+        contractName: request.contract.contractName,
+        contractVersion: request.contract.contractVersion,
+        schemaName: transport?.type === "json_schema" ? transport.name : undefined,
+        strictSchema: transport?.type === "json_schema" ? (transport.strict ?? true) : false,
+        failureStage: "request_time",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    const rawResponseText = await response.text();
+    if (!response.ok) {
+      return {
+        ok: false,
+        requestedModelId: request.contract.modelId,
+        provider: model.provider,
+        providerModel: model.model,
+        requestUrl,
+        contractName: request.contract.contractName,
+        contractVersion: request.contract.contractVersion,
+        schemaName: transport?.type === "json_schema" ? transport.name : undefined,
+        strictSchema: transport?.type === "json_schema" ? (transport.strict ?? true) : false,
+        httpStatus: response.status,
+        failureStage: "request_time",
+        errorMessage: buildExcerpt(parseErrorText(rawResponseText)) ?? "provider returned error",
+      };
+    }
+
+    try {
+      const payload = JSON.parse(rawResponseText) as OpenAICompatibleResponse;
+      extractOutputText(payload);
+      return {
+        ok: true,
+        requestedModelId: request.contract.modelId,
+        provider: model.provider,
+        providerModel: model.model,
+        requestUrl,
+        contractName: request.contract.contractName,
+        contractVersion: request.contract.contractVersion,
+        schemaName: transport?.type === "json_schema" ? transport.name : undefined,
+        strictSchema: transport?.type === "json_schema" ? (transport.strict ?? true) : false,
+        httpStatus: response.status,
+        resolvedModelId: readTrimmedString(payload.model) ?? `${model.provider}/${model.model}`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        requestedModelId: request.contract.modelId,
+        provider: model.provider,
+        providerModel: model.model,
+        requestUrl,
+        contractName: request.contract.contractName,
+        contractVersion: request.contract.contractVersion,
+        schemaName: transport?.type === "json_schema" ? transport.name : undefined,
+        strictSchema: transport?.type === "json_schema" ? (transport.strict ?? true) : false,
+        httpStatus: response.status,
+        failureStage: "provider_response",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   async execute(request: JsonModelExecutionRequest): Promise<JsonModelExecutionResponse> {
     const model = resolveRequestModel(request.contract.modelId, this.defaultProvider);
     const auth = await this.resolveAuthImpl(model.provider, this.config);
@@ -488,7 +644,12 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
       ...(buildProviderOptions(request, model.provider)
         ? { provider: buildProviderOptions(request, model.provider) }
         : {}),
+      ...buildPromptCacheOptions(request),
     } satisfies Record<string, unknown>;
+    const prefixHash = sha256(request.systemPrompt);
+    const schemaHash = buildSchemaHash(request);
+    const promptCacheKey = request.responseOptions?.promptCache?.key;
+    const promptCacheRetention = request.responseOptions?.promptCache?.retention;
 
     let response: Response;
     try {
@@ -516,6 +677,10 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         providerModel: model.model,
         requestUrl,
         requestBody: buildTraceRequestBody(requestBody),
+        prefixHash,
+        schemaHash,
+        promptCacheKey,
+        promptCacheRetention,
         responseOk: false,
         responseBodyReceived: false,
         failureStage: "request_time",
@@ -542,6 +707,10 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         providerModel: model.model,
         requestUrl,
         requestBody: buildTraceRequestBody(requestBody),
+        prefixHash,
+        schemaHash,
+        promptCacheKey,
+        promptCacheRetention,
         httpStatus: response.status,
         responseOk: false,
         responseBodyReceived: rawResponseText.trim().length > 0,
@@ -568,6 +737,10 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         providerModel: model.model,
         requestUrl,
         requestBody: buildTraceRequestBody(requestBody),
+        prefixHash,
+        schemaHash,
+        promptCacheKey,
+        promptCacheRetention,
         httpStatus: response.status,
         responseOk: true,
         responseBodyReceived: rawResponseText.trim().length > 0,
@@ -596,6 +769,10 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         providerModel: model.model,
         requestUrl,
         requestBody: buildTraceRequestBody(requestBody),
+        prefixHash,
+        schemaHash,
+        promptCacheKey,
+        promptCacheRetention,
         httpStatus: response.status,
         responseOk: true,
         responseBodyReceived: rawResponseText.trim().length > 0,
@@ -622,6 +799,10 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
       providerModel: model.model,
       requestUrl,
       requestBody: buildTraceRequestBody(requestBody),
+      prefixHash,
+      schemaHash,
+      promptCacheKey,
+      promptCacheRetention,
       httpStatus: response.status,
       responseOk: true,
       responseBodyReceived: rawResponseText.trim().length > 0,
@@ -632,9 +813,26 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
     };
     this.onTrace?.(trace);
 
-    return {
+    const executionResponse: JsonModelExecutionResponse = {
       outputText,
       resolvedModelId: trace.resolvedModelId,
     };
+    if (
+      trace.promptTokenCount !== undefined ||
+      trace.outputTokenCount !== undefined ||
+      trace.cachedInputTokenCount !== undefined ||
+      promptCacheKey !== undefined ||
+      schemaHash !== undefined
+    ) {
+      executionResponse.usage = {
+        promptTokens: trace.promptTokenCount,
+        outputTokens: trace.outputTokenCount,
+        cachedInputTokens: trace.cachedInputTokenCount,
+        promptCacheKey,
+        prefixHash,
+        schemaHash,
+      };
+    }
+    return executionResponse;
   }
 }

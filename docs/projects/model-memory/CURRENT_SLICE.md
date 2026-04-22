@@ -67,6 +67,14 @@ classified as `not_clean`: the UI prompts completed and no-store/privacy rows
 did not leak, but ordinary-turn durable capture did not create new memory rows
 because the live capture path hit DB connection/statement timeouts.
 
+The active follow-up slice is mechanical capture/ingest hardening, not a
+semantic-quality pass. It addresses the timeout evidence by making live capture
+observable as structured jobs, stopping ordinary-turn capture from rebuilding
+runtime state synchronously, using scoped reconciliation summaries, hardening
+edge endpoint validation, adding DB pool/schema/cache observability knobs, and
+redacting ordinary-turn source windows before persistence. Document ingest
+remains paused during this work.
+
 ## Current Outcome
 
 - MMV2-native SQL storage is live semantic truth:
@@ -225,6 +233,32 @@ because the live capture path hit DB connection/statement timeouts.
     `.artifacts/model-memory/final-current-runtime-soak/2026-04-22-partial-corpus/soak-report.json`
     and is `not_clean` because durable ordinary-turn capture produced no new
     DB rows during the soak
+- 2026-04-22 mechanical capture/ingest hardening pass:
+  - ordinary-turn live capture emits safe structured job events:
+    `capture_queued`, `capture_started`, `capture_written`,
+    `capture_failed`, and `runtime_rebuild_deferred`
+  - user-visible turns remain non-blocking, but capture failures are now
+    classed through the shared ingestion taxonomy instead of only warning logs
+  - ordinary-turn capture no longer requests synchronous runtime rebuild by
+    default; it marks runtime/projection state dirty for deferred rebuild
+  - rebuild locking defaults to `pg_try_advisory_xact_lock` and can be rolled
+    back to blocking lock behavior with
+    `MODEL_MEMORY_REBUILD_BLOCKING_LOCK_ENABLED=true`
+  - reconciliation neighbors for ordinary capture use scoped projected
+    summaries by default instead of decoding all durable memory rows
+  - live batch edge endpoint validation now uses one batched endpoint lookup
+    before FK-backed edge writes
+  - DB pool sizing/timeouts are configurable through
+    `MODEL_MEMORY_DB_POOL_MAX`,
+    `MODEL_MEMORY_DB_POOL_CONNECTION_TIMEOUT_MS`, and
+    `MODEL_MEMORY_DB_POOL_IDLE_TIMEOUT_MS`
+  - provider preflight now has an exact-contract strict-schema path in
+    addition to generic JSON health checks
+  - model-call traces include safe prompt-cache metadata, prefix/schema hashes,
+    token usage, and cached token counts when providers return them
+  - ordinary-turn source windows are redacted before source/segment
+    persistence; durable memories may still carry bounded evidence quotes, but
+    full prompt/assistant turn text is not persisted as segment content
 
 ## Current Risks
 
@@ -237,10 +271,12 @@ because the live capture path hit DB connection/statement timeouts.
 - live retrieval/context lookup can still transiently time out under UI proof
   load; this should be treated as a runtime availability/diagnostics issue, not
   a reason to add topical write-path heuristics
-- live ordinary-turn durable capture can fail under DB connection/statement
-  timeout while the user-visible turn still completes; the current partial
-  soak must not be treated as clean until capture retry/timeout handling is
-  fixed and rerun
+- live ordinary-turn durable capture now surfaces capture jobs and avoids
+  synchronous rebuild. Gateway pickup for the mechanical hardening image has
+  completed and health is green, but the current partial soak remains
+  `not_clean` until a fresh runtime proof shows durable rows being created
+  again under gateway load. The pickup pass did not write artificial proof/eval
+  memories into the live durable DB.
 - file-pack/provider variance still needs seeded stabilization and reporting
 - capture seam wiring remains limited to production-verified/no-dark-data
   surfaces behind kill switches; unverified seams stay blocked
@@ -274,13 +310,18 @@ because the live capture path hit DB connection/statement timeouts.
    only with provider credits restored, bounded class-filtered failed-source
    retry, the runner failure circuit breaker enabled, and the failed-source
    quarantine report reviewed.
-5. Finish the next shared ingestion-funnel slice:
+5. Rerun a narrow `MEMMECH-2026-04-22` proof for durable ordinary-turn
+   capture, capture job events, deferred rebuild state, DB pool telemetry,
+   strict-schema preflight, cache metrics, and no raw ordinary-turn
+   source-window persistence. Runtime pickup is already complete; do not write
+   synthetic proof/eval content into the live durable DB.
+6. Finish the next shared ingestion-funnel slice:
    - executable pipeline stage orchestration across all capture paths
    - candidate-level quarantine artifacts/reports
    - per-candidate persistence/savepoints where safe
    - non-mutating integrity audit for memories/events/edges/source refs
    - provider scorecard and cache/cost telemetry in closeout reports
-6. Continue hardening Retrieval Runtime relevance and telemetry without
+7. Continue hardening Retrieval Runtime relevance and telemetry without
    mutating truth:
    - prefer fresh projection digests backed by active MMV2 ids
    - record stale/superseded/deleted/conflicted/inactive exclusions
@@ -288,27 +329,27 @@ because the live capture path hit DB connection/statement timeouts.
      but not selected
    - emit empty-retrieval telemetry
    - keep lexical/RRF/vector-style ranking read-time only
-7. Continue remaining evaluation coverage for:
+8. Continue remaining evaluation coverage for:
    - tool-result proof capture
    - projection-backed recall
    - stale/superseded exclusion
    - no raw-data persistence
    - root `USER.md` / `MEMORY.md` no-write
-8. Inventory and quarantine remaining fallback compatibility in small
+9. Inventory and quarantine remaining fallback compatibility in small
    reversible slices:
    - no broad deletion without tests
    - no legacy semantic-family/collision behavior in default MMV2 hot paths
    - only explicit fallback flags with tests
-9. Harden ordinary-turn MMV2 evaluation coverage:
-   - durable preference
-   - durable directive
-   - durable project fact
-   - structural correction target
-   - temp/session-only reject
-   - privacy/no-store reject
-   - scope and evidence grounding
-   - no topic parser or fuzzy write-path supersession regression
-10. Run seeded file-pack/provider variance comparisons and separate:
+10. Harden ordinary-turn MMV2 evaluation coverage:
+    - durable preference
+    - durable directive
+    - durable project fact
+    - structural correction target
+    - temp/session-only reject
+    - privacy/no-store reject
+    - scope and evidence grounding
+    - no topic parser or fuzzy write-path supersession regression
+11. Run seeded file-pack/provider variance comparisons and separate:
 
 - deterministic regression
 - provider/model variance

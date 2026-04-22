@@ -18,7 +18,17 @@ export type ModelMemoryActivityEventType =
   | "projection_digest_used"
   | "capture_seam_observed"
   | "retrieval_empty"
-  | "retrieval_miss_diagnostic";
+  | "retrieval_miss_diagnostic"
+  | "capture_queued"
+  | "capture_started"
+  | "capture_skipped"
+  | "capture_failed"
+  | "capture_written"
+  | "runtime_rebuild_deferred"
+  | "runtime_rebuild_scheduled"
+  | "runtime_rebuild_completed"
+  | "runtime_rebuild_failed"
+  | "runtime_rebuild_skipped_lock_busy";
 
 export type ModelMemoryActivityKind =
   | "retrieval"
@@ -27,7 +37,14 @@ export type ModelMemoryActivityKind =
   | "projection"
   | "hook_probe";
 
-export type ModelMemoryActivityStatus = "started" | "completed" | "skipped" | "failed";
+export type ModelMemoryActivityStatus =
+  | "queued"
+  | "started"
+  | "completed"
+  | "skipped"
+  | "failed"
+  | "deferred"
+  | "scheduled";
 
 export type ModelMemoryActivityFeedSettings = {
   enabled: boolean;

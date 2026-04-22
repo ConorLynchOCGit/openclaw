@@ -84,6 +84,7 @@ export type {
   JsonModelExecutionRequest,
   JsonModelExecutionResponse,
   JsonModelExecutor,
+  MemoryIngestionFailureClass,
   ModelMemoryStorageEngine,
   MemoryIdentityDescriptor,
   ModelMemoryLifecycleState,
@@ -186,6 +187,7 @@ export const buildZeroCandidateRecoverySelection = bindFacadeFunction(
 );
 export const calculateSearchTextOverlap = bindFacadeFunction("calculateSearchTextOverlap");
 export const captureOrdinaryTurnLive = bindFacadeFunction("captureOrdinaryTurnLive");
+export const classifyMemoryIngestionFailure = bindFacadeFunction("classifyMemoryIngestionFailure");
 export const compileProjection = bindFacadeFunction("compileProjection");
 export const createModelMemoryPgPool = bindFacadeFunction("createModelMemoryPgPool");
 export const deriveMemoryIdentity = bindFacadeFunction("deriveMemoryIdentity");

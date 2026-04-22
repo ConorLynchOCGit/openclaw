@@ -4,8 +4,11 @@ import {
   buildLiveRetrievalEnvelope,
   buildProjectionBootstrapContextFiles,
   buildCompletedAssistantTurnCaptureInput,
+  getModelMemoryRuntimeDirtySnapshot,
   hasExplicitDurableCaptureSignal,
+  markModelMemoryRuntimeDirty,
   parseMmV2RawJsonOutput,
+  resetModelMemoryRuntimeDirtyStateForTests,
   resolveModelMemoryLiveRuntimeStatus,
   shouldAttemptLiveRetrievalContext,
   shouldSkipOrdinaryTurnCaptureForExplicitOptOut,
@@ -188,6 +191,27 @@ describe("buildCompletedAssistantTurnCaptureInput", () => {
       sourceMetadata: { toolCallCount: 1 },
     });
     expect(capture?.turn.currentTurnText).toBe(userText);
+  });
+});
+
+describe("model-memory runtime dirty state", () => {
+  it("tracks deferred rebuild state without storing raw turn text", () => {
+    resetModelMemoryRuntimeDirtyStateForTests();
+
+    const snapshot = markModelMemoryRuntimeDirty({
+      reason: "ordinary_turn_capture_written",
+      memoryIds: ["memory-2", "memory-1", "memory-1"],
+      markedAt: new Date("2026-04-22T00:00:00.000Z"),
+    });
+
+    expect(snapshot).toMatchObject({
+      dirty: true,
+      reason: "ordinary_turn_capture_written",
+      affectedMemoryIds: ["memory-1", "memory-2"],
+      writeCountSinceLastRebuild: 1,
+      markedAt: "2026-04-22T00:00:00.000Z",
+    });
+    expect(JSON.stringify(getModelMemoryRuntimeDirtySnapshot())).not.toContain("Please remember");
   });
 });
 

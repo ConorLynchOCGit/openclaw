@@ -5,6 +5,45 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-22 - Capture performance hardening is mechanical, not semantic
+
+Decision:
+
+- treat the failed current-runtime partial-corpus soak as a mechanical
+  capture/ingest availability failure, not a reason to change MMV2 semantic
+  truth
+- keep user-facing turns non-blocking, but make background capture observable
+  through safe job events and shared failure classes
+- disable ordinary-turn synchronous runtime rebuild by default; capture writes
+  mark runtime/projection state dirty and explicit admin/proof paths can still
+  request rebuild
+- prefer try-lock/fail-fast rebuild behavior over blocking
+  `pg_advisory_xact_lock`, with
+  `MODEL_MEMORY_REBUILD_BLOCKING_LOCK_ENABLED=true` as rollback
+- bound reconciliation by scope and projected columns for ordinary capture
+  rather than decoding all durable memories on every turn
+- validate edge endpoints with one batched lookup before FK-backed edge writes
+- make DB pool sizing/timeouts configurable without a migration
+- preflight actual strict-schema contracts, not only generic JSON-object
+  provider health
+- record prompt-cache keys, prefix/schema hashes, token usage, cached token
+  counts, model/provider, and latency as bounded telemetry only
+- redact ordinary-turn source-window content before persistence; keep only
+  hashes, counts, safe metadata, and bounded evidence quotes used by admitted
+  memory records
+
+Reasoning:
+
+- read-only DB timing shows the live DB is small enough that table size alone
+  is not the root cause
+- timeout logs point to contention, rebuild coupling, pool pressure, and
+  provider/schema mechanics
+- fixing this by semantic heuristics, fuzzy correction, or broader legacy
+  fallback would make the memory system less trustworthy
+- the durable repair is to decouple capture writes from rebuilds, make capture
+  outcomes inspectable, reduce DB round trips, and prevent raw ordinary-turn
+  text from becoming durable source data
+
 ## 2026-04-22 - Partial-corpus proof can proceed before full ingest completes
 
 Decision:

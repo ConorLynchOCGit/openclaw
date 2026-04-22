@@ -309,8 +309,24 @@ Observed 2026-04-22b performance posture:
   adaptive large-source splitting, failed-source quarantine reports, class
   filtered retry, progress/cost telemetry, and FK-safe edge deferral are now
   implemented as runner/funnel hardening
-- remaining future work: adaptive concurrency, per-source timeout/stuck-source
-  detection, and a dry-run cost/size estimate before the next large pass
+- mechanical capture/ingest hardening also adds strict-schema contract
+  preflight, prompt-cache key/usage telemetry, configurable DB pool knobs,
+  non-blocking runtime rebuild locking, scoped reconciliation summaries, and
+  ordinary-turn source-window redaction
+- remaining future work: adaptive concurrency, separate queue/pool lanes,
+  per-source timeout/stuck-source detection, candidate-level savepoints, and a
+  dry-run cost/size estimate before the next large pass
+
+Benchmark/cache note:
+
+- benchmark calls should route through
+  `MODEL_MEMORY_BENCHMARK_MODEL_ID=openai-codex/gpt-5.4-mini` unless the
+  operator explicitly chooses another model
+- compare mini vs nano only after mechanical preflight, redaction, persistence,
+  and rebuild-decoupling tests pass
+- report prompt tokens, cached tokens, output tokens, latency, model/provider,
+  prefix hash, schema hash, and prompt-cache key per call
+- do not write benchmark/proof output into the live durable-memory DB
 
 ## Immediate follow-up
 

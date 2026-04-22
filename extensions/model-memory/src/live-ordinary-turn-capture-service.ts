@@ -20,9 +20,15 @@ import {
 } from "./ordinary-turn-capture.ts";
 import { rebuildDerivedRuntimeState } from "./runtime-rebuild-orchestrator.ts";
 import type { SemanticCollisionAdjudicator } from "./semantic-collision-adjudication.ts";
+import { redactOrdinaryTurnSourceEnvelopeForPersistence } from "./source-adapters/ordinary-turn-source-adapter.ts";
 
 type MmV2AwareCanonicalRepository = ModelMemoryCanonicalRepository & {
   listExistingMemorySummaries?: () => Promise<ExistingMemorySummary[]>;
+  listExistingMemorySummariesForCapture?: (input: {
+    projectId?: string | null;
+    sessionId?: string | null;
+    limit?: number;
+  }) => Promise<ExistingMemorySummary[]>;
   persistLiveMemoryBatch?: (batch: LiveMemoryBatch) => Promise<void>;
 };
 
@@ -52,11 +58,30 @@ export async function captureOrdinaryTurnLive(input: {
         capture: input.capture.turn,
         modelId: input.capture.modelId,
         interpreter: input.capture.interpreter,
-        reconciliationNeighbors: await canonicalRepository.listExistingMemorySummaries!(),
+        reconciliationNeighbors:
+          typeof canonicalRepository.listExistingMemorySummariesForCapture === "function"
+            ? await canonicalRepository.listExistingMemorySummariesForCapture({
+                projectId: input.capture.turn.projectId ?? null,
+                sessionId: input.capture.turn.sessionId ?? null,
+                limit: 240,
+              })
+            : await canonicalRepository.listExistingMemorySummaries!(),
       })
     : await captureOrdinaryTurn(input.capture);
-  const source = await canonicalRepository.persistSource(result.source);
-  await canonicalRepository.persistSourceWindows(result.windows);
+  const persistenceEnvelope =
+    result.source.sourceKind === "ordinary_turn"
+      ? redactOrdinaryTurnSourceEnvelopeForPersistence({
+          source: result.source,
+          normalizedText: result.windows.map((window) => window.normalizedText).join("\n"),
+          windows: result.windows,
+        })
+      : {
+          source: result.source,
+          normalizedText: result.windows.map((window) => window.normalizedText).join("\n"),
+          windows: result.windows,
+        };
+  const source = await canonicalRepository.persistSource(persistenceEnvelope.source);
+  await canonicalRepository.persistSourceWindows(persistenceEnvelope.windows);
   const mmv2Recording = canUseMmV2LivePath
     ? (result as unknown as { mmv2LiveRecording: LiveMemoryBatch }).mmv2LiveRecording
     : undefined;
@@ -105,7 +130,7 @@ export async function captureOrdinaryTurnLive(input: {
         ),
       );
   const rebuild =
-    input.runtimeRepository && (input.rebuildRuntime ?? true)
+    input.runtimeRepository && (input.rebuildRuntime ?? false)
       ? await rebuildDerivedRuntimeState({
           canonicalRepository,
           runtimeRepository: input.runtimeRepository,

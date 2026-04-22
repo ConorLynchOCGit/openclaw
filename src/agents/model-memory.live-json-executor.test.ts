@@ -499,6 +499,130 @@ describe("model-memory live json executor", () => {
     });
   });
 
+  it("preflights the actual strict schema contract instead of generic json_object", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: "openai/gpt-5.4-nano",
+            choices: [{ message: { content: '{"schema_version":"capture_routing.v1"}' } }],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    );
+    const executor = new OpenAICompatibleLiveJsonExecutor({
+      fetchImpl,
+      resolveAuth: async () => ({
+        apiKey: "sk-test",
+        mode: "api-key",
+        source: "test",
+      }),
+    });
+
+    const result = await executor.preflightContract({
+      contract: {
+        contractName: "capture_routing",
+        contractVersion: "mmv2-capture-routing-v1",
+        modelId: "openrouter/openai/gpt-5.4-nano",
+      },
+      systemPrompt: "system prompt must not be sent during preflight",
+      userPrompt: "user prompt must not be sent during preflight",
+      responseFormat: "json",
+      responseOptions: {
+        transport: {
+          type: "json_schema",
+          name: "capture_routing_batch",
+          strict: true,
+          schema: { type: "object", properties: {}, additionalProperties: false },
+        },
+        provider: { requireParameters: true },
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      contractName: "capture_routing",
+      contractVersion: "mmv2-capture-routing-v1",
+      schemaName: "capture_routing_batch",
+      strictSchema: true,
+    });
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.stringify(parseRequestBody(init))).not.toContain("user prompt must not be sent");
+    expect(parseRequestBody(init)).toMatchObject({
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "capture_routing_batch",
+          strict: true,
+        },
+      },
+      provider: {
+        require_parameters: true,
+      },
+    });
+  });
+
+  it("sends prompt-cache key metadata and returns cache usage when provided", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: "gpt-5.4-mini",
+            choices: [{ message: { content: '{"ok":true}' } }],
+            usage: {
+              prompt_tokens: 1000,
+              completion_tokens: 50,
+              prompt_tokens_details: { cached_tokens: 800 },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    );
+    const executor = new OpenAICompatibleLiveJsonExecutor({
+      fetchImpl,
+      resolveAuth: async () => ({
+        apiKey: "oauth-test",
+        mode: "oauth",
+        source: "profile:openai-codex:default",
+      }),
+    });
+
+    const result = await executor.execute({
+      contract: {
+        contractName: "mmv2-extraction",
+        contractVersion: "v1",
+        modelId: "openai-codex/gpt-5.4-mini",
+      },
+      systemPrompt: "stable static prefix",
+      userPrompt: "dynamic source tail",
+      responseFormat: "json",
+      responseOptions: {
+        promptCache: {
+          key: "mmv2-extraction-v1-prefix",
+          retention: "short",
+        },
+      },
+    });
+
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(parseRequestBody(init)).toMatchObject({
+      prompt_cache_key: "mmv2-extraction-v1-prefix",
+      prompt_cache_retention: "short",
+    });
+    expect(result.usage).toMatchObject({
+      promptTokens: 1000,
+      outputTokens: 50,
+      cachedInputTokens: 800,
+      promptCacheKey: "mmv2-extraction-v1-prefix",
+    });
+  });
+
   it("preflights provider credit failures without starting extraction work", async () => {
     const fetchImpl = vi.fn(
       async () =>

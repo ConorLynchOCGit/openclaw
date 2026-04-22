@@ -216,6 +216,7 @@ describe("live-ordinary-turn-capture-service", () => {
       const result = await captureOrdinaryTurnLive({
         canonicalRepository,
         runtimeRepository,
+        rebuildRuntime: true,
         capture: {
           turn: {
             currentTurnText: "Please keep explanations high level by default.",
@@ -362,6 +363,7 @@ describe("live-ordinary-turn-capture-service", () => {
       const result = await captureOrdinaryTurnLive({
         canonicalRepository,
         runtimeRepository,
+        rebuildRuntime: true,
         collisionAdjudicator: {
           async adjudicate() {
             throw new Error("legacy semantic collision adjudicator must not run on MMV2 live path");
@@ -387,11 +389,18 @@ describe("live-ordinary-turn-capture-service", () => {
       const legacyCount = await database.sql.query(
         "SELECT COUNT(*)::int AS count FROM model_memory.memory_objects",
       );
+      const segments = await database.sql.query(
+        "SELECT normalized_text, block_descriptors FROM model_memory.ingest_segments",
+      );
 
       expect(result.writeResults).toHaveLength(1);
       expect(durableCount.rows[0]?.count).toBe(1);
       expect(legacyCount.rows[0]?.count).toBe(0);
       expect(result.rebuild?.activeMemorySlots).toHaveLength(1);
+      expect(String(segments.rows[0]?.normalized_text)).toContain("[redacted ordinary_turn_window");
+      expect(JSON.stringify(segments.rows[0]?.block_descriptors)).not.toContain(
+        "Please keep explanations high level by default.",
+      );
     } finally {
       await database.close();
     }

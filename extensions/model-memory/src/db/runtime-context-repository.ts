@@ -26,6 +26,19 @@ import type { SqlClient } from "./sql-client.ts";
 
 const RUNTIME_REBUILD_LOCK_NAMESPACE = 42042;
 const RUNTIME_REBUILD_LOCK_ID = 1;
+const MODEL_MEMORY_REBUILD_BLOCKING_LOCK_ENABLED_ENV = "MODEL_MEMORY_REBUILD_BLOCKING_LOCK_ENABLED";
+
+export class RuntimeRebuildLockBusyError extends Error {
+  constructor() {
+    super("model-memory runtime rebuild lock is busy");
+    this.name = "RuntimeRebuildLockBusyError";
+  }
+}
+
+function isBlockingRuntimeRebuildLockEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = env[MODEL_MEMORY_REBUILD_BLOCKING_LOCK_ENABLED_ENV]?.trim().toLowerCase();
+  return value === "1" || value === "true" || value === "yes" || value === "on";
+}
 
 function decodeActiveMemorySlot(row: QueryResultRow): ActiveMemorySlotRecord {
   return {
@@ -215,10 +228,20 @@ export class RuntimeContextRepository {
       // Serialize derived runtime rebuilds across interactive capture, daily
       // continuity recovery, and bulk ingestion so overlapping writers do not
       // race on the active runtime tables.
-      await repository.sql.query("SELECT pg_advisory_xact_lock($1, $2)", [
-        RUNTIME_REBUILD_LOCK_NAMESPACE,
-        RUNTIME_REBUILD_LOCK_ID,
-      ]);
+      if (isBlockingRuntimeRebuildLockEnabled()) {
+        await repository.sql.query("SELECT pg_advisory_xact_lock($1, $2)", [
+          RUNTIME_REBUILD_LOCK_NAMESPACE,
+          RUNTIME_REBUILD_LOCK_ID,
+        ]);
+      } else {
+        const lock = await repository.sql.query<{ acquired: boolean }>(
+          "SELECT pg_try_advisory_xact_lock($1, $2) AS acquired",
+          [RUNTIME_REBUILD_LOCK_NAMESPACE, RUNTIME_REBUILD_LOCK_ID],
+        );
+        if (!lock.rows[0]?.acquired) {
+          throw new RuntimeRebuildLockBusyError();
+        }
+      }
       return work(repository);
     });
   }

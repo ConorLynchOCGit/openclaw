@@ -1,12 +1,43 @@
+import type { QueryResult, QueryResultRow } from "pg";
 import { describe, expect, it } from "vitest";
 import { buildContextArtifact } from "../runtime/context-artifacts.ts";
 import { buildContextRunLedger } from "../usage-cache-ledger.ts";
 import { ModelMemoryCanonicalRepository } from "./canonical-repository.ts";
 import { applyModelMemoryMigrations } from "./migrations.ts";
 import { createPgMemTestDatabase } from "./pg-test.ts";
-import { RuntimeContextRepository } from "./runtime-context-repository.ts";
+import {
+  RuntimeContextRepository,
+  RuntimeRebuildLockBusyError,
+} from "./runtime-context-repository.ts";
+import type { SqlClient } from "./sql-client.ts";
 
 describe("runtime-context-repository", () => {
+  it("uses non-blocking rebuild lock by default and fails fast when busy", async () => {
+    const queries: string[] = [];
+    const sql: SqlClient = {
+      async query<Row extends QueryResultRow = QueryResultRow>(text: string) {
+        queries.push(text);
+        return {
+          rows: [{ acquired: false }],
+          command: "SELECT",
+          rowCount: 1,
+          oid: 0,
+          fields: [],
+        } as unknown as QueryResult<Row>;
+      },
+      async withTransaction(work) {
+        return work(sql);
+      },
+    };
+    const runtime = new RuntimeContextRepository(sql);
+
+    await expect(runtime.withRuntimeRebuildLock(async () => "not-run")).rejects.toBeInstanceOf(
+      RuntimeRebuildLockBusyError,
+    );
+    expect(queries.join("\n")).toContain("pg_try_advisory_xact_lock");
+    expect(queries.join("\n")).not.toContain("pg_advisory_xact_lock($1, $2)");
+  });
+
   it("round-trips derived runtime tables through the live schema", async () => {
     const database = await createPgMemTestDatabase();
     try {

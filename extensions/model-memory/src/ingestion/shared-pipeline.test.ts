@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCandidateRepairPayload,
   buildMemoryPromptPlan,
+  buildMemoryPromptCacheHealthReport,
   classifyMemoryIngestionFailure,
   createMemoryIngestionTelemetryEvent,
   decideMemoryIngestionRetry,
@@ -136,6 +137,46 @@ describe("shared memory ingestion pipeline", () => {
 
     expect(first.staticPrefixHash).toBe(second.staticPrefixHash);
     expect(first.dynamicTailHash).not.toBe(second.dynamicTailHash);
+  });
+
+  it("reports prompt-cache health from bounded model-call telemetry", () => {
+    const report = buildMemoryPromptCacheHealthReport([
+      {
+        provider: "openai-codex",
+        model: "gpt-5.4-mini",
+        contractName: "mmv2-extraction",
+        promptTokens: 1_000,
+        cachedTokens: 800,
+        outputTokens: 100,
+        latencyMs: 500,
+        prefixHash: "prefix-a",
+        promptCacheKey: "contract-a",
+      },
+      {
+        provider: "openrouter",
+        model: "openai/gpt-5.4-nano",
+        contractName: "mmv2-extraction",
+        promptTokens: 1_000,
+        cachedTokens: 0,
+        outputTokens: 120,
+        latencyMs: 900,
+        prefixHash: "prefix-a",
+        promptCacheKey: "contract-a",
+      },
+    ]);
+
+    expect(report).toMatchObject({
+      totalCalls: 2,
+      cacheableCalls: 2,
+      cacheHits: 1,
+      cacheHitRate: 0.5,
+      totalPromptTokens: 2_000,
+      totalCachedTokens: 800,
+      cachedTokenPercentage: 0.4,
+      averageCachedTokensPerCall: 400,
+      averageLatencyMsCached: 500,
+      averageLatencyMsUncached: 900,
+    });
   });
 
   it("validates candidates independently and quarantines invalid siblings", () => {

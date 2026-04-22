@@ -1009,3 +1009,21 @@ Required implementation tests:
 - the module can run in observe/report-only mode without mutating memories
 - auto-fix is disabled by default and never performs unsafe semantic changes
   without explicit user approval
+
+## Capture/Runtime Mechanical Signals
+
+Memory Ops should treat the following as first-class observe-only signals:
+
+- capture job queued/started/written/failed/skipped counts
+- capture failure class by path and stage
+- runtime rebuild dirty markers and skipped-lock events
+- DB pool total/idle/waiting snapshots where available
+- query/transaction latency summaries where available
+- provider strict-schema preflight results by contract
+- prompt-cache hit rate and cached-token percentage by ingest/benchmark run
+- ordinary-turn redaction policy violations
+
+Recommendations may ask the operator to rerun a narrow proof, adjust pool
+knobs, pause capture under pool pressure, or inspect provider/model routing.
+They must not auto-fix semantic truth, replay broad ingestion, or persist raw
+prompt/transcript/tool-log content.

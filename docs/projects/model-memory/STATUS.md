@@ -128,6 +128,38 @@ Current 2026-04-22 partial-corpus proof state:
   shows the UI prompt pass completed and no-store/privacy leakage checks stayed
   clean, but ordinary-turn durable capture produced no new DB rows because the
   live capture path hit DB connection/statement timeouts
+- mechanical capture/ingest hardening has now landed in source for the timeout
+  path:
+  - live ordinary-turn capture emits structured safe capture job events instead
+    of failing only through warning logs
+  - ordinary-turn capture defaults to deferred runtime rebuild with an
+    in-process dirty marker rather than synchronous full rebuild
+  - runtime rebuild locking defaults to try-lock/fail-fast behavior with
+    `MODEL_MEMORY_REBUILD_BLOCKING_LOCK_ENABLED=true` as rollback
+  - ordinary-turn reconciliation uses scoped projected summaries by default
+  - live batch edge endpoint validation uses one batched lookup before edge
+    writes
+  - DB pool max/connection timeout/idle timeout are env-configurable and pool
+    stats can be snapshotted
+  - provider preflight can exercise the actual strict schema contract, including
+    OpenRouter `require_parameters`
+  - prompt-cache key/retention metadata, prefix hash, schema hash, token usage,
+    and cached-token counts are recorded in bounded traces where providers
+    return usage
+  - ordinary-turn source-window persistence redacts full turn text before
+    writing `model_memory.ingest_segments`
+- runtime pickup for this code completed on 2026-04-22:
+  - rebuilt `openclaw:local`
+  - recreated only `openclaw-gateway`
+  - gateway returned healthy on `/healthz`, `gateway call health`, and
+    `status --json`
+  - model-memory live runtime armed with 590 objects and 3 projection targets
+  - root `USER.md` / `MEMORY.md` hashes stayed unchanged
+- this is not yet a clean runtime soak result; a future narrow
+  `MEMMECH-2026-04-22` proof must show durable ordinary-turn rows, capture job
+  status, deferred rebuild behavior, and root no-write/no-dark-data evidence.
+  The pickup pass did not create artificial durable proof/eval memories in the
+  live DB.
 - storage compatibility fallback identity now stays structural inside
   `extensions/model-memory/src/mmv2/storage-compatibility.ts` and no longer
   imports legacy `semantic-identity.ts`

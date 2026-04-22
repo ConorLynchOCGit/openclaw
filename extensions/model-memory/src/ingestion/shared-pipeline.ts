@@ -297,6 +297,68 @@ export type MemoryPromptPlan = {
   cacheEligible: boolean;
 };
 
+export type MemoryModelCallTelemetry = {
+  model: string;
+  provider: string;
+  resolvedModel?: string;
+  contractName: string;
+  promptTokens?: number;
+  cachedTokens?: number;
+  cacheWriteTokens?: number;
+  outputTokens?: number;
+  latencyMs?: number;
+  prefixHash?: string;
+  schemaHash?: string;
+  promptCacheKey?: string;
+};
+
+export type MemoryPromptCacheHealthReport = {
+  totalCalls: number;
+  cacheableCalls: number;
+  cacheHits: number;
+  cacheHitRate: number;
+  totalPromptTokens: number;
+  totalCachedTokens: number;
+  cachedTokenPercentage: number;
+  averageCachedTokensPerCall: number;
+  averageLatencyMsCached?: number;
+  averageLatencyMsUncached?: number;
+};
+
+function average(values: number[]): number | undefined {
+  if (values.length === 0) {
+    return undefined;
+  }
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+export function buildMemoryPromptCacheHealthReport(
+  calls: MemoryModelCallTelemetry[],
+): MemoryPromptCacheHealthReport {
+  const cacheableCalls = calls.filter((call) => call.promptCacheKey || call.prefixHash);
+  const cacheHits = calls.filter((call) => (call.cachedTokens ?? 0) > 0);
+  const totalPromptTokens = calls.reduce((sum, call) => sum + (call.promptTokens ?? 0), 0);
+  const totalCachedTokens = calls.reduce((sum, call) => sum + (call.cachedTokens ?? 0), 0);
+  const cachedLatencies = calls
+    .filter((call) => (call.cachedTokens ?? 0) > 0 && call.latencyMs !== undefined)
+    .map((call) => call.latencyMs as number);
+  const uncachedLatencies = calls
+    .filter((call) => (call.cachedTokens ?? 0) === 0 && call.latencyMs !== undefined)
+    .map((call) => call.latencyMs as number);
+  return {
+    totalCalls: calls.length,
+    cacheableCalls: cacheableCalls.length,
+    cacheHits: cacheHits.length,
+    cacheHitRate: cacheableCalls.length > 0 ? cacheHits.length / cacheableCalls.length : 0,
+    totalPromptTokens,
+    totalCachedTokens,
+    cachedTokenPercentage: totalPromptTokens > 0 ? totalCachedTokens / totalPromptTokens : 0,
+    averageCachedTokensPerCall: calls.length > 0 ? totalCachedTokens / calls.length : 0,
+    averageLatencyMsCached: average(cachedLatencies),
+    averageLatencyMsUncached: average(uncachedLatencies),
+  };
+}
+
 function stableHash(value: unknown): string {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return createHash("sha256")

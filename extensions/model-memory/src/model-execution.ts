@@ -27,11 +27,21 @@ export const JsonModelProviderOptionsSchema = z
 
 export type JsonModelProviderOptions = z.infer<typeof JsonModelProviderOptionsSchema>;
 
+export const JsonModelPromptCacheOptionsSchema = z
+  .object({
+    key: z.string().trim().min(1).optional(),
+    retention: z.enum(["ephemeral", "short", "long"]).optional(),
+  })
+  .strict();
+
+export type JsonModelPromptCacheOptions = z.infer<typeof JsonModelPromptCacheOptionsSchema>;
+
 export const JsonModelExecutionResponseOptionsSchema = z
   .object({
     transport: JsonModelResponseTransportSchema.optional(),
     provider: JsonModelProviderOptionsSchema.optional(),
     maxOutputTokens: z.number().int().positive().optional(),
+    promptCache: JsonModelPromptCacheOptionsSchema.optional(),
   })
   .strict();
 
@@ -59,6 +69,17 @@ export const JsonModelExecutionResponseSchema = z
   .object({
     outputText: z.string().trim().min(1),
     resolvedModelId: z.string().trim().min(1).optional(),
+    usage: z
+      .object({
+        promptTokens: z.number().int().nonnegative().optional(),
+        outputTokens: z.number().int().nonnegative().optional(),
+        cachedInputTokens: z.number().int().nonnegative().optional(),
+        promptCacheKey: z.string().trim().min(1).optional(),
+        prefixHash: z.string().trim().min(1).optional(),
+        schemaHash: z.string().trim().min(1).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
