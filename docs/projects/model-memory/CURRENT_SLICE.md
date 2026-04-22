@@ -179,31 +179,43 @@ runtime availability caveat. The affected item was rerun in isolation as
     malformed
   - memory-edge endpoint validation now uses the shared persistence boundary
     helper before writing FK-backed edges
+- 2026-04-22 follow-on memory architecture pass:
+  - fixed the scripted proof-runner canonical-candidate blocker by preserving
+    single-batch extraction candidate ids and reserving batch prefixes for
+    true multi-batch collision protection
+  - expanded ordinary-turn proof coverage from 7 to 11 adjudicated cases:
+    preference, directive, project fact, structural correction, temp/privacy
+    rejects, workspace scope, duplicate prevention, source-ref merge, scoped
+    conflict, and near-source-ref conflict/no-fuzzy regression
+  - hardened capture-seam tests so every declared seam remains
+    default-disabled behind global plus seam-specific kill switches
+  - refreshed the failed-source quarantine report in report-only mode without
+    resuming ingest
 
 ## Current Risks
 
 - soak-window fallback code still exists and must be removed or further
   quarantined in small reversible slices
-- ordinary-turn MMV2 evaluation coverage lags the live write-path reality
+- ordinary-turn MMV2 evaluation coverage is stronger but still not a full
+  live UI capture soak matrix
 - retrieval relevance is acceptable for the clean soak but not yet globally
   optimized; future misses must stay observable through retrieval telemetry
 - live retrieval/context lookup can still transiently time out under UI proof
   load; this should be treated as a runtime availability/diagnostics issue, not
   a reason to add topical write-path heuristics
 - file-pack/provider variance still needs seeded stabilization and reporting
-- several proposed capture hooks still need production-safe verification before
-  any capture wiring
+- capture seam wiring remains limited to production-verified/no-dark-data
+  surfaces behind kill switches; unverified seams stay blocked
 - closed-loop operational signals must avoid dark data and must not become
   parallel raw capture
 - the shared ingestion funnel is not yet fully wired as a single executable
   pipeline across every path; this pass landed shared contracts and selected
   adapters, but candidate-level quarantine/persistence still needs a deeper
   implementation slice
-- `pnpm vitest run extensions/model-memory/src/mmv2/proof-runner.test.ts`
-  still fails existing scripted project-fact cases with
-  `Unable to resolve canonical candidate ...`; this is classified as
-  ordinary-turn/proof-runner coverage debt and must not be fixed with topic
-  parsers or fuzzy write-path matching
+- document ingest remains blocked from safe resume by checkpoint state and
+  provider/funnel preconditions: the report-only failed-source quarantine has
+  79 failed, 200 completed, 25 pending, `runStatus=running`, and a hard
+  `provider_credit` no-retry class
 - Docs Sync Publish Repo is workflow-hardened but still blocked until
   `OPENCLAW_DOCS_SYNC_TOKEN` is set to a credential with Contents read/write
   on `openclaw/docs`
@@ -238,12 +250,11 @@ runtime availability caveat. The affected item was rerun in isolation as
      but not selected
    - emit empty-retrieval telemetry
    - keep lexical/RRF/vector-style ranking read-time only
-7. Add remaining evaluation coverage for:
+7. Continue remaining evaluation coverage for:
    - tool-result proof capture
    - projection-backed recall
    - stale/superseded exclusion
    - no raw-data persistence
-   - duplicate ordinary-turn capture prevention
    - root `USER.md` / `MEMORY.md` no-write
 8. Inventory and quarantine remaining fallback compatibility in small
    reversible slices:

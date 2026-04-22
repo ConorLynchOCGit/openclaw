@@ -3220,4 +3220,24 @@ export const MMV2_ORDINARY_TURN_PROOF_CASES: MmV2DocumentProofCase[] = [
     caseId: "mmv2-turn-007-workspace-scoped-preference",
     tags: ["scoped", "workspace-scope"],
   }),
+  asOrdinaryTurnProofCase({
+    sourceCaseId: "mmv2-doc-004-duplicate-seeded",
+    caseId: "mmv2-turn-008-duplicate-prevention",
+    tags: ["duplicate", "dedupe"],
+  }),
+  asOrdinaryTurnProofCase({
+    sourceCaseId: "mmv2-doc-006-source-ref-merge-seeded",
+    caseId: "mmv2-turn-009-source-ref-merge",
+    tags: ["source-ref", "structural-merge"],
+  }),
+  asOrdinaryTurnProofCase({
+    sourceCaseId: "mmv2-doc-007-scoped-conflict-seeded",
+    caseId: "mmv2-turn-010-scoped-conflict",
+    tags: ["conflict", "scoped"],
+  }),
+  asOrdinaryTurnProofCase({
+    sourceCaseId: "mmv2-doc-013-near-duplicate-source-ref-conflict",
+    caseId: "mmv2-turn-011-near-source-ref-conflict",
+    tags: ["source-ref", "conflict", "no-fuzzy-supersession"],
+  }),
 ];

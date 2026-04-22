@@ -332,11 +332,9 @@ async function extractAtomicCandidatesBatched(input: {
     };
   }
 
+  const routedBatches = chunkArray(input.routedCandidates, ATOMIC_EXTRACTION_BATCH_SIZE);
   const batches: AtomicExtractionBatch[] = [];
-  for (const [batchIndex, routedBatch] of chunkArray(
-    input.routedCandidates,
-    ATOMIC_EXTRACTION_BATCH_SIZE,
-  ).entries()) {
+  for (const [batchIndex, routedBatch] of routedBatches.entries()) {
     const extracted = await extractAtomicCandidates({
       rawEvent: input.rawEvent,
       sourceKind: "document",
@@ -347,7 +345,11 @@ async function extractAtomicCandidatesBatched(input: {
       routedCandidates: routedBatch,
       responseMode: input.responseMode,
     });
-    batches.push(prefixAtomicExtractionBatch(extracted, `atomic-${batchIndex}:`));
+    batches.push(
+      routedBatches.length > 1
+        ? prefixAtomicExtractionBatch(extracted, `atomic-${batchIndex}:`)
+        : extracted,
+    );
   }
 
   return mergeAtomicExtractionBatches(input.rawEvent.event_id, batches);
@@ -370,11 +372,9 @@ async function extractCompositeCandidatesBatched(input: {
     };
   }
 
+  const routedBatches = chunkArray(input.routedCandidates, COMPOSITE_EXTRACTION_BATCH_SIZE);
   const batches: CompositeExtractionBatch[] = [];
-  for (const [batchIndex, routedBatch] of chunkArray(
-    input.routedCandidates,
-    COMPOSITE_EXTRACTION_BATCH_SIZE,
-  ).entries()) {
+  for (const [batchIndex, routedBatch] of routedBatches.entries()) {
     const extracted = await extractCompositeCandidates({
       rawEvent: input.rawEvent,
       sourceKind: "document",
@@ -385,7 +385,11 @@ async function extractCompositeCandidatesBatched(input: {
       routedCandidates: routedBatch,
       responseMode: input.responseMode,
     });
-    batches.push(prefixCompositeExtractionBatch(extracted, `composite-${batchIndex}:`));
+    batches.push(
+      routedBatches.length > 1
+        ? prefixCompositeExtractionBatch(extracted, `composite-${batchIndex}:`)
+        : extracted,
+    );
   }
 
   return mergeCompositeExtractionBatches(input.rawEvent.event_id, batches);

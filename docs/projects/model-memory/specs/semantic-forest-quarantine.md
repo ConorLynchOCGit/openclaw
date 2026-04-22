@@ -80,6 +80,13 @@ MODEL_MEMORY_LEGACY_CAPTURED_OBJECT_WRITE_FALLBACK_ENABLED=true
 Default behavior is fail-closed for legacy captured-object fallback. MMV2
 native recording remains the normal live write path.
 
+The 2026-04-22 follow-on ordinary-turn proof fix preserves structural
+candidate identity across single-batch extraction, canonicalization, admission,
+and reconciliation. It does not add topic-specific parsing, fuzzy
+supersession, semantic-family matching, or semantic-forest fallback. Batch
+prefixes remain allowed only as collision protection for true multi-batch
+extraction.
+
 ## Forbidden Write-Path Inference
 
 Forbidden by default:

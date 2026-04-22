@@ -51,8 +51,13 @@ title: "Model Memory Roadmap"
   quarantine/removal, closed-loop ops, and Phase 2 derived features.
 - The 2026-04-22 deep document ingest is paused at
   `checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json` for
-  overnight continuation; build-focused hardening should proceed without
-  resuming ingest or running the full regression soak.
+  provider/funnel hardening; resume only after provider credit/preflight,
+  checkpoint state, failed-source class selection, and candidate-level
+  quarantine/persistence gates are clean.
+- The ordinary-turn proof-runner blocker from single-batch candidate-id
+  prefixing is fixed, and ordinary-turn proof coverage now spans 11
+  adjudicated cases without semantic forests, fuzzy supersession, or
+  topic-specific parser fixtures.
 
 ## Current top priorities
 
@@ -78,7 +83,10 @@ title: "Model Memory Roadmap"
    - keep all ranking read-time only
 7. finish quarantine/removal of fallback compatibility after the clean
    retrieval-runtime soak
-8. update ordinary-turn MMV2 evaluation coverage where needed
+8. continue ordinary-turn MMV2 evaluation coverage where needed; the current
+   scripted matrix covers preference, directive, project fact, structural
+   correction, temp/privacy rejects, workspace scope, duplicate prevention,
+   source-ref merge, scoped conflict, and no-fuzzy source-ref conflict
 9. stabilize file-pack/provider variance
 10. implement remaining verified primary memory capture seam expansion
 11. keep live memory activity-feed visibility bounded:

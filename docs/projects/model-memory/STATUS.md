@@ -242,10 +242,15 @@ Remaining from the active pass:
 - run a post-ingest retrieval/projection proof after the paused corpus
   completes so corpus recall is proven from MMV2/projection evidence rather
   than root files or same-session context
-- ordinary-turn/proof-runner coverage remains blocked by existing scripted
-  project-fact failures in
-  `extensions/model-memory/src/mmv2/proof-runner.test.ts`; the next fix must
-  preserve structural MMV2 semantics and avoid marker/topic/fuzzy matching
+- ordinary-turn/proof-runner coverage is no longer blocked by the scripted
+  project-fact canonical-candidate failure:
+  - single-batch extraction candidate ids are preserved through
+    deterministic canonicalization/admission
+  - batch prefixes remain reserved for true multi-batch collision protection
+  - `extensions/model-memory/src/mmv2/proof-runner.test.ts` now passes
+  - ordinary-turn proof coverage now includes 11 adjudicated cases, including
+    duplicate prevention, source-ref merge, scoped conflict, and a
+    no-fuzzy-supersession source-ref conflict regression
 
 Current post-soak hardening progress:
 

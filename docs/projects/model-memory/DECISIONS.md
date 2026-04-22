@@ -5,6 +5,31 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-22 - Proof-runner candidate identity stays stable for single batches
+
+Decision:
+
+- preserve extraction candidate ids when document or ordinary-turn extraction
+  uses a single atomic or composite batch
+- reserve `atomic-<batch>:` / `composite-<batch>:` prefixes for true
+  multi-batch collision protection only
+- treat prefixed single-batch ids as a structural bug because admission,
+  reconciliation-neighbor lookup, scripted proof fixtures, and operator
+  evidence all use candidate ids as phase-to-phase correlation keys
+- expand ordinary-turn proof coverage by reusing existing adjudicated MMV2
+  proof cases rather than adding topic-specific parser fixtures
+
+Reasoning:
+
+- the proof-runner project-fact failures came from candidate-id rewriting, not
+  from missing project-fact semantics
+- fixing the structural id flow keeps MMV2 canonicalization/admission general
+  and avoids semantic forests, fuzzy supersession, and marker/topic-specific
+  shortcuts
+- ordinary-turn coverage should fail if duplicate prevention, source-ref merge,
+  scoped conflict, no-store/temp rejection, workspace scoping, or no-fuzzy
+  behavior regresses
+
 ## 2026-04-22 - Shared ingestion funnel starts as contracts plus safe adapters
 
 Decision:

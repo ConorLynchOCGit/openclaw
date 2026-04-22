@@ -41,6 +41,10 @@ with clear provenance and authority.
   as `needs_repo_verification` before implementation.
 - Fallback hooks may assist recovery but must not silently become the primary
   semantic contract.
+- Every wired seam must remain behind both the global
+  `MODEL_MEMORY_CAPTURE_SEAMS_ENABLED` kill switch and its seam-specific env
+  switch. The default posture is disabled unless explicitly enabled for
+  bounded evidence collection.
 
 ## Verification Status Values
 

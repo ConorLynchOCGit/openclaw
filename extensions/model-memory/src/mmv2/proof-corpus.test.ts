@@ -86,6 +86,10 @@ describe("mmv2/proof-corpus", () => {
       "mmv2-turn-005-temporary-session-only-reject",
       "mmv2-turn-006-explicit-no-store-privacy-reject",
       "mmv2-turn-007-workspace-scoped-preference",
+      "mmv2-turn-008-duplicate-prevention",
+      "mmv2-turn-009-source-ref-merge",
+      "mmv2-turn-010-scoped-conflict",
+      "mmv2-turn-011-near-source-ref-conflict",
     ]);
     expect(
       MMV2_ORDINARY_TURN_PROOF_CASES.every((proofCase) => proofCase.sourceKind === "ordinary_turn"),
@@ -121,6 +125,35 @@ describe("mmv2/proof-corpus", () => {
     ).toMatchObject({
       decision: "insert_new",
     });
+    expect(
+      MMV2_ORDINARY_TURN_PROOF_CASES.find(
+        (proofCase) => proofCase.id === "mmv2-turn-008-duplicate-prevention",
+      )?.expected.writeSimulation?.candidates[0],
+    ).toMatchObject({
+      disposition: "keep_existing_noop",
+      createsNewDurableMemory: false,
+    });
+    expect(
+      MMV2_ORDINARY_TURN_PROOF_CASES.find(
+        (proofCase) => proofCase.id === "mmv2-turn-009-source-ref-merge",
+      )?.expected.reconciliation?.items[0],
+    ).toMatchObject({
+      decision: "merge_with_existing",
+      targetMemoryIdsInclude: ["existing-source-ref-001"],
+    });
+    expect(
+      MMV2_ORDINARY_TURN_PROOF_CASES.find(
+        (proofCase) => proofCase.id === "mmv2-turn-010-scoped-conflict",
+      )?.expected.reconciliation?.items[0],
+    ).toMatchObject({
+      decision: "record_as_conflict",
+      conflictType: "scope_narrowing",
+    });
+    expect(
+      MMV2_ORDINARY_TURN_PROOF_CASES.find(
+        (proofCase) => proofCase.id === "mmv2-turn-011-near-source-ref-conflict",
+      )?.metadata?.tags,
+    ).toContain("no-fuzzy-supersession");
     for (const proofCase of MMV2_ORDINARY_TURN_PROOF_CASES) {
       const admittedCandidateIds = new Set(
         proofCase.scripted.admission

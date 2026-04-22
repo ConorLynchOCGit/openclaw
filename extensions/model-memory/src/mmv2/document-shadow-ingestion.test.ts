@@ -184,6 +184,17 @@ describe("mmv2/document-shadow-ingestion", () => {
     });
 
     expect(result.postWriteAudit.audit_status).toBe("pass");
+    expect(
+      result.atomicExtraction.atomic_candidates.map((candidate) => candidate.candidate_id),
+    ).toEqual(["candidate-001"]);
+    expect(
+      result.canonicalization.canonical_candidates.map((candidate) => candidate.candidate_id),
+    ).toEqual(expect.arrayContaining(["candidate-001"]));
+    expect(
+      result.atomicExtraction.atomic_candidates.every(
+        (candidate) => !candidate.candidate_id.startsWith("atomic-0:"),
+      ),
+    ).toBe(true);
     expect(result.shadowRecording.durableMemories).toHaveLength(2);
     expect(
       result.shadowRecording.memoryEvents.every(

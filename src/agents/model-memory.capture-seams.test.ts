@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildModelMemoryCaptureSeamRecord,
+  type ModelMemoryCaptureSeamName,
   recordModelMemoryCaptureSeamEvidence,
   resolveModelMemoryCaptureSeamSettings,
 } from "./model-memory.capture-seams.js";
@@ -57,6 +58,39 @@ describe("model-memory capture seam wiring", () => {
         } as NodeJS.ProcessEnv,
       }),
     ).toEqual({ enabled: true, seamEnabled: true, outputDir: tempDir });
+  });
+
+  it("keeps every declared capture seam default-disabled behind its explicit env switch", () => {
+    const seamEnv: Array<[ModelMemoryCaptureSeamName, string]> = [
+      ["message:preprocessed", "MODEL_MEMORY_CAPTURE_SEAM_MESSAGE_PREPROCESSED_ENABLED"],
+      ["ContextEngine.ingest", "MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_INGEST_ENABLED"],
+      ["ContextEngine.ingestBatch", "MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_INGEST_BATCH_ENABLED"],
+      ["ContextEngine.assemble", "MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_ASSEMBLE_ENABLED"],
+      ["ContextEngine.afterTurn", "MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_AFTER_TURN_ENABLED"],
+      ["tool_result_persist", "MODEL_MEMORY_CAPTURE_SEAM_TOOL_RESULT_PERSIST_ENABLED"],
+      ["after_tool_call", "MODEL_MEMORY_CAPTURE_SEAM_AFTER_TOOL_CALL_ENABLED"],
+      ["agent_end", "MODEL_MEMORY_CAPTURE_SEAM_AGENT_END_ENABLED"],
+    ];
+
+    for (const [seamName, envName] of seamEnv) {
+      expect(
+        resolveModelMemoryCaptureSeamSettings({
+          seamName,
+          outputDir: tempDir,
+          env: { MODEL_MEMORY_CAPTURE_SEAMS_ENABLED: "1" } as NodeJS.ProcessEnv,
+        }),
+      ).toMatchObject({ enabled: true, seamEnabled: false });
+      expect(
+        resolveModelMemoryCaptureSeamSettings({
+          seamName,
+          outputDir: tempDir,
+          env: {
+            MODEL_MEMORY_CAPTURE_SEAMS_ENABLED: "1",
+            [envName]: "1",
+          } as NodeJS.ProcessEnv,
+        }),
+      ).toEqual({ enabled: true, seamEnabled: true, outputDir: tempDir });
+    }
   });
 
   it("does not persist raw prompt, transcript, tool log, or dynamic key identifiers", () => {
