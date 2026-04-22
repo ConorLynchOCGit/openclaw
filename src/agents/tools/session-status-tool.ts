@@ -23,7 +23,11 @@ import {
 import { applyModelOverrideToSessionEntry } from "../../sessions/model-overrides.js";
 import { normalizeOptionalLowercaseString } from "../../shared/string-coerce.js";
 import { buildTaskStatusSnapshotForRelatedSessionKeyForOwner } from "../../tasks/task-owner-access.js";
-import { formatTaskStatusDetail, formatTaskStatusTitle } from "../../tasks/task-status.js";
+import {
+  formatTaskStatusDetail,
+  formatTaskStatusLifecycleLabel,
+  formatTaskStatusTitle,
+} from "../../tasks/task-status.js";
 import { loadModelCatalog } from "../model-catalog.js";
 import {
   buildAllowedModelSet,
@@ -169,16 +173,11 @@ function formatSessionTaskLine(params: {
   if (!task) {
     return undefined;
   }
-  const headline =
-    snapshot.activeCount > 0
-      ? `${snapshot.activeCount} active`
-      : snapshot.recentFailureCount > 0
-        ? `${snapshot.recentFailureCount} recent failure${snapshot.recentFailureCount === 1 ? "" : "s"}`
-        : `latest ${task.status.replaceAll("_", " ")}`;
+  const headline = formatTaskStatusLifecycleLabel(snapshot, task);
   const title = formatTaskStatusTitle(task);
   const detail = formatTaskStatusDetail(task);
-  const parts = [headline, task.runtime, title, detail].filter(Boolean);
-  return parts.length ? `📌 Tasks: ${parts.join(" · ")}` : undefined;
+  const parts = [task.runtime, title, detail].filter(Boolean);
+  return parts.length ? `${headline}: ${parts.join(" · ")}` : undefined;
 }
 
 async function resolveModelOverride(params: {

@@ -199,6 +199,113 @@ describe("model-memory document ingestion tool", () => {
     );
   });
 
+  it("strips generated zones from root workspace memory files and marks daily notes lower authority", async () => {
+    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "model-memory-tool-memory-"));
+    tempDirs.push(workspaceDir);
+    await import("node:fs/promises").then(({ mkdir }) =>
+      mkdir(path.join(workspaceDir, "memory"), { recursive: true }),
+    );
+    await writeFile(
+      path.join(workspaceDir, "USER.md"),
+      [
+        "# USER.md",
+        "",
+        "- durable human note",
+        "",
+        "<!-- OPENCLAW:MEMORY-PROJECTION:START memory-projection:user-profile -->",
+        "- generated projection",
+        "<!-- OPENCLAW:MEMORY-PROJECTION:END memory-projection:user-profile -->",
+        "",
+        "<!-- BEGIN GENERATED: model-memory -->",
+        "- generated model memory",
+        "<!-- END GENERATED: model-memory -->",
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(
+      path.join(workspaceDir, "memory", "2026-04-21.md"),
+      "# Daily\n\n- running context\n",
+      "utf8",
+    );
+
+    const executeRun = vi.fn(async (input: Record<string, unknown>) => ({
+      runId: input.runId,
+      status: "completed",
+      createdAt: "2026-04-15T00:00:00.000Z",
+      updatedAt: "2026-04-15T00:00:01.000Z",
+      modelId: "openrouter/openai/gpt-5.4-nano",
+      candidateModelId: "openrouter/openai/gpt-5.4-nano",
+      chunkSize: 10,
+      maxConcurrency: 1,
+      maxWordsPerWindow: 1500,
+      sources: [],
+      chunks: [],
+      totals: {
+        docsAttempted: 2,
+        docsCompleted: 2,
+        docsFailed: 0,
+        capturedClaimCount: 0,
+        ignoredWindowCount: 0,
+        rejectedWindowCount: 0,
+        writeDecisionCounts: {},
+        rejectReasons: [],
+      },
+    }));
+
+    const tool = createModelMemoryDocumentIngestionTool(fakeApi(), fakeCtx(workspaceDir), {
+      loadInternalRuntimeDeps: async () => ({
+        createDatabaseRuntime: vi.fn(async () => ({
+          canonicalRepository: {},
+          runtimeRepository: {},
+          pool: { end: vi.fn(async () => undefined) },
+        })) as never,
+        createLiveJsonExecutor: vi.fn(
+          async () =>
+            ({
+              execute: vi.fn(),
+              getRequestTimeoutMs: () => 180_000,
+              getRequestSeed: () => 7,
+            }) as never,
+        ),
+      }),
+      createRunnerService: () =>
+        ({
+          executeRun,
+        }) as never,
+    });
+
+    await tool.execute("tool-call-memory", {
+      sources: ["USER.md", "memory/2026-04-21.md"],
+      runId: "memory-source-run",
+    });
+
+    const sources = (
+      executeRun.mock.calls[0]?.[0] as {
+        sources?: Array<{
+          document?: {
+            text?: string;
+            sourceKind?: string;
+            sourceMetadata?: Record<string, unknown>;
+          };
+        }>;
+      }
+    ).sources;
+    expect(sources?.[0]?.document?.text).toContain("- durable human note");
+    expect(sources?.[0]?.document?.text).not.toContain("generated projection");
+    expect(sources?.[0]?.document?.sourceMetadata).toMatchObject({
+      sourceAuthority: "workspace_root_human_owned",
+      generatedZonesStripped: true,
+    });
+    expect(sources?.[1]?.document).toMatchObject({
+      sourceKind: "daily_continuity",
+      sourceMetadata: {
+        sourceAuthority: "workspace_daily_note_lower_authority",
+        generatedZonesStripped: false,
+      },
+    });
+    expect(sources?.[1]?.document?.sourceMetadata?.contentHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
   it("resolves repo-canonical source paths through the product_live import", async () => {
     const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "model-memory-tool-import-"));
     tempDirs.push(workspaceDir);

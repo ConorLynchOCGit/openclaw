@@ -200,6 +200,8 @@ function buildWebBrowsingSection(params: { isMinimal: boolean; availableTools: S
       0,
       "- If the target public URL is already known, do not use `web_search` first just to search.",
       "- For known public non-interactive pages, do not escalate to browser first.",
+      "- If the user explicitly asks for the browser, browser tool, or browser lane, honor that request with `browser` unless policy blocks it or login/interaction constraints require a different allowed path.",
+      "- When the user explicitly asks for the browser, do not substitute `web_fetch` just because fetch could answer the question. The explicit browser request controls the lane unless policy blocks browser use.",
       "- Preferred order for public-page retrieval: `web_fetch` first; if the result is thin, shell-like, or clearly client-rendered, use the render-aware path; use `browser` only when interaction is needed or fetch or render still fails.",
       "- Never conclude a public JS-heavy page is empty from one thin fetch alone.",
     );
@@ -207,10 +209,24 @@ function buildWebBrowsingSection(params: { isMinimal: boolean; availableTools: S
 
   if (hasSessionsSend) {
     lines.push(
-      "- For exploratory external public-web research, prefer bounded delegation to canonical `agent:web-researcher:main` and finish from its result instead of independently re-browsing.",
+      "- For exploratory, comparative, or multi-source external public-web research, delegate the external collection step to canonical `agent:web-researcher:main` and finish from its result instead of independently re-browsing in the caller session.",
+      "- Treat prompts that say `compare`, `comparison`, `versus`, `vs`, or ask for sourced multi-site external research as delegated research by default when canonical `agent:web-researcher:main` is available.",
+      "- When a task combines local or repo-grounded reading with external public-web comparison, keep the local reading in the caller if needed, but still delegate the external collection step to canonical `agent:web-researcher:main`.",
       "- For explicit URL or “read this page/site” tasks, prefer a fresh temporary `web-researcher` session rather than the long-lived canonical session so stale research context cannot leak into exact field reads.",
+      "- When the user wants cited comparative research rather than one exact page fact, do not satisfy the external-web side inline with `web_fetch`, `web_search`, or `browser` if the delegated web-researcher lane is available.",
+      "- For comparative public-web research, treat inline `web_fetch` or `web_search` in the caller session as the wrong path when canonical `agent:web-researcher:main` is available. Use `sessions_send` to that session instead.",
+      "- If you answer a comparative external-web prompt without first delegating via `sessions_send`, that is a routing mistake unless the delegated lane is unavailable or blocked.",
       "- Send bounded delegation requests that include at least `objective`, `why_this_matters`, `required_fields`, `adjacent_context_to_collect`, and `desired_output_shape`.",
       "- After a delegated `web-researcher` result returns, do not independently re-browse unless the result is incomplete or stronger evidence is still required.",
+    );
+  }
+
+  if (params.availableTools.has("session_status")) {
+    lines.push(
+      "- When the user asks for current status, progress, whether work is still running, or gives a short follow-up like `Status?` after recent work, use `session_status` before answering.",
+      "- Do not answer status/progress follow-ups from memory or vague prose when `session_status` can provide current task state.",
+      "- For detached/background follow-ups in the same session, prefer `session_status` over starting new work.",
+      "- When `session_status` returns a bounded task-state line such as `Queued:`, `Working:`, `Completed:`, `Failed:`, or `Timed out:`, preserve that state explicitly in your answer instead of flattening it into vague prose like `done successfully`.",
     );
   }
 

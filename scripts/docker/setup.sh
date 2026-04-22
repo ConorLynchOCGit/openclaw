@@ -502,6 +502,7 @@ echo "==> Fixing data-directory permissions"
 # (.openclaw/) inside the workspace gets chowned, not the user's project files.
 run_prestart_gateway --user root --entrypoint sh openclaw-gateway -c \
   'find /home/node/.openclaw -xdev -exec chown node:node {} +; \
+   [ -d /home/node/.openclaw/agent-workspaces ] && find /home/node/.openclaw/agent-workspaces -xdev -exec chown node:node {} + || true; \
    [ -d /home/node/.openclaw/workspace/.openclaw ] && chown -R node:node /home/node/.openclaw/workspace/.openclaw || true'
 
 echo ""

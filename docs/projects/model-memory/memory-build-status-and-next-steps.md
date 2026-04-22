@@ -5,6 +5,22 @@ title: "Memory Build Status And Next Steps"
 
 # Memory Build Status And Next Steps
 
+## Authority Status
+
+Status: `historical_rule_vs_fact_handoff`
+
+This file preserves the rule-vs-fact benchmark handoff that preceded the
+MMV2-native storage cutover and post-cutover hot-path cleanup. It remains useful
+for benchmark lineage, but it is no longer the current roadmap owner.
+
+Current roadmap authority now lives in:
+
+- [Current Slice](/projects/model-memory/CURRENT_SLICE)
+- [Roadmap](/projects/model-memory/roadmap)
+- [Phase 2 Execution Roadmap](/projects/model-memory/phase-2-execution-roadmap)
+- [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
+- [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
+
 ## Current production truth
 
 The first production fix from the rule-vs-fact benchmark has already shipped.

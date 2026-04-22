@@ -15,7 +15,7 @@ type PgPoolLike = Pick<Pool, "connect" | "query">;
 type PgClientLike = Pick<PoolClient, "query" | "release">;
 
 function isPoolLike(value: PgPoolLike | PgClientLike): value is PgPoolLike {
-  return "connect" in value;
+  return !("release" in value);
 }
 
 export class PgSqlClient implements SqlClient {

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { DOCUMENT_INGEST_ENGINE_ENV } from "./document-ingestion.ts";
 import { captureOrdinaryTurn } from "./ordinary-turn-capture.ts";
 import type {
   SemanticInterpreter,
@@ -168,6 +169,10 @@ const turnProofCases: TurnProofCase[] = [
 ];
 
 describe("ordinary-turn-capture", () => {
+  afterEach(() => {
+    delete process.env[DOCUMENT_INGEST_ENGINE_ENV];
+  });
+
   it.each(turnProofCases)(
     "captures $id through the shared semantic contract",
     async (proofCase) => {
@@ -237,6 +242,68 @@ describe("ordinary-turn-capture", () => {
       expect(result.capturedObjects[0].contractVersion).toBe("v2-canonicalization");
     },
   );
+
+  it("does not switch ordinary turns onto MMV2 document contracts when document ingest defaults to MMV2", async () => {
+    process.env[DOCUMENT_INGEST_ENGINE_ENV] = "mmv2";
+    const contractVersions: string[] = [];
+
+    const result = await captureOrdinaryTurn({
+      turn: {
+        currentTurnText: "For project-001, the deployment region is region-001.",
+      },
+      modelId: "model-turn-keep-v1",
+      candidateModelId: "model-turn-keep-v1",
+      interpreter: createScriptedInterpreter((input) => {
+        contractVersions.push(input.prompt.contract.contractVersion);
+        if (input.prompt.contract.contractVersion === "v2-candidate") {
+          return {
+            action: "capture",
+            objects: [
+              {
+                candidateType: "fact",
+                claim: "For project-001, the deployment region is region-001.",
+                supportingSpans: [
+                  {
+                    blockId: input.sourceWindow.blockDescriptors.at(-1)?.id,
+                    lineStart: input.sourceWindow.lineStart,
+                    lineEnd: input.sourceWindow.lineEnd,
+                    headingPath: input.sourceWindow.headingPath,
+                  },
+                ],
+                confidence: "strong",
+                shouldStore: true,
+              },
+            ],
+          };
+        }
+        return {
+          action: "capture",
+          objects: [
+            {
+              canonicalClass: "project",
+              kind: "fact",
+              payload: {
+                subject: "deployment region",
+                value: "region-001",
+              },
+              scope: {
+                projectId: "project-001",
+                projectScope: "project-001",
+              },
+              provenance: [lastProvenance(input)],
+              confidence: "strong",
+              durability: "durable",
+              reviewMode: "auto_accept",
+            },
+          ],
+        };
+      }),
+    });
+
+    expect(result.capturedObjects).toHaveLength(1);
+    expect(contractVersions).toEqual(["v2-candidate", "v2-canonicalization"]);
+    expect(contractVersions.some((version) => version.startsWith("mmv2-"))).toBe(false);
+  });
 
   it("rejects invalid ordinary-turn outputs instead of silently backfilling meaning", async () => {
     const contractVersions: string[] = [];

@@ -6,6 +6,8 @@ import {
 import {
   buildAtomicCandidate,
   buildCompositeCandidate,
+  buildAtomicRoutedCandidate,
+  buildCompositeRoutedCandidate,
   captureOne,
   createMmV2TestSource,
   createScriptedMmV2Interpreter,
@@ -50,7 +52,7 @@ describe("mmv2/composite-extraction", () => {
       sourceWindow: source.sourceWindow,
       modelId: "model-001",
       interpreter,
-      segments: [segment],
+      routedCandidates: [buildCompositeRoutedCandidate(segment)],
     });
 
     expect(result.composite_candidates[0].components[0].promotion).toBe("embedded_only");
@@ -89,5 +91,67 @@ describe("mmv2/composite-extraction", () => {
 
     const suppressed = suppressAtomicCandidatesOwnedByComposites(atomicBatch, compositeBatch);
     expect(suppressed.atomic_candidates).toHaveLength(0);
+  });
+
+  it("returns an empty batch without calling the model when there are no routed composite segments", async () => {
+    const source = createMmV2TestSource("I prefer concise answers.");
+    let callCount = 0;
+    const interpreter = createScriptedMmV2Interpreter({
+      "mmv2-composite-extraction-v1": () => {
+        callCount += 1;
+        return captureOne({
+          schema_version: "composite_extraction.v1",
+          event_id: source.rawEvent.event_id,
+          composite_candidates: [],
+        });
+      },
+    });
+
+    const result = await extractCompositeCandidates({
+      rawEvent: source.rawEvent,
+      sourceKind: "document",
+      sourceId: source.sourceId,
+      sourceWindow: source.sourceWindow,
+      modelId: "model-001",
+      interpreter,
+      routedCandidates: [],
+    });
+
+    expect(callCount).toBe(0);
+    expect(result).toEqual({
+      schema_version: "composite_extraction.v1",
+      event_id: source.rawEvent.event_id,
+      composite_candidates: [],
+    });
+  });
+
+  it("rejects atomic-owned routed spans before calling the composite extractor", async () => {
+    const source = createMmV2TestSource("I prefer concise answers.");
+    const segment = source.segmented.segments[0];
+    let callCount = 0;
+    const interpreter = createScriptedMmV2Interpreter({
+      "mmv2-composite-extraction-v1": () => {
+        callCount += 1;
+        return captureOne({
+          schema_version: "composite_extraction.v1",
+          event_id: source.rawEvent.event_id,
+          composite_candidates: [],
+        });
+      },
+    });
+
+    await expect(
+      extractCompositeCandidates({
+        rawEvent: source.rawEvent,
+        sourceKind: "document",
+        sourceId: source.sourceId,
+        sourceWindow: source.sourceWindow,
+        modelId: "model-001",
+        interpreter,
+        routedCandidates: [buildAtomicRoutedCandidate(segment) as never],
+      }),
+    ).rejects.toThrow(/composite_candidate/);
+
+    expect(callCount).toBe(0);
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getCurrentMemoryObjects } from "./runtime-read-models.ts";
+import type { DurableMemoryRecord, MemoryEdge, MemoryEvent } from "./mmv2/contracts.ts";
+import { getCurrentMemoryObjects, listRuntimeMemoryRecords } from "./runtime-read-models.ts";
 import type { ModelMemoryObjectRecord } from "./storage-database-contract.ts";
 
 function buildMemoryObjectRecord(
@@ -34,6 +35,59 @@ function buildMemoryObjectRecord(
   };
 }
 
+function buildDurableMemoryRecord(overrides: Partial<DurableMemoryRecord>): DurableMemoryRecord {
+  const now = "2026-04-21T00:00:00.000Z";
+  return {
+    memory_id: overrides.memory_id ?? "memory-001",
+    schema_version: "durable_memory.v1",
+    status: overrides.status ?? "active",
+    unit_type: "atomic",
+    kind: overrides.kind ?? "claim",
+    artifact_type: null,
+    canonical_text: overrides.canonical_text ?? "Project fact.",
+    search_text: overrides.search_text ?? "Project fact.",
+    scope: overrides.scope ?? {
+      tenant_id: "default",
+      user_id: "unknown-user",
+      project_id: "project-001",
+      workspace_id: "workspace-001",
+      subject_type: "project",
+      subject_id: "project-001",
+      applies_to: "current_project",
+    },
+    payload: overrides.payload ?? { claim_type: "project_fact" },
+    validity: overrides.validity ?? {
+      temporal_status: "current",
+      valid_at: now,
+      invalid_at: null,
+      ttl_seconds: null,
+    },
+    confidence: overrides.confidence ?? 0.9,
+    quality: overrides.quality ?? {
+      atomicity: 0.9,
+      specificity: 0.9,
+      durability: 0.9,
+      actionability: 0.8,
+      grounding: 1,
+    },
+    source_refs: overrides.source_refs ?? [],
+    lineage: overrides.lineage ?? {
+      candidate_ids: [],
+      derived_from_memory_ids: [],
+      supersedes_memory_ids: [],
+      superseded_by_memory_id: null,
+      conflicts_with_memory_ids: [],
+      parent_memory_id: null,
+      child_memory_ids: [],
+    },
+    created_at: overrides.created_at ?? now,
+    updated_at: overrides.updated_at ?? now,
+    last_accessed_at: overrides.last_accessed_at ?? null,
+    access_count: overrides.access_count ?? 0,
+    tags: overrides.tags ?? [],
+  };
+}
+
 describe("runtime-read-models", () => {
   it("returns active objects only by default", () => {
     const records = [
@@ -63,5 +117,43 @@ describe("runtime-read-models", () => {
       "active-explicit",
       "active-legacy",
     ]);
+  });
+
+  it("threads MMV2 memory event and edge ids into runtime provenance", async () => {
+    const records = await listRuntimeMemoryRecords({
+      listDurableMemories: async () => [buildDurableMemoryRecord({ memory_id: "memory-001" })],
+      listMemoryEvents: async () => [
+        {
+          memory_event_id: "event-001",
+          schema_version: "memory_event.v1",
+          event_type: "memory_inserted",
+          occurred_at: "2026-04-21T00:00:00.000Z",
+          actor: "system",
+          source_ingest_event_id: "source-event-001",
+          candidate_id: "candidate-001",
+          memory_id: "memory-001",
+          target_memory_ids: [],
+          payload: {},
+        } satisfies MemoryEvent,
+      ],
+      listMemoryEdges: async () => [
+        {
+          edge_id: "edge-001",
+          schema_version: "memory_edge.v1",
+          from_memory_id: "memory-001",
+          to_memory_id: "memory-older",
+          edge_type: "supersedes",
+          created_at: "2026-04-21T00:00:00.000Z",
+          metadata: {},
+        } satisfies MemoryEdge,
+      ],
+    });
+
+    expect(records[0]?.provenance).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ memoryEventId: "event-001" }),
+        expect.objectContaining({ memoryEdgeId: "edge-001" }),
+      ]),
+    );
   });
 });

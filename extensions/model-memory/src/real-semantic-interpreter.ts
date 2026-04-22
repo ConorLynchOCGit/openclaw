@@ -25,6 +25,7 @@ export class ExecutorBackedSemanticInterpreter implements SemanticInterpreter {
       systemPrompt: input.prompt.systemPrompt,
       userPrompt: input.prompt.userPrompt,
       responseFormat: input.prompt.responseFormat,
+      responseOptions: input.prompt.responseOptions,
     });
     return parseJsonModelOutput(response, input.prompt.contract, SemanticInterpreterResultSchema);
   }

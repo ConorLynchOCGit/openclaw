@@ -26,6 +26,39 @@ They must not:
 - introduce family registries
 - override canonical class or kind
 
+## Retrieval-runtime addendum
+
+The current read-side authority is
+[Memory Retrieval Runtime](/projects/model-memory/specs/memory-retrieval-runtime).
+
+Runtime read models now have three explicit jobs:
+
+1. expose active MMV2 truth to retrieval without reintroducing legacy object
+   contracts
+2. expose projection digests and context artifacts as compiled views with
+   source-memory provenance
+3. record retrieval and pack telemetry strongly enough to prove fresh-session
+   recall
+
+No new DB migration is required for the first Memory Retrieval Runtime pass.
+The initial implementation should use the existing `runtime_context`
+retrieval-result, context-artifact, active-slot/set, and projection-version
+surfaces until the runtime contract is proven.
+
+Required runtime artifacts:
+
+- `retrieval_plan` structured payloads
+- `retrieval_run` telemetry with `query_text_hash`, selected ids, excluded ids,
+  pack ids, indexes used, and injection target
+- `memory_pack` artifacts for operating, user profile, project state,
+  procedure, source reference, episode continuity, projection digest, and
+  conflict packs
+- `projection_digest` artifacts with active `source_memory_ids`, content hash,
+  freshness, stale/conflict markers, and source refs
+
+Raw prompt text, full transcripts, raw tool logs, secrets, and unbounded user
+content must not be persisted in these runtime artifacts.
+
 ## Runtime schema
 
 Derived runtime state should live in a separate schema such as `runtime_context`.
@@ -103,6 +136,9 @@ Examples:
 - `session_summary_pack`
 - generated bootstrap sections
 - retrieval-context packs
+- `memory_pack`
+- `projection_digest`
+- `retrieval_run_summary`
 
 Each artifact should record:
 
@@ -129,7 +165,22 @@ That includes:
 - `procedure_memory_pack`
 - `session_summary_pack`
 - `retrieval_pack`
+- `memory_pack`
 - generated bootstrap packet artifacts before file projection
+
+Memory Retrieval Runtime artifacts additionally must record:
+
+- retrieval plan id
+- retrieval run id
+- pack id
+- selected memory ids
+- selected projection ids
+- exclusion reasons
+- injection target
+- source authority level
+- whether the artifact can satisfy MMV2 recall proof
+
+Workspace-file-only artifacts cannot satisfy MMV2 recall proof.
 
 ## Projection target records
 
@@ -151,6 +202,29 @@ Examples:
 - retrieval-facing scope changed -> invalidate recalled-pack cache
 
 This dirty-state system is operational only. It must not affect semantic truth.
+
+## Source weighting
+
+Runtime assembly should use weighted source posture rather than treating every
+context artifact as equivalent.
+
+Default source order:
+
+1. active MMV2 hard directives
+2. active MMV2 records selected by a retrieval run
+3. fresh MMV2-derived projection digests with active source ids
+4. human-owned root `USER.md` / `MEMORY.md` bootstrap inputs
+5. lower-authority daily notes and episode continuity
+6. current-session transcript state
+
+Root `USER.md` and `MEMORY.md` remain human-owned compatibility/bootstrap
+inputs, not model-memory projection write-back targets. They may help context
+assembly, but they must not override active MMV2 records or prove durable
+recall by themselves.
+
+Daily notes remain writable continuity files and ingestion targets. They should
+be represented as lower-authority `daily_continuity` sources and fingerprinted
+by content hash.
 
 ## Provisional visibility rule
 

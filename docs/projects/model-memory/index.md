@@ -25,39 +25,30 @@ The target system inside OpenClaw has four pillars:
 - usage/cache layer
 
 This project is intentionally isolated from the legacy memory implementation.
-That clean-room boundary remains, and the repo has now completed the production
-cutover flip onto `model-memory`.
+That clean-room boundary remains, and the repo has now completed the
+MMV2-native storage cutover plus the first post-cutover hot-path cleanup.
 
 Current status:
 
-- slices 1 through 15 are implemented in `extensions/model-memory/`
-- the live logical database `model_memory` is provisioned on the shared Supabase/Postgres server
-- the initial package migration has been applied to that logical database
-- the claim-plus-support architecture is now implemented:
-  - durable objects plus support items
-  - lifecycle and activation state
-  - bounded duplicate adjudication
-  - daily continuity recovery as a provisional secondary lane
-  - active-only default runtime reads
-- the live runtime seam now exists:
-  - bootstrap/context overlay
-  - live assistant-turn capture
-  - explicit enable/disable switch
-- the target production cutover posture is now live:
-  - `plugins.slots.memory = "none"`
-  - `agents.defaults.memorySearch.enabled = false`
-- the production flip has been executed and verified:
-  - `model-memory` is live
-  - rollback is native no-memory mode
-  - legacy slot remains off
-- the first repo-side retirement cuts are now also done:
-  - bundled `session-memory` hook retained as continuity-producing automation
-  - startup fallback to legacy QMD/plugin memory removed
-  - legacy top-level memory docs rewritten away from canonical status
-- remaining work is operational:
-  - run the 72-hour watch
-  - perform sampled review and fast-follow fixes
-  - retire legacy code after the stability window
+- MMV2-native SQL storage is live semantic truth:
+  - `model_memory.ingest_sources`
+  - `model_memory.ingest_segments`
+  - `model_memory.durable_memories`
+  - `model_memory.memory_events`
+  - `model_memory.memory_edges`
+- active live write hot paths persist MMV2 live memory batches by default
+- active rebuild/read hot paths consume MMV2 durable truth through native
+  runtime records by default
+- the MMV2-active soak exposed a read-side blocker: recall can still lean on
+  stale projection/context artifacts unless a retrieval runtime records direct
+  retrieval evidence
+- legacy five-kind canonical storage is retired from active truth
+- legacy-shaped write/read compatibility remains soak-window fallback only
+- old v1 and pre-MMV2 cutover docs are historical design provenance, not
+  current live authority
+- next work is Memory Retrieval Runtime replacement, clean-soak proof, then
+  fallback compatibility removal, capture seam expansion, closed-loop memory
+  ops instrumentation, and Phase 2 graph/capsule/planner features
 
 ## Project docs
 
@@ -103,31 +94,35 @@ Current status:
 40. [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
 41. [Model Driven Packet Assembly Evaluation](/projects/model-memory/specs/model-driven-packet-assembly-evaluation)
 42. [Packet Compiler And Budgeting](/projects/model-memory/specs/packet-compiler-and-budgeting)
-43. [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)
-44. [Model Memory Evidence](/projects/model-memory/evidence)
-45. [Memory Residue Audit](/projects/model-memory/memory-residue-audit)
-46. [Legacy Memory Retirement Execution](/projects/model-memory/legacy-memory-retirement-execution)
-47. [Continuity Preservation And Retirement](/projects/model-memory/continuity-preservation-and-retirement)
-48. [USER.md And Projected Context Contract](/projects/model-memory/user-md-and-projected-context-contract)
-49. [Legacy Continuity Export And Ingest](/projects/model-memory/legacy-continuity-export-and-ingest)
-50. [Legacy Retirement Proof](/projects/model-memory/final-legacy-retirement-proof)
-51. [Document Ingest Pipeline Walkthrough](/projects/model-memory/document-ingest-pipeline-walkthrough)
-52. [Representative Corpus Rule Vs Fact Benchmark](/projects/model-memory/representative-corpus-rule-vs-fact-benchmark)
-53. [Rule Vs Fact Benchmark Scorecard](/projects/model-memory/rule-vs-fact-benchmark-scorecard)
-54. [Rule Vs Fact Variant Design](/projects/model-memory/rule-vs-fact-variant-design)
-55. [Rule Vs Fact Benchmark Findings](/projects/model-memory/rule-vs-fact-benchmark-findings)
-56. [Rule Vs Fact Next Change Recommendation](/projects/model-memory/rule-vs-fact-next-change-recommendation)
-57. [Memory Build Status And Next Steps](/projects/model-memory/memory-build-status-and-next-steps)
-58. [Daily Memory Grounding Repair](/projects/model-memory/daily-memory-grounding-repair)
-59. [Daily Continuity Health](/projects/model-memory/daily-continuity-health)
-60. [Memory Bootstrap Ownership Split Baseline 2026-04](/projects/model-memory/memory-bootstrap-ownership-split-baseline-2026-04)
-61. [Memory Bootstrap Ownership Contract](/projects/model-memory/memory-bootstrap-ownership-contract)
-62. [MEMORY.md Bootstrap Review 2026-04](/projects/model-memory/memory-md-bootstrap-review-2026-04)
-63. [Memory Bootstrap Semantics Restoration Baseline 2026-04](/projects/model-memory/memory-bootstrap-semantics-restoration-baseline-2026-04)
-64. [Memory Bootstrap Semantics Contract](/projects/model-memory/memory-bootstrap-semantics-contract)
-65. [MMV2 Ingestion Draft Specs](/projects/model-memory/specs/mmv2)
-66. [MMV2 First Execution Sprint Checklist](/projects/model-memory/mmv2-first-execution-sprint-checklist)
-67. [MMV2 Corpus Evaluation Baseline 2026-04](/projects/model-memory/mmv2-corpus-evaluation-baseline-2026-04)
+43. [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
+44. [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
+45. [Memory Retrieval Runtime](/projects/model-memory/specs/memory-retrieval-runtime)
+46. [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)
+47. [Model Memory Evidence](/projects/model-memory/evidence)
+48. [Memory Residue Audit](/projects/model-memory/memory-residue-audit)
+49. [Legacy Memory Retirement Execution](/projects/model-memory/legacy-memory-retirement-execution)
+50. [Continuity Preservation And Retirement](/projects/model-memory/continuity-preservation-and-retirement)
+51. [USER.md And Projected Context Contract](/projects/model-memory/user-md-and-projected-context-contract)
+52. [Legacy Continuity Export And Ingest](/projects/model-memory/legacy-continuity-export-and-ingest)
+53. [Legacy Retirement Proof](/projects/model-memory/final-legacy-retirement-proof)
+54. [Document Ingest Pipeline Walkthrough](/projects/model-memory/document-ingest-pipeline-walkthrough)
+55. [Representative Corpus Rule Vs Fact Benchmark](/projects/model-memory/representative-corpus-rule-vs-fact-benchmark)
+56. [Rule Vs Fact Benchmark Scorecard](/projects/model-memory/rule-vs-fact-benchmark-scorecard)
+57. [Rule Vs Fact Variant Design](/projects/model-memory/rule-vs-fact-variant-design)
+58. [Rule Vs Fact Benchmark Findings](/projects/model-memory/rule-vs-fact-benchmark-findings)
+59. [Rule Vs Fact Next Change Recommendation](/projects/model-memory/rule-vs-fact-next-change-recommendation)
+60. [Memory Build Status And Next Steps](/projects/model-memory/memory-build-status-and-next-steps)
+61. [Daily Memory Grounding Repair](/projects/model-memory/daily-memory-grounding-repair)
+62. [Daily Continuity Health](/projects/model-memory/daily-continuity-health)
+63. [Memory Bootstrap Ownership Split Baseline 2026-04](/projects/model-memory/memory-bootstrap-ownership-split-baseline-2026-04)
+64. [Memory Bootstrap Ownership Contract](/projects/model-memory/memory-bootstrap-ownership-contract)
+65. [MEMORY.md Bootstrap Review 2026-04](/projects/model-memory/memory-md-bootstrap-review-2026-04)
+66. [Memory Bootstrap Semantics Restoration Baseline 2026-04](/projects/model-memory/memory-bootstrap-semantics-restoration-baseline-2026-04)
+67. [Memory Bootstrap Semantics Contract](/projects/model-memory/memory-bootstrap-semantics-contract)
+68. [MMV2 Ingestion Specs](/projects/model-memory/specs/mmv2)
+69. [MMV2 First Execution Sprint Checklist](/projects/model-memory/mmv2-first-execution-sprint-checklist)
+70. [MMV2 Corpus Evaluation Baseline 2026-04](/projects/model-memory/mmv2-corpus-evaluation-baseline-2026-04)
+71. [MMV2 Real Model Eval Baseline 2026-04](/projects/model-memory/mmv2-real-model-eval-baseline-2026-04)
 
 ## Scope
 
@@ -141,11 +136,16 @@ Initial implementation scope:
 
 Current operational scope:
 
-- 72-hour stabilization watch
-- sampled post-cutover review and fast-follow fixes
-- legacy retirement and deletion
-- deep substrate population and the upcoming human soak flow through the
-  canonical ingest, verification, and prompt-set docs
+- soak-window observation of MMV2-native storage and hot paths
+- quarantine/removal planning for fallback compatibility
+- ordinary-turn MMV2 evaluation coverage
+- file-pack/provider variance stabilization
+- capture seam expansion planning and implementation
+- closed-loop memory ops instrumentation planning and implementation
+- Memory Retrieval Runtime replacement for fresh-session recall, memory packs,
+  projection digests, source weighting, and direct retrieval telemetry
+- deep substrate population through the canonical ingest, verification, and
+  prompt-set docs
 - a bundled operator skill now exists for the canonical deep ingest flow:
   - `skills/model-memory-deep-ingest/SKILL.md`
 - first-cut user-transparent arbitration between long-document reads and
@@ -156,10 +156,14 @@ Current operational scope:
   - proactive planner
   - skill and tool synthesis
   - cache and projection policy
-- the immediate memory priority before those broader waves is now:
-  - packet compiler quality and packet-system unification
-  - `kind`-primary migration
-  - kind-balance repair, especially the missing active `rule` problem
+- immediate memory priorities before broader Phase 2 derived features are now:
+  - implement Memory Retrieval Runtime
+  - rerun the clean soak with direct retrieval telemetry
+  - finish fallback compatibility quarantine/removal after clean retrieval soak
+  - update ordinary-turn MMV2 evaluation coverage
+  - stabilize file-pack/provider variance
+  - implement primary capture seams
+  - implement closed-loop memory ops instrumentation
 - the reviewed implementation order now exists in:
   - [Phase 2 Execution Roadmap](/projects/model-memory/phase-2-execution-roadmap)
 - the original Main-run interruption record now exists in:
@@ -194,15 +198,23 @@ Current operational scope:
 - the follow-on bootstrap-semantics restoration for `memory-md` now lives in:
   - [Memory Bootstrap Semantics Restoration Baseline 2026-04](/projects/model-memory/memory-bootstrap-semantics-restoration-baseline-2026-04)
   - [Memory Bootstrap Semantics Contract](/projects/model-memory/memory-bootstrap-semantics-contract)
-- the MMV2 document-only evaluation lane now lives beside the shadow ingest path:
+- the MMV2 evaluation lane now remains separate from live persistence:
   - corpus contract:
     - `extensions/model-memory/src/mmv2/proof-corpus.ts`
-  - phase-aware runner:
+  - scripted phase-aware runner:
     - `extensions/model-memory/src/mmv2/proof-runner.ts`
+  - real-model phase-aware runner:
+    - `extensions/model-memory/src/mmv2/proof-runner-real.ts`
+  - write-realism simulation:
+    - `extensions/model-memory/src/mmv2/write-simulation.ts`
+  - failed-case adjudication surface:
+    - `extensions/model-memory/src/mmv2/adjudication.ts`
   - disposable script/report entrypoint:
     - `scripts/run-mmv2-document-corpus.mjs`
   - disposable artifacts:
     - `.artifacts/model-memory/mmv2/`
-  - still intentionally out of scope:
-    - ordinary-turn MMV2 evaluation
-    - live DB writes from MMV2 corpus runs
+  - current scoring split:
+    - phase correctness
+    - write-policy realism
+  - ordinary-turn MMV2 evaluation coverage is a near-term roadmap item
+  - live DB writes from proof/file-pack artifacts remain prohibited

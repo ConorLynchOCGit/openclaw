@@ -9,17 +9,27 @@ title: "Post-Cutover Hierarchical Retrieval"
 
 This is deferred post-cutover work.
 
-It is not part of the current cutover bar for `model-memory`.
+It is not the current blocking read-side implementation.
 
-The current retrieval lane remains:
+The current blocking implementation is
+[Memory Retrieval Runtime](/projects/model-memory/specs/memory-retrieval-runtime).
+That runtime replaces the flat V0 retrieval path with retrieval planning,
+status-aware candidate recall, memory packs, projection digests, context
+injection, and direct telemetry.
 
-- one retrieval envelope
-- one interpreted retrieval request
-- one bounded deterministic recall pass
-- optional reranking
-- one final packed result set
+This hierarchical spec remains the later multi-pass extension for long,
+multi-objective prompts after the Memory Retrieval Runtime V1 is proven.
 
-That current lane is acceptable for bounded top-N memory fetch.
+The V1 retrieval runtime starts with:
+
+- one current turn/task envelope
+- one retrieval plan
+- bounded candidate recall across selected corpora/indexes
+- status/scope/conflict filtering
+- one or more memory packs
+- one telemetry-backed context injection
+
+That V1 lane is acceptable for bounded task-context recall.
 
 It is not yet intended to be the final answer for long, multi-objective, or
 hierarchical planning prompts.

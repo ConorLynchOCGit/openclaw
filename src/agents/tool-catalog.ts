@@ -104,7 +104,8 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   {
     id: "web_search",
     label: "web_search",
-    description: "Search the web",
+    description:
+      "Search the web. Wrong route for comparative public-web research when sessions_send to canonical web-researcher is available.",
     sectionId: "web",
     profiles: ["coding"],
     includeInOpenClawGroup: true,
@@ -112,7 +113,8 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   {
     id: "web_fetch",
     label: "web_fetch",
-    description: "Fetch web content",
+    description:
+      "Fetch web content. Do not use when the user explicitly asked for the browser tool or browser lane. Wrong route for comparative public-web research when sessions_send to canonical web-researcher is available.",
     sectionId: "web",
     profiles: ["coding"],
     includeInOpenClawGroup: true,
@@ -200,7 +202,8 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   {
     id: "browser",
     label: "browser",
-    description: "Control web browser",
+    description:
+      "Control web browser. Use this when the user explicitly asks for the browser tool, browser lane, or rendered browser-visible page state.",
     sectionId: "ui",
     profiles: [],
     includeInOpenClawGroup: true,

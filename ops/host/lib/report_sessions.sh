@@ -13,6 +13,7 @@ readonly WEEKLY_OPERATOR_REVIEW_JOB_ID="9ed2aa1e-dc0d-4793-948a-10714aaafcf6"
 readonly WEEKLY_MAINTENANCE_DEBT_GUARD_SESSION_ID="weekly-maintenance-debt-guard"
 readonly WEEKLY_MAINTENANCE_DEBT_GUARD_SESSION_KEY="agent:chief:${WEEKLY_MAINTENANCE_DEBT_GUARD_SESSION_ID}"
 readonly WEEKLY_MAINTENANCE_DEBT_GUARD_SESSION_LABEL="Weekly Maintenance Debt Guard"
+readonly WEEKLY_MAINTENANCE_DEBT_GUARD_JOB_ID="311e2d3f-4c1c-4e98-ad38-42ed8439b154"
 
 report_session_store_path() {
   local agent_id="$1"
@@ -110,4 +111,9 @@ report_operator_review_session_jsonl_path() {
       return 1
       ;;
   esac
+}
+
+report_maintenance_debt_guard_session_jsonl_path() {
+  report_latest_cron_run_session_jsonl_path "$WEEKLY_MAINTENANCE_DEBT_GUARD_JOB_ID" "chief" \
+    || report_session_jsonl_path "$WEEKLY_MAINTENANCE_DEBT_GUARD_SESSION_KEY"
 }

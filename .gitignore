@@ -150,6 +150,7 @@ changelog/fragments/
 # Local scratch workspace
 .tmp/
 .artifacts/
+.openclaw-memory-ops/
 test/fixtures/openclaw-vitest-unit-report.json
 analysis/
 .artifacts/qa-e2e/

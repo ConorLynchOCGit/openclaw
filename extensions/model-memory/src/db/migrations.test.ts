@@ -36,6 +36,9 @@ describe("model-memory migrations", () => {
     expect(migrations.map((entry) => entry.name)).toEqual([
       "0001_model_memory_init.sql",
       "0002_model_memory_support_items.sql",
+      "0003_model_memory_mmv2_native_storage.sql",
+      "0004_model_memory_runtime_context_text_ids.sql",
+      "0005_model_memory_schema_migrations.sql",
     ]);
     expect(migrations[0]?.sql).toContain("CREATE SCHEMA IF NOT EXISTS model_memory");
   });
@@ -92,6 +95,33 @@ describe("model-memory migrations", () => {
       await expect(
         readColumnNames(database, "model_memory", "memory_objects"),
       ).resolves.not.toContain("provenance");
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("does not recreate retired legacy tables once migrations are tracked", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      await database.sql.query(`
+        DROP TABLE IF EXISTS
+          model_memory.memory_support_items,
+          model_memory.supersession_links,
+          model_memory.write_events,
+          model_memory.memory_objects,
+          model_memory.source_windows,
+          model_memory.sources
+        CASCADE
+      `);
+
+      await applyModelMemoryMigrations(database.sql);
+
+      await expect(
+        readColumnNames(database, "model_memory", "durable_memories"),
+      ).resolves.toContain("memory_id");
+      expect(() => database.db.getSchema("model_memory").getTable("memory_objects")).toThrow();
+      expect(() => database.db.getSchema("model_memory").getTable("sources")).toThrow();
     } finally {
       await database.close();
     }

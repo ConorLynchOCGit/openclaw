@@ -120,6 +120,35 @@ function resolveProviderBaseUrl(config: OpenClawConfig | undefined, provider: st
   throw new Error(`model-memory live executor does not support provider "${provider}"`);
 }
 
+function buildResponseFormat(request: JsonModelExecutionRequest): Record<string, unknown> {
+  const transport = request.responseOptions?.transport;
+  if (!transport || transport.type === "json_object") {
+    return { type: "json_object" };
+  }
+
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: transport.name,
+      strict: transport.strict ?? true,
+      schema: transport.schema,
+    },
+  };
+}
+
+function buildProviderOptions(
+  request: JsonModelExecutionRequest,
+  provider: string,
+): Record<string, unknown> | undefined {
+  if (provider !== "openrouter") {
+    return undefined;
+  }
+  if (request.responseOptions?.provider?.requireParameters !== true) {
+    return undefined;
+  }
+  return { require_parameters: true };
+}
+
 function resolveRequestModel(modelId: string, defaultProvider: string): ModelRef {
   const parsed = parseModelRef(modelId, defaultProvider);
   if (!parsed) {
@@ -259,7 +288,10 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
           content: request.userPrompt,
         },
       ],
-      response_format: { type: "json_object" },
+      response_format: buildResponseFormat(request),
+      ...(buildProviderOptions(request, model.provider)
+        ? { provider: buildProviderOptions(request, model.provider) }
+        : {}),
     } satisfies Record<string, unknown>;
 
     let response: Response;

@@ -1,16 +1,31 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
   DEFAULT_WORKSPACE_PROJECTION_TARGETS,
+  ExecutorBackedRetrievalRequestInterpreter,
   ExecutorBackedSemanticCollisionAdjudicator,
   ExecutorBackedSemanticInterpreter,
+  buildRetrievalPackArtifact,
+  buildToolResultProofLiveCapture,
   captureOrdinaryTurnLive,
   compileProjection,
+  executeRetrieval,
+  listRuntimeMemoryRecords,
+  materializeProjectionArtifacts,
   rebuildDerivedRuntimeState,
+  type ContextArtifactRecord,
+  type RuntimeMemoryRecord,
+  type SemanticInterpreter,
+  type SemanticInterpreterInput,
   type WorkspaceProjectionTargetRecord,
 } from "../plugin-sdk/model-memory.js";
+import {
+  resolveModelMemoryCaptureSeamSettings,
+  type ModelMemoryCaptureSeamName,
+} from "./model-memory.capture-seams.js";
 import {
   createModelMemoryDatabaseRuntime,
   resolveModelMemoryDatabaseResolution,
@@ -21,11 +36,24 @@ const log = createSubsystemLogger("model-memory/live-runtime");
 
 const MODEL_MEMORY_PLUGIN_ID = "model-memory";
 const LIVE_MODEL_MEMORY_ENABLED_ENV = "MODEL_MEMORY_LIVE_ENABLED";
+const MODEL_MEMORY_PROJECTION_ARTIFACTS_ENABLED_ENV = "MODEL_MEMORY_PROJECTION_ARTIFACTS_ENABLED";
+const MODEL_MEMORY_TOOL_RESULT_PROOF_CAPTURE_ENABLED_ENV =
+  "MODEL_MEMORY_TOOL_RESULT_PROOF_CAPTURE_ENABLED";
 const DEFAULT_LIVE_MODEL_REF = "openrouter/openai/gpt-5.4-nano";
 const MODEL_MEMORY_CONTEXT_PATH_PREFIX = ".openclaw/model-memory/context";
-const BOOTSTRAP_PROJECTION_TARGET_IDS = new Set(["memory-md"]);
+const MODEL_MEMORY_RETRIEVAL_CONTEXT_PATH = `${MODEL_MEMORY_CONTEXT_PATH_PREFIX}/retrieval-pack.md`;
+const BOOTSTRAP_PROJECTION_TARGET_IDS = new Set(["memory-md", "user-md"]);
 
 type JsonRecord = Record<string, unknown>;
+type MmV2LiveRepositoryCapabilities = {
+  listExistingMemorySummaries?: unknown;
+  persistLiveMemoryBatch?: (batch: unknown) => Promise<unknown>;
+  withTransaction?: (
+    work: (repository: MmV2LiveRepositoryCapabilities) => Promise<unknown>,
+  ) => Promise<unknown>;
+  persistSource?: (source: unknown) => Promise<unknown>;
+  persistSourceWindows?: (windows: unknown[]) => Promise<unknown>;
+};
 
 export type ModelMemoryLiveRuntimeStatus = {
   enabled: boolean;
@@ -60,11 +88,13 @@ export type ModelMemoryLiveRuntimeWarmResult = {
 
 type LiveRuntimeDeps = Awaited<ReturnType<typeof createModelMemoryDatabaseRuntime>> & {
   semanticInterpreter: InstanceType<typeof ExecutorBackedSemanticInterpreter>;
+  mmv2SemanticInterpreter: ExecutorBackedMmV2SemanticInterpreter;
+  retrievalInterpreter: InstanceType<typeof ExecutorBackedRetrievalRequestInterpreter>;
   collisionAdjudicator: InstanceType<typeof ExecutorBackedSemanticCollisionAdjudicator>;
 };
 
 type LiveRuntimeReadModels = {
-  memoryObjects: Awaited<ReturnType<LiveRuntimeDeps["canonicalRepository"]["listMemoryObjects"]>>;
+  memoryObjects: RuntimeMemoryRecord[];
   projectionTargets: WorkspaceProjectionTargetRecord[];
   projectionOutputs: Record<string, string>;
   projectionVersions: ReturnType<typeof compileProjection>["version"][];
@@ -76,7 +106,46 @@ type LiveRuntimeReadModels = {
   >;
 };
 
+function isActiveProjectionSource(memory: RuntimeMemoryRecord): boolean {
+  return (
+    memory.lifecycleState !== "superseded" &&
+    memory.lifecycleState !== "expired" &&
+    memory.lifecycleState !== "provisional" &&
+    memory.lifecycleState !== "conflict_hold" &&
+    !memory.supersededAt &&
+    !memory.expiredAt
+  );
+}
+
+function buildActiveProjectionSourceIds(memoryObjects: RuntimeMemoryRecord[]): Set<string> {
+  return new Set(memoryObjects.filter(isActiveProjectionSource).map((memory) => memory.id));
+}
+
 type ProjectionVersionRecord = ReturnType<typeof compileProjection>["version"];
+
+export type LiveRetrievalContextInput = {
+  config?: OpenClawConfig;
+  sessionId?: string;
+  sessionKey?: string;
+  agentId?: string;
+  currentTurnText?: string;
+  workspaceDir?: string;
+  maxResults?: number;
+};
+
+export type ModelMemoryToolResultProofCaptureResult =
+  | {
+      captured: true;
+      sourceId: string;
+      segmentIds: string[];
+      memoryIds: string[];
+      eventIds: string[];
+      boundedFact: Record<string, unknown>;
+    }
+  | {
+      captured: false;
+      reason: "disabled" | "no_bounded_fact" | "model_memory_unavailable" | "write_unavailable";
+    };
 
 let runtimeCache:
   | {
@@ -95,6 +164,69 @@ function readTrimmedString(value: unknown): string | undefined {
 
 function readBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function readNestedRecord(
+  value: unknown,
+  pathParts: string[],
+): Record<string, unknown> | undefined {
+  let current: unknown = value;
+  for (const part of pathParts) {
+    if (!isRecord(current)) {
+      return undefined;
+    }
+    current = current[part];
+  }
+  return isRecord(current) ? current : undefined;
+}
+
+function stripOuterJsonCodeFence(text: string): string {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return match?.[1]?.trim() ?? trimmed;
+}
+
+function extractStructuredJsonCandidate(text: string): string {
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  const objectStart = text.indexOf("{");
+  const objectEnd = text.lastIndexOf("}");
+  if (objectStart !== -1 && objectEnd > objectStart) {
+    return text.slice(objectStart, objectEnd + 1).trim();
+  }
+
+  const arrayStart = text.indexOf("[");
+  const arrayEnd = text.lastIndexOf("]");
+  if (arrayStart !== -1 && arrayEnd > arrayStart) {
+    return text.slice(arrayStart, arrayEnd + 1).trim();
+  }
+
+  return text.trim();
+}
+
+export function parseMmV2RawJsonOutput(outputText: string): unknown {
+  return JSON.parse(extractStructuredJsonCandidate(stripOuterJsonCodeFence(outputText)));
+}
+
+class ExecutorBackedMmV2SemanticInterpreter implements SemanticInterpreter {
+  constructor(private readonly executor: OpenAICompatibleLiveJsonExecutor) {}
+
+  async interpret(input: SemanticInterpreterInput) {
+    const response = await this.executor.execute({
+      contract: input.prompt.contract,
+      systemPrompt: input.prompt.systemPrompt,
+      userPrompt: input.prompt.userPrompt,
+      responseFormat: input.prompt.responseFormat,
+      responseOptions: input.prompt.responseOptions,
+    });
+    return {
+      action: "capture" as const,
+      objects: [parseMmV2RawJsonOutput(response.outputText)],
+    };
+  }
 }
 
 function readModelMemoryPluginConfig(config?: OpenClawConfig): JsonRecord {
@@ -135,6 +267,40 @@ function resolveLegacyMemorySlotDisabled(config?: OpenClawConfig): boolean {
 
 function resolveLegacyMemorySearchDisabled(config?: OpenClawConfig): boolean {
   return config?.agents?.defaults?.memorySearch?.enabled === false;
+}
+
+function resolveProjectionArtifactMaterializationEnabled(
+  config?: OpenClawConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const envEnabled = resolveBooleanEnv(env[MODEL_MEMORY_PROJECTION_ARTIFACTS_ENABLED_ENV]);
+  if (envEnabled !== undefined) {
+    return envEnabled;
+  }
+  const liveConfig = readLiveConfig(config);
+  const projections = isRecord(liveConfig.projections) ? liveConfig.projections : {};
+  const materializeArtifacts = isRecord(projections.materializeArtifacts)
+    ? projections.materializeArtifacts
+    : {};
+  return readBoolean(materializeArtifacts.enabled) ?? true;
+}
+
+function resolveToolResultProofCaptureEnabled(
+  config?: OpenClawConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const envEnabled = resolveBooleanEnv(env[MODEL_MEMORY_TOOL_RESULT_PROOF_CAPTURE_ENABLED_ENV]);
+  if (envEnabled !== undefined) {
+    return envEnabled;
+  }
+  const captureSeams =
+    readNestedRecord(readModelMemoryPluginConfig(config), ["captureSeams"]) ??
+    readNestedRecord(config, ["modelMemory", "captureSeams"]) ??
+    {};
+  const toolResultProof = isRecord(captureSeams.toolResultProofCapture)
+    ? captureSeams.toolResultProofCapture
+    : {};
+  return readBoolean(toolResultProof.enabled) ?? false;
 }
 
 export function resolveModelMemoryLiveRuntimeStatus(
@@ -210,6 +376,64 @@ function resolveCandidateModelRef(config?: OpenClawConfig): string {
   return readTrimmedString(liveConfig.candidateModelId) ?? resolveLiveModelRef(config);
 }
 
+function resolveRetrievalModelRef(config?: OpenClawConfig): string {
+  const liveConfig = readLiveConfig(config);
+  return readTrimmedString(liveConfig.retrievalModelId) ?? resolveLiveModelRef(config);
+}
+
+function resolveLiveRetrievalMaxResults(config?: OpenClawConfig): number {
+  const liveConfig = readLiveConfig(config);
+  const configured = liveConfig.maxRetrievalResults;
+  if (typeof configured === "number" && Number.isFinite(configured)) {
+    return Math.min(20, Math.max(1, Math.trunc(configured)));
+  }
+  return 8;
+}
+
+function normalizeRetrievalTurnText(text: string | undefined): string {
+  return text?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+export function shouldAttemptLiveRetrievalContext(params: {
+  status: ModelMemoryLiveRuntimeStatus;
+  currentTurnText?: string;
+}): boolean {
+  return (
+    params.status.enabled &&
+    params.status.databaseConfigured &&
+    params.status.includeRetrievalPacks &&
+    normalizeRetrievalTurnText(params.currentTurnText).length > 0
+  );
+}
+
+export function buildLiveRetrievalEnvelope(params: {
+  sessionId?: string;
+  sessionKey?: string;
+  agentId?: string;
+  currentTurnText: string;
+  maxResults?: number;
+}) {
+  const scope: Record<string, unknown> = {
+    liveContextPath: "bootstrap_context",
+    retrievalScope: "live_ordinary_turn",
+  };
+  if (params.sessionKey) {
+    scope.sessionKey = params.sessionKey;
+  }
+  if (params.agentId) {
+    scope.agentId = params.agentId;
+  }
+
+  return {
+    queryText: normalizeRetrievalTurnText(params.currentTurnText),
+    requestPurpose: "live_context_injection",
+    scope,
+    sessionId: params.sessionId,
+    agentId: params.agentId,
+    maxResults: params.maxResults ?? 8,
+  };
+}
+
 async function getLiveRuntime(config?: OpenClawConfig): Promise<LiveRuntimeDeps> {
   const status = resolveModelMemoryLiveRuntimeStatus(config);
   if (!status.enabled) {
@@ -230,6 +454,8 @@ async function getLiveRuntime(config?: OpenClawConfig): Promise<LiveRuntimeDeps>
         return {
           ...db,
           semanticInterpreter: new ExecutorBackedSemanticInterpreter(executor),
+          mmv2SemanticInterpreter: new ExecutorBackedMmV2SemanticInterpreter(executor),
+          retrievalInterpreter: new ExecutorBackedRetrievalRequestInterpreter(executor),
           collisionAdjudicator: new ExecutorBackedSemanticCollisionAdjudicator(executor),
         };
       })(),
@@ -247,7 +473,7 @@ async function loadRuntimeReadModels(params: {
   const canonicalRepository = runtime.canonicalRepository;
   const runtimeRepository = runtime.runtimeRepository;
 
-  let memoryObjects = await canonicalRepository.listMemoryObjects();
+  let memoryObjects = await listRuntimeMemoryRecords(canonicalRepository);
   let slots = await runtimeRepository.listActiveMemorySlots();
   let sets = await runtimeRepository.listActiveMemorySets();
   let artifacts = await runtimeRepository.listContextArtifacts();
@@ -258,7 +484,7 @@ async function loadRuntimeReadModels(params: {
     (slots.length === 0 || sets.length === 0 || projectionTargets.length === 0)
   ) {
     const rebuild = await rebuildDerivedRuntimeState({
-      canonicalRepository,
+      canonicalRepository: canonicalRepository as never,
       runtimeRepository,
     });
     memoryObjects = rebuild.memoryObjects;
@@ -273,6 +499,7 @@ async function loadRuntimeReadModels(params: {
   const knownTargetIds = new Set(
     DEFAULT_WORKSPACE_PROJECTION_TARGETS.map((target) => target.targetId),
   );
+  const projectionBuiltAt = new Date();
   const compiled = effectiveTargets
     .filter((target) => target.enabled && knownTargetIds.has(target.targetId))
     .map(async (target) => {
@@ -287,9 +514,35 @@ async function loadRuntimeReadModels(params: {
         slots,
         sets,
         existingFileContent,
+        builtAt: projectionBuiltAt,
       });
     });
   const compiledResults = await Promise.all(compiled);
+  try {
+    await Promise.all(
+      compiledResults.map((entry) => runtimeRepository.persistProjectionVersion(entry.version)),
+    );
+    projectionTargets = await runtimeRepository.listProjectionTargets();
+  } catch (error) {
+    log.warn(`model-memory projection version persistence unavailable: ${String(error)}`);
+  }
+  if (params.workspaceDir && resolveProjectionArtifactMaterializationEnabled(params.config)) {
+    try {
+      await materializeProjectionArtifacts({
+        workspaceRoot: params.workspaceDir,
+        entries: compiledResults.map((entry) => ({
+          targetId: entry.target.targetId,
+          renderedText: entry.renderedText,
+          version: entry.version,
+          digest: entry.digest,
+        })),
+        activeMemoryIds: buildActiveProjectionSourceIds(memoryObjects),
+        generatedAt: projectionBuiltAt,
+      });
+    } catch (error) {
+      log.warn(`model-memory projection artifact materialization unavailable: ${String(error)}`);
+    }
+  }
 
   return {
     memoryObjects,
@@ -345,6 +598,75 @@ function buildExtraContextFiles(params: {
   }));
 }
 
+function retrievalContextFileFromArtifact(
+  artifact: ContextArtifactRecord | undefined,
+): Array<{ path: string; content: string }> {
+  const content = artifact?.renderedText?.trim();
+  if (!content) {
+    return [];
+  }
+  return [
+    {
+      path: MODEL_MEMORY_RETRIEVAL_CONTEXT_PATH,
+      content,
+    },
+  ];
+}
+
+async function buildLiveRetrievalContextArtifact(params: {
+  runtime: LiveRuntimeDeps;
+  readModels: LiveRuntimeReadModels;
+  config?: OpenClawConfig;
+  sessionId?: string;
+  sessionKey?: string;
+  agentId?: string;
+  currentTurnText: string;
+  maxResults?: number;
+}): Promise<ContextArtifactRecord | undefined> {
+  const envelope = buildLiveRetrievalEnvelope({
+    sessionId: params.sessionId,
+    sessionKey: params.sessionKey,
+    agentId: params.agentId,
+    currentTurnText: params.currentTurnText,
+    maxResults: params.maxResults ?? resolveLiveRetrievalMaxResults(params.config),
+  });
+  if (!envelope.queryText) {
+    return undefined;
+  }
+
+  const retrieval = await executeRetrieval({
+    envelope,
+    interpreter: params.runtime.retrievalInterpreter,
+    memoryObjects: params.readModels.memoryObjects,
+    modelId: resolveRetrievalModelRef(params.config),
+    store: params.runtime.retrievalStore,
+    createdAt: new Date(),
+    projectionVersions: params.readModels.projectionVersions,
+  });
+  if (!retrieval) {
+    return undefined;
+  }
+
+  const artifact = buildRetrievalPackArtifact({
+    retrievalRequest: retrieval.retrievalRequest,
+    retrievalResultSet: retrieval.retrievalResultSet,
+    retrievalResultItems: retrieval.retrievalResultItems,
+    memoryObjects: params.readModels.memoryObjects,
+    buildPolicyVersion: "memory-retrieval-runtime.live.v1",
+    retrievalPlan: retrieval.retrievalPlan,
+    retrievalCandidates: retrieval.retrievalCandidates,
+    retrievalExclusions: retrieval.retrievalExclusions,
+    selectedProjectionDigests: retrieval.selectedProjectionDigests,
+    projectionVersions: params.readModels.projectionVersions,
+  });
+  const persisted = await params.runtime.runtimeRepository.persistContextArtifact(artifact);
+  await params.runtime.retrievalStore.updatePackedArtifactId?.(
+    retrieval.retrievalResultSet.id,
+    persisted.id,
+  );
+  return persisted;
+}
+
 export function buildProjectionBootstrapContextFiles(params: {
   projectionVersions: ProjectionVersionRecord[];
   projectionOutputs: Record<string, string>;
@@ -384,8 +706,10 @@ export function buildProjectionBootstrapContextFiles(params: {
 export async function resolveModelMemoryBootstrapOverlay(params: {
   config?: OpenClawConfig;
   sessionId?: string;
+  sessionKey?: string;
   agentId?: string;
   workspaceDir?: string;
+  currentTurnText?: string;
 }): Promise<ModelMemoryBootstrapOverlay | null> {
   const status = resolveModelMemoryLiveRuntimeStatus(params.config);
   if (!status.enabled || !status.databaseConfigured) {
@@ -393,11 +717,33 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
   }
 
   try {
+    const runtime = await getLiveRuntime(params.config);
     const readModels = await loadRuntimeReadModels({
       config: params.config,
       sessionId: params.sessionId,
       workspaceDir: params.workspaceDir,
     });
+    let retrievalArtifact: ContextArtifactRecord | undefined;
+    if (
+      shouldAttemptLiveRetrievalContext({
+        status,
+        currentTurnText: params.currentTurnText,
+      })
+    ) {
+      try {
+        retrievalArtifact = await buildLiveRetrievalContextArtifact({
+          runtime,
+          readModels,
+          config: params.config,
+          sessionId: params.sessionId,
+          sessionKey: params.sessionKey,
+          agentId: params.agentId,
+          currentTurnText: params.currentTurnText!,
+        });
+      } catch (error) {
+        log.warn(`model-memory live retrieval context unavailable: ${String(error)}`);
+      }
+    }
 
     return {
       contextFiles: [
@@ -405,6 +751,7 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
           projectionVersions: readModels.projectionVersions,
           projectionOutputs: readModels.projectionOutputs,
         }),
+        ...retrievalContextFileFromArtifact(retrievalArtifact),
         ...buildExtraContextFiles({
           artifacts: readModels.contextArtifacts,
           sessionSummaryArtifactId: readModels.sessionState?.sessionSummaryArtifactId,
@@ -433,7 +780,7 @@ export async function warmModelMemoryLiveRuntime(params: {
 
   const runtime = await getLiveRuntime(params.config);
   const [memoryObjects, projectionTargets] = await Promise.all([
-    runtime.canonicalRepository.listMemoryObjects(),
+    listRuntimeMemoryRecords(runtime.canonicalRepository),
     runtime.runtimeRepository.listProjectionTargets(),
   ]);
 
@@ -446,6 +793,62 @@ export async function warmModelMemoryLiveRuntime(params: {
 
 function normalizeCaptureText(text: string | undefined): string {
   return text?.replace(/\s+/g, " ").trim() ?? "";
+}
+
+function sha256Text(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+export function shouldSkipOrdinaryTurnCaptureForExplicitOptOut(userText: string): boolean {
+  const normalized = userText.toLowerCase();
+  return (
+    /\bdo\s+not\s+(?:remember|store|retain|save)\b/.test(normalized) ||
+    /\bdon't\s+(?:remember|store|retain|save)\b/.test(normalized) ||
+    /\bdo\s+not\s+change\s+(?:durable\s+)?memory\b/.test(normalized) ||
+    /\bdon't\s+change\s+(?:durable\s+)?memory\b/.test(normalized) ||
+    /\bfor\s+this\s+one\s+(?:answer|reply|turn)\s+only\b/.test(normalized)
+  );
+}
+
+export function buildCompletedAssistantTurnCaptureInput(params: {
+  sessionId?: string;
+  sessionKey?: string;
+  agentId?: string;
+  userText: string;
+  assistantText: string;
+  sourceMetadata?: Record<string, unknown>;
+}): {
+  turn: {
+    sessionId?: string;
+    sourceMetadata: Record<string, unknown>;
+    currentTurnText: string;
+    currentTurnSpeaker: "user";
+  };
+} | null {
+  const assistantText = normalizeCaptureText(params.assistantText);
+  const userText = normalizeCaptureText(params.userText);
+  if (!assistantText || !userText) {
+    return null;
+  }
+  if (shouldSkipOrdinaryTurnCaptureForExplicitOptOut(userText)) {
+    return null;
+  }
+
+  return {
+    turn: {
+      sessionId: params.sessionId,
+      sourceMetadata: {
+        sessionKey: params.sessionKey,
+        agentId: params.agentId,
+        liveRuntime: true,
+        assistantResponseSha256: sha256Text(assistantText),
+        assistantResponseLength: assistantText.length,
+        ...params.sourceMetadata,
+      },
+      currentTurnText: userText,
+      currentTurnSpeaker: "user",
+    },
+  };
 }
 
 export async function captureModelMemoryAssistantTurn(params: {
@@ -462,37 +865,122 @@ export async function captureModelMemoryAssistantTurn(params: {
     return;
   }
 
-  const assistantText = normalizeCaptureText(params.assistantText);
-  const userText = normalizeCaptureText(params.userText);
-  if (!assistantText || !userText) {
+  const captureInput = buildCompletedAssistantTurnCaptureInput(params);
+  if (!captureInput) {
     return;
   }
 
   const runtime = await getLiveRuntime(params.config);
+  const canonicalRepository = runtime.canonicalRepository as typeof runtime.canonicalRepository &
+    MmV2LiveRepositoryCapabilities;
+  const canUseMmV2LivePath =
+    typeof canonicalRepository.listExistingMemorySummaries === "function" &&
+    typeof canonicalRepository.persistLiveMemoryBatch === "function";
   await captureOrdinaryTurnLive({
-    canonicalRepository: runtime.canonicalRepository,
+    canonicalRepository: runtime.canonicalRepository as never,
     runtimeRepository: runtime.runtimeRepository,
-    memoryStore: runtime.memoryStore,
+    memoryStore: runtime.memoryStore as never,
     collisionAdjudicator: runtime.collisionAdjudicator,
     capture: {
-      turn: {
-        sessionId: params.sessionId,
-        sourceMetadata: {
-          sessionKey: params.sessionKey,
-          agentId: params.agentId,
-          liveRuntime: true,
-          ...params.sourceMetadata,
-        },
-        recentContext: [{ speaker: "user", text: userText }],
-        currentTurnText: assistantText,
-        currentTurnSpeaker: "assistant",
-      },
+      turn: captureInput.turn,
       modelId: resolveLiveModelRef(params.config),
       candidateModelId: resolveCandidateModelRef(params.config),
-      interpreter: runtime.semanticInterpreter,
+      interpreter: canUseMmV2LivePath
+        ? runtime.mmv2SemanticInterpreter
+        : runtime.semanticInterpreter,
     },
     rebuildRuntime: true,
   });
+}
+
+export async function captureModelMemoryToolResultProof(params: {
+  config?: OpenClawConfig;
+  hookName: Extract<ModelMemoryCaptureSeamName, "tool_result_persist" | "after_tool_call">;
+  toolName: string;
+  toolCallId?: string;
+  runId?: string;
+  sessionId?: string;
+  sessionKey?: string;
+  agentId?: string;
+  result: unknown;
+  isError?: boolean;
+  observedAt?: Date;
+}): Promise<ModelMemoryToolResultProofCaptureResult> {
+  const status = resolveModelMemoryLiveRuntimeStatus(params.config);
+  const seamSettings = resolveModelMemoryCaptureSeamSettings({
+    seamName: params.hookName,
+    config: params.config,
+  });
+  if (
+    !status.enabled ||
+    !status.captureWritesEnabled ||
+    !status.databaseConfigured ||
+    !seamSettings.enabled ||
+    !seamSettings.seamEnabled ||
+    !resolveToolResultProofCaptureEnabled(params.config)
+  ) {
+    return { captured: false, reason: "disabled" };
+  }
+
+  const built = buildToolResultProofLiveCapture({
+    toolName: params.toolName,
+    toolCallId: params.toolCallId,
+    runId: params.runId,
+    sessionId: params.sessionId,
+    sessionKey: params.sessionKey,
+    agentId: params.agentId,
+    result: params.result,
+    isError: params.isError,
+    observedAt: params.observedAt,
+  });
+  if (!built) {
+    return { captured: false, reason: "no_bounded_fact" };
+  }
+
+  const runtime = await getLiveRuntime(params.config).catch(() => undefined);
+  if (!runtime) {
+    return { captured: false, reason: "model_memory_unavailable" };
+  }
+  const canonicalRepository = runtime.canonicalRepository as typeof runtime.canonicalRepository &
+    MmV2LiveRepositoryCapabilities;
+  const persistLiveMemoryBatch = canonicalRepository.persistLiveMemoryBatch;
+  if (typeof persistLiveMemoryBatch !== "function") {
+    return { captured: false, reason: "write_unavailable" };
+  }
+
+  if (typeof canonicalRepository.withTransaction === "function") {
+    await canonicalRepository.withTransaction(async (transactionRepository) => {
+      if (
+        typeof transactionRepository.persistSource !== "function" ||
+        typeof transactionRepository.persistSourceWindows !== "function" ||
+        typeof transactionRepository.persistLiveMemoryBatch !== "function"
+      ) {
+        throw new Error(
+          "MMV2 tool-result proof capture transaction repository is missing write capabilities.",
+        );
+      }
+      await transactionRepository.persistSource(built.source);
+      await transactionRepository.persistSourceWindows(built.windows);
+      await transactionRepository.persistLiveMemoryBatch(built.liveMemoryBatch);
+    });
+  } else {
+    await runtime.canonicalRepository.persistSource(built.source);
+    await runtime.canonicalRepository.persistSourceWindows(built.windows);
+    await persistLiveMemoryBatch(built.liveMemoryBatch);
+  }
+  await rebuildDerivedRuntimeState({
+    canonicalRepository: runtime.canonicalRepository as never,
+    runtimeRepository: runtime.runtimeRepository,
+  });
+
+  return {
+    captured: true,
+    sourceId: built.source.id,
+    segmentIds: built.windows.map((window) => window.id),
+    memoryIds: built.liveMemoryBatch.durableMemories.map((memory) => memory.memory_id),
+    eventIds: built.liveMemoryBatch.memoryEvents.map((event) => event.memory_event_id),
+    boundedFact: built.boundedFact as Record<string, unknown>,
+  };
 }
 
 export function __resetModelMemoryLiveRuntimeForTest() {

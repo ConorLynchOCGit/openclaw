@@ -40,6 +40,50 @@ describe("createOpenClawCodingTools", () => {
     }
   });
 
+  it("blocks ordinary assistant write/edit tools from mutating root workspace memory files", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-protected-memory-"));
+    try {
+      await fs.writeFile(path.join(tmpDir, "USER.md"), "# USER\n", "utf8");
+      const tools = createOpenClawCodingTools({ workspaceDir: tmpDir });
+      const { writeTool, editTool } = expectReadWriteEditTools(tools);
+
+      await expect(
+        writeTool?.execute("tool-protected-write", {
+          path: "USER.md",
+          content: "# USER\n- generated\n",
+        }),
+      ).rejects.toThrow(/Direct writes to USER\.md or MEMORY\.md are blocked/);
+
+      await expect(
+        editTool?.execute("tool-protected-edit", {
+          path: "USER.md",
+          edits: [{ oldText: "# USER", newText: "# USER\n- generated" }],
+        }),
+      ).rejects.toThrow(/Direct writes to USER\.md or MEMORY\.md are blocked/);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps daily memory notes writable for session-memory style writes", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-daily-memory-"));
+    try {
+      const tools = createOpenClawCodingTools({ workspaceDir: tmpDir });
+      const { writeTool } = expectReadWriteEditTools(tools);
+
+      await writeTool?.execute("tool-daily-memory-write", {
+        path: "memory/2026-04-21.md",
+        content: "# Daily\n\n- running context\n",
+      });
+
+      await expect(
+        fs.readFile(path.join(tmpDir, "memory", "2026-04-21.md"), "utf8"),
+      ).resolves.toContain("running context");
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects legacy alias parameters", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-legacy-alias-"));
     try {

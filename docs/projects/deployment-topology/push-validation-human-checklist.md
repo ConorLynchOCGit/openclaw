@@ -21,6 +21,44 @@ Use that document for the deeper prompt-ingestion, document-ingestion,
 daily-summary-ingestion, retrieval, context, projection, and cache checks that
 go beyond the deployment push gate.
 
+Before running the browser-facing selector checks, capture the current live
+proof snapshot:
+
+```bash
+node scripts/operator-ui-proof.mjs --json
+```
+
+Expected current post-rebuild selector proof:
+
+- `sessionsList.count = 31`
+- `codexRowCount = 0`
+
+That helper does not replace the browser check, but it confirms whether the
+live gateway payload is already clean before you interpret what the browser
+shows.
+
+Cross-project canonical inventory:
+
+- [Master Human UI Test Matrix](/projects/qa-program/master-human-ui-test-matrix)
+- [Operator UI Validation Results 2026-04](/projects/qa-program/operator-ui-validation-results-2026-04)
+- [Authenticated Operator Prompt Harness Spec](/projects/deployment-topology/authenticated-operator-prompt-harness-spec)
+- [Authenticated Operator Prompt Harness Proof](/projects/deployment-topology/authenticated-operator-prompt-harness-proof)
+
+## Current April 19, 2026 state
+
+The sanctioned authenticated prompt-execution harness now exists. The old
+“missing browser-visible prompt lane” blocker is closed.
+
+Current matrix state:
+
+- `19` pass
+- `15` fail
+- `4` blocked_by_environment
+
+Use the current matrix and results ledger first. Use this checklist when
+rerunning or closing the still-failing seams, not as a replacement for the
+recorded evidence already captured.
+
 ## Stage meanings
 
 - `before_commit` means the behavior should be checked before creating a landing
@@ -49,8 +87,8 @@ go beyond the deployment push gate.
 | Session UI/chat parity            | While the long-running task is active, compare the chat transcript with the session/chokepoint UI                                                                                                              | Chat and session UI agree on whether work is queued, running, or completed                                                      | Session UI shows active work but chat remains blank                                                                | `before_push`          |
 | Legacy workspace alias resolution | Ask Main which legacy workspace project paths now resolve through canonical repo projects and which path remains writable by design                                                                            | Explains that most legacy paths are compatibility aliases and identifies `projects/ops` as the writable exception               | Still describes a two-project-registry model or cannot explain the alias map                                       | `before_push`          |
 | Shared bootstrap authored profile | In a fresh Main session, ask a small personalized prompt that depends on authored shared bootstrap context                                                                                                     | Behavior reflects the shared authored profile and current runtime bootstrap pack                                                | Response acts like the shared profile is missing or detached from the runtime pack                                 | `before_push`          |
-| Model-memory capture              | In a fresh Main session, say `Remember this exact token for a later test: saffron-orbit-17.` then finish the session                                                                                           | A memory write or capture attempt is visible in the intended model-memory path                                                  | No capture occurs and no attempt is visible in the memory architecture                                             | `before_push`          |
-| Model-memory retrieval            | In a later fresh Main session, ask `What token did I ask you to remember earlier?`                                                                                                                             | The system retrieves or correctly surfaces the stored token through the model-memory path                                       | No retrieval occurs, or retrieval obviously ignores the earlier capture                                            | `before_push`          |
+| Model-memory capture              | In a fresh Main session, choose a fresh unique token for this run and say `For the rest of this test phase, remember this exact token for later retrieval: <unique-token>.` then finish the session            | A memory write or capture attempt is visible in the intended model-memory path                                                  | No capture occurs and no attempt is visible in the memory architecture                                             | `before_push`          |
+| Model-memory retrieval            | In a later fresh Main session, ask `What exact token did I ask you to remember during this test phase? Return the token only.`                                                                                 | The system retrieves or correctly surfaces the stored token through the model-memory path                                       | No retrieval occurs, or retrieval obviously ignores the earlier capture                                            | `before_push`          |
 | `/readyz` published route         | Curl or open the published `/readyz` route                                                                                                                                                                     | Returns a real readiness response, not the control UI shell                                                                     | Returns HTML shell, wrong route content, or non-ready failure without a real incident                              | `before_push`          |
 | GitHub digest lane                | Run the live GitHub digest trigger manually if safe, or inspect the next scheduled result after the cron fires                                                                                                 | The canonized repo-owned digest assets produce the expected Telegram-ready summary lane                                         | Host-only legacy assets are still required, or the digest fails end-to-end                                         | `post_push_monitoring` |
 | Daily operator review             | Run the daily prep, native cron run, sync, and artifact path                                                                                                                                                   | A fresh daily artifact is written and the sync path succeeds from the latest successful run transcript                          | Prep works but artifact sync fails, or the native session does not yield a usable artifact body                    | `before_push`          |
@@ -77,15 +115,18 @@ go beyond the deployment push gate.
 ## Current observed gap notes
 
 - The replay closeout below is still the right strict operator pass, but this
-  validation run did not prove broad bounded `Queued:` / `Working:` chat
-  updates for generic shell-backed long-running work. The transcript still
-  looked mostly dead until tool rows or final completion.
-- Detached/background replay proved partially: one terminal completion recap
-  surfaced on return and it did not duplicate on the next follow-up.
-- Ingest-specific replay remains pending live proof. No deep ingest or memory
-  benchmark was active during this pass, and Main-side ingest validation is
-  still blocked by canonical repo path resolution and bundled-skill path
-  handling on that lane.
+  validation run failed broad bounded `Queued:` / `Working:` chat updates for
+  generic long-running work. The transcript still looked mostly dead until
+  terminal completion.
+- Detached/background replay no longer counts as an unknown:
+  - the bounded replay-on-return row failed
+  - the replay-dedupe second follow-up row passed
+- Ingest-specific replay is now a concrete fail tranche, not just an unrun
+  note. The authenticated harness executed the ingest prompts and they did not
+  produce usable start/progress/replay evidence.
+- Authenticated Tailnet browser automation is no longer a blocker:
+  - the approved-origin device-approval path is now proven
+  - the authenticated prompt harness is now proven on top of that path
 
 ## Focused replay and root-gate closeout
 

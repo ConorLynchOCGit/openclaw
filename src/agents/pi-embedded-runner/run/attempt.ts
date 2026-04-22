@@ -68,6 +68,8 @@ import { resolveHeartbeatPromptForSystemPrompt } from "../../heartbeat-system-pr
 import { resolveImageSanitizationLimits } from "../../image-sanitization.js";
 import { buildModelAliasLines } from "../../model-alias-lines.js";
 import { resolveModelAuthMode } from "../../model-auth.js";
+import { recordModelMemoryCaptureSeamEvidence } from "../../model-memory.capture-seams.js";
+import { recordModelMemoryProductionHookProbe } from "../../model-memory.hook-probe.js";
 import { resolveDefaultModelForAgent } from "../../model-selection.js";
 import { supportsModelTools } from "../../model-tool-support.js";
 import { releaseWsSession } from "../../openai-ws-stream.js";
@@ -462,6 +464,8 @@ export async function runEmbeddedAttempt(
           config: params.config,
           sessionKey: params.sessionKey,
           sessionId: params.sessionId,
+          agentId: params.agentId,
+          currentTurnText: params.prompt,
           warn: makeBootstrapWarn({ sessionLabel, warn: (message) => log.warn(message) }),
           contextMode: params.bootstrapContextMode,
           runKind: params.bootstrapContextRunKind,
@@ -2328,6 +2332,45 @@ export async function runEmbeddedAttempt(
               : undefined,
         });
         anthropicPayloadLogger?.recordUsage(messagesSnapshot, promptError);
+
+        void recordModelMemoryProductionHookProbe({
+          hookName: "agent_end",
+          triggerSurface: "pi_embedded_runner.agent_end",
+          payload: {
+            messageCount: messagesSnapshot.length,
+            success: !aborted && !promptError,
+            durationMs: Date.now() - promptStartedAt,
+            trigger: params.trigger,
+          },
+          context: {
+            runId: params.runId,
+            agentId: hookAgentId,
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+            workspaceDir: params.workspaceDir,
+            messageProvider: params.messageProvider ?? undefined,
+            channelId: params.messageChannel ?? params.messageProvider ?? undefined,
+          },
+        }).catch(() => undefined);
+        void recordModelMemoryCaptureSeamEvidence({
+          seamName: "agent_end",
+          triggerSurface: "pi_embedded_runner.agent_end",
+          payload: {
+            messageCount: messagesSnapshot.length,
+            success: !aborted && !promptError,
+            durationMs: Date.now() - promptStartedAt,
+            trigger: params.trigger,
+          },
+          context: {
+            runId: params.runId,
+            agentId: hookAgentId,
+            sessionKey: params.sessionKey,
+            sessionId: params.sessionId,
+            workspaceDir: params.workspaceDir,
+            messageProvider: params.messageProvider ?? undefined,
+            channelId: params.messageChannel ?? params.messageProvider ?? undefined,
+          },
+        }).catch(() => undefined);
 
         // Run agent_end hooks to allow plugins to analyze the conversation
         // This is fire-and-forget, so we don't await

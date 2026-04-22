@@ -141,6 +141,39 @@ describe("loadSettings default gateway URL derivation", () => {
     expect(sessionStorage.length).toBe(0);
   });
 
+  it("forces the served gateway url over a stale persisted remote target on gateway-served pages", async () => {
+    setTestLocation({
+      protocol: "https:",
+      host: "gateway.example:8443",
+      pathname: "/openclaw/chat",
+    });
+    localStorage.setItem(
+      "openclaw.control.settings.v1",
+      JSON.stringify({
+        gatewayUrl: "wss://stale-gateway.example:8443/openclaw",
+        sessionKey: "agent:test_old:main",
+        lastActiveSessionKey: "agent:test_old:main",
+      }),
+    );
+
+    expect(loadSettings()).toMatchObject({
+      gatewayUrl: expectedGatewayUrl("/openclaw"),
+      sessionKey: "main",
+      lastActiveSessionKey: "main",
+    });
+
+    const scopedKey = `openclaw.control.settings.v1:${expectedGatewayUrl("/openclaw")}`;
+    expect(JSON.parse(localStorage.getItem(scopedKey) ?? "{}")).toMatchObject({
+      gatewayUrl: expectedGatewayUrl("/openclaw"),
+      sessionsByGateway: {
+        [expectedGatewayUrl("/openclaw")]: {
+          sessionKey: "main",
+          lastActiveSessionKey: "main",
+        },
+      },
+    });
+  });
+
   it("loads the current-tab token from sessionStorage", async () => {
     setTestLocation({
       protocol: "https:",

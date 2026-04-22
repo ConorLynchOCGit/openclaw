@@ -5,9 +5,11 @@ export const SESSIONS_LIST_TOOL_DISPLAY_SUMMARY =
   "List visible sessions and optional recent messages.";
 export const SESSIONS_HISTORY_TOOL_DISPLAY_SUMMARY =
   "Read sanitized message history for a visible session.";
-export const SESSIONS_SEND_TOOL_DISPLAY_SUMMARY = "Send a message to another visible session.";
+export const SESSIONS_SEND_TOOL_DISPLAY_SUMMARY =
+  "Send a message to another visible session; mandatory lane for delegated comparative web research.";
 export const SESSIONS_SPAWN_TOOL_DISPLAY_SUMMARY = "Spawn sub-agent or ACP sessions.";
-export const SESSION_STATUS_TOOL_DISPLAY_SUMMARY = "Show session status, usage, and model state.";
+export const SESSION_STATUS_TOOL_DISPLAY_SUMMARY =
+  "Show session status, usage, model state, and current or recent task state.";
 export const UPDATE_PLAN_TOOL_DISPLAY_SUMMARY = "Track a short structured work plan.";
 
 export function describeSessionsListTool(): string {
@@ -28,6 +30,9 @@ export function describeSessionsSendTool(): string {
   return [
     "Send a message into another visible session by sessionKey or label.",
     "Use this to delegate follow-up work to an existing session; waits for the target run and returns the updated assistant reply when available.",
+    "For comparative or multi-source public-web research, use this to delegate the external collection step to canonical agent:web-researcher:main instead of browsing inline from Main.",
+    "When that canonical lane exists, treat sessions_send as the required path for the external comparison step rather than an optional alternative to inline web_fetch or web_search.",
+    "If the prompt is a sourced external comparison across sites, pages, or vendors, using inline web_search or web_fetch instead of sessions_send is the wrong route unless the delegated lane is unavailable.",
   ].join(" ");
 }
 
@@ -44,7 +49,9 @@ export function describeSessionStatusTool(): string {
   return [
     "Show a /status-equivalent session status card for the current or another visible session, including usage, time, cost when available, and linked background task context.",
     "Optional `model` sets a per-session model override; `model=default` resets overrides.",
-    "Use this for questions like what model is active or how a session is configured.",
+    "Use this for questions like what model is active, how a session is configured, or whether recent work is still running.",
+    "For short follow-ups like `Status?`, `still running?`, or progress checks after recent work, prefer this over answering from memory.",
+    "When the returned task line already gives a bounded lifecycle label such as Queued, Working, Completed, Failed, or Timed out, preserve that state explicitly in the answer instead of paraphrasing it away.",
   ].join(" ");
 }
 

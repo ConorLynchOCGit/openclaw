@@ -7,6 +7,13 @@ import {
   type SegmentedIngestEvent,
   type SegmentedIngestSegment,
 } from "./contracts.ts";
+import {
+  isBulletLine,
+  isHeadingLine,
+  isIndentedContinuationLine,
+  isNumberedLine,
+  parseStructuredList,
+} from "./structural-markdown.ts";
 
 function sha256(input: string): string {
   return createHash("sha256").update(input).digest("hex");
@@ -38,23 +45,15 @@ function isBlank(line: string): boolean {
   return line.trim().length === 0;
 }
 
-function isHeading(line: string): boolean {
-  return /^#{1,6}\s+\S/.test(line.trim());
-}
-
-function isBullet(line: string): boolean {
-  return /^\s*[-*•]\s+\S/.test(line);
-}
-
-function isNumbered(line: string): boolean {
-  return /^\s*\d+[.)]\s+\S/.test(line);
+function isFenceLine(line: string): boolean {
+  return /^\s*```/.test(line);
 }
 
 function paragraphSentenceRanges(
   text: string,
 ): Array<{ start: number; end: number; text: string }> {
   const ranges: Array<{ start: number; end: number; text: string }> = [];
-  const matcher = /[^.!?\n]+[.!?]?/g;
+  const matcher = /[\s\S]+?(?:[.!?](?=\s|$)|$)/g;
   let match: RegExpExecArray | null;
   while ((match = matcher.exec(text)) !== null) {
     const sentence = match[0].trim();
@@ -80,10 +79,11 @@ export function detectSegmentShape(text: string): SegmentedIngestSegment["detect
   if (/^#{1,6}\s+\S[\s\S]*\n.+/.test(trimmed)) {
     return "heading_plus_body";
   }
-  if (trimmed.split("\n").every((line) => isNumbered(line))) {
+  const parsedList = parseStructuredList(trimmed);
+  if (parsedList?.kind === "numbered") {
     return "numbered_list_block";
   }
-  if (trimmed.split("\n").every((line) => isBullet(line))) {
+  if (parsedList?.kind === "bullet") {
     return "bullet_list_block";
   }
   if (trimmed.startsWith(">")) {
@@ -135,12 +135,13 @@ export function segmentRawIngestEvent(event: RawIngestEvent): SegmentedIngestEve
     const localBefore = previousNonBlank?.text ?? "";
     const localAfter = nextNonBlank?.text ?? "";
 
-    if (isHeading(current.text)) {
+    if (isHeadingLine(current.text)) {
       let endIndex = index;
       while (
         endIndex + 1 < lines.length &&
         !isBlank(lines[endIndex + 1].text) &&
-        !isHeading(lines[endIndex + 1].text)
+        !isHeadingLine(lines[endIndex + 1].text) &&
+        !isFenceLine(lines[endIndex + 1].text)
       ) {
         endIndex += 1;
       }
@@ -162,11 +163,13 @@ export function segmentRawIngestEvent(event: RawIngestEvent): SegmentedIngestEve
       continue;
     }
 
-    if (isNumbered(current.text) || isBullet(current.text)) {
-      const matcher = isNumbered(current.text) ? isNumbered : isBullet;
+    if (isFenceLine(current.text)) {
       let endIndex = index;
-      while (endIndex + 1 < lines.length && matcher(lines[endIndex + 1].text)) {
+      while (endIndex + 1 < lines.length) {
         endIndex += 1;
+        if (isFenceLine(lines[endIndex].text)) {
+          break;
+        }
       }
       const text = event.raw_text.slice(current.start, lines[endIndex].end);
       segments.push(
@@ -177,7 +180,37 @@ export function segmentRawIngestEvent(event: RawIngestEvent): SegmentedIngestEve
           lines[endIndex].end,
           localBefore,
           localAfter,
-          isNumbered(current.text) ? "numbered_list_block" : "bullet_list_block",
+          "code_block",
+        ),
+      );
+      index = endIndex + 1;
+      continue;
+    }
+
+    if (isNumberedLine(current.text) || isBulletLine(current.text)) {
+      const matcher = isNumberedLine(current.text) ? isNumberedLine : isBulletLine;
+      let endIndex = index;
+      while (endIndex + 1 < lines.length) {
+        const nextLine = lines[endIndex + 1];
+        if (isBlank(nextLine.text) || isHeadingLine(nextLine.text)) {
+          break;
+        }
+        if (matcher(nextLine.text) || isIndentedContinuationLine(nextLine.text)) {
+          endIndex += 1;
+          continue;
+        }
+        break;
+      }
+      const text = event.raw_text.slice(current.start, lines[endIndex].end);
+      segments.push(
+        createSegment(
+          event.event_id,
+          text,
+          current.start,
+          lines[endIndex].end,
+          localBefore,
+          localAfter,
+          isNumberedLine(current.text) ? "numbered_list_block" : "bullet_list_block",
         ),
       );
       index = endIndex + 1;
@@ -188,9 +221,10 @@ export function segmentRawIngestEvent(event: RawIngestEvent): SegmentedIngestEve
     while (
       endIndex + 1 < lines.length &&
       !isBlank(lines[endIndex + 1].text) &&
-      !isHeading(lines[endIndex + 1].text) &&
-      !isNumbered(lines[endIndex + 1].text) &&
-      !isBullet(lines[endIndex + 1].text)
+      !isHeadingLine(lines[endIndex + 1].text) &&
+      !isFenceLine(lines[endIndex + 1].text) &&
+      !isNumberedLine(lines[endIndex + 1].text) &&
+      !isBulletLine(lines[endIndex + 1].text)
     ) {
       endIndex += 1;
     }

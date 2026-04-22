@@ -73,6 +73,11 @@ describe("status-json-payload", () => {
         osSummary: { platform: "linux" },
         memory: null,
         memoryPlugin: { enabled: true },
+        modelMemory: {
+          enabled: true,
+          databaseConfigured: true,
+          databaseName: "model_memory",
+        },
         agents: [{ id: "main" }],
         secretDiagnostics: ["diag"],
         securityAudit: { summary: { critical: 1 } },
@@ -101,6 +106,11 @@ describe("status-json-payload", () => {
       updateChannelSource: "config",
       memory: null,
       memoryPlugin: { enabled: true },
+      modelMemory: {
+        enabled: true,
+        databaseConfigured: true,
+        databaseName: "model_memory",
+      },
       gateway: {
         mode: "remote",
         url: "wss://gateway.example.com",

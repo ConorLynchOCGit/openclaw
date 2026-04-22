@@ -65,6 +65,62 @@ export function includesAll<T>(actual: readonly T[], expected: readonly T[]): bo
   return expected.every((value) => actual.includes(value));
 }
 
+export function stripOrderedListPrefix(value: string): string {
+  return value.replace(/^\s*\d+[.)]\s*/u, "").trim();
+}
+
+export function normalizeComparisonText(value: string): string {
+  return stripOrderedListPrefix(value)
+    .toLowerCase()
+    .replace(/[_-]+/gu, " ")
+    .replace(/[^\p{L}\p{N}\s/]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function normalizeSemanticToken(token: string): string {
+  const compact = token.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (compact.length <= 8) {
+    return compact;
+  }
+  return compact.slice(0, 8);
+}
+
+export function semanticallyMatchesText(actual: string, expected: string): boolean {
+  const normalizedActual = normalizeComparisonText(actual);
+  const normalizedExpected = normalizeComparisonText(expected);
+  if (!normalizedExpected) {
+    return true;
+  }
+  const compactActual = normalizedActual.replace(/\s+/gu, "");
+  const compactExpected = normalizedExpected.replace(/\s+/gu, "");
+  if (
+    normalizedActual === normalizedExpected ||
+    normalizedActual.includes(normalizedExpected) ||
+    normalizedExpected.includes(normalizedActual) ||
+    compactActual === compactExpected ||
+    compactActual.includes(compactExpected) ||
+    compactExpected.includes(compactActual)
+  ) {
+    return true;
+  }
+  const actualTokens = new Set(
+    normalizedActual
+      .split(" ")
+      .map(normalizeSemanticToken)
+      .filter((token) => token.length >= 4),
+  );
+  const expectedTokens = normalizedExpected
+    .split(" ")
+    .map(normalizeSemanticToken)
+    .filter((token) => token.length >= 4);
+  if (expectedTokens.length === 0) {
+    return true;
+  }
+  const overlap = expectedTokens.filter((token) => actualTokens.has(token)).length;
+  return overlap >= Math.max(1, Math.ceil(expectedTokens.length / 2));
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

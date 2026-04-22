@@ -148,6 +148,26 @@ export function formatTaskStatusDetail(task: TaskRecord): string | undefined {
   );
 }
 
+export function formatTaskStatusLifecycleLabel(
+  snapshot: TaskStatusSnapshot,
+  task: TaskRecord,
+): string {
+  if (snapshot.activeCount > 0 || task.status === "queued" || task.status === "running") {
+    return task.status === "queued" ? "Queued" : "Working";
+  }
+  switch (task.status) {
+    case "failed":
+    case "lost":
+      return "Failed";
+    case "timed_out":
+      return "Timed out";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return "Completed";
+  }
+}
+
 export type TaskStatusSnapshot = {
   latest?: TaskRecord;
   focus?: TaskRecord;

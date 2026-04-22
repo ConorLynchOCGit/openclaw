@@ -63,6 +63,36 @@ describe("browser control server", () => {
     });
   });
 
+  it("falls back to role snapshots when aria refs need private _snapshotForAI support", async () => {
+    const base = await startServerAndBase();
+    const realFetch = getBrowserTestFetch();
+    pwMocks.snapshotAiViaPlaywright.mockRejectedValueOnce(
+      new Error("refs=aria requires Playwright _snapshotForAI support."),
+    );
+
+    const snapAi = (await realFetch(`${base}/snapshot?format=ai&refs=aria`).then((r) =>
+      r.json(),
+    )) as { ok: boolean; format?: string; snapshot?: string };
+
+    expect(snapAi.ok).toBe(true);
+    expect(snapAi.format).toBe("ai");
+    expect(pwMocks.snapshotRoleViaPlaywright).toHaveBeenCalledWith({
+      cdpUrl: state.cdpBaseUrl,
+      targetId: "abcd1234",
+      selector: "",
+      frameSelector: "",
+      refsMode: "aria",
+      ssrfPolicy: {
+        dangerouslyAllowPrivateNetwork: true,
+      },
+      options: {
+        interactive: undefined,
+        compact: undefined,
+        maxDepth: undefined,
+      },
+    });
+  });
+
   it("agent contract: navigation + common act commands", async () => {
     const base = await startServerAndBase();
     const realFetch = getBrowserTestFetch();

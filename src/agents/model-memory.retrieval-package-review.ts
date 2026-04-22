@@ -224,6 +224,7 @@ export async function runModelMemoryRetrievalPackageReview(input: {
       memoryObjects: rebuild.memoryObjects,
       modelId: input.modelRef,
       createdAt: new Date(),
+      projectionVersions: rebuild.projectionVersions,
     });
     if (!retrieval) {
       throw new Error(`retrieval package review unexpectedly skipped probe ${probe.id}`);
@@ -270,6 +271,10 @@ export async function runModelMemoryRetrievalPackageReview(input: {
       retrievalResultSet: retrieval.retrievalResultSet,
       retrievalResultItems: retrieval.retrievalResultItems,
       memoryObjects: rebuild.memoryObjects,
+      retrievalPlan: retrieval.retrievalPlan,
+      retrievalCandidates: retrieval.retrievalCandidates,
+      retrievalExclusions: retrieval.retrievalExclusions,
+      selectedProjectionDigests: retrieval.selectedProjectionDigests,
       buildPolicyVersion: "v1",
     });
     const verdict = computeVerdict({

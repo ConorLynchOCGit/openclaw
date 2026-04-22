@@ -82,6 +82,10 @@ describe("parseSessionKey", () => {
   });
 
   it("identifies known specialist main sessions", () => {
+    expect(parseSessionKey("agent:researcher:main")).toEqual({
+      prefix: "",
+      fallbackName: "Researcher",
+    });
     expect(parseSessionKey("agent:web-researcher:main")).toEqual({
       prefix: "",
       fallbackName: "Web Researcher",
@@ -89,6 +93,21 @@ describe("parseSessionKey", () => {
     expect(parseSessionKey("agent:x-manager:main")).toEqual({
       prefix: "",
       fallbackName: "X Manager Session",
+    });
+  });
+
+  it("identifies known operator review and maintenance sessions", () => {
+    expect(parseSessionKey("agent:main:daily-operator-review")).toEqual({
+      prefix: "",
+      fallbackName: "Daily Operator Review",
+    });
+    expect(parseSessionKey("agent:main:weekly-operator-review")).toEqual({
+      prefix: "",
+      fallbackName: "Weekly Operator Review",
+    });
+    expect(parseSessionKey("agent:chief:weekly-maintenance-debt-guard")).toEqual({
+      prefix: "",
+      fallbackName: "Weekly Maintenance Debt Guard",
     });
   });
 

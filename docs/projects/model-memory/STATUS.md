@@ -7,7 +7,125 @@ title: "Model Memory Status"
 
 ## Overall
 
-State: `production_cutover_live_retirement_execution_in_progress`
+State: `mmv2_clean_soak_accepted_post_soak_hardening`
+
+Current authority:
+
+- MMV2-native SQL storage is the live semantic source of truth:
+  - `model_memory.ingest_sources`
+  - `model_memory.ingest_segments`
+  - `model_memory.durable_memories`
+  - `model_memory.memory_events`
+  - `model_memory.memory_edges`
+- active live write hot paths now persist MMV2 live memory batches by default
+- active rebuild/read hot paths now consume MMV2 durable truth through native
+  runtime records by default
+- `SOAKQUAR-2026-04-21` is accepted as the first clean MMV2
+  retrieval-runtime soak baseline
+- fresh-session recall is now accepted through direct retrieval telemetry and
+  retrieval-pack evidence selecting relevant fresh MMV2 ids
+- the runtime-boundary proof for projection materialization and production hook
+  probes is accepted as the current post-soak baseline
+- legacy-shaped storage/object compatibility remains present only for the
+  agreed soak-window fallback posture
+- old v1/spec-closure language is historical design provenance, not current
+  live implementation authority
+
+Accepted clean-soak baseline:
+
+- artifact root:
+  `.artifacts/model-memory/soak-ui-validation/2026-04-21-semantic-quarantine-soak/`
+- DB evidence:
+  `.artifacts/model-memory/soak-ui-validation/2026-04-21-semantic-quarantine-soak/db-evidence-final.json`
+- Memory Ops leakage scan:
+  `.artifacts/model-memory/soak-ui-validation/2026-04-21-semantic-quarantine-soak/memory-ops-leakage-scan.txt`
+- rollback image tag:
+  `openclaw:rollback-memory-soak-20260421T175907Z`
+- accepted durable ids:
+  - preference `992ee8e3-ce78-518f-87fa-defcb9457404`
+  - directive `9f681bb4-0524-5972-8f2f-2e247b46d8b4`
+  - project fact `4720dede-c33d-5c5e-835e-7e1be6d3445d`
+  - structural correction `e64c1528-d6c2-52b3-8674-38172dc4604a`
+  - supersession edge `fa9a259f-330b-5f06-bf11-79f62a0ffe47`
+- accepted retrieval request:
+  `c9d9c67c-410a-5729-a02e-e5cf0a761b8e`
+- latest Memory Ops report:
+  `.openclaw-memory-ops/reports/latest.md`
+
+Accepted runtime-boundary baseline:
+
+- artifact root:
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/`
+- projection validation:
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/projection-db-validation-final.json`
+- projection artifact directory:
+  `/root/.openclaw/workspace/.openclaw/model-memory/projections/`
+- projection materialization status:
+  artifact-only, content-hash-addressed, root write-back disabled
+- production hook status baseline:
+  - production-verified:
+    `message:preprocessed`, `ContextEngine.assemble`, `tool_result_persist`,
+    `after_tool_call`, `agent_end`, `ContextEngine.afterTurn`
+  - synthetic-only:
+    `ContextEngine.ingest`, `ContextEngine.ingestBatch`, bootstrap,
+    compaction, command, and session-end surfaces
+  - registered-not-fired:
+    prompt assembly/memory injection observer, retrieval observer
+  - blocked:
+    changed bootstrap files, changed memory files
+- hook/capture evidence:
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/hook-and-seam-evidence-rerun3.json`
+- runtime-boundary Memory Ops leakage scan:
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/memory-ops-leakage-scan-final.json`
+- root `USER.md` / `MEMORY.md` hash proof:
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/root-hashes-before-rerun3.txt`
+  and
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/root-hashes-after-rerun3.txt`
+- rollback image tag:
+  `openclaw:rollback-memory-soak-20260421T175907Z`
+
+Current near-term engineering sequence:
+
+1. keep `SOAKQUAR-2026-04-21` and the runtime-boundary artifacts as regression
+   baselines
+2. expand capture through bounded tool-result proof/capture first; keep
+   `message:preprocessed` routing/telemetry-only until no-raw-prompt and
+   duplicate-proof guarantees are proven
+3. production-verify or block `ContextEngine.ingest` and `ingestBatch` before
+   any semantic capture wiring from those seams
+4. quarantine/remove fallback compatibility in small reversible slices
+5. update ordinary-turn MMV2 evaluation coverage where needed
+6. harden Retrieval Runtime relevance, exclusions, and empty-retrieval
+   telemetry without mutating truth
+7. stabilize file-pack/provider variance
+8. implement the primary capture seam expansion specified in
+   [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
+   only for verified seams behind kill switches
+9. implement closed-loop operational instrumentation specified in
+   [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
+10. then proceed to Phase 2 graph, capsule, hierarchical retrieval, planner,
+    synthesis, and cache/projection features
+
+Current post-soak hardening progress:
+
+- default MMV2 retrieval/runtime read-model code is now guarded by focused
+  tests against legacy semantic-family/collision imports
+- retrieval text normalization is local to the Retrieval Runtime and does not
+  depend on legacy semantic identity scoring
+- projection registry/catalog is defined for the full v1 projection set:
+  user profile, project, procedure, source, decision log, timeline, entity,
+  dashboard, agent digest, and projection digest
+- projection compiler output now includes artifact-only digest metadata:
+  source memory ids, source event ids when available, content hash, freshness,
+  stale markers, conflict markers, artifact paths, and retrieval digest data
+- retrieval pack/run telemetry now includes selected ids, excluded ids,
+  exclusion reason counts, stale/superseded/deleted/conflicted/inactive
+  filtering counts, empty-retrieval state, selected projection ids, selected
+  source memory ids, and token estimates
+- latest hook discovery artifact:
+  `.openclaw-memory-ops/hook-discovery/2026-04-21T191432-298Z.json`
+- latest hook discovery remains synthetic/static evidence only for capture
+  seam purposes, so no primary capture seam has been wired in this pass
 
 The clean-room parallel package now exists at `extensions/model-memory/` with
 implementation slices 1 through 19 completed on fast lanes. The package now
@@ -19,18 +137,25 @@ also has the direct live-runtime seams needed for production cutover:
 - gateway startup warmup for the live runtime
 - status/doctor visibility for the cutover posture
 
-The project has now moved out of “more duplicate tuning first” posture and into
-the post-cutover stabilization window:
+The project has moved out of pre-cutover and old duplicate-tuning posture. The
+current posture is MMV2-native truth with an accepted retrieval-runtime soak:
 
 - `model-memory` is treated as materially stronger than the legacy memory stack
 - the old memory stack is treated as retirement debt, not a strategic fallback
-- the production flip is now complete
-- rollback remains native no-memory behavior
+- the storage cutover is complete
+- live write hot paths now use MMV2-native contracts by default
+- the read layer now has enough retrieval planning, status-aware recall,
+  memory packs, projection-digest selection, and direct retrieval telemetry for
+  the accepted soak baseline
+- rollback/fallback remains explicit for the soak window
 - the active phase is now:
-  - 72-hour observability window
-  - daily sampled review
-  - fast-follow fixes
-  - time-bounded legacy retirement
+  - Memory Retrieval Runtime specification and implementation
+  - retrieval-runtime clean-soak proof
+  - fallback compatibility quarantine/removal planning after that proof
+  - ordinary-turn MMV2 evaluation coverage
+  - file-pack/provider variance stabilization
+  - primary capture seam expansion
+  - closed-loop memory ops instrumentation
 
 The current pre-test preparation package is now also canonized:
 
@@ -100,11 +225,20 @@ The current bootstrap-memory posture is now also cleaner:
 - current runs now overlay freshly canonicalized bootstrap files over stale
   session-scoped bootstrap snapshots by filename
 
-The current MMV2 execution posture is now also clearer:
+The current MMV2 execution posture is now:
 
-- the first MMV2 document-only shadow ingest lane exists under:
+- MMV2-native SQL storage is live semantic truth
+- active document ingest, ordinary-turn capture, daily recovery, replay, and
+  runner/tooling write paths prefer MMV2 live memory batches
+- runtime rebuild and the V0 read path consume MMV2 durable truth through
+  native runtime records
+- V0 recall/projection assembly is not enough for clean-soak acceptance; the
+  Memory Retrieval Runtime must provide direct retrieval telemetry, source
+  weighting, memory packs, and projection-digest selection
+- legacy compatibility is soak-window fallback only
+- proof/file-pack/split evaluation lanes remain separate from live DB writes
+- the MMV2 implementation and evaluation code lives under:
   - `extensions/model-memory/src/mmv2/`
-- the first MMV2 corpus-evaluation lane now targets document ingestion only
 - the MMV2 proof contract is phase-aware rather than final-output-only:
   - segmentation
   - routing
@@ -114,27 +248,48 @@ The current MMV2 execution posture is now also clearer:
   - canonicalization
   - admission
   - seeded-neighbor reconciliation
-  - shadow recording
+  - recording
   - post-write audit
-- the MMV2 proof runner remains separate from the v1 proof runner
+- the MMV2 proof runners remain separate from live persistence:
+  - scripted runner:
+    - `extensions/model-memory/src/mmv2/proof-runner.ts`
+  - real-model runner:
+    - `extensions/model-memory/src/mmv2/proof-runner-real.ts`
+- the MMV2 evaluation lane now carries two explicit scores:
+  - phase correctness
+  - write-policy realism
+- post-reconciliation write simulation is now explicit:
+  - `extensions/model-memory/src/mmv2/write-simulation.ts`
+  - duplicate and merge outcomes no longer count as realistic new-memory writes
+- failed MMV2 corpus cases now emit adjudication-ready surfaces:
+  - `extensions/model-memory/src/mmv2/adjudication.ts`
+  - artifact templates include review labels such as:
+    - `model_wrong`
+    - `expectation_wrong`
+    - `comparator_too_strict`
+    - `write_policy_simulation_wrong`
 - corpus reports write to disposable filesystem artifacts, not the live
   durable-memory database
-- ordinary-turn MMV2 evaluation remains intentionally out of scope in this pass
+- the same document corpus can now be replayed in:
+  - scripted mode
+  - real-model mode
+- ordinary-turn MMV2 evaluation coverage is now a near-term roadmap item, not a
+  permanent exclusion
 
 The current top-priority memory work is now:
 
-- shared packet compiler design across bootstrap, dynamic, and retrieval packs
-- `kind`-primary migration
-- repair of live kind balance, especially the missing active `rule` class of
-  memory objects
-
-These are treated as one linked quality lane because packet usefulness depends
-on corpus shape and packet shaping together.
-
-The current proof obligations for that lane are now tracked in:
-
-- [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)
-- [Memory Build Status And Next Steps](/projects/model-memory/memory-build-status-and-next-steps)
+- Memory Retrieval Runtime replacement:
+  - [Memory Retrieval Runtime](/projects/model-memory/specs/memory-retrieval-runtime)
+- direct retrieval telemetry for fresh-session recall
+- clean MMV2-active soak rerun with memory packs/projection digests
+- soak-window compatibility quarantine/removal after the clean retrieval soak
+- ordinary-turn MMV2 evaluation coverage
+- file-pack/provider variance stabilization
+- primary capture seam expansion:
+  - [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
+- closed-loop memory ops instrumentation:
+  - [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
+- then Phase 2 graph/capsule/retrieval/planner/synthesis/cache work
 
 The current rule-vs-fact benchmark tranche now adds:
 
@@ -564,7 +719,7 @@ That evidence currently shows:
     - interval on attach-support misses remains wide:
       - lower = `0.1634`
       - upper = `0.6124`
-- current cutover judgment remains `not_ready_for_cutover`
+- historical cutover judgment at that point was `not_ready_for_cutover`
   - remaining blockers:
     - long-horizon duplicate pressure remains above the cutover bar
     - preserved-corpus duplicate review still contains too many clear
@@ -655,8 +810,15 @@ Current evidence posture:
 - the blocker is now best described as mixed:
   - deterministic gate loss is still real
   - batch choice quality is also materially involved
-- final current judgment:
-  - `not_ready_for_cutover`
+- historical judgment at that time:
+  - `not_ready_for_cutover` at that historical checkpoint
+
+## Historical Implementation Log
+
+The sections below preserve earlier v1 and pre-MMV2 cutover implementation
+state. They are useful for lineage and evidence archaeology, but they are not
+current authority where they conflict with the MMV2-native status at the top of
+this file.
 
 The live database lane is now materially complete for the current package
 scope:

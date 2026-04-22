@@ -1,5 +1,9 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LegacyContextEngine } from "../../../context-engine/legacy.js";
 import { buildMemorySystemPromptAddition } from "../../../plugin-sdk/core.js";
 import {
   clearMemoryPluginState,
@@ -241,6 +245,59 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
         return params.sessionKey === sessionKey;
       }),
     ).toBe(true);
+  });
+
+  it("production-probes legacy ContextEngine ingest and ingestBatch without raw message content", async () => {
+    const hookProbeDir = await mkdtemp(path.join(os.tmpdir(), "hook-probe-"));
+    const seamDir = await mkdtemp(path.join(os.tmpdir(), "capture-seam-"));
+    tempPaths.push(hookProbeDir, seamDir);
+    const previousEnv = {
+      MODEL_MEMORY_HOOK_PROBE_ENABLED: process.env.MODEL_MEMORY_HOOK_PROBE_ENABLED,
+      MODEL_MEMORY_HOOK_PROBE_OUTPUT_DIR: process.env.MODEL_MEMORY_HOOK_PROBE_OUTPUT_DIR,
+      MODEL_MEMORY_CONTEXT_INGEST_PRODUCTION_PROBE_ENABLED:
+        process.env.MODEL_MEMORY_CONTEXT_INGEST_PRODUCTION_PROBE_ENABLED,
+      MODEL_MEMORY_CAPTURE_SEAMS_ENABLED: process.env.MODEL_MEMORY_CAPTURE_SEAMS_ENABLED,
+      MODEL_MEMORY_CAPTURE_SEAM_OUTPUT_DIR: process.env.MODEL_MEMORY_CAPTURE_SEAM_OUTPUT_DIR,
+      MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_INGEST_ENABLED:
+        process.env.MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_INGEST_ENABLED,
+      MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_INGEST_BATCH_ENABLED:
+        process.env.MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_INGEST_BATCH_ENABLED,
+    };
+    process.env.MODEL_MEMORY_HOOK_PROBE_ENABLED = "1";
+    process.env.MODEL_MEMORY_HOOK_PROBE_OUTPUT_DIR = hookProbeDir;
+    process.env.MODEL_MEMORY_CONTEXT_INGEST_PRODUCTION_PROBE_ENABLED = "1";
+    process.env.MODEL_MEMORY_CAPTURE_SEAMS_ENABLED = "1";
+    process.env.MODEL_MEMORY_CAPTURE_SEAM_OUTPUT_DIR = seamDir;
+    process.env.MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_INGEST_ENABLED = "1";
+    process.env.MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_INGEST_BATCH_ENABLED = "1";
+
+    try {
+      await finalizeTurn(sessionKey, new LegacyContextEngine(), {
+        messagesSnapshot: [seedMessage, doneMessage],
+        prePromptMessageCount: 0,
+      });
+
+      const day = new Date().toISOString().slice(0, 10);
+      const hookProbeText = await readFile(path.join(hookProbeDir, `${day}.jsonl`), "utf8");
+      const seamText = await readFile(path.join(seamDir, `${day}.jsonl`), "utf8");
+
+      expect(hookProbeText).toContain('"hook_name":"ContextEngine.ingestBatch"');
+      expect(hookProbeText).toContain('"hook_name":"ContextEngine.ingest"');
+      expect(seamText).toContain('"seam_name":"ContextEngine.ingestBatch"');
+      expect(seamText).toContain('"seam_name":"ContextEngine.ingest"');
+      expect(hookProbeText).not.toContain("seed");
+      expect(hookProbeText).not.toContain("done");
+      expect(seamText).not.toContain("seed");
+      expect(seamText).not.toContain("done");
+    } finally {
+      for (const [key, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
   });
 
   it("forwards silentExpected to the embedded subscription", async () => {

@@ -367,7 +367,7 @@ export class RuntimeContextRepository {
           model_id,
           built_at
         )
-        VALUES ($1, $2, $3, $4::uuid[], $5::text[], $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14)
+        VALUES ($1, $2, $3, $4::text[], $5::text[], $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (id)
         DO UPDATE SET
           artifact_type = EXCLUDED.artifact_type,
@@ -465,7 +465,7 @@ export class RuntimeContextRepository {
           token_estimate,
           built_at
         )
-        VALUES ($1, $2, $3, $4, $5::uuid[], $6::text[], $7::text[], $8, $9)
+        VALUES ($1, $2, $3, $4, $5::text[], $6::text[], $7::text[], $8, $9)
         ON CONFLICT (target_id, content_hash)
         DO UPDATE SET
           canonical_artifact_path = EXCLUDED.canonical_artifact_path,

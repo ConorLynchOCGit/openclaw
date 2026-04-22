@@ -236,6 +236,7 @@ export async function resolveBootstrapFilesForRun(params: {
   sessionKey?: string;
   sessionId?: string;
   agentId?: string;
+  currentTurnText?: string;
   warn?: (message: string) => void;
   contextMode?: BootstrapContextMode;
   runKind?: BootstrapContextRunKind;
@@ -250,6 +251,7 @@ async function resolveBootstrapArtifactsForRun(params: {
   sessionKey?: string;
   sessionId?: string;
   agentId?: string;
+  currentTurnText?: string;
   warn?: (message: string) => void;
   contextMode?: BootstrapContextMode;
   runKind?: BootstrapContextRunKind;
@@ -265,7 +267,10 @@ async function resolveBootstrapArtifactsForRun(params: {
     workspaceDir: params.workspaceDir,
     config: params.config,
     sessionId: params.sessionId,
+    sessionKey: params.sessionKey,
     agentId: params.agentId,
+    currentTurnText: params.currentTurnText,
+    writeRootMemoryFiles: params.currentTurnText ? false : undefined,
   });
   const rawFiles = params.sessionKey
     ? await getOrLoadBootstrapFiles({
@@ -303,6 +308,7 @@ export async function resolveBootstrapContextForRun(params: {
   sessionKey?: string;
   sessionId?: string;
   agentId?: string;
+  currentTurnText?: string;
   warn?: (message: string) => void;
   contextMode?: BootstrapContextMode;
   runKind?: BootstrapContextRunKind;

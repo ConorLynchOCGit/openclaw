@@ -1812,6 +1812,7 @@ async function runRetrievalContextProbe(input: {
       modelId: input.modelRef,
       store: input.runtime.retrievalStore,
       createdAt: new Date(),
+      projectionVersions: input.projectionVersions,
     });
 
     if (!retrieval) {
@@ -1840,6 +1841,10 @@ async function runRetrievalContextProbe(input: {
       retrievalResultSet: retrieval.retrievalResultSet,
       retrievalResultItems: retrieval.retrievalResultItems,
       memoryObjects: input.memoryObjects,
+      retrievalPlan: retrieval.retrievalPlan,
+      retrievalCandidates: retrieval.retrievalCandidates,
+      retrievalExclusions: retrieval.retrievalExclusions,
+      selectedProjectionDigests: retrieval.selectedProjectionDigests,
       buildPolicyVersion: "v1",
     });
     const persistedPack =

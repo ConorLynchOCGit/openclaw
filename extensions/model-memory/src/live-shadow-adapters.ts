@@ -22,20 +22,27 @@ export type LiveShadowResult =
 function toRuntimeObservation(input: {
   capturedObjects: Array<{ object: Parameters<typeof deriveMemoryIdentity>[0] }>;
   writeResults: Array<{
-    decision: "ignore" | "attach_support" | "write" | "supersede";
+    decision: "ignore" | "attach_support" | "write" | "supersede" | "reject" | "quarantine";
     memoryObject?: { identityKey: string };
+    memoryId?: string;
     supersessionLink?: { priorObjectId: string };
+    targetMemoryIds?: string[];
   }>;
 }): RuntimeObservation {
   return {
     capturedObjects: input.capturedObjects.map((entry) => entry.object),
-    writeObservations: input.writeResults.map((entry, index) => ({
-      decision: entry.decision,
-      identityKey:
-        entry.memoryObject?.identityKey ??
-        deriveMemoryIdentity(input.capturedObjects[index].object).identityKey,
-      supersededIdentityKey: entry.supersessionLink?.priorObjectId,
-    })),
+    writeObservations: input.writeResults.map((entry, index) => {
+      const decision =
+        entry.decision === "reject" || entry.decision === "quarantine" ? "ignore" : entry.decision;
+      return {
+        decision,
+        identityKey:
+          entry.memoryObject?.identityKey ??
+          entry.memoryId ??
+          deriveMemoryIdentity(input.capturedObjects[index].object).identityKey,
+        supersededIdentityKey: entry.supersessionLink?.priorObjectId ?? entry.targetMemoryIds?.[0],
+      };
+    }),
   };
 }
 

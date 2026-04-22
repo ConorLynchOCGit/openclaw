@@ -176,6 +176,24 @@ function persistSessionToken(gatewayUrl: string, token: string) {
   }
 }
 
+function shouldForceServedGatewayUrl(params: {
+  persistedGatewayUrl: string;
+  defaultGatewayUrl: string;
+}): boolean {
+  if (isViteDevPage()) {
+    return false;
+  }
+  try {
+    const persisted = new URL(params.persistedGatewayUrl);
+    const current = new URL(params.defaultGatewayUrl);
+    return persisted.protocol !== current.protocol || persisted.host !== current.host;
+  } catch {
+    const persistedScope = normalizeGatewayTokenScope(params.persistedGatewayUrl);
+    const defaultScope = normalizeGatewayTokenScope(params.defaultGatewayUrl);
+    return Boolean(persistedScope && defaultScope && persistedScope !== defaultScope);
+  }
+}
+
 export function loadSettings(): UiSettings {
   const { pageUrl: pageDerivedUrl, effectiveUrl: defaultUrl } = deriveDefaultGatewayUrl();
   const storage = getSafeLocalStorage();
@@ -209,8 +227,21 @@ export function loadSettings(): UiSettings {
     }
     const parsed = JSON.parse(raw) as PersistedUiSettings;
     const parsedGatewayUrl = normalizeOptionalString(parsed.gatewayUrl) ?? defaults.gatewayUrl;
-    const gatewayUrl = parsedGatewayUrl === pageDerivedUrl ? defaultUrl : parsedGatewayUrl;
-    const scopedSessionSelection = resolveScopedSessionSelection(gatewayUrl, parsed, defaults);
+    const forcedServedGatewayUrl = shouldForceServedGatewayUrl({
+      persistedGatewayUrl: parsedGatewayUrl,
+      defaultGatewayUrl: defaultUrl,
+    });
+    const gatewayUrl = forcedServedGatewayUrl
+      ? defaultUrl
+      : parsedGatewayUrl === pageDerivedUrl
+        ? defaultUrl
+        : parsedGatewayUrl;
+    const scopedSessionSelection = forcedServedGatewayUrl
+      ? {
+          sessionKey: defaults.sessionKey,
+          lastActiveSessionKey: defaults.lastActiveSessionKey,
+        }
+      : resolveScopedSessionSelection(gatewayUrl, parsed, defaults);
     const { theme, mode } = parseThemeSelection(
       (parsed as { theme?: unknown }).theme,
       (parsed as { themeMode?: unknown }).themeMode,
@@ -257,7 +288,7 @@ export function loadSettings(): UiSettings {
           : defaults.borderRadius,
       locale: isSupportedLocale(parsed.locale) ? parsed.locale : undefined,
     };
-    if ("token" in parsed) {
+    if ("token" in parsed || gatewayUrl !== parsedGatewayUrl) {
       persistSettings(settings);
     }
     return settings;

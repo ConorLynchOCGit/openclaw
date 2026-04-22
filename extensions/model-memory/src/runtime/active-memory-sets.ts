@@ -2,15 +2,15 @@ import {
   buildRuntimeId,
   getCurrentMemoryObjects,
   type ActiveMemorySetRecord,
+  type RuntimeMemoryRecord,
 } from "../runtime-read-models.ts";
-import type { ModelMemoryObjectRecord } from "../storage-database-contract.ts";
 
-export function buildActiveMemorySetKey(record: ModelMemoryObjectRecord): string {
+export function buildActiveMemorySetKey(record: RuntimeMemoryRecord): string {
   return [record.canonicalClass, record.kind, record.scopeKey ?? "global"].join(":");
 }
 
 export function materializeActiveMemorySets(
-  memoryObjects: ModelMemoryObjectRecord[],
+  memoryObjects: RuntimeMemoryRecord[],
 ): ActiveMemorySetRecord[] {
   return getCurrentMemoryObjects(memoryObjects)
     .map((record) => {

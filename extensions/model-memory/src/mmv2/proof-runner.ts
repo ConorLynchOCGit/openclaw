@@ -6,28 +6,18 @@ import type {
 import type {
   AdmissionDecision,
   AtomicCandidate,
+  AtomicRoutedCandidate,
   CanonicalCandidate,
   CaptureRoutingDecision,
+  CompositeRoutedCandidate,
   CompositeCandidate,
   ExistingMemorySummary,
   ReconciliationDecision,
   SegmentedIngestSegment,
 } from "./contracts.ts";
-import {
-  ingestDocumentV2Shadow,
-  type DocumentV2ShadowIngestionResult,
-} from "./document-shadow-ingestion.ts";
-import { compareAdmissionPhase } from "./proof-compare-admission.ts";
-import { compareAtomicPhase } from "./proof-compare-atomic.ts";
-import { compareAuditPhase } from "./proof-compare-audit.ts";
-import { compareCanonicalizationPhase } from "./proof-compare-canonicalization.ts";
-import { compareCompositePhase } from "./proof-compare-composite.ts";
-import { compareReconciliationPhase } from "./proof-compare-reconciliation.ts";
-import { compareRecordingPhase } from "./proof-compare-recording.ts";
-import { compareRoutingPhase } from "./proof-compare-routing.ts";
-import { compareSegmentationPhase } from "./proof-compare-segmentation.ts";
-import { type MmV2PhaseComparisonResult, type MmV2PhaseName } from "./proof-compare-shared.ts";
-import { compareSuppressionPhase } from "./proof-compare-suppression.ts";
+import { ingestDocumentV2Shadow } from "./document-shadow-ingestion.ts";
+import { captureOrdinaryTurnV2ForLiveStorage } from "./live-document-ingestion.ts";
+import { runPostWriteAudit } from "./post-write-audit.ts";
 import {
   MMV2_DOCUMENT_PROOF_CASES,
   type MmV2DocumentProofCase,
@@ -36,42 +26,14 @@ import {
   type MmV2ScriptedCompositeCandidate,
   type MmV2ScriptedReconciliationDecision,
 } from "./proof-corpus.ts";
-
-export type MmV2ProofCaseResult = {
-  caseId: string;
-  status: "pass" | "comparison_failed" | "execution_failed";
-  pass: boolean;
-  seededNeighborCount: number;
-  mismatchCount: number;
-  failedPhases: MmV2PhaseName[];
-  phaseResults: MmV2PhaseComparisonResult[];
-  error?: {
-    kind: "runner_execution_failure";
-    message: string;
-  };
-};
-
-export type MmV2ProofCorpusSummary = {
-  totalCases: number;
-  passedCases: number;
-  comparisonFailedCases: number;
-  executionFailedCases: number;
-  failedCases: number;
-  phaseSummary: Record<
-    MmV2PhaseName,
-    {
-      passed: number;
-      failed: number;
-      mismatches: number;
-    }
-  >;
-};
-
-export type MmV2ProofCorpusResult = {
-  generatedAt: string;
-  results: MmV2ProofCaseResult[];
-  summary: MmV2ProofCorpusSummary;
-};
+import {
+  buildMmV2ExecutionFailure,
+  compareMmV2ProofRun,
+  summarizeMmV2ProofResults,
+  type MmV2ModelMetadata,
+  type MmV2ProofCaseRunResult,
+  type MmV2ProofCorpusResult,
+} from "./proof-runner-core.ts";
 
 type RoutingPromptPayload = {
   raw_event: { event_id: string };
@@ -86,9 +48,10 @@ type AtomicPromptPayload = {
   raw_event: {
     event_id: string;
   };
-  segments: Array<{
+  routed_candidates: Array<{
     segment_id: string;
     text: string;
+    source_route: "atomic_candidate" | "composite_candidate";
   }>;
 };
 
@@ -128,19 +91,6 @@ type ReconciliationPromptPayload = {
   neighbors: ExistingMemorySummary[];
 };
 
-export const MMV2_PROOF_PHASES: MmV2PhaseName[] = [
-  "segmentation",
-  "routing",
-  "atomic",
-  "composite",
-  "suppression",
-  "canonicalization",
-  "admission",
-  "reconciliation",
-  "recording",
-  "audit",
-];
-
 function captureOne(object: unknown): SemanticInterpreterResult {
   return { action: "capture", objects: [object] };
 }
@@ -178,10 +128,13 @@ function resolveAtomicCandidates(
   payload: AtomicPromptPayload,
 ): AtomicCandidate[] {
   return scripted.map((candidate) => {
-    const segment = findSegmentByText(payload.segments, candidate.sourceSegmentTextIncludes);
+    const routedCandidate = findSegmentByText(
+      payload.routed_candidates as AtomicRoutedCandidate[],
+      candidate.sourceSegmentTextIncludes,
+    );
     return {
       candidate_id: candidate.candidate_id,
-      source_segment_id: segment.segment_id,
+      source_segment_id: routedCandidate.segment_id,
       kind: candidate.kind,
       raw_statement: candidate.raw_statement,
       normalized_statement: candidate.normalized_statement,
@@ -200,10 +153,13 @@ function resolveCompositeCandidates(
   payload: AtomicPromptPayload,
 ): CompositeCandidate[] {
   return scripted.map((candidate) => {
-    const segment = findSegmentByText(payload.segments, candidate.sourceSegmentTextIncludes);
+    const routedCandidate = findSegmentByText(
+      payload.routed_candidates as CompositeRoutedCandidate[],
+      candidate.sourceSegmentTextIncludes,
+    );
     return {
       candidate_id: candidate.candidate_id,
-      source_segment_id: segment.segment_id,
+      source_segment_id: routedCandidate.segment_id,
       artifact_type: candidate.artifact_type,
       title: candidate.title,
       purpose: candidate.purpose,
@@ -325,6 +281,13 @@ function resolveReconciliationDecision(
 export function createScriptedMmV2ProofInterpreter(
   caseInput: MmV2DocumentProofCase,
 ): SemanticInterpreter {
+  const readPromptPayload = <T>(input: SemanticInterpreterInput): T => {
+    if (input.prompt.promptPayload !== undefined) {
+      return input.prompt.promptPayload as T;
+    }
+    return JSON.parse(input.prompt.userPrompt) as T;
+  };
+
   return {
     async interpret(input: SemanticInterpreterInput): Promise<SemanticInterpreterResult> {
       const contractVersion = input.prompt.contract.contractVersion;
@@ -332,7 +295,7 @@ export function createScriptedMmV2ProofInterpreter(
         contractVersion === "mmv2-capture-routing-v1" ||
         contractVersion === "mmv2-capture-routing-repair-v1"
       ) {
-        const payload = JSON.parse(input.prompt.userPrompt) as RoutingPromptPayload;
+        const payload = readPromptPayload<RoutingPromptPayload>(input);
         return captureOne({
           schema_version: "capture_routing.v1",
           event_id: payload.raw_event.event_id,
@@ -344,7 +307,7 @@ export function createScriptedMmV2ProofInterpreter(
         contractVersion === "mmv2-atomic-repair-v1" ||
         contractVersion === "mmv2-atomic-evidence-repair-v1"
       ) {
-        const payload = JSON.parse(input.prompt.userPrompt) as AtomicPromptPayload;
+        const payload = readPromptPayload<AtomicPromptPayload>(input);
         return captureOne({
           schema_version: "atomic_extraction.v1",
           event_id: payload.raw_event.event_id,
@@ -356,7 +319,7 @@ export function createScriptedMmV2ProofInterpreter(
         contractVersion === "mmv2-composite-repair-v1" ||
         contractVersion === "mmv2-composite-evidence-repair-v1"
       ) {
-        const payload = JSON.parse(input.prompt.userPrompt) as AtomicPromptPayload;
+        const payload = readPromptPayload<AtomicPromptPayload>(input);
         return captureOne({
           schema_version: "composite_extraction.v1",
           event_id: payload.raw_event.event_id,
@@ -367,7 +330,7 @@ export function createScriptedMmV2ProofInterpreter(
         contractVersion === "mmv2-canonicalization-v1" ||
         contractVersion === "mmv2-canonicalization-repair-v1"
       ) {
-        const payload = JSON.parse(input.prompt.userPrompt) as CanonicalPromptPayload;
+        const payload = readPromptPayload<CanonicalPromptPayload>(input);
         return captureOne({
           schema_version: "canonical_candidates.v1",
           event_id: payload.raw_event.event_id,
@@ -381,7 +344,7 @@ export function createScriptedMmV2ProofInterpreter(
         contractVersion === "mmv2-admission-v1" ||
         contractVersion === "mmv2-admission-repair-v1"
       ) {
-        const payload = JSON.parse(input.prompt.userPrompt) as AdmissionPromptPayload;
+        const payload = readPromptPayload<AdmissionPromptPayload>(input);
         return captureOne({
           schema_version: "admission_decision.v1",
           event_id: payload.raw_event.event_id,
@@ -392,7 +355,7 @@ export function createScriptedMmV2ProofInterpreter(
         contractVersion === "mmv2-reconciliation-v1" ||
         contractVersion === "mmv2-reconciliation-repair-v1"
       ) {
-        const payload = JSON.parse(input.prompt.userPrompt) as ReconciliationPromptPayload;
+        const payload = readPromptPayload<ReconciliationPromptPayload>(input);
         return captureOne(
           resolveReconciliationDecision(caseInput.scripted.reconciliation, payload),
         );
@@ -402,24 +365,50 @@ export function createScriptedMmV2ProofInterpreter(
   };
 }
 
-function countSeededNeighbors(proofCase: MmV2DocumentProofCase): number {
-  return (
-    (proofCase.seededNeighbors?.length ?? 0) +
-    Object.values(proofCase.seededNeighborsByCandidateId ?? {}).reduce(
-      (total, neighbors) => total + neighbors.length,
-      0,
-    )
-  );
-}
-
-export type MmV2ProofCaseRunResult = MmV2ProofCaseResult & {
-  run?: DocumentV2ShadowIngestionResult;
+const SCRIPTED_MODEL_METADATA: MmV2ModelMetadata = {
+  requestedModelId: "mmv2-proof-model-001",
+  resolvedModelIds: ["mmv2-proof-model-001"],
+  provider: null,
+  executorKind: "scripted",
 };
 
 async function executeMmV2ProofCase(
   proofCase: MmV2DocumentProofCase,
 ): Promise<MmV2ProofCaseRunResult> {
   const interpreter = createScriptedMmV2ProofInterpreter(proofCase);
+  if (proofCase.sourceKind === "ordinary_turn") {
+    const ordinaryTurnResult = await captureOrdinaryTurnV2ForLiveStorage({
+      capture: {
+        currentTurnText: proofCase.text,
+        currentTurnSpeaker: "user",
+        projectId: proofCase.metadata?.tags?.includes("project-fact") ? "project-001" : undefined,
+        sessionId: `mmv2-proof-${proofCase.id}`,
+        sourceMetadata: {
+          proof_case_id: proofCase.id,
+          proof_source_kind: proofCase.sourceKind,
+        },
+      },
+      modelId: "mmv2-proof-model-001",
+      interpreter,
+      reconciliationNeighbors: proofCase.seededNeighbors,
+      reconciliationNeighborsByCandidateId: proofCase.seededNeighborsByCandidateId,
+    });
+    const shadowRecording = ordinaryTurnResult.mmv2ShadowRecording;
+    return compareMmV2ProofRun({
+      proofCase,
+      runMode: "scripted",
+      modelMetadata: SCRIPTED_MODEL_METADATA,
+      run: {
+        ...ordinaryTurnResult.mmv2Core,
+        shadowRecording,
+        postWriteAudit: runPostWriteAudit({
+          eventId: ordinaryTurnResult.mmv2Core.rawEvent.event_id,
+          ...shadowRecording,
+        }),
+      },
+    });
+  }
+
   const run = await ingestDocumentV2Shadow({
     document: {
       externalSourceId: proofCase.id,
@@ -430,40 +419,12 @@ async function executeMmV2ProofCase(
     reconciliationNeighbors: proofCase.seededNeighbors,
     reconciliationNeighborsByCandidateId: proofCase.seededNeighborsByCandidateId,
   });
-
-  const phaseResults: MmV2PhaseComparisonResult[] = [
-    compareSegmentationPhase(run.segmented, proofCase.expected.segmentation),
-    compareRoutingPhase(run.routing, run.segmented, proofCase.expected.routing),
-    compareAtomicPhase(run.atomicExtractionRaw, run.segmented, proofCase.expected.atomic),
-    compareCompositePhase(run.compositeExtraction, run.segmented, proofCase.expected.composite),
-    compareSuppressionPhase(
-      run.atomicExtractionRaw,
-      run.atomicExtraction,
-      proofCase.expected.suppression,
-    ),
-    compareCanonicalizationPhase(run.canonicalization, proofCase.expected.canonicalization),
-    compareAdmissionPhase(run.admission, run.canonicalization, proofCase.expected.admission),
-    compareReconciliationPhase(
-      run.reconciliation,
-      run.canonicalization,
-      proofCase.expected.reconciliation,
-    ),
-    compareRecordingPhase(run.shadowRecording, proofCase.expected.recording),
-    compareAuditPhase(run.postWriteAudit, proofCase.expected.audit),
-  ];
-
-  const mismatchCount = phaseResults.reduce((total, result) => total + result.mismatches.length, 0);
-  const failedPhases = phaseResults.filter((result) => !result.pass).map((result) => result.phase);
-  return {
-    caseId: proofCase.id,
-    status: failedPhases.length === 0 ? "pass" : "comparison_failed",
-    pass: failedPhases.length === 0,
-    seededNeighborCount: countSeededNeighbors(proofCase),
-    mismatchCount,
-    failedPhases,
-    phaseResults,
+  return compareMmV2ProofRun({
+    proofCase,
+    runMode: "scripted",
+    modelMetadata: SCRIPTED_MODEL_METADATA,
     run,
-  };
+  });
 }
 
 export async function runMmV2ProofCase(
@@ -472,19 +433,12 @@ export async function runMmV2ProofCase(
   try {
     return await executeMmV2ProofCase(proofCase);
   } catch (error) {
-    return {
-      caseId: proofCase.id,
-      status: "execution_failed",
-      pass: false,
-      seededNeighborCount: countSeededNeighbors(proofCase),
-      mismatchCount: 0,
-      failedPhases: [],
-      phaseResults: [],
-      error: {
-        kind: "runner_execution_failure",
-        message: error instanceof Error ? error.message : String(error),
-      },
-    };
+    return buildMmV2ExecutionFailure({
+      proofCase,
+      runMode: "scripted",
+      modelMetadata: SCRIPTED_MODEL_METADATA,
+      error,
+    });
   }
 }
 
@@ -495,41 +449,13 @@ export async function runMmV2ProofCorpus(
   for (const proofCase of proofCases) {
     resultsWithRuns.push(await runMmV2ProofCase(proofCase));
   }
-
-  const phaseSummary = Object.fromEntries(
-    MMV2_PROOF_PHASES.map((phase) => [phase, { passed: 0, failed: 0, mismatches: 0 }]),
-  ) as MmV2ProofCorpusSummary["phaseSummary"];
-
-  for (const result of resultsWithRuns) {
-    for (const phaseResult of result.phaseResults) {
-      if (phaseResult.pass) {
-        phaseSummary[phaseResult.phase].passed += 1;
-      } else {
-        phaseSummary[phaseResult.phase].failed += 1;
-      }
-      phaseSummary[phaseResult.phase].mismatches += phaseResult.mismatches.length;
-    }
-  }
-
-  const results: MmV2ProofCaseResult[] = resultsWithRuns.map(({ run: _run, ...result }) => result);
-  const passedCases = results.filter((result) => result.status === "pass").length;
-  const comparisonFailedCases = results.filter(
-    (result) => result.status === "comparison_failed",
-  ).length;
-  const executionFailedCases = results.filter(
-    (result) => result.status === "execution_failed",
-  ).length;
-  return {
-    generatedAt: new Date().toISOString(),
-    results,
+  const summary = summarizeMmV2ProofResults({
+    runMode: "scripted",
+    modelMetadata: SCRIPTED_MODEL_METADATA,
     resultsWithRuns,
-    summary: {
-      totalCases: results.length,
-      passedCases,
-      comparisonFailedCases,
-      executionFailedCases,
-      failedCases: comparisonFailedCases + executionFailedCases,
-      phaseSummary,
-    },
+  });
+  return {
+    ...summary,
+    resultsWithRuns,
   };
 }

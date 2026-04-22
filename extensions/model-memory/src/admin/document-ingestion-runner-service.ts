@@ -353,11 +353,7 @@ export class ModelMemoryDocumentIngestionRunnerService {
   private readonly memoryStore?: DatabaseMemoryObjectStore;
 
   constructor(private readonly deps: ModelMemoryDocumentIngestionRunnerServiceDependencies) {
-    this.memoryStore =
-      deps.memoryStore ??
-      (deps.canonicalRepository
-        ? new DatabaseMemoryObjectStore(deps.canonicalRepository, deps.collisionAdjudicator)
-        : undefined);
+    this.memoryStore = deps.memoryStore;
   }
 
   async executeRun(input: {
@@ -600,9 +596,9 @@ export class ModelMemoryDocumentIngestionRunnerService {
       return this.deps.processSource(input.source);
     }
 
-    if (!this.deps.canonicalRepository || !this.memoryStore) {
+    if (!this.deps.canonicalRepository) {
       throw new Error(
-        "document ingestion runner requires canonicalRepository and memoryStore when no custom processSource is provided",
+        "document ingestion runner requires canonicalRepository when no custom processSource is provided",
       );
     }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ModelMemoryCanonicalRepository } from "./db/canonical-repository.ts";
 import { applyModelMemoryMigrations } from "./db/migrations.ts";
+import { MmV2NativeRepository } from "./db/mmv2-native-repository.ts";
 import { createPgMemTestDatabase } from "./db/pg-test.ts";
 import { RuntimeContextRepository } from "./db/runtime-context-repository.ts";
 import { rebuildDerivedRuntimeState } from "./runtime-rebuild-orchestrator.ts";
@@ -106,6 +107,95 @@ describe("runtime-rebuild-orchestrator", () => {
 
       expect(third.activeMemorySlots[0]?.currentIdentityKey).toBe("project-fact-region-002");
       expect(third.projectionVersions.length).toBeGreaterThan(second.projectionVersions.length);
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("rebuilds from MMV2 durable truth through the compatibility projector", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const canonicalRepository = new MmV2NativeRepository(database.sql);
+      const runtimeRepository = new RuntimeContextRepository(database.sql);
+
+      await canonicalRepository.upsertDurableMemory({
+        memory_id: "memory-001",
+        schema_version: "durable_memory.v1",
+        status: "active",
+        unit_type: "atomic",
+        kind: "claim",
+        artifact_type: null,
+        canonical_text: "Deployment region is region-001.",
+        search_text: "deployment region region-001",
+        scope: {
+          tenant_id: "openclaw",
+          user_id: "unknown-user",
+          project_id: "project-001",
+          workspace_id: null,
+          subject_type: "project",
+          subject_id: "project-001",
+          applies_to: "current_project",
+        },
+        payload: {
+          payload_type: "claim",
+          claim_type: "project_fact",
+          subject: "deployment region",
+          predicate: "is",
+          object: "region-001",
+          qualifiers: [],
+          temporal_status: "currently_true",
+        },
+        validity: {
+          valid_at: "2026-04-20T00:00:00.000Z",
+          invalid_at: null,
+          ttl_seconds: null,
+          temporal_status: "current",
+        },
+        confidence: 0.9,
+        quality: {
+          atomicity: 0.98,
+          specificity: 0.9,
+          durability: 0.91,
+          actionability: 0.76,
+          grounding: 0.88,
+        },
+        source_refs: [
+          {
+            source_ingest_event_id: "event-001",
+            source_type: "document",
+            source_id: "source-001",
+            speaker: "unknown",
+            created_at: "2026-04-20T00:00:00.000Z",
+            segment_id: "segment-001",
+            start_char: 0,
+            end_char: 0,
+            evidence_quote: "Deployment region is region-001.",
+          },
+        ],
+        lineage: {
+          candidate_ids: ["candidate-001"],
+          derived_from_memory_ids: [],
+          supersedes_memory_ids: [],
+          superseded_by_memory_id: null,
+          conflicts_with_memory_ids: [],
+          parent_memory_id: null,
+          child_memory_ids: [],
+        },
+        created_at: "2026-04-20T00:00:00.000Z",
+        updated_at: "2026-04-20T00:00:00.000Z",
+        last_accessed_at: null,
+        access_count: 0,
+        tags: ["project", "fact"],
+      });
+
+      const rebuilt = await rebuildDerivedRuntimeState({
+        canonicalRepository,
+        runtimeRepository,
+      });
+
+      expect(rebuilt.activeMemorySlots).toHaveLength(1);
+      expect(rebuilt.projectionOutputs["memory-md"]).toContain("deployment region");
     } finally {
       await database.close();
     }

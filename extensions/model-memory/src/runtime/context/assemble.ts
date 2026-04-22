@@ -148,6 +148,59 @@ function toSemiStableSegments(
     .filter((segment) => countRuntimeTokens(segment.text) > 0);
 }
 
+function extractOperatingMemoryLines(artifacts: ContextArtifactRecord[]): string[] {
+  const lines: string[] = [];
+  for (const artifact of artifacts) {
+    if (artifact.artifactType !== "retrieval_pack") {
+      continue;
+    }
+    const packs = artifact.structuredPayload?.memoryPacks;
+    if (!Array.isArray(packs)) {
+      continue;
+    }
+    for (const pack of packs) {
+      if (
+        !pack ||
+        typeof pack !== "object" ||
+        !("packType" in pack) ||
+        pack.packType !== "operating_pack" ||
+        !("sections" in pack) ||
+        !Array.isArray(pack.sections)
+      ) {
+        continue;
+      }
+      for (const section of pack.sections) {
+        if (!section || typeof section !== "object" || !("items" in section)) {
+          continue;
+        }
+        const items = Array.isArray(section.items) ? section.items : [];
+        for (const item of items) {
+          if (!item || typeof item !== "object" || !("text" in item)) {
+            continue;
+          }
+          const text = typeof item.text === "string" ? item.text.trim() : "";
+          if (text.length > 0) {
+            lines.push(text);
+          }
+        }
+      }
+    }
+  }
+  return lines;
+}
+
+function buildSystemPromptAddition(artifacts: ContextArtifactRecord[]): string | undefined {
+  const uniqueLines = [...new Set(extractOperatingMemoryLines(artifacts))];
+  if (uniqueLines.length === 0) {
+    return undefined;
+  }
+  return [
+    "<operating-memory>",
+    ...uniqueLines.map((line) => `- ${trimTextToTokenBudget(line, 60)}`),
+    "</operating-memory>",
+  ].join("\n");
+}
+
 function toVolatileSegments(input: AssembleContextInput): ContextSegment[] {
   const turnSegmentText = input.recentTurns
     .map((turn) => `${turn.role}: ${turn.text}`)
@@ -183,6 +236,13 @@ export function assembleContext(input: AssembleContextInput): AssembledContext {
     [...stableSegments, ...semiStableSegments, ...volatileSegments],
     input.maxTokens,
   );
+  const includedRetrievalArtifacts = input.includeRetrievalPacks
+    ? semiStableSegments.flatMap((segment) =>
+        segment.sourceArtifactId
+          ? input.artifacts.filter((artifact) => artifact.id === segment.sourceArtifactId)
+          : [],
+      )
+    : [];
 
   return {
     stableSegments,
@@ -190,5 +250,6 @@ export function assembleContext(input: AssembleContextInput): AssembledContext {
     volatileSegments,
     orderedSegments: trimmed.segments,
     pruningUsed: trimmed.pruningUsed,
+    systemPromptAddition: buildSystemPromptAddition(includedRetrievalArtifacts),
   };
 }

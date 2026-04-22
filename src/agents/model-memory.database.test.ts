@@ -176,6 +176,7 @@ describe("model-memory database resolution", () => {
     );
     expect(migrationRunner).toHaveBeenCalledTimes(1);
     expect(runtime.resolution.databaseName).toBe("model_memory_runtime");
+    expect(runtime.storageEngine).toBe("mmv2");
     expect(runtime.canonicalRepository).toBeDefined();
     expect(runtime.runtimeRepository).toBeDefined();
     expect(runtime.memoryStore).toBeDefined();

@@ -29,7 +29,10 @@ export function buildHarnessProjectionOutputs(input: {
       return [
         {
           targetId: version.targetId,
-          relativePath: target.relativePath,
+          relativePath:
+            target.targetKind === "memory_md" || target.targetKind === "user_md"
+              ? version.canonicalArtifactPath
+              : target.relativePath,
           content,
         },
       ];

@@ -1118,6 +1118,90 @@ export async function handleToolExecutionEnd(
     sanitizedResult,
   });
 
+  const { recordModelMemoryProductionHookProbe } = await import("./model-memory.hook-probe.js");
+  void recordModelMemoryProductionHookProbe({
+    hookName: "after_tool_call",
+    triggerSurface: "pi_embedded_tool_result.after_tool_call",
+    payload: {
+      toolName,
+      runId,
+      toolCallId,
+      isToolError,
+      result: sanitizedResult,
+    },
+    context: {
+      toolName,
+      agentId: ctx.params.agentId,
+      sessionKey: ctx.params.sessionKey,
+      sessionId: ctx.params.sessionId,
+      runId,
+      toolCallId,
+    },
+  }).catch(() => undefined);
+  const { recordModelMemoryCaptureSeamEvidence } = await import("./model-memory.capture-seams.js");
+  void recordModelMemoryCaptureSeamEvidence({
+    seamName: "after_tool_call",
+    triggerSurface: "pi_embedded_tool_result.after_tool_call",
+    payload: {
+      toolName,
+      runId,
+      toolCallId,
+      isToolError,
+      resultKind: Array.isArray(sanitizedResult) ? "array" : typeof sanitizedResult,
+    },
+    context: {
+      toolName,
+      agentId: ctx.params.agentId,
+      sessionKey: ctx.params.sessionKey,
+      sessionId: ctx.params.sessionId,
+      runId,
+      toolCallId,
+    },
+  }).catch(() => undefined);
+  const { captureModelMemoryToolResultProof } = await import("./model-memory.live-runtime.js");
+  try {
+    const captureResult = await captureModelMemoryToolResultProof({
+      hookName: "after_tool_call",
+      toolName,
+      toolCallId,
+      runId,
+      sessionId: ctx.params.sessionId,
+      sessionKey: ctx.params.sessionKey,
+      agentId: ctx.params.agentId,
+      result: sanitizedResult,
+      isError: isToolError,
+    });
+    void recordModelMemoryCaptureSeamEvidence({
+      seamName: "after_tool_call",
+      triggerSurface: "pi_embedded_tool_result.after_tool_call.capture_result",
+      payload: {
+        toolName,
+        toolCallId,
+        runId,
+        captured: captureResult.captured,
+        reason: captureResult.captured ? "captured" : captureResult.reason,
+        sourceId: captureResult.captured ? captureResult.sourceId : undefined,
+        segmentCount: captureResult.captured ? captureResult.segmentIds.length : 0,
+        memoryCount: captureResult.captured ? captureResult.memoryIds.length : 0,
+        eventCount: captureResult.captured ? captureResult.eventIds.length : 0,
+      },
+      context: {
+        toolName,
+        agentId: ctx.params.agentId,
+        sessionKey: ctx.params.sessionKey,
+        sessionId: ctx.params.sessionId,
+        runId,
+        toolCallId,
+      },
+      semanticMemoryWriteAttempted: captureResult.captured,
+      durableMemoryWriteAttempted: captureResult.captured,
+    }).catch(() => undefined);
+  } catch (err) {
+    ctx.log.warn(
+      `model-memory tool-result proof capture failed: tool=${toolName} error=${String(err)}`,
+    );
+  }
+
   // Run after_tool_call plugin hook (fire-and-forget)
   const hookRunnerAfter = ctx.hookRunner ?? (await loadHookRunnerGlobal()).getGlobalHookRunner();
   if (hookRunnerAfter?.hasHooks("after_tool_call")) {

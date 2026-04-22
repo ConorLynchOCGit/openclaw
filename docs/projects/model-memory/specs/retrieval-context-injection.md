@@ -5,6 +5,37 @@ title: "Retrieval And Context Injection"
 
 # Retrieval And Context Injection
 
+## Current status
+
+This spec is now V0 design provenance for the older flat object-native
+retrieval lane.
+
+The current blocking read-side architecture is
+[Memory Retrieval Runtime](/projects/model-memory/specs/memory-retrieval-runtime).
+
+V0 remains useful for its object-native and no-detector-era constraints, but it
+does not define the current acceptance bar for recall, projection-backed
+context, memory packs, conflict/supersession filtering, or retrieval telemetry.
+
+The failed MMV2-active soak showed that capture/storage can be MMV2-native while
+fresh-session recall still leans on stale projection/context artifacts. Future
+implementation must route recall through the Memory Retrieval Runtime:
+
+```text
+current task / turn
+  -> RetrievalPlan
+  -> candidate recall from canonical MMV2 records and derived indexes
+  -> status/scope/conflict filtering
+  -> MemoryPack assembly
+  -> ContextEngine injection
+  -> RetrievalRun telemetry
+```
+
+Projection-backed recall is acceptable only when the retrieval runtime selects
+a fresh MMV2-derived projection/digest with active `source_memory_ids` and
+records that selection in retrieval telemetry. Workspace-file-only or
+same-session-transcript recall is not sufficient for soak acceptance.
+
 ## Objective
 
 Define the read path for `model-memory` without reintroducing detector-era or string-matching architecture.

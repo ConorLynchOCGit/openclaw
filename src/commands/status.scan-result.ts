@@ -1,3 +1,4 @@
+import type { ModelMemoryLiveRuntimeStatus } from "../agents/model-memory.live-runtime.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { collectChannelStatusIssues as collectChannelStatusIssuesFn } from "../infra/channels-status-issues.js";
 import { resolveOsSummary } from "../infra/os-summary.js";
@@ -39,6 +40,7 @@ export type StatusScanResult = {
   summary: Awaited<ReturnType<typeof getStatusSummaryFn>>;
   memory: MemoryStatusSnapshot | null;
   memoryPlugin: MemoryPluginStatus;
+  modelMemory: ModelMemoryLiveRuntimeStatus | null;
   pluginCompatibility: PluginCompatibilityNotice[];
 };
 
@@ -68,6 +70,7 @@ export function buildStatusScanResult(params: {
   summary: Awaited<ReturnType<typeof getStatusSummaryFn>>;
   memory: MemoryStatusSnapshot | null;
   memoryPlugin: MemoryPluginStatus;
+  modelMemory: ModelMemoryLiveRuntimeStatus | null;
   pluginCompatibility: PluginCompatibilityNotice[];
 }): StatusScanResult {
   return {
@@ -93,6 +96,7 @@ export function buildStatusScanResult(params: {
     summary: params.summary,
     memory: params.memory,
     memoryPlugin: params.memoryPlugin,
+    modelMemory: params.modelMemory,
     pluginCompatibility: params.pluginCompatibility,
   };
 }

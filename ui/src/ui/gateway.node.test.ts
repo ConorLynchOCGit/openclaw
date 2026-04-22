@@ -88,6 +88,7 @@ type ConnectFrame = {
   method?: string;
   params?: {
     auth?: { token?: string; password?: string; deviceToken?: string };
+    device?: { id?: string; publicKey?: string; signature?: string; signedAt?: number };
     scopes?: string[];
   };
 };
@@ -232,6 +233,8 @@ describe("GatewayBrowserClient", () => {
     expect(typeof connectFrame.id).toBe("string");
     expect(connectFrame.method).toBe("connect");
     expect(connectFrame.params?.auth?.token).toBe("shared-auth-token");
+    expect(connectFrame.params?.device?.id).toBe("device-1");
+    expect(typeof connectFrame.params?.device?.signature).toBe("string");
     expect(signDevicePayloadMock).toHaveBeenCalledWith("private-key", expect.any(String));
     const signedPayload = signDevicePayloadMock.mock.calls[0]?.[1];
     expect(signedPayload).toContain("|shared-auth-token|nonce-1");

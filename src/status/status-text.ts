@@ -36,6 +36,7 @@ import {
 import {
   buildTaskStatusSnapshot,
   formatTaskStatusDetail,
+  formatTaskStatusLifecycleLabel,
   formatTaskStatusTitle,
 } from "../tasks/task-status.js";
 
@@ -119,16 +120,11 @@ function formatSessionTaskLine(sessionKey: string): string | undefined {
   if (!task) {
     return undefined;
   }
-  const headline =
-    snapshot.activeCount > 0
-      ? `${snapshot.activeCount} active · ${snapshot.totalCount} total`
-      : snapshot.recentFailureCount > 0
-        ? `${snapshot.recentFailureCount} recent failure${snapshot.recentFailureCount === 1 ? "" : "s"}`
-        : "recently finished";
+  const headline = formatTaskStatusLifecycleLabel(snapshot, task);
   const title = formatTaskStatusTitle(task);
   const detail = formatTaskStatusDetail(task);
-  const parts = [headline, task.runtime, title, detail].filter(Boolean);
-  return parts.length ? `📌 Tasks: ${parts.join(" · ")}` : undefined;
+  const parts = [task.runtime, title, detail].filter(Boolean);
+  return parts.length ? `${headline}: ${parts.join(" · ")}` : undefined;
 }
 
 function formatAgentTaskCountsLine(agentId: string): string | undefined {

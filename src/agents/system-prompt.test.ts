@@ -161,19 +161,28 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain(
       "Never conclude a public JS-heavy page is empty from one thin fetch alone.",
     );
+    expect(prompt).toContain("If the user explicitly asks for the browser");
     expect(prompt).toContain("never read local `/app/skills/*.md`");
   });
 
   it("adds web-researcher delegation rules when sessions_send is available", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",
-      toolNames: ["sessions_send"],
+      toolNames: ["sessions_send", "session_status"],
       skillsPrompt: "<available_skills></available_skills>",
     });
 
     expect(prompt).toContain("canonical `agent:web-researcher:main`");
     expect(prompt).toContain("fresh temporary `web-researcher` session");
+    expect(prompt).toContain("comparative, or multi-source external public-web research");
+    expect(prompt).toContain("delegate the external collection step");
+    expect(prompt).toContain("`compare`, `comparison`, `versus`, `vs`");
+    expect(prompt).toContain("that is a routing mistake");
+    expect(prompt).toContain("do not satisfy the external-web side inline");
     expect(prompt).toContain("desired_output_shape");
+    expect(prompt).toContain("use `session_status` before answering");
+    expect(prompt).toContain("For detached/background follow-ups in the same session");
+    expect(prompt).toContain("preserve that state explicitly in your answer");
   });
 
   it("omits skills in minimal prompt mode when skillsPrompt is absent", () => {

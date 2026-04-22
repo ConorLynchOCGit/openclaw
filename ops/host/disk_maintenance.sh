@@ -5,9 +5,10 @@ WORKSPACE="${OPENCLAW_WORKSPACE_DIR:-/root/.openclaw/workspace}"
 ARCHIVE_DIR="$WORKSPACE/archives/disk_maintenance"
 DATE_ID="$(date +%F)"
 OUT="$ARCHIVE_DIR/${DATE_ID}.md"
-FREE_ALERT_GB=25
-IMAGE_REVIEW_ALERT_GB=8
-BUILDKIT_RETENTION_HOURS=168
+FREE_ALERT_GB="${FREE_ALERT_GB:-25}"
+IMAGE_REVIEW_ALERT_GB="${IMAGE_REVIEW_ALERT_GB:-8}"
+BUILDKIT_RETENTION_HOURS="${BUILDKIT_RETENTION_HOURS:-24}"
+BUILDKIT_RESERVED_SPACE="${BUILDKIT_RESERVED_SPACE:-25GB}"
 TMP_PRE_DOCKER="$(mktemp)"
 TMP_POST_DOCKER="$(mktemp)"
 TMP_PRUNE="$(mktemp)"
@@ -25,7 +26,7 @@ pre_df_h="$(df -h /)"
 pre_containerd="$(du -xsh /var/lib/containerd 2>/dev/null || echo 'unavailable /var/lib/containerd')"
 docker system df --format '{{json .}}' > "$TMP_PRE_DOCKER"
 
-docker builder prune --force --filter "until=${BUILDKIT_RETENTION_HOURS}h" > "$TMP_PRUNE" 2>&1
+docker builder prune --force --filter "until=${BUILDKIT_RETENTION_HOURS}h" --reserved-space "$BUILDKIT_RESERVED_SPACE" > "$TMP_PRUNE" 2>&1
 
 post_free_bytes="$(df -B1 / | awk 'NR==2 {print $4}')"
 post_df_h="$(df -h /)"
@@ -56,7 +57,8 @@ python3 - <<'PY' \
   "$TMP_TOP" \
   "$FREE_ALERT_GB" \
   "$IMAGE_REVIEW_ALERT_GB" \
-  "$BUILDKIT_RETENTION_HOURS"
+  "$BUILDKIT_RETENTION_HOURS" \
+  "$BUILDKIT_RESERVED_SPACE"
 import json
 import math
 import sys
@@ -77,6 +79,7 @@ top_path = Path(sys.argv[11])
 free_alert_gb = int(sys.argv[12])
 image_review_alert_gb = int(sys.argv[13])
 buildkit_retention_hours = int(sys.argv[14])
+buildkit_reserved_space = sys.argv[15]
 
 
 def load_df_rows(path: Path):
@@ -134,6 +137,7 @@ lines = [
     f"- free_space_alert_gb: {free_alert_gb}",
     f"- image_review_alert_gb: {image_review_alert_gb}",
     f"- buildkit_retention_hours: {buildkit_retention_hours}",
+    f"- buildkit_reserved_space: {buildkit_reserved_space}",
     "",
     "## Pre-Cleanup Disk State",
     "",
@@ -146,7 +150,7 @@ lines = [
     "",
     "## Cleanup Action",
     "",
-    "- action: `docker builder prune --force --filter until=168h`",
+    f"- action: `docker builder prune --force --filter until={buildkit_retention_hours}h --reserved-space {buildkit_reserved_space}`",
     "- scope: aged BuildKit cache only; no images, volumes, or running containers removed automatically",
     "",
     "```text",

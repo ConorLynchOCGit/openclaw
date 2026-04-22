@@ -15,6 +15,38 @@ Use it when you want one operator-facing script that covers:
 - model-memory
 - full-stack operator-visible behavior
 
+Before running the browser-facing selector checks in this pack, capture the
+current live non-browser proof snapshot first:
+
+```bash
+node scripts/operator-ui-proof.mjs --json
+```
+
+That helper confirms live gateway/session/build truth, but it does not replace
+the browser checks below.
+
+Cross-project canonical inventory:
+
+- [Master Human UI Test Matrix](/projects/qa-program/master-human-ui-test-matrix)
+- [Operator UI Validation Results 2026-04](/projects/qa-program/operator-ui-validation-results-2026-04)
+- [Authenticated Operator Prompt Harness Spec](/projects/deployment-topology/authenticated-operator-prompt-harness-spec)
+- [Authenticated Operator Prompt Harness Proof](/projects/deployment-topology/authenticated-operator-prompt-harness-proof)
+
+## Current April 19, 2026 state
+
+The sanctioned authenticated prompt-execution harness now exists for the
+approved Tailnet Control UI path.
+
+That means:
+
+- prompt-driven Main and specialist checks are no longer blocked on missing
+  browser execution infrastructure
+- the matrix and result ledger already record current pass/fail state for those
+  rows
+- this prompt pack should now be used for targeted reruns of failing seams or
+  for future release revalidation, not as the first place where those checks
+  are discovered
+
 ## Stage labels
 
 - `pre_commit`: should be checked before a landing commit for the touched slice
@@ -84,25 +116,25 @@ Use it when you want one operator-facing script that covers:
 
 ## Model-memory pre-soak and capture
 
-| Surface                   | Prompt or operator action                                                                                                           | Expected result                                                             | Evidence to collect                     | Failure sign                                                    | Stage         |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------------- | ------------- |
-| Prompt capture token      | In a fresh Main session, say: `Remember this exact token for a later test: marigold-signal-42.`                                     | Ordinary-turn capture attempts or records the token                         | transcript, later DB or retrieval proof | no visible capture path later                                   | `memory_soak` |
-| Prompt capture preference | In another fresh Main session, say: `For the rest of this test phase, remember that I prefer terse bullet answers.`                 | Stable preference capture is attempted or recorded                          | transcript, later retrieval proof       | later formatting shows no recall                                | `memory_soak` |
-| Daily summary canary      | Add a unique canary to the finalized daily summary, for example `Deep-soak canary: brass-harbor-9.`                                 | Daily summary contains a deterministic retrieval target                     | daily summary file note                 | no stable canary entry                                          | `memory_soak` |
-| Document-ingest retrieval | After the deep ingest pass, ask: `What are the exact artifacts produced by the deep document-ingest run, and what does each prove?` | Combines runbook and verification-plan knowledge coherently                 | transcript                              | cannot connect ingest artifacts to verification                 | `memory_soak` |
-| Project retrieval         | Ask: `Which imported projects were canonized into docs/projects and why do they matter to runtime behavior?`                        | Retrieves from the populated document substrate                             | transcript                              | misses major rescued projects                                   | `memory_soak` |
-| Alias-aware retrieval     | Ask: `If I mention projects/web_stack or projects/channel_identity, what canonical project docs should you actually read now?`      | Resolves the legacy workspace names back to the canonical imported projects | transcript                              | treats the legacy names as separate authoritative project trees | `memory_soak` |
+| Surface                   | Prompt or operator action                                                                                                                                                    | Expected result                                                             | Evidence to collect                     | Failure sign                                                    | Stage         |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------------------------------- | ------------- |
+| Prompt capture token      | In a fresh Main session, choose a fresh unique token for this run and say: `For the rest of this test phase, remember this exact token for later retrieval: <unique-token>.` | Ordinary-turn capture attempts or records the token                         | transcript, later DB or retrieval proof | no visible capture path later                                   | `memory_soak` |
+| Prompt capture preference | In another fresh Main session, say: `For the rest of this test phase, remember that I prefer terse bullet answers.`                                                          | Stable preference capture is attempted or recorded                          | transcript, later retrieval proof       | later formatting shows no recall                                | `memory_soak` |
+| Daily summary canary      | Add a unique canary to the finalized daily summary, for example `Deep-soak canary: brass-harbor-9.`                                                                          | Daily summary contains a deterministic retrieval target                     | daily summary file note                 | no stable canary entry                                          | `memory_soak` |
+| Document-ingest retrieval | After the deep ingest pass, ask: `What are the exact artifacts produced by the deep document-ingest run, and what does each prove?`                                          | Combines runbook and verification-plan knowledge coherently                 | transcript                              | cannot connect ingest artifacts to verification                 | `memory_soak` |
+| Project retrieval         | Ask: `Which imported projects were canonized into docs/projects and why do they matter to runtime behavior?`                                                                 | Retrieves from the populated document substrate                             | transcript                              | misses major rescued projects                                   | `memory_soak` |
+| Alias-aware retrieval     | Ask: `If I mention projects/web_stack or projects/channel_identity, what canonical project docs should you actually read now?`                                               | Resolves the legacy workspace names back to the canonical imported projects | transcript                              | treats the legacy names as separate authoritative project trees | `memory_soak` |
 
 ## Model-memory delayed retrieval and context behavior
 
-| Surface                  | Prompt or operator action                                                                               | Expected result                                           | Evidence to collect                   | Failure sign                                          | Stage         |
-| ------------------------ | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------- | ------------- |
-| Token retrieval          | In a later fresh Main session, ask: `What exact token did I ask you to remember earlier?`               | Retrieves `marigold-signal-42` through memory             | transcript, retrieval trace           | cannot retrieve token                                 | `memory_soak` |
-| Preference retrieval     | In a later fresh Main session, ask: `How should you format answers for me during this test phase?`      | Recalls terse-bullet preference                           | transcript, retrieval trace           | generic answer with no preference recall              | `memory_soak` |
-| Daily summary retrieval  | In a later fresh Main session, ask: `What was the deep-soak canary from the finalized daily summary?`   | Retrieves `brass-harbor-9` through the daily-summary lane | transcript, daily continuity evidence | no daily-summary recall                               | `memory_soak` |
-| Cross-doc synthesis      | Ask: `Explain how Brave, Firecrawl, and browser were restored and how a human should verify each path.` | Uses multiple canonized sources coherently                | transcript, context trace             | wrong restoration story or missing verification steps | `memory_soak` |
-| Retrieval stability      | Ask twice: `What is the difference between workspace topology and deployment topology?`                 | Second answer stays semantically stable                   | two transcripts, cache diff           | material drift on the second answer                   | `memory_soak` |
-| Near-duplicate stability | Immediately ask: `How do workspace topology and deployment topology differ operationally?`              | Answer stays consistent under phrasing drift              | transcript, retrieval trace           | cold unrelated answer with no shared grounding        | `memory_soak` |
+| Surface                  | Prompt or operator action                                                                                                       | Expected result                                                    | Evidence to collect                   | Failure sign                                          | Stage         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------- | ----------------------------------------------------- | ------------- |
+| Token retrieval          | In a later fresh Main session, ask: `What exact token did I ask you to remember during this test phase? Return the token only.` | Retrieves the same fresh unique token from this run through memory | transcript, retrieval trace           | cannot retrieve token                                 | `memory_soak` |
+| Preference retrieval     | In a later fresh Main session, ask: `How should you format answers for me during this test phase?`                              | Recalls terse-bullet preference                                    | transcript, retrieval trace           | generic answer with no preference recall              | `memory_soak` |
+| Daily summary retrieval  | In a later fresh Main session, ask: `What was the deep-soak canary from the finalized daily summary?`                           | Retrieves `brass-harbor-9` through the daily-summary lane          | transcript, daily continuity evidence | no daily-summary recall                               | `memory_soak` |
+| Cross-doc synthesis      | Ask: `Explain how Brave, Firecrawl, and browser were restored and how a human should verify each path.`                         | Uses multiple canonized sources coherently                         | transcript, context trace             | wrong restoration story or missing verification steps | `memory_soak` |
+| Retrieval stability      | Ask twice: `What is the difference between workspace topology and deployment topology?`                                         | Second answer stays semantically stable                            | two transcripts, cache diff           | material drift on the second answer                   | `memory_soak` |
+| Near-duplicate stability | Immediately ask: `How do workspace topology and deployment topology differ operationally?`                                      | Answer stays consistent under phrasing drift                       | transcript, retrieval trace           | cold unrelated answer with no shared grounding        | `memory_soak` |
 
 ## Full-stack operator-facing behavior
 
@@ -144,6 +176,16 @@ For the replay and root-gate work, also inspect:
 
 ## Current observed gap notes
 
+- The live gateway payload is now clean for the legacy validation-row leak:
+  `node scripts/operator-ui-proof.mjs --json` reports `sessionsList.count = 31`
+  and `codexRowCount = 0` after the rebuilt runtime rollout.
+- Tailnet-native browser automation is now proven on the sanctioned path:
+  - first visit can hit `PAIRING_REQUIRED` for a fresh secure browser device
+  - the exact pending Control UI device can be approved through the repo-backed
+    CLI path
+  - reload of the same browser context reaches authenticated selector state
+  - exact proof lives in:
+    - [Tailnet Authenticated Browser Proof](/projects/deployment-topology/tailnet-authenticated-browser-proof)
 - The replay prompts below remain the right strict checks, but this validation
   run did not prove bounded `Queued:` / `Working:` transcript updates for
   generic shell-backed long-running work. Tool rows and final completion were
@@ -181,5 +223,6 @@ root-gate work.
 
 This prompt pack complements:
 
+- [Master Human UI Test Matrix](/projects/qa-program/master-human-ui-test-matrix)
 - [Push Validation Human Checklist](/projects/deployment-topology/push-validation-human-checklist)
 - [Deep Memory Soak Human Tests](/projects/model-memory/deep-memory-soak-human-tests)

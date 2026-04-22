@@ -132,7 +132,7 @@ function decodeSupersessionLink(row: QueryResultRow): ModelMemorySupersessionLin
 }
 
 export class ModelMemoryCanonicalRepository {
-  constructor(private readonly sql: SqlClient) {}
+  constructor(protected readonly sql: SqlClient) {}
 
   withTransaction<T>(work: (repository: ModelMemoryCanonicalRepository) => Promise<T>): Promise<T> {
     return this.sql.withTransaction((tx) => work(new ModelMemoryCanonicalRepository(tx)));
@@ -330,8 +330,8 @@ export class ModelMemoryCanonicalRepository {
         record.normalizedSearchText,
         JSON.stringify(record.scope),
         record.scopeKey ?? null,
-        record.lifecycleState,
-        record.activationBasis,
+        record.lifecycleState ?? (record.supersededAt ? "superseded" : "active"),
+        record.activationBasis ?? "primary_capture",
         record.confidence,
         record.durability,
         record.suggestedReviewMode,

@@ -1,36 +1,71 @@
 ---
-summary: "Draft MMV2 ingestion spec pack captured from the GPT document-ingest redesign conversation."
-title: "MMV2 Ingestion Draft Specs"
+summary: "MMV2 ingestion spec pack and current live/evaluation boundary."
+title: "MMV2 Ingestion Specs"
 ---
 
-# MMV2 Ingestion Draft Specs
+# MMV2 Ingestion Specs
 
-This subtree captures the proposed document-ingestion-first `model-memory`
-ingestion v2 contract from the GPT design conversation supplied by the user.
+This subtree captures the MMV2 ingestion contract that started as a
+document-ingestion-first design and is now the live direction for
+`model-memory`.
 
-It is intentionally separate from the live v1 spec pack.
+The original GPT phase structure is preserved for design provenance, but MMV2
+is no longer just a draft/shadow lane.
 
 Status:
 
-- draft proposal only
-- not the live runtime contract
-- partially implemented in a document-only shadow lane
-- intended to preserve the GPT phase structure before any code changes begin
+- MMV2-native SQL storage is live semantic truth
+- document ingest is MMV2-native on the active path
+- active write/read hot paths have crossed over to MMV2-native contracts
+- legacy compatibility remains soak-window fallback only
+- ordinary-turn MMV2 evaluation coverage still needs to catch up to the live
+  path
+- proof/file-pack/split artifacts remain evaluation-only and do not write to
+  the live durable-memory DB
 
-Current evaluation lane:
+Implemented/live surfaces:
+
+- MMV2-native durable tables:
+  - `model_memory.ingest_sources`
+  - `model_memory.ingest_segments`
+  - `model_memory.durable_memories`
+  - `model_memory.memory_events`
+  - `model_memory.memory_edges`
+- live MMV2 recording batches and native repository persistence
+- first-class composite and conflict durability
+- native runtime records derived from MMV2 durable truth
+- file-pack and proof evaluation artifacts for document-ingest quality
+
+Still-needed evaluation coverage:
 
 - document-only MMV2 corpus contract:
   - `extensions/model-memory/src/mmv2/proof-corpus.ts`
-- document-only MMV2 proof runner:
+- scripted document-only MMV2 proof runner:
   - `extensions/model-memory/src/mmv2/proof-runner.ts`
+- real-model document-only MMV2 proof runner:
+  - `extensions/model-memory/src/mmv2/proof-runner-real.ts`
+- write-realism simulation:
+  - `extensions/model-memory/src/mmv2/write-simulation.ts`
+- failed-case adjudication surface:
+  - `extensions/model-memory/src/mmv2/adjudication.ts`
 - disposable report entrypoint:
   - `scripts/run-mmv2-document-corpus.mjs`
 - current artifact output root:
   - `.artifacts/model-memory/mmv2/`
-- still out of scope:
-  - ordinary-turn MMV2 evaluation
-  - live DB writes
-  - v1 cutover
+- current scoring split:
+  - phase correctness
+  - write-policy realism
+- ordinary-turn MMV2 evaluation coverage remains a near-term roadmap item
+- file-pack/provider variance stabilization remains a near-term roadmap item
+
+Future extensions:
+
+- primary capture seam expansion:
+  - [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
+- closed-loop operational instrumentation:
+  - [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
+- Phase 2 derived graph, capsule, hierarchical retrieval, planner, synthesis,
+  and cache/projection features
 
 ## Pack contents
 
@@ -54,10 +89,13 @@ Current evaluation lane:
 18. [GPT Source Alignment Review](/projects/model-memory/specs/mmv2/gpt-source-alignment-review)
 19. [MMV2 First Execution Sprint Checklist](/projects/model-memory/mmv2-first-execution-sprint-checklist)
 
-## Working rules for this pack
+## Working Rules For This Pack
 
 - preserve the GPT phase ordering exactly
 - preserve the GPT object shapes and prompt drafts as faithfully as possible
 - mark all repo-side normalizations explicitly
-- keep the live v1 contract discoverable rather than overwritten
-- do not treat this pack as implementation approval by itself
+- keep historical v1 contracts discoverable as history rather than current
+  authority
+- do not use evaluation artifacts as production writes
+- do not weaken evidence grounding or conflict durability for compatibility
+- do not add detector-era taxonomies as runtime truth

@@ -12,6 +12,7 @@ type StatusJsonScanLike = {
   osSummary: unknown;
   memory: unknown;
   memoryPlugin: unknown;
+  modelMemory?: unknown;
   gatewayMode: "local" | "remote";
   gatewayConnection: {
     url: string;
@@ -82,6 +83,7 @@ export async function resolveStatusJsonOutput(params: {
     osSummary: scan.osSummary,
     memory: scan.memory,
     memoryPlugin: scan.memoryPlugin,
+    modelMemory: scan.modelMemory,
     agents: scan.agentStatus,
     secretDiagnostics: scan.secretDiagnostics,
     securityAudit,

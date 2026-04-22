@@ -7,6 +7,7 @@ import type {
   AssembleResult,
   CompactResult,
   ContextEngineRuntimeContext,
+  IngestBatchResult,
   IngestResult,
 } from "./types.js";
 
@@ -33,6 +34,16 @@ export class LegacyContextEngine implements ContextEngine {
   }): Promise<IngestResult> {
     // No-op: SessionManager handles message persistence in the legacy flow
     return { ingested: false };
+  }
+
+  async ingestBatch(_params: {
+    sessionId: string;
+    sessionKey?: string;
+    messages: AgentMessage[];
+    isHeartbeat?: boolean;
+  }): Promise<IngestBatchResult> {
+    // No-op: SessionManager handles message persistence in the legacy flow.
+    return { ingestedCount: 0 };
   }
 
   async assemble(params: {

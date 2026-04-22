@@ -1,3 +1,6 @@
+import { MmV2DatabaseMemoryObjectStore } from "../../extensions/model-memory/src/db/mmv2-memory-object-store.ts";
+import { MmV2NativeRepository } from "../../extensions/model-memory/src/db/mmv2-native-repository.ts";
+import { resolveModelMemoryStorageEngine } from "../../extensions/model-memory/src/storage-engine.ts";
 import { loadConfig, type OpenClawConfig } from "../config/config.js";
 import {
   DatabaseMemoryObjectStore,
@@ -29,11 +32,12 @@ export type ModelMemoryDatabaseResolution = {
 
 export type ModelMemoryDatabaseRuntime = {
   resolution: ModelMemoryDatabaseResolution;
+  storageEngine: "legacy" | "mmv2";
   pool: ModelMemoryPgPool;
   sqlClient: SqlClient;
-  canonicalRepository: InstanceType<typeof ModelMemoryCanonicalRepository>;
+  canonicalRepository: InstanceType<typeof ModelMemoryCanonicalRepository> | MmV2NativeRepository;
   runtimeRepository: InstanceType<typeof RuntimeContextRepository>;
-  memoryStore: InstanceType<typeof DatabaseMemoryObjectStore>;
+  memoryStore: InstanceType<typeof DatabaseMemoryObjectStore> | MmV2DatabaseMemoryObjectStore;
   retrievalStore: InstanceType<typeof DatabaseRetrievalStore>;
   migrationNames: string[];
 };
@@ -186,9 +190,11 @@ export async function createModelMemoryDatabaseRuntime(
     migrationRunner?: (client: SqlClient) => Promise<string[]>;
   } = {},
 ): Promise<ModelMemoryDatabaseRuntime> {
+  const env = input.env ?? process.env;
+  const config = input.config ?? loadConfig();
   const resolution = resolveModelMemoryDatabaseResolution({
-    config: input.config,
-    env: input.env,
+    config,
+    env,
     defaultDatabaseName: input.defaultDatabaseName,
     databaseMode: input.databaseMode,
   });
@@ -218,16 +224,25 @@ export async function createModelMemoryDatabaseRuntime(
   };
   const migrationRunner = input.migrationRunner ?? applyModelMemoryMigrations;
   const migrationNames = input.applyMigrations === false ? [] : await migrationRunner(sqlClient);
-  const canonicalRepository = new ModelMemoryCanonicalRepository(sqlClient);
+  const storageEngine = resolveModelMemoryStorageEngine(config, env);
+  const legacyCanonicalRepository = new ModelMemoryCanonicalRepository(sqlClient);
+  const mmv2CanonicalRepository = new MmV2NativeRepository(sqlClient);
+  const canonicalRepository =
+    storageEngine === "mmv2" ? mmv2CanonicalRepository : legacyCanonicalRepository;
   const runtimeRepository = new RuntimeContextRepository(sqlClient);
+  const memoryStore =
+    storageEngine === "mmv2"
+      ? new MmV2DatabaseMemoryObjectStore(mmv2CanonicalRepository)
+      : new DatabaseMemoryObjectStore(legacyCanonicalRepository);
 
   return {
     resolution,
+    storageEngine,
     pool,
     sqlClient,
     canonicalRepository,
     runtimeRepository,
-    memoryStore: new DatabaseMemoryObjectStore(canonicalRepository),
+    memoryStore,
     retrievalStore: new DatabaseRetrievalStore(runtimeRepository),
     migrationNames,
   };

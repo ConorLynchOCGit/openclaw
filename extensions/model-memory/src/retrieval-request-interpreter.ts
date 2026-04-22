@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { normalizeIdentityText } from "./semantic-identity.ts";
+import { normalizeRetrievalText } from "./runtime/retrieval/text-normalization.ts";
 import type { CanonicalClass, Confidence, MemoryKind } from "./semantic-schema.ts";
 
 export type RetrievalEnvelope = {
@@ -93,7 +93,7 @@ function normalizeScopeConstraints(
       if (typeof value !== "string") {
         return [];
       }
-      const normalized = normalizeIdentityText(value);
+      const normalized = normalizeRetrievalText(value);
       return normalized.length > 0 ? [[key, normalized] as const] : [];
     }),
   );
@@ -103,7 +103,7 @@ function uniqueSignificantTokens(text: string): string[] {
   const seen = new Set<string>();
   const tokens = text
     .split(/[^a-z0-9]+/i)
-    .map((token) => normalizeIdentityText(token))
+    .map((token) => normalizeRetrievalText(token))
     .filter(
       (token) => token.length >= 4 && !RETRIEVAL_STOPWORDS.has(token) && !/^\d+$/.test(token),
     );
@@ -140,7 +140,7 @@ function mergeHints(...hintLists: Array<string[] | undefined>): string[] | undef
   const merged: string[] = [];
   for (const hintList of hintLists) {
     for (const hint of hintList ?? []) {
-      const normalized = normalizeIdentityText(hint);
+      const normalized = normalizeRetrievalText(hint);
       if (normalized.length === 0 || seen.has(normalized)) {
         continue;
       }
@@ -290,6 +290,12 @@ export async function interpretRetrievalRequest(input: {
     prompt,
   });
   if (result.action === "skip") {
+    if (input.envelope.requestPurpose === "live_context_injection") {
+      return {
+        action: "retrieve",
+        request: buildLexicalBaselineRetrievalRequest(input.envelope),
+      };
+    }
     return result;
   }
   const harmonized = harmonizeInterpretedRetrievalRequest({

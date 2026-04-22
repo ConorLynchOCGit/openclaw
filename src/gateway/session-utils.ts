@@ -64,6 +64,13 @@ import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "../shared/string-coerce.js";
+import { listTasksForSessionKeyForStatus } from "../tasks/task-status-access.js";
+import {
+  buildTaskStatusSnapshot,
+  formatTaskStatusDetail,
+  formatTaskStatusLifecycleLabel,
+  formatTaskStatusTitle,
+} from "../tasks/task-status.js";
 import { normalizeSessionDeliveryFields } from "../utils/delivery-context.shared.js";
 import { estimateUsageCost, resolveModelCostConfig } from "../utils/usage-format.js";
 import {
@@ -1266,6 +1273,20 @@ export function buildGatewaySessionRow(params: {
     }
   }
 
+  const taskSnapshot = buildTaskStatusSnapshot(listTasksForSessionKeyForStatus(key), { now });
+  const taskFocus = taskSnapshot.focus;
+  const taskStatusLabel = taskFocus
+    ? formatTaskStatusLifecycleLabel(taskSnapshot, taskFocus)
+    : undefined;
+  const taskStatusDetail = taskFocus ? formatTaskStatusDetail(taskFocus) : undefined;
+  const taskStatusParts = taskFocus
+    ? [taskFocus.runtime, formatTaskStatusTitle(taskFocus), taskStatusDetail].filter(Boolean)
+    : [];
+  const taskStatusLine =
+    taskStatusLabel && taskStatusParts.length > 0
+      ? `${taskStatusLabel}: ${taskStatusParts.join(" · ")}`
+      : undefined;
+
   return {
     key,
     spawnedBy: subagentOwner || entry?.spawnedBy,
@@ -1304,6 +1325,8 @@ export function buildGatewaySessionRow(params: {
     totalTokensFresh,
     estimatedCostUsd,
     status: subagentRun ? subagentStatus : entry?.status,
+    taskStatusLabel,
+    taskStatusLine,
     startedAt: subagentRun ? subagentStartedAt : entry?.startedAt,
     endedAt: subagentRun ? subagentEndedAt : entry?.endedAt,
     runtimeMs: subagentRun ? subagentRuntimeMs : entry?.runtimeMs,

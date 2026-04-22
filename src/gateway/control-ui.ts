@@ -121,6 +121,8 @@ type ControlUiAvatarMeta = {
   avatarUrl: string | null;
 };
 
+const CONTROL_UI_CACHE_CONTROL = "no-store";
+
 function applyControlUiSecurityHeaders(res: ServerResponse) {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Content-Security-Policy", buildControlUiCspHeader());
@@ -131,7 +133,7 @@ function applyControlUiSecurityHeaders(res: ServerResponse) {
 function sendJson(res: ServerResponse, status: number, body: unknown) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Cache-Control", CONTROL_UI_CACHE_CONTROL);
   res.end(JSON.stringify(body));
 }
 
@@ -446,9 +448,10 @@ export function handleControlUiAvatarRequest(
 function setStaticFileHeaders(res: ServerResponse, filePath: string) {
   const ext = path.extname(filePath).toLowerCase();
   res.setHeader("Content-Type", contentTypeForExt(ext));
-  // Static UI should never be cached aggressively while iterating; allow the
-  // browser to revalidate.
-  res.setHeader("Cache-Control", "no-cache");
+  // Control UI correctness matters more than asset reuse here: when the live
+  // gateway payload changes but a browser still renders stale rows, we need the
+  // browser to fetch fresh UI assets instead of trusting an older bundle.
+  res.setHeader("Cache-Control", CONTROL_UI_CACHE_CONTROL);
 }
 
 function serveResolvedFile(res: ServerResponse, filePath: string, body: Buffer) {
@@ -465,7 +468,7 @@ function serveResolvedIndexHtml(res: ServerResponse, body: string) {
     );
   }
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Cache-Control", CONTROL_UI_CACHE_CONTROL);
   res.end(body);
 }
 
@@ -580,7 +583,7 @@ export function handleControlUiHttpRequest(
     if (req.method === "HEAD") {
       res.statusCode = 200;
       res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Cache-Control", CONTROL_UI_CACHE_CONTROL);
       res.end();
       return true;
     }

@@ -1,11 +1,39 @@
+import { z } from "zod";
 import { createModelContractMetadata } from "../prompt-contracts.ts";
 import type { SemanticExtractionPrompt } from "../semantic-interpreter.ts";
 import type {
+  AtomicRoutedCandidate,
   AtomicCandidate,
   CanonicalCandidate,
+  CompositeRoutedCandidate,
   RawIngestEvent,
   SegmentedIngestEvent,
 } from "./contracts.ts";
+import {
+  AdmissionDecisionBatchSchema,
+  AtomicExtractionBatchSchema,
+  CanonicalCandidateBatchSchema,
+  CaptureRoutingBatchSchema,
+  CompositeExtractionBatchSchema,
+  ReconciliationDecisionSchema,
+} from "./contracts.ts";
+import {
+  CAPTURE_ROUTING_BATCH_PROMPT_SCHEMA,
+  ATOMIC_EXTRACTION_BATCH_PROMPT_SCHEMA,
+  CANONICAL_CANDIDATE_BATCH_PROMPT_SCHEMA,
+  COMPOSITE_EXTRACTION_BATCH_PROMPT_SCHEMA,
+  ADMISSION_DECISION_BATCH_PROMPT_SCHEMA,
+  RECONCILIATION_DECISION_PROMPT_SCHEMA,
+  RECONCILIATION_INPUT_PROMPT_SCHEMA,
+} from "./prompt-schema-literals.ts";
+
+export type MmV2PromptResponseMode =
+  | "json_object"
+  | "prompt_schema_json_object"
+  | "strict_json_schema";
+
+export const DEFAULT_MMV2_PROMPT_RESPONSE_MODE: MmV2PromptResponseMode =
+  "prompt_schema_json_object";
 
 const CLASSIFIER_BASELINE = [
   'Do not use "preference" as a top-level kind.',
@@ -25,21 +53,104 @@ const CLASSIFIER_BASELINE = [
   "For composite spans, create a parent artifact and mark child components as embedded_only, global, both, or blocked.",
 ].join("\n");
 
-function buildPrompt(
-  modelId: string,
-  contractVersion: string,
-  systemPrompt: string,
-  userPayload: unknown,
-): SemanticExtractionPrompt {
+function serializeJson(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
+export function buildPromptRawEventMetadata(rawEvent: RawIngestEvent): Record<string, unknown> {
+  return {
+    event_id: rawEvent.event_id,
+    schema_version: rawEvent.schema_version,
+    tenant_id: rawEvent.tenant_id,
+    user_id: rawEvent.user_id,
+    session_id: rawEvent.session_id,
+    source_type: rawEvent.source_type,
+    source_id: rawEvent.source_id,
+    speaker: rawEvent.speaker,
+    created_at: rawEvent.created_at,
+    timezone: rawEvent.timezone,
+    metadata: rawEvent.metadata,
+  };
+}
+
+function buildJsonSchema(schema: z.ZodTypeAny): Record<string, unknown> {
+  return schema.toJSONSchema({
+    target: "draft-07",
+    unrepresentable: "any",
+  }) as Record<string, unknown>;
+}
+
+function appendSchemaSections(
+  sections: string[] | string,
+  schemaSections: Array<{ label: string; schemaObject: Record<string, unknown> }>,
+): string {
+  const normalizedSections = Array.isArray(sections) ? sections : [sections];
+  if (schemaSections.length === 0) {
+    return normalizedSections.join("\n");
+  }
+  return [
+    ...normalizedSections,
+    "",
+    ...schemaSections.flatMap((section, index) => [
+      ...(index === 0 ? [] : [""]),
+      section.label,
+      serializeJson(section.schemaObject),
+    ]),
+  ].join("\n");
+}
+
+function buildPrompt(input: {
+  modelId: string;
+  contractVersion: string;
+  systemPromptSections: string[] | string;
+  userPromptSections: string[];
+  promptPayload: unknown;
+  responseSchemaName: string;
+  responseSchema: z.ZodTypeAny;
+  promptSchemaObject?: Record<string, unknown>;
+  transportSchemaObject?: Record<string, unknown>;
+  responseMode?: MmV2PromptResponseMode;
+  extraSystemSchemaSections?: Array<{ label: string; schemaObject: Record<string, unknown> }>;
+}): SemanticExtractionPrompt {
+  const responseMode = input.responseMode ?? DEFAULT_MMV2_PROMPT_RESPONSE_MODE;
+  const schemaObject = input.promptSchemaObject ?? buildJsonSchema(input.responseSchema);
+  const transportSchemaObject = input.transportSchemaObject ?? schemaObject;
+  const systemPrompt = appendSchemaSections(input.systemPromptSections, [
+    ...(input.extraSystemSchemaSections ?? []),
+    {
+      label: "Required output JSON schema:",
+      schemaObject,
+    },
+  ]);
+
   return {
     contract: createModelContractMetadata({
       contractName: "semantic_extraction",
-      contractVersion,
-      modelId,
+      contractVersion: input.contractVersion,
+      modelId: input.modelId,
     }),
     responseFormat: "json",
+    responseOptions:
+      responseMode === "strict_json_schema"
+        ? {
+            transport: {
+              type: "json_schema",
+              name: input.responseSchemaName,
+              strict: true,
+              schema: transportSchemaObject,
+            },
+            provider: {
+              requireParameters: true,
+            },
+          }
+        : {
+            transport: {
+              type: "json_object",
+            },
+          },
     systemPrompt,
-    userPrompt: JSON.stringify(userPayload),
+    userPrompt: input.userPromptSections.join("\n"),
+    promptPayload: input.promptPayload,
   };
 }
 
@@ -47,65 +158,113 @@ export function buildCaptureRoutingPrompt(input: {
   modelId: string;
   rawEvent: RawIngestEvent;
   segmented: SegmentedIngestEvent;
+  responseMode?: MmV2PromptResponseMode;
 }): SemanticExtractionPrompt {
-  return buildPrompt(
-    input.modelId,
-    "mmv2-capture-routing-v1",
-    [
+  const promptPayload = {
+    raw_event: input.rawEvent,
+    segments: input.segmented.segments,
+  };
+  return buildPrompt({
+    modelId: input.modelId,
+    contractVersion: "mmv2-capture-routing-v1",
+    responseSchemaName: "capture_routing_batch",
+    responseSchema: CaptureRoutingBatchSchema,
+    promptSchemaObject: CAPTURE_ROUTING_BATCH_PROMPT_SCHEMA as Record<string, unknown>,
+    transportSchemaObject: CAPTURE_ROUTING_BATCH_PROMPT_SCHEMA as Record<string, unknown>,
+    responseMode: input.responseMode,
+    systemPromptSections: [
       CLASSIFIER_BASELINE,
       "You are Durable Memory Capture Router v1.",
       "Your job is to decide whether each provided text segment should be routed for durable memory extraction.",
-      "Return only JSON matching the supplied schema.",
+      "Return only JSON matching the exact output schema below.",
       "",
       "Definitions:",
-      "ignore: no durable memory value.",
-      "atomic_candidate: one or more standalone durable memory candidates.",
-      "composite_candidate: a multi-part artifact such as a procedure, checklist, workflow, runbook, project state, decision record, source bundle, profile, or lesson pack.",
-      "needs_more_context: may contain durable memory but text alone is insufficient.",
+      "",
+      "ignore:",
+      "  The segment has no durable memory value. Examples: smalltalk, transient task wording, one-off phrasing, temporary status, vague statements, or content that cannot be grounded.",
+      "",
+      "atomic_candidate:",
+      "  The segment appears to contain one or more standalone durable memory candidates that can be represented as atomic claim, directive, source_ref, or episode.",
+      "",
+      "composite_candidate:",
+      '  The segment appears to describe a multi-part artifact such as a procedure, checklist, workflow, runbook, project state, decision record, source bundle, profile, or lesson pack. Prefer composite_candidate for ordered lists, bullets under a heading, multi-step instructions, or "when X happens, do A then B" patterns.',
+      "",
+      "needs_more_context:",
+      "  The segment may contain durable memory, but the text alone is insufficient to extract a grounded candidate.",
       "",
       "Routing rules:",
-      "1. Prefer composite_candidate over atomic_candidate for ordered, dependent, or grouped components.",
+      "1. Prefer composite_candidate over atomic_candidate when a segment has ordered, dependent, or grouped components.",
       "2. Do not extract memory content in this step.",
-      "3. Do not infer facts not explicitly supported by the segment.",
+      "3. Do not infer facts that are not explicitly supported by the segment.",
       "4. evidence_quote must be an exact substring from the segment text.",
-      "5. If a segment is a step inside a larger list, route the larger list as composite_candidate and the isolated step as ignore unless independently useful.",
+      "5. If the segment is a step inside a larger list, route the larger list as composite_candidate and the isolated step as ignore unless it is independently useful.",
       '6. A user preference stated as "I like/prefer/want X" is an atomic_candidate, not automatically a rule.',
       '7. An instruction stated as "always/default/use/avoid/do not X" is an atomic_candidate.',
       '8. Temporary statements like "today I am tired" or "for this answer use bullets" are usually ignore unless the text clearly says they should persist.',
       "9. Use confidence below 0.6 when uncertain.",
     ].join("\n"),
-    {
-      raw_event: input.rawEvent,
-      segments: input.segmented.segments,
-    },
-  );
+    userPromptSections: [
+      "Classify the following segments for durable memory extraction.",
+      "",
+      "Raw event metadata:",
+      serializeJson(buildPromptRawEventMetadata(input.rawEvent)),
+      "",
+      "Segments:",
+      serializeJson(input.segmented.segments),
+      "",
+      "Return only the routing JSON.",
+    ],
+    promptPayload,
+  });
 }
 
 export function buildAtomicExtractionPrompt(input: {
   modelId: string;
   rawEvent: RawIngestEvent;
-  segments: SegmentedIngestEvent["segments"];
+  routedCandidates: AtomicRoutedCandidate[];
+  responseMode?: MmV2PromptResponseMode;
 }): SemanticExtractionPrompt {
-  return buildPrompt(
-    input.modelId,
-    "mmv2-atomic-extraction-v1",
-    [
-      CLASSIFIER_BASELINE,
+  const promptPayload = {
+    raw_event: input.rawEvent,
+    routed_candidates: input.routedCandidates,
+  };
+  return buildPrompt({
+    modelId: input.modelId,
+    contractVersion: "mmv2-atomic-extraction-v1",
+    responseSchemaName: "atomic_extraction_batch",
+    responseSchema: AtomicExtractionBatchSchema,
+    promptSchemaObject: ATOMIC_EXTRACTION_BATCH_PROMPT_SCHEMA as Record<string, unknown>,
+    transportSchemaObject: ATOMIC_EXTRACTION_BATCH_PROMPT_SCHEMA as Record<string, unknown>,
+    responseMode: input.responseMode,
+    systemPromptSections: [
       "You are Atomic Durable Memory Extractor v1.",
+      "",
       "Extract atomic durable memory candidates from routed text segments.",
-      "Return only JSON matching the supplied schema.",
+      "",
+      "Return only JSON matching the exact output schema below.",
       "",
       "Allowed atomic kinds:",
-      'claim: a truth-evaluable statement. Test: "It is true that ..."',
-      'directive: a prescriptive instruction. Test: "The assistant/user/system should/must/default to ..."',
-      "source_ref: a pointer to a resource, file, URL, document, repo path, person, ticket, or source to consult.",
-      "episode: a time-bounded event, decision, outcome, task result, or interaction.",
+      "",
+      "claim:",
+      '  A truth-evaluable statement. Test: "It is true that ..."',
+      "",
+      "directive:",
+      '  A prescriptive instruction that should guide future behavior. Test: "The assistant/user/system should/must/default to ..."',
+      "",
+      "source_ref:",
+      "  A pointer to a resource, file, URL, document, repo path, person, ticket, or source to consult.",
+      "",
+      "episode:",
+      "  A time-bounded event, decision, outcome, task result, or interaction.",
       "",
       "Important classification rules:",
+      "",
       '1. Do not use "user preference" as a kind.',
       '2. "I prefer X", "I like X", "I usually want X" are usually claim with claim_type = preference_state.',
       '3. "Use X", "Default to X", "Always X", "Never X", "Do not X" are directive.',
-      "4. A descriptive preference may optionally produce both a claim and a derived directive only when future assistant behavior is clear.",
+      "4. A descriptive preference may optionally produce both:",
+      "   - a claim describing the user preference",
+      "   - a derived directive only when the future assistant behavior is clear",
       "5. A directive must contain an action and a trigger.",
       "6. A claim must be truth-evaluable.",
       "7. A source_ref must primarily be valuable as a locator.",
@@ -114,36 +273,117 @@ export function buildAtomicExtractionPrompt(input: {
       "10. Do not extract secrets, credentials, or highly sensitive content as durable memory.",
       "11. evidence_quote must be an exact substring from the source segment.",
       "12. normalized_statement must be a single sentence.",
-      "13. If a segment contains multiple independent atomic memories, emit multiple candidates.",
-      "14. If a candidate requires unstated inference, do not emit it.",
-      "15. If uncertain, lower confidence instead of over-extracting.",
+      "13. Each routed candidate represents one routed span.",
+      "14. Do not emit more than one top-level atomic candidate for the same routed span unless that routed candidate explicitly sets allow_multiple_top_level_atomic = true.",
+      '15. Statements about current project configuration or deployment settings, such as "The deployment region is us-east-1", should usually be claim_type = project_fact when they describe the current project rather than the external environment.',
+      '16. Keep the full field name together when possible for simple project facts; prefer subject = "deployment region", predicate = "is", object = "us-east-1" over splitting the noun phrase into smaller parts.',
+      "17. For scoped preferences, keep the preference object minimal and move contextual scope into qualifiers or scope rather than folding it into payload.object unless the scope phrase is truly part of the preferred thing.",
+      '18. Example: for "For technical design reviews, I prefer detailed explanations.", prefer object = "detailed explanations" and put "technical design reviews" into qualifiers, scope, or later canonicalization context.',
+      "19. If a candidate requires unstated inference, do not emit it.",
+      "20. If uncertain, lower confidence instead of over-extracting.",
     ].join("\n"),
-    {
-      raw_event: input.rawEvent,
-      segments: input.segments,
-    },
-  );
+    userPromptSections: [
+      "Extract atomic durable memory candidates from these routed candidates.",
+      "",
+      "Raw event metadata:",
+      serializeJson(buildPromptRawEventMetadata(input.rawEvent)),
+      "",
+      "Atomic routed candidates:",
+      serializeJson(input.routedCandidates),
+      "",
+      "Return only the atomic extraction JSON.",
+    ],
+    promptPayload,
+  });
 }
 
 export function buildCompositeExtractionPrompt(input: {
   modelId: string;
   rawEvent: RawIngestEvent;
-  segments: SegmentedIngestEvent["segments"];
+  routedCandidates: CompositeRoutedCandidate[];
+  responseMode?: MmV2PromptResponseMode;
 }): SemanticExtractionPrompt {
-  return buildPrompt(
-    input.modelId,
-    "mmv2-composite-extraction-v1",
-    [
-      CLASSIFIER_BASELINE,
+  const promptPayload = {
+    raw_event: input.rawEvent,
+    routed_candidates: input.routedCandidates,
+  };
+  return buildPrompt({
+    modelId: input.modelId,
+    contractVersion: "mmv2-composite-extraction-v1",
+    responseSchemaName: "composite_extraction_batch",
+    responseSchema: CompositeExtractionBatchSchema,
+    promptSchemaObject: COMPOSITE_EXTRACTION_BATCH_PROMPT_SCHEMA as Record<string, unknown>,
+    transportSchemaObject: COMPOSITE_EXTRACTION_BATCH_PROMPT_SCHEMA as Record<string, unknown>,
+    responseMode: input.responseMode,
+    systemPromptSections: [
       "You are Composite Durable Memory Extractor v1.",
-      "Extract composite durable memory candidates from routed text segments.",
-      "Return only JSON matching the supplied schema.",
       "",
-      "Composite artifact types: procedure, checklist, profile, project_state, decision_record, source_bundle, lesson_pack.",
-      "Component roles include step, guardrail, precondition, postcondition, decision_point, reference, fact, rationale, example, owner, open_question, other.",
-      "Promotion rules: embedded_only, global, both, blocked.",
+      "Extract composite durable memory candidates from routed text segments.",
+      "",
+      "Return only JSON matching the exact output schema below.",
+      "",
+      "Composite artifact types:",
+      "",
+      "procedure:",
+      "  Ordered actions for achieving an outcome. Usually has steps and triggers.",
+      "",
+      "checklist:",
+      "  A set of items to verify. Order may be less important than completeness.",
+      "",
+      "profile:",
+      "  A structured description of a user, project, team, entity, or tool.",
+      "",
+      "project_state:",
+      "  Current durable state of a project, including goals, constraints, owners, open issues, and decisions.",
+      "",
+      "decision_record:",
+      "  A durable decision plus rationale, alternatives, consequences, and date.",
+      "",
+      "source_bundle:",
+      "  A grouped set of references or resources.",
+      "",
+      "lesson_pack:",
+      "  A set of reusable lessons, examples, or troubleshooting knowledge.",
+      "",
+      "Component roles:",
+      "",
+      "step:",
+      "  A required action in order.",
+      "",
+      "guardrail:",
+      "  A constraint that must be respected.",
+      "",
+      "precondition:",
+      "  Something that must be true before execution.",
+      "",
+      "postcondition:",
+      "  Something that should be true after execution.",
+      "",
+      "decision_point:",
+      "  A branch or choice in the procedure.",
+      "",
+      "reference:",
+      "  A source to consult.",
+      "",
+      "fact:",
+      "  A descriptive fact embedded inside the artifact.",
+      "",
+      "Promotion rules:",
+      "",
+      "embedded_only:",
+      "  Default for steps, examples, local facts, and details that only make sense inside the artifact.",
+      "",
+      "global:",
+      "  Use only when the component is independently useful outside the artifact, such as a hard safety rule, durable user rule, or canonical source reference.",
+      "",
+      "both:",
+      "  Use when the component must remain in the artifact and also be available as standalone memory.",
+      "",
+      "blocked:",
+      "  Use for credentials, secrets, overly sensitive content, or content that should not be durably stored.",
       "",
       "Extraction rules:",
+      "",
       "1. Do not emit child steps as separate top-level atomic candidates here.",
       "2. Preserve order using order_index.",
       "3. Every component evidence_quote must be an exact substring from the source segment.",
@@ -153,94 +393,262 @@ export function buildCompositeExtractionPrompt(input: {
       "7. If a component is a rule inside a procedure, keep it embedded_only unless it clearly applies outside the procedure.",
       "8. If a component contains a file path, URL, repo path, document title, or source pointer, embedded_atomic_kind should be source_ref.",
       "9. If uncertain whether to promote a component globally, choose embedded_only.",
-      "10. Do not invent missing steps.",
-      "11. Do not persist secrets or credentials.",
+      '10. In an ordered procedure, prohibitions or approval requirements such as "Do not deploy without approval" should usually be role = guardrail rather than role = step.',
+      "11. If a guardrail in a procedure clearly constrains behavior outside one local step, prefer promotion = both or promotion = global rather than embedded_only.",
+      "12. Do not invent missing steps.",
+      "13. Do not persist secrets or credentials.",
     ].join("\n"),
-    {
-      raw_event: input.rawEvent,
-      segments: input.segments,
-    },
-  );
+    userPromptSections: [
+      "Extract composite durable memory candidates from these routed candidates.",
+      "",
+      "Raw event metadata:",
+      serializeJson(buildPromptRawEventMetadata(input.rawEvent)),
+      "",
+      "Composite routed candidates:",
+      serializeJson(input.routedCandidates),
+      "",
+      "Return only the composite extraction JSON.",
+    ],
+    promptPayload,
+  });
 }
 
 export function buildCanonicalizationPrompt(input: {
   modelId: string;
   rawEvent: RawIngestEvent;
   extractedCandidates: Array<AtomicCandidate | Record<string, unknown>>;
+  responseMode?: MmV2PromptResponseMode;
 }): SemanticExtractionPrompt {
-  return buildPrompt(
-    input.modelId,
-    "mmv2-canonicalization-v1",
-    [
+  const promptPayload = {
+    raw_event: input.rawEvent,
+    extracted_candidates: input.extractedCandidates,
+  };
+  return buildPrompt({
+    modelId: input.modelId,
+    contractVersion: "mmv2-canonicalization-v1",
+    responseSchemaName: "canonical_candidate_batch",
+    responseSchema: CanonicalCandidateBatchSchema,
+    promptSchemaObject: CANONICAL_CANDIDATE_BATCH_PROMPT_SCHEMA as Record<string, unknown>,
+    transportSchemaObject: CANONICAL_CANDIDATE_BATCH_PROMPT_SCHEMA as Record<string, unknown>,
+    responseMode: input.responseMode,
+    systemPromptSections: [
       "You are Durable Memory Canonicalizer v1.",
+      "",
       "Convert extracted memory candidates into concise canonical memory statements.",
-      "Return only JSON matching the supplied schema.",
-      "Preserve the distinction between descriptive and prescriptive memory.",
-      'For preference claims, use wording like "The user prefers ...".',
-      'For soft directives, use wording like "Default to ... when ...".',
-      'For hard directives, use wording like "Do not ..." or "Always ...".',
-      "Do not add information not present in the candidate or evidence.",
-      "Never invent validity dates.",
-      "Never convert an embedded_only procedure step into a global memory.",
+      "",
+      "Return only JSON matching the exact output schema below.",
+      "",
+      "Canonicalization rules:",
+      "",
+      "1. canonical_text must be short, explicit, and durable.",
+      "2. Do not add information not present in the candidate or evidence.",
+      "3. Preserve the distinction between descriptive and prescriptive memory:",
+      "   - claim describes what is true",
+      "   - directive says what should be done",
+      "4. For preference claims, use wording like:",
+      '   "The user prefers ..."',
+      "5. For soft directives, use wording like:",
+      '   "Default to ... when ..."',
+      "6. For hard directives, use wording like:",
+      '   "Do not ..." or "Always ..."',
+      "7. For source_ref, include the resource label and locator.",
+      "8. For episode, include the event or decision and time if available.",
+      "9. For composite artifacts, canonical_text should summarize the artifact, not flatten all components.",
+      "10. For components, canonical_text should preserve the component role.",
+      "11. If a candidate is too vague, score specificity below 0.5.",
+      "12. If a candidate is likely temporary, score durability below 0.5.",
+      "13. If a candidate is not grounded in exact evidence, score grounding below 0.5.",
+      "14. Never invent validity dates.",
+      "15. Never convert an embedded_only procedure step into a global memory.",
+      "16. Only composite candidates may set artifact_type. Atomic and component candidates must use artifact_type = null.",
     ].join("\n"),
-    {
-      raw_event: input.rawEvent,
-      extracted_candidates: input.extractedCandidates,
-    },
-  );
+    userPromptSections: [
+      "Canonicalize these extracted memory candidates.",
+      "",
+      "Raw event metadata:",
+      serializeJson(buildPromptRawEventMetadata(input.rawEvent)),
+      "",
+      "Extracted candidates:",
+      serializeJson(input.extractedCandidates),
+      "",
+      "Return only canonical candidate JSON.",
+    ],
+    promptPayload,
+  });
 }
 
 export function buildAdmissionPrompt(input: {
   modelId: string;
   rawEvent: RawIngestEvent;
   canonicalCandidates: CanonicalCandidate[];
+  responseMode?: MmV2PromptResponseMode;
 }): SemanticExtractionPrompt {
-  return buildPrompt(
-    input.modelId,
-    "mmv2-admission-v1",
-    [
+  const promptPayload = {
+    raw_event: input.rawEvent,
+    canonical_candidates: input.canonicalCandidates,
+  };
+  return buildPrompt({
+    modelId: input.modelId,
+    contractVersion: "mmv2-admission-v1",
+    responseSchemaName: "admission_decision_batch",
+    responseSchema: AdmissionDecisionBatchSchema,
+    promptSchemaObject: ADMISSION_DECISION_BATCH_PROMPT_SCHEMA as Record<string, unknown>,
+    transportSchemaObject: ADMISSION_DECISION_BATCH_PROMPT_SCHEMA as Record<string, unknown>,
+    responseMode: input.responseMode,
+    systemPromptSections: [
       "You are Durable Memory Admission Judge v1.",
+      "",
       "Decide whether each canonical candidate should be admitted to durable memory.",
-      "Return only JSON matching the supplied schema.",
-      "Admission decisions: admit, reject, quarantine, embed_only.",
-      "Reject temporary one-turn instructions.",
-      'Reject vague memories like "the user likes good answers."',
-      "Quarantine secrets, credentials, sensitive personal data, or safety-sensitive content.",
-      "embed_only for procedure steps and local artifact details unless promotion is global or both.",
-      "Admit clear hard directives unless unsafe or superseded.",
-      "Admit explicit stable user preferences as claims.",
-      "Admit derived soft directives only when directly supported by a preference claim.",
-      "Admit source_ref only when locator is useful and sufficiently specific.",
-      "Admit episodes only when they capture important decisions, completions, changes, or outcomes.",
+      "",
+      "Return only JSON matching the exact output schema below.",
+      "",
+      "Admission decisions:",
+      "",
+      "admit:",
+      "  Candidate should be stored as durable memory.",
+      "",
+      "reject:",
+      "  Candidate should not be stored.",
+      "",
+      "quarantine:",
+      "  Candidate may be useful but is too uncertain, sensitive, vague, or conflicting for automatic write.",
+      "",
+      "embed_only:",
+      "  Candidate is valid only as a child inside a composite artifact and should not be stored as standalone global memory.",
+      "",
+      "Scoring rules:",
+      "",
+      "future_utility:",
+      "  High if likely to improve future answers or actions.",
+      "",
+      "durability:",
+      "  High if likely to remain true or useful beyond the current turn/session.",
+      "",
+      "confidence:",
+      "  High if directly and explicitly grounded.",
+      "",
+      "novelty:",
+      "  High if not obviously duplicative.",
+      "",
+      "scope_clarity:",
+      "  High if it is clear where this memory applies.",
+      "",
+      "sensitivity_safety:",
+      "  High if safe to store; low if sensitive, credential-like, private, or regulated.",
+      "",
+      "specificity:",
+      "  High if concrete enough to retrieve and use later.",
+      "",
+      "Allowed reason_codes:",
+      '  "durable", "useful_future_context", "explicit_user_statement", "clear_instruction", "canonical_source", "important_decision", "temporary", "duplicate_likely", "too_vague", "low_confidence", "sensitive", "embedded_component_only", "scope_unclear", "not_actionable", "not_memory"',
+      "",
+      "Decision rules:",
+      "",
+      "1. Reject temporary one-turn instructions.",
+      '2. Reject vague memories like "the user likes good answers."',
+      "3. Quarantine secrets, credentials, sensitive personal data, or safety-sensitive content.",
+      "4. embed_only for procedure steps and local artifact details unless promotion is global or both.",
+      "5. Admit clear hard directives unless unsafe or superseded.",
+      "6. Admit explicit stable user preferences as claims.",
+      "7. Admit derived soft directives only when directly supported by a preference claim.",
+      "8. Admit source_ref only when locator is useful and sufficiently specific.",
+      "9. Admit episodes only when they capture important decisions, completions, changes, or outcomes.",
+      "10. Do not invent novelty; if unsure, set requires_reconciliation = true.",
+      "11. Do not reject a durable composite artifact merely because some child components are embedded_only. embedded_only is normal for procedure steps.",
+      "12. Use embedded_component_only only when evaluating a standalone component candidate, not a composite parent artifact.",
+      "13. When a scoped project fact may overlap with a broader existing fact, prefer requires_reconciliation = true rather than assuming it is safely novel.",
+      "14. Parent procedure and checklist artifacts are admissible when they are durable, reusable, and well-grounded, even if most child steps remain embedded_only.",
+      "15. Ordered procedures with embedded steps should be judged as reusable artifacts, not as non-actionable leaked components.",
+      "16. Approval guardrails and deployment safety instructions are not sensitive by default unless they contain credentials, secrets, or regulated personal data.",
+      "17. If a source_ref has an exact locator, strong grounding, and no real sensitivity risk, admit it and let reconciliation decide whether it merges, conflicts, or stays distinct.",
+      "18. Do not quarantine a safe source_ref only because novelty is uncertain; ambiguity about related locators belongs in reconciliation.",
+      "19. For composite parents, final policy is based on parent artifact structure, not on whether embedded child steps remain embedded_only.",
     ].join("\n"),
-    {
-      raw_event: input.rawEvent,
-      canonical_candidates: input.canonicalCandidates,
-    },
-  );
+    userPromptSections: [
+      "Decide admission for these canonical memory candidates.",
+      "",
+      "Raw event metadata:",
+      serializeJson(buildPromptRawEventMetadata(input.rawEvent)),
+      "",
+      "Canonical candidates:",
+      serializeJson(input.canonicalCandidates),
+      "",
+      "Return only admission decision JSON.",
+    ],
+    promptPayload,
+  });
 }
 
 export function buildReconciliationPrompt(input: {
   modelId: string;
   reconciliationInput: unknown;
+  responseMode?: MmV2PromptResponseMode;
 }): SemanticExtractionPrompt {
-  return buildPrompt(
-    input.modelId,
-    "mmv2-reconciliation-v1",
-    [
+  return buildPrompt({
+    modelId: input.modelId,
+    contractVersion: "mmv2-reconciliation-v1",
+    responseSchemaName: "reconciliation_decision",
+    responseSchema: ReconciliationDecisionSchema,
+    promptSchemaObject: RECONCILIATION_DECISION_PROMPT_SCHEMA as Record<string, unknown>,
+    transportSchemaObject: RECONCILIATION_DECISION_PROMPT_SCHEMA as Record<string, unknown>,
+    responseMode: input.responseMode,
+    systemPromptSections: [
       "You are Durable Memory Reconciliation Judge v1.",
+      "",
       "Compare one admitted candidate against existing memory neighbors.",
-      "Return only JSON matching the supplied schema.",
-      "Decision meanings: insert_new, merge_with_existing, supersede_existing, keep_existing_ignore_candidate, record_as_conflict, quarantine.",
-      "Prefer exact existing memory when candidate is a duplicate.",
-      "Supersede older preference claims when the user explicitly changes their preference.",
-      "Do not treat project-scoped and global memories as duplicates unless scope is equivalent.",
-      "Do not merge hard constraints with soft preferences.",
-      "Do not merge descriptive claims with directives unless one is explicitly derived from the other.",
-      "If uncertain, quarantine.",
+      "",
+      "Return only JSON matching the exact output schema below.",
+      "",
+      "Decision meanings:",
+      "",
+      "insert_new:",
+      "  Candidate is distinct and should be recorded as a new memory.",
+      "",
+      "merge_with_existing:",
+      "  Candidate is the same memory as an existing one, but adds useful detail or confidence.",
+      "",
+      "supersede_existing:",
+      "  Candidate updates, replaces, narrows, broadens, or invalidates existing memory.",
+      "",
+      "keep_existing_ignore_candidate:",
+      "  Candidate is duplicate, weaker, less grounded, or less useful than existing memory.",
+      "",
+      "record_as_conflict:",
+      "  Candidate appears to conflict with existing memory and cannot be safely resolved automatically.",
+      "",
+      "quarantine:",
+      "  Reconciliation is uncertain or risky.",
+      "",
+      "Rules:",
+      "",
+      "1. Prefer exact existing memory when candidate is a duplicate.",
+      "2. Supersede older preference claims when the user explicitly changes their preference.",
+      "3. Do not treat project-scoped and global memories as duplicates unless scope is equivalent.",
+      "4. Do not merge hard constraints with soft preferences.",
+      "5. Do not merge descriptive claims with directives unless one is explicitly derived from the other.",
+      "6. If candidate narrows scope, use conflict_type = scope_narrowing.",
+      "7. If candidate broadens scope, use conflict_type = scope_broadening.",
+      "8. If candidate says the opposite of an existing current memory, use direct_contradiction or preference_changed.",
+      "9. If existing memory is more specific and candidate is vague, keep_existing_ignore_candidate.",
+      "10. If uncertain, quarantine.",
+      "11. When a project-scoped candidate narrows or qualifies a broader existing fact about the same subject, prefer record_as_conflict or scope_narrowing rather than insert_new.",
     ].join("\n"),
-    input.reconciliationInput,
-  );
+    extraSystemSchemaSections: [
+      {
+        label: "Reconciliation input schema:",
+        schemaObject: RECONCILIATION_INPUT_PROMPT_SCHEMA as Record<string, unknown>,
+      },
+    ],
+    userPromptSections: [
+      "Reconcile this candidate with existing memory neighbors.",
+      "",
+      "Reconciliation input:",
+      serializeJson(input.reconciliationInput),
+      "",
+      "Return only reconciliation decision JSON.",
+    ],
+    promptPayload: input.reconciliationInput,
+  });
 }
 
 export function buildRepairPrompt(input: {
@@ -248,36 +656,67 @@ export function buildRepairPrompt(input: {
   contractVersion: string;
   originalPayload: unknown;
   validationErrors: Array<{ path: string; message: string }>;
+  expectedOutputShape?: string;
+  responseSchemaName?: string;
+  responseSchema?: z.ZodTypeAny;
+  responseMode?: MmV2PromptResponseMode;
 }): SemanticExtractionPrompt {
-  return buildPrompt(
-    input.modelId,
-    input.contractVersion,
-    [
-      "Your previous response failed validation.",
-      "Repair the JSON. Do not add new segment IDs.",
-      "Return only valid JSON matching the schema.",
+  return buildPrompt({
+    modelId: input.modelId,
+    contractVersion: input.contractVersion,
+    responseSchemaName: input.responseSchemaName ?? "repair_response",
+    responseSchema: input.responseSchema ?? z.record(z.string(), z.unknown()),
+    responseMode: input.responseMode,
+    systemPromptSections: [
+      "Your previous output failed validation.",
+      "Repair the JSON. Do not add new segment IDs unless they already exist in the original payload.",
+      "Return only valid JSON matching the exact output schema below.",
       "Do not add fields. Do not remove required fields. Do not invent evidence.",
-    ].join("\n"),
-    {
+      input.expectedOutputShape ?? "",
+    ],
+    userPromptSections: [
+      "Validation errors:",
+      serializeJson(input.validationErrors),
+      "",
+      "Original payload:",
+      serializeJson(input.originalPayload),
+      "",
+      "Return only valid JSON matching the schema.",
+    ],
+    promptPayload: {
       validation_errors: input.validationErrors,
       original_payload: input.originalPayload,
     },
-  );
+  });
 }
 
 export function buildEvidenceRepairPrompt(input: {
   modelId: string;
   contractVersion: string;
   originalPayload: unknown;
+  expectedOutputShape?: string;
+  responseSchemaName?: string;
+  responseSchema?: z.ZodTypeAny;
+  responseMode?: MmV2PromptResponseMode;
 }): SemanticExtractionPrompt {
-  return buildPrompt(
-    input.modelId,
-    input.contractVersion,
-    [
+  return buildPrompt({
+    modelId: input.modelId,
+    contractVersion: input.contractVersion,
+    responseSchemaName: input.responseSchemaName ?? "evidence_repair_response",
+    responseSchema: input.responseSchema ?? z.record(z.string(), z.unknown()),
+    responseMode: input.responseMode,
+    systemPromptSections: [
       "Some evidence_quote values were not exact substrings.",
       "For each invalid candidate, either replace evidence_quote with an exact substring from the source, or remove the candidate if no exact evidence exists.",
-      "Return only repaired JSON.",
-    ].join("\n"),
-    input.originalPayload,
-  );
+      "Return only repaired JSON matching the exact output schema below.",
+      input.expectedOutputShape ?? "",
+    ],
+    userPromptSections: [
+      "Original payload:",
+      serializeJson(input.originalPayload),
+      "",
+      "Return only repaired JSON matching the schema.",
+    ],
+    promptPayload: input.originalPayload,
+  });
 }

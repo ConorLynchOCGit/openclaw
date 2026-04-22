@@ -4,6 +4,7 @@ export {
   DEFAULT_BOOTSTRAP_PROMPT_TRUNCATION_WARNING_MODE,
   DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS,
   ensureSessionHeader,
+  normalizeBootstrapFileContentForInjection,
   resolveBootstrapMaxChars,
   resolveBootstrapPromptTruncationWarningMode,
   resolveBootstrapTotalMaxChars,

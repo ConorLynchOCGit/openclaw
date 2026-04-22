@@ -14,6 +14,7 @@ import { applyUpdateHunk } from "./apply-patch-update.js";
 import { toRelativeSandboxPath, resolvePathFromInput } from "./path-policy.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
+import { assertWritableWorkspaceMemoryPath } from "./workspace-memory-generated-zones.js";
 
 const BEGIN_PATCH_MARKER = "*** Begin Patch";
 const END_PATCH_MARKER = "*** End Patch";
@@ -156,6 +157,7 @@ export async function applyPatch(
 
     if (hunk.kind === "add") {
       const target = await resolvePatchPath(hunk.path, options);
+      assertWritableWorkspaceMemoryPath({ root: options.cwd, filePath: target.resolved });
       await ensureDir(target.resolved, fileOps);
       await fileOps.writeFile(target.resolved, hunk.contents);
       recordSummary(summary, seen, "added", target.display);
@@ -164,18 +166,21 @@ export async function applyPatch(
 
     if (hunk.kind === "delete") {
       const target = await resolvePatchPath(hunk.path, options, PATH_ALIAS_POLICIES.unlinkTarget);
+      assertWritableWorkspaceMemoryPath({ root: options.cwd, filePath: target.resolved });
       await fileOps.remove(target.resolved);
       recordSummary(summary, seen, "deleted", target.display);
       continue;
     }
 
     const target = await resolvePatchPath(hunk.path, options);
+    assertWritableWorkspaceMemoryPath({ root: options.cwd, filePath: target.resolved });
     const applied = await applyUpdateHunk(target.resolved, hunk.chunks, {
       readFile: (path) => fileOps.readFile(path),
     });
 
     if (hunk.movePath) {
       const moveTarget = await resolvePatchPath(hunk.movePath, options);
+      assertWritableWorkspaceMemoryPath({ root: options.cwd, filePath: moveTarget.resolved });
       await ensureDir(moveTarget.resolved, fileOps);
       await fileOps.writeFile(moveTarget.resolved, applied);
       await fileOps.remove(target.resolved);

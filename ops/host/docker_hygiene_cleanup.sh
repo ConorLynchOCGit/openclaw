@@ -6,6 +6,8 @@ ARCHIVE_DIR="$WORKSPACE/archives/docker_hygiene"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="$ARCHIVE_DIR/${TIMESTAMP}.md"
 APPLY=0
+BUILDKIT_RETENTION_HOURS="${BUILDKIT_RETENTION_HOURS:-24}"
+BUILDKIT_RESERVED_SPACE="${BUILDKIT_RESERVED_SPACE:-25GB}"
 
 if [[ "${1:-}" == "--apply" ]]; then
   APPLY=1
@@ -91,7 +93,7 @@ if [[ "$APPLY" == "1" ]]; then
   fi
 
   REMOVAL_LOG+=$'## Builder Prune\n\n```text\n'
-  REMOVAL_LOG+="$(docker builder prune --force --filter 'until=168h' 2>&1)"$'\n'
+  REMOVAL_LOG+="$(docker builder prune --force --filter "until=${BUILDKIT_RETENTION_HOURS}h" --reserved-space "$BUILDKIT_RESERVED_SPACE" 2>&1)"$'\n'
   REMOVAL_LOG+=$'```\n'
 fi
 
@@ -105,6 +107,8 @@ cat > /tmp/docker_hygiene_report.$$ <<EOF
 
 - generated_at_utc: ${TIMESTAMP}
 - mode: $( [[ "$APPLY" == "1" ]] && echo "apply" || echo "dry-run" )
+- buildkit_retention_hours: ${BUILDKIT_RETENTION_HOURS}
+- buildkit_reserved_space: ${BUILDKIT_RESERVED_SPACE}
 
 ## Pre-Run Summary
 

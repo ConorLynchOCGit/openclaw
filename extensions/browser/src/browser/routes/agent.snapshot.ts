@@ -521,8 +521,13 @@ export function registerBrowserAgentSnapshotRoutes(
                   : {}),
               })
               .catch(async (err) => {
-                // Public-API fallback when Playwright's private _snapshotForAI is missing.
-                if (String(err).toLowerCase().includes("_snapshotforai")) {
+                const message = String(err).toLowerCase();
+                // Public-API fallback when Playwright's private _snapshotForAI path is
+                // unavailable for either ai snapshots or aria-ref role snapshots.
+                if (
+                  message.includes("_snapshotforai") ||
+                  message.includes("refs=aria requires playwright _snapshotforai support")
+                ) {
                   return await pw.snapshotRoleViaPlaywright(roleSnapshotArgs);
                 }
                 throw err;

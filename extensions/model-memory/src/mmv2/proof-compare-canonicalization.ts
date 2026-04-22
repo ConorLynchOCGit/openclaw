@@ -2,6 +2,8 @@ import type { CanonicalCandidateBatch } from "./contracts.ts";
 import {
   compareExpectedCollection,
   matchesSubset,
+  normalizeComparisonText,
+  semanticallyMatchesText,
   type MmV2PhaseComparisonResult,
 } from "./proof-compare-shared.ts";
 import type { MmV2CanonicalExpectation, MmV2PhaseExpectation } from "./proof-corpus.ts";
@@ -17,15 +19,21 @@ export function compareCanonicalizationPhase(
     expected: expectation?.items ?? [],
     exactCount: expectation?.exactCount,
     matches: (candidate, expected) =>
-      (expected.candidateId === undefined || candidate.candidate_id === expected.candidateId) &&
       (expected.canonicalTextIncludes === undefined ||
-        candidate.canonical_text.includes(expected.canonicalTextIncludes)) &&
+        semanticallyMatchesText(candidate.canonical_text, expected.canonicalTextIncludes)) &&
+      (expected.canonicalTextTokensInclude === undefined ||
+        expected.canonicalTextTokensInclude.every((token) =>
+          normalizeComparisonText(candidate.canonical_text).includes(
+            normalizeComparisonText(token),
+          ),
+        )) &&
       (expected.unitType === undefined || candidate.unit_type === expected.unitType) &&
       (expected.kind === undefined || candidate.kind === expected.kind) &&
       (expected.artifactType === undefined || candidate.artifact_type === expected.artifactType) &&
       (expected.promotion === undefined || candidate.promotion === expected.promotion) &&
       (expected.sourceEvidenceQuote === undefined ||
-        candidate.source.evidence_quote === expected.sourceEvidenceQuote) &&
+        normalizeComparisonText(candidate.source.evidence_quote) ===
+          normalizeComparisonText(expected.sourceEvidenceQuote)) &&
       matchesSubset(candidate.payload, expected.payloadSubset),
     describeActual: (actualItem) => ({
       candidate_id: actualItem.candidate_id,

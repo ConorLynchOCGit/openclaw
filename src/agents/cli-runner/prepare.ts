@@ -89,6 +89,8 @@ export async function prepareCliRunContext(
     config: params.config,
     sessionKey: params.sessionKey,
     sessionId: params.sessionId,
+    agentId: params.agentId,
+    currentTurnText: params.prompt,
     warn: prepareDeps.makeBootstrapWarn({
       sessionLabel,
       warn: (message) => cliBackendLog.warn(message),

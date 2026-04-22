@@ -3,14 +3,14 @@ import type {
   ActiveMemorySetRecord,
   ActiveMemorySlotRecord,
   ContextArtifactRecord,
+  RuntimeMemoryRecord,
 } from "../runtime-read-models.ts";
-import type { ModelMemoryObjectRecord } from "../storage-database-contract.ts";
 import { buildContextArtifact } from "./context-artifacts.ts";
 
 function getObjectById(
-  memoryObjects: ModelMemoryObjectRecord[],
+  memoryObjects: RuntimeMemoryRecord[],
   objectId: string,
-): ModelMemoryObjectRecord | undefined {
+): RuntimeMemoryRecord | undefined {
   return memoryObjects.find(
     (record) =>
       record.id === objectId &&
@@ -19,7 +19,7 @@ function getObjectById(
   );
 }
 
-function formatObject(record: ModelMemoryObjectRecord): string {
+function formatObject(record: RuntimeMemoryRecord): string {
   if (record.kind === "fact") {
     return `- ${summarizeModelMemoryValue(record.payload.subject, "fact")}: ${summarizeModelMemoryValue(record.payload.value)}`;
   }
@@ -56,7 +56,7 @@ function formatObject(record: ModelMemoryObjectRecord): string {
 }
 
 export function buildDerivedContextArtifacts(input: {
-  memoryObjects: ModelMemoryObjectRecord[];
+  memoryObjects: RuntimeMemoryRecord[];
   slots: ActiveMemorySlotRecord[];
   sets: ActiveMemorySetRecord[];
   buildPolicyVersion: string;
@@ -66,7 +66,7 @@ export function buildDerivedContextArtifacts(input: {
   const currentSlotObjects = input.slots
     .map((slot) => ({ slot, record: getObjectById(input.memoryObjects, slot.currentObjectId) }))
     .filter(
-      (entry): entry is { slot: ActiveMemorySlotRecord; record: ModelMemoryObjectRecord } =>
+      (entry): entry is { slot: ActiveMemorySlotRecord; record: RuntimeMemoryRecord } =>
         !!entry.record,
     );
 
@@ -95,7 +95,7 @@ export function buildDerivedContextArtifacts(input: {
 
   const scopedSlotGroups = new Map<
     string,
-    Array<{ slot: ActiveMemorySlotRecord; record: ModelMemoryObjectRecord }>
+    Array<{ slot: ActiveMemorySlotRecord; record: RuntimeMemoryRecord }>
   >();
   for (const entry of currentSlotObjects) {
     if (!entry.record.scopeKey) {
@@ -132,7 +132,7 @@ export function buildDerivedContextArtifacts(input: {
     );
   }
 
-  const procedureGroups = new Map<string, ModelMemoryObjectRecord[]>();
+  const procedureGroups = new Map<string, RuntimeMemoryRecord[]>();
   for (const entry of input.sets.filter((setRecord) => setRecord.kind === "procedure")) {
     const record = getObjectById(input.memoryObjects, entry.memoryObjectId);
     if (!record) {

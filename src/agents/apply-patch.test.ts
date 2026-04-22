@@ -59,6 +59,23 @@ describe("applyPatch", () => {
     });
   });
 
+  it("blocks patches from mutating root workspace memory files", async () => {
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, "MEMORY.md"), "# Memory\n", "utf8");
+      const patch = `*** Begin Patch
+*** Update File: MEMORY.md
+@@
+-# Memory
++# Memory
++- generated write
+*** End Patch`;
+
+      await expect(applyPatch(patch, { cwd: dir })).rejects.toThrow(
+        /Direct writes to USER\.md or MEMORY\.md are blocked/,
+      );
+    });
+  });
+
   it("updates and moves a file", async () => {
     await withTempDir(async (dir) => {
       const source = path.join(dir, "source.txt");

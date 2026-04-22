@@ -5,6 +5,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKSPACE="${OPENCLAW_WORKSPACE_DIR:-/root/.openclaw/workspace}"
 source "$REPO_ROOT/ops/host/lib/postgres_client.sh"
 source "$REPO_ROOT/ops/host/lib/report_sessions.sh"
+source "$REPO_ROOT/ops/host/lib/workspace_memory_guard.sh"
 OPS_DIR="$REPO_ROOT/ops/reviews"
 GENERATED_DIR="$WORKSPACE/projects/ops/generated_current"
 ARCHIVE_DIR="$WORKSPACE/archives/weekly_operator_reviews"
@@ -207,6 +208,11 @@ $GITHUB_AUTOMATION_SNIPPET
 ## Daily Memory Evidence Artifact
 \`\`\`
 $DAILY_MEMORY_EVIDENCE_SNIPPET
+\`\`\`
+
+## Workspace Memory Writeability Guard
+\`\`\`
+$(workspace_memory_writeability_guard_note "$WORKSPACE")
 \`\`\`
 
 ## Session Bloat Audit Inputs

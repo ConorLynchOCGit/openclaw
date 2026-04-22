@@ -1,6 +1,9 @@
 import path from "node:path";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
-import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
+import {
+  normalizeBootstrapFileContentForInjection,
+  type EmbeddedContextFile,
+} from "./pi-embedded-helpers.js";
 import type { WorkspaceBootstrapFile } from "./workspace.js";
 
 export const DEFAULT_BOOTSTRAP_NEAR_LIMIT_RATIO = 0.85;
@@ -144,7 +147,7 @@ export function buildBootstrapInjectionStats(params: {
   }
   return params.bootstrapFiles.map((file) => {
     const pathValue = normalizeOptionalString(file.path) ?? "";
-    const rawChars = file.missing ? 0 : (file.content ?? "").trimEnd().length;
+    const rawChars = file.missing ? 0 : normalizeBootstrapFileContentForInjection(file).length;
     const injected =
       (pathValue ? injectedByPath.get(pathValue) : undefined) ??
       injectedByPath.get(file.name) ??

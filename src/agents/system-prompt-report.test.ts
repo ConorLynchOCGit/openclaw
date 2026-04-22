@@ -105,6 +105,31 @@ describe("buildSystemPromptReport", () => {
     expect(report.injectedWorkspaceFiles[0]?.truncated).toBe(true);
   });
 
+  it("does not mark MEMORY.md truncated when only generated bootstrap blocks were stripped", () => {
+    const curatedContent = ["# MEMORY.md", "", "## Long-Term Context", "- durable note"].join("\n");
+    const file = makeBootstrapFile({
+      name: "MEMORY.md",
+      path: "/tmp/workspace/MEMORY.md",
+      content: [
+        "<!-- BEGIN GENERATED: openclaw-canonical -->",
+        "## Workspace Recall Index",
+        "- generated",
+        "<!-- END GENERATED: openclaw-canonical -->",
+        "",
+        curatedContent,
+      ].join("\n"),
+    });
+    const report = makeReport({
+      file,
+      injectedPath: "/tmp/workspace/MEMORY.md",
+      injectedContent: curatedContent,
+    });
+
+    expect(report.injectedWorkspaceFiles[0]?.rawChars).toBe(curatedContent.length);
+    expect(report.injectedWorkspaceFiles[0]?.injectedChars).toBe(curatedContent.length);
+    expect(report.injectedWorkspaceFiles[0]?.truncated).toBe(false);
+  });
+
   it("ignores malformed injected file paths and still matches valid entries", () => {
     const file = makeBootstrapFile({ path: "/tmp/workspace/policies/AGENTS.md" });
     const report = buildSystemPromptReport({

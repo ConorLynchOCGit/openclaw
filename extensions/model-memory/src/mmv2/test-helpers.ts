@@ -8,7 +8,9 @@ import { adaptDocumentSource } from "../source-adapters/document-source-adapter.
 import type {
   AdmissionDecision,
   AtomicCandidate,
+  AtomicRoutedCandidate,
   CanonicalCandidate,
+  CompositeRoutedCandidate,
   CompositeCandidate,
   ExistingMemorySummary,
   RawIngestEvent,
@@ -109,6 +111,24 @@ export function buildAtomicCandidate(
   };
 }
 
+export function buildAtomicRoutedCandidate(
+  segment: SegmentedIngestEvent["segments"][number],
+  overrides: Partial<AtomicRoutedCandidate> = {},
+): AtomicRoutedCandidate {
+  return {
+    ...segment,
+    source_route: "atomic_candidate",
+    candidate_summary: overrides.candidate_summary ?? "Atomic routed candidate",
+    memory_likelihood: overrides.memory_likelihood ?? 0.8,
+    durability_likelihood: overrides.durability_likelihood ?? 0.8,
+    composite_likelihood: overrides.composite_likelihood ?? 0.05,
+    reason_codes: overrides.reason_codes ?? ["durable_user_fact"],
+    evidence_quote: overrides.evidence_quote ?? segment.text,
+    confidence: overrides.confidence ?? 0.9,
+    allow_multiple_top_level_atomic: overrides.allow_multiple_top_level_atomic ?? false,
+  };
+}
+
 export function buildCompositeCandidate(
   segmentId: string,
   evidenceQuote: string,
@@ -149,8 +169,26 @@ export function buildCompositeCandidate(
   };
 }
 
+export function buildCompositeRoutedCandidate(
+  segment: SegmentedIngestEvent["segments"][number],
+  overrides: Partial<CompositeRoutedCandidate> = {},
+): CompositeRoutedCandidate {
+  return {
+    ...segment,
+    source_route: "composite_candidate",
+    candidate_summary: overrides.candidate_summary ?? "Composite routed candidate",
+    memory_likelihood: overrides.memory_likelihood ?? 0.8,
+    durability_likelihood: overrides.durability_likelihood ?? 0.8,
+    composite_likelihood: overrides.composite_likelihood ?? 0.95,
+    reason_codes: overrides.reason_codes ?? ["ordered_steps"],
+    evidence_quote: overrides.evidence_quote ?? segment.text,
+    confidence: overrides.confidence ?? 0.9,
+    allow_multiple_top_level_atomic: false,
+  };
+}
+
 export function buildCanonicalCandidate(
-  rawEvent: RawIngestEvent,
+  rawEvent: Pick<RawIngestEvent, "event_id" | "tenant_id" | "user_id"> & Partial<RawIngestEvent>,
   segmentId: string,
   evidenceQuote: string,
   overrides: Partial<CanonicalCandidate> = {},
@@ -168,10 +206,10 @@ export function buildCanonicalCandidate(
     search_text: overrides.search_text ?? "user prefers concise answers",
     source: overrides.source ?? {
       event_id: rawEvent.event_id,
-      source_type: rawEvent.source_type,
-      source_id: rawEvent.source_id,
-      speaker: rawEvent.speaker,
-      created_at: rawEvent.created_at,
+      source_type: rawEvent.source_type ?? "document",
+      source_id: rawEvent.source_id ?? "test-source",
+      speaker: rawEvent.speaker ?? "user",
+      created_at: rawEvent.created_at ?? "2026-04-21T00:00:00.000Z",
       segment_id: segmentId,
       start_char: 0,
       end_char: evidenceQuote.length,
@@ -187,7 +225,7 @@ export function buildCanonicalCandidate(
       applies_to: "global",
     },
     validity: overrides.validity ?? {
-      valid_at: rawEvent.created_at,
+      valid_at: rawEvent.created_at ?? "2026-04-21T00:00:00.000Z",
       invalid_at: null,
       ttl_seconds: null,
       temporal_status: "current",

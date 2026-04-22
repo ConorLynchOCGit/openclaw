@@ -1,10 +1,13 @@
-import { getCurrentMemoryObjects, type ActiveMemorySlotRecord } from "../runtime-read-models.ts";
-import type { ModelMemoryObjectRecord } from "../storage-database-contract.ts";
+import {
+  getCurrentMemoryObjects,
+  type ActiveMemorySlotRecord,
+  type RuntimeMemoryRecord,
+} from "../runtime-read-models.ts";
 
 export function materializeActiveMemorySlots(
-  memoryObjects: ModelMemoryObjectRecord[],
+  memoryObjects: RuntimeMemoryRecord[],
 ): ActiveMemorySlotRecord[] {
-  const currentBySlot = new Map<string, ModelMemoryObjectRecord>();
+  const currentBySlot = new Map<string, RuntimeMemoryRecord>();
 
   for (const record of getCurrentMemoryObjects(memoryObjects)) {
     if (!record.slotKey) {

@@ -1,3 +1,5 @@
+import { recordModelMemoryCaptureSeamEvidence } from "../../agents/model-memory.capture-seams.js";
+import { recordModelMemoryProductionHookProbe } from "../../agents/model-memory.hook-probe.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { fireAndForgetHook } from "../../hooks/fire-and-forget.js";
 import { createInternalHookEvent, triggerInternalHook } from "../../hooks/internal-hooks.js";
@@ -23,6 +25,7 @@ export function emitPreAgentMessageHooks(params: {
   }
 
   const canonical = deriveInboundMessageHookContext(params.ctx);
+  const preprocessedContext = toInternalMessagePreprocessedContext(canonical, params.cfg);
   if (canonical.transcript) {
     fireAndForgetHook(
       triggerInternalHook(
@@ -38,13 +41,29 @@ export function emitPreAgentMessageHooks(params: {
   }
 
   fireAndForgetHook(
+    recordModelMemoryProductionHookProbe({
+      hookName: "message:preprocessed",
+      triggerSurface: "auto_reply.message_preprocess",
+      payload: preprocessedContext,
+      context: { sessionKey },
+      config: params.cfg,
+    }),
+    "get-reply: message:preprocessed production probe failed",
+  );
+  fireAndForgetHook(
+    recordModelMemoryCaptureSeamEvidence({
+      seamName: "message:preprocessed",
+      triggerSurface: "auto_reply.message_preprocess",
+      payload: preprocessedContext,
+      context: { sessionKey },
+      config: params.cfg,
+    }),
+    "get-reply: message:preprocessed capture seam evidence failed",
+  );
+
+  fireAndForgetHook(
     triggerInternalHook(
-      createInternalHookEvent(
-        "message",
-        "preprocessed",
-        sessionKey,
-        toInternalMessagePreprocessedContext(canonical, params.cfg),
-      ),
+      createInternalHookEvent("message", "preprocessed", sessionKey, preprocessedContext),
     ),
     "get-reply: message:preprocessed internal hook failed",
   );

@@ -105,6 +105,8 @@ export const CaptureRoutingDecisionSchema = z
         "checklist",
         "workflow_or_runbook",
         "temporary_context",
+        "explicit_no_store",
+        "privacy_opt_out",
         "smalltalk",
         "ambiguous",
         "sensitive",
@@ -126,6 +128,39 @@ export const CaptureRoutingBatchSchema = z
 
 export type CaptureRoutingDecision = z.infer<typeof CaptureRoutingDecisionSchema>;
 export type CaptureRoutingBatch = z.infer<typeof CaptureRoutingBatchSchema>;
+
+export const RoutedCandidateSchema = SegmentedIngestSegmentSchema.extend({
+  source_route: z.enum(["atomic_candidate", "composite_candidate"]),
+  candidate_summary: z.string().max(280),
+  memory_likelihood: z.number().min(0).max(1),
+  durability_likelihood: z.number().min(0).max(1),
+  composite_likelihood: z.number().min(0).max(1),
+  reason_codes: CaptureRoutingDecisionSchema.shape.reason_codes,
+  evidence_quote: z.string(),
+  confidence: z.number().min(0).max(1),
+  allow_multiple_top_level_atomic: z.boolean().default(false),
+}).strict();
+
+export const AtomicRoutedCandidateSchema = RoutedCandidateSchema.extend({
+  source_route: z.literal("atomic_candidate"),
+}).strict();
+
+export const CompositeRoutedCandidateSchema = RoutedCandidateSchema.extend({
+  source_route: z.literal("composite_candidate"),
+}).strict();
+
+export const RoutedCandidateBatchSchema = z
+  .object({
+    schema_version: z.literal("capture_routing.v1"),
+    event_id: z.string(),
+    routed_candidates: z.array(RoutedCandidateSchema),
+  })
+  .strict();
+
+export type RoutedCandidate = z.infer<typeof RoutedCandidateSchema>;
+export type AtomicRoutedCandidate = z.infer<typeof AtomicRoutedCandidateSchema>;
+export type CompositeRoutedCandidate = z.infer<typeof CompositeRoutedCandidateSchema>;
+export type RoutedCandidateBatch = z.infer<typeof RoutedCandidateBatchSchema>;
 
 export const CandidateScopeSchema = z
   .object({
@@ -356,7 +391,7 @@ export const CompositeCandidateSchema = z
     risk_flags: z.array(
       z.enum([
         "contains_pii",
-        "contacret",
+        "contains_secret",
         "health_data",
         "financial_data",
         "legal_data",
@@ -406,6 +441,7 @@ export const CanonicalScopeSchema = z
     applies_to: z.string(),
   })
   .strict();
+export type CanonicalScope = z.infer<typeof CanonicalScopeSchema>;
 
 export const CanonicalValiditySchema = z
   .object({
@@ -415,6 +451,7 @@ export const CanonicalValiditySchema = z
     temporal_status: z.enum(["current", "historical", "future", "unknown"]),
   })
   .strict();
+export type CanonicalValidity = z.infer<typeof CanonicalValiditySchema>;
 
 export const CanonicalQualitySchema = z
   .object({
@@ -425,6 +462,7 @@ export const CanonicalQualitySchema = z
     grounding: z.number().min(0).max(1),
   })
   .strict();
+export type CanonicalQuality = z.infer<typeof CanonicalQualitySchema>;
 
 export const CanonicalCandidateSchema = z
   .object({
@@ -493,6 +531,8 @@ export const AdmissionDecisionSchema = z
         "canonical_source",
         "important_decision",
         "temporary",
+        "explicit_no_store",
+        "privacy_opt_out",
         "duplicate_likely",
         "too_vague",
         "low_confidence",

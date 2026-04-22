@@ -4,7 +4,13 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { truncateUtf16Safe } from "../../utils.js";
-import type { WorkspaceBootstrapFile } from "../workspace.js";
+import { stripGeneratedWorkspaceMemoryZones } from "../workspace-memory-generated-zones.js";
+import {
+  DEFAULT_MEMORY_ALT_FILENAME,
+  DEFAULT_MEMORY_FILENAME,
+  DEFAULT_USER_FILENAME,
+  type WorkspaceBootstrapFile,
+} from "../workspace.js";
 import type { EmbeddedContextFile } from "./types.js";
 
 type ContentBlockWithSignature = {
@@ -86,7 +92,7 @@ export function stripThoughtSignatures<T>(
 // Runtime-facing bootstrap surfaces now carry materially richer canonicalized
 // operational content. Keep the defaults high enough that AGENTS.md and
 // MEMORY.md fit without truncation in the normal case.
-export const DEFAULT_BOOTSTRAP_MAX_CHARS = 30_000;
+export const DEFAULT_BOOTSTRAP_MAX_CHARS = 35_000;
 export const DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS = 150_000;
 export const DEFAULT_BOOTSTRAP_PROMPT_TRUNCATION_WARNING_MODE = "once";
 const MIN_BOOTSTRAP_FILE_BUDGET_CHARS = 64;
@@ -175,6 +181,25 @@ function clampToBudget(content: string, budget: number): string {
   return `${truncateUtf16Safe(content, safe)}…`;
 }
 
+export function normalizeBootstrapFileContentForInjection(file: {
+  name: WorkspaceBootstrapFile["name"];
+  content?: string;
+}): string {
+  const raw = (file.content ?? "").trimEnd();
+  if (
+    file.name !== DEFAULT_MEMORY_FILENAME &&
+    file.name !== DEFAULT_MEMORY_ALT_FILENAME &&
+    file.name !== DEFAULT_USER_FILENAME
+  ) {
+    return raw;
+  }
+  const stripped = stripGeneratedWorkspaceMemoryZones({
+    relativePath: file.name,
+    content: raw,
+  }).trim();
+  return stripped || raw;
+}
+
 export async function ensureSessionHeader(params: {
   sessionFile: string;
   sessionId: string;
@@ -243,8 +268,12 @@ export function buildBootstrapContextFiles(
       );
       break;
     }
+    const normalizedContent = normalizeBootstrapFileContentForInjection(file);
+    if (!normalizedContent.trim()) {
+      continue;
+    }
     const fileMaxChars = Math.max(1, Math.min(maxChars, remainingTotalChars));
-    const trimmed = trimBootstrapContent(file.content ?? "", file.name, fileMaxChars);
+    const trimmed = trimBootstrapContent(normalizedContent, file.name, fileMaxChars);
     const contentWithinBudget = clampToBudget(trimmed.content, remainingTotalChars);
     if (!contentWithinBudget) {
       continue;

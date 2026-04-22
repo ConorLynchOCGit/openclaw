@@ -10,6 +10,8 @@
 .bun
 .tmp
 **/.tmp
+.openclaw-memory-ops
+.openclaw-memory-ops/**
 .DS_Store
 **/.DS_Store
 *.png

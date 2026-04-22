@@ -23,11 +23,14 @@ void test("runMmV2DocumentCorpus writes disposable report artifacts", async () =
 
   assert.equal(result.report.summary.totalCases, 1);
   assert.equal(result.report.summary.failedCases, 0);
+  assert.equal(result.report.runMode, "scripted");
+  assert.equal(result.report.summary.scores.phaseCorrectness.ratio, 1);
   assert.ok(result.artifacts.runDir.startsWith(outputRoot));
   assert.equal(
     JSON.parse(await readFile(result.artifacts.summaryJsonPath, "utf8")).summary.totalCases,
     1,
   );
+  assert.equal(JSON.parse(await readFile(result.artifacts.adjudicationJsonPath, "utf8")).length, 0);
   assert.match(
     await readFile(result.artifacts.summaryMarkdownPath, "utf8"),
     /MMV2 Document Corpus Evaluation/u,

@@ -5,6 +5,25 @@ title: "Model Memory Spec Closure Review"
 
 # Model Memory Spec Closure Review
 
+## Authority Status
+
+Status: `historical_v1_design_provenance`
+
+This review is preserved as the closure record for the original clean-room v1
+implementation planning. It is not current live implementation authority where
+it conflicts with MMV2-native durable truth.
+
+Current authority is:
+
+- MMV2-native SQL storage as live semantic truth
+- MMV2 live recording batches and native repository persistence
+- active read/write hot paths using MMV2-native contracts by default
+- legacy compatibility as soak-window fallback only
+
+Use this document to understand design lineage and why earlier boundaries were
+chosen. Do not use it to reassert old v1 storage or five-kind write contracts
+over the current MMV2-native system.
+
 ## Objective
 
 Confirm that the clean-room design is closed enough to begin implementation without improvising architecture in code.

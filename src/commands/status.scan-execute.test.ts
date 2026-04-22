@@ -3,12 +3,28 @@ import { executeStatusScanFromOverview } from "./status.scan-execute.ts";
 import type { StatusScanOverviewResult } from "./status.scan-overview.ts";
 import type { MemoryStatusSnapshot } from "./status.scan.shared.js";
 
-const { resolveStatusSummaryFromOverview, resolveMemoryPluginStatus } = vi.hoisted(() => ({
+const {
+  resolveStatusSummaryFromOverview,
+  resolveMemoryPluginStatus,
+  resolveModelMemoryLiveRuntimeStatus,
+} = vi.hoisted(() => ({
   resolveStatusSummaryFromOverview: vi.fn(async () => ({ sessions: { count: 1 } })),
   resolveMemoryPluginStatus: vi.fn(() => ({
     enabled: false,
     slot: null,
     reason: "memorySearch not configured",
+  })),
+  resolveModelMemoryLiveRuntimeStatus: vi.fn(() => ({
+    enabled: true,
+    source: "config:plugins.entries.model-memory.config.live.enabled",
+    includeRetrievalPacks: false,
+    contextInjectionEnabled: true,
+    captureWritesEnabled: true,
+    legacyMemorySlotDisabled: true,
+    legacyMemorySearchDisabled: true,
+    databaseConfigured: true,
+    databaseSource: "config:plugins.entries.model-memory.config.database.url",
+    databaseName: "model_memory",
   })),
 }));
 
@@ -18,6 +34,10 @@ vi.mock("./status.scan-overview.ts", () => ({
 
 vi.mock("./status.scan.shared.js", () => ({
   resolveMemoryPluginStatus,
+}));
+
+vi.mock("../agents/model-memory.live-runtime.js", () => ({
+  resolveModelMemoryLiveRuntimeStatus,
 }));
 
 describe("executeStatusScanFromOverview", () => {
@@ -71,6 +91,7 @@ describe("executeStatusScanFromOverview", () => {
     });
 
     expect(resolveMemoryPluginStatus).toHaveBeenCalledWith(overview.cfg);
+    expect(resolveModelMemoryLiveRuntimeStatus).toHaveBeenCalledWith(overview.cfg);
     expect(resolveStatusSummaryFromOverview).toHaveBeenCalledWith({ overview });
     expect(resolveMemory).toHaveBeenCalledWith({
       cfg: overview.cfg,
@@ -91,6 +112,18 @@ describe("executeStatusScanFromOverview", () => {
         channels: { rows: [], details: [] },
         summary: { sessions: { count: 1 } },
         memory: { agentId: "main", backend: "builtin", provider: "memory-core" },
+        modelMemory: {
+          enabled: true,
+          source: "config:plugins.entries.model-memory.config.live.enabled",
+          includeRetrievalPacks: false,
+          contextInjectionEnabled: true,
+          captureWritesEnabled: true,
+          legacyMemorySlotDisabled: true,
+          legacyMemorySearchDisabled: true,
+          databaseConfigured: true,
+          databaseSource: "config:plugins.entries.model-memory.config.database.url",
+          databaseName: "model_memory",
+        },
         pluginCompatibility: [],
       }),
     );

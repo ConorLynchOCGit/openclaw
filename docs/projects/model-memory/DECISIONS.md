@@ -5,6 +5,247 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-21 - Runtime-boundary projection and hook-probe baseline accepted
+
+Decision:
+
+- the runtime-boundary proof rooted at
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/`
+  is accepted as the post-clean-soak baseline for projection materialization
+  and production hook probe evidence
+- projection materialization is artifact-only under
+  `/root/.openclaw/workspace/.openclaw/model-memory/projections/`
+  and does not write generated content into root `USER.md` or root
+  `MEMORY.md`
+- runtime projection versions and materialized projection files must continue
+  to match by content hash
+- production hook evidence is distinct from synthetic/static registration:
+  only hooks observed during real UI/gateway turns are eligible for capture
+  seam wiring
+- `message:preprocessed` remains routing/telemetry-only for now because it
+  overlaps ordinary-turn capture and carries raw-prompt risk
+- the first semantic capture expansion should be bounded tool-result
+  proof/capture through `tool_result_persist` and `after_tool_call`, behind
+  kill switches and with no raw tool-log persistence
+
+Accepted evidence:
+
+- projection validation:
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/projection-db-validation-final.json`
+- hook discovery:
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/hook-discovery-final.json`
+- hook/capture runtime evidence:
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/hook-and-seam-evidence-rerun3.json`
+- Memory Ops leakage scan:
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/memory-ops-leakage-scan-final.json`
+- root file hash proof:
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/root-hashes-before-rerun3.txt`
+  and
+  `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/root-hashes-after-rerun3.txt`
+- rollback image tag remains
+  `openclaw:rollback-memory-soak-20260421T175907Z`
+
+Reasoning:
+
+- this separates projection artifact availability from canonical truth:
+  MMV2 SQL remains truth, projections remain compiled views, and retrieval
+  may use projection digests only when backed by active MMV2 ids
+- this separates hook-health proof from capture wiring:
+  production-observed hooks can be wired behind kill switches, synthetic-only
+  hooks stay blocked
+- bounded tool-result capture is safer than raw prompt capture because it can
+  store artifact paths, file counts, command status, URLs, docs/runbooks, and
+  error classes without persisting prompts, transcripts, or raw tool logs
+
+## 2026-04-21 - SOAKQUAR accepted as clean MMV2 retrieval-runtime soak baseline
+
+Decision:
+
+- `SOAKQUAR-2026-04-21` is accepted as the first clean MMV2
+  retrieval-runtime soak baseline
+- the accepted artifact root is
+  `.artifacts/model-memory/soak-ui-validation/2026-04-21-semantic-quarantine-soak/`
+- the rollback image tag preserved for this baseline is
+  `openclaw:rollback-memory-soak-20260421T175907Z`
+- future memory-lane regressions should compare against this baseline rather
+  than the earlier failed preflight/partial soak artifacts
+- post-soak work may proceed in this order:
+  - fallback compatibility removal/quarantine in small reversible slices
+  - ordinary-turn MMV2 eval hardening
+  - retrieval-runtime relevance/telemetry hardening
+  - seeded file-pack/provider variance reporting
+  - production-safe hook canaries
+  - verified primary capture seam expansion behind kill switches
+
+Accepted evidence:
+
+- preference memory `992ee8e3-ce78-518f-87fa-defcb9457404` with event
+  `e4feb0f6-d9bb-5561-a807-34c41509990f`
+- directive memory `9f681bb4-0524-5972-8f2f-2e247b46d8b4` with event
+  `83feef07-5548-547d-9e3c-c096c93f35bb`
+- project fact memory `4720dede-c33d-5c5e-835e-7e1be6d3445d` with event
+  `5da8d9ae-883e-5b6d-8d84-79d225c04b88`
+- structural correction memory `e64c1528-d6c2-52b3-8674-38172dc4604a`
+  with event `f31dcea6-5bc8-53d5-8743-2c19143b1f47`
+- structural supersession edge
+  `fa9a259f-330b-5f06-bf11-79f62a0ffe47` from the correction memory to
+  the targeted preference memory
+- fresh recall retrieval request
+  `c9d9c67c-410a-5729-a02e-e5cf0a761b8e` selected fresh soak memory ids
+  through direct retrieval telemetry/retrieval-pack evidence
+- Memory Ops latest report
+  `.openclaw-memory-ops/reports/latest.md` remained observe/report-only with
+  auto-fix disabled and no raw prompt/transcript/tool-log/private phrase
+  leakage
+- root `USER.md` and root `MEMORY.md` did not mutate during ordinary UI
+  soak prompts
+
+Reasoning:
+
+- the accepted bar is not perfect global recall quality
+- the accepted bar is observable, bounded MMV2 behavior:
+  canonical durable rows/events/edges, structural correction, relevant
+  retrieval telemetry, no dark-data leakage, and no legacy semantic-family
+  write-path inference
+- this prevents the project from being trapped in endless optimization loops or
+  solving soak failures through brittle semantic forests
+
+## 2026-04-21 - Semantic forest quarantine before clean-soak acceptance
+
+Decision:
+
+- MMV2 live write paths must not use legacy fuzzy semantic-family collision,
+  family recall, or same-source-family scoring by default
+- correction and supersession are structural:
+  - `memory_id` targets may supersede exactly the targeted active memory
+  - unresolved or unsupported targets become inspectable unresolved-target
+    correction records rather than inferred topical supersession
+- explicit project-fact and correction prompts are temporary command-shaped
+  capture contracts, not topic parsers
+- retrieval relevance may use read-time ranking over lexical, fielded,
+  recency, source-lineage, and projection-digest evidence, but retrieval never
+  mutates canonical truth
+- the clean soak acceptance bar is realistic:
+  - capture/event evidence for preference, directive, and project fact
+  - structural correction behavior or honest unresolved-target classification
+  - temp/privacy no active durable memory
+  - fresh recall backed by retrieval telemetry selecting relevant MMV2 ids or
+    a projection digest backed by those ids
+  - no raw prompt/transcript/tool-log leakage
+
+Reasoning:
+
+- the previous soak blockers were tempting to solve with narrow topic-specific
+  patches
+- those patches would recreate the old semantic forest and make the system
+  brittle
+- structural write-path rules and observable read-time ranking let the project
+  move through soak without pretending recall quality is globally perfect
+
+## 2026-04-21 - Memory Retrieval Runtime now blocks fallback removal and capture expansion
+
+Decision:
+
+- the next memory layer is a Memory Retrieval Runtime between canonical MMV2
+  storage and OpenClaw context assembly
+- canonical MMV2 durable records/events/edges remain semantic truth
+- projections are compiled views, not write authority
+- memory packs are runtime bundles, not durable memory records
+- the first implementation should use existing `runtime_context`
+  retrieval/context/projection tables and artifacts; do not add a DB migration
+  for the first retrieval-runtime pass
+- direct retrieval telemetry is required for clean-soak recall acceptance
+- projection-backed recall is acceptable only when the retrieval runtime
+  selects a fresh MMV2-derived projection/digest with active source memory ids
+- root `USER.md`, root `MEMORY.md`, daily notes, and session transcript context
+  cannot satisfy MMV2 recall proof by themselves
+- compatibility fallback removal and primary capture seam expansion are blocked
+  until the retrieval-runtime soak is clean
+
+Reasoning:
+
+- the MMV2-active soak proved capture/storage but failed the recall bar:
+  fresh-session recall could be explained by projection/context artifacts and
+  did not record direct retrieval requests
+- the old V0 retrieval path is too flat: it lacks retrieval planning, pack
+  typing, source weighting, conflict/supersession exclusion, projection digest
+  selection, and reliable telemetry
+- removing fallback or expanding capture before fixing recall would increase
+  memory volume without proving the system can retrieve the right active truth
+- projections can be faster and more robust than raw DB retrieval for some
+  project/entity views, but only when they remain source-linked, fresh, and
+  subordinate to canonical MMV2 state
+
+## 2026-04-21 - MMV2 hot paths are native by default and legacy compatibility is soak-window fallback only
+
+Decision:
+
+- active live write paths should persist MMV2 live memory batches into
+  MMV2-native durable SQL by default
+- active runtime rebuild and the V0 read path should read MMV2 durable truth
+  through native runtime records by default
+- this decision is superseded for roadmap ordering by the Memory Retrieval
+  Runtime decision above
+- legacy-shaped captured-object and legacy-style read compatibility should
+  remain present only as soak-window fallback/quarantine
+- the next roadmap sequence is:
+  - implement Memory Retrieval Runtime
+  - rerun the clean retrieval-runtime soak
+  - remove or further quarantine compatibility after that soak
+  - add ordinary-turn MMV2 evaluation coverage
+  - stabilize file-pack/provider variance
+  - implement primary capture seam expansion
+  - implement closed-loop memory ops instrumentation
+  - then proceed to graph, capsules, hierarchical retrieval, planner, synthesis,
+    and cache/projection policy
+
+Reasoning:
+
+- the storage cutover already made MMV2-native SQL the live semantic authority
+- the post-cutover cleanup moved active write/read seams onto MMV2-native
+  contracts
+- keeping old compatibility on the normal path would preserve the wrong mental
+  model and delay Phase 2 derived features
+- capture and operational safety need to be complete before graph/capsule work
+  consumes the live memory substrate more aggressively
+
+## 2026-04-21 - MMV2-native durable storage is now the live semantic authority with archive-only legacy retention
+
+Decision:
+
+- live semantic truth for `model-memory` now lives in MMV2-native durable SQL
+  tables:
+  - `model_memory.ingest_sources`
+  - `model_memory.ingest_segments`
+  - `model_memory.durable_memories`
+  - `model_memory.memory_events`
+  - `model_memory.memory_edges`
+- the old five-kind canonical tables are no longer live semantic authority
+- the first-pass storage posture is:
+  - MMV2-native durable write truth
+  - temporary write-side compatibility adapter for non-MMV2 upstream seams
+  - temporary read-side compatibility projection for rebuild/retrieval/runtime
+    consumers
+- the live reset is destructive by design:
+  - no legacy row migration into MMV2
+  - full DB backup first
+  - archive-only preservation of legacy DB state
+- rollback for the first soak cycle is operational, not a code revert:
+  - restore the full DB backup
+  - set `MODEL_MEMORY_STORAGE_ENGINE=legacy` if needed
+  - restart `openclaw-gateway`
+
+Reasoning:
+
+- the old five-kind schema had become mostly heavy-ingest residue and was no
+  longer the desired semantic truth contract
+- MMV2 already carried the richer durable contract needed for first-class
+  composites, conflicts, lineage, and scoped truth
+- a destructive reset with explicit backup and one-soak fallback is cleaner
+  than attempting lossy legacy-row migration into a new semantic contract
+- temporary compatibility layers are acceptable only as a bounded bridge while
+  the remaining upstream/read seams are rewired to MMV2 directly
+
 ## 2026-04-17 - Phase 2 uses kind-primary semantics, project-state capsules first, and operator-visible review surfacing
 
 Decision:

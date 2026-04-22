@@ -12,6 +12,7 @@ export function buildStatusJsonPayload(params: {
   osSummary: unknown;
   memory: unknown;
   memoryPlugin: unknown;
+  modelMemory?: unknown;
   agents: unknown;
   secretDiagnostics: string[];
   securityAudit?: unknown;
@@ -32,6 +33,7 @@ export function buildStatusJsonPayload(params: {
     updateChannelSource: channelInfo.source,
     memory: params.memory,
     memoryPlugin: params.memoryPlugin,
+    ...(params.modelMemory === undefined ? {} : { modelMemory: params.modelMemory }),
     gateway: buildStatusGatewayJsonPayloadFromSurface({ surface: params.surface }),
     gatewayService: params.surface.gatewayService,
     nodeService: params.surface.nodeService,

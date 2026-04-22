@@ -1,4 +1,5 @@
 import type {
+  MemoryProjectionType,
   WorkspaceProjectionTargetRecord,
   WorkspaceProjectionVersionRecord,
 } from "../../runtime-read-models.ts";
@@ -50,10 +51,17 @@ export function getWorkspaceProjectionTarget(targetId: string): WorkspaceProject
 
 export type BuildProjectionVersionInput = {
   targetId: string;
+  projectionType?: MemoryProjectionType;
   renderedText: string;
   sourceObjectIds: string[];
+  sourceEventIds?: string[];
+  sourceEdgeIds?: string[];
   sourceSlotKeys: string[];
   sourceSetKeys: string[];
+  freshness?: WorkspaceProjectionVersionRecord["freshness"];
+  staleMarkers?: string[];
+  conflictMarkers?: string[];
+  retrievalDigest?: WorkspaceProjectionVersionRecord["retrievalDigest"];
   builtAt?: Date;
 };
 
@@ -69,14 +77,25 @@ export function buildWorkspaceProjectionVersion(
   const normalizedSourceSetKeys = [...input.sourceSetKeys].toSorted((left, right) =>
     left.localeCompare(right),
   );
+  const normalizedSourceEventIds = [...(input.sourceEventIds ?? [])].toSorted((left, right) =>
+    left.localeCompare(right),
+  );
+  const normalizedSourceEdgeIds = [...(input.sourceEdgeIds ?? [])].toSorted((left, right) =>
+    left.localeCompare(right),
+  );
   const contentHash = hashRuntimeValue(
     JSON.stringify(
       {
         targetId: input.targetId,
+        projectionType: input.projectionType,
         renderedText: input.renderedText,
         sourceObjectIds: normalizedSourceObjectIds,
+        sourceEventIds: normalizedSourceEventIds,
+        sourceEdgeIds: normalizedSourceEdgeIds,
         sourceSlotKeys: normalizedSourceSlotKeys,
         sourceSetKeys: normalizedSourceSetKeys,
+        staleMarkers: input.staleMarkers ?? [],
+        conflictMarkers: input.conflictMarkers ?? [],
       },
       null,
       2,
@@ -86,12 +105,19 @@ export function buildWorkspaceProjectionVersion(
   return {
     id: buildRuntimeId("projection", `${input.targetId}:${contentHash}`),
     targetId: input.targetId,
+    projectionType: input.projectionType,
     contentHash,
     canonicalArtifactPath: `.openclaw/model-memory/projections/${input.targetId}-${contentHash.slice(0, 12)}.md`,
     sourceObjectIds: normalizedSourceObjectIds,
+    sourceEventIds: normalizedSourceEventIds,
+    sourceEdgeIds: normalizedSourceEdgeIds,
     sourceSlotKeys: normalizedSourceSlotKeys,
     sourceSetKeys: normalizedSourceSetKeys,
     tokenEstimate: countRuntimeTokens(input.renderedText),
     builtAt: input.builtAt ?? new Date(0),
+    freshness: input.freshness,
+    staleMarkers: input.staleMarkers ?? [],
+    conflictMarkers: input.conflictMarkers ?? [],
+    retrievalDigest: input.retrievalDigest,
   };
 }

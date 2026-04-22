@@ -84,6 +84,7 @@ export type {
   JsonModelExecutionRequest,
   JsonModelExecutionResponse,
   JsonModelExecutor,
+  ModelMemoryStorageEngine,
   MemoryIdentityDescriptor,
   ModelMemoryLifecycleState,
   ModelMemoryObject,
@@ -96,8 +97,12 @@ export type {
   ModelMemorySupportItemRecord,
   ModelMemoryWriteEventRecord,
   PackagingDriftType,
+  ProjectionMaterializationResult,
+  ProductionHookProbeRecord,
   RetrievalEnvelope,
   RetrievalResultItemRecord,
+  RuntimeCompatibleMemoryRecord,
+  RuntimeMemoryRecord,
   RuntimeRebuildResult,
   SameClaimConfidence,
   SearchTextOverlap,
@@ -108,6 +113,8 @@ export type {
   SessionContextStateRecord,
   SqlClient,
   StructuralDeltaClass,
+  ToolResultProofCaptureBuildResult,
+  ToolResultProofCaptureInput,
   WorkspaceProjectionTargetRecord,
   WorkspaceProjectionVersionRecord,
 } from "@openclaw/model-memory/runtime-api.js";
@@ -143,6 +150,12 @@ export const MemoryKindSchema: FacadeModule["MemoryKindSchema"] = createLazyFaca
 export const ModelMemoryCanonicalRepository: FacadeModule["ModelMemoryCanonicalRepository"] =
   createLazyFacadeClassValue("ModelMemoryCanonicalRepository");
 
+export const MmV2DatabaseMemoryObjectStore: FacadeModule["MmV2DatabaseMemoryObjectStore"] =
+  createLazyFacadeClassValue("MmV2DatabaseMemoryObjectStore");
+
+export const MmV2NativeRepository: FacadeModule["MmV2NativeRepository"] =
+  createLazyFacadeClassValue("MmV2NativeRepository");
+
 export const ModelMemoryOperatorInspection: FacadeModule["ModelMemoryOperatorInspection"] =
   createLazyFacadeClassValue("ModelMemoryOperatorInspection");
 
@@ -162,6 +175,9 @@ export const buildLexicalBaselineRetrievalRequest = bindFacadeFunction(
 );
 export const buildRetrievalPackArtifact = bindFacadeFunction("buildRetrievalPackArtifact");
 export const buildRetrievalRequestPrompt = bindFacadeFunction("buildRetrievalRequestPrompt");
+export const buildToolResultProofLiveCapture = bindFacadeFunction(
+  "buildToolResultProofLiveCapture",
+);
 export const buildWorkspaceProjectionVersion = bindFacadeFunction(
   "buildWorkspaceProjectionVersion",
 );
@@ -181,11 +197,17 @@ export const ingestDocumentLive = bindFacadeFunction("ingestDocumentLive");
 export const isDeterministicSameSlotSupersession = bindFacadeFunction(
   "isDeterministicSameSlotSupersession",
 );
+export const listRuntimeMemoryRecords = bindFacadeFunction("listRuntimeMemoryRecords");
+export const materializeProjectionArtifacts = bindFacadeFunction("materializeProjectionArtifacts");
 export const normalizeIdentityText = bindFacadeFunction("normalizeIdentityText");
 export const rankRetrievalCandidates = bindFacadeFunction("rankRetrievalCandidates");
 export const rebuildDerivedRuntimeState = bindFacadeFunction("rebuildDerivedRuntimeState");
 export const recoverDailyContinuityCandidatesLive = bindFacadeFunction(
   "recoverDailyContinuityCandidatesLive",
+);
+export const recordProductionHookProbe = bindFacadeFunction("recordProductionHookProbe");
+export const resolveModelMemoryStorageEngine = bindFacadeFunction(
+  "resolveModelMemoryStorageEngine",
 );
 export const runLiveDocumentShadow = bindFacadeFunction("runLiveDocumentShadow");
 export const runModelMemoryContextEngine = bindFacadeFunction("runModelMemoryContextEngine");

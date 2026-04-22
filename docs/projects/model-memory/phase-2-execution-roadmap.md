@@ -32,10 +32,62 @@ Phase 2 currently assumes:
   stronger enforcement lands in a second pass after the base graph and capsule
   system is proven
 
-Before the larger graph/capsule waves proceed, the project now treats packet
-compiler quality and kind balance as the immediate priority substrate.
+Before the larger graph/capsule waves proceed, the project now treats the
+Memory Retrieval Runtime, MMV2 capture coverage, closed-loop operational
+safety, and provider/evaluation stability as the immediate readiness substrate.
 
-That work sits at the front of Wave 0.
+Packet compiler quality and kind balance remain important, but they no longer
+override the post-storage-cutover need to fix recall/retrieval/projections
+first.
+
+## Pre-Phase-2 Continuation
+
+This continuation must finish before graph/capsule/planner implementation
+becomes the active engineering lane.
+
+1. Memory Retrieval Runtime:
+   - implement the replacement architecture in
+     [Memory Retrieval Runtime](/projects/model-memory/specs/memory-retrieval-runtime)
+   - introduce `RetrievalPlan`, `RetrievalCandidate`, `MemoryPack`,
+     `ProjectionDigest`, and `RetrievalRun`
+   - use existing `runtime_context` retrieval/context/projection storage in
+     the first pass; do not add DB migrations for the initial runtime slice
+   - require direct retrieval telemetry for fresh-session recall
+   - treat projection-backed recall as valid only when retrieval-selected,
+     fresh, and backed by active MMV2 `source_memory_ids`
+2. Clean MMV2-active retrieval soak:
+   - prove durable preference, directive, project fact, and
+     correction/supersession capture
+   - prove temp/privacy prompts do not create active durable memory
+   - prove fresh-session recall through retrieval telemetry rather than
+     same-session transcript or workspace-file-only context
+   - keep Memory Ops observe/report-only with auto-fix disabled
+3. Soak-window compatibility quarantine/removal plan:
+   - keep legacy compatibility fallback-only during soak
+   - remove or further quarantine fallback code after soak
+   - verify no active live writer or reader depends on legacy-shaped objects as
+     its primary contract
+4. Ordinary-turn MMV2 evaluation coverage:
+   - build ordinary-turn proof coverage against the live MMV2 path
+   - cover user preferences, durable directives, project facts, corrections,
+     and session-only rejects
+5. File-pack/provider variance stabilization:
+   - keep seeded file-pack runs honest
+   - report provider-output drift explicitly
+   - distinguish deterministic regression from model/provider variance
+6. Primary capture seam expansion:
+   - implement the verified seams from
+     [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
+   - start with `message:preprocessed` and ContextEngine user-message catchall
+   - add tool-result and outcome seams only with hook-health checks
+7. `memory-ops-closed-loop` instrumentation:
+   - implement the closed-loop spec in
+     [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
+   - enforce the no-dark-data rule
+   - keep auto-fix disabled by default
+
+Only after those seven items are validated should implementation proceed to the
+Phase 2 derived-feature waves below.
 
 ## Execution order
 
@@ -48,9 +100,17 @@ Goal:
 
 Includes:
 
+- Memory Retrieval Runtime
+- clean MMV2-active retrieval soak
+- post-soak fallback compatibility removal after that soak
+- ordinary-turn MMV2 evaluation coverage
+- file-pack/provider variance stabilization
+- primary capture seam expansion
+- closed-loop memory ops instrumentation
 - shared packet compiler and budgeting rails
 - `MEMORY.md` proof lane generalized into packet-family policy
 - retrieval-pack budgeting and shaping contract
+- projection-digest contract and source weighting
 - deep ingest stabilization and substrate population
 - `kind`-primary schema review
 - prompt-contract review for ingestion and capture prompts
@@ -59,6 +119,16 @@ Includes:
 
 Validation gate:
 
+- active live writers and readers have no normal-path dependence on
+  legacy-shaped objects
+- fresh-session recall records direct retrieval telemetry
+- selected packs/projections cite active MMV2 source memory ids
+- superseded/conflicted memories are excluded by default or rendered only in
+  conflict packs
+- ordinary-turn MMV2 proof coverage exists
+- file-pack variance is classified and reported honestly
+- capture seam hooks have health checks and fallback behavior
+- memory-ops signals persist only with automated consumers
 - deep ingest completes or advances cleanly
 - checkpoint contract is truthful under failure and resume
 - no known runtime rebuild race remains

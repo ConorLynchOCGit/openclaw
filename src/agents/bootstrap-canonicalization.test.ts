@@ -144,4 +144,59 @@ describe("assembleBootstrapCompatibilityContent", () => {
       ["# MEMORY.md", "", "## Human Notes", "- keep this around", ""].join("\n"),
     );
   });
+
+  it("keeps USER.md human-owned while pointing to the user projection artifact", () => {
+    const content = assembleBootstrapCompatibilityContent({
+      fileName: "USER.md",
+      filePath: "USER.md",
+      existingContent: [
+        "# USER.md",
+        "",
+        "## Human Profile",
+        "- keep this around",
+        "",
+        "<!-- OPENCLAW:MEMORY-PROJECTION:START memory-projection:user-profile -->",
+        "- old generated user preference",
+        "<!-- OPENCLAW:MEMORY-PROJECTION:END memory-projection:user-profile -->",
+        "",
+        "<!-- BEGIN GENERATED: model-memory -->",
+        "- generated user preference",
+        "<!-- END GENERATED: model-memory -->",
+      ].join("\n"),
+      registryEntry: {
+        id: "user_md",
+        runtimePath: "USER.md",
+        structuralMode: "human_profile",
+        currentOwnership: "human_curated_user_profile",
+        targetOwnership: "human_curated_runtime_source",
+        projectionMode: "artifact_only",
+        seedMode: "bootstrap_materialized",
+        seedTiming: "startup",
+        canonicalSourceClass: ["docs_projects"],
+      },
+      canonicalSources,
+      projectionText: "# USER.md\n\n## Preferences\n- generated user preference",
+      projectionVersion: {
+        id: "projection-user-v1",
+        targetId: "user-md",
+        contentHash: "hash-002",
+        canonicalArtifactPath: ".openclaw/model-memory/projections/user-md-hash-002.md",
+        sourceObjectIds: [],
+        sourceSlotKeys: [],
+        sourceSetKeys: [],
+        tokenEstimate: 12,
+        builtAt: new Date(0),
+      },
+    });
+
+    expect(content).toContain("## Human Profile");
+    expect(content).toContain("- keep this around");
+    expect(content).not.toContain("<!-- BEGIN GENERATED: model-memory -->");
+    expect(content).not.toContain("OPENCLAW:MEMORY-PROJECTION");
+    expect(content).not.toContain("- generated user preference");
+    expect(content).toContain("<!-- BEGIN GENERATED: openclaw-canonical -->");
+    expect(content).toContain(
+      "Current generated user projection artifact: .openclaw/model-memory/projections/user-md-hash-002.md",
+    );
+  });
 });

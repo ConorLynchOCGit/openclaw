@@ -30,6 +30,10 @@ import type { AnyAgentTool } from "./pi-tools.types.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
 import { sanitizeToolResultImages } from "./tool-images.js";
+import {
+  assertWritableWorkspaceMemoryPath,
+  isDailyWorkspaceMemoryNote,
+} from "./workspace-memory-generated-zones.js";
 
 export {
   REQUIRED_PARAM_GROUPS,
@@ -383,6 +387,15 @@ async function buildAutoIngestFingerprint(params: {
   workspaceRelativePath: string;
 }): Promise<string | null> {
   try {
+    if (isDailyWorkspaceMemoryNote(params.workspaceRelativePath)) {
+      const content = await fs.readFile(params.absolutePath, "utf8");
+      return createHash("sha256")
+        .update(params.workspaceRelativePath)
+        .update("\0daily-note-content\0")
+        .update(content)
+        .digest("hex")
+        .slice(0, 24);
+    }
     const stat = await fs.stat(params.absolutePath);
     return createHash("sha256")
       .update(params.workspaceRelativePath)
@@ -1155,6 +1168,7 @@ function createSandboxWriteOperations(params: SandboxToolParams) {
       await params.bridge.mkdirp({ filePath: dir, cwd: params.root });
     },
     writeFile: async (absolutePath: string, content: string) => {
+      assertWritableWorkspaceMemoryPath({ root: params.root, filePath: absolutePath });
       await params.bridge.writeFile({ filePath: absolutePath, cwd: params.root, data: content });
     },
   } as const;
@@ -1164,8 +1178,10 @@ function createSandboxEditOperations(params: SandboxToolParams) {
   return {
     readFile: (absolutePath: string) =>
       params.bridge.readFile({ filePath: absolutePath, cwd: params.root }),
-    writeFile: (absolutePath: string, content: string) =>
-      params.bridge.writeFile({ filePath: absolutePath, cwd: params.root, data: content }),
+    writeFile: (absolutePath: string, content: string) => {
+      assertWritableWorkspaceMemoryPath({ root: params.root, filePath: absolutePath });
+      return params.bridge.writeFile({ filePath: absolutePath, cwd: params.root, data: content });
+    },
     access: async (absolutePath: string) => {
       const stat = await params.bridge.stat({ filePath: absolutePath, cwd: params.root });
       if (!stat) {
@@ -1196,7 +1212,10 @@ function createHostWriteOperations(root: string, options?: { workspaceOnly?: boo
         const resolved = path.resolve(expandTildeToOsHome(dir));
         await fs.mkdir(resolved, { recursive: true });
       },
-      writeFile: writeHostFile,
+      writeFile: async (absolutePath: string, content: string) => {
+        assertWritableWorkspaceMemoryPath({ root, filePath: expandTildeToOsHome(absolutePath) });
+        await writeHostFile(absolutePath, content);
+      },
     } as const;
   }
 
@@ -1210,6 +1229,7 @@ function createHostWriteOperations(root: string, options?: { workspaceOnly?: boo
     },
     writeFile: async (absolutePath: string, content: string) => {
       const relative = toRelativeWorkspacePath(root, absolutePath);
+      assertWritableWorkspaceMemoryPath({ root, filePath: path.resolve(root, relative) });
       await writeFileWithinRoot({
         rootDir: root,
         relativePath: relative,
@@ -1230,7 +1250,10 @@ function createHostEditOperations(root: string, options?: { workspaceOnly?: bool
         const resolved = path.resolve(expandTildeToOsHome(absolutePath));
         return await fs.readFile(resolved);
       },
-      writeFile: writeHostFile,
+      writeFile: async (absolutePath: string, content: string) => {
+        assertWritableWorkspaceMemoryPath({ root, filePath: expandTildeToOsHome(absolutePath) });
+        await writeHostFile(absolutePath, content);
+      },
       access: async (absolutePath: string) => {
         const resolved = path.resolve(expandTildeToOsHome(absolutePath));
         await fs.access(resolved);
@@ -1250,6 +1273,7 @@ function createHostEditOperations(root: string, options?: { workspaceOnly?: bool
     },
     writeFile: async (absolutePath: string, content: string) => {
       const relative = toRelativeWorkspacePath(root, absolutePath);
+      assertWritableWorkspaceMemoryPath({ root, filePath: path.resolve(root, relative) });
       await writeFileWithinRoot({
         rootDir: root,
         relativePath: relative,

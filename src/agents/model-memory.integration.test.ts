@@ -64,11 +64,7 @@ describe("model-memory harness integration", () => {
       },
     });
 
-    expect(result.bootstrapFiles.map((file) => file.name).toSorted()).toEqual([
-      "AGENTS.md",
-      "MEMORY.md",
-      "USER.md",
-    ]);
+    expect(result.bootstrapFiles.map((file) => file.name).toSorted()).toEqual(["AGENTS.md"]);
     expect(result.normalizedUsage?.input).toBe(40);
     expect(result.normalizedUsage?.output).toBe(10);
     expect(result.normalizedUsage?.cacheRead).toBe(7);

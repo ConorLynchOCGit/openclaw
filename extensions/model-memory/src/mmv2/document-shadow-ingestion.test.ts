@@ -14,13 +14,16 @@ describe("mmv2/document-shadow-ingestion", () => {
   it("runs end to end without any live v1 DB write", async () => {
     const text = "I prefer concise answers.\n\n1. Run the test suite.\n2. Ship the build.";
     const source = createMmV2TestSource(text);
+    const readPayload = <T>(input: {
+      prompt: { promptPayload?: unknown; userPrompt: string };
+    }): T => (input.prompt.promptPayload as T) ?? (JSON.parse(input.prompt.userPrompt) as T);
 
     const interpreter = createScriptedMmV2Interpreter({
       "mmv2-capture-routing-v1": (input) => {
-        const payload = JSON.parse(input.prompt.userPrompt) as {
+        const payload = readPayload<{
           raw_event: { event_id: string };
           segments: Array<{ segment_id: string; text: string; detected_shape: string }>;
-        };
+        }>(input);
         const runtimePreferenceSegment = payload.segments.find((segment) =>
           segment.text.includes("I prefer concise answers."),
         )!;
@@ -57,11 +60,11 @@ describe("mmv2/document-shadow-ingestion", () => {
         });
       },
       "mmv2-atomic-extraction-v1": (input) => {
-        const payload = JSON.parse(input.prompt.userPrompt) as {
+        const payload = readPayload<{
           raw_event: typeof source.rawEvent;
-          segments: Array<{ segment_id: string; text: string }>;
-        };
-        const runtimePreferenceSegment = payload.segments.find((segment) =>
+          routed_candidates: Array<{ segment_id: string; text: string; source_route: string }>;
+        }>(input);
+        const runtimePreferenceSegment = payload.routed_candidates.find((segment) =>
           segment.text.includes("I prefer concise answers."),
         )!;
         const claimCandidate = buildAtomicCandidate(
@@ -75,11 +78,16 @@ describe("mmv2/document-shadow-ingestion", () => {
         });
       },
       "mmv2-composite-extraction-v1": (input) => {
-        const payload = JSON.parse(input.prompt.userPrompt) as {
+        const payload = readPayload<{
           raw_event: typeof source.rawEvent;
-          segments: Array<{ segment_id: string; text: string; detected_shape: string }>;
-        };
-        const runtimeProcedureSegment = payload.segments.find(
+          routed_candidates: Array<{
+            segment_id: string;
+            text: string;
+            detected_shape: string;
+            source_route: string;
+          }>;
+        }>(input);
+        const runtimeProcedureSegment = payload.routed_candidates.find(
           (segment) => segment.detected_shape === "numbered_list_block",
         )!;
         const compositeCandidate = buildCompositeCandidate(
@@ -93,7 +101,7 @@ describe("mmv2/document-shadow-ingestion", () => {
         });
       },
       "mmv2-canonicalization-v1": (input) => {
-        const payload = JSON.parse(input.prompt.userPrompt) as {
+        const payload = readPayload<{
           raw_event: typeof source.rawEvent;
           extracted_candidates: Array<{
             candidate_id: string;
@@ -101,7 +109,7 @@ describe("mmv2/document-shadow-ingestion", () => {
             evidence_quote?: string;
             summary?: string;
           }>;
-        };
+        }>(input);
         const claim = payload.extracted_candidates.find((candidate) =>
           candidate.evidence_quote?.includes("I prefer concise answers."),
         )!;
@@ -138,10 +146,10 @@ describe("mmv2/document-shadow-ingestion", () => {
         });
       },
       "mmv2-admission-v1": (input) => {
-        const payload = JSON.parse(input.prompt.userPrompt) as {
+        const payload = readPayload<{
           raw_event: typeof source.rawEvent;
           canonical_candidates: Array<{ candidate_id: string }>;
-        };
+        }>(input);
         return captureOne({
           schema_version: "admission_decision.v1",
           event_id: payload.raw_event.event_id,
@@ -150,11 +158,14 @@ describe("mmv2/document-shadow-ingestion", () => {
           ),
         });
       },
-      "mmv2-reconciliation-v1": (input) =>
-        captureOne({
+      "mmv2-reconciliation-v1": (input) => {
+        const payload = readPayload<{ event_id: string; candidate: { candidate_id: string } }>(
+          input,
+        );
+        return captureOne({
           schema_version: "reconciliation_decision.v1",
-          event_id: JSON.parse(input.prompt.userPrompt).event_id,
-          candidate_id: JSON.parse(input.prompt.userPrompt).candidate.candidate_id,
+          event_id: payload.event_id,
+          candidate_id: payload.candidate.candidate_id,
           decision: "insert_new",
           target_memory_ids: [],
           merged_canonical_text: null,
@@ -162,7 +173,8 @@ describe("mmv2/document-shadow-ingestion", () => {
           supersedes_memory_ids: [],
           rationale: "New shadow candidate.",
           confidence: 0.9,
-        }),
+        });
+      },
     });
 
     const result = await ingestDocumentV2Shadow({

@@ -29,6 +29,33 @@ Observed runtime continuity/state surfaces still present:
 - no live QMD directories found
 - no live LanceDB directories found
 
+## 2026-04-21 post-SOAKQUAR compatibility quarantine baseline
+
+`SOAKQUAR-2026-04-21` is accepted as the clean MMV2 retrieval-runtime soak
+baseline. Compatibility work can now proceed, but only in small reversible
+slices.
+
+Quarantine rules:
+
+- no semantic forests
+- no fuzzy write-path correction or supersession
+- no legacy semantic-family collision in default MMV2 hot paths
+- no root `USER.md` / `MEMORY.md` projection write-back
+- no fallback compatibility removal without a targeted test and rollback path
+
+Current fallback classifications:
+
+| Surface                                                          | Classification                            | Default posture                                                                       | Next action                                                                        |
+| ---------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `extensions/model-memory/src/semantic-identity.ts`               | legacy fallback / read-only normalization | not MMV2 write authority                                                              | keep quarantined; test that live MMV2 capture does not call it                     |
+| `extensions/model-memory/src/semantic-collision-adjudication.ts` | legacy fallback                           | not default MMV2 reconciliation                                                       | keep behind explicit fallback-only posture                                         |
+| `extensions/model-memory/src/db/database-memory-object-store.ts` | legacy fallback                           | not default MMV2 truth                                                                | retain only for explicit rollback/fallback until selector tests prove removal safe |
+| `extensions/model-memory/src/mmv2/semantic-identity.ts`          | bounded structured identity               | allowed for canonical fields, ids, scope, status, source refs, and explicit user text | keep bounded; reject fuzzy topical growth                                          |
+| `extensions/model-memory/src/mmv2/reconciliation.ts`             | bounded structured identity               | exact duplicates and structural correction targets only                               | keep tests for no fuzzy supersession                                               |
+| `extensions/model-memory/src/mmv2/storage-compatibility.ts`      | legacy shape bridge                       | temporary compatibility only                                                          | remove after read/write consumers stop importing legacy shapes                     |
+| `extensions/model-memory/src/runtime-read-models.ts`             | read-only adapter                         | MMV2-derived read models only                                                         | ensure compatibility projections are never treated as canonical authority          |
+| `extensions/model-memory/src/retrieval-request-interpreter.ts`   | read-only retrieval fallback              | telemetry fallback only                                                               | continue replacing with Retrieval Runtime planner behavior                         |
+
 ## Already retired before this slice
 
 These user-listed legacy paths were already gone at the start of this sprint.
@@ -120,3 +147,28 @@ current repo.
   authority
 - record exact remaining blocker seams for the deeper `memory-core` /
   `memorySearch` deletion tranche
+
+## 2026-04-21 MMV2 storage cutover posture
+
+The first MMV2-native durable-storage cutover executes with these explicit
+rules:
+
+- live semantic truth is MMV2-native SQL, not the legacy five-kind schema
+- legacy DB contents are backup/archive only
+- no legacy rows are migrated forward into MMV2
+- runtime-derived `runtime_context.*` is wiped and reseeded from MMV2 truth
+- temporary compatibility projection/adapter layers may exist for one soak
+  cycle, but they are not canonical truth
+
+### One-soak rollback procedure
+
+If the first soak cycle fails, rollback is:
+
+1. stop `openclaw-gateway`
+2. restore the full DB dump taken immediately before cutover
+3. set `MODEL_MEMORY_STORAGE_ENGINE=legacy` if the live runtime must read/write
+   the old schema during rollback
+4. restart `openclaw-gateway`
+
+This rollback path is the sanctioned fallback. Code revert is not the primary
+rollback mechanism for the first soak cycle.

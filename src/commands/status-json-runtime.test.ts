@@ -27,6 +27,12 @@ function createScan() {
     osSummary: { platform: "linux" },
     memory: null,
     memoryPlugin: { enabled: true },
+    modelMemory: {
+      enabled: true,
+      source: "config:plugins.entries.model-memory.config.live.enabled",
+      databaseConfigured: true,
+      databaseName: "model_memory",
+    },
     gatewayMode: "local" as const,
     gatewayConnection: { url: "ws://127.0.0.1:18789", urlSource: "config" },
     remoteUrlMissing: false,

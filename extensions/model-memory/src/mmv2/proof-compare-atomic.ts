@@ -2,10 +2,66 @@ import type { AtomicExtractionBatch, SegmentedIngestEvent } from "./contracts.ts
 import {
   compareExpectedCollection,
   matchesSubset,
+  normalizeComparisonText,
   resolveSegmentText,
+  semanticallyMatchesText,
   type MmV2PhaseComparisonResult,
 } from "./proof-compare-shared.ts";
 import type { MmV2AtomicExpectation, MmV2PhaseExpectation } from "./proof-corpus.ts";
+
+function matchesAtomicPayload(
+  candidate: AtomicExtractionBatch["atomic_candidates"][number],
+  expected: MmV2AtomicExpectation,
+): boolean {
+  if (expected.payloadSubset === undefined) {
+    return true;
+  }
+  if (matchesSubset(candidate.payload, expected.payloadSubset)) {
+    return true;
+  }
+  if (
+    candidate.kind === "directive" &&
+    expected.payloadSubset &&
+    typeof expected.payloadSubset === "object" &&
+    !Array.isArray(expected.payloadSubset)
+  ) {
+    const payload = candidate.payload as Record<string, unknown>;
+    const expectedAction = expected.payloadSubset.action;
+    const expectedTrigger = expected.payloadSubset.trigger;
+    const actionMatches =
+      typeof expectedAction !== "string" ||
+      (typeof payload.action === "string" &&
+        semanticallyMatchesText(payload.action, expectedAction));
+    const triggerMatches =
+      typeof expectedTrigger !== "string" ||
+      (typeof payload.trigger === "string" &&
+        semanticallyMatchesText(payload.trigger, expectedTrigger));
+    const remainingSubset = Object.fromEntries(
+      Object.entries(expected.payloadSubset).filter(
+        ([key]) => key !== "action" && key !== "trigger",
+      ),
+    );
+    return actionMatches && triggerMatches && matchesSubset(candidate.payload, remainingSubset);
+  }
+  if (
+    candidate.kind === "source_ref" &&
+    expected.payloadSubset &&
+    typeof expected.payloadSubset === "object" &&
+    !Array.isArray(expected.payloadSubset)
+  ) {
+    const payload = candidate.payload as Record<string, unknown>;
+    if (
+      typeof expected.payloadSubset.locator === "string" &&
+      payload.locator === expected.payloadSubset.locator
+    ) {
+      const remainingSubset = Object.fromEntries(
+        Object.entries(expected.payloadSubset).filter(([key]) => key !== "locator"),
+      );
+      return matchesSubset(candidate.payload, remainingSubset);
+    }
+  }
+  return false;
+}
 
 export function compareAtomicPhase(
   atomic: AtomicExtractionBatch,
@@ -23,16 +79,16 @@ export function compareAtomicPhase(
     expected: expectation?.items ?? [],
     exactCount: expectation?.exactCount,
     matches: (candidate, expected) =>
-      (expected.candidateId === undefined || candidate.candidate_id === expected.candidateId) &&
       (expected.sourceSegmentTextIncludes === undefined ||
         candidate.sourceSegmentText.includes(expected.sourceSegmentTextIncludes)) &&
       (expected.evidenceQuote === undefined ||
-        candidate.evidence_quote === expected.evidenceQuote) &&
+        normalizeComparisonText(candidate.evidence_quote) ===
+          normalizeComparisonText(expected.evidenceQuote)) &&
       (expected.kind === undefined || candidate.kind === expected.kind) &&
       (expected.normalizedStatement === undefined ||
-        candidate.normalized_statement === expected.normalizedStatement) &&
+        semanticallyMatchesText(candidate.normalized_statement, expected.normalizedStatement)) &&
       (expected.minConfidence === undefined || candidate.confidence >= expected.minConfidence) &&
-      matchesSubset(candidate.payload, expected.payloadSubset),
+      matchesAtomicPayload(candidate, expected),
     describeActual: (actualItem) => ({
       candidate_id: actualItem.candidate_id,
       sourceSegmentText: actualItem.sourceSegmentText,

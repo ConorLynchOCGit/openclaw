@@ -6,6 +6,7 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORKSPACE="${OPENCLAW_WORKSPACE_DIR:-/root/.openclaw/workspace}"
 source "$REPO_ROOT/ops/host/lib/report_sessions.sh"
+source "$REPO_ROOT/ops/host/lib/workspace_memory_guard.sh"
 OPS_DIR="$REPO_ROOT/ops/reviews"
 GENERATED_DIR="$WORKSPACE/projects/ops/generated_current"
 OUT="$GENERATED_DIR/daily_operator_review_context_current.md"
@@ -119,6 +120,17 @@ DEPLOYMENT_CURRENT_SLICE_SNIPPET="$(sed -n '1,120p' "$REPO_ROOT/docs/projects/de
 SYSTEM_DEPLOYMENT_SNIPPET="$(sed -n '1,200p' "$REPO_ROOT/docs/system/deployment.md" 2>/dev/null || true)"
 SYSTEM_MEMORY_SNIPPET="$(sed -n '1,220p' "$REPO_ROOT/docs/system/memory.md" 2>/dev/null || true)"
 GITHUB_AUTOMATION_SNIPPET="$(sed -n '1,180p' "$REPO_ROOT/docs/projects/deployment-topology/github-automation.md" 2>/dev/null || true)"
+MEMORY_OPS_REPORT_HOST="$REPO_ROOT/.openclaw-memory-ops/reports/latest.md"
+MEMORY_OPS_REPORT_RUNTIME="/app/.openclaw-memory-ops/reports/latest.md"
+
+memory_ops_report_note() {
+  if [[ -f "$MEMORY_OPS_REPORT_HOST" ]]; then
+    printf 'latest_path_host: %s\nlatest_path_runtime: %s\nstatus: present\n' "$MEMORY_OPS_REPORT_HOST" "$MEMORY_OPS_REPORT_RUNTIME"
+    sed -n '1,120p' "$MEMORY_OPS_REPORT_HOST"
+  else
+    printf 'latest_path_host: %s\nlatest_path_runtime: %s\nstatus: missing\n' "$MEMORY_OPS_REPORT_HOST" "$MEMORY_OPS_REPORT_RUNTIME"
+  fi
+}
 
 cron_health_note() {
   if [[ -n "$LATEST_CRON_HEALTH_HOST" && -f "$LATEST_CRON_HEALTH_HOST" ]]; then
@@ -159,6 +171,7 @@ cat > "$OUT" <<EOF
 7. Current \`archives/daily_memory_evidence/$TODAY.md\`
 8. Current canonical repo status
 9. Current cron/runtime/session evidence
+10. Current Memory Ops Health Report, when present
 
 ## Required Output Shape
 - Begin with \`# Daily Operator Review — $TODAY\`
@@ -238,6 +251,16 @@ $SYSTEM_MEMORY_SNIPPET
 $GITHUB_AUTOMATION_SNIPPET
 \`\`\`
 
+### Memory Ops Health Report
+\`\`\`
+$(memory_ops_report_note)
+\`\`\`
+
+### Workspace memory writeability guard
+\`\`\`
+$(workspace_memory_writeability_guard_note "$WORKSPACE")
+\`\`\`
+
 ## Narrow Context Sources
 - \`docs/projects/deployment-topology/STATUS.md\` and \`CURRENT_SLICE.md\` remain the primary bounded-next-pass sources.
 - \`docs/system/deployment.md\` and \`docs/system/memory.md\` remain the durable system-level policy surfaces.
@@ -245,6 +268,7 @@ $GITHUB_AUTOMATION_SNIPPET
 - \`docs/projects/maintenance/DEBT_REGISTER.md\` remains the authority for unresolved maintenance debt when directly relevant.
 - \`archives/daily_memory_evidence/$TODAY.md\` is the durable memory-evidence layer for this review.
 - \`docs/projects/deployment-topology/github-automation.md\` is the authority for the GitHub digest lane contract.
+- \`.openclaw-memory-ops/reports/latest.md\` is the observe/report-only memory-ops recommendation surface when present.
 - Legacy workspace \`core/ROADMAP.md\` and workspace \`MEMORY.md\` are no longer authoritative for this review and must not override the canonical docs.
 - Use these files selectively; do not restate large excerpts in the daily review.
 

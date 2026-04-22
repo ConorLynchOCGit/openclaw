@@ -1,3 +1,4 @@
+import type { JsonModelExecutionResponseOptions } from "./model-execution.ts";
 import type { ModelContractMetadata } from "./prompt-contracts.ts";
 import type { ModelMemorySourceKind } from "./storage-database-contract.ts";
 
@@ -25,6 +26,8 @@ export type SemanticExtractionPrompt = {
   systemPrompt: string;
   userPrompt: string;
   responseFormat: "json";
+  responseOptions?: JsonModelExecutionResponseOptions;
+  promptPayload?: unknown;
 };
 
 export type SemanticInterpreterInput = {

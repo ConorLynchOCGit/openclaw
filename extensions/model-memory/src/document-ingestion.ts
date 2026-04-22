@@ -1,5 +1,14 @@
 import { z } from "zod";
+import type {
+  CapturedMemoryObject,
+  DocumentIngestionInput,
+  DocumentIngestionResult,
+  DocumentWindowIngestionResult,
+  IngestionSourceWindow,
+  SharedIngestionResult,
+} from "./document-ingestion-contracts.ts";
 import { buildHeadingPathOptions, buildHeadingPathRefLookup } from "./heading-paths.ts";
+import { ingestDocumentV2ForLivePath } from "./mmv2/live-document-ingestion.ts";
 import { JsonModelOutputError } from "./model-execution.ts";
 import {
   buildSemanticCandidateExtractionPrompt,
@@ -7,11 +16,16 @@ import {
   buildSemanticExtractionPrompt,
   buildSemanticExtractionRepairPrompt,
 } from "./semantic-extraction-prompt.ts";
-import type {
-  InterpreterSourceWindow,
-  SemanticInterpreter,
-  SemanticInterpreterResult,
-} from "./semantic-interpreter.ts";
+export type {
+  CapturedMemoryObject,
+  DocumentIngestionInput,
+  DocumentIngestionResult,
+  DocumentWindowIngestionResult,
+  IngestionBlockDescriptor,
+  IngestionSourceWindow,
+  SharedIngestionResult,
+} from "./document-ingestion-contracts.ts";
+import type { SemanticInterpreter, SemanticInterpreterResult } from "./semantic-interpreter.ts";
 import type { ModelMemoryObject } from "./semantic-schema.ts";
 import type {
   SourceWindowValidationContext,
@@ -21,56 +35,9 @@ import type {
 import { validateMemoryObject } from "./semantic-validator.ts";
 import {
   adaptDocumentSource,
-  type DocumentSourceEnvelope,
   type DocumentSourceInput,
 } from "./source-adapters/document-source-adapter.ts";
 import type { ModelMemorySourceKind } from "./storage-database-contract.ts";
-
-export type CapturedMemoryObject = {
-  sourceWindowId: string;
-  sourceKind: ModelMemorySourceKind;
-  object: ModelMemoryObject;
-  contractName: "semantic_extraction";
-  contractVersion: string;
-  modelId: string;
-};
-
-export type DocumentWindowIngestionResult =
-  | {
-      sourceWindowId: string;
-      action: "ignore";
-    }
-  | {
-      sourceWindowId: string;
-      action: "capture";
-      objects: CapturedMemoryObject[];
-    }
-  | {
-      sourceWindowId: string;
-      action: "reject";
-      errors: ValidationFailure[];
-      rawObjects: unknown[];
-    };
-
-export type DocumentIngestionResult = {
-  source: DocumentSourceEnvelope["source"];
-  windows: DocumentSourceEnvelope["windows"];
-  windowResults: DocumentWindowIngestionResult[];
-  capturedObjects: CapturedMemoryObject[];
-};
-
-type IngestionBlockDescriptor = {
-  id: string;
-  headingPath: string[];
-  lineStart: number;
-  lineEnd: number;
-  text: string;
-};
-
-type IngestionSourceWindow = InterpreterSourceWindow & {
-  blockDescriptors: IngestionBlockDescriptor[];
-  createdAt?: Date;
-};
 
 type IngestionSourceEnvelope<
   TSource extends { id: string; sourceKind: ModelMemorySourceKind },
@@ -80,24 +47,9 @@ type IngestionSourceEnvelope<
   windows: TWindow[];
 };
 
-export type SharedIngestionResult<
-  TSource extends { id: string; sourceKind: ModelMemorySourceKind },
-  TWindow extends IngestionSourceWindow,
-> = {
-  source: TSource;
-  windows: TWindow[];
-  windowResults: DocumentWindowIngestionResult[];
-  capturedObjects: CapturedMemoryObject[];
-};
+export const DOCUMENT_INGEST_ENGINE_ENV = "MODEL_MEMORY_DOCUMENT_INGEST_ENGINE";
 
-export type DocumentIngestionInput = {
-  document: DocumentSourceInput;
-  modelId: string;
-  candidateModelId?: string;
-  interpreter: SemanticInterpreter;
-  contractVersion?: string;
-  candidateContractVersion?: string;
-};
+export type DocumentIngestEngine = "v1" | "mmv2";
 
 const CandidateTypeSchema = z.enum(["preference", "fact", "rule", "procedure", "reference"]);
 const CandidateConfidenceSchema = z.enum(["weak", "medium", "strong"]);
@@ -772,4 +724,45 @@ export async function ingestDocument(
     contractVersion: input.contractVersion,
     candidateContractVersion: input.candidateContractVersion,
   });
+}
+
+function readDocumentIngestEngineOverride(): string | undefined {
+  const rawValue = process.env[DOCUMENT_INGEST_ENGINE_ENV];
+  if (typeof rawValue !== "string") {
+    return undefined;
+  }
+  const normalized = rawValue.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+export function resolveLiveDocumentIngestEngine(input: {
+  sourceKind?: DocumentSourceInput["sourceKind"];
+}): DocumentIngestEngine {
+  if ((input.sourceKind ?? "document") !== "document") {
+    return "v1";
+  }
+
+  const override = readDocumentIngestEngineOverride();
+  if (!override || override === "mmv2") {
+    return "mmv2";
+  }
+  if (override === "v1" || override === "legacy") {
+    return "v1";
+  }
+
+  throw new Error(
+    `Unsupported ${DOCUMENT_INGEST_ENGINE_ENV} value: ${override}. Expected mmv2 or v1.`,
+  );
+}
+
+export async function ingestDocumentForLivePath(
+  input: DocumentIngestionInput,
+): Promise<DocumentIngestionResult> {
+  const engine = resolveLiveDocumentIngestEngine({
+    sourceKind: input.document.sourceKind,
+  });
+  if (engine === "v1") {
+    return ingestDocument(input);
+  }
+  return ingestDocumentV2ForLivePath(input);
 }

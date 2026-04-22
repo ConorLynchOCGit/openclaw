@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compileProjection } from "../../projection-compiler.ts";
 
 describe("render-memory-md", () => {
-  it("renders deterministic MEMORY.md content and preserves human sections", () => {
+  it("renders deterministic MEMORY.md content while leaving root MEMORY.md artifact-only", () => {
     const result = compileProjection({
       targetId: "memory-md",
       memoryObjects: [
@@ -86,6 +86,6 @@ describe("render-memory-md", () => {
     expect(result.renderedText).toContain("- deployment region: region-001");
     expect(result.renderedText).toContain("- procedure-001: run check-001 -> record artifact-001");
     expect(result.outputFileContent).toContain("Preserve me.");
-    expect(result.outputFileContent).toContain("<!-- BEGIN GENERATED: model-memory -->");
+    expect(result.outputFileContent).not.toContain("<!-- BEGIN GENERATED: model-memory -->");
   });
 });

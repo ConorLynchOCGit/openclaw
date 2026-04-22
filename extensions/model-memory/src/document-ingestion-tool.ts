@@ -3,6 +3,11 @@ import path from "node:path";
 import type { AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool, OpenClawPluginApi } from "openclaw/plugin-sdk/core";
+import {
+  buildWorkspaceMemorySourceMetadata,
+  isDailyWorkspaceMemoryNote,
+  stripGeneratedWorkspaceMemoryZones,
+} from "../../../src/agents/workspace-memory-generated-zones.js";
 import { resolveRepoCanonicalReadPath } from "../../../src/infra/repo-canonical-paths.js";
 import {
   JsonFileDocumentIngestionRunRecordStore,
@@ -11,7 +16,6 @@ import {
   type DocumentIngestionRunnerRunRecord,
   type DocumentIngestionRunnerSource,
 } from "./admin/document-ingestion-runner-service.ts";
-import { DatabaseMemoryObjectStore } from "./db/database-memory-object-store.ts";
 import type { JsonModelExecutor } from "./model-execution.ts";
 import { ExecutorBackedSemanticInterpreter } from "./real-semantic-interpreter.ts";
 import { ExecutorBackedSemanticCollisionAdjudicator } from "./semantic-collision-adjudication.ts";
@@ -154,7 +158,15 @@ async function buildRunnerSources(input: {
     const absolutePath =
       canonical?.absolutePath ?? assertWorkspaceRelativePath(input.workspaceRoot, sourcePath);
     const displayPath = canonical?.logicalPath ?? sourcePath;
-    const text = await input.readTextFile(absolutePath, "utf8");
+    const rawText = await input.readTextFile(absolutePath, "utf8");
+    const text = stripGeneratedWorkspaceMemoryZones({
+      relativePath: displayPath,
+      content: rawText,
+    });
+    const memorySourceMetadata = buildWorkspaceMemorySourceMetadata({
+      relativePath: displayPath,
+      content: rawText,
+    });
     records.push({
       sourceId: `model-memory-tool-source-${index + 1}`,
       displayPath,
@@ -163,10 +175,13 @@ async function buildRunnerSources(input: {
         externalSourceId: displayPath,
         text,
         projectId: input.projectId,
-        sourceKind: "document",
+        sourceKind: isDailyWorkspaceMemoryNote(displayPath) ? "daily_continuity" : "document",
         sourceMetadata: {
           relativePath: displayPath,
           sourceSurface: "model_memory_document_ingest_tool",
+          contentHash: memorySourceMetadata.contentHash,
+          sourceAuthority: memorySourceMetadata.sourceAuthority,
+          generatedZonesStripped: memorySourceMetadata.generatedZonesStripped,
         },
         maxWordsPerWindow: input.maxWordsPerWindow,
       },
@@ -279,16 +294,11 @@ export function createModelMemoryDocumentIngestionTool(
         });
         const interpreter = new ExecutorBackedSemanticInterpreter(executor);
         const collisionAdjudicator = new ExecutorBackedSemanticCollisionAdjudicator(executor);
-        const memoryStore = new DatabaseMemoryObjectStore(
-          runtime.canonicalRepository,
-          collisionAdjudicator,
-        );
         const service =
           deps.createRunnerService?.(runtime) ??
           new ModelMemoryDocumentIngestionRunnerService({
             canonicalRepository: runtime.canonicalRepository,
             runtimeRepository: runtime.runtimeRepository,
-            memoryStore,
             collisionAdjudicator,
           });
         const recordStore =

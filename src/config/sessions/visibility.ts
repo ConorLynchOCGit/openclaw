@@ -7,6 +7,7 @@ import type { SessionEntry, SessionRetentionClass, SessionVisibilityClass } from
 
 const PROOF_SESSION_KEY_PREFIX = "codex-";
 const PROOF_SESSION_KEY_PREFIX_ALT = "proof-";
+const PROOF_SESSION_KEY_PREFIX_VALIDATION = "validation-";
 const SYSTEM_SESSION_SUFFIX = ":heartbeat";
 const PROOF_RETENTION_MS = 2 * 24 * 60 * 60 * 1000;
 const INTERNAL_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
@@ -27,7 +28,8 @@ export function hasUserFacingSessionMetadata(
 function matchesProofSessionKey(requestKey: string): boolean {
   return (
     requestKey.startsWith(PROOF_SESSION_KEY_PREFIX) ||
-    requestKey.startsWith(PROOF_SESSION_KEY_PREFIX_ALT)
+    requestKey.startsWith(PROOF_SESSION_KEY_PREFIX_ALT) ||
+    requestKey.startsWith(PROOF_SESSION_KEY_PREFIX_VALIDATION)
   );
 }
 
@@ -41,7 +43,15 @@ function isProofHintedEntry(entry?: SessionEntry): boolean {
     return true;
   }
   const label = normalizeLowercaseStringOrEmpty(entry?.label ?? "");
-  return label === "proof" || label === "codex";
+  if (label === "proof" || label === "codex") {
+    return true;
+  }
+  const displayName = normalizeLowercaseStringOrEmpty(entry?.displayName ?? "");
+  const originLabel = normalizeLowercaseStringOrEmpty(entry?.origin?.label ?? "");
+  if (displayName.startsWith("codex-") || displayName.startsWith("proof-")) {
+    return true;
+  }
+  return originLabel.startsWith("codex-") || originLabel.startsWith("proof-");
 }
 
 function isInternalEntry(entry?: SessionEntry): boolean {
@@ -60,9 +70,6 @@ export function deriveSessionVisibilityClass(params: {
   entry?: SessionEntry;
 }): SessionVisibilityClass {
   const existing = params.entry?.visibilityClass;
-  if (existing) {
-    return existing;
-  }
 
   const loweredKey = normalizeLowercaseStringOrEmpty(params.key);
   if (
@@ -76,13 +83,38 @@ export function deriveSessionVisibilityClass(params: {
 
   const parsed = parseAgentSessionKey(params.key);
   const requestKey = normalizeLowercaseStringOrEmpty(parsed?.rest ?? "");
+  const isCanonicalMainSession =
+    parsed && normalizeAgentId(parsed.agentId) === "main" && requestKey === "main";
+  if (isCanonicalMainSession) {
+    return "operator";
+  }
+  const staleStoredProofForUserFacingMainSession =
+    existing === "proof" &&
+    parsed &&
+    normalizeAgentId(parsed.agentId) === "main" &&
+    hasUserFacingSessionMetadata(params.entry) &&
+    !matchesProofSessionKey(requestKey) &&
+    !isProofHintedEntry(params.entry);
+  if (staleStoredProofForUserFacingMainSession) {
+    return "operator";
+  }
+  const legacyOperatorProofMismatch =
+    existing === "operator" &&
+    params.entry?.retentionClass === "standard" &&
+    params.entry?.systemSent === true;
   if (
     parsed &&
     normalizeAgentId(parsed.agentId) === "main" &&
-    (matchesProofSessionKey(requestKey) || isProofHintedEntry(params.entry)) &&
+    (matchesProofSessionKey(requestKey) ||
+      isProofHintedEntry(params.entry) ||
+      legacyOperatorProofMismatch) &&
     !hasUserFacingSessionMetadata(params.entry)
   ) {
     return "proof";
+  }
+
+  if (existing) {
+    return existing;
   }
 
   if (
@@ -102,10 +134,13 @@ export function deriveSessionRetentionClass(params: {
   entry?: SessionEntry;
 }): SessionRetentionClass {
   const existing = params.entry?.retentionClass;
-  if (existing) {
+  const visibilityClass = deriveSessionVisibilityClass(params);
+  const staleStoredOperatorRetention = existing === "standard" && visibilityClass !== "operator";
+  const staleStoredNonOperatorRetention =
+    existing !== undefined && existing !== "standard" && visibilityClass === "operator";
+  if (existing && !staleStoredOperatorRetention && !staleStoredNonOperatorRetention) {
     return existing;
   }
-  const visibilityClass = deriveSessionVisibilityClass(params);
   switch (visibilityClass) {
     case "proof":
       return "proof_short";

@@ -7,17 +7,23 @@ title: "Deployment Topology Current Slice"
 
 ## Active slice
 
-`runtime-hardening-rollout-proof-and-session-classification`
+`authenticated-operator-prompt-harness-and-ui-failure-triage`
 
 ## Goals
 
-1. keep runtime-facing changes tied to live rollout proof instead of local-only
-   validation
-2. expose and verify a real deployed build signature on the live gateway
-3. keep internal/proof sessions out of the normal operator selector through
-   explicit metadata classification and retention
-4. preserve the compose-run gateway RPC proof path while diagnosing the still
-   broken host loopback RPC path
-5. keep auth discovery, path parity, and runtime-assertion surfaces discoverable
-6. keep the repo docs aligned with the new live runtime truth
-7. preserve the Tailnet-safe operator posture while runtime proof evolves
+1. preserve the approved-origin authenticated browser harness as the canonical
+   operator prompt-execution lane
+2. keep the old selector/auth bootstrap blockers closed and documented
+3. drive the remaining operator/UI backlog from real browser-visible evidence
+   instead of human-only assumptions
+4. reduce the remaining backlog to concrete runtime/product failures
+5. triage those failures by seam:
+   - review-session publication
+   - bootstrap truncation
+   - Main tool/delegation routing
+   - specialist workspace permissions
+   - missing Researcher selector exposure
+   - progress/replay/session-parity state
+   - model-memory token retrieval
+   - ingest start/progress/replay
+   - selector label regression after sustained activity

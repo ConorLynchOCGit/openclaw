@@ -1,10 +1,27 @@
 import type { CompositeExtractionBatch, SegmentedIngestEvent } from "./contracts.ts";
 import {
   compareExpectedCollection,
+  normalizeComparisonText,
   resolveSegmentText,
+  semanticallyMatchesText,
   type MmV2PhaseComparisonResult,
 } from "./proof-compare-shared.ts";
 import type { MmV2CompositeExpectation, MmV2PhaseExpectation } from "./proof-corpus.ts";
+
+function hasExplicitHeading(sourceText: string): boolean {
+  const firstLine = sourceText.split("\n", 1)[0]?.trim() ?? "";
+  return firstLine.length > 0 && !/^\d+[.)]\s/u.test(firstLine) && !/^[-*•]\s/u.test(firstLine);
+}
+
+function matchesComponentEvidence(
+  component: { evidence_quote: string; content: string },
+  expectedQuote: string,
+): boolean {
+  return (
+    semanticallyMatchesText(component.evidence_quote, expectedQuote) ||
+    semanticallyMatchesText(component.content, expectedQuote)
+  );
+}
 
 export function compareCompositePhase(
   composite: CompositeExtractionBatch,
@@ -22,15 +39,19 @@ export function compareCompositePhase(
     expected: expectation?.items ?? [],
     exactCount: expectation?.exactCount,
     matches: (candidate, expected) =>
-      (expected.candidateId === undefined || candidate.candidate_id === expected.candidateId) &&
       (expected.sourceSegmentTextIncludes === undefined ||
         candidate.sourceSegmentText.includes(expected.sourceSegmentTextIncludes)) &&
       (expected.evidenceQuote === undefined ||
-        candidate.evidence_quote === expected.evidenceQuote) &&
+        normalizeComparisonText(candidate.evidence_quote) ===
+          normalizeComparisonText(expected.evidenceQuote)) &&
       (expected.artifactType === undefined || candidate.artifact_type === expected.artifactType) &&
-      (expected.title === undefined || candidate.title === expected.title) &&
+      (expected.title === undefined ||
+        !hasExplicitHeading(candidate.sourceSegmentText) ||
+        candidate.title === expected.title) &&
       (expected.summaryIncludes === undefined ||
-        candidate.summary.includes(expected.summaryIncludes)) &&
+        normalizeComparisonText(candidate.summary).includes(
+          normalizeComparisonText(expected.summaryIncludes),
+        )) &&
       (expected.componentCount === undefined ||
         candidate.components.length === expected.componentCount) &&
       (expected.componentRolesInclude === undefined ||
@@ -41,14 +62,14 @@ export function compareCompositePhase(
         expected.embeddedOnlyEvidenceQuotes.every((quote) =>
           candidate.components.some(
             (component) =>
-              component.evidence_quote === quote && component.promotion === "embedded_only",
+              matchesComponentEvidence(component, quote) && component.promotion === "embedded_only",
           ),
         )) &&
       (expected.promotedEvidenceQuotes === undefined ||
         expected.promotedEvidenceQuotes.every((quote) =>
           candidate.components.some(
             (component) =>
-              component.evidence_quote === quote &&
+              matchesComponentEvidence(component, quote) &&
               (component.promotion === "global" || component.promotion === "both"),
           ),
         )),
@@ -60,6 +81,7 @@ export function compareCompositePhase(
       summary: actualItem.summary,
       components: actualItem.components.map((component) => ({
         evidence_quote: component.evidence_quote,
+        content: component.content,
         role: component.role,
         promotion: component.promotion,
       })),

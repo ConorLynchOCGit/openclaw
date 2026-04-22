@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import type { IncomingMessage } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
 import type { ResolvedGatewayAuth } from "./auth.js";
 import { CONTROL_UI_BOOTSTRAP_CONFIG_PATH } from "./control-ui-contract.js";
@@ -174,6 +174,61 @@ describe("handleControlUiHttpRequest", () => {
         expect(String(csp)).toContain("frame-ancestors 'none'");
         expect(String(csp)).toContain("script-src 'self'");
         expect(String(csp)).not.toContain("script-src 'self' 'unsafe-inline'");
+      },
+    });
+  });
+
+  it("serves the Control UI shell with no-store caching", async () => {
+    await withControlUiRoot({
+      fn: async (tmp) => {
+        const { res, handled } = runControlUiRequest({
+          url: "/",
+          method: "GET",
+          rootPath: tmp,
+        });
+        expect(handled).toBe(true);
+        expect(res.statusCode).toBe(200);
+        expect(res.setHeader as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+          "Cache-Control",
+          "no-store",
+        );
+      },
+    });
+  });
+
+  it("serves bootstrap config with no-store caching", async () => {
+    await withControlUiRoot({
+      fn: async (tmp) => {
+        const { res, handled } = runControlUiRequest({
+          url: CONTROL_UI_BOOTSTRAP_CONFIG_PATH,
+          method: "GET",
+          rootPath: tmp,
+        });
+        expect(handled).toBe(true);
+        expect(res.statusCode).toBe(200);
+        expect(res.setHeader as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+          "Cache-Control",
+          "no-store",
+        );
+      },
+    });
+  });
+
+  it("serves static assets with no-store caching", async () => {
+    await withControlUiRoot({
+      fn: async (tmp) => {
+        await writeAssetFile(tmp, "app.js", "console.log('fresh');\n");
+        const { res, handled } = runControlUiRequest({
+          url: "/assets/app.js",
+          method: "GET",
+          rootPath: tmp,
+        });
+        expect(handled).toBe(true);
+        expect(res.statusCode).toBe(200);
+        expect(res.setHeader as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalledWith(
+          "Cache-Control",
+          "no-store",
+        );
       },
     });
   });

@@ -1123,6 +1123,7 @@ describe("chat view", () => {
     expect(labels).not.toContain(
       "subagent:4f2146de-887b-4176-9abe-91140082959b · webchat:g-agent-main-subagent-4f2146de-887b-4176-9abe-91140082959b",
     );
+    expect(sessionSelect?.getAttribute("aria-label")).toBe("Select session");
   });
 
   it("keeps a unique scoped fallback when the current grouped session is missing from sessions.list", () => {
@@ -1209,6 +1210,73 @@ describe("chat view", () => {
       "Subagent: cron-config-check · subagent:6fb8b84b-c31f-410f-b7df-1553c82e43c9",
     );
     expect(labels).not.toContain("Subagent: cron-config-check");
+  });
+
+  it("evicts stale session options when the selector rerenders with a smaller live session set", () => {
+    const { state } = createChatHeaderState({ omitSessionFromList: true });
+    state.sessionKey = "agent:main:main";
+    state.settings.sessionKey = state.sessionKey;
+    state.sessionsResult = {
+      ts: 0,
+      path: "",
+      count: 5,
+      defaults: { modelProvider: "openai", model: "gpt-5", contextTokens: null },
+      sessions: [
+        {
+          key: "agent:main:main",
+          kind: "direct",
+          updatedAt: null,
+          displayName: "Main Session",
+        },
+        {
+          key: "agent:main:codex-live-progress-generic",
+          kind: "direct",
+          updatedAt: null,
+        },
+        {
+          key: "agent:main:codex-live-progress-generic2",
+          kind: "direct",
+          updatedAt: null,
+        },
+        {
+          key: "agent:main:codex-live-progress-generic4",
+          kind: "direct",
+          updatedAt: null,
+        },
+        {
+          key: "agent:main:codex-live-progress-generic5",
+          kind: "direct",
+          updatedAt: null,
+        },
+      ],
+    };
+
+    const container = document.createElement("div");
+    render(renderChatSessionSelect(state), container);
+
+    state.sessionsResult = {
+      ts: 1,
+      path: "",
+      count: 1,
+      defaults: { modelProvider: "openai", model: "gpt-5", contextTokens: null },
+      sessions: [
+        {
+          key: "agent:main:main",
+          kind: "direct",
+          updatedAt: null,
+          displayName: "Main Session",
+        },
+      ],
+    };
+    render(renderChatSessionSelect(state), container);
+
+    const [sessionSelect] = Array.from(container.querySelectorAll<HTMLSelectElement>("select"));
+    const optionValues = Array.from(sessionSelect?.querySelectorAll("option") ?? []).map(
+      (option) => option.value,
+    );
+
+    expect(optionValues).toEqual(["agent:main:main"]);
+    expect(optionValues.some((value) => value.includes("codex-live-progress"))).toBe(false);
   });
 
   it("prefixes duplicate agent session labels with the agent name", () => {

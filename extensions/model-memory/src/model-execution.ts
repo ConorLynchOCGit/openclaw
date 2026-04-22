@@ -1,6 +1,43 @@
 import { z } from "zod";
 import type { ModelContractMetadata } from "./prompt-contracts.ts";
 
+export const JsonModelResponseTransportSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("json_object"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("json_schema"),
+      name: z.string().trim().min(1),
+      strict: z.boolean().optional(),
+      schema: z.unknown(),
+    })
+    .strict(),
+]);
+
+export type JsonModelResponseTransport = z.infer<typeof JsonModelResponseTransportSchema>;
+
+export const JsonModelProviderOptionsSchema = z
+  .object({
+    requireParameters: z.boolean().optional(),
+  })
+  .strict();
+
+export type JsonModelProviderOptions = z.infer<typeof JsonModelProviderOptionsSchema>;
+
+export const JsonModelExecutionResponseOptionsSchema = z
+  .object({
+    transport: JsonModelResponseTransportSchema.optional(),
+    provider: JsonModelProviderOptionsSchema.optional(),
+  })
+  .strict();
+
+export type JsonModelExecutionResponseOptions = z.infer<
+  typeof JsonModelExecutionResponseOptionsSchema
+>;
+
 export const JsonModelExecutionRequestSchema = z
   .object({
     contract: z.object({
@@ -11,6 +48,7 @@ export const JsonModelExecutionRequestSchema = z
     systemPrompt: z.string(),
     userPrompt: z.string(),
     responseFormat: z.literal("json"),
+    responseOptions: JsonModelExecutionResponseOptionsSchema.optional(),
   })
   .strict();
 

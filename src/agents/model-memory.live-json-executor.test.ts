@@ -127,6 +127,91 @@ describe("model-memory live json executor", () => {
     expect(url).toBe("https://api.openai.com/v1/chat/completions");
   });
 
+  it("sends strict json_schema and require_parameters when requested for openrouter", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: "openai/gpt-5.4-nano",
+            choices: [
+              {
+                message: {
+                  content:
+                    '{"schema_version":"capture_routing.v1","event_id":"evt-001","routing_decisions":[]}',
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    );
+    const executor = new OpenAICompatibleLiveJsonExecutor({
+      fetchImpl,
+      resolveAuth: async () => ({
+        apiKey: "sk-test",
+        mode: "api-key",
+        source: "test",
+      }),
+    });
+
+    await executor.execute({
+      contract: {
+        contractName: "semantic_extraction",
+        contractVersion: "mmv2-capture-routing-v1",
+        modelId: "openrouter/openai/gpt-5.4-nano",
+      },
+      systemPrompt: "system",
+      userPrompt: "user",
+      responseFormat: "json",
+      responseOptions: {
+        transport: {
+          type: "json_schema",
+          name: "capture_routing_batch",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              schema_version: { type: "string" },
+            },
+            required: ["schema_version"],
+            additionalProperties: false,
+          },
+        },
+        provider: {
+          requireParameters: true,
+        },
+      },
+    });
+
+    const call = fetchImpl.mock.calls[0];
+    expect(call).toBeDefined();
+    const [, init] = call as unknown as [string, RequestInit];
+    expect(parseRequestBody(init)).toMatchObject({
+      model: "openai/gpt-5.4-nano",
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "capture_routing_batch",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              schema_version: { type: "string" },
+            },
+            required: ["schema_version"],
+            additionalProperties: false,
+          },
+        },
+      },
+      provider: {
+        require_parameters: true,
+      },
+    });
+  });
+
   it("accepts request timeout from the environment when no explicit override is provided", async () => {
     const originalTimeout = process.env.MODEL_MEMORY_REQUEST_TIMEOUT_MS;
     process.env.MODEL_MEMORY_REQUEST_TIMEOUT_MS = "345000";

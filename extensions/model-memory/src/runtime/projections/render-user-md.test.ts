@@ -82,10 +82,22 @@ describe("render-user-md", () => {
         },
       ],
       sets: [],
+      existingFileContent: [
+        "# USER.md",
+        "",
+        "- human-owned note",
+        "",
+        "<!-- BEGIN GENERATED: model-memory -->",
+        "- stale generated preference",
+        "<!-- END GENERATED: model-memory -->",
+      ].join("\n"),
     });
 
     expect(result.renderedText).toContain("## Preferences");
     expect(result.renderedText).toContain("- response detail: keep explanations high level");
     expect(result.renderedText).not.toContain("deployment region");
+    expect(result.outputFileContent).toContain("- human-owned note");
+    expect(result.outputFileContent).not.toContain("<!-- BEGIN GENERATED: model-memory -->");
+    expect(result.outputFileContent).not.toContain("stale generated preference");
   });
 });

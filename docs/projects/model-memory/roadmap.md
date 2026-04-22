@@ -7,14 +7,20 @@ title: "Model Memory Roadmap"
 
 ## Principles
 
-- Build the new system in parallel.
-- Keep runtime truth object-native.
-- Keep canonical classes explicit: `user`, `feedback`, `project`, `reference`.
-- Keep internal kinds minimal: `preference`, `fact`, `rule`, `procedure`, `reference`.
-- Keep the live write path deterministic and conservative.
-- Keep context, projection, and usage layers derived rather than ontological.
-- Standalone proof is complete enough for production cutover; the current work
-  is stabilization, sampled review, and legacy retirement.
+- MMV2-native SQL is the live semantic source of truth.
+- Active live write hot paths use MMV2-native contracts by default.
+- Read/retrieval/context hot paths route through the Memory Retrieval Runtime
+  for accepted soak recall proof.
+- Legacy-shaped storage and object contracts remain only as soak-window
+  fallback/compatibility surfaces.
+- Keep runtime truth object-native: durable memories, memory events, memory
+  edges, ingest sources, and ingest segments.
+- Keep context, projection, graph, capsule, planner, and cache layers derived
+  rather than ontological.
+- Preserve MMV2 evidence grounding, conflict durability, and first-class
+  composites.
+- Do not rebuild detector-era taxonomies or add compatibility categories as
+  runtime truth.
 
 ## Progress snapshot
 
@@ -25,28 +31,112 @@ title: "Model Memory Roadmap"
 - Phase 4 is complete.
 - Phase 5 is complete.
 - Phase 6 is complete.
-- Phase 7 is active as the post-cutover stabilization window.
+- Phase 7 storage cutover is complete:
+  - MMV2-native durable SQL storage is live semantic truth
+  - old five-kind canonical tables are retired from active truth
+  - old DB state is archive-only
+- Phase 8 hot-path cleanup is complete:
+  - active write seams persist MMV2 live memory batches by default
+  - runtime rebuild and the V0 read path consume MMV2 durable truth through
+    native runtime records
+  - V0 recall/projection assembly is not enough for clean-soak acceptance and
+    must be replaced by the Memory Retrieval Runtime
+  - legacy compatibility remains fallback-only for the soak window
+- The accepted baselines are now:
+  - `SOAKQUAR-2026-04-21` for the clean MMV2 retrieval-runtime soak
+  - `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/`
+    for projection materialization and production hook probe evidence
+- The active roadmap is now bounded capture expansion, retrieval/projection
+  quality hardening, fallback quarantine/removal, closed-loop ops, and Phase 2
+  derived features.
 
 ## Current top priorities
 
-1. packet compiler quality and packet-system unification
-2. `kind`-primary migration with `canonicalClass` demotion
-3. kind-balance repair, especially the missing active `rule` problem
+1. expand semantic capture through bounded tool-result proof/capture first:
+   - `tool_result_persist`
+   - `after_tool_call`
+   - no raw prompts, transcripts, or tool logs
+   - all writes route through MMV2 admission/reconciliation
+2. keep `message:preprocessed` routing/telemetry-only until no-duplicate and
+   no-raw-prompt guarantees are proven
+3. production-verify or block `ContextEngine.ingest` and `ingestBatch`; do not
+   treat synthetic-only canaries as production proof
+4. harden Retrieval Runtime/projection relevance:
+   - prefer fresh projection digests backed by active MMV2 ids
+   - emit stale/superseded/deleted/conflicted/inactive exclusions
+   - keep all ranking read-time only
+5. finish quarantine/removal of fallback compatibility after the clean
+   retrieval-runtime soak
+6. update ordinary-turn MMV2 evaluation coverage where needed
+7. stabilize file-pack/provider variance
+8. implement remaining verified primary memory capture seam expansion
+9. implement `memory-ops-closed-loop` instrumentation
+10. proceed to Phase 2 derived features:
 
-These are one linked effort, not three unrelated cleanup items.
+- graph runtime
+- project/subject capsules
+- hierarchical retrieval
+- proactive planner
+- skill/tool synthesis
+- cache/projection policy
 
-Packet quality is currently constrained by both corpus shape and packet
-shaping. That makes kind balance a packet-quality issue as well as an ingestion
-issue.
+These are ordered. Do not wire unverified capture seams, reintroduce semantic
+forests, use fuzzy write-path correction, or jump to graph/capsule/planner work
+before bounded capture and retrieval/projection hardening have targeted proof.
 
-The current benchmark result also clarifies sequencing inside that lane:
+Packet compiler quality and `kind`-primary cleanup remain relevant, but they
+are no longer the sole active roadmap owner. They now sit inside the broader
+Phase 2 preparation lane after MMV2-native retrieval, capture, and ops
+instrumentation are safe.
 
-- first production move:
-  - prompt simplification for pass 1 and pass 2
-- not the first production move:
-  - schema rewrites
-  - collision rewrites
-  - deterministic fact-to-rule compensation logic
+## Current Authority
+
+Current implementation authority is:
+
+- MMV2-native durable SQL tables:
+  - `model_memory.ingest_sources`
+  - `model_memory.ingest_segments`
+  - `model_memory.durable_memories`
+  - `model_memory.memory_events`
+  - `model_memory.memory_edges`
+- MMV2 live recording batches and native repository persistence
+- native runtime records derived directly from MMV2 durable truth
+
+Historical v1 spec material remains useful for design provenance, but it is not
+the current live authority where it conflicts with MMV2-native durable truth.
+
+## Next Engineering Sequence
+
+1. Bounded tool-result proof/capture seam expansion.
+2. ContextEngine production verification for `ingest` / `ingestBatch`.
+3. Retrieval/projection relevance and exclusion telemetry hardening:
+   - [Memory Retrieval Runtime](/projects/model-memory/specs/memory-retrieval-runtime)
+4. Soak-window compatibility quarantine/removal plan.
+5. Ordinary-turn MMV2 evaluation coverage.
+6. File-pack/provider variance stabilization.
+7. Remaining verified primary memory capture seam expansion:
+   - [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
+8. Closed-loop memory ops instrumentation:
+   - [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
+9. Phase 2 graph runtime:
+   - [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
+10. First project-state capsule:
+    - [Subject Capsules And Dense Ingestion](/projects/model-memory/specs/subject-capsules-and-dense-ingestion)
+11. Hierarchical retrieval:
+
+- [Post-Cutover Hierarchical Retrieval](/projects/model-memory/specs/post-cutover-hierarchical-retrieval)
+
+11. Proactive planner:
+
+- [Proactive Memory Planner](/projects/model-memory/specs/proactive-memory-planner)
+
+12. Skill/tool synthesis:
+
+- [Skill And Tool Synthesis](/projects/model-memory/specs/skill-and-tool-synthesis)
+
+13. Cache/projection policy:
+
+- [Cache And Projection Policy](/projects/model-memory/specs/cache-and-projection-policy)
 
 ## Phase 0: Specs and scaffolding
 
@@ -779,7 +869,7 @@ Still blocking after Slice 24:
 - the blocker remains mixed:
   - deterministic gate loss is still real on dense rule sources
   - batch choice still leaves too many recovered same-claim cases unconverted
-- current judgment remains `not_ready_for_cutover`
+- historical judgment at that point was `not_ready_for_cutover`
 - one more focused pass is only justified if it directly attacks:
   - exact live-versus-replay case replay
   - batch-heavy same-claim conversion
@@ -809,7 +899,7 @@ Completed:
   and emits durable artifacts instead of aborting on retrieval probe failures
 - the proof runner now records live retrieval/context provider failures as
   explicit probe errors
-- current cutover judgment remains `not_ready`
+- historical cutover judgment at that point was `not_ready`
   - remaining blockers:
     - retrieval probe provider `400` failures on the nano lane
     - unproven context assembly because retrieval probes did not complete

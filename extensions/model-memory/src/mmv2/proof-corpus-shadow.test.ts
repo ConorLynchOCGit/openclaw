@@ -25,12 +25,15 @@ describe("mmv2/proof-corpus-shadow", () => {
 
     for (const [index, proofCase] of proofCases.entries()) {
       const source = createMmV2TestSource(proofCase.text);
+      const readPayload = <T>(input: {
+        prompt: { promptPayload?: unknown; userPrompt: string };
+      }): T => (input.prompt.promptPayload as T) ?? (JSON.parse(input.prompt.userPrompt) as T);
       const interpreter = createScriptedMmV2Interpreter({
         "mmv2-capture-routing-v1": (input) => {
-          const payload = JSON.parse(input.prompt.userPrompt) as {
+          const payload = readPayload<{
             raw_event: { event_id: string };
             segments: Array<{ segment_id: string; text: string; detected_shape: string }>;
-          };
+          }>(input);
           const runtimeSegment = proofCase.expectComposite
             ? payload.segments.find((segment) => segment.detected_shape === "numbered_list_block")!
             : payload.segments.find((segment) =>
@@ -57,10 +60,10 @@ describe("mmv2/proof-corpus-shadow", () => {
           });
         },
         "mmv2-atomic-extraction-v1": (input) => {
-          const payload = JSON.parse(input.prompt.userPrompt) as {
+          const payload = readPayload<{
             raw_event: typeof source.rawEvent;
-            segments: Array<{ segment_id: string; text: string }>;
-          };
+            routed_candidates: Array<{ segment_id: string; text: string; source_route: string }>;
+          }>(input);
           if (proofCase.expectComposite) {
             return captureOne({
               schema_version: "atomic_extraction.v1",
@@ -68,7 +71,7 @@ describe("mmv2/proof-corpus-shadow", () => {
               atomic_candidates: [],
             });
           }
-          const runtimeSegment = payload.segments[0];
+          const runtimeSegment = payload.routed_candidates[0];
           const atomicCandidate = buildAtomicCandidate(
             runtimeSegment.segment_id,
             runtimeSegment.text,
@@ -80,10 +83,15 @@ describe("mmv2/proof-corpus-shadow", () => {
           });
         },
         "mmv2-composite-extraction-v1": (input) => {
-          const payload = JSON.parse(input.prompt.userPrompt) as {
+          const payload = readPayload<{
             raw_event: typeof source.rawEvent;
-            segments: Array<{ segment_id: string; text: string; detected_shape: string }>;
-          };
+            routed_candidates: Array<{
+              segment_id: string;
+              text: string;
+              detected_shape: string;
+              source_route: string;
+            }>;
+          }>(input);
           if (!proofCase.expectComposite) {
             return captureOne({
               schema_version: "composite_extraction.v1",
@@ -91,7 +99,7 @@ describe("mmv2/proof-corpus-shadow", () => {
               composite_candidates: [],
             });
           }
-          const runtimeSegment = payload.segments.find(
+          const runtimeSegment = payload.routed_candidates.find(
             (segment) => segment.detected_shape === "numbered_list_block",
           )!;
           const compositeCandidate = buildCompositeCandidate(
@@ -105,14 +113,14 @@ describe("mmv2/proof-corpus-shadow", () => {
           });
         },
         "mmv2-canonicalization-v1": (input) => {
-          const payload = JSON.parse(input.prompt.userPrompt) as {
+          const payload = readPayload<{
             raw_event: typeof source.rawEvent;
             extracted_candidates: Array<{
               candidate_id: string;
               source_segment_id: string;
               evidence_quote?: string;
             }>;
-          };
+          }>(input);
           const extracted = payload.extracted_candidates[0];
           const canonical = proofCase.expectComposite
             ? buildCanonicalCandidate(
@@ -144,10 +152,10 @@ describe("mmv2/proof-corpus-shadow", () => {
           });
         },
         "mmv2-admission-v1": (input) => {
-          const payload = JSON.parse(input.prompt.userPrompt) as {
+          const payload = readPayload<{
             raw_event: typeof source.rawEvent;
             canonical_candidates: Array<{ candidate_id: string }>;
-          };
+          }>(input);
           return captureOne({
             schema_version: "admission_decision.v1",
             event_id: payload.raw_event.event_id,
@@ -156,11 +164,14 @@ describe("mmv2/proof-corpus-shadow", () => {
             ),
           });
         },
-        "mmv2-reconciliation-v1": (input) =>
-          captureOne({
+        "mmv2-reconciliation-v1": (input) => {
+          const payload = readPayload<{ event_id: string; candidate: { candidate_id: string } }>(
+            input,
+          );
+          return captureOne({
             schema_version: "reconciliation_decision.v1",
-            event_id: JSON.parse(input.prompt.userPrompt).event_id,
-            candidate_id: JSON.parse(input.prompt.userPrompt).candidate.candidate_id,
+            event_id: payload.event_id,
+            candidate_id: payload.candidate.candidate_id,
             decision: "insert_new",
             target_memory_ids: [],
             merged_canonical_text: null,
@@ -168,7 +179,8 @@ describe("mmv2/proof-corpus-shadow", () => {
             supersedes_memory_ids: [],
             rationale: "Proof corpus insert.",
             confidence: 0.9,
-          }),
+          });
+        },
       });
 
       const result = await ingestDocumentV2Shadow({

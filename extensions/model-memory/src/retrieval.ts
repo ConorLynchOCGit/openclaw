@@ -5,14 +5,28 @@ import {
   type RetrievalRequestInterpreter,
 } from "./retrieval-request-interpreter.ts";
 import { InMemoryRetrievalStore } from "./retrieval-store.ts";
-import { buildRuntimeId, getCurrentMemoryObjects } from "./runtime-read-models.ts";
+import {
+  buildRuntimeId,
+  hashRuntimeValue,
+  type RuntimeCompatibleMemoryRecord,
+  type RuntimeMemoryRecord,
+  type WorkspaceProjectionVersionRecord,
+} from "./runtime-read-models.ts";
 import type {
   RetrievalRequestRecord,
   RetrievalResultItemRecord,
   RetrievalResultSetRecord,
 } from "./runtime-read-models.ts";
-import { normalizeIdentityText } from "./semantic-identity.ts";
-import type { ModelMemoryObjectRecord } from "./storage-database-contract.ts";
+import {
+  buildRetrievalPlan,
+  recallCanonicalCandidates,
+  redactRetrievalQueryForStorage,
+  scoreRuntimeMemoryCandidate,
+  type ProjectionDigest,
+  type RetrievalCandidate,
+  type RetrievalExclusion,
+  type RetrievalPlan,
+} from "./runtime/retrieval/index.ts";
 
 type Awaitable<T> = T | Promise<T>;
 
@@ -28,9 +42,10 @@ export interface RetrievalStore {
 }
 
 export type RankedCandidate = {
-  object: ModelMemoryObjectRecord;
+  object: RuntimeMemoryRecord;
   score: number;
   reasonCodes: string[];
+  candidate?: RetrievalCandidate;
 };
 
 export type RetrievalExecutionResult = {
@@ -38,18 +53,11 @@ export type RetrievalExecutionResult = {
   interpretedRequest: InterpretedRetrievalRequest;
   retrievalResultSet: RetrievalResultSetRecord;
   retrievalResultItems: RetrievalResultItemRecord[];
+  retrievalPlan: RetrievalPlan;
+  retrievalCandidates: RetrievalCandidate[];
+  retrievalExclusions: RetrievalExclusion[];
+  selectedProjectionDigests: ProjectionDigest[];
 };
-
-function normalizeScopeConstraints(
-  scopeConstraints: Record<string, string> | undefined,
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(scopeConstraints ?? {}).map(([key, value]) => [
-      key,
-      normalizeIdentityText(value),
-    ]),
-  );
-}
 
 function buildRetrievalRequestRecord(input: {
   envelope: RetrievalEnvelope;
@@ -57,17 +65,23 @@ function buildRetrievalRequestRecord(input: {
   modelId: string;
   contractVersion: string;
   createdAt: Date;
+  queryTextHash: string;
 }): RetrievalRequestRecord {
+  const redactedQueryText = redactRetrievalQueryForStorage(input.envelope.queryText);
   return {
     id: buildRuntimeId(
       "retrieval_request",
-      `${input.envelope.sessionId ?? "none"}:${input.envelope.queryText}:${input.contractVersion}`,
+      `${input.envelope.sessionId ?? "none"}:${input.queryTextHash}:${input.contractVersion}`,
     ),
     sessionId: input.envelope.sessionId,
     agentId: input.envelope.agentId,
-    queryText: input.envelope.queryText,
+    queryText: redactedQueryText,
     requestPurpose: input.envelope.requestPurpose,
-    scope: input.interpretedRequest.scopeConstraints ?? input.envelope.scope ?? {},
+    scope: {
+      ...(input.interpretedRequest.scopeConstraints ?? input.envelope.scope),
+      retrievalRuntimeQueryHash: input.queryTextHash,
+      rawQueryPersisted: false,
+    },
     desiredResultCount: input.interpretedRequest.desiredResultCount,
     contractName: "retrieval_request_interpretation",
     contractVersion: input.contractVersion,
@@ -87,103 +101,45 @@ function rankBandForIndex(index: number): RetrievalResultItemRecord["rankBand"] 
 }
 
 export function scoreRetrievalCandidate(
-  object: ModelMemoryObjectRecord,
+  object: RuntimeMemoryRecord,
   request: InterpretedRetrievalRequest,
 ): RankedCandidate | undefined {
-  if (
-    request.canonicalClasses.length > 0 &&
-    !request.canonicalClasses.includes(
-      object.canonicalClass as (typeof request.canonicalClasses)[number],
-    )
-  ) {
+  const scored = scoreRuntimeMemoryCandidate(object, request);
+  if (!scored || scored.scopeMatch === "mismatch") {
     return undefined;
-  }
-  if (
-    request.kinds?.length &&
-    !request.kinds.includes(object.kind as NonNullable<typeof request.kinds>[number])
-  ) {
-    return undefined;
-  }
-
-  const normalizedScopeConstraints = normalizeScopeConstraints(request.scopeConstraints);
-  const normalizedObjectScope = Object.fromEntries(
-    Object.entries(object.scope).map(([key, value]) => [
-      key,
-      typeof value === "string" ? normalizeIdentityText(value) : value,
-    ]),
-  );
-  for (const [key, value] of Object.entries(normalizedScopeConstraints)) {
-    if (normalizedObjectScope[key] !== value) {
-      return undefined;
-    }
-  }
-
-  let score = 0;
-  const reasonCodes = new Set<string>();
-
-  if (Object.keys(normalizedScopeConstraints).length > 0) {
-    score += 50;
-    reasonCodes.add("scope_match");
-  }
-  if (request.canonicalClasses.length > 0) {
-    score += 20;
-    reasonCodes.add("class_match");
-  }
-
-  const subjectMatches = [...(request.subjectHints ?? [])].filter((hint) => {
-    const normalizedHint = normalizeIdentityText(hint);
-    return (
-      object.normalizedSubject?.includes(normalizedHint) ||
-      object.normalizedTitle?.includes(normalizedHint)
-    );
-  });
-  if (subjectMatches.length > 0) {
-    score += subjectMatches.length * 10;
-    reasonCodes.add("subject_match");
-  }
-
-  const contentMatches = [...(request.contentHints ?? [])].filter((hint) =>
-    object.normalizedSearchText.includes(normalizeIdentityText(hint)),
-  );
-  if (contentMatches.length > 0) {
-    score += contentMatches.length * 5;
-    reasonCodes.add("text_match");
-  }
-
-  if (score === 0 && request.canonicalClasses.length === 0 && !request.kinds?.length) {
-    score = 1;
   }
 
   return {
     object,
-    score,
-    reasonCodes: [...reasonCodes],
+    score: scored.score,
+    reasonCodes: scored.reasonCodes,
   };
 }
 
 export function rankRetrievalCandidates(input: {
-  memoryObjects: ModelMemoryObjectRecord[];
+  memoryObjects: RuntimeCompatibleMemoryRecord[];
   request: InterpretedRetrievalRequest;
 }): RankedCandidate[] {
-  return getCurrentMemoryObjects(input.memoryObjects)
-    .map((object) => scoreRetrievalCandidate(object, input.request))
-    .filter((entry): entry is RankedCandidate => !!entry)
-    .toSorted((left, right) => {
-      if (right.score !== left.score) {
-        return right.score - left.score;
-      }
-      return left.object.id.localeCompare(right.object.id);
-    });
+  return recallCanonicalCandidates({
+    memoryObjects: input.memoryObjects,
+    request: input.request,
+  }).selectedMemoryCandidates.map((candidate) => ({
+    object: candidate.memory!,
+    score: candidate.score,
+    reasonCodes: candidate.reasonCodes,
+    candidate,
+  }));
 }
 
 export async function executeRetrieval(input: {
   envelope: RetrievalEnvelope;
   interpreter: RetrievalRequestInterpreter;
-  memoryObjects: ModelMemoryObjectRecord[];
+  memoryObjects: RuntimeCompatibleMemoryRecord[];
   modelId: string;
   contractVersion?: string;
   store?: RetrievalStore | InMemoryRetrievalStore;
   createdAt?: Date;
+  projectionVersions?: WorkspaceProjectionVersionRecord[];
 }): Promise<RetrievalExecutionResult | undefined> {
   const interpreted = await interpretRetrievalRequest({
     envelope: input.envelope,
@@ -196,21 +152,38 @@ export async function executeRetrieval(input: {
   }
 
   const createdAt = input.createdAt ?? new Date(0);
+  const queryTextHash = hashRuntimeValue(input.envelope.queryText);
+  const retrievalPlan = buildRetrievalPlan({
+    request: interpreted.request,
+    queryTextHash,
+    requestPurpose: input.envelope.requestPurpose,
+    sessionId: input.envelope.sessionId,
+  });
   const requestRecord = buildRetrievalRequestRecord({
     envelope: input.envelope,
     interpretedRequest: interpreted.request,
     modelId: input.modelId,
     contractVersion: input.contractVersion ?? "v1",
     createdAt,
+    queryTextHash,
   });
   if (input.store) {
     await input.store.persistRetrievalRequest(requestRecord);
   }
 
-  const ranked = rankRetrievalCandidates({
+  const recalled = recallCanonicalCandidates({
     memoryObjects: input.memoryObjects,
     request: interpreted.request,
-  }).slice(0, interpreted.request.desiredResultCount);
+    projectionVersions: input.projectionVersions,
+  });
+  const ranked = recalled.selectedMemoryCandidates
+    .slice(0, interpreted.request.desiredResultCount)
+    .map((candidate) => ({
+      object: candidate.memory!,
+      score: candidate.score,
+      reasonCodes: candidate.reasonCodes,
+      candidate,
+    }));
 
   const resultSet = input.store
     ? await input.store.createResultSet({
@@ -252,5 +225,9 @@ export async function executeRetrieval(input: {
     interpretedRequest: interpreted.request,
     retrievalResultSet: resultSet,
     retrievalResultItems: resultItems,
+    retrievalPlan,
+    retrievalCandidates: recalled.retrievalCandidates,
+    retrievalExclusions: recalled.exclusions,
+    selectedProjectionDigests: recalled.selectedProjectionDigests,
   };
 }

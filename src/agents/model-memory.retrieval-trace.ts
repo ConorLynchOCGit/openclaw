@@ -155,6 +155,7 @@ export async function runModelMemoryRetrievalTrace(input: {
       modelId: input.modelRef,
       store: input.runtime.retrievalStore,
       createdAt: new Date(),
+      projectionVersions: rebuild.projectionVersions,
     });
 
     if (!retrieval) {
@@ -195,6 +196,10 @@ export async function runModelMemoryRetrievalTrace(input: {
       retrievalResultSet: retrieval.retrievalResultSet,
       retrievalResultItems: retrieval.retrievalResultItems,
       memoryObjects: rebuild.memoryObjects,
+      retrievalPlan: retrieval.retrievalPlan,
+      retrievalCandidates: retrieval.retrievalCandidates,
+      retrievalExclusions: retrieval.retrievalExclusions,
+      selectedProjectionDigests: retrieval.selectedProjectionDigests,
       buildPolicyVersion: "v1",
     });
     const persistedPack =

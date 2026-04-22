@@ -174,6 +174,11 @@ const pwMocks = vi.hoisted(() => ({
   selectOptionViaPlaywright: vi.fn(async (_opts?: unknown) => {}),
   setInputFilesViaPlaywright: vi.fn(async () => {}),
   snapshotAiViaPlaywright: vi.fn(async () => ({ snapshot: "ok" })),
+  snapshotRoleViaPlaywright: vi.fn(async () => ({
+    snapshot: "ok",
+    refs: {},
+    stats: { lines: 1, chars: 2, refs: 0, interactive: 0 },
+  })),
   traceStopViaPlaywright: vi.fn(async () => {}),
   takeScreenshotViaPlaywright: vi.fn(async () => ({
     buffer: Buffer.from("png"),

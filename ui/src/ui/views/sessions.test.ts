@@ -173,4 +173,45 @@ describe("sessions view", () => {
     expect(onDeselectAll).not.toHaveBeenCalled();
     expect(onSelectPage).not.toHaveBeenCalled();
   });
+
+  it("renders a working state label for running sessions", async () => {
+    const container = document.createElement("div");
+    render(
+      renderSessions(
+        buildProps(
+          buildResult({
+            key: "agent:main:main",
+            kind: "direct",
+            updatedAt: Date.now(),
+            status: "running",
+          }),
+        ),
+      ),
+      container,
+    );
+    await Promise.resolve();
+
+    expect(container.textContent).toContain("Working");
+  });
+
+  it("prefers task-derived status text over coarse session status", async () => {
+    const container = document.createElement("div");
+    render(
+      renderSessions(
+        buildProps(
+          buildResult({
+            key: "agent:main:main",
+            kind: "direct",
+            updatedAt: Date.now(),
+            status: "done",
+            taskStatusLine: "Working: exec · Background task · STEP:2",
+          }),
+        ),
+      ),
+      container,
+    );
+    await Promise.resolve();
+
+    expect(container.textContent).toContain("Working: exec · Background task · STEP:2");
+  });
 });

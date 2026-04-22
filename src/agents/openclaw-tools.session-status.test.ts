@@ -513,7 +513,7 @@ describe("session_status tool", () => {
     const firstContent = result.content?.[0];
     const text = (firstContent as { text: string } | undefined)?.text ?? "";
 
-    expect(text).toContain("📌 Tasks: 1 active");
+    expect(text).toContain("Working:");
     expect(text).toContain("acp");
     expect(text).toContain("Summarize inbox backlog");
     expect(text).toContain("Indexing the latest threads");
@@ -556,7 +556,7 @@ describe("session_status tool", () => {
     const firstContent = result.content?.[0];
     const text = (firstContent as { text: string } | undefined)?.text ?? "";
 
-    expect(text).toContain("📌 Tasks: 1 active");
+    expect(text).toContain("Working:");
     expect(text).toContain("live task");
     expect(text).not.toContain("stale completed task");
     expect(text).not.toContain("finished long ago");
@@ -588,7 +588,7 @@ describe("session_status tool", () => {
     const firstContent = result.content?.[0];
     const text = (firstContent as { text: string } | undefined)?.text ?? "";
 
-    expect(text).toContain("📌 Tasks: 1 recent failure");
+    expect(text).toContain("Failed:");
     expect(text).toContain("failing task");
     expect(text).toContain("permission denied");
   });
@@ -669,7 +669,7 @@ describe("session_status tool", () => {
     const firstContent = result.content?.[0];
     const text = (firstContent as { text: string } | undefined)?.text ?? "";
 
-    expect(text).toContain("📌 Tasks: 1 recent failure");
+    expect(text).toContain("Failed:");
     expect(text).toContain("failing task");
     expect(text).toContain("permission denied");
     expect(text).not.toContain("successful task");

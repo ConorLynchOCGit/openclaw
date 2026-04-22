@@ -9,6 +9,7 @@ import {
   DEFAULT_BOOTSTRAP_PROMPT_TRUNCATION_WARNING_MODE,
   DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS,
   ensureSessionHeader,
+  normalizeBootstrapFileContentForInjection,
   resolveBootstrapMaxChars,
   resolveBootstrapPromptTruncationWarningMode,
   resolveBootstrapTotalMaxChars,
@@ -100,6 +101,98 @@ describe("buildBootstrapContextFiles", () => {
     expect(result[1]?.content).toHaveLength(24_875);
     expect(result[0]?.content).not.toContain("[...truncated, read AGENTS.md for full content...]");
     expect(result[1]?.content).not.toContain("[...truncated, read MEMORY.md for full content...]");
+  });
+
+  it("strips generated MEMORY.md scaffolding from injected bootstrap content", () => {
+    const memoryContent = [
+      "<!-- BEGIN GENERATED: model-memory -->",
+      "# MEMORY.md",
+      "",
+      "## Standing Context",
+      "- generated",
+      "<!-- END GENERATED: model-memory -->",
+      "",
+      "<!-- BEGIN GENERATED: openclaw-canonical -->",
+      "## Workspace Recall Index",
+      "- generated",
+      "<!-- END GENERATED: openclaw-canonical -->",
+      "",
+      "# MEMORY.md",
+      "",
+      "## Long-Term Context",
+      "- durable human note",
+    ].join("\n");
+
+    expect(
+      normalizeBootstrapFileContentForInjection({
+        name: "MEMORY.md",
+        content: memoryContent,
+      }),
+    ).toBe(["# MEMORY.md", "", "## Long-Term Context", "- durable human note"].join("\n"));
+  });
+
+  it("strips generated USER.md projection blocks from injected bootstrap content", () => {
+    const userContent = [
+      "# USER.md",
+      "",
+      "## Human Profile",
+      "- durable user note",
+      "",
+      "<!-- OPENCLAW:MEMORY-PROJECTION:START memory-projection:user-profile -->",
+      "- old generated preference",
+      "<!-- OPENCLAW:MEMORY-PROJECTION:END memory-projection:user-profile -->",
+      "",
+      "<!-- BEGIN GENERATED: model-memory -->",
+      "- generated preference",
+      "<!-- END GENERATED: model-memory -->",
+      "",
+      "<!-- BEGIN GENERATED: openclaw-canonical -->",
+      "- artifact pointer",
+      "<!-- END GENERATED: openclaw-canonical -->",
+    ].join("\n");
+
+    expect(
+      normalizeBootstrapFileContentForInjection({
+        name: "USER.md",
+        content: userContent,
+      }),
+    ).toBe(["# USER.md", "", "## Human Profile", "- durable user note"].join("\n"));
+  });
+
+  it("keeps curated MEMORY.md bootstrap content without truncation once generated blocks are stripped", () => {
+    const generatedBlock = [
+      "<!-- BEGIN GENERATED: model-memory -->",
+      "# MEMORY.md",
+      "",
+      "## Standing Context",
+      `- ${"g".repeat(40_000)}`,
+      "<!-- END GENERATED: model-memory -->",
+      "",
+      "<!-- BEGIN GENERATED: openclaw-canonical -->",
+      "## Workspace Recall Index",
+      `- ${"h".repeat(10_000)}`,
+      "<!-- END GENERATED: openclaw-canonical -->",
+      "",
+    ].join("\n");
+    const curatedBlock = ["# MEMORY.md", "", "## Long-Term Context", `- ${"c".repeat(5_000)}`].join(
+      "\n",
+    );
+    const warnings: string[] = [];
+
+    const result = buildBootstrapContextFiles(
+      [
+        makeFile({
+          name: "MEMORY.md",
+          path: "/tmp/MEMORY.md",
+          content: `${generatedBlock}${curatedBlock}`,
+        }),
+      ],
+      { warn: (message) => warnings.push(message) },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.content).toBe(curatedBlock);
+    expect(warnings).toEqual([]);
   });
 
   it("keeps total injected bootstrap characters under the new default total cap", () => {

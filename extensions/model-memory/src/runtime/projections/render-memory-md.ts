@@ -1,14 +1,17 @@
 import { summarizeModelMemoryValue } from "../../payload-summary.ts";
-import type { ActiveMemorySetRecord, ActiveMemorySlotRecord } from "../../runtime-read-models.ts";
-import type { ModelMemoryObjectRecord } from "../../storage-database-contract.ts";
+import type {
+  ActiveMemorySetRecord,
+  ActiveMemorySlotRecord,
+  RuntimeMemoryRecord,
+} from "../../runtime-read-models.ts";
 
 export type RenderProjectionInput = {
   slots: ActiveMemorySlotRecord[];
   sets: ActiveMemorySetRecord[];
-  memoryObjects: ModelMemoryObjectRecord[];
+  memoryObjects: RuntimeMemoryRecord[];
 };
 
-function getObjectById(memoryObjects: ModelMemoryObjectRecord[], objectId: string) {
+function getObjectById(memoryObjects: RuntimeMemoryRecord[], objectId: string) {
   const record = memoryObjects.find((entry) => entry.id === objectId);
   if (!record) {
     throw new Error(`missing memory object for projection: ${objectId}`);
@@ -16,11 +19,11 @@ function getObjectById(memoryObjects: ModelMemoryObjectRecord[], objectId: strin
   return record;
 }
 
-function formatFact(record: ModelMemoryObjectRecord): string {
+function formatFact(record: RuntimeMemoryRecord): string {
   return `- ${summarizeModelMemoryValue(record.payload.subject, "fact")}: ${summarizeModelMemoryValue(record.payload.value)}`;
 }
 
-function formatRule(record: ModelMemoryObjectRecord): string {
+function formatRule(record: RuntimeMemoryRecord): string {
   const parts = [summarizeModelMemoryValue(record.payload.subject, "rule")];
   if (record.payload.recommendedAction) {
     parts.push(`do: ${summarizeModelMemoryValue(record.payload.recommendedAction)}`);
@@ -34,7 +37,7 @@ function formatRule(record: ModelMemoryObjectRecord): string {
   return `- ${parts.join(" | ")}`;
 }
 
-function formatProcedure(record: ModelMemoryObjectRecord): string {
+function formatProcedure(record: RuntimeMemoryRecord): string {
   const steps = Array.isArray(record.payload.steps)
     ? record.payload.steps.map((step) => summarizeModelMemoryValue(step)).join(" -> ")
     : "";

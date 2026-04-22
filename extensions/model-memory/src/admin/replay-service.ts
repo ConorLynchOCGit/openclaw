@@ -20,17 +20,13 @@ export type ReplayServiceDependencies = {
 };
 
 export class ModelMemoryReplayService {
-  private readonly memoryStore: DatabaseMemoryObjectStore;
-
-  constructor(private readonly deps: ReplayServiceDependencies) {
-    this.memoryStore = deps.memoryStore ?? new DatabaseMemoryObjectStore(deps.canonicalRepository);
-  }
+  constructor(private readonly deps: ReplayServiceDependencies) {}
 
   replayDocument(ingestion: DocumentIngestionInput): Promise<LiveDocumentIngestionResult> {
     return ingestDocumentLive({
       canonicalRepository: this.deps.canonicalRepository,
       runtimeRepository: this.deps.runtimeRepository,
-      memoryStore: this.memoryStore,
+      memoryStore: this.deps.memoryStore,
       ingestion,
       rebuildRuntime: true,
     });
@@ -40,7 +36,7 @@ export class ModelMemoryReplayService {
     return captureOrdinaryTurnLive({
       canonicalRepository: this.deps.canonicalRepository,
       runtimeRepository: this.deps.runtimeRepository,
-      memoryStore: this.memoryStore,
+      memoryStore: this.deps.memoryStore,
       capture,
       rebuildRuntime: true,
     });

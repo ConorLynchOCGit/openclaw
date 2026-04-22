@@ -50,6 +50,38 @@ describe("buildBootstrapInjectionStats", () => {
       truncated: true,
     });
   });
+
+  it("compares injected MEMORY.md against normalized bootstrap content", () => {
+    const curatedContent = ["# MEMORY.md", "", "## Long-Term Context", "- durable note"].join("\n");
+    const bootstrapFiles: WorkspaceBootstrapFile[] = [
+      {
+        name: "MEMORY.md",
+        path: "/tmp/MEMORY.md",
+        content: [
+          "<!-- BEGIN GENERATED: openclaw-canonical -->",
+          "## Workspace Recall Index",
+          "- generated",
+          "<!-- END GENERATED: openclaw-canonical -->",
+          "",
+          curatedContent,
+        ].join("\n"),
+        missing: false,
+      },
+    ];
+    const injectedFiles = [{ path: "/tmp/MEMORY.md", content: curatedContent }];
+
+    const stats = buildBootstrapInjectionStats({
+      bootstrapFiles,
+      injectedFiles,
+    });
+
+    expect(stats[0]).toMatchObject({
+      name: "MEMORY.md",
+      rawChars: curatedContent.length,
+      injectedChars: curatedContent.length,
+      truncated: false,
+    });
+  });
 });
 
 describe("analyzeBootstrapBudget", () => {

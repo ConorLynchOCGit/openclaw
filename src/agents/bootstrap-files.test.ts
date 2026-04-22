@@ -164,6 +164,46 @@ describe("resolveBootstrapFilesForRun", () => {
       ["# MEMORY.md", "", "## Long-Term Context", "- durable note", ""].join("\n"),
     );
   });
+
+  it("does not mutate root USER.md or MEMORY.md while resolving ordinary-turn context", async () => {
+    const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    const userPath = path.join(workspaceDir, "USER.md");
+    const memoryPath = path.join(workspaceDir, "MEMORY.md");
+    const userContent = [
+      "# USER.md",
+      "",
+      "Human-owned user context.",
+      "",
+      "<!-- BEGIN GENERATED: model-memory -->",
+      "stale generated user projection",
+      "<!-- END GENERATED: model-memory -->",
+      "",
+    ].join("\n");
+    const memoryContent = [
+      "# MEMORY.md",
+      "",
+      "Human-owned memory context.",
+      "",
+      "<!-- BEGIN GENERATED: openclaw-canonical -->",
+      "stale generated memory pointer",
+      "<!-- END GENERATED: openclaw-canonical -->",
+      "",
+    ].join("\n");
+    await fs.writeFile(userPath, userContent, "utf8");
+    await fs.writeFile(memoryPath, memoryContent, "utf8");
+
+    const result = await resolveBootstrapContextForRun({
+      workspaceDir,
+      currentTurnText: "ordinary assistant turn",
+    });
+    const userFile = result.bootstrapFiles.find((file) => file.name === "USER.md");
+    const memoryFile = result.bootstrapFiles.find((file) => file.name === "MEMORY.md");
+
+    expect(await fs.readFile(userPath, "utf8")).toBe(userContent);
+    expect(await fs.readFile(memoryPath, "utf8")).toBe(memoryContent);
+    expect(userFile?.content).not.toContain("stale generated user projection");
+    expect(memoryFile?.content).not.toContain("stale generated memory pointer");
+  });
 });
 
 describe("resolveBootstrapContextForRun", () => {

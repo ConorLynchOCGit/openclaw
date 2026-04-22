@@ -33,6 +33,18 @@ describe("mmv2/segmentation", () => {
     expect(sentences[0].end_char).toBeLessThanOrEqual(paragraph!.end_char);
   });
 
+  it("does not split file paths into separate sentence fragments", () => {
+    const rawEvent = createRawIngestEvent({
+      sourceId: "source-001",
+      rawText: "The billing docs live at /docs/billing.md.",
+    });
+    const segmented = segmentRawIngestEvent(rawEvent);
+
+    expect(segmented.segments).toHaveLength(1);
+    expect(segmented.segments[0]?.text).toBe("The billing docs live at /docs/billing.md.");
+    expect(segmented.segments[0]?.detected_shape).toBe("paragraph");
+  });
+
   it("groups heading plus body blocks", () => {
     const rawEvent = createRawIngestEvent({
       sourceId: "source-001",

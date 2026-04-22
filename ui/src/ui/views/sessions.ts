@@ -79,6 +79,31 @@ const FAST_LEVELS = [
 const REASONING_LEVELS = ["", "off", "on", "stream"] as const;
 const PAGE_SIZES = [10, 25, 50, 100] as const;
 
+function formatSessionRunState(row: GatewaySessionRow): string {
+  const taskStatusLine = normalizeOptionalString(row.taskStatusLine);
+  if (taskStatusLine) {
+    return taskStatusLine;
+  }
+  const taskStatusLabel = normalizeOptionalString(row.taskStatusLabel);
+  if (taskStatusLabel) {
+    return taskStatusLabel;
+  }
+  switch (row.status) {
+    case "running":
+      return "Working";
+    case "done":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    case "killed":
+      return "Killed";
+    case "timeout":
+      return "Timed out";
+    default:
+      return "Idle";
+  }
+}
+
 function normalizeProviderId(provider?: string | null): string {
   if (!provider) {
     return "";
@@ -390,8 +415,9 @@ export function renderSessions(props: SessionsProps) {
                 </th>
                 ${sortHeader("key", "Key", "data-table-key-col")}
                 <th>Label</th>
-                ${sortHeader("kind", "Kind")} ${sortHeader("updated", "Updated")}
-                ${sortHeader("tokens", "Tokens")}
+                ${sortHeader("kind", "Kind")}
+                <th>State</th>
+                ${sortHeader("updated", "Updated")} ${sortHeader("tokens", "Tokens")}
                 <th>Compaction</th>
                 <th>Thinking</th>
                 <th>Fast</th>
@@ -404,7 +430,7 @@ export function renderSessions(props: SessionsProps) {
                 ? html`
                     <tr>
                       <td
-                        colspan="11"
+                        colspan="12"
                         style="text-align: center; padding: 48px 16px; color: var(--muted)"
                       >
                         No sessions found.
@@ -540,6 +566,7 @@ function renderRows(row: GatewaySessionRow, props: SessionsProps) {
       <td>
         <span class="data-table-badge ${badgeClass}">${row.kind}</span>
       </td>
+      <td>${formatSessionRunState(row)}</td>
       <td>${updated}</td>
       <td>${formatSessionTokens(row)}</td>
       <td>

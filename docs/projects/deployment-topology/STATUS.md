@@ -117,11 +117,20 @@ rather than a model-memory side lane.
     weaken gateway origin policy just to make local browser automation easier
   - the planning boundary for that work now lives in
     [Tailscale-Compliant Self-Testing Plan](/projects/deployment-topology/tailscale-compliant-self-testing-plan)
-- the session selector hygiene fix is now explicit and live:
-  - internal `codex-*` proof rows without visible metadata are hidden from the
-    normal operator session selector
-  - the durable rule and evidence path live in
-    [Session Selector Visibility Cleanup](/projects/deployment-topology/session-selector-visibility-cleanup)
+- the session selector hygiene lane is now proven at live gateway payload level:
+  - the repo added metadata-driven repair for legacy validation/proof rows that
+    leaked through `visibilityClass: "operator"`
+  - the live gateway was rebuilt onto that patched source
+  - the sanctioned proof helper now reports:
+    - `sessionsList.count: 31`
+    - `codexRowCount: 0`
+  - the remaining open question is browser/authenticated UI confirmation, not
+    selector payload truth
+  - the evidence path lives in:
+    - [Tailnet UI Validation Baseline](/projects/deployment-topology/tailnet-ui-validation-baseline)
+    - [Control UI Session Cache Refresh Diagnosis](/projects/deployment-topology/control-ui-session-cache-refresh-diagnosis)
+    - [Session Selector Visibility Cleanup](/projects/deployment-topology/session-selector-visibility-cleanup)
+    - [Sanctioned Operator Proof Helper](/projects/deployment-topology/sanctioned-operator-proof-helper)
 - runtime rollout proof is now separated cleanly from local repo truth:
   - the gateway readiness surface now exposes a deployed build signature header
   - the local-vs-live fingerprint check now passes against the rebuilt gateway
@@ -149,6 +158,52 @@ rather than a model-memory side lane.
   observability:
   - [Runtime Image Drift Detection](/projects/deployment-topology/runtime-image-drift-detection)
   - [Runtime Observability And Drift](/projects/deployment-topology/runtime-observability-and-drift)
+- a sanctioned non-browser proof path now exists for operator-surface checks:
+  - [Sanctioned Operator Proof Helper](/projects/deployment-topology/sanctioned-operator-proof-helper)
+- Tailnet-native browser automation is now proven on the sanctioned path:
+  - approved-origin reachability works
+  - shared-token bootstrap works
+  - fresh secure browsers still create a real Control UI device and can hit
+    `PAIRING_REQUIRED`
+  - the repo now has a sanctioned proof path that approves that exact browser
+    device and reloads the same context into authenticated UI state
+  - exact evidence lives in:
+    - [Tailnet Native Playwright Attempt](/projects/deployment-topology/tailnet-native-playwright-attempt)
+    - [Tailnet Authenticated Browser Bootstrap Baseline](/projects/deployment-topology/tailnet-authenticated-browser-bootstrap-baseline)
+    - [Tailnet Authenticated Browser Bootstrap Diagnosis](/projects/deployment-topology/tailnet-authenticated-browser-bootstrap-diagnosis)
+    - [Tailnet Authenticated Browser Proof](/projects/deployment-topology/tailnet-authenticated-browser-proof)
+- the sanctioned authenticated prompt-execution lane now exists on top of that
+  approved-device browser path:
+  - repo-backed browser harness:
+    - `scripts/lib/operator-browser-harness.mjs`
+  - direct prompt runner:
+    - `scripts/operator-prompt-harness.mjs`
+  - bulk rerun driver:
+    - `scripts/rerun-blocked-operator-ui-tests.mjs`
+  - exact contracts and proof live in:
+    - [Authenticated Operator Prompt Harness Spec](/projects/deployment-topology/authenticated-operator-prompt-harness-spec)
+    - [Authenticated Operator Prompt Harness Test Plan](/projects/deployment-topology/authenticated-operator-prompt-harness-test-plan)
+    - [Authenticated Operator Prompt Harness Proof](/projects/deployment-topology/authenticated-operator-prompt-harness-proof)
+- the cross-project operator UI inventory is now canonized under QA Program:
+  - [Master Human UI Test Matrix](/projects/qa-program/master-human-ui-test-matrix)
+  - [Operator UI Validation Results 2026-04](/projects/qa-program/operator-ui-validation-results-2026-04)
+- the old “missing prompt harness” blocker is now closed:
+  - the former 29 blocked operator/UI rows were rerun through the authenticated
+    harness and now grade as:
+    - `10` pass
+    - `15` fail
+    - `4` blocked_by_environment
+  - the remaining gaps are now concrete runtime/product failures:
+    - operator-review session exposure
+    - fresh bootstrap truncation
+    - browser-vs-fetch routing in Main
+    - delegation proof through the canonical researcher lane
+    - Builder and Writer `EACCES`
+    - missing Researcher selector lane
+    - progress/replay/parity failures
+    - token capture/retrieval drift
+    - ingest start/progress/replay failures
+    - selector label regression after sustained activity
 
 ## Immediate next move
 
@@ -157,14 +212,16 @@ rather than a model-memory side lane.
   live runtime
 - keep the repaired GitHub lane monitored for the next organic canonical repo
   event
-- rerun the remaining incomplete human-validation prompts and the new
-  session-identity/chat-progress proofs after rollout
+- keep the approved-device Tailnet browser proof path stable and build follow-on
+  browser assertions on top of that real pairing contract
+- use the new QA master matrix and authenticated harness proof when driving the
+  next fix tranches; the remaining gaps are no longer test-lane gaps
+- fix the operator-review, specialist-pack, progress/replay, model-memory, and
+  ingest failures directly before spending more time on new checklist expansion
 - fix the host-side loopback gateway RPC probe abnormal-close (`1006`) so the
   host CLI proof path matches the now-working compose-run gateway RPC path
 - widen structured progress emission only for lanes that still never enter
   task-registry or reply-run state
-- build the sanctioned device-auth-backed proof path for replay/state checks
-  before attempting any Tailnet-sensitive Control UI automation changes
 - keep the Turbo graph honest while the next tranche focuses on broader package
   ownership, not root-gate decomposition itself
 - hand the richer per-agent pack expansion off to

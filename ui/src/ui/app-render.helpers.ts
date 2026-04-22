@@ -188,6 +188,7 @@ export function renderChatSessionSelect(state: AppViewState) {
     <div class="chat-controls__session-row">
       <label class="field chat-controls__session">
         <select
+          aria-label="Select session"
           .value=${state.sessionKey}
           title=${selectedSessionLabel}
           ?disabled=${!state.connected || sessionGroups.length === 0}
@@ -475,6 +476,7 @@ export function renderChatMobileToggle(state: AppViewState) {
         <div class="chat-controls">
           <label class="field chat-controls__session">
             <select
+              aria-label="Select session"
               .value=${state.sessionKey}
               @change=${(e: Event) => {
                 const next = (e.target as HTMLSelectElement).value;
@@ -853,11 +855,23 @@ function resolveKnownSessionClassName(key: string): string | null {
   if (key === "main" || key === "agent:main:main") {
     return "Main Session";
   }
+  if (key === "agent:main:daily-operator-review") {
+    return "Daily Operator Review";
+  }
+  if (key === "agent:main:weekly-operator-review") {
+    return "Weekly Operator Review";
+  }
   if (key === "agent:chief:main") {
     return "Chief Session";
   }
+  if (key === "agent:chief:weekly-maintenance-debt-guard") {
+    return "Weekly Maintenance Debt Guard";
+  }
   if (key === "agent:builder:main") {
     return "Builder Session";
+  }
+  if (key === "agent:researcher:main") {
+    return "Researcher";
   }
   if (key === "agent:x-manager:main") {
     return "X Manager Session";

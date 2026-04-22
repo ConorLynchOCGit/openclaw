@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import { buildDeterministicUuid } from "../deterministic-uuid.ts";
 import type {
+  ModelMemoryObjectRecord,
+  ModelMemorySupportItemRecord,
+  ModelMemoryWriteEventRecord,
+} from "../storage-database-contract.ts";
+import { sanitizeCompositePayloadForRetention } from "./composite-policy.ts";
+import type {
   AdmissionDecisionBatch,
   CanonicalCandidateBatch,
   DurableMemoryRecord,
@@ -8,11 +14,29 @@ import type {
   MemoryEvent,
   ReconciliationDecision,
 } from "./contracts.ts";
+import {
+  projectDurableMemoryToLegacyRecord,
+  projectDurableMemoryToSupportItems,
+  projectMemoryEventToLegacyWriteEvent,
+} from "./storage-compatibility.ts";
 
 export type ShadowMemoryBatch = {
   memoryEvents: MemoryEvent[];
   durableMemories: DurableMemoryRecord[];
   memoryEdges: MemoryEdge[];
+};
+
+export type LiveMemoryBatch = ShadowMemoryBatch;
+
+export type LiveMemoryWriteResult = {
+  decision: "write" | "supersede" | "attach_support" | "reject" | "quarantine";
+  eventType: MemoryEvent["event_type"];
+  memoryId?: string;
+  candidateId?: string;
+  targetMemoryIds: string[];
+  memoryObject?: ModelMemoryObjectRecord;
+  supportItem?: ModelMemorySupportItemRecord;
+  writeEvent: ModelMemoryWriteEventRecord;
 };
 
 function nowIso(): string {
@@ -21,6 +45,12 @@ function nowIso(): string {
 
 function hashSearchText(input: string): string {
   return createHash("sha256").update(input).digest("hex");
+}
+
+function sanitizeRecordedPayload(
+  candidate: CanonicalCandidateBatch["canonical_candidates"][number],
+): DurableMemoryRecord["payload"] {
+  return sanitizeCompositePayloadForRetention(candidate);
 }
 
 export function recordShadowMemoryBatch(input: {
@@ -81,7 +111,7 @@ export function recordShadowMemoryBatch(input: {
       canonical_text: candidate.canonical_text,
       search_text: candidate.search_text,
       scope: candidate.scope,
-      payload: candidate.payload,
+      payload: sanitizeRecordedPayload(candidate),
       validity: candidate.validity,
       confidence: candidate.confidence,
       quality: candidate.quality,
@@ -132,6 +162,9 @@ export function recordShadowMemoryBatch(input: {
       payload: {
         admission_decision: admission.decision,
         reconciliation_decision: reconciliation?.decision ?? "insert_new",
+        reconciliation_conflict_type: reconciliation?.conflict_type ?? "none",
+        reconciliation_rationale:
+          reconciliation?.rationale ?? "No reconciliation decision was required.",
       },
     });
 
@@ -165,4 +198,50 @@ export function recordShadowMemoryBatch(input: {
   }
 
   return { memoryEvents, durableMemories, memoryEdges };
+}
+
+export const recordLiveMemoryBatch = recordShadowMemoryBatch;
+
+export function summarizeLiveMemoryWriteResults(batch: ShadowMemoryBatch): LiveMemoryWriteResult[] {
+  const memoryById = new Map(batch.durableMemories.map((memory) => [memory.memory_id, memory]));
+  const supersededByMemoryId = new Set(
+    batch.memoryEdges
+      .filter((edge) => edge.edge_type === "supersedes")
+      .map((edge) => edge.from_memory_id),
+  );
+
+  return batch.memoryEvents.map((event) => {
+    let decision: LiveMemoryWriteResult["decision"];
+    switch (event.event_type) {
+      case "memory_merged":
+      case "artifact_updated":
+        decision = "attach_support";
+        break;
+      case "candidate_rejected":
+        decision = "reject";
+        break;
+      case "candidate_quarantined":
+        decision = "quarantine";
+        break;
+      default:
+        decision =
+          event.memory_id && supersededByMemoryId.has(event.memory_id) ? "supersede" : "write";
+        break;
+    }
+
+    const durableMemory = event.memory_id ? memoryById.get(event.memory_id) : undefined;
+    const supportItem = durableMemory
+      ? projectDurableMemoryToSupportItems(durableMemory)[0]
+      : undefined;
+    return {
+      decision,
+      eventType: event.event_type,
+      memoryId: event.memory_id ?? undefined,
+      candidateId: event.candidate_id ?? undefined,
+      targetMemoryIds: event.target_memory_ids,
+      memoryObject: durableMemory ? projectDurableMemoryToLegacyRecord(durableMemory) : undefined,
+      supportItem,
+      writeEvent: projectMemoryEventToLegacyWriteEvent(event),
+    };
+  });
 }

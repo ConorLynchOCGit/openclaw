@@ -67,6 +67,18 @@ describe("buildStatusScanResult", () => {
     const summary = buildColdStartStatusSummary();
     const memory = { agentId: "main", backend: "builtin" as const, provider: "sqlite" };
     const memoryPlugin = { enabled: true, slot: "memory-core" };
+    const modelMemory = {
+      enabled: true,
+      source: "config:plugins.entries.model-memory.config.live.enabled" as const,
+      includeRetrievalPacks: false,
+      contextInjectionEnabled: true,
+      captureWritesEnabled: true,
+      legacyMemorySlotDisabled: true,
+      legacyMemorySearchDisabled: true,
+      databaseConfigured: true,
+      databaseSource: "config:plugins.entries.model-memory.config.database.url" as const,
+      databaseName: "model_memory",
+    };
     const pluginCompatibility = [
       {
         pluginId: "legacy",
@@ -93,6 +105,7 @@ describe("buildStatusScanResult", () => {
         summary,
         memory,
         memoryPlugin,
+        modelMemory,
         pluginCompatibility,
       }),
     ).toEqual({
@@ -118,6 +131,7 @@ describe("buildStatusScanResult", () => {
       summary,
       memory,
       memoryPlugin,
+      modelMemory,
       pluginCompatibility,
     });
   });

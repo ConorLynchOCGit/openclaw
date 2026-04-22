@@ -1,3 +1,4 @@
+import { resolveModelMemoryLiveRuntimeStatus } from "../agents/model-memory.live-runtime.js";
 import type { PluginCompatibilityNotice } from "../plugins/status.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { StatusScanOverviewResult } from "./status.scan-overview.ts";
@@ -23,6 +24,7 @@ export async function executeStatusScanFromOverview(params: {
   pluginCompatibility: PluginCompatibilityNotice[];
 }) {
   const memoryPlugin = resolveMemoryPluginStatus(params.overview.cfg);
+  const modelMemory = resolveModelMemoryLiveRuntimeStatus(params.overview.cfg);
   const [memory, summary] = await Promise.all([
     params.resolveMemory({
       cfg: params.overview.cfg,
@@ -49,6 +51,7 @@ export async function executeStatusScanFromOverview(params: {
     summary,
     memory,
     memoryPlugin,
+    modelMemory,
     pluginCompatibility: params.pluginCompatibility,
   });
 }

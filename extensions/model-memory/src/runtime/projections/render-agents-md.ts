@@ -1,14 +1,17 @@
 import { summarizeModelMemoryValue } from "../../payload-summary.ts";
-import type { ActiveMemorySetRecord, ActiveMemorySlotRecord } from "../../runtime-read-models.ts";
-import type { ModelMemoryObjectRecord } from "../../storage-database-contract.ts";
+import type {
+  ActiveMemorySetRecord,
+  ActiveMemorySlotRecord,
+  RuntimeMemoryRecord,
+} from "../../runtime-read-models.ts";
 
 export type RenderAgentsProjectionInput = {
   slots: ActiveMemorySlotRecord[];
   sets: ActiveMemorySetRecord[];
-  memoryObjects: ModelMemoryObjectRecord[];
+  memoryObjects: RuntimeMemoryRecord[];
 };
 
-function getObjectById(memoryObjects: ModelMemoryObjectRecord[], objectId: string) {
+function getObjectById(memoryObjects: RuntimeMemoryRecord[], objectId: string) {
   const record = memoryObjects.find((entry) => entry.id === objectId);
   if (!record) {
     throw new Error(`missing memory object for projection: ${objectId}`);

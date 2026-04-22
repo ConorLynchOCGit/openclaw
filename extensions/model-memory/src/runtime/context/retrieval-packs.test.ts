@@ -67,6 +67,29 @@ describe("retrieval packs", () => {
 
     expect(artifact.artifactType).toBe("retrieval_pack");
     expect(artifact.sourceObjectIds).toEqual(["memory-001"]);
+    expect(artifact.renderedText).toContain("sha256:");
+    expect(artifact.renderedText).not.toContain("Find deployment information");
+    expect(artifact.structuredPayload?.schemaVersion).toBe("memory_retrieval_runtime.v1");
+    expect(artifact.structuredPayload?.retrievalRun).toEqual(
+      expect.objectContaining({
+        rawQueryPersisted: false,
+        selectedMemoryIds: ["memory-001"],
+      }),
+    );
+    expect(artifact.structuredPayload?.memoryPacks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          packType: "project_state_pack",
+          sources: [expect.objectContaining({ memoryId: "memory-001" })],
+        }),
+      ]),
+    );
+    expect(artifact.structuredPayload?.recallProof).toEqual(
+      expect.objectContaining({
+        acceptedSources: ["mmv2_runtime_memory", "mmv2_projection_digest"],
+        rejectedSources: ["root_USER_md", "root_MEMORY_md", "daily_note_only"],
+      }),
+    );
 
     const assembled = assembleContext({
       projectionVersions: [],
@@ -82,6 +105,86 @@ describe("retrieval packs", () => {
     expect(assembled.semiStableSegments).toHaveLength(1);
     expect(assembled.semiStableSegments[0]?.segmentType).toBe("retrieval_pack");
     expect(assembled.semiStableSegments[0]?.text).toContain("deployment region");
+  });
+
+  it("lifts operating packs into system prompt additions without root workspace file proof", () => {
+    const artifact = buildRetrievalPackArtifact({
+      retrievalRequest: {
+        id: "retrieval-request-rule",
+        sessionId: "session-rule",
+        queryText: "sha256:query-hash",
+        requestPurpose: "context_injection",
+        scope: { projectId: "project-001", retrievalRuntimeQueryHash: "query-hash" },
+        desiredResultCount: 1,
+        contractName: "retrieval_request_interpretation",
+        contractVersion: "v1",
+        modelId: "retrieval-model-001",
+        createdAt: new Date(0),
+      },
+      retrievalResultSet: {
+        id: "retrieval-set-rule",
+        retrievalRequestId: "retrieval-request-rule",
+        contentHash: "hash-rule",
+        resultCount: 1,
+        createdAt: new Date(0),
+      },
+      retrievalResultItems: [
+        {
+          id: "retrieval-item-rule",
+          retrievalResultSetId: "retrieval-set-rule",
+          memoryObjectId: "memory-rule",
+          rankIndex: 0,
+          rankBand: "primary",
+          retrievalReasonCodes: ["kind_match", "rerank_selected"],
+          selectedForContext: true,
+          createdAt: new Date(0),
+        },
+      ],
+      memoryObjects: [
+        {
+          id: "memory-rule",
+          canonicalClass: "project",
+          kind: "rule",
+          payload: { subject: "deployment", recommendedAction: "ask before deploying" },
+          normalizedSubject: "deployment",
+          normalizedTitle: undefined,
+          normalizedSearchText: "deployment ask before deploying",
+          scope: { projectId: "project-001" },
+          scopeKey: "project-001",
+          provenance: [{ sourceId: "source-rule", blockId: "segment-rule" }],
+          confidence: "strong",
+          durability: "durable",
+          suggestedReviewMode: "auto_accept",
+          executedReviewMode: "auto_accept",
+          rationaleCodes: [],
+          identityKey: "rule-001",
+          contractName: "mmv2_runtime_projection",
+          contractVersion: "v1",
+          modelId: "mmv2-storage",
+          createdAt: new Date(0),
+          lifecycleState: "active",
+          activationBasis: "primary_capture",
+        },
+      ],
+      buildPolicyVersion: "v1",
+    });
+
+    const assembled = assembleContext({
+      projectionVersions: [],
+      projectionTexts: {},
+      artifacts: [artifact],
+      recentTurns: [],
+      toolResults: [],
+      currentTurn: "Can you deploy?",
+      maxTokens: 100,
+      includeRetrievalPacks: true,
+      retrievalPackScopeKeys: ["session-rule"],
+    });
+
+    expect(assembled.systemPromptAddition).toContain("<operating-memory>");
+    expect(assembled.systemPromptAddition).toContain("ask before deploying");
+    expect(assembled.systemPromptAddition).not.toContain("USER.md");
+    expect(assembled.systemPromptAddition).not.toContain("MEMORY.md");
   });
 
   it("keeps only the latest retrieval pack for the active scope", () => {

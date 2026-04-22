@@ -8,6 +8,7 @@ import {
 } from "./bootstrap-file-registry.js";
 import { resolveBootstrapRepoPath, resolveBootstrapRepoRoot } from "./bootstrap-repo-paths.js";
 import { resolveModelMemoryBootstrapOverlay } from "./model-memory.live-runtime.js";
+import { stripGeneratedWorkspaceMemoryZones } from "./workspace-memory-generated-zones.js";
 import {
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_BOOTSTRAP_FILENAME,
@@ -108,10 +109,10 @@ function removeGeneratedZone(existingContent: string | undefined, blockId: strin
 }
 
 export function stripMemoryCompatibilityScaffolding(existingContent: string | undefined): string {
-  const withoutModelMemory = removeGeneratedZone(existingContent, MODEL_MEMORY_ZONE_BLOCK_ID);
-  const withoutCanonicalPointers = removeGeneratedZone(withoutModelMemory, CANONICAL_ZONE_BLOCK_ID);
-  const trimmed = withoutCanonicalPointers.trim();
-  return trimmed.length > 0 ? `${trimmed}\n` : "";
+  return stripGeneratedWorkspaceMemoryZones({
+    relativePath: DEFAULT_MEMORY_FILENAME,
+    content: existingContent ?? "",
+  });
 }
 
 function extractBulletLines(markdown: string, heading: string): string[] {
@@ -332,7 +333,7 @@ function renderCanonicalBlock(params: {
 
   if (params.fileName === DEFAULT_USER_FILENAME) {
     lines.push(
-      "- This compatibility file is assembled from user-facing durable context plus generated memory when available.",
+      "- This compatibility file is human-owned user context; generated model-memory user projection stays in a separate artifact.",
     );
     if (params.projectionVersion?.canonicalArtifactPath) {
       lines.push(
@@ -410,7 +411,15 @@ export function assembleBootstrapCompatibilityContent(params: {
   }
 
   let assembled = params.existingContent ?? "";
-  if (params.projectionText) {
+  if (params.fileName === DEFAULT_USER_FILENAME) {
+    // USER.md mirrors MEMORY.md's human-owned posture: generated user
+    // projection is made available as an artifact, not written back into the
+    // root compatibility file.
+    assembled = stripGeneratedWorkspaceMemoryZones({
+      relativePath: params.fileName,
+      content: assembled,
+    });
+  } else if (params.projectionText) {
     assembled = upsertGeneratedZone(assembled, params.projectionText, MODEL_MEMORY_ZONE_BLOCK_ID);
   } else {
     assembled = removeGeneratedZone(assembled, MODEL_MEMORY_ZONE_BLOCK_ID);
@@ -433,7 +442,10 @@ export async function materializeCanonicalBootstrapCompatibilityFiles(params: {
   workspaceDir: string;
   config?: OpenClawConfig;
   sessionId?: string;
+  sessionKey?: string;
   agentId?: string;
+  currentTurnText?: string;
+  writeRootMemoryFiles?: boolean;
 }): Promise<MaterializeBootstrapCompatibilityResult> {
   const [registryEntries, canonicalSources, modelMemoryOverlay, agentCanonicalSources] =
     await Promise.all([
@@ -442,8 +454,10 @@ export async function materializeCanonicalBootstrapCompatibilityFiles(params: {
       resolveModelMemoryBootstrapOverlay({
         config: params.config,
         sessionId: params.sessionId,
+        sessionKey: params.sessionKey,
         agentId: params.agentId,
         workspaceDir: params.workspaceDir,
+        currentTurnText: params.currentTurnText,
       }),
       loadAgentCanonicalRuntimeSources(params.agentId),
     ]);
@@ -496,7 +510,13 @@ export async function materializeCanonicalBootstrapCompatibilityFiles(params: {
       continue;
     }
 
-    await writeIfChanged(filePath, assembledContent);
+    const isRootMemoryFile =
+      fileName === DEFAULT_USER_FILENAME ||
+      fileName === DEFAULT_MEMORY_FILENAME ||
+      fileName === DEFAULT_MEMORY_ALT_FILENAME;
+    if (params.writeRootMemoryFiles !== false || !isRootMemoryFile) {
+      await writeIfChanged(filePath, assembledContent);
+    }
     files.push({
       name: fileName as WorkspaceBootstrapFile["name"],
       path: filePath,

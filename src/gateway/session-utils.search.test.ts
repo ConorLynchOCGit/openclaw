@@ -279,6 +279,138 @@ describe("listSessionsFromStore search", () => {
     ]);
   });
 
+  test("repairs legacy operator metadata for system-sent validation proof sessions", () => {
+    const now = Date.now();
+    const store: Record<string, SessionEntry> = {
+      "agent:main:main": {
+        sessionId: "sess-main",
+        updatedAt: now,
+        displayName: "Main Session",
+      } as SessionEntry,
+      "agent:main:validation-progress-replay": {
+        sessionId: "sess-proof-legacy",
+        updatedAt: now - 1000,
+        systemSent: true,
+        visibilityClass: "operator",
+        retentionClass: "standard",
+        origin: {
+          provider: "webchat",
+          surface: "webchat",
+          label: "codex-validation-phase2",
+        },
+      } as SessionEntry,
+    };
+
+    const result = listSessionsFromStore({
+      cfg: baseCfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+    });
+
+    expect(result.sessions.map((session) => session.key)).toEqual(["agent:main:main"]);
+  });
+
+  test("keeps labeled operator review sessions visible even when legacy metadata still says operator", () => {
+    const now = Date.now();
+    const store: Record<string, SessionEntry> = {
+      "agent:main:main": {
+        sessionId: "sess-main",
+        updatedAt: now,
+        displayName: "Main Session",
+      } as SessionEntry,
+      "agent:main:daily-operator-review": {
+        sessionId: "sess-review",
+        updatedAt: now - 1000,
+        label: "Daily Operator Review",
+        systemSent: true,
+        visibilityClass: "operator",
+        retentionClass: "standard",
+      } as SessionEntry,
+    };
+
+    const result = listSessionsFromStore({
+      cfg: baseCfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+    });
+
+    expect(result.sessions.map((session) => session.key)).toEqual([
+      "agent:main:main",
+      "agent:main:daily-operator-review",
+    ]);
+  });
+
+  test("repairs stale stored proof visibility for labeled main-session operator review rows", () => {
+    const now = Date.now();
+    const store: Record<string, SessionEntry> = {
+      "agent:main:main": {
+        sessionId: "sess-main",
+        updatedAt: now,
+        displayName: "Main Session",
+      } as SessionEntry,
+      "agent:main:weekly-operator-review": {
+        sessionId: "sess-review",
+        updatedAt: now - 1000,
+        label: "Weekly Operator Review",
+        systemSent: true,
+        visibilityClass: "proof",
+        retentionClass: "proof_short",
+      } as SessionEntry,
+    };
+
+    const result = listSessionsFromStore({
+      cfg: baseCfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+    });
+
+    expect(result.sessions.map((session) => session.key)).toEqual([
+      "agent:main:main",
+      "agent:main:weekly-operator-review",
+    ]);
+    const repaired = result.sessions.find(
+      (session) => session.key === "agent:main:weekly-operator-review",
+    );
+    expect(repaired?.visibilityClass).toBe("operator");
+    expect(repaired?.retentionClass).toBe("standard");
+  });
+
+  test("repairs stale stored proof visibility for the canonical main session even without a label", () => {
+    const now = Date.now();
+    const store: Record<string, SessionEntry> = {
+      "agent:main:main": {
+        sessionId: "sess-main",
+        updatedAt: now,
+        systemSent: true,
+        visibilityClass: "proof",
+        retentionClass: "proof_short",
+      } as SessionEntry,
+      "agent:main:daily-operator-review": {
+        sessionId: "sess-review",
+        updatedAt: now - 1000,
+        label: "Daily Operator Review",
+      } as SessionEntry,
+    };
+
+    const result = listSessionsFromStore({
+      cfg: baseCfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+    });
+
+    expect(result.sessions.map((session) => session.key)).toEqual([
+      "agent:main:main",
+      "agent:main:daily-operator-review",
+    ]);
+    const repaired = result.sessions.find((session) => session.key === "agent:main:main");
+    expect(repaired?.visibilityClass).toBe("operator");
+    expect(repaired?.retentionClass).toBe("standard");
+  });
+
   test("hides unnamed internal subagent sessions even when the key is not codex-prefixed", () => {
     const now = Date.now();
     const store: Record<string, SessionEntry> = {

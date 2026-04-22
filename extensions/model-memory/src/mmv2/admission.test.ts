@@ -91,4 +91,120 @@ describe("mmv2/admission", () => {
 
     expect(result.decisions[0].decision).toBe("embed_only");
   });
+
+  it("auto-admits explicit durable project-fact commands only", () => {
+    const source = createMmV2TestSource(
+      "Durable workspace project fact: the retrieval soak validates structural correction targets.",
+    );
+    const candidate = buildCanonicalCandidate(
+      source.rawEvent,
+      source.segmented.segments[0].segment_id,
+      "Durable workspace project fact: the retrieval soak validates structural correction targets.",
+      {
+        candidate_id: `det-project-fact:${source.segmented.segments[0].segment_id}`,
+        kind: "claim",
+        payload: {
+          claim_type: "project_fact",
+          subject: "retrieval soak",
+          predicate: "validates",
+          object: "structural correction targets",
+        },
+        scope: {
+          tenant_id: source.rawEvent.tenant_id,
+          user_id: source.rawEvent.user_id,
+          project_id: "project-001",
+          workspace_id: null,
+          subject_type: "project",
+          subject_id: "current_project",
+          applies_to: "current_project",
+        },
+      },
+    );
+
+    const result = applyAdmissionThresholds(
+      {
+        schema_version: "canonical_candidates.v1",
+        event_id: source.rawEvent.event_id,
+        canonical_candidates: [candidate],
+      },
+      {
+        schema_version: "admission_decision.v1",
+        event_id: source.rawEvent.event_id,
+        decisions: [
+          buildAdmissionDecision(candidate.candidate_id, {
+            decision: "quarantine",
+            scores: {
+              future_utility: 0.45,
+              durability: 0.46,
+              confidence: 0.6,
+              novelty: 0.5,
+              scope_clarity: 0.6,
+              sensitivity_safety: 0.95,
+              specificity: 0.5,
+            },
+          }),
+        ],
+      },
+    );
+
+    expect(result.decisions[0].decision).toBe("admit");
+  });
+
+  it("does not auto-admit ordinary project chatter through the broad project-scoped gate", () => {
+    const source = createMmV2TestSource(
+      "The retrieval soak validates structural correction targets.",
+    );
+    const candidate = buildCanonicalCandidate(
+      source.rawEvent,
+      source.segmented.segments[0].segment_id,
+      "The retrieval soak validates structural correction targets.",
+      {
+        candidate_id: "ordinary-project-fact",
+        kind: "claim",
+        payload: {
+          claim_type: "project_fact",
+          subject: "retrieval soak",
+          predicate: "validates",
+          object: "structural correction targets",
+        },
+        scope: {
+          tenant_id: source.rawEvent.tenant_id,
+          user_id: source.rawEvent.user_id,
+          project_id: "project-001",
+          workspace_id: null,
+          subject_type: "project",
+          subject_id: "current_project",
+          applies_to: "current_project",
+        },
+      },
+    );
+
+    const result = applyAdmissionThresholds(
+      {
+        schema_version: "canonical_candidates.v1",
+        event_id: source.rawEvent.event_id,
+        canonical_candidates: [candidate],
+      },
+      {
+        schema_version: "admission_decision.v1",
+        event_id: source.rawEvent.event_id,
+        decisions: [
+          buildAdmissionDecision(candidate.candidate_id, {
+            decision: "quarantine",
+            scores: {
+              future_utility: 0.45,
+              durability: 0.46,
+              confidence: 0.6,
+              novelty: 0.5,
+              scope_clarity: 0.6,
+              sensitivity_safety: 0.95,
+              specificity: 0.5,
+            },
+          }),
+        ],
+      },
+    );
+
+    expect(result.decisions[0].decision).not.toBe("admit");
+  });
 });
