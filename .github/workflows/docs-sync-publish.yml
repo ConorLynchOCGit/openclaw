@@ -32,9 +32,27 @@ jobs:
           OPENCLAW_DOCS_SYNC_TOKEN: ${{ secrets.OPENCLAW_DOCS_SYNC_TOKEN }}
         run: |
           set -euo pipefail
-          git clone \
-            "https://x-access-token:${OPENCLAW_DOCS_SYNC_TOKEN}@github.com/openclaw/docs.git" \
-            publish
+          if [ -z "${OPENCLAW_DOCS_SYNC_TOKEN:-}" ]; then
+            echo "::error title=Missing OPENCLAW_DOCS_SYNC_TOKEN::Set OPENCLAW_DOCS_SYNC_TOKEN on ConorLynchOCGit/openclaw to a fine-grained PAT or GitHub App installation token with Contents read/write on openclaw/docs."
+            exit 1
+          fi
+
+          git clone "https://github.com/openclaw/docs.git" publish
+
+          auth_header="$(printf 'x-access-token:%s' "${OPENCLAW_DOCS_SYNC_TOKEN}" | base64 | tr -d '\n')"
+          git -C publish config --local \
+            http.https://github.com/openclaw/docs.git.extraheader \
+            "AUTHORIZATION: basic ${auth_header}"
+
+          if ! git -C publish ls-remote --exit-code origin refs/heads/main >/dev/null; then
+            echo "::error title=Docs sync token cannot read publish repo::OPENCLAW_DOCS_SYNC_TOKEN must be valid for openclaw/docs."
+            exit 1
+          fi
+
+          if ! git -C publish push --dry-run origin HEAD:main >/dev/null; then
+            echo "::error title=Docs sync token cannot push publish repo::OPENCLAW_DOCS_SYNC_TOKEN must have Contents read/write on openclaw/docs. Password authentication is not supported."
+            exit 1
+          fi
 
       - name: Sync docs into publish repo
         run: |

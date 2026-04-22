@@ -164,6 +164,21 @@ runtime availability caveat. The affected item was rerun in isolation as
 - old v1 spec closure material is historical authority only
 - MMV2 proof/file-pack artifacts remain evaluation-only and do not write to the
   live durable-memory DB
+- 2026-04-22 shared ingestion-funnel hardening pass has started:
+  - shared failure taxonomy and telemetry contracts now cover document ingest,
+    ordinary-turn capture, tool-result capture, daily recovery, bootstrap
+    import, and future heartbeat/proactive capture
+  - document-ingest runner failure classification now delegates to the shared
+    taxonomy instead of carrying a runner-only class list
+  - live document, ordinary-turn, daily-recovery, and tool-result capture
+    surfaces now return bounded ingestion telemetry with ids/counts only
+  - provider JSON execution traces now hash prompt message content and record
+    bounded usage/finish metadata instead of raw prompt bodies
+  - capture routing now deterministically routes temp/no-store/privacy signals
+    before model routing and skips capture safely when routing repair output is
+    malformed
+  - memory-edge endpoint validation now uses the shared persistence boundary
+    helper before writing FK-backed edges
 
 ## Current Risks
 
@@ -180,21 +195,42 @@ runtime availability caveat. The affected item was rerun in isolation as
   any capture wiring
 - closed-loop operational signals must avoid dark data and must not become
   parallel raw capture
+- the shared ingestion funnel is not yet fully wired as a single executable
+  pipeline across every path; this pass landed shared contracts and selected
+  adapters, but candidate-level quarantine/persistence still needs a deeper
+  implementation slice
+- `pnpm vitest run extensions/model-memory/src/mmv2/proof-runner.test.ts`
+  still fails existing scripted project-fact cases with
+  `Unable to resolve canonical candidate ...`; this is classified as
+  ordinary-turn/proof-runner coverage debt and must not be fixed with topic
+  parsers or fuzzy write-path matching
+- Docs Sync Publish Repo is workflow-hardened but still blocked until
+  `OPENCLAW_DOCS_SYNC_TOKEN` is set to a credential with Contents read/write
+  on `openclaw/docs`
 
 ## Current Work Queue
 
-1. Keep `message:preprocessed` routing/telemetry-only until dedupe and
+1. Set or replace `OPENCLAW_DOCS_SYNC_TOKEN` for `ConorLynchOCGit/openclaw`
+   with either a GitHub App installation token or fine-grained PAT scoped to
+   `openclaw/docs` with Contents read/write; then rerun Docs Sync Publish Repo.
+2. Keep `message:preprocessed` routing/telemetry-only until dedupe and
    no-raw-prompt guarantees are proven.
-2. Treat `ContextEngine.ingest` and `ContextEngine.ingestBatch` hook evidence
+3. Treat `ContextEngine.ingest` and `ContextEngine.ingestBatch` hook evidence
    as production evidence only when it comes from real UI/gateway turns; do not
    fake production verification from direct internal calls.
-3. Do not resume the curated 304-source document-ingest corpus until provider
+4. Do not resume the curated 304-source document-ingest corpus until provider
    health/credit preflight passes. Resume
    from checkpoint `checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json`
    only with provider credits restored, bounded class-filtered failed-source
    retry, the runner failure circuit breaker enabled, and the failed-source
    quarantine report reviewed.
-4. Continue hardening Retrieval Runtime relevance and telemetry without
+5. Finish the next shared ingestion-funnel slice:
+   - executable pipeline stage orchestration across all capture paths
+   - candidate-level quarantine artifacts/reports
+   - per-candidate persistence/savepoints where safe
+   - non-mutating integrity audit for memories/events/edges/source refs
+   - provider scorecard and cache/cost telemetry in closeout reports
+6. Continue hardening Retrieval Runtime relevance and telemetry without
    mutating truth:
    - prefer fresh projection digests backed by active MMV2 ids
    - record stale/superseded/deleted/conflicted/inactive exclusions
@@ -202,19 +238,19 @@ runtime availability caveat. The affected item was rerun in isolation as
      but not selected
    - emit empty-retrieval telemetry
    - keep lexical/RRF/vector-style ranking read-time only
-5. Add remaining evaluation coverage for:
+7. Add remaining evaluation coverage for:
    - tool-result proof capture
    - projection-backed recall
    - stale/superseded exclusion
    - no raw-data persistence
    - duplicate ordinary-turn capture prevention
    - root `USER.md` / `MEMORY.md` no-write
-6. Inventory and quarantine remaining fallback compatibility in small
+8. Inventory and quarantine remaining fallback compatibility in small
    reversible slices:
    - no broad deletion without tests
    - no legacy semantic-family/collision behavior in default MMV2 hot paths
    - only explicit fallback flags with tests
-7. Harden ordinary-turn MMV2 evaluation coverage:
+9. Harden ordinary-turn MMV2 evaluation coverage:
    - durable preference
    - durable directive
    - durable project fact
@@ -223,7 +259,7 @@ runtime availability caveat. The affected item was rerun in isolation as
    - privacy/no-store reject
    - scope and evidence grounding
    - no topic parser or fuzzy write-path supersession regression
-8. Run seeded file-pack/provider variance comparisons and separate:
+10. Run seeded file-pack/provider variance comparisons and separate:
 
 - deterministic regression
 - provider/model variance

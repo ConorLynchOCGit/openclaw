@@ -1,4 +1,5 @@
 import type { QueryResultRow } from "pg";
+import { partitionMemoryEdgesByKnownEndpoints } from "../ingestion/shared-pipeline.ts";
 import type {
   ExistingMemorySummary,
   MemoryEdge,
@@ -519,8 +520,6 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
       }
 
       const knownMemoryIds = new Set(batch.durableMemories.map((memory) => memory.memory_id));
-      const deferredEdges: Array<{ edge: MemoryEdge; reason: string }> = [];
-      const validEdges: MemoryEdge[] = [];
       for (const edge of batch.memoryEdges) {
         const endpointIds = [edge.from_memory_id, edge.to_memory_id];
         for (const endpointId of endpointIds) {
@@ -528,19 +527,12 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
             knownMemoryIds.add(endpointId);
           }
         }
-
-        const missingEndpointIds = endpointIds.filter(
-          (endpointId) => !knownMemoryIds.has(endpointId),
-        );
-        if (missingEndpointIds.length > 0) {
-          deferredEdges.push({
-            edge,
-            reason: `missing endpoint memory id(s): ${missingEndpointIds.join(", ")}`,
-          });
-          continue;
-        }
-        validEdges.push(edge);
       }
+
+      const { validEdges, deferredEdges } = partitionMemoryEdgesByKnownEndpoints({
+        edges: batch.memoryEdges,
+        knownMemoryIds,
+      });
 
       for (const edge of validEdges) {
         await repository.upsertMemoryEdge(edge);

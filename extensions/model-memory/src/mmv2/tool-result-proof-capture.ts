@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import { buildDeterministicUuid } from "../deterministic-uuid.ts";
+import {
+  createMemoryIngestionTelemetryEvent,
+  type MemoryIngestionTelemetryEvent,
+} from "../ingestion/shared-pipeline.ts";
 import { adaptOrdinaryTurnSource } from "../source-adapters/ordinary-turn-source-adapter.ts";
 import type {
   ModelMemorySourceRecord,
@@ -64,6 +68,7 @@ export type ToolResultProofCaptureBuildResult = {
   admissionBatch: AdmissionDecisionBatch;
   reconciliationDecisions: ReconciliationDecision[];
   liveMemoryBatch: LiveMemoryBatch;
+  ingestionTelemetry: MemoryIngestionTelemetryEvent[];
 };
 
 function sha256(value: string): string {
@@ -558,6 +563,38 @@ export function buildToolResultProofLiveCapture(
     admissionBatch,
     reconciliationDecisions,
   });
+  const ingestionTelemetry = [
+    createMemoryIngestionTelemetryEvent({
+      path: "tool_result_capture",
+      stage: "semantic_contract_boundary",
+      status: "completed",
+      candidate_counts: {
+        extracted: canonicalBatch.canonical_candidates.length,
+        valid: canonicalBatch.canonical_candidates.length,
+      },
+      ids: {
+        source_ids: [envelope.source.id],
+        segment_ids: envelope.windows.map((entry) => entry.id),
+      },
+    }),
+    createMemoryIngestionTelemetryEvent({
+      path: "tool_result_capture",
+      stage: "persistence_boundary",
+      status: "completed",
+      candidate_counts: {
+        admitted: liveMemoryBatch.durableMemories.length,
+        rejected: liveMemoryBatch.memoryEvents.filter(
+          (entry) =>
+            entry.event_type === "candidate_rejected" ||
+            entry.event_type === "candidate_quarantined",
+        ).length,
+      },
+      ids: {
+        memory_ids: liveMemoryBatch.durableMemories.map((entry) => entry.memory_id),
+        event_ids: liveMemoryBatch.memoryEvents.map((entry) => entry.memory_event_id),
+      },
+    }),
+  ];
 
   return {
     source: envelope.source,
@@ -567,5 +604,6 @@ export function buildToolResultProofLiveCapture(
     admissionBatch,
     reconciliationDecisions,
     liveMemoryBatch,
+    ingestionTelemetry,
   };
 }

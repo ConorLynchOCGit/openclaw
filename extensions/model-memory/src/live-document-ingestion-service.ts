@@ -11,6 +11,10 @@ import {
   type DocumentIngestionInput,
   type DocumentIngestionResult,
 } from "./document-ingestion.ts";
+import {
+  createMemoryIngestionTelemetryEvent,
+  type MemoryIngestionTelemetryEvent,
+} from "./ingestion/shared-pipeline.ts";
 import type { ExistingMemorySummary } from "./mmv2/contracts.ts";
 import { ingestDocumentV2ForLiveStorage } from "./mmv2/live-document-ingestion.ts";
 import type { LiveMemoryBatch, LiveMemoryWriteResult } from "./mmv2/recording.ts";
@@ -25,6 +29,7 @@ type MmV2AwareCanonicalRepository = ModelMemoryCanonicalRepository & {
 
 export type LiveDocumentIngestionResult = DocumentIngestionResult & {
   writeResults: LiveMemoryWriteResult[];
+  ingestionTelemetry: MemoryIngestionTelemetryEvent[];
   rebuild?: Awaited<ReturnType<typeof rebuildDerivedRuntimeState>>;
 };
 
@@ -109,11 +114,41 @@ export async function ingestDocumentLive(input: {
           runtimeRepository: input.runtimeRepository,
         })
       : undefined;
+  const ingestionTelemetry = [
+    createMemoryIngestionTelemetryEvent({
+      path: "document_ingest",
+      stage: "semantic_contract_boundary",
+      status: "completed",
+      candidate_counts: {
+        extracted: result.capturedObjects.length,
+        valid: result.capturedObjects.length,
+      },
+    }),
+    createMemoryIngestionTelemetryEvent({
+      path: "document_ingest",
+      stage: "persistence_boundary",
+      status: "completed",
+      candidate_counts: {
+        admitted: writeResults.filter(
+          (entry) => entry.decision === "write" || entry.decision === "supersede",
+        ).length,
+        rejected: writeResults.filter(
+          (entry) => entry.decision === "reject" || entry.decision === "quarantine",
+        ).length,
+      },
+      ids: {
+        memory_ids: writeResults
+          .map((entry) => entry.memoryId)
+          .filter((entry): entry is string => Boolean(entry)),
+      },
+    }),
+  ];
 
   return {
     ...result,
     source,
     writeResults,
+    ingestionTelemetry,
     rebuild,
   };
 }

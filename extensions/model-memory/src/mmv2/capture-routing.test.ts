@@ -4,6 +4,65 @@ import type { CaptureRoutingBatch } from "./contracts.ts";
 import { captureOne, createMmV2TestSource, createScriptedMmV2Interpreter } from "./test-helpers.ts";
 
 describe("mmv2/capture-routing", () => {
+  it("deterministically routes explicit no-store and temporary instructions before model routing", async () => {
+    const source = createMmV2TestSource(
+      'Do not store this exact sentence as a memory: "temporary private phrase".\n\nFor this answer only, reply in three bullets.',
+    );
+    const interpreter = createScriptedMmV2Interpreter({});
+
+    const result = await routeCaptureCandidates({
+      rawEvent: source.rawEvent,
+      segmented: source.segmented,
+      sourceKind: "document",
+      sourceId: source.sourceId,
+      sourceWindow: source.sourceWindow,
+      modelId: "model-001",
+      interpreter,
+    });
+
+    expect(result.routing_decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          route: "atomic_candidate",
+          reason_codes: ["explicit_no_store", "privacy_opt_out", "ambiguous"],
+        }),
+        expect.objectContaining({
+          route: "atomic_candidate",
+          reason_codes: ["temporary_context"],
+        }),
+      ]),
+    );
+  });
+
+  it("skips model-routed segments when routing repair output is invalid", async () => {
+    const source = createMmV2TestSource(
+      "The deployment reliability picture is evolving across several related areas.",
+    );
+    const interpreter = createScriptedMmV2Interpreter({
+      "mmv2-capture-routing-v1": () => captureOne({ not_routing: true }),
+      "mmv2-capture-routing-repair-v1": () => captureOne({ still_not_routing: true }),
+    });
+
+    const result = await routeCaptureCandidates({
+      rawEvent: source.rawEvent,
+      segmented: source.segmented,
+      sourceKind: "document",
+      sourceId: source.sourceId,
+      sourceWindow: source.sourceWindow,
+      modelId: "model-001",
+      interpreter,
+    });
+
+    expect(result.routing_decisions).toHaveLength(1);
+    expect(result.routing_decisions[0]).toMatchObject({
+      route: "ignore",
+      candidate_summary: "Capture routing repair failed; skipped capture safely.",
+      memory_likelihood: 0,
+      durability_likelihood: 0,
+      reason_codes: ["not_memory"],
+    });
+  });
+
   it("routes ordered list blocks to composite handling via deterministic override", async () => {
     const source = createMmV2TestSource("1. Run tests\n2. Ship build");
     const listSegment = source.segmented.segments.find(

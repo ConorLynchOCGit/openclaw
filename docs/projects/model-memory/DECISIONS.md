@@ -5,6 +5,62 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-22 - Shared ingestion funnel starts as contracts plus safe adapters
+
+Decision:
+
+- define one shared ingestion-funnel contract and failure taxonomy for
+  document ingest, ordinary-turn capture, tool-result capture, daily recovery,
+  bootstrap import, and future heartbeat/proactive capture
+- make provider-boundary failures, prompt planning, retry decisions,
+  candidate validation, persistence endpoint validation, and no-dark-data
+  telemetry reusable instead of runner-only behavior
+- route malformed capture-routing repair output to a safe skipped batch rather
+  than failing the whole source/turn
+- keep extraction/canonicalization truth semantics unchanged until the next
+  deeper candidate-level quarantine slice can be implemented with proof-runner
+  compatibility
+- do not resume deep document ingest until the shared funnel has enough
+  candidate-level quarantine/persistence coverage and provider credits pass
+  preflight
+
+Reasoning:
+
+- the paused ingest failures repeat across memory paths, so a runner-only fix
+  is insufficient
+- the first safe slice is shared contracts, telemetry, provider boundaries,
+  and persistence endpoint validation; a broad rewrite of extraction,
+  admission, or reconciliation would risk silently changing MMV2 truth
+- malformed repair output must be classified or quarantined, not retried in an
+  unbounded loop
+- the remaining proof-runner project-fact blocker should be fixed directly in
+  the scripted MMV2 path; it must not be worked around with topic parsers,
+  semantic forests, or fuzzy supersession
+
+## 2026-04-22 - Docs sync auth requires a write-scoped external credential
+
+Decision:
+
+- keep `.github/workflows/docs-sync-publish.yml` using
+  `OPENCLAW_DOCS_SYNC_TOKEN` for publishing to `openclaw/docs`
+- fail fast when the token is missing or cannot read/push the publish repo
+- do not echo token-bearing remotes; configure the token as a local Git extra
+  header inside the runner
+- preferred credential is a GitHub App installation token scoped to
+  `openclaw/docs` with Contents read/write
+- acceptable fallback is a fine-grained PAT stored as
+  `OPENCLAW_DOCS_SYNC_TOKEN` on `ConorLynchOCGit/openclaw`, scoped only to
+  `openclaw/docs`, Contents read/write, with explicit expiration/rotation
+
+Reasoning:
+
+- the workflow reached the publish push step and failed because GitHub rejected
+  credentials for `https://github.com/openclaw/docs.git/`
+- the current source repo has no Actions secret and the current operator
+  account only has READ permission on `openclaw/docs`
+- workflow logic can be hardened locally, but successful publishing requires a
+  credential owned by the organization/repo with write access to the docs repo
+
 ## 2026-04-22 - Deep ingest failures require funnel hardening before resume
 
 Decision:

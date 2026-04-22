@@ -31,6 +31,7 @@ export const JsonModelExecutionResponseOptionsSchema = z
   .object({
     transport: JsonModelResponseTransportSchema.optional(),
     provider: JsonModelProviderOptionsSchema.optional(),
+    maxOutputTokens: z.number().int().positive().optional(),
   })
   .strict();
 

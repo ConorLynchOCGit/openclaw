@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { loadConfig, type OpenClawConfig } from "../config/config.js";
 import type {
   JsonModelExecutionRequest,
@@ -38,13 +39,19 @@ export type ModelMemoryLiveExecutionTrace = {
   responseBodyExcerpt?: string;
   resolvedModelId?: string;
   outputTextExcerpt?: string;
+  finishReason?: string;
+  promptTokenCount?: number;
+  outputTokenCount?: number;
+  cachedInputTokenCount?: number;
   failureStage?: ModelMemoryLiveExecutionFailureStage;
   errorMessage?: string;
 };
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
+const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 const MODEL_MEMORY_REQUEST_TIMEOUT_ENV = "MODEL_MEMORY_REQUEST_TIMEOUT_MS";
 const MODEL_MEMORY_REQUEST_SEED_ENV = "MODEL_MEMORY_REQUEST_SEED";
+const MODEL_MEMORY_REQUEST_MAX_OUTPUT_TOKENS_ENV = "MODEL_MEMORY_REQUEST_MAX_OUTPUT_TOKENS";
 
 export type ModelMemoryLiveJsonExecutorOptions = {
   config?: OpenClawConfig;
@@ -72,10 +79,19 @@ export type ModelMemoryProviderPreflightResult = {
 type OpenAICompatibleResponse = {
   model?: string;
   choices?: Array<{
+    finish_reason?: string;
     message?: {
       content?: string | Array<{ type?: string; text?: string }>;
     };
   }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    prompt_tokens_details?: {
+      cached_tokens?: number;
+    };
+  };
   error?: {
     message?: string;
   };
@@ -115,6 +131,24 @@ function resolveRequestSeed(explicitRequestSeed?: number): number | undefined {
 
   const parsed = Number.parseInt(envValue, 10);
   return Number.isInteger(parsed) ? parsed : undefined;
+}
+
+function resolveMaxOutputTokens(explicitMaxOutputTokens?: number): number {
+  if (
+    explicitMaxOutputTokens !== undefined &&
+    Number.isInteger(explicitMaxOutputTokens) &&
+    explicitMaxOutputTokens > 0
+  ) {
+    return explicitMaxOutputTokens;
+  }
+
+  const envValue = readTrimmedString(process.env[MODEL_MEMORY_REQUEST_MAX_OUTPUT_TOKENS_ENV]);
+  if (!envValue) {
+    return DEFAULT_MAX_OUTPUT_TOKENS;
+  }
+
+  const parsed = Number.parseInt(envValue, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_OUTPUT_TOKENS;
 }
 
 function resolveProviderBaseUrl(config: OpenClawConfig | undefined, provider: string): string {
@@ -199,6 +233,51 @@ function buildExcerpt(value: string | undefined, maxLength = 400): string | unde
     return normalized;
   }
   return `${normalized.slice(0, maxLength - 3)}...`;
+}
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function buildTraceRequestBody(requestBody: Record<string, unknown>): Record<string, unknown> {
+  const messages = Array.isArray(requestBody.messages) ? requestBody.messages : [];
+  return {
+    ...requestBody,
+    messages: messages.map((message) => {
+      if (!message || typeof message !== "object" || Array.isArray(message)) {
+        return { role: "unknown", content_sha256: null, content_chars: 0 };
+      }
+      const record = message as { role?: unknown; content?: unknown };
+      const content =
+        typeof record.content === "string" ? record.content : JSON.stringify(record.content ?? "");
+      return {
+        role: typeof record.role === "string" ? record.role : "unknown",
+        content_sha256: sha256(content),
+        content_chars: content.length,
+      };
+    }),
+  };
+}
+
+function buildUsageTrace(payload: OpenAICompatibleResponse): {
+  finishReason?: string;
+  promptTokenCount?: number;
+  outputTokenCount?: number;
+  cachedInputTokenCount?: number;
+} {
+  return {
+    finishReason: readTrimmedString(payload.choices?.[0]?.finish_reason),
+    promptTokenCount:
+      typeof payload.usage?.prompt_tokens === "number" ? payload.usage.prompt_tokens : undefined,
+    outputTokenCount:
+      typeof payload.usage?.completion_tokens === "number"
+        ? payload.usage.completion_tokens
+        : undefined,
+    cachedInputTokenCount:
+      typeof payload.usage?.prompt_tokens_details?.cached_tokens === "number"
+        ? payload.usage.prompt_tokens_details.cached_tokens
+        : undefined,
+  };
 }
 
 function parseErrorText(rawText: string): string {
@@ -393,6 +472,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
     const requestBody = {
       model: model.model,
       temperature: 0,
+      max_tokens: resolveMaxOutputTokens(request.responseOptions?.maxOutputTokens),
       ...(this.requestSeed !== undefined ? { seed: this.requestSeed } : {}),
       messages: [
         {
@@ -435,7 +515,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         provider: model.provider,
         providerModel: model.model,
         requestUrl,
-        requestBody,
+        requestBody: buildTraceRequestBody(requestBody),
         responseOk: false,
         responseBodyReceived: false,
         failureStage: "request_time",
@@ -461,7 +541,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         provider: model.provider,
         providerModel: model.model,
         requestUrl,
-        requestBody,
+        requestBody: buildTraceRequestBody(requestBody),
         httpStatus: response.status,
         responseOk: false,
         responseBodyReceived: rawResponseText.trim().length > 0,
@@ -487,7 +567,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         provider: model.provider,
         providerModel: model.model,
         requestUrl,
-        requestBody,
+        requestBody: buildTraceRequestBody(requestBody),
         httpStatus: response.status,
         responseOk: true,
         responseBodyReceived: rawResponseText.trim().length > 0,
@@ -507,6 +587,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
     try {
       outputText = extractOutputText(payload);
     } catch (error) {
+      const usageTrace = buildUsageTrace(payload);
       const trace: ModelMemoryLiveExecutionTrace = {
         contractName: request.contract.contractName,
         contractVersion: request.contract.contractVersion,
@@ -514,12 +595,13 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         provider: model.provider,
         providerModel: model.model,
         requestUrl,
-        requestBody,
+        requestBody: buildTraceRequestBody(requestBody),
         httpStatus: response.status,
         responseOk: true,
         responseBodyReceived: rawResponseText.trim().length > 0,
         responseBodyExcerpt,
         resolvedModelId: readTrimmedString(payload.model) ?? `${model.provider}/${model.model}`,
+        ...usageTrace,
         failureStage: "provider_response",
         errorMessage: error instanceof Error ? error.message : String(error),
       };
@@ -531,6 +613,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
       );
     }
 
+    const usageTrace = buildUsageTrace(payload);
     const trace: ModelMemoryLiveExecutionTrace = {
       contractName: request.contract.contractName,
       contractVersion: request.contract.contractVersion,
@@ -538,13 +621,14 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
       provider: model.provider,
       providerModel: model.model,
       requestUrl,
-      requestBody,
+      requestBody: buildTraceRequestBody(requestBody),
       httpStatus: response.status,
       responseOk: true,
       responseBodyReceived: rawResponseText.trim().length > 0,
       responseBodyExcerpt,
       resolvedModelId: readTrimmedString(payload.model) ?? `${model.provider}/${model.model}`,
       outputTextExcerpt: buildExcerpt(outputText),
+      ...usageTrace,
     };
     this.onTrace?.(trace);
 

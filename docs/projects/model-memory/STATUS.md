@@ -72,6 +72,25 @@ Current authority:
   adaptive large-source splitting for fresh runs, failed-source quarantine
   reports, class-filtered failed-source retry, progress/cost telemetry, and
   FK-safe memory-edge deferral
+- shared ingestion-funnel contracts are now present for all memory ingestion
+  lanes:
+  - document ingest
+  - ordinary-turn capture
+  - tool-result capture
+  - daily recovery
+  - bootstrap import
+  - future heartbeat/proactive capture
+- the shared contract currently provides the common failure taxonomy, provider
+  boundary decisions, prompt-plan hashing, retry decisions, candidate
+  validation helpers, edge endpoint partitioning, and no-dark-data telemetry
+  checks; it is not yet a fully centralized executable pipeline for every
+  capture path
+- live capture services now expose bounded ingestion telemetry with ids/counts
+  only; raw prompt text, full transcripts, and raw tool logs remain excluded
+- provider execution traces now store prompt message hashes/lengths and
+  bounded usage/finish metadata instead of raw message bodies
+- capture routing now handles malformed routing repair output by skipping that
+  model-routed batch safely instead of failing the entire source/turn
 - legacy-shaped storage/object compatibility remains present only for the
   agreed soak-window fallback posture
 - old v1/spec-closure language is historical design provenance, not current
@@ -204,17 +223,29 @@ Current 2026-04-22 hardening progress:
 
 Remaining from the active pass:
 
+- Docs Sync Publish Repo workflow now fails fast on a missing/invalid
+  `OPENCLAW_DOCS_SYNC_TOKEN` and no longer stores a token-bearing remote URL,
+  but the current fork has no secret and the logged-in account only has READ
+  permission on `openclaw/docs`; a GitHub App installation token or
+  fine-grained PAT with Contents read/write is still required before the
+  workflow can publish
 - keep document ingest stopped until provider credits and provider response
   stability are confirmed, then resume from the checkpoint with the MMV2
   skill/runbook and failure circuit breaker; do not edit the durable DB
   manually and do not use semantic/fuzzy compatibility to force failures past
   admission
+- do not resume the paused ingest until the next funnel slice finishes
+  candidate-level quarantine/persistence and the provider preflight passes
 - keep live retrieval availability under observation: the hardening recall
   rerun had projection-backed fresh-id evidence, but also logged one
   retrieval-context timeout before the final answer
 - run a post-ingest retrieval/projection proof after the paused corpus
   completes so corpus recall is proven from MMV2/projection evidence rather
   than root files or same-session context
+- ordinary-turn/proof-runner coverage remains blocked by existing scripted
+  project-fact failures in
+  `extensions/model-memory/src/mmv2/proof-runner.test.ts`; the next fix must
+  preserve structural MMV2 semantics and avoid marker/topic/fuzzy matching
 
 Current post-soak hardening progress:
 

@@ -9,6 +9,10 @@ import {
   type CapturedObjectWriteStore,
 } from "./db/captured-object-write-compatibility.ts";
 import { RuntimeContextRepository } from "./db/runtime-context-repository.ts";
+import {
+  createMemoryIngestionTelemetryEvent,
+  type MemoryIngestionTelemetryEvent,
+} from "./ingestion/shared-pipeline.ts";
 import type { ExistingMemorySummary } from "./mmv2/contracts.ts";
 import { recoverDailyContinuityV2ForLiveStorage } from "./mmv2/live-document-ingestion.ts";
 import type { LiveMemoryBatch, LiveMemoryWriteResult } from "./mmv2/recording.ts";
@@ -25,6 +29,7 @@ export type LiveDailyContinuityRecoveryResult = Awaited<
   ReturnType<typeof recoverDailyContinuityCandidates>
 > & {
   writeResults: LiveMemoryWriteResult[];
+  ingestionTelemetry: MemoryIngestionTelemetryEvent[];
   rebuild?: Awaited<ReturnType<typeof rebuildDerivedRuntimeState>>;
 };
 
@@ -106,11 +111,41 @@ export async function recoverDailyContinuityCandidatesLive(input: {
           runtimeRepository: input.runtimeRepository,
         })
       : undefined;
+  const ingestionTelemetry = [
+    createMemoryIngestionTelemetryEvent({
+      path: "daily_recovery",
+      stage: "semantic_contract_boundary",
+      status: "completed",
+      candidate_counts: {
+        extracted: result.capturedObjects.length,
+        valid: result.capturedObjects.length,
+      },
+    }),
+    createMemoryIngestionTelemetryEvent({
+      path: "daily_recovery",
+      stage: "persistence_boundary",
+      status: "completed",
+      candidate_counts: {
+        admitted: writeResults.filter(
+          (entry) => entry.decision === "write" || entry.decision === "supersede",
+        ).length,
+        rejected: writeResults.filter(
+          (entry) => entry.decision === "reject" || entry.decision === "quarantine",
+        ).length,
+      },
+      ids: {
+        memory_ids: writeResults
+          .map((entry) => entry.memoryId)
+          .filter((entry): entry is string => Boolean(entry)),
+      },
+    }),
+  ];
 
   return {
     ...result,
     source,
     writeResults,
+    ingestionTelemetry,
     rebuild,
   };
 }

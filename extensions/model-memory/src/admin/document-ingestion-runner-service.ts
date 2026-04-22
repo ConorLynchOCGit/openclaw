@@ -3,6 +3,11 @@ import path from "node:path";
 import type { ModelMemoryCanonicalRepository } from "../db/canonical-repository.ts";
 import type { CapturedObjectWriteStore } from "../db/captured-object-write-compatibility.ts";
 import type { RuntimeContextRepository } from "../db/runtime-context-repository.ts";
+import {
+  classifyMemoryIngestionFailure,
+  isMemoryIngestionProviderBoundaryFailure,
+  type MemoryIngestionFailureClass,
+} from "../ingestion/shared-pipeline.ts";
 import { ingestDocumentLive } from "../live-document-ingestion-service.ts";
 import { rebuildDerivedRuntimeState } from "../runtime-rebuild-orchestrator.ts";
 import type { SemanticCollisionAdjudicator } from "../semantic-collision-adjudication.ts";
@@ -154,17 +159,7 @@ export interface DocumentIngestionRunRecordStore {
   save(record: DocumentIngestionRunnerRunRecord): Promise<void>;
 }
 
-export type DocumentIngestionFailureClass =
-  | "provider_credit"
-  | "provider_empty_response"
-  | "provider_connection"
-  | "provider_json_boundary"
-  | "extraction_repair"
-  | "capture_routing_repair"
-  | "canonicalization"
-  | "db_persistence"
-  | "timeout"
-  | "other";
+export type DocumentIngestionFailureClass = MemoryIngestionFailureClass;
 
 export type DocumentIngestionFailureCircuitBreakerOptions = {
   enabled?: boolean;
@@ -183,66 +178,11 @@ const DEFAULT_FAILURE_CIRCUIT_BREAKER: Required<DocumentIngestionFailureCircuitB
 };
 
 export function classifyDocumentIngestionFailure(message: string): DocumentIngestionFailureClass {
-  const normalized = message.toLowerCase();
-  if (normalized.includes("402") || normalized.includes("insufficient credits")) {
-    return "provider_credit";
-  }
-  if (
-    normalized.includes("provider_response missing text content") ||
-    normalized.includes("missing text content in model response")
-  ) {
-    return "provider_empty_response";
-  }
-  if (normalized.includes("connection terminated") || normalized.includes("econnreset")) {
-    return "provider_connection";
-  }
-  if (
-    normalized.includes("expected ',' or '}'") ||
-    normalized.includes("expected property name") ||
-    normalized.includes("unexpected token") ||
-    normalized.includes("unterminated string") ||
-    normalized.includes("unexpected non-whitespace character") ||
-    normalized.includes("bad control character") ||
-    normalized.includes("json")
-  ) {
-    return "provider_json_boundary";
-  }
-  if (
-    normalized.includes("capture routing repair") ||
-    normalized.includes("capture_routing_repair")
-  ) {
-    return "capture_routing_repair";
-  }
-  if (
-    normalized.includes("extraction repair") ||
-    normalized.includes("atomic_extraction_repair") ||
-    normalized.includes("composite_extraction_repair") ||
-    normalized.includes("extraction_repair")
-  ) {
-    return "extraction_repair";
-  }
-  if (
-    normalized.includes("canonicalization produced invalid output") ||
-    normalized.includes("canonicalization_invalid_output")
-  ) {
-    return "canonicalization";
-  }
-  if (normalized.includes("foreign key") || normalized.includes("violates")) {
-    return "db_persistence";
-  }
-  if (normalized.includes("timeout") || normalized.includes("timed out")) {
-    return "timeout";
-  }
-  return "other";
+  return classifyMemoryIngestionFailure(message);
 }
 
 function isProviderBoundaryFailure(failureClass: DocumentIngestionFailureClass): boolean {
-  return (
-    failureClass === "provider_credit" ||
-    failureClass === "provider_empty_response" ||
-    failureClass === "provider_connection" ||
-    failureClass === "provider_json_boundary"
-  );
+  return isMemoryIngestionProviderBoundaryFailure(failureClass);
 }
 
 class DocumentIngestionFailureCircuitBreakerError extends Error {

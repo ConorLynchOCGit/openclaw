@@ -71,6 +71,7 @@ describe("model-memory live json executor", () => {
     expect(parseRequestBody(init)).toMatchObject({
       model: "anthropic/claude-sonnet-4-6",
       temperature: 0,
+      max_tokens: 4096,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: "system" },
@@ -252,8 +253,8 @@ describe("model-memory live json executor", () => {
           contractVersion: "v1",
           modelId: "openrouter/google/gemini-2.5-flash-lite",
         },
-        systemPrompt: "system",
-        userPrompt: "user",
+        systemPrompt: "raw-system-secret",
+        userPrompt: "raw-user-secret",
         responseFormat: "json",
       });
 
@@ -307,8 +308,8 @@ describe("model-memory live json executor", () => {
           contractVersion: "v1",
           modelId: "openrouter/openai/gpt-5-mini",
         },
-        systemPrompt: "system",
-        userPrompt: "user",
+        systemPrompt: "raw-system-secret",
+        userPrompt: "raw-user-secret",
         responseFormat: "json",
       });
 
@@ -369,8 +370,8 @@ describe("model-memory live json executor", () => {
           contractVersion: "v1",
           modelId: "openrouter/openai/gpt-5.4-nano",
         },
-        systemPrompt: "system",
-        userPrompt: "user",
+        systemPrompt: "raw-system-secret",
+        userPrompt: "raw-user-secret",
         responseFormat: "json",
       });
 
@@ -429,8 +430,8 @@ describe("model-memory live json executor", () => {
           contractVersion: "v1",
           modelId: "openrouter/openai/gpt-5.4-nano",
         },
-        systemPrompt: "system",
-        userPrompt: "user",
+        systemPrompt: "raw-system-secret",
+        userPrompt: "raw-user-secret",
         responseFormat: "json",
       }),
     ).rejects.toMatchObject({
@@ -554,8 +555,8 @@ describe("model-memory live json executor", () => {
           contractVersion: "v1",
           modelId: "openrouter/openai/gpt-5.4-nano",
         },
-        systemPrompt: "system",
-        userPrompt: "user",
+        systemPrompt: "raw-system-secret",
+        userPrompt: "raw-user-secret",
         responseFormat: "json",
       });
     } catch (error) {
@@ -573,6 +574,14 @@ describe("model-memory live json executor", () => {
     expect(traces[0]).toMatchObject({
       responseOk: true,
       failureStage: "provider_parse",
+    });
+    expect(JSON.stringify(traces[0]?.requestBody)).not.toContain("raw-system-secret");
+    expect(JSON.stringify(traces[0]?.requestBody)).not.toContain("raw-user-secret");
+    expect(traces[0]?.requestBody).toMatchObject({
+      messages: [
+        { role: "system", content_chars: "raw-system-secret".length },
+        { role: "user", content_chars: "raw-user-secret".length },
+      ],
     });
   });
 });

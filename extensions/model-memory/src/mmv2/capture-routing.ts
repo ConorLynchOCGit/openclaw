@@ -77,6 +77,8 @@ const ALLOWED_ROUTING_REASON_CODES = new Set<CaptureRoutingDecision["reason_code
   "checklist",
   "workflow_or_runbook",
   "temporary_context",
+  "explicit_no_store",
+  "privacy_opt_out",
   "smalltalk",
   "ambiguous",
   "sensitive",
@@ -310,6 +312,18 @@ function isTemporaryResponseInstructionSegment(segment: SegmentedIngestSegment):
     /\b(?:for this answer|for this response|current session only|this session only)\b/iu.test(
       normalizedSegmentText(segment),
     )
+  );
+}
+
+function isNoStoreOrPrivacyOptOutSegment(segment: SegmentedIngestSegment): boolean {
+  if (!isSimpleProseShape(segment)) {
+    return false;
+  }
+  const normalized = normalizedSegmentText(segment);
+  return (
+    /\b(?:do not|don't|never)\s+(?:store|remember|persist|save)\b/iu.test(normalized) ||
+    /\bno[-\s]?store\b/iu.test(normalized) ||
+    /\b(?:privacy|private)\s+(?:test|phrase|sentence|content|note)\b/iu.test(normalized)
   );
 }
 
@@ -613,6 +627,20 @@ function classifyDeterministically(segment: SegmentedIngestSegment): CaptureRout
     });
   }
 
+  if (isNoStoreOrPrivacyOptOutSegment(segment)) {
+    return buildDeterministicDecision({
+      segment,
+      route: "atomic_candidate",
+      candidateSummary: "Explicit no-store or privacy opt-out instruction.",
+      memoryLikelihood: 0.18,
+      durabilityLikelihood: 0.01,
+      compositeLikelihood: 0,
+      reasonCodes: ["explicit_no_store", "privacy_opt_out", "ambiguous"],
+      confidence: 0.98,
+      evidenceQuote: segment.text,
+    });
+  }
+
   if (isExplicitPreferenceStatement(segment)) {
     return buildDeterministicDecision({
       segment,
@@ -766,11 +794,14 @@ function applyDeterministicOverrides(
       const shape = segment?.detected_shape;
       const structuralDecision = segment ? buildStructuredListDecision(segment) : null;
       if (
-        structuralDecision?.route === "composite_candidate" &&
         (shape === "numbered_list_block" ||
           shape === "bullet_list_block" ||
           shape === "heading_plus_body") &&
         decision.route === "atomic_candidate" &&
+        (structuralDecision?.route === "composite_candidate" ||
+          decision.reason_codes.some((code) =>
+            ["ordered_steps", "checklist", "workflow_or_runbook"].includes(code),
+          )) &&
         !(
           decision.confidence >= 0.9 &&
           !decision.reason_codes.some((code) =>
@@ -820,27 +851,41 @@ async function routeModelBatch(
         return applyDeterministicOverrides(sanitized, segmented);
       }
     }
-    return repairCaptureRouting({
-      ...input,
-      segmented,
-      previousPayload: extractBatch(result),
-      validationErrors: parsed.error.issues.map((issue) => ({
-        path: issue.path.join("."),
-        message: issue.message,
-      })),
-    });
+    try {
+      return await repairCaptureRouting({
+        ...input,
+        segmented,
+        previousPayload: extractBatch(result),
+        validationErrors: parsed.error.issues.map((issue) => ({
+          path: issue.path.join("."),
+          message: issue.message,
+        })),
+      });
+    } catch (error) {
+      if (error instanceof JsonModelOutputError) {
+        return buildRoutingRepairSkipBatch(input, segmented);
+      }
+      throw error;
+    }
   }
 
   const coverageErrors = validateCoverage(parsed.data, segmented);
   const evidenceErrors = validateEvidence(parsed.data, segmented);
   const validationErrors = [...coverageErrors, ...evidenceErrors];
   if (validationErrors.length > 0) {
-    return repairCaptureRouting({
-      ...input,
-      segmented,
-      previousPayload: parsed.data,
-      validationErrors,
-    });
+    try {
+      return await repairCaptureRouting({
+        ...input,
+        segmented,
+        previousPayload: parsed.data,
+        validationErrors,
+      });
+    } catch (error) {
+      if (error instanceof JsonModelOutputError) {
+        return buildRoutingRepairSkipBatch(input, segmented);
+      }
+      throw error;
+    }
   }
 
   return applyDeterministicOverrides(parsed.data, segmented);
@@ -867,6 +912,29 @@ function shouldRouteDirectlyToAtomicInRuntime(segment: SegmentedIngestSegment): 
     segment.text.trim().length > 0 &&
     !isSchemaLikeText(segment.text)
   );
+}
+
+function buildRoutingRepairSkipBatch(
+  input: RoutingInput,
+  segmented: SegmentedIngestEvent,
+): CaptureRoutingBatch {
+  return {
+    schema_version: "capture_routing.v1",
+    event_id: input.rawEvent.event_id,
+    routing_decisions: segmented.segments.map((segment) =>
+      buildDeterministicDecision({
+        segment,
+        route: "ignore",
+        candidateSummary: "Capture routing repair failed; skipped capture safely.",
+        memoryLikelihood: 0,
+        durabilityLikelihood: 0,
+        compositeLikelihood: 0,
+        reasonCodes: ["not_memory"],
+        confidence: 1,
+        evidenceQuote: segment.text,
+      }),
+    ),
+  };
 }
 
 export async function repairCaptureRouting(

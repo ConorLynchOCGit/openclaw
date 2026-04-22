@@ -181,6 +181,10 @@ Before resuming:
 - record root `USER.md` / `MEMORY.md` hashes
 - record before DB counts
 - confirm provider credits and account limits are sufficient
+- run provider-boundary preflight and stop on `provider_credit`
+- run estimate/dry-run mode when available before large retry sets
+- review the failed-source quarantine report and select retry classes
+  explicitly
 - leave provider preflight enabled unless intentionally debugging the preflight
   itself
 
@@ -193,6 +197,33 @@ completed sources.
 The runner now includes an enabled-by-default failure circuit breaker. It stops
 the run before the checkpoint is flooded with low-signal failures when provider
 or extraction infrastructure is unhealthy.
+
+The runner shares failure-class names with the cross-path memory ingestion
+funnel. Treat these classes consistently across document ingest, ordinary-turn
+capture, tool-result capture, daily recovery, bootstrap import, and future
+heartbeat/proactive capture:
+
+- `provider_credit`
+- `provider_empty_response`
+- `provider_connection`
+- `provider_json_boundary`
+- `extraction_repair`
+- `capture_routing_repair`
+- `canonicalization`
+- `db_persistence`
+- `timeout`
+- `other`
+
+Do not solve these classes by shrinking every chunk blindly. Use adaptive
+window batching and source splitting only when a source exceeds context/output
+budget or repeatedly times out. Keep the static prompt prefix stable where
+possible so provider caching can work, and put source text in the dynamic tail.
+
+Candidate-level quarantine is the target architecture: preserve valid
+candidates from a source while quarantining invalid candidates with source refs
+and exact validation errors. Until the candidate-level quarantine slice is fully
+implemented and tested, do not resume the deep corpus just to see whether the
+same systemic classes recur.
 
 Circuit-breaker controls:
 
