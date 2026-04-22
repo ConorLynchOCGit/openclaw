@@ -7,7 +7,7 @@ title: "Memory Capture Seams"
 
 ## Status
 
-This is a roadmap/spec document, not an implementation record.
+This is now both a roadmap/spec document and a partial implementation record.
 
 MMV2-native SQL storage is already live semantic truth. Active write and read
 hot paths now use MMV2-native contracts by default. This spec defines the next
@@ -46,6 +46,46 @@ with clear provenance and authority.
   switch. The default posture is disabled unless explicitly enabled for
   bounded evidence collection.
 
+2026-04-22 implementation posture:
+
+- active seams default on only when the global kill switch is enabled and the
+  seam-specific switch is not explicitly off
+- fallback-only seams remain disabled unless explicitly enabled
+- all seam evidence and activity records store safe ids, hashes, counts,
+  statuses, and classes only
+
+## 2026-04-22 Activation Record
+
+Current policy is encoded in `src/agents/model-memory.capture-seams.ts`.
+
+Active when global capture seams are enabled:
+
+- `message:preprocessed`
+- `ContextEngine.ingest`
+- `ContextEngine.ingestBatch`
+- `tool_result_persist`
+- `after_tool_call`
+- `agent_end`
+- `ContextEngine.afterTurn`
+- `agent:bootstrap`
+- `memory_file_import`
+
+Fallback-only unless explicitly enabled:
+
+- `message:received`
+- `message:transcribed`
+
+Blocked:
+
+- changed bootstrap files without a production file-change firing surface
+- changed memory files without a production file-change firing surface
+
+The latest Memory Ops hook discovery artifact marked
+`message:preprocessed`, `ContextEngine.ingest`, `ContextEngine.ingestBatch`,
+`ContextEngine.assemble`, `tool_result_persist`, `after_tool_call`,
+`agent_end`, and `ContextEngine.afterTurn` as production-verified. Synthetic
+or fallback hooks are not promoted to primary capture.
+
 ## Verification Status Values
 
 - `verified`: the hook exists and firing behavior has been proven in the live
@@ -58,18 +98,18 @@ with clear provenance and authority.
 
 ## Target Seam Matrix
 
-| Seam                                       | Status                    | Primary Role                            | Feeds                                                      |
-| ------------------------------------------ | ------------------------- | --------------------------------------- | ---------------------------------------------------------- |
-| `message:preprocessed`                     | `needs_repo_verification` | Primary user-input capture              | Primary memory capture                                     |
-| `message:received`                         | `fallback_only`           | Raw user-message fallback               | Primary memory capture only if later seam missing          |
-| `message:transcribed`                      | `fallback_only`           | Voice/media fallback                    | Primary memory capture only if no later preprocessed event |
-| `ContextEngine.ingest()` / `ingestBatch()` | `needs_repo_verification` | Catchall and batch user-message capture | Primary capture plus closed-loop indexing                  |
-| `tool_result_persist`                      | `needs_repo_verification` | Tool-derived facts and proof            | Primary capture plus provenance                            |
-| `after_tool_call`                          | `needs_repo_verification` | Normalized tool-result lane if it fires | Primary capture plus provenance                            |
-| `agent_end`                                | `needs_repo_verification` | Final task outcome capture              | Primary capture with lower assistant authority             |
-| `ContextEngine.afterTurn()`                | `needs_repo_verification` | Completed turn delta capture            | Primary capture and session summary                        |
-| `agent:bootstrap` plus bootstrap files     | `needs_repo_verification` | Standing rules and bootstrap imports    | Primary capture on first import or hash change             |
-| Changed memory files                       | `needs_repo_verification` | Curated memory and daily-note imports   | Primary capture on hash change                             |
+| Seam                                       | Status           | Primary Role                            | Feeds                                                      |
+| ------------------------------------------ | ---------------- | --------------------------------------- | ---------------------------------------------------------- |
+| `message:preprocessed`                     | `verified`       | Primary user-input capture              | Primary memory capture                                     |
+| `message:received`                         | `fallback_only`  | Raw user-message fallback               | Primary memory capture only if later seam missing          |
+| `message:transcribed`                      | `fallback_only`  | Voice/media fallback                    | Primary memory capture only if no later preprocessed event |
+| `ContextEngine.ingest()` / `ingestBatch()` | `verified`       | Catchall and batch user-message capture | Primary capture plus closed-loop indexing                  |
+| `tool_result_persist`                      | `verified`       | Tool-derived facts and proof            | Primary capture plus provenance                            |
+| `after_tool_call`                          | `verified`       | Normalized tool-result lane if it fires | Primary capture plus provenance                            |
+| `agent_end`                                | `verified`       | Final task outcome capture              | Primary capture with lower assistant authority             |
+| `ContextEngine.afterTurn()`                | `verified`       | Completed turn delta capture            | Primary capture and session summary                        |
+| `agent:bootstrap` plus bootstrap files     | `synthetic_only` | Standing rules and bootstrap imports    | Primary capture on first import or hash change             |
+| Changed memory files                       | `blocked`        | Curated memory and daily-note imports   | Primary capture on hash change                             |
 
 ## `message:preprocessed`
 

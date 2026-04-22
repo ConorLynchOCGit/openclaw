@@ -36,6 +36,18 @@ a fresh MMV2-derived projection/digest with active `source_memory_ids` and
 records that selection in retrieval telemetry. Workspace-file-only or
 same-session-transcript recall is not sufficient for soak acceptance.
 
+Implementation update, 2026-04-22:
+
+- retrieval packs now include projection digest packs for selected fresh
+  projection versions
+- pack telemetry records selected projection ids and backing source memory ids
+- context assembly can inject the selected projection digest pack into the
+  semi-stable context segment
+- the current test coverage proves a `project_page` digest changes the memory
+  pack/context text that reaches runtime context
+- stale, conflicted, inactive, and hash-invalid projections stay excluded from
+  normal context packs unless explicitly requested for inspection
+
 ## Objective
 
 Define the read path for `model-memory` without reintroducing detector-era or string-matching architecture.

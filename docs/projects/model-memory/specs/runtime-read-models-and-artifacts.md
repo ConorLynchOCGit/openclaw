@@ -231,6 +231,40 @@ Generated projection pages materialize only under the projection artifact root,
 currently `/root/.openclaw/workspace/.openclaw/model-memory/projections/`.
 They must never be written back into root `USER.md` or `MEMORY.md`.
 
+2026-04-22 live materialization record:
+
+- command: `node scripts/model-memory-materialize-projection-catalog.mjs`
+- live runtime records read: 590
+- active source memory ids: 542
+- projection artifacts written: 10
+- projection index:
+  `/root/.openclaw/workspace/.openclaw/model-memory/projections/index.json`
+- root write-back status: disabled
+
+Runtime use:
+
+- `project_page` supplies active project state, blockers, and recent decisions
+- `procedure_page` supplies operational runbooks/checklists
+- `decision_log` supplies prior decisions plus stale/conflict markers
+- `source_page` points retrieval to canonical docs/source evidence
+- `user_profile_page` supplies stable task-relevant preferences
+- `entity_page` and `timeline_page` support "what do we know about X?" and
+  "what changed?" queries
+- `agent_digest` and `projection_digest` provide compact machine-facing
+  retrieval context
+
+Selection/injection:
+
+- retrieval selects only fresh projection digests backed by active MMV2 source
+  memory ids
+- stale, inactive, hash-invalid, or conflicted projections are excluded from
+  normal packs
+- selected projection ids and backing source memory ids are recorded in
+  retrieval pack telemetry
+- `projection_digest_pack` artifacts are eligible for context assembly and can
+  affect model behavior by adding compact source-backed projection summaries to
+  the semi-stable context segment
+
 - whether the artifact can satisfy MMV2 recall proof
 
 Workspace-file-only artifacts cannot satisfy MMV2 recall proof.

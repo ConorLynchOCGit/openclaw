@@ -156,6 +156,21 @@ Implementation note, 2026-04-22:
 - these changes are availability/observability controls; ranking remains
   read-time only and does not mutate MMV2 truth
 
+Implementation note, 2026-04-22 pre-Phase-2 gate:
+
+- all 10 rich projection types can now be materialized into the live projection
+  artifact index from active MMV2 runtime records
+- retrieval candidate recall excludes stale, inactive, and conflicted
+  projection digests from normal packs
+- selected projection digests carry reason codes including
+  `projection_type:<type>`
+- retrieval-pack assembly records selected projection ids and backing source
+  memory ids, then exposes eligible projection digest packs to context
+  assembly
+- projection-backed context is valid only when the selected digest is backed by
+  active MMV2 source memory ids; workspace-file-only context is still not
+  recall proof
+
 Implementation note, 2026-04-21:
 
 - the first no-migration runtime now carries typed `RetrievalPlan`,

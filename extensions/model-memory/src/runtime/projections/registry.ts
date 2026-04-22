@@ -32,6 +32,8 @@ export type ProjectionRegistryEntry = {
   staleRule: string;
   conflictRule: string;
   retrievalRole: ProjectionRetrievalRole;
+  runtimeUseCase: string;
+  selectionHints: string[];
   sourceRequirements: {
     requireActiveMemoryIds: boolean;
     requireSourceEventIds: boolean;
@@ -53,6 +55,8 @@ export const PROJECTION_REGISTRY: readonly ProjectionRegistryEntry[] = [
       "stale when any source memory is superseded, deleted, or replaced after compile time",
     conflictRule: "conflicted user preferences appear only in conflict sections",
     retrievalRole: "user_profile",
+    runtimeUseCase: "supplies stable user preferences when task-relevant",
+    selectionHints: ["preference", "user", "style", "remembered preference"],
     sourceRequirements: {
       requireActiveMemoryIds: true,
       requireSourceEventIds: true,
@@ -78,6 +82,8 @@ export const PROJECTION_REGISTRY: readonly ProjectionRegistryEntry[] = [
     conflictRule:
       "project conflicts are summarized in conflict markers and omitted from compiled truth",
     retrievalRole: "project_state",
+    runtimeUseCase: "gives concise active project state, blockers, and recent decisions",
+    selectionHints: ["project", "blocker", "decision", "current state"],
     sourceRequirements: {
       requireActiveMemoryIds: true,
       requireSourceEventIds: true,
@@ -96,6 +102,8 @@ export const PROJECTION_REGISTRY: readonly ProjectionRegistryEntry[] = [
     staleRule: "stale when procedure source memory, source ref, or dependency edge changes",
     conflictRule: "conflicting procedure versions require conflict-aware retrieval",
     retrievalRole: "procedure",
+    runtimeUseCase: "injects operational runbooks and checklists for repeated workflows",
+    selectionHints: ["procedure", "runbook", "checklist", "workflow"],
     sourceRequirements: {
       requireActiveMemoryIds: true,
       requireSourceEventIds: true,
@@ -114,6 +122,8 @@ export const PROJECTION_REGISTRY: readonly ProjectionRegistryEntry[] = [
     staleRule: "stale when the referenced source hash changes",
     conflictRule: "source-derived conflicting claims are linked but not compiled as current truth",
     retrievalRole: "source_reference",
+    runtimeUseCase: "points the agent to canonical docs and source evidence",
+    selectionHints: ["source", "doc", "evidence", "reference"],
     sourceRequirements: {
       requireActiveMemoryIds: true,
       requireSourceEventIds: true,
@@ -132,6 +142,8 @@ export const PROJECTION_REGISTRY: readonly ProjectionRegistryEntry[] = [
     staleRule: "stale when a decision memory is corrected, superseded, or deleted",
     conflictRule: "contested decisions are marked and excluded from current-decision summaries",
     retrievalRole: "project_state",
+    runtimeUseCase: "supplies prior decisions with conflict and stale markers",
+    selectionHints: ["decision", "decided", "prior decision", "stale"],
     sourceRequirements: {
       requireActiveMemoryIds: true,
       requireSourceEventIds: true,
@@ -151,6 +163,8 @@ export const PROJECTION_REGISTRY: readonly ProjectionRegistryEntry[] = [
     conflictRule:
       "conflicted episodes are listed only when conflict-aware timeline mode is requested",
     retrievalRole: "episode_continuity",
+    runtimeUseCase: "supports what changed and recent continuity queries",
+    selectionHints: ["timeline", "changed", "recent", "episode"],
     sourceRequirements: {
       requireActiveMemoryIds: true,
       requireSourceEventIds: true,
@@ -169,6 +183,8 @@ export const PROJECTION_REGISTRY: readonly ProjectionRegistryEntry[] = [
     staleRule: "stale when entity claims or same-entity edges change",
     conflictRule: "conflicting entity claims are rendered as contested claims, not current truth",
     retrievalRole: "entity_world",
+    runtimeUseCase: "supports what do we know about an entity queries",
+    selectionHints: ["entity", "who", "what do we know", "about"],
     sourceRequirements: {
       requireActiveMemoryIds: true,
       requireSourceEventIds: true,
@@ -187,6 +203,8 @@ export const PROJECTION_REGISTRY: readonly ProjectionRegistryEntry[] = [
     staleRule: "stale when the latest compile does not include the latest memory event",
     conflictRule: "dashboards may summarize conflicts but cannot resolve truth",
     retrievalRole: "conflict_dashboard",
+    runtimeUseCase: "summarizes health, stale/conflict state, and operator-facing memory status",
+    selectionHints: ["dashboard", "health", "conflict", "stale"],
     sourceRequirements: {
       requireActiveMemoryIds: true,
       requireSourceEventIds: false,
@@ -205,6 +223,8 @@ export const PROJECTION_REGISTRY: readonly ProjectionRegistryEntry[] = [
     staleRule: "stale when any source memory id is no longer active",
     conflictRule: "conflicted inputs are excluded unless a conflict pack is requested",
     retrievalRole: "digest_index",
+    runtimeUseCase: "provides compact machine-facing context for agent retrieval",
+    selectionHints: ["agent", "digest", "context", "machine"],
     sourceRequirements: {
       requireActiveMemoryIds: true,
       requireSourceEventIds: true,
@@ -223,6 +243,8 @@ export const PROJECTION_REGISTRY: readonly ProjectionRegistryEntry[] = [
     staleRule: "stale when source memory ids are missing, inactive, superseded, or deleted",
     conflictRule: "digest marks conflict sources and does not inject them into normal packs",
     retrievalRole: "digest_index",
+    runtimeUseCase: "provides compact projection index context for retrieval pack assembly",
+    selectionHints: ["projection", "digest", "index", "retrieval"],
     sourceRequirements: {
       requireActiveMemoryIds: true,
       requireSourceEventIds: true,

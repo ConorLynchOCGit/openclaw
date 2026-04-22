@@ -27,6 +27,17 @@ export type MemoryOpsClosedLoopConfig = {
   signalRetentionDays: number;
   aggregateRetentionDays: number;
   autoFix: MemoryOpsAutoFixConfig;
+  safeLevel1AutoFix: {
+    enabled: true;
+    retryFailedCaptureJobs: true;
+    markRuntimeDirtyAfterCaptureWrite: true;
+    rebuildStaleProjectionArtifacts: true;
+    quarantineInvalidProjectionArtifacts: true;
+    rotateRuntimeStateJsonl: true;
+    refreshProviderScorecards: true;
+    disableFailingFailoverSafeModelRoutes: true;
+    generateOperatorApprovalTickets: true;
+  };
 };
 
 export const DEFAULT_MEMORY_OPS_BASE_DIR = ".openclaw-memory-ops";
@@ -58,6 +69,17 @@ export const DEFAULT_MEMORY_OPS_CONFIG: MemoryOpsClosedLoopConfig = {
     regenerateReports: false,
     retryFailedBatchFlush: false,
   },
+  safeLevel1AutoFix: {
+    enabled: true,
+    retryFailedCaptureJobs: true,
+    markRuntimeDirtyAfterCaptureWrite: true,
+    rebuildStaleProjectionArtifacts: true,
+    quarantineInvalidProjectionArtifacts: true,
+    rotateRuntimeStateJsonl: true,
+    refreshProviderScorecards: true,
+    disableFailingFailoverSafeModelRoutes: true,
+    generateOperatorApprovalTickets: true,
+  },
 };
 
 export function resolveMemoryOpsConfig(
@@ -77,6 +99,19 @@ export function resolveMemoryOpsConfig(
       excludeConflictedUnlessMarked: false,
       regenerateReports: false,
       retryFailedBatchFlush: false,
+    },
+    safeLevel1AutoFix: {
+      ...DEFAULT_MEMORY_OPS_CONFIG.safeLevel1AutoFix,
+      ...overrides.safeLevel1AutoFix,
+      enabled: true,
+      retryFailedCaptureJobs: true,
+      markRuntimeDirtyAfterCaptureWrite: true,
+      rebuildStaleProjectionArtifacts: true,
+      quarantineInvalidProjectionArtifacts: true,
+      rotateRuntimeStateJsonl: true,
+      refreshProviderScorecards: true,
+      disableFailingFailoverSafeModelRoutes: true,
+      generateOperatorApprovalTickets: true,
     },
   };
 }

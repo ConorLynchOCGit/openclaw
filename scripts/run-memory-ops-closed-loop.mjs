@@ -18,6 +18,7 @@ function parseArgs(argv) {
     hookDiscovery: argv.includes("--hook-discovery"),
     hookCanary: argv.includes("--hook-canary"),
     reportFixture: argv.includes("--report-fixture"),
+    safeLevel1AutoFix: argv.includes("--safe-level1-autofix"),
     baseDir: readArgValue(argv, "--base-dir") ?? ".openclaw-memory-ops",
     repoRoot: readArgValue(argv, "--repo-root") ?? getRepoRoot(),
   };
@@ -142,6 +143,51 @@ async function main() {
     output.recommendationPath = sink.recommendationPathForDay(nowIso.slice(0, 10));
     output.reportPath = report.reportPath;
     output.latestReportPath = report.latestPath;
+  }
+
+  if (args.safeLevel1AutoFix) {
+    const plan = api.buildSafeLevel1AutoFixPlan({
+      captureJobs: [
+        { jobId: "fixture-timeout-job", status: "failed", failureClass: "timeout" },
+        { jobId: "fixture-privacy-job", status: "failed", failureClass: "privacy_no_store" },
+      ],
+      runtimeDirtyStates: [{ dirtyId: "fixture-dirty-state", status: "dirty" }],
+      projections: [
+        {
+          projectionId: "fixture-stale-projection",
+          freshnessStatus: "stale",
+          staleMarkers: ["source_hash_changed"],
+          hashValid: true,
+          activeSourceMemoryIdsValid: true,
+        },
+        {
+          projectionId: "fixture-invalid-projection",
+          freshnessStatus: "fresh",
+          hashValid: false,
+          activeSourceMemoryIdsValid: true,
+        },
+      ],
+      providerRoutes: [
+        {
+          routeId: "fixture-failover-safe-route",
+          failoverSafe: true,
+          schemaSuccessRate: 0.5,
+        },
+      ],
+      runtimeStateJsonlPaths: ["model-memory/capture-jobs/events.jsonl"],
+      semanticTruthTouchRequested: [
+        {
+          ticketId: "fixture-semantic-truth-ticket",
+          reason: "operator approval required for semantic truth mutation",
+        },
+      ],
+    });
+    const fs = await import("node:fs/promises");
+    const planDir = path.join(args.baseDir, "auto-fix");
+    await fs.mkdir(planDir, { recursive: true });
+    const planPath = path.join(planDir, "safe-level1-plan.json");
+    await fs.writeFile(planPath, `${JSON.stringify(plan, null, 2)}\n`, "utf8");
+    output.safeLevel1AutoFixPlanPath = planPath;
   }
 
   console.log(JSON.stringify(output, null, 2));

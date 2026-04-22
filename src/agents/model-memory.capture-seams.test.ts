@@ -3,7 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  MODEL_MEMORY_CAPTURE_SEAM_POLICIES,
+  buildModelMemoryCaptureSeamDedupeKey,
   buildModelMemoryCaptureSeamRecord,
+  getModelMemoryCaptureSeamPolicy,
   type ModelMemoryCaptureSeamName,
   recordModelMemoryCaptureSeamEvidence,
   resolveModelMemoryCaptureSeamSettings,
@@ -27,7 +30,7 @@ describe("model-memory capture seam wiring", () => {
         outputDir: tempDir,
         env: {} as NodeJS.ProcessEnv,
       }),
-    ).toMatchObject({ enabled: false, seamEnabled: false });
+    ).toMatchObject({ enabled: false, seamEnabled: true });
     expect(
       resolveModelMemoryCaptureSeamSettings({
         seamName: "message:preprocessed",
@@ -60,8 +63,10 @@ describe("model-memory capture seam wiring", () => {
     ).toEqual({ enabled: true, seamEnabled: true, outputDir: tempDir });
   });
 
-  it("keeps every declared capture seam default-disabled behind its explicit env switch", () => {
+  it("activates eligible seams behind the global switch and keeps raw ingress fallbacks disabled", () => {
     const seamEnv: Array<[ModelMemoryCaptureSeamName, string]> = [
+      ["message:received", "MODEL_MEMORY_CAPTURE_SEAM_MESSAGE_RECEIVED_ENABLED"],
+      ["message:transcribed", "MODEL_MEMORY_CAPTURE_SEAM_MESSAGE_TRANSCRIBED_ENABLED"],
       ["message:preprocessed", "MODEL_MEMORY_CAPTURE_SEAM_MESSAGE_PREPROCESSED_ENABLED"],
       ["ContextEngine.ingest", "MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_INGEST_ENABLED"],
       ["ContextEngine.ingestBatch", "MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_INGEST_BATCH_ENABLED"],
@@ -70,16 +75,22 @@ describe("model-memory capture seam wiring", () => {
       ["tool_result_persist", "MODEL_MEMORY_CAPTURE_SEAM_TOOL_RESULT_PERSIST_ENABLED"],
       ["after_tool_call", "MODEL_MEMORY_CAPTURE_SEAM_AFTER_TOOL_CALL_ENABLED"],
       ["agent_end", "MODEL_MEMORY_CAPTURE_SEAM_AGENT_END_ENABLED"],
+      ["agent:bootstrap", "MODEL_MEMORY_CAPTURE_SEAM_AGENT_BOOTSTRAP_ENABLED"],
+      ["memory_file_import", "MODEL_MEMORY_CAPTURE_SEAM_MEMORY_FILE_IMPORT_ENABLED"],
     ];
 
     for (const [seamName, envName] of seamEnv) {
+      const policy = getModelMemoryCaptureSeamPolicy(seamName);
       expect(
         resolveModelMemoryCaptureSeamSettings({
           seamName,
           outputDir: tempDir,
           env: { MODEL_MEMORY_CAPTURE_SEAMS_ENABLED: "1" } as NodeJS.ProcessEnv,
         }),
-      ).toMatchObject({ enabled: true, seamEnabled: false });
+      ).toMatchObject({
+        enabled: true,
+        seamEnabled: policy.status === "active",
+      });
       expect(
         resolveModelMemoryCaptureSeamSettings({
           seamName,
@@ -91,6 +102,56 @@ describe("model-memory capture seam wiring", () => {
         }),
       ).toEqual({ enabled: true, seamEnabled: true, outputDir: tempDir });
     }
+  });
+
+  it("documents kill switches, rollback, dedupe, and MMV2-native posture for every seam", () => {
+    expect(MODEL_MEMORY_CAPTURE_SEAM_POLICIES.map((entry) => entry.seamName)).toEqual([
+      "message:received",
+      "message:transcribed",
+      "message:preprocessed",
+      "ContextEngine.ingest",
+      "ContextEngine.ingestBatch",
+      "ContextEngine.assemble",
+      "ContextEngine.afterTurn",
+      "tool_result_persist",
+      "after_tool_call",
+      "agent_end",
+      "agent:bootstrap",
+      "memory_file_import",
+    ]);
+    for (const policy of MODEL_MEMORY_CAPTURE_SEAM_POLICIES) {
+      expect(policy.globalKillSwitch).toBe("MODEL_MEMORY_CAPTURE_SEAMS_ENABLED");
+      expect(policy.seamKillSwitch).toMatch(/^MODEL_MEMORY_CAPTURE_SEAM_/u);
+      expect(policy.noRawDataAllowed).toBe(true);
+      expect(policy.independentRollback).toBe(true);
+      expect(policy.dedupeRequired).toBe(true);
+    }
+    expect(getModelMemoryCaptureSeamPolicy("message:received").status).toBe("fallback_only");
+    expect(getModelMemoryCaptureSeamPolicy("message:transcribed").status).toBe("fallback_only");
+    expect(getModelMemoryCaptureSeamPolicy("message:preprocessed").status).toBe("active");
+  });
+
+  it("builds stable cross-seam dedupe keys from safe authority ids", () => {
+    const key = buildModelMemoryCaptureSeamDedupeKey({
+      seamName: "ContextEngine.ingestBatch",
+      sourceHash: "a".repeat(64),
+      sessionId: "session-1",
+    });
+    expect(key).toHaveLength(64);
+    expect(
+      buildModelMemoryCaptureSeamDedupeKey({
+        seamName: "ContextEngine.ingestBatch",
+        sourceHash: "a".repeat(64),
+        sessionId: "session-1",
+      }),
+    ).toBe(key);
+    expect(
+      buildModelMemoryCaptureSeamDedupeKey({
+        seamName: "agent_end",
+        sourceHash: "a".repeat(64),
+        sessionId: "session-1",
+      }),
+    ).not.toBe(key);
   });
 
   it("does not persist raw prompt, transcript, tool log, or dynamic key identifiers", () => {
@@ -133,7 +194,7 @@ describe("model-memory capture seam wiring", () => {
         outputDir: tempDir,
         env: { MODEL_MEMORY_CAPTURE_SEAMS_ENABLED: "1" } as NodeJS.ProcessEnv,
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ seam_name: "agent_end" });
 
     await expect(
       recordModelMemoryCaptureSeamEvidence({

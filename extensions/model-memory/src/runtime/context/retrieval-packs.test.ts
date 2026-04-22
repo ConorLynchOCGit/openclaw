@@ -187,6 +187,111 @@ describe("retrieval packs", () => {
     expect(assembled.systemPromptAddition).not.toContain("MEMORY.md");
   });
 
+  it("injects selected projection digests into runtime memory packs with active source ids", () => {
+    const artifact = buildRetrievalPackArtifact({
+      retrievalRequest: {
+        id: "retrieval-request-projection",
+        sessionId: "session-projection",
+        queryText: "sha256:projection-query",
+        requestPurpose: "context_injection",
+        scope: { projectId: "project-001", retrievalRuntimeQueryHash: "projection-query" },
+        desiredResultCount: 1,
+        contractName: "retrieval_request_interpretation",
+        contractVersion: "v1",
+        modelId: "retrieval-model-001",
+        createdAt: new Date(0),
+      },
+      retrievalResultSet: {
+        id: "retrieval-set-projection",
+        retrievalRequestId: "retrieval-request-projection",
+        contentHash: "hash-projection",
+        resultCount: 0,
+        createdAt: new Date(0),
+      },
+      retrievalResultItems: [],
+      memoryObjects: [
+        {
+          id: "memory-project",
+          canonicalClass: "project",
+          kind: "fact",
+          payload: { subject: "active project", value: "projection backed" },
+          normalizedSubject: "active project",
+          normalizedSearchText: "active project projection backed",
+          scope: { projectId: "project-001" },
+          provenance: [{ sourceId: "source-project", blockId: "segment-project" }],
+          confidence: "strong",
+          durability: "durable",
+          suggestedReviewMode: "auto_accept",
+          executedReviewMode: "auto_accept",
+          rationaleCodes: [],
+          identityKey: "memory-project",
+          contractName: "mmv2_runtime_projection",
+          contractVersion: "v1",
+          modelId: "mmv2-storage",
+          createdAt: new Date(0),
+          lifecycleState: "active",
+        },
+      ],
+      projectionVersions: [
+        {
+          id: "projection-project-page",
+          targetId: "catalog-project_page",
+          projectionType: "project_page",
+          contentHash: "hash-project-page",
+          canonicalArtifactPath: ".openclaw/model-memory/projections/projects/page.md",
+          sourceObjectIds: ["memory-project"],
+          sourceEventIds: ["event-project"],
+          sourceEdgeIds: ["edge-project"],
+          sourceSlotKeys: [],
+          sourceSetKeys: [],
+          tokenEstimate: 10,
+          builtAt: new Date(0),
+          freshness: { status: "fresh" },
+          staleMarkers: [],
+          conflictMarkers: [],
+          retrievalDigest: {
+            title: "project page",
+            summary: "gives concise active project state, blockers, and recent decisions",
+            sourceMemoryIds: ["memory-project"],
+            sourceEventIds: ["event-project"],
+            contentHash: "hash-project-page",
+          },
+        },
+      ],
+      buildPolicyVersion: "v1",
+    });
+
+    const payload = artifact.structuredPayload as Record<string, any>;
+    expect(payload.retrievalRun.selectedProjectionIds).toEqual(["projection-project-page"]);
+    expect(payload.retrievalRun.metrics.selectedSourceMemoryIds).toEqual(["memory-project"]);
+    expect(payload.memoryPacks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          packType: "projection_digest_pack",
+          sources: [expect.objectContaining({ projectionId: "projection-project-page" })],
+        }),
+      ]),
+    );
+
+    const assembled = assembleContext({
+      projectionVersions: [],
+      projectionTexts: {},
+      artifacts: [artifact],
+      recentTurns: [],
+      toolResults: [],
+      currentTurn: "What is the active project state?",
+      maxTokens: 100,
+      includeRetrievalPacks: true,
+      retrievalPackScopeKeys: ["session-projection"],
+    });
+
+    expect(assembled.semiStableSegments[0]?.text).toContain("catalog-project_page");
+    expect(assembled.semiStableSegments[0]?.text).toContain("active project state");
+    expect(assembled.semiStableSegments[0]?.text).toContain(
+      ".openclaw/model-memory/projections/projects/page.md",
+    );
+  });
+
   it("keeps only the latest retrieval pack for the active scope", () => {
     const assembled = assembleContext({
       projectionVersions: [],

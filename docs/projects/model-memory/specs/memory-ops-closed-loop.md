@@ -7,14 +7,53 @@ title: "Memory Ops Closed Loop"
 
 ## Status
 
-This is a future implementation spec.
-
-Do not implement this module from this document alone. The next implementation
-pass must verify actual hook availability and repo conventions first.
+This is now an implemented observe/report surface with Safe Level 1 auto-fix
+planning. It remains forbidden to mutate semantic truth automatically.
 
 Future module/plugin name:
 
 - `memory-ops-closed-loop`
+
+## 2026-04-22 Implementation Record
+
+Current surfaces:
+
+- JSONL signals under `.openclaw-memory-ops/signals/`
+- JSONL recommendations under `.openclaw-memory-ops/recommendations/`
+- reports under `.openclaw-memory-ops/reports/`
+- hook discovery artifacts under `.openclaw-memory-ops/hook-discovery/`
+- Safe Level 1 plans under `.openclaw-memory-ops/auto-fix/`
+
+Enabled Safe Level 1 planning actions:
+
+- retry failed capture jobs only for `timeout`, `provider_connection`, and
+  `pool_pressure`
+- mark runtime dirty and schedule rebuild after capture writes when rebuild is
+  skipped
+- rebuild stale projection artifacts from active MMV2 source ids only
+- quarantine invalid projection artifacts without deleting canonical truth
+- rotate runtime-state JSONL by age/size
+- refresh provider scorecards
+- disable failing routes only when they are already failover-safe
+- generate operator approval tickets for semantic-truth mutations
+
+Forbidden:
+
+- semantic auto-fix
+- auto-delete memory
+- auto-supersede memory
+- auto-repair semantic candidates
+- fuzzy correction or fuzzy supersession
+- root `USER.md` / `MEMORY.md` generated write-back
+
+Latest proof command:
+
+```bash
+node scripts/run-memory-ops-closed-loop.mjs --hook-discovery --hook-canary --report-fixture --safe-level1-autofix --base-dir .openclaw-memory-ops
+```
+
+The hook discovery pass was optimized to read the source corpus once and scan
+in memory. This avoids the previous per-hook repeated file-read timeout.
 
 ## Core Principle
 

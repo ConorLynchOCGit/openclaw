@@ -95,6 +95,23 @@ from the durable MMV2 record structure only. This keeps rollback/read-shape
 compatibility available without allowing legacy semantic-family identity to
 re-enter the default MMV2 hot path.
 
+The 2026-04-22 pre-Phase-2 gate adds a legacy fallback registry and regression
+tests for retained compatibility surfaces:
+
+- default retrieval paths and MMV2 write hot paths must not import legacy
+  semantic-family or collision modules
+- retained legacy captured-object write fallback remains fail-closed by
+  default and requires
+  `MODEL_MEMORY_LEGACY_CAPTURED_OBJECT_WRITE_FALLBACK_ENABLED=true`
+- `semantic-collision-adjudication.ts`, `live-shadow-adapters.ts`,
+  `runtime-comparison.ts`, and `proof/object-comparison.ts` are classified as
+  admin/proof diagnostics only
+- broad `runtime-api.ts` / `index.ts` legacy semantic/collision exports remain
+  `still_required` because the plugin SDK and older admin/proof scripts still
+  depend on them; they are not default MMV2 hot-path authority
+- every retained fallback surface is classified as non-default, rollback-only,
+  admin-only, quarantined, or still required with an explicit blocker
+
 ## Forbidden Write-Path Inference
 
 Forbidden by default:

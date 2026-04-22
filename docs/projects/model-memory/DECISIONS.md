@@ -5,6 +5,49 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-22 - Pre-Phase-2 gates prefer artifact-safe proof over fake live DB writes
+
+Decision:
+
+- finish Pass 6 as a cache-aware benchmark/compression harness plus safe
+  artifact reports, not as benchmark/eval durable memories
+- materialize the full rich projection catalog from live MMV2 records into the
+  projection artifact root only
+- activate capture seams by policy only when the seam has production evidence,
+  dedupe/no-dark-data tests, and global plus seam-specific kill switches
+- keep `message:received` and `message:transcribed` fallback-only unless the
+  primary `message:preprocessed` seam is unavailable
+- enable Safe Level 1 Memory Ops auto-fix planning only for operational
+  artifact/job/runtime-state actions
+- keep semantic auto-fix, memory deletion, auto-supersession, semantic
+  candidate repair, and fuzzy correction disabled
+- treat the MEMMECH proof as mechanically clean only for artifact-safe gates;
+  live durable ordinary-turn row proof needs an operator-approved durable
+  payload or isolated/staging DB
+
+Reasoning:
+
+- benchmark/proof output is evaluation data, not durable semantic truth
+- projections are derived context views; writing them under the projection
+  artifact root is safe, writing them to root `USER.md` or `MEMORY.md` is not
+- safe operational auto-fixes can reduce toil without mutating MMV2 semantic
+  truth
+- removing all legacy public exports would currently break the plugin SDK and
+  older admin/proof scripts, so the correct near-term posture is quarantine
+  plus default-hot-path import tests
+
+Rollback:
+
+- disable all capture seams with `MODEL_MEMORY_CAPTURE_SEAMS_ENABLED=false`
+- disable individual seams with their `MODEL_MEMORY_CAPTURE_SEAM_*_ENABLED`
+  env switches
+- ignore or remove `.artifacts/model-memory/pass6-cache-aware-benchmark/` and
+  `.artifacts/model-memory/memmech-proof/` if reports need regeneration
+- remove or ignore `$OPENCLAW_STATE_DIR/model-memory/runtime-dirty/` and
+  `$OPENCLAW_STATE_DIR/model-memory/capture-jobs/` to reset operational state
+- keep semantic-truth auto-fix disabled; semantic changes require operator
+  approval tickets
+
 ## 2026-04-22 - Pool, persistence, and provider telemetry stay operational
 
 Decision:

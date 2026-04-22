@@ -6,5 +6,6 @@ export * from "./production-hook-probe.ts";
 export * from "./recommendations.ts";
 export * from "./recorders.ts";
 export * from "./report.ts";
+export * from "./safe-level1-autofix.ts";
 export * from "./signals.ts";
 export * from "./types.ts";

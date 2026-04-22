@@ -7,7 +7,7 @@ title: "Model Memory Status"
 
 ## Overall
 
-State: `mmv2_hardening_landed_ingest_stopped_for_funnel_hardening`
+State: `pre_phase_2_memory_gates_partially_landed`
 
 Current authority:
 
@@ -223,6 +223,72 @@ Current 2026-04-22 partial-corpus proof state:
 - storage compatibility fallback identity now stays structural inside
   `extensions/model-memory/src/mmv2/storage-compatibility.ts` and no longer
   imports legacy `semantic-identity.ts`
+
+Pre-Phase-2 gate status, 2026-04-22:
+
+- Pass 6 source/artifact implementation is landed:
+  - cache-aware benchmark harness covers mini/nano model summaries, stable
+    cache keys, prefix/schema hashes, cached-token percentages, latency,
+    schema adherence, empty responses, repair rate, valid candidate rate, and
+    safe cost estimates
+  - the benchmark artifact root is
+    `.artifacts/model-memory/pass6-cache-aware-benchmark/2026-04-22-pass6/`
+  - the recorded recommendation prefers mini in the fixture report because it
+    has higher valid-candidate/schema behavior while nano remains the cheaper
+    high-volume route to evaluate under live provider conditions
+  - large-document compression is documented as source-preserving projection
+    cache only, not canonical truth
+- capture seam activation policy is now encoded in
+  `src/agents/model-memory.capture-seams.ts`:
+  - active when global switch is enabled and seam-specific switch is not off:
+    `message:preprocessed`, `ContextEngine.ingest`,
+    `ContextEngine.ingestBatch`, `tool_result_persist`, `after_tool_call`,
+    `agent_end`, `ContextEngine.afterTurn`, `agent:bootstrap`,
+    `memory_file_import`
+  - fallback-only unless explicitly enabled:
+    `message:received`, `message:transcribed`
+  - production hook evidence from the latest Memory Ops run marks
+    `message:preprocessed`, `ContextEngine.ingest`,
+    `ContextEngine.ingestBatch`, `ContextEngine.assemble`,
+    `tool_result_persist`, `after_tool_call`, `agent_end`, and
+    `ContextEngine.afterTurn` as production-verified
+  - changed bootstrap and memory-file watcher seams remain blocked until a
+    production file-change firing surface exists
+- full projection catalog was materialized from 590 live MMV2 runtime records:
+  - active source memory count: 542
+  - projection count: 10
+  - root write-back status: disabled
+  - artifact index:
+    `/root/.openclaw/workspace/.openclaw/model-memory/projections/index.json`
+- runtime retrieval/context tests prove selected projection digests enter
+  retrieval packs and assembled context with active source memory ids.
+- fallback compatibility retirement remains partial:
+  - `mmv2/storage-compatibility.ts` is structural and no longer imports legacy
+    semantic identity
+  - broad runtime/plugin SDK semantic identity/collision exports are still
+    required for plugin compatibility and older admin/proof scripts, so they
+    are classified as `still_required` and non-default rather than removed
+  - default retrieval and MMV2 write hot-path import tests still block legacy
+    semantic-family/collision modules
+- Memory Ops Safe Level 1 planning is active with semantic auto-fix still off:
+  - retry failed capture jobs only for `timeout`, `provider_connection`, and
+    `pool_pressure`
+  - mark runtime dirty and schedule rebuild when capture writes skip rebuild
+  - rebuild stale projection artifacts from active MMV2 ids only
+  - quarantine invalid projection artifacts without deleting canonical truth
+  - rotate runtime-state JSONL logs by age/size
+  - refresh provider scorecards and disable failing model routes only when
+    failover-safe
+  - generate operator approval tickets for semantic-truth changes
+- Pass 7 artifact proof is mechanically clean for runtime-state/projection
+  gates but not a live durable-row soak:
+  - proof marker: `MEMMECH-2026-04-22`
+  - proof root:
+    `.artifacts/model-memory/memmech-proof/2026-04-22-pass-7/`
+  - durable DB writes: none
+  - isolated pg-mem tests prove ordinary-turn durable rows can be written
+  - live durable row proof still requires an operator-approved durable payload
+    or staging DB
 
 Accepted clean-soak baseline:
 

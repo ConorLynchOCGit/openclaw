@@ -412,6 +412,8 @@ function renderProjectionCatalogPage(input: {
     `- projection_type: ${digest.projectionType}`,
     `- schema_version: ${digest.schemaVersion}`,
     `- retrieval_role: ${registryEntry.retrievalRole}`,
+    `- runtime_use_case: ${registryEntry.runtimeUseCase}`,
+    `- selection_hints: ${registryEntry.selectionHints.join(", ")}`,
     `- content_hash: ${digest.contentHash}`,
     `- compiled_at: ${digest.compiledAt}`,
     `- freshness: ${digest.freshness.status}`,
@@ -504,10 +506,10 @@ export function compileProjectionCatalogDigests(input: {
     return buildProjectionDigestArtifact({
       projectionType: entry.projectionType,
       title: entry.projectionType.replace(/_/gu, " "),
-      summary: summarizeProjectionSources(
+      summary: `${entry.runtimeUseCase}. ${summarizeProjectionSources(
         sourceObjects.filter(isActiveProjectionSource),
         entry.projectionType,
-      ),
+      )}`,
       sourceObjects,
       artifactPath: `${entry.artifactPathPrefix}/digest-${hashRuntimeValue(entry.projectionType).slice(0, 12)}.json`,
       builtAt,
@@ -528,7 +530,10 @@ export function compileProjectionCatalogPages(input: {
     const digest = buildProjectionDigestArtifact({
       projectionType: registryEntry.projectionType,
       title: registryEntry.projectionType.replace(/_/gu, " "),
-      summary: summarizeProjectionSources(activeSourceObjects, registryEntry.projectionType),
+      summary: `${registryEntry.runtimeUseCase}. ${summarizeProjectionSources(
+        activeSourceObjects,
+        registryEntry.projectionType,
+      )}`,
       sourceObjects,
       builtAt,
     });

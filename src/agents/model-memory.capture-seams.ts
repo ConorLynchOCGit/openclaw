@@ -10,6 +10,8 @@ const MAX_HASHES = 80;
 const MAX_DEPTH = 4;
 
 export type ModelMemoryCaptureSeamName =
+  | "message:received"
+  | "message:transcribed"
   | "message:preprocessed"
   | "ContextEngine.ingest"
   | "ContextEngine.ingestBatch"
@@ -17,7 +19,30 @@ export type ModelMemoryCaptureSeamName =
   | "ContextEngine.afterTurn"
   | "tool_result_persist"
   | "after_tool_call"
-  | "agent_end";
+  | "agent_end"
+  | "agent:bootstrap"
+  | "memory_file_import";
+
+export type ModelMemoryCaptureSeamActivationStatus =
+  | "active"
+  | "verified_pending_activation"
+  | "fallback_only"
+  | "blocked"
+  | "synthetic_only"
+  | "registered_not_fired"
+  | "future";
+
+export type ModelMemoryCaptureSeamPolicy = {
+  seamName: ModelMemoryCaptureSeamName;
+  status: ModelMemoryCaptureSeamActivationStatus;
+  globalKillSwitch: typeof GLOBAL_ENABLED_ENV;
+  seamKillSwitch: string;
+  writesThroughMmv2NativePath: boolean;
+  noRawDataAllowed: true;
+  dedupeRequired: boolean;
+  independentRollback: true;
+  activationReason: string;
+};
 
 export type ModelMemoryCaptureSeamRecord = {
   schema_version: "model_memory_capture_seam.v1";
@@ -56,6 +81,8 @@ export type ModelMemoryCaptureSeamSettings = {
 };
 
 const SEAM_ENV: Record<ModelMemoryCaptureSeamName, string> = {
+  "message:received": "MODEL_MEMORY_CAPTURE_SEAM_MESSAGE_RECEIVED_ENABLED",
+  "message:transcribed": "MODEL_MEMORY_CAPTURE_SEAM_MESSAGE_TRANSCRIBED_ENABLED",
   "message:preprocessed": "MODEL_MEMORY_CAPTURE_SEAM_MESSAGE_PREPROCESSED_ENABLED",
   "ContextEngine.ingest": "MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_INGEST_ENABLED",
   "ContextEngine.ingestBatch": "MODEL_MEMORY_CAPTURE_SEAM_CONTEXT_INGEST_BATCH_ENABLED",
@@ -64,7 +91,52 @@ const SEAM_ENV: Record<ModelMemoryCaptureSeamName, string> = {
   tool_result_persist: "MODEL_MEMORY_CAPTURE_SEAM_TOOL_RESULT_PERSIST_ENABLED",
   after_tool_call: "MODEL_MEMORY_CAPTURE_SEAM_AFTER_TOOL_CALL_ENABLED",
   agent_end: "MODEL_MEMORY_CAPTURE_SEAM_AGENT_END_ENABLED",
+  "agent:bootstrap": "MODEL_MEMORY_CAPTURE_SEAM_AGENT_BOOTSTRAP_ENABLED",
+  memory_file_import: "MODEL_MEMORY_CAPTURE_SEAM_MEMORY_FILE_IMPORT_ENABLED",
 };
+
+const ACTIVE_SEAMS = new Set<ModelMemoryCaptureSeamName>([
+  "message:preprocessed",
+  "ContextEngine.ingest",
+  "ContextEngine.ingestBatch",
+  "ContextEngine.afterTurn",
+  "tool_result_persist",
+  "after_tool_call",
+  "agent_end",
+  "agent:bootstrap",
+  "memory_file_import",
+]);
+
+const FALLBACK_ONLY_SEAMS = new Set<ModelMemoryCaptureSeamName>([
+  "message:received",
+  "message:transcribed",
+]);
+
+export const MODEL_MEMORY_CAPTURE_SEAM_POLICIES: readonly ModelMemoryCaptureSeamPolicy[] = (
+  Object.keys(SEAM_ENV) as ModelMemoryCaptureSeamName[]
+).map((seamName) => ({
+  seamName,
+  status: ACTIVE_SEAMS.has(seamName)
+    ? "active"
+    : FALLBACK_ONLY_SEAMS.has(seamName)
+      ? "fallback_only"
+      : "future",
+  globalKillSwitch: GLOBAL_ENABLED_ENV,
+  seamKillSwitch: SEAM_ENV[seamName],
+  writesThroughMmv2NativePath:
+    seamName !== "ContextEngine.assemble" &&
+    seamName !== "message:received" &&
+    seamName !== "message:transcribed",
+  noRawDataAllowed: true,
+  dedupeRequired: true,
+  independentRollback: true,
+  activationReason:
+    seamName === "message:received" || seamName === "message:transcribed"
+      ? "fallback-only ingress retained for primary seam failure or media path gaps"
+      : seamName === "ContextEngine.assemble"
+        ? "retrieval/injection telemetry only; no semantic write"
+        : "eligible production-verified seam, gated by global and seam-specific kill switches",
+}));
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -141,16 +213,48 @@ export function resolveModelMemoryCaptureSeamSettings(input: {
   const env = input.env ?? process.env;
   const config = readCaptureSeamConfig(input.config);
   const enabled = readBoolean(env[GLOBAL_ENABLED_ENV]) ?? readBoolean(config.enabled) ?? false;
+  const policy = getModelMemoryCaptureSeamPolicy(input.seamName);
   const seamEnabled =
     readBoolean(env[SEAM_ENV[input.seamName]]) ??
     readBoolean(readSeamSpecificConfig(config, input.seamName)) ??
-    false;
+    policy.status === "active";
   const outputDir =
     input.outputDir ??
     readString(env[OUTPUT_DIR_ENV]) ??
     readString(config.outputDir) ??
     path.join(process.cwd(), ".openclaw-memory-ops", "capture-seam-runtime");
   return { enabled, seamEnabled, outputDir };
+}
+
+export function getModelMemoryCaptureSeamPolicy(
+  seamName: ModelMemoryCaptureSeamName,
+): ModelMemoryCaptureSeamPolicy {
+  const policy = MODEL_MEMORY_CAPTURE_SEAM_POLICIES.find((entry) => entry.seamName === seamName);
+  if (!policy) {
+    throw new Error(`unknown model-memory capture seam: ${seamName}`);
+  }
+  return policy;
+}
+
+export function buildModelMemoryCaptureSeamDedupeKey(input: {
+  seamName: ModelMemoryCaptureSeamName;
+  sourceHash?: string;
+  sessionId?: string;
+  sessionKey?: string;
+  sourceId?: string;
+  eventId?: string;
+}): string {
+  const policy = getModelMemoryCaptureSeamPolicy(input.seamName);
+  const authorityKey = [
+    input.sourceHash,
+    input.sourceId,
+    input.eventId,
+    input.sessionId,
+    input.sessionKey,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .join("|");
+  return sha256(`${policy.seamName}|${authorityKey || "unknown"}`);
 }
 
 function valueKind(value: unknown): string {

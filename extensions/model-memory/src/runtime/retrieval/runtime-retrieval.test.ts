@@ -171,6 +171,98 @@ describe("memory retrieval runtime", () => {
     expect(digests[0]?.freshness?.status).toBe("fresh");
   });
 
+  it("selects every mature projection type into projection-backed runtime context when fresh", () => {
+    const projectionTypes = [
+      "user_profile_page",
+      "project_page",
+      "procedure_page",
+      "source_page",
+      "decision_log",
+      "timeline_page",
+      "entity_page",
+      "dashboard",
+      "agent_digest",
+      "projection_digest",
+    ] as const;
+    const projectionVersions: WorkspaceProjectionVersionRecord[] = projectionTypes.map(
+      (projectionType) => ({
+        id: `projection-${projectionType}`,
+        targetId: `catalog-${projectionType}`,
+        projectionType,
+        contentHash: `hash-${projectionType}`,
+        canonicalArtifactPath: `.openclaw/model-memory/projections/${projectionType}/page.md`,
+        sourceObjectIds: ["memory-active"],
+        sourceEventIds: ["event-active"],
+        sourceEdgeIds: ["edge-active"],
+        sourceSlotKeys: [],
+        sourceSetKeys: [],
+        tokenEstimate: 10,
+        builtAt: new Date(0),
+        freshness: { status: "fresh" },
+        staleMarkers: [],
+        conflictMarkers: [],
+        retrievalDigest: {
+          title: projectionType,
+          summary: `${projectionType} runtime use digest deployment region`,
+          sourceMemoryIds: ["memory-active"],
+          sourceEventIds: ["event-active"],
+          contentHash: `hash-${projectionType}`,
+        },
+      }),
+    );
+    const recalled = recallCanonicalCandidates({
+      request,
+      memoryObjects: [memory({ id: "memory-active" })],
+      projectionVersions,
+    });
+
+    expect(
+      recalled.selectedProjectionDigests.map((digest) => digest.projectionType).toSorted(),
+    ).toEqual([...projectionTypes].toSorted());
+    for (const projectionType of projectionTypes) {
+      expect(
+        recalled.retrievalCandidates.find(
+          (candidate) => candidate.projectionId === `projection-${projectionType}`,
+        )?.reasonCodes,
+      ).toEqual(expect.arrayContaining([`projection_type:${projectionType}`]));
+    }
+  });
+
+  it("excludes conflicted projections from normal packs", () => {
+    const recalled = recallCanonicalCandidates({
+      request,
+      memoryObjects: [memory({ id: "memory-active" })],
+      projectionVersions: [
+        {
+          id: "projection-conflict",
+          targetId: "catalog-decision-log",
+          projectionType: "decision_log",
+          contentHash: "hash-conflict",
+          canonicalArtifactPath: ".openclaw/model-memory/projections/decisions/page.md",
+          sourceObjectIds: ["memory-active"],
+          sourceSlotKeys: [],
+          sourceSetKeys: [],
+          tokenEstimate: 10,
+          builtAt: new Date(0),
+          freshness: { status: "fresh" },
+          staleMarkers: [],
+          conflictMarkers: ["conflicted_source_memory"],
+        },
+      ],
+    });
+
+    expect(recalled.selectedProjectionDigests).toEqual([]);
+    expect(recalled.exclusions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "projection-conflict",
+          idType: "projection",
+          reason: "conflicted",
+        }),
+      ]),
+    );
+  });
+
   it("emits projection exclusion telemetry and fresh digest reason codes", () => {
     const projectionVersions: WorkspaceProjectionVersionRecord[] = [
       {

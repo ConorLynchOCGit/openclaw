@@ -3,6 +3,7 @@ export * from "./calibration-report.ts";
 export * from "./context-engine.ts";
 export * from "./daily-continuity-recovery.ts";
 export * from "./deterministic-uuid.ts";
+export * from "./legacy-fallback-registry.ts";
 export * from "./admin/replay-service.ts";
 export * from "./admin/document-ingestion-runner-service.ts";
 export * from "./db/canonical-repository.ts";

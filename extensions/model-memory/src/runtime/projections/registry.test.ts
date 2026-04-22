@@ -22,6 +22,8 @@ describe("projection registry", () => {
       expect(entry.schemaVersion).toBe("memory_projection.v1");
       expect(entry.sourceRequirements.requireActiveMemoryIds).toBe(true);
       expect(entry.artifactPathPrefix).toContain(".openclaw/model-memory/projections/");
+      expect(entry.runtimeUseCase.length).toBeGreaterThan(10);
+      expect(entry.selectionHints.length).toBeGreaterThan(0);
       if (entry.machineFacing) {
         expect(entry.artifactOutputs).toContain("json_digest");
       }
@@ -33,6 +35,7 @@ describe("projection registry", () => {
       expect.objectContaining({
         projectionType: "project_page",
         retrievalRole: "project_state",
+        runtimeUseCase: "gives concise active project state, blockers, and recent decisions",
       }),
     );
   });

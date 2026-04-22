@@ -38,6 +38,30 @@ The current-runtime partial-corpus soak remains `not_clean` until a fresh
 runtime proof shows durable ordinary-turn capture creates rows under gateway
 load without DB timeouts or raw-turn persistence.
 
+Pass 6 is implemented as a safe benchmark/compression harness and artifact
+report, not live semantic memory:
+
+- `scripts/model-memory-cache-aware-benchmark.mjs` writes reports under
+  `.artifacts/model-memory/pass6-cache-aware-benchmark/2026-04-22-pass6/`
+- prompt-cache keys are derived from contract/schema/prompt version plus
+  static prefix hash
+- static prompt/schema content stays first and source/window text stays in the
+  dynamic tail
+- mini/nano comparison records latency, token usage, cached-token percentage,
+  schema adherence, empty-response rate, repair rate, valid-candidate rate,
+  and safe cost estimates
+- large-document compression is evaluated as source-preserving projection/cache
+  only; admitted candidates must validate against original source spans
+
+Pass 7 artifact proof is present at
+`.artifacts/model-memory/memmech-proof/2026-04-22-pass-7/`. It proves capture
+job runtime-state, dirty-state runtime-state, provider/cache metric surfaces,
+all 10 projection types in the live projection index, root write-back disabled,
+and no raw runtime-state payloads. It does not create synthetic durable
+memories in the live DB. A fully clean current-runtime soak still needs an
+operator-approved durable live payload or isolated/staging DB proof for durable
+ordinary-turn row creation.
+
 ## Guardrails
 
 - MMV2 durable SQL remains semantic truth.

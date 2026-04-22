@@ -69,17 +69,16 @@ title: "Model Memory Roadmap"
   - the current-runtime soak is not clean because ordinary-turn durable
     capture hit DB connection/statement timeouts and created no new memory
     rows for the durable capture prompts
-- Mechanical capture/ingest hardening is now the active stabilization lane:
-  Passes 1-5 now persist safe runtime-state capture jobs and dirty-state
+- Mechanical capture/ingest hardening is now mostly landed for pre-Phase-2:
+  Passes 1-6 persist safe runtime-state capture jobs and dirty-state
   snapshots/events, defer rebuilds, keep rebuild locking fail-fast by default,
   scope reconciliation, add DB priority lanes and pool-pressure backoff, batch
-  live persistence with deferred invalid candidate/edge reports, and preflight
-  actual strict-schema provider contracts with safe provider/model scorecards.
-- Remaining mechanical work is split into explicit passes in
-  [Capture And Ingest Mechanical Hardening](/projects/model-memory/specs/capture-ingest-mechanical-hardening):
-  durable dirty/rebuild scheduling, DB pool lanes, batch
-  persistence/savepoints, provider schema scorecards, cache-aware benchmarks,
-  and final MEMMECH proof/soak.
+  live persistence with deferred invalid candidate/edge reports, preflight
+  actual strict-schema provider contracts with safe provider/model scorecards,
+  and provide cache-aware mini/nano plus large-document compression reports.
+- Pass 7 artifact-safe MEMMECH proof is present, but live durable ordinary-turn
+  row proof still requires an operator-approved durable payload or isolated
+  staging DB before the current-runtime soak can be called fully clean.
 
 ## Current top priorities
 
@@ -93,12 +92,12 @@ title: "Model Memory Roadmap"
 3. keep fresh production verification for `ContextEngine.ingest` and
    `ingestBatch`; the 2026-04-22 current-runtime proof shows production
    runtime evidence, while synthetic-only hooks remain blocked
-4. complete the remaining mechanical hardening passes in order:
-   - cache-aware mini/nano and large-document compression benchmarks
-   - final `MEMMECH-2026-04-22` proof and current-runtime soak
-5. run a narrow `MEMMECH-2026-04-22` proof after the mechanical passes, then
-   rerun the current-runtime soak before calling the soak clean. Do not write
-   synthetic proof/eval content into the live durable DB.
+4. run an operator-approved live durable capture proof or staging-DB proof for
+   `MEMMECH-2026-04-22`; do not write synthetic proof/eval content into the
+   live durable DB
+5. rerun the current-runtime soak after the durable-row proof and only call it
+   clean if capture jobs, dirty state, projection-backed context injection,
+   Memory Ops Level 1, and no-dark-data gates all pass
 6. populate MMV2 with the curated 2026-04 deep document-ingest corpus and
    verify source/segment/memory/event evidence; resume from checkpoint during
    the overnight ingest window, not during build-focused hardening

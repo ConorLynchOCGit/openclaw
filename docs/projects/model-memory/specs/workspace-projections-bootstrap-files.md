@@ -141,6 +141,27 @@ freshness, stale markers, conflict markers, and retrieval digest metadata.
 They are never allowed to write generated content back into root `USER.md` or
 `MEMORY.md`.
 
+2026-04-22 live materialization record:
+
+- command: `node scripts/model-memory-materialize-projection-catalog.mjs`
+- live MMV2 runtime records read: 590
+- active source memory ids: 542
+- projection artifacts written: 10
+- projection index:
+  `/root/.openclaw/workspace/.openclaw/model-memory/projections/index.json`
+- root write-back status: disabled
+
+Runtime consumers:
+
+- `project_page`: active project state, blockers, and recent decisions
+- `procedure_page`: repeated operational runbooks and checklists
+- `decision_log`: prior decisions plus conflict/stale markers
+- `source_page`: canonical source/document evidence pointers
+- `user_profile_page`: stable task-relevant user preferences
+- `entity_page` and `timeline_page`: entity knowledge and change history
+- `agent_digest` and `projection_digest`: compact machine-facing retrieval
+  context
+
 ## Phase 2 knowledge artifact root
 
 Phase 2 graph and capsule artifacts should use a derived knowledge namespace:

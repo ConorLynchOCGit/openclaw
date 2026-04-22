@@ -7,7 +7,7 @@ title: "Model Memory Current Slice"
 
 ## Slice
 
-`mmv2-hardening-landing-and-paused-ingest`
+`pre-phase-2-memory-gates`
 
 ## Goal
 
@@ -100,8 +100,33 @@ Passes 3-5 are now implemented and live-picked-up without a DB migration:
   capture routing, extraction, canonicalization, and retrieval interpretation,
   and provider scorecards record safe schema/latency/token/cache metrics.
 
-The next major passes are Pass 6 cache-aware model/compression benchmarking
-and Pass 7 `MEMMECH-2026-04-22` proof/soak after narrow proof planning.
+Pass 6 and the artifact-safe portion of Pass 7 are now implemented in source
+and proof artifacts:
+
+- cache-aware mini/nano benchmarking is available through
+  `scripts/model-memory-cache-aware-benchmark.mjs` and records stable
+  prompt-cache keys, prefix/schema hashes, cached-token percentages, latency,
+  schema adherence, empty-response rate, repair rate, and valid-candidate rate
+  without durable DB writes
+- large-document compression research compares direct rigid capture,
+  source-preserving summary then capture, and section-map candidate hints; the
+  summary path remains projection/cache-only and every admitted candidate must
+  validate against original source spans
+- capture seam policy now makes production-verified seams active behind global
+  and seam-specific kill switches, keeps `message:received` and
+  `message:transcribed` fallback-only, and records deterministic dedupe keys
+- full rich projection catalog materialization now writes all 10 projection
+  types under `/root/.openclaw/workspace/.openclaw/model-memory/projections/`
+  with root write-back disabled
+- Memory Ops Safe Level 1 auto-fix planning is active for artifact/job/runtime
+  maintenance only; semantic truth mutation still generates operator approval
+  tickets instead of auto-fix
+- `MEMMECH-2026-04-22` artifact proof is rooted at
+  `.artifacts/model-memory/memmech-proof/2026-04-22-pass-7/`
+
+The current pass did not create an artificial durable memory in the live DB.
+Durable ordinary-turn row proof is covered by isolated pg-mem tests unless an
+operator-approved long-term live durable payload is provided.
 
 ## Current Outcome
 

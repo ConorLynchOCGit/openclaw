@@ -71,6 +71,11 @@ type ContextEngineCanarySpec = {
   params: Record<string, unknown>;
 };
 
+type HookDiscoveryCorpusEntry = {
+  file: string;
+  text: string;
+};
+
 const TARGET_SPECS: HookTargetSpec[] = [
   {
     hookName: "message:preprocessed",
@@ -454,24 +459,32 @@ async function walkFiles(root: string, relativeDir = ""): Promise<string[]> {
   return files;
 }
 
-async function findPatternFiles(input: {
+async function readHookDiscoveryCorpus(input: {
   repoRoot: string;
   files: string[];
-  patterns: string[];
-}): Promise<string[]> {
-  const matches: string[] = [];
+}): Promise<HookDiscoveryCorpusEntry[]> {
+  const corpus: HookDiscoveryCorpusEntry[] = [];
   for (const file of input.files) {
-    let text = "";
     try {
-      text = await readFile(path.join(input.repoRoot, file), "utf8");
+      corpus.push({
+        file,
+        text: await readFile(path.join(input.repoRoot, file), "utf8"),
+      });
     } catch {
       continue;
     }
-    if (input.patterns.some((pattern) => text.includes(pattern))) {
-      matches.push(file);
-    }
   }
-  return matches.toSorted();
+  return corpus;
+}
+
+function findPatternFilesInCorpus(input: {
+  corpus: HookDiscoveryCorpusEntry[];
+  patterns: string[];
+}): string[] {
+  return input.corpus
+    .filter((entry) => input.patterns.some((pattern) => entry.text.includes(pattern)))
+    .map((entry) => entry.file)
+    .toSorted();
 }
 
 async function readGitHead(repoRoot: string): Promise<string> {
@@ -497,11 +510,11 @@ export async function discoverMemoryOpsHooksFromRepo(input: {
   const searchRoots = ["src", "extensions", "ops", "docs/projects/model-memory"];
   const filesByRoot = await Promise.all(searchRoots.map((root) => walkFiles(input.repoRoot, root)));
   const files = filesByRoot.flat();
+  const corpus = await readHookDiscoveryCorpus({ repoRoot: input.repoRoot, files });
   const targets: HookDiscoveryTarget[] = [];
   for (const spec of TARGET_SPECS) {
-    const sourceFiles = await findPatternFiles({
-      repoRoot: input.repoRoot,
-      files,
+    const sourceFiles = findPatternFilesInCorpus({
+      corpus,
       patterns: spec.primaryPatterns,
     });
     const status = statusForSpec(spec, sourceFiles);

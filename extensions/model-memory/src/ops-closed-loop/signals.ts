@@ -136,6 +136,6 @@ export function createMemoryOpsSignal(
     ...input,
     signal_id: input.signal_id ?? randomUUID(),
     schema_version: "memory_ops_signal.v1",
-    created_at: input.created_at ?? new Date().toISOString(),
+    created_at: input.created_at ?? input.observed_at ?? new Date().toISOString(),
   };
 }

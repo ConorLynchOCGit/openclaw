@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { listLegacyFallbackSurfaces } from "../../legacy-fallback-registry.ts";
 
 const repoRoot = resolve(import.meta.dirname, "../../../../..");
 
@@ -68,5 +69,40 @@ describe("semantic forest quarantine", () => {
     );
     expect(source).toContain("isLegacyCapturedObjectWriteFallbackEnabled");
     expect(source).toContain('await import("./semantic-collision-adjudication.ts")');
+  });
+
+  it("keeps legacy semantic/collision public exports classified as compatibility-only", () => {
+    for (const file of [
+      "extensions/model-memory/src/index.ts",
+      "extensions/model-memory/src/runtime-api.ts",
+    ]) {
+      const source = readRepoFile(file);
+      expect(source).toContain('export * from "./semantic-collision-adjudication.ts"');
+      expect(source).toContain('export * from "./semantic-identity.ts"');
+      expect(source).toContain('export * from "./write-policy.ts"');
+      expect(source).toContain('export * from "./legacy-fallback-registry.ts"');
+    }
+  });
+
+  it("classifies every retained fallback surface as non-default", () => {
+    const surfaces = listLegacyFallbackSurfaces();
+
+    expect(surfaces.map((surface) => surface.surface)).toEqual(
+      expect.arrayContaining([
+        "legacy captured-object write fallback",
+        "semantic-collision-adjudication.ts",
+        "semantic-identity.ts",
+        "runtime-api.ts / index.ts broad legacy exports",
+        "write-policy.ts legacy semantic identity dependency",
+      ]),
+    );
+    expect(surfaces.every((surface) => !surface.defaultLivePathAllowed)).toBe(true);
+    expect(
+      surfaces
+        .filter((surface) => surface.status === "explicit_fallback_only")
+        .every(
+          (surface) => typeof surface.rollbackFlag === "string" && surface.rollbackFlag.length > 0,
+        ),
+    ).toBe(true);
   });
 });

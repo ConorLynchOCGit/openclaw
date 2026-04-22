@@ -461,7 +461,9 @@ export function buildProjectionDigests(input: {
         conflictMarkers: version.conflictMarkers ?? [],
         stale:
           (version.freshness?.status ?? (sourceMemoryIds.length === 0 ? "stale" : "fresh")) ===
-            "stale" || (version.staleMarkers?.length ?? 0) > 0,
+            "stale" ||
+          (version.staleMarkers?.length ?? 0) > 0 ||
+          (version.conflictMarkers?.length ?? 0) > 0,
         sourceWeight: sourceMemoryIds.length,
       };
     })
@@ -483,6 +485,18 @@ function buildProjectionDigestExclusions(input: {
           detail: "projection_digest_has_no_active_source_memory_ids",
           sourceLane: "projection_digest" as const,
           status: "inactive" as const,
+        },
+      ];
+    }
+    if ((version.conflictMarkers ?? []).length > 0) {
+      return [
+        {
+          id: version.id,
+          idType: "projection" as const,
+          reason: "conflicted" as const,
+          detail: version.conflictMarkers?.join(",") || "conflicted_projection_digest",
+          sourceLane: "projection_digest" as const,
+          status: "conflicted" as const,
         },
       ];
     }
@@ -526,6 +540,7 @@ function scoreProjectionDigest(
     reasonCodes: [
       "projection_digest",
       "active_source_memory_ids",
+      `projection_type:${digest.projectionType}`,
       ...(freshnessBoost > 0 ? ["fresh_projection_digest"] : []),
       ...(lexicalMatches.length > 0 ? ["projection_lexical_match"] : []),
     ],

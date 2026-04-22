@@ -23,6 +23,7 @@ import {
   buildRecommendationsFromSignals,
 } from "./recommendations.ts";
 import { generateMemoryOpsHealthReport, writeMemoryOpsHealthReport } from "./report.ts";
+import { buildSafeLevel1AutoFixPlan } from "./safe-level1-autofix.ts";
 import {
   createMemoryOpsSignal,
   prepareSignalForPersistence,
@@ -242,7 +243,66 @@ describe("memory ops closed loop", () => {
       },
     });
     expect(config.autoFix.enabled).toBe(false);
+    expect(config.safeLevel1AutoFix.enabled).toBe(true);
     expect(listFutureMechanicalFixes().every((entry) => !entry.enabled)).toBe(true);
+  });
+
+  it("builds only safe Level 1 auto-fix actions and never semantic truth mutations", () => {
+    const plan = buildSafeLevel1AutoFixPlan({
+      captureJobs: [
+        { jobId: "job-timeout", status: "failed", failureClass: "timeout" },
+        { jobId: "job-privacy", status: "failed", failureClass: "privacy_no_store" },
+      ],
+      runtimeDirtyStates: [{ dirtyId: "dirty-1", status: "dirty" }],
+      projections: [
+        {
+          projectionId: "projection-stale",
+          freshnessStatus: "stale",
+          staleMarkers: ["source_hash_changed"],
+          hashValid: true,
+          activeSourceMemoryIdsValid: true,
+        },
+        {
+          projectionId: "projection-invalid",
+          freshnessStatus: "fresh",
+          hashValid: false,
+          activeSourceMemoryIdsValid: true,
+        },
+      ],
+      providerRoutes: [
+        {
+          routeId: "openrouter/openai/gpt-5.4-nano",
+          failoverSafe: true,
+          schemaSuccessRate: 0.5,
+        },
+      ],
+      runtimeStateJsonlPaths: [".openclaw/model-memory/capture-jobs/events.jsonl"],
+      semanticTruthTouchRequested: [
+        { ticketId: "approval-1", reason: "would touch semantic truth" },
+      ],
+    });
+
+    expect(plan.actions.map((entry) => entry.action_kind)).toEqual(
+      expect.arrayContaining([
+        "retry_failed_capture_job",
+        "mark_runtime_dirty_and_schedule_rebuild",
+        "rebuild_stale_projection_artifact",
+        "quarantine_invalid_projection_artifact",
+        "rotate_runtime_state_jsonl",
+        "refresh_provider_scorecard",
+        "disable_failover_safe_model_route",
+        "operator_approval_ticket",
+      ]),
+    );
+    expect(plan.actions.find((entry) => entry.target_id === "job-privacy")).toBeUndefined();
+    expect(plan.actions.every((entry) => entry.safe_to_apply_without_semantic_truth_mutation)).toBe(
+      true,
+    );
+    expect(plan.forbidden_semantic_truth_actions).toEqual(
+      expect.arrayContaining(["auto_delete_memory", "semantic_candidate_auto_repair"]),
+    );
+    expect(JSON.stringify(plan)).not.toContain("full prompt");
+    expect(plan.actions.every((entry) => !entry.contains_transcript)).toBe(true);
   });
 
   it("discovers hook surfaces and writes an artifact with honest non-fired statuses", async () => {
