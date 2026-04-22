@@ -286,6 +286,291 @@ describe("chat view", () => {
     expect(container.querySelectorAll(".chat-side-result")).toHaveLength(1);
   });
 
+  it("keeps full long assistant responses available behind a compact preview", () => {
+    const container = document.createElement("div");
+    const longResponse = `${"Long response line\n".repeat(120)}FINAL-MARKER`;
+    const onOpenSidebar = vi.fn();
+
+    render(
+      renderChat(
+        createProps({
+          messages: [
+            {
+              role: "assistant",
+              content: longResponse,
+              timestamp: 1000,
+            },
+          ],
+          onOpenSidebar,
+        }),
+      ),
+      container,
+    );
+
+    expect(container.textContent).toContain("Preview only. Full response preserved");
+    expect(container.querySelector(".chat-full-response")).not.toBeNull();
+    expect(container.textContent).toContain("FINAL-MARKER");
+    expect(container.textContent).toContain("Open full");
+    expect(container.textContent).toContain("Copy as markdown");
+    expect(container.textContent).toContain("Export");
+  });
+
+  it("renders queued prompts inline instead of a detached queue list", () => {
+    const container = document.createElement("div");
+    const onQueueRemove = vi.fn();
+    const onDraftChange = vi.fn();
+
+    render(
+      renderChat(
+        createProps({
+          queue: [
+            {
+              id: "queued-1",
+              text: "queued prompt text",
+              createdAt: 1000,
+            },
+          ],
+          onQueueRemove,
+          onDraftChange,
+        }),
+      ),
+      container,
+    );
+
+    expect(container.querySelector(".chat-queued-prompt")).not.toBeNull();
+    expect(container.textContent).toContain("Queued #1");
+    expect(container.textContent).toContain("queued prompt text");
+    expect(container.querySelector(".chat-queue")).toBeNull();
+  });
+
+  it("renders memory activity as collapsible timeline metadata instead of assistant bubbles", () => {
+    const container = document.createElement("div");
+
+    render(
+      renderChat(
+        createProps({
+          messages: [
+            {
+              role: "assistant",
+              content:
+                "[Memory Activity] retrieval completed | request_id=req_1 | selected_ids=mem_1",
+              timestamp: 1000,
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    expect(container.querySelector(".chat-memory-activity")).not.toBeNull();
+    expect(container.querySelector(".chat-group.assistant")).toBeNull();
+    expect(container.textContent).toContain("retrieval checked");
+  });
+
+  it("renders structured memory activity as tool-like metadata instead of assistant bubbles", () => {
+    const container = document.createElement("div");
+
+    render(
+      renderChat(
+        createProps({
+          messages: [
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "Memory activity" }],
+              timestamp: 1000,
+              __openclaw: {
+                kind: "model_memory_activity",
+                schemaVersion: 1,
+                eventType: "memory_retrieval_checked",
+                label: "retrieval completed",
+                status: "completed",
+                ids: {
+                  retrievalRequestId: ["req_1"],
+                  selectedMemoryIds: ["mem_1"],
+                },
+                rawContentPersisted: false,
+                containsPromptText: false,
+                containsTranscript: false,
+                containsRawToolLog: false,
+              },
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    expect(container.querySelector(".chat-memory-activity--tool-like")).not.toBeNull();
+    expect(container.querySelector(".chat-group.assistant")).toBeNull();
+    expect(container.textContent).toContain("memory retrieval checked");
+    expect(container.textContent).toContain("retrievalRequestId=req_1");
+    expect(container.textContent).not.toContain("[Memory Activity]");
+  });
+
+  it("shows a stable working card while a run is active", () => {
+    const container = document.createElement("div");
+
+    render(
+      renderChat(
+        createProps({
+          runId: "run-working-1",
+          sending: true,
+          stream: "",
+          streamStartedAt: 1000,
+          canAbort: true,
+          onAbort: vi.fn(),
+        }),
+      ),
+      container,
+    );
+
+    expect(container.querySelector(".chat-run-status")).not.toBeNull();
+    expect(container.textContent).toContain("Working...");
+    expect(container.textContent).toContain("retrieving memory");
+    expect(container.textContent).toContain("elapsed");
+    expect(container.textContent).toContain("run run-working-1");
+    expect(container.textContent).toContain("Cancel");
+    expect(container.textContent).toContain("Retry unavailable");
+    expect(container.textContent).toContain("Copy diagnostic bundle");
+  });
+
+  it("keeps a coarse working card visible when a run is active before stream events arrive", () => {
+    const container = document.createElement("div");
+
+    render(
+      renderChat(
+        createProps({
+          sending: false,
+          stream: null,
+          canAbort: true,
+          streamStartedAt: 1000,
+        }),
+      ),
+      container,
+    );
+
+    expect(container.querySelector(".chat-run-status")).not.toBeNull();
+    expect(container.textContent).toContain("Working...");
+    expect(container.textContent).toContain("running");
+  });
+
+  it("renders the operator experience panel with redacted diagnostics", () => {
+    const container = document.createElement("div");
+
+    render(
+      renderChat(
+        createProps({
+          runtimeVersion: "test-runtime",
+          runId: "run-diagnostic-1",
+          hostOperatorStatus: {
+            state: "read_only",
+            scopes: ["live_repo", "operator_workspace"],
+            auditId: "audit_1",
+            reason: "write disabled",
+          },
+          messages: [
+            {
+              role: "user",
+              content: "RAW PROMPT SHOULD NOT ENTER DIAGNOSTIC BUNDLE",
+              timestamp: 900,
+            },
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "Memory activity" }],
+              timestamp: 1000,
+              __openclaw: {
+                kind: "model_memory_activity",
+                schemaVersion: 1,
+                eventType: "projection_digest_used",
+                label: "projection digest used",
+                status: "completed",
+                ids: {
+                  retrievalRequestId: ["req_1"],
+                  projectionIds: ["proj_1"],
+                  selectedMemoryIds: ["mem_1"],
+                },
+              },
+            },
+          ],
+          toolMessages: [
+            {
+              role: "tool",
+              toolName: "git status",
+              content: "bounded status",
+              timestamp: 1100,
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    expect(container.querySelector(".operator-experience-panel")).not.toBeNull();
+    expect(container.textContent).toContain("host-operator read-only");
+    expect(container.textContent).toContain("1 memory events");
+
+    const toggle = container.querySelector<HTMLButtonElement>(".operator-experience-panel__toggle");
+    toggle?.click();
+    render(
+      renderChat(
+        createProps({
+          runtimeVersion: "test-runtime",
+          runId: "run-diagnostic-1",
+          hostOperatorStatus: {
+            state: "read_only",
+            scopes: ["live_repo", "operator_workspace"],
+            auditId: "audit_1",
+            reason: "write disabled",
+          },
+          messages: [
+            {
+              role: "user",
+              content: "RAW PROMPT SHOULD NOT ENTER DIAGNOSTIC BUNDLE",
+              timestamp: 900,
+            },
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "Memory activity" }],
+              timestamp: 1000,
+              __openclaw: {
+                kind: "model_memory_activity",
+                schemaVersion: 1,
+                eventType: "projection_digest_used",
+                label: "projection digest used",
+                status: "completed",
+                ids: {
+                  retrievalRequestId: ["req_1"],
+                  projectionIds: ["proj_1"],
+                  selectedMemoryIds: ["mem_1"],
+                },
+              },
+            },
+          ],
+          toolMessages: [
+            {
+              role: "tool",
+              toolName: "git status",
+              content: "bounded status",
+              timestamp: 1100,
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    expect(container.textContent).toContain("Retrieval proof explorer");
+    expect(container.textContent).toContain("Projection artifacts");
+    expect(container.textContent).toContain("Diff/test/build cards");
+    expect(container.textContent).toContain("git status");
+    const diagnostic = container
+      .querySelector<HTMLButtonElement>(".operator-diagnostic-copy")
+      ?.getAttribute("data-diagnostic-bundle");
+    expect(diagnostic).toContain("run-diagnostic-1");
+    expect(diagnostic).toContain("projection digest used");
+    expect(diagnostic).not.toContain("RAW PROMPT SHOULD NOT ENTER DIAGNOSTIC BUNDLE");
+  });
+
   it("dismisses BTW side results from the dismiss button", () => {
     const container = document.createElement("div");
     const onDismissSideResult = vi.fn();
@@ -727,6 +1012,34 @@ describe("chat view", () => {
     stopButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onAbort).toHaveBeenCalledTimes(1);
     expect(container.textContent).not.toContain("New session");
+  });
+
+  it("keeps queue submission available while a run can be aborted", () => {
+    const container = document.createElement("div");
+    const onSend = vi.fn();
+    render(
+      renderChat(
+        createProps({
+          canAbort: true,
+          sending: true,
+          draft: "queued while running",
+          onAbort: vi.fn(),
+          onSend,
+        }),
+      ),
+      container,
+    );
+
+    const stopButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Stop generating"]',
+    );
+    const queueButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Queue message"]',
+    );
+    expect(stopButton).not.toBeNull();
+    expect(queueButton).not.toBeNull();
+    queueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(onSend).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the stop button visible for abortable non-streaming runs", () => {

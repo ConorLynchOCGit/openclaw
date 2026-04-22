@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { OpenClawConfig } from "../config/config.js";
-import { appendAssistantMessageToSessionTranscript } from "../config/sessions/transcript.js";
+import { appendExactAssistantMessageToSessionTranscript } from "../config/sessions/transcript.js";
 
 const ACTIVITY_FEED_ENABLED_ENV = "MODEL_MEMORY_ACTIVITY_FEED_ENABLED";
 const ACTIVITY_FEED_LEVEL_ENV = "MODEL_MEMORY_ACTIVITY_FEED_LEVEL";
@@ -9,6 +9,16 @@ const ACTIVITY_FEED_MAX_IDS = 8;
 type JsonRecord = Record<string, unknown>;
 
 export type ModelMemoryActivityFeedLevel = "summary" | "maximal";
+
+export type ModelMemoryActivityEventType =
+  | "memory_retrieval_checked"
+  | "memory_pack_injected"
+  | "memory_capture_skipped"
+  | "memory_written"
+  | "projection_digest_used"
+  | "capture_seam_observed"
+  | "retrieval_empty"
+  | "retrieval_miss_diagnostic";
 
 export type ModelMemoryActivityKind =
   | "retrieval"
@@ -27,6 +37,7 @@ export type ModelMemoryActivityFeedSettings = {
 export type ModelMemoryActivityEvent = {
   kind: ModelMemoryActivityKind;
   status: ModelMemoryActivityStatus;
+  eventType?: ModelMemoryActivityEventType;
   config?: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
   sessionKey?: string;
@@ -39,7 +50,7 @@ export type ModelMemoryActivityEvent = {
   metrics?: Record<string, number | boolean | undefined>;
 };
 
-type TranscriptAppender = typeof appendAssistantMessageToSessionTranscript;
+type TranscriptAppender = typeof appendExactAssistantMessageToSessionTranscript;
 
 function isRecord(value: unknown): value is JsonRecord {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -97,6 +108,33 @@ function sanitizeSegment(value: string): string | undefined {
   return trimmed;
 }
 
+function sanitizeLabelKey(value: string): string | undefined {
+  const key = sanitizeSegment(value);
+  if (!key) {
+    return undefined;
+  }
+  const normalized = key.toLowerCase();
+  if (
+    [
+      "prompt",
+      "raw_prompt",
+      "transcript",
+      "raw_transcript",
+      "tool_log",
+      "raw_tool_log",
+      "content",
+      "text",
+      "message",
+      "private_phrase",
+      "secret",
+      "token",
+    ].includes(normalized)
+  ) {
+    return undefined;
+  }
+  return key;
+}
+
 function boundedIdList(value: string | string[] | undefined): string[] {
   const values = Array.isArray(value) ? value : value ? [value] : [];
   return values
@@ -109,6 +147,34 @@ function formatKind(kind: ModelMemoryActivityKind): string {
   return kind.replaceAll("_", " ");
 }
 
+function resolveActivityEventType(event: ModelMemoryActivityEvent): ModelMemoryActivityEventType {
+  if (event.eventType) {
+    return event.eventType;
+  }
+  if (event.kind === "projection") {
+    return "projection_digest_used";
+  }
+  if (event.kind === "hook_probe") {
+    return "capture_seam_observed";
+  }
+  if (event.kind === "retrieval") {
+    if (event.status === "skipped") {
+      return "retrieval_empty";
+    }
+    if (event.safeLabels?.diagnostic === "memory_existed_but_excluded") {
+      return "retrieval_miss_diagnostic";
+    }
+    if (Number(event.metrics?.packs ?? 0) > 0 || Number(event.metrics?.packInjected ?? 0) > 0) {
+      return "memory_pack_injected";
+    }
+    return "memory_retrieval_checked";
+  }
+  if (event.status === "skipped") {
+    return "memory_capture_skipped";
+  }
+  return "memory_written";
+}
+
 function formatLabels(labels: ModelMemoryActivityEvent["safeLabels"]): string[] {
   if (!labels) {
     return [];
@@ -116,7 +182,7 @@ function formatLabels(labels: ModelMemoryActivityEvent["safeLabels"]): string[] 
   return Object.entries(labels)
     .toSorted(([left], [right]) => left.localeCompare(right))
     .flatMap(([key, value]) => {
-      const safeKey = sanitizeSegment(key);
+      const safeKey = sanitizeLabelKey(key);
       const safeValue =
         typeof value === "string"
           ? sanitizeSegment(value)
@@ -125,6 +191,70 @@ function formatLabels(labels: ModelMemoryActivityEvent["safeLabels"]): string[] 
             : value;
       return safeKey && safeValue !== undefined ? [`${safeKey}=${safeValue}`] : [];
     });
+}
+
+function buildSafeLabels(labels: ModelMemoryActivityEvent["safeLabels"]): JsonRecord {
+  const safe: JsonRecord = {};
+  if (!labels) {
+    return safe;
+  }
+  for (const [key, value] of Object.entries(labels).toSorted(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    const safeKey = sanitizeLabelKey(key);
+    if (!safeKey || value === undefined) {
+      continue;
+    }
+    if (typeof value === "string") {
+      const safeValue = sanitizeSegment(value);
+      if (safeValue !== undefined) {
+        safe[safeKey] = safeValue;
+      }
+      continue;
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+      safe[safeKey] = value;
+    }
+  }
+  return safe;
+}
+
+function buildSafeIds(
+  ids: ModelMemoryActivityEvent["ids"],
+  level: ModelMemoryActivityFeedLevel,
+): JsonRecord {
+  const safe: JsonRecord = {};
+  if (!ids) {
+    return safe;
+  }
+  for (const [key, value] of Object.entries(ids).toSorted(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    const safeKey = sanitizeSegment(key);
+    const safeIds = boundedIdList(value);
+    if (!safeKey || safeIds.length === 0) {
+      continue;
+    }
+    safe[safeKey] = level === "summary" ? { count: safeIds.length } : safeIds;
+  }
+  return safe;
+}
+
+function buildSafeMetrics(metrics: ModelMemoryActivityEvent["metrics"]): JsonRecord {
+  const safe: JsonRecord = {};
+  if (!metrics) {
+    return safe;
+  }
+  for (const [key, value] of Object.entries(metrics).toSorted(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    const safeKey = sanitizeSegment(key);
+    if (!safeKey || value === undefined || !Number.isFinite(Number(value))) {
+      continue;
+    }
+    safe[safeKey] = value;
+  }
+  return safe;
 }
 
 function formatIds(ids: ModelMemoryActivityEvent["ids"], level: ModelMemoryActivityFeedLevel) {
@@ -184,6 +314,54 @@ export function buildModelMemoryActivityFeedText(
   return pieces.join(" | ");
 }
 
+export function buildModelMemoryActivityTranscriptMessage(
+  event: ModelMemoryActivityEvent,
+  settings: ModelMemoryActivityFeedSettings = { enabled: true, level: "maximal" },
+) {
+  const eventType = resolveActivityEventType(event);
+  const label = `${formatKind(event.kind)} ${event.status}`;
+  const timestamp = Date.now();
+  return {
+    role: "assistant" as const,
+    content: [{ type: "text" as const, text: "Memory activity" }],
+    api: "openai-responses",
+    provider: "openclaw",
+    model: "memory-activity",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0,
+      },
+    },
+    stopReason: "stop" as const,
+    timestamp,
+    __openclaw: {
+      kind: "model_memory_activity",
+      schemaVersion: 1,
+      eventType,
+      activityKind: event.kind,
+      status: event.status,
+      label,
+      observedAt: timestamp,
+      ids: buildSafeIds(event.ids, settings.level),
+      metrics: buildSafeMetrics(event.metrics),
+      labels: buildSafeLabels(event.safeLabels),
+      rawContentPersisted: false,
+      containsPromptText: false,
+      containsTranscript: false,
+      containsRawToolLog: false,
+    },
+  };
+}
+
 export async function emitModelMemoryActivityFeedEvent(
   event: ModelMemoryActivityEvent,
   deps: { appendTranscript?: TranscriptAppender } = {},
@@ -198,11 +376,11 @@ export async function emitModelMemoryActivityFeedEvent(
   if (!event.sessionKey?.trim()) {
     return { emitted: false, reason: "missing_session_key" };
   }
-  const text = buildModelMemoryActivityFeedText(event, settings);
   const idempotencyKey = `model-memory-activity:${sha256(
     JSON.stringify({
       kind: event.kind,
       status: event.status,
+      eventType: event.eventType,
       sessionKey: event.sessionKey,
       sessionId: event.sessionId,
       runId: event.runId,
@@ -212,11 +390,12 @@ export async function emitModelMemoryActivityFeedEvent(
       labels: event.safeLabels,
     }),
   )}`;
-  const appendTranscript = deps.appendTranscript ?? appendAssistantMessageToSessionTranscript;
+  const appendTranscript = deps.appendTranscript ?? appendExactAssistantMessageToSessionTranscript;
+  const message = buildModelMemoryActivityTranscriptMessage(event, settings);
   const appended = await appendTranscript({
     agentId: event.agentId,
     sessionKey: event.sessionKey,
-    text,
+    message,
     idempotencyKey,
   });
   return appended.ok

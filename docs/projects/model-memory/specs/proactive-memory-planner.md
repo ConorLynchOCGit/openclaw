@@ -28,9 +28,24 @@ Any meaningful candidate must surface inside ordinary OpenClaw operator flow.
 
 Open decisions before implementation:
 
-- which planner recommendations must surface immediately vs daily/heartbeat
-- approval gates for automatic projection/capsule refreshes
-- retention and dedupe policy for repeated planner recommendations
+- exact UI shape for heartbeat surfacing
+- exact retention durations for each candidate class after first implementation
+- final kill switches and config names for planner automatic derived work
+
+2026-04-22 Phase 2 decision lock:
+
+- heartbeat becomes the primary lightweight proactive memory maintenance loop
+- the planner may automatically perform reversible derived maintenance,
+  including projection refresh, capsule refresh, cache warmup, dirty marking,
+  and telemetry rollups
+- the planner must proactively surface skill, tool, and workflow opportunities
+  to the operator when evidence thresholds are met
+- planner recommendations are deduped by stable candidate id and expire when
+  stale
+- manual operator review is not the normal path for low-risk derived
+  maintenance; review is reserved for durable semantic truth changes,
+  privileged actions, skill/tool promotion, policy changes, and high-risk
+  privacy/security cases
 
 ## Objective
 
@@ -44,6 +59,7 @@ The proactive planner should notice when the system ought to:
 - warm a retrieval or capsule cache
 - surface contradictions or stale knowledge
 - propose a skill or tool candidate
+- propose a workflow candidate
 - queue operator-visible review items
 
 It must not become an unsandboxed autonomous actor.
@@ -82,6 +98,9 @@ Allowed automatic actions:
 
 These are derived-state maintenance actions, not policy changes.
 
+Heartbeat-driven planner ticks may run these actions without manual review when
+the action is reversible, derived-only, and does not mutate MMV2 durable truth.
+
 ## Review-gated actions
 
 The planner may propose but must not auto-promote:
@@ -90,6 +109,7 @@ The planner may propose but must not auto-promote:
 - new durable user or project policies
 - skill promotion
 - tool promotion
+- workflow promotion into a standing automation
 - third-party skill install
 - prompt mutation
 - new privileged automation lanes
@@ -106,6 +126,18 @@ Required surfaces:
 - relevant turn when the candidate materially overlaps the active work
 - heartbeat if pending review exists
 - daily operator reporting
+
+Heartbeat is the first-class proactive surface. It should not be a passive
+`HEARTBEAT_OK` loop when planner work exists. It should compactly surface:
+
+- skill candidates
+- tool candidates
+- workflow candidates
+- stale capsule or projection repairs
+- repeated retrieval misses
+- blocked privacy or injection findings
+- dirty graph/capsule/projection state
+- overnight ingest or maintenance opportunities
 
 Optional later surfaces:
 
@@ -203,6 +235,7 @@ Suggested candidate classes:
 - `contradiction_review`
 - `skill_candidate`
 - `tool_candidate`
+- `workflow_candidate`
 - `policy_candidate`
 - `source_authority_review`
 
@@ -257,6 +290,11 @@ and surfaces them as candidate skill or tool synthesis opportunities.
 
 It should not directly compile and install those skills by itself.
 
+Skill, tool, and workflow opportunities should be surfaced proactively rather
+than waiting for the operator to ask for them. The default channel is heartbeat
+for persistent candidates, with turn-level surfacing when the candidate is
+directly relevant to the current work.
+
 ## Privacy, trust, and prompt injection
 
 Phase 2 should let the planner observe:
@@ -296,10 +334,12 @@ This spec does not authorize:
 
 1. emit planner records only
 2. surface pending review through heartbeat and operator review
-3. add in-turn `context_surface` behavior
-4. enable reversible auto-refresh actions
-5. add candidate classes one by one
-6. only later consider stronger automation after proof and operator feedback
+3. make heartbeat a real planner tick with bounded derived maintenance and
+   candidate surfacing
+4. add in-turn `context_surface` behavior
+5. enable reversible auto-refresh actions
+6. add candidate classes one by one
+7. only later consider stronger automation after proof and operator feedback
 
 ## Related specs
 

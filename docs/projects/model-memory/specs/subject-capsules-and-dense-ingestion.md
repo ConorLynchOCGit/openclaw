@@ -28,11 +28,19 @@ The first capsule flavor is now chosen:
 - dense ingestion remains document-ingest into MMV2 durable truth first; capsule
   generation cannot bypass admission or create hidden semantic summaries
 
-Open decisions before implementation:
+2026-04-22 Phase 2 decision lock:
 
-- first materialization target for `project_state` capsules
-- review policy for conflicted capsule sections
-- capsule budget and refresh cadence for active projects vs broad subjects
+- the first materialization target for capsule artifacts is
+  `/root/.openclaw/workspace/.openclaw/knowledge/capsules/`
+- the `.openclaw/knowledge/` root must be documented as a derived knowledge
+  artifact root before implementation; it does not replace MMV2 SQL truth
+- conflicted capsule content is compiled into explicit conflict-aware sections
+  and excluded from normal injection unless conflict-aware retrieval is
+  requested
+- capsule refresh cadence is after ingest batch, after relevant
+  correction/supersession, and daily if dirty
+- active project capsules receive eager refresh priority; broad subject
+  capsules start on-demand until usage data justifies precompilation
 
 ## Objective
 
@@ -56,6 +64,29 @@ Canonical memory objects remain the primary store.
 The graph runtime remains the structural substrate.
 
 Capsules are consumable views built on top of both.
+
+## Artifact root
+
+Capsule artifacts should materialize under:
+
+- `/root/.openclaw/workspace/.openclaw/knowledge/capsules/`
+
+This creates a clearer Phase 2 knowledge-artifact namespace for graph and
+capsule outputs.
+
+The current generated model-memory artifact root remains
+`.openclaw/model-memory/` for existing projection and runtime memory artifacts.
+Before capsule implementation, workspace topology and model-memory artifact
+specs should explicitly add `.openclaw/knowledge/` as a derived knowledge root.
+
+The knowledge artifact root must follow the same policy as projections:
+
+- artifact-only output
+- content-hash-addressed files
+- source memory, event, and edge ids in every digest
+- freshness, stale, and conflict markers
+- no generated write-back into root `USER.md` or `MEMORY.md`
+- no bypass around MMV2 admission or reconciliation
 
 ## Why this exists
 
@@ -229,6 +260,19 @@ Suggested triggers:
 - the operator explicitly requests capsule build
 - a scheduled maintenance or review lane asks for refreshed state
 
+Approved first cadence:
+
+- refresh after each completed document-ingest batch that touches the capsule
+  target
+- refresh after relevant correction, supersession, conflict, or lifecycle
+  changes
+- refresh daily if the capsule is marked dirty
+- rebuild on demand for explicit operator inspection
+
+The planner may perform these refreshes automatically because they are derived
+artifact maintenance. It may not use capsule refreshes to create new durable
+semantic truth.
+
 ## Retrieval interaction
 
 Capsules should not replace object-native retrieval for all prompts.
@@ -299,6 +343,11 @@ explicitly forbidden from model use.
 
 No capsule should smuggle imperative external text into a privileged planning or
 tool-execution lane as if it were runtime instruction.
+
+Conflicted, stale, privacy-risk, or prompt-injection-risk content should stay
+visible as bounded metadata or conflict sections rather than silently
+disappearing. Normal retrieval should exclude those sections unless the request
+is explicitly inspection-oriented or conflict-aware.
 
 ## Evaluation criteria
 

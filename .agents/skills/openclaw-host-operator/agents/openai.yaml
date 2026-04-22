@@ -1,0 +1,4 @@
+interface:
+  display_name: Host Operator
+  short_description: Use scoped host_operator_repo access safely.
+  default_prompt: Use $openclaw-host-operator to resolve canonical paths and inspect or edit approved live repo/workspace documents with audit-backed host-operator tooling.

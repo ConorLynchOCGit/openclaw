@@ -23,6 +23,8 @@ Use this skill for MMV2 document ingestion work only. The source of truth is the
 - Do not write evaluation/proof output into the live durable-memory DB.
 - Root `USER.md` and `MEMORY.md` are human-owned compatibility files; never projection-write back into them.
 - Ingest failures are classified, not hidden by broad retries.
+- Do not resume after systemic provider/funnel failures until provider
+  preflight passes and the failed-source quarantine report is reviewed.
 
 ## Default Workflow
 
@@ -34,22 +36,36 @@ ps -eo pid,ppid,stat,etime,cmd | rg 'model-memory-document-ingestion-runner|MODE
 
 2. Inspect the latest checkpoint and daily note before changing state.
 3. Record root `USER.md` / `MEMORY.md` hashes before a live ingest or projection rebuild.
-4. Use the canonical MMV2 runner:
+4. Use the canonical MMV2 runner. Keep provider preflight and the failure
+   circuit breaker enabled unless debugging those controls directly:
 
 ```bash
-MODEL_MEMORY_RUNNER_ID=<run-id> \
-MODEL_MEMORY_RUNNER_CHECKPOINT=checkpoints/model-memory/<checkpoint>.json \
-pnpm exec tsx scripts/model-memory-document-ingestion-runner.ts \
-  --manifest <manifest-or-target-list>
+MODEL_MEMORY_RUNNER_RUN_ID=<run-id> \
+MODEL_MEMORY_RUNNER_RECORD_PATH=checkpoints/model-memory/<checkpoint>.json \
+MODEL_MEMORY_RUNNER_PLAN_PATH=<runner-plan.json> \
+MODEL_MEMORY_RUNNER_PREFLIGHT=1 \
+MODEL_MEMORY_RUNNER_FAILURE_CIRCUIT_BREAKER=1 \
+pnpm exec tsx scripts/model-memory-document-ingestion-runner.ts
 ```
 
-5. For failed-source retry only, use the bounded retry flag from the runner:
+5. For failed-source retry only, use bounded retry plus class filtering after
+   the matching fix is in place:
 
 ```bash
 MODEL_MEMORY_RUNNER_RETRY_FAILED=1 \
-MODEL_MEMORY_RUNNER_CHECKPOINT=checkpoints/model-memory/<checkpoint>.json \
-pnpm exec tsx scripts/model-memory-document-ingestion-runner.ts \
-  --manifest <manifest-or-target-list>
+MODEL_MEMORY_RUNNER_RETRY_FAILED_CLASSES=provider_empty_response,provider_json_boundary \
+MODEL_MEMORY_RUNNER_RECORD_PATH=checkpoints/model-memory/<checkpoint>.json \
+MODEL_MEMORY_RUNNER_PLAN_PATH=<runner-plan.json> \
+pnpm exec tsx scripts/model-memory-document-ingestion-runner.ts
+```
+
+To inspect the failed-source quarantine without provider calls:
+
+```bash
+MODEL_MEMORY_RUNNER_REPORT_ONLY=1 \
+MODEL_MEMORY_RUNNER_RUN_ID=<run-id> \
+MODEL_MEMORY_RUNNER_RECORD_PATH=checkpoints/model-memory/<checkpoint>.json \
+pnpm exec tsx scripts/model-memory-document-ingestion-runner.ts
 ```
 
 6. Pause with a normal process signal, then verify checkpoint state reports no running source.
@@ -60,6 +76,8 @@ pnpm exec tsx scripts/model-memory-document-ingestion-runner.ts \
 ## Failure Classes
 
 - corpus issue
+- provider credit/health issue
+- provider empty-response issue
 - extraction/provider JSON-boundary issue
 - canonicalization issue
 - admission issue
@@ -67,4 +85,4 @@ pnpm exec tsx scripts/model-memory-document-ingestion-runner.ts \
 - projection/rebuild issue
 - timeout/resource issue
 
-Do not solve these by broad semantic matching. If a source is too large or unstable, split/retry that source or defer it with the exact blocker.
+Do not solve these by broad semantic matching. If a source is too large or unstable, use the runner's adaptive splitting for fresh runs, retry only the fixed failure class, or defer it with the exact blocker.

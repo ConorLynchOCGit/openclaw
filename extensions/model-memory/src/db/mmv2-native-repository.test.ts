@@ -331,4 +331,59 @@ describe("MmV2NativeRepository", () => {
       await database.close();
     }
   });
+
+  it("defers invalid live memory edges instead of violating foreign keys", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const repository = new MmV2NativeRepository(database.sql);
+
+      await repository.persistLiveMemoryBatch({
+        durableMemories: [buildMinimalDurableMemory("memory-with-invalid-edge")],
+        memoryEdges: [
+          {
+            edge_id: "edge-invalid-001",
+            schema_version: "memory_edge.v1",
+            from_memory_id: "memory-with-invalid-edge",
+            to_memory_id: "memory-does-not-exist",
+            edge_type: "supersedes",
+            created_at: "2026-04-21T00:00:00.000Z",
+            metadata: { reason: "test-invalid-edge" },
+          },
+        ],
+        memoryEvents: [
+          {
+            memory_event_id: "event-with-deferred-edge",
+            schema_version: "memory_event.v1",
+            event_type: "memory_inserted",
+            occurred_at: "2026-04-21T00:00:00.000Z",
+            actor: "system",
+            source_ingest_event_id: "source-event-001",
+            candidate_id: "candidate-001",
+            memory_id: "memory-with-invalid-edge",
+            target_memory_ids: [],
+            payload: { decision: "write" },
+          },
+        ],
+      });
+
+      expect(await repository.listMemoryEdges()).toEqual([]);
+      const events = await repository.listMemoryEvents();
+      expect(events[0]?.payload).toMatchObject({
+        deferred_memory_edges: [
+          {
+            edge_id: "edge-invalid-001",
+            edge_type: "supersedes",
+            from_memory_id: "memory-with-invalid-edge",
+            to_memory_id: "memory-does-not-exist",
+          },
+        ],
+      });
+      expect((await repository.getDurableMemory("memory-with-invalid-edge"))?.status).toBe(
+        "active",
+      );
+    } finally {
+      await database.close();
+    }
+  });
 });

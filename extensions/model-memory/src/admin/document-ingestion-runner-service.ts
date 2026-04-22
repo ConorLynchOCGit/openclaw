@@ -32,7 +32,11 @@ export type DocumentIngestionRunnerRunStatus =
   | "interrupted";
 
 export type DocumentIngestionRunnerRunError = {
-  phase: "processing_source" | "runtime_rebuild_after_chunk" | "run_record_save";
+  phase:
+    | "processing_source"
+    | "failure_circuit_breaker"
+    | "runtime_rebuild_after_chunk"
+    | "run_record_save";
   message: string;
   name?: string;
   chunkIndex?: number;
@@ -99,11 +103,23 @@ export type DocumentIngestionRunnerRunRecord = {
   runError?: DocumentIngestionRunnerRunError;
 };
 
+export type DocumentIngestionRunnerProgressTelemetry = {
+  docsAttempted: number;
+  docsCompleted: number;
+  docsFailed: number;
+  docsPending: number;
+  totalSources: number;
+  failureRate: number;
+  estimatedRemainingCostUsd?: number;
+  circuitBreakerReason?: string;
+};
+
 export type DocumentIngestionRunnerProgressEvent =
   | {
       type: "phase";
       phase: "start" | "start_chunk" | "resume_chunk" | "complete";
       message: string;
+      telemetry?: DocumentIngestionRunnerProgressTelemetry;
     }
   | {
       type: "source_start";
@@ -111,6 +127,7 @@ export type DocumentIngestionRunnerProgressEvent =
       total: number;
       source: DocumentIngestionRunnerSource;
       message: string;
+      telemetry?: DocumentIngestionRunnerProgressTelemetry;
     }
   | {
       type: "source_complete";
@@ -119,6 +136,7 @@ export type DocumentIngestionRunnerProgressEvent =
       source: DocumentIngestionRunnerSource;
       result: DocumentIngestionRunnerSourceRecord;
       message: string;
+      telemetry?: DocumentIngestionRunnerProgressTelemetry;
     };
 
 export type DocumentIngestionRunnerProcessedSource = {
@@ -134,6 +152,216 @@ export type DocumentIngestionRunnerProcessedSource = {
 export interface DocumentIngestionRunRecordStore {
   load(runId: string): Promise<DocumentIngestionRunnerRunRecord | undefined>;
   save(record: DocumentIngestionRunnerRunRecord): Promise<void>;
+}
+
+export type DocumentIngestionFailureClass =
+  | "provider_credit"
+  | "provider_empty_response"
+  | "provider_connection"
+  | "provider_json_boundary"
+  | "extraction_repair"
+  | "capture_routing_repair"
+  | "canonicalization"
+  | "db_persistence"
+  | "timeout"
+  | "other";
+
+export type DocumentIngestionFailureCircuitBreakerOptions = {
+  enabled?: boolean;
+  maxProviderBoundaryFailuresPerChunk?: number;
+  maxConsecutiveProviderBoundaryFailures?: number;
+  maxChunkFailureRatio?: number;
+  minChunkAttemptsForFailureRatio?: number;
+};
+
+const DEFAULT_FAILURE_CIRCUIT_BREAKER: Required<DocumentIngestionFailureCircuitBreakerOptions> = {
+  enabled: true,
+  maxProviderBoundaryFailuresPerChunk: 5,
+  maxConsecutiveProviderBoundaryFailures: 4,
+  maxChunkFailureRatio: 0.8,
+  minChunkAttemptsForFailureRatio: 6,
+};
+
+export function classifyDocumentIngestionFailure(message: string): DocumentIngestionFailureClass {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("402") || normalized.includes("insufficient credits")) {
+    return "provider_credit";
+  }
+  if (
+    normalized.includes("provider_response missing text content") ||
+    normalized.includes("missing text content in model response")
+  ) {
+    return "provider_empty_response";
+  }
+  if (normalized.includes("connection terminated") || normalized.includes("econnreset")) {
+    return "provider_connection";
+  }
+  if (
+    normalized.includes("expected ',' or '}'") ||
+    normalized.includes("expected property name") ||
+    normalized.includes("unexpected token") ||
+    normalized.includes("unterminated string") ||
+    normalized.includes("unexpected non-whitespace character") ||
+    normalized.includes("bad control character") ||
+    normalized.includes("json")
+  ) {
+    return "provider_json_boundary";
+  }
+  if (
+    normalized.includes("capture routing repair") ||
+    normalized.includes("capture_routing_repair")
+  ) {
+    return "capture_routing_repair";
+  }
+  if (
+    normalized.includes("extraction repair") ||
+    normalized.includes("atomic_extraction_repair") ||
+    normalized.includes("composite_extraction_repair") ||
+    normalized.includes("extraction_repair")
+  ) {
+    return "extraction_repair";
+  }
+  if (
+    normalized.includes("canonicalization produced invalid output") ||
+    normalized.includes("canonicalization_invalid_output")
+  ) {
+    return "canonicalization";
+  }
+  if (normalized.includes("foreign key") || normalized.includes("violates")) {
+    return "db_persistence";
+  }
+  if (normalized.includes("timeout") || normalized.includes("timed out")) {
+    return "timeout";
+  }
+  return "other";
+}
+
+function isProviderBoundaryFailure(failureClass: DocumentIngestionFailureClass): boolean {
+  return (
+    failureClass === "provider_credit" ||
+    failureClass === "provider_empty_response" ||
+    failureClass === "provider_connection" ||
+    failureClass === "provider_json_boundary"
+  );
+}
+
+class DocumentIngestionFailureCircuitBreakerError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DocumentIngestionFailureCircuitBreakerError";
+  }
+}
+
+type ChunkFailureCircuitBreakerState = {
+  attempted: number;
+  failed: number;
+  providerBoundaryFailures: number;
+  consecutiveProviderBoundaryFailures: number;
+  failureCounts: Record<DocumentIngestionFailureClass, number>;
+};
+
+function createChunkFailureCircuitBreakerState(): ChunkFailureCircuitBreakerState {
+  return {
+    attempted: 0,
+    failed: 0,
+    providerBoundaryFailures: 0,
+    consecutiveProviderBoundaryFailures: 0,
+    failureCounts: {
+      provider_credit: 0,
+      provider_empty_response: 0,
+      provider_connection: 0,
+      provider_json_boundary: 0,
+      extraction_repair: 0,
+      capture_routing_repair: 0,
+      canonicalization: 0,
+      db_persistence: 0,
+      timeout: 0,
+      other: 0,
+    },
+  };
+}
+
+function mergeFailureCircuitBreakerOptions(
+  input?: DocumentIngestionFailureCircuitBreakerOptions,
+): Required<DocumentIngestionFailureCircuitBreakerOptions> {
+  const merged: Required<DocumentIngestionFailureCircuitBreakerOptions> = {
+    ...DEFAULT_FAILURE_CIRCUIT_BREAKER,
+  };
+  if (!input) {
+    return merged;
+  }
+  if (input.enabled !== undefined) {
+    merged.enabled = input.enabled;
+  }
+  if (input.maxProviderBoundaryFailuresPerChunk !== undefined) {
+    merged.maxProviderBoundaryFailuresPerChunk = input.maxProviderBoundaryFailuresPerChunk;
+  }
+  if (input.maxConsecutiveProviderBoundaryFailures !== undefined) {
+    merged.maxConsecutiveProviderBoundaryFailures = input.maxConsecutiveProviderBoundaryFailures;
+  }
+  if (input.maxChunkFailureRatio !== undefined) {
+    merged.maxChunkFailureRatio = input.maxChunkFailureRatio;
+  }
+  if (input.minChunkAttemptsForFailureRatio !== undefined) {
+    merged.minChunkAttemptsForFailureRatio = input.minChunkAttemptsForFailureRatio;
+  }
+  return merged;
+}
+
+function updateFailureCircuitBreaker(input: {
+  state: ChunkFailureCircuitBreakerState;
+  options: Required<DocumentIngestionFailureCircuitBreakerOptions>;
+  sourceRecord: DocumentIngestionRunnerSourceRecord;
+  chunkIndex: number;
+}): void {
+  const { state, options, sourceRecord, chunkIndex } = input;
+  if (!options.enabled) {
+    return;
+  }
+
+  state.attempted += 1;
+  if (sourceRecord.status !== "failed") {
+    state.consecutiveProviderBoundaryFailures = 0;
+    return;
+  }
+
+  state.failed += 1;
+  const failureClass = classifyDocumentIngestionFailure(sourceRecord.errorMessage ?? "");
+  state.failureCounts[failureClass] += 1;
+
+  if (failureClass === "provider_credit") {
+    throw new DocumentIngestionFailureCircuitBreakerError(
+      `document ingestion failure circuit breaker tripped in chunk ${chunkIndex}: provider_credit after ${state.failed}/${state.attempted} failed source(s)`,
+    );
+  }
+
+  if (isProviderBoundaryFailure(failureClass)) {
+    state.providerBoundaryFailures += 1;
+    state.consecutiveProviderBoundaryFailures += 1;
+  } else {
+    state.consecutiveProviderBoundaryFailures = 0;
+  }
+
+  if (state.consecutiveProviderBoundaryFailures >= options.maxConsecutiveProviderBoundaryFailures) {
+    throw new DocumentIngestionFailureCircuitBreakerError(
+      `document ingestion failure circuit breaker tripped in chunk ${chunkIndex}: ${state.consecutiveProviderBoundaryFailures} consecutive provider-boundary failures`,
+    );
+  }
+
+  if (state.providerBoundaryFailures >= options.maxProviderBoundaryFailuresPerChunk) {
+    throw new DocumentIngestionFailureCircuitBreakerError(
+      `document ingestion failure circuit breaker tripped in chunk ${chunkIndex}: ${state.providerBoundaryFailures} provider-boundary failures in one chunk`,
+    );
+  }
+
+  if (
+    state.attempted >= options.minChunkAttemptsForFailureRatio &&
+    state.failed / state.attempted >= options.maxChunkFailureRatio
+  ) {
+    throw new DocumentIngestionFailureCircuitBreakerError(
+      `document ingestion failure circuit breaker tripped in chunk ${chunkIndex}: ${state.failed}/${state.attempted} sources failed`,
+    );
+  }
 }
 
 export class JsonFileDocumentIngestionRunRecordStore implements DocumentIngestionRunRecordStore {
@@ -330,23 +558,58 @@ function recalculateRunRecord(
   };
 }
 
+function buildProgressTelemetry(input: {
+  record: DocumentIngestionRunnerRunRecord;
+  estimatedCostPerSourceUsd?: number;
+  circuitBreakerReason?: string;
+}): DocumentIngestionRunnerProgressTelemetry {
+  const docsPending = input.record.sources.filter(
+    (source) => source.status === "pending" || source.status === "running",
+  ).length;
+  const docsAttempted = input.record.totals.docsAttempted;
+  const telemetry: DocumentIngestionRunnerProgressTelemetry = {
+    docsAttempted,
+    docsCompleted: input.record.totals.docsCompleted,
+    docsFailed: input.record.totals.docsFailed,
+    docsPending,
+    totalSources: input.record.sources.length,
+    failureRate: docsAttempted > 0 ? input.record.totals.docsFailed / docsAttempted : 0,
+  };
+  if (input.estimatedCostPerSourceUsd !== undefined) {
+    telemetry.estimatedRemainingCostUsd = docsPending * input.estimatedCostPerSourceUsd;
+  }
+  if (input.circuitBreakerReason) {
+    telemetry.circuitBreakerReason = input.circuitBreakerReason;
+  }
+  return telemetry;
+}
+
 async function runWithConcurrency<T>(
   items: T[],
   maxConcurrency: number,
   worker: (item: T, index: number) => Promise<void>,
 ): Promise<void> {
   let nextIndex = 0;
+  let stopError: unknown;
   const concurrency = Math.max(1, maxConcurrency);
 
   const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (nextIndex < items.length) {
+    while (nextIndex < items.length && !stopError) {
       const currentIndex = nextIndex;
       nextIndex += 1;
-      await worker(items[currentIndex], currentIndex);
+      try {
+        await worker(items[currentIndex], currentIndex);
+      } catch (error) {
+        stopError ??= error;
+        break;
+      }
     }
   });
 
   await Promise.all(runners);
+  if (stopError) {
+    throw stopError;
+  }
 }
 
 export class ModelMemoryDocumentIngestionRunnerService {
@@ -368,10 +631,14 @@ export class ModelMemoryDocumentIngestionRunnerService {
     recordStore?: DocumentIngestionRunRecordStore;
     resume?: boolean;
     retryFailed?: boolean;
+    retryFailedClasses?: DocumentIngestionFailureClass[];
     rebuildRuntime?: boolean;
+    failureCircuitBreaker?: DocumentIngestionFailureCircuitBreakerOptions;
+    estimatedCostPerSourceUsd?: number;
     onProgress?: (event: DocumentIngestionRunnerProgressEvent) => void | Promise<void>;
   }): Promise<DocumentIngestionRunnerRunRecord> {
     const maxConcurrency = Math.max(1, input.maxConcurrency ?? 1);
+    const failureCircuitBreaker = mergeFailureCircuitBreakerOptions(input.failureCircuitBreaker);
     const existingRecord =
       input.resume && input.recordStore ? await input.recordStore.load(input.runId) : undefined;
 
@@ -400,6 +667,10 @@ export class ModelMemoryDocumentIngestionRunnerService {
         type: "phase",
         phase: "start",
         message: `starting document ingestion run ${input.runId} with ${input.sources.length} sources`,
+        telemetry: buildProgressTelemetry({
+          record,
+          estimatedCostPerSourceUsd: input.estimatedCostPerSourceUsd,
+        }),
       });
 
       const orderedChunks = [...new Set(input.sources.map((source) => source.chunkIndex))].toSorted(
@@ -421,7 +692,12 @@ export class ModelMemoryDocumentIngestionRunnerService {
             !existingSource ||
             existingSource.status === "pending" ||
             existingSource.status === "running" ||
-            (input.retryFailed === true && existingSource.status === "failed")
+            (input.retryFailed === true &&
+              existingSource.status === "failed" &&
+              (!input.retryFailedClasses ||
+                input.retryFailedClasses.includes(
+                  classifyDocumentIngestionFailure(existingSource.errorMessage ?? ""),
+                )))
           );
         });
 
@@ -430,6 +706,10 @@ export class ModelMemoryDocumentIngestionRunnerService {
             type: "phase",
             phase: "resume_chunk",
             message: `skipping chunk ${chunkIndex}; already completed in prior run record`,
+            telemetry: buildProgressTelemetry({
+              record,
+              estimatedCostPerSourceUsd: input.estimatedCostPerSourceUsd,
+            }),
           });
           continue;
         }
@@ -443,8 +723,13 @@ export class ModelMemoryDocumentIngestionRunnerService {
           type: "phase",
           phase: "start_chunk",
           message: `starting chunk ${chunkIndex} with ${pendingSources.length} pending sources`,
+          telemetry: buildProgressTelemetry({
+            record,
+            estimatedCostPerSourceUsd: input.estimatedCostPerSourceUsd,
+          }),
         });
 
+        const failureCircuitBreakerState = createChunkFailureCircuitBreakerState();
         await runWithConcurrency(pendingSources, maxConcurrency, async (source) => {
           failurePhase = "processing_source";
           failureSource = source;
@@ -464,6 +749,10 @@ export class ModelMemoryDocumentIngestionRunnerService {
             total: totalSources,
             source,
             message: `ingesting ${sourceIndex}/${totalSources}: ${source.displayPath}`,
+            telemetry: buildProgressTelemetry({
+              record,
+              estimatedCostPerSourceUsd: input.estimatedCostPerSourceUsd,
+            }),
           });
 
           let nextRecord: DocumentIngestionRunnerSourceRecord;
@@ -532,6 +821,18 @@ export class ModelMemoryDocumentIngestionRunnerService {
               nextRecord.status === "completed"
                 ? `completed ${sourceIndex}/${totalSources}: ${source.displayPath} captured=${nextRecord.capturedClaimCount} decisions=${JSON.stringify(nextRecord.writeDecisionCounts)}`
                 : `failed ${sourceIndex}/${totalSources}: ${source.displayPath} error=${nextRecord.errorMessage}`,
+            telemetry: buildProgressTelemetry({
+              record,
+              estimatedCostPerSourceUsd: input.estimatedCostPerSourceUsd,
+            }),
+          });
+
+          failurePhase = "failure_circuit_breaker";
+          updateFailureCircuitBreaker({
+            state: failureCircuitBreakerState,
+            options: failureCircuitBreaker,
+            sourceRecord: nextRecord,
+            chunkIndex,
           });
         });
 
@@ -563,10 +864,16 @@ export class ModelMemoryDocumentIngestionRunnerService {
         type: "phase",
         phase: "complete",
         message: `document ingestion run ${input.runId} complete: completed=${record.totals.docsCompleted} failed=${record.totals.docsFailed}`,
+        telemetry: buildProgressTelemetry({
+          record,
+          estimatedCostPerSourceUsd: input.estimatedCostPerSourceUsd,
+        }),
       });
 
       return record;
     } catch (error) {
+      const circuitBreakerReason =
+        error instanceof DocumentIngestionFailureCircuitBreakerError ? error.message : undefined;
       record = {
         ...recalculateRunRecord(record),
         status: "interrupted",
@@ -582,6 +889,16 @@ export class ModelMemoryDocumentIngestionRunnerService {
         },
       };
       await input.recordStore?.save(record);
+      await input.onProgress?.({
+        type: "phase",
+        phase: "complete",
+        message: `document ingestion run ${input.runId} interrupted: ${record.runError?.message ?? "unknown error"}`,
+        telemetry: buildProgressTelemetry({
+          record,
+          estimatedCostPerSourceUsd: input.estimatedCostPerSourceUsd,
+          circuitBreakerReason,
+        }),
+      });
       throw error;
     }
   }

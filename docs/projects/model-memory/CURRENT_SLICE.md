@@ -28,12 +28,26 @@ The active slice is no longer the old v1 cutover, five-kind storage, or
 packet-only/kind-balance lane. Those records remain useful history, but the
 current implementation authority is MMV2-native durable truth.
 
-The 2026-04-22 document ingest is intentionally paused for an overnight pickup.
+The 2026-04-22 document ingest was resumed through the canonical MMV2 runner
+and is currently stopped for ingestion-funnel hardening, not because the
+document corpus should be abandoned.
 The checkpoint is
-`checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json` with 100
-attempted, 92 completed, 8 failed, 204 pending, and no running source at pause.
-This pause is not a retrieval/projection hardening failure and must not be
-worked around with semantic forests or topic heuristics.
+`checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json` with 200
+completed, 79 failed, 24 pending, and one stale `running` source marker after
+operator interruption. No runner process is active. The dominant failure
+classes are provider missing-text responses, prior OpenRouter 402 credit
+exhaustion, extraction/repair validation failures, JSON-boundary failures, and
+one DB edge foreign-key failure. This must not be worked around with semantic
+forests, topic heuristics, fuzzy write-path correction, or legacy collision
+fallback.
+
+Ingestion-funnel hardening is now implemented for provider health preflight,
+strict missing-text retry caps, optional alternate model/provider fallback,
+adaptive large-source splitting for fresh runs, failed-source quarantine
+reports, class-filtered failed-source retry, progress/cost telemetry, and
+FK-safe memory-edge deferral. The corpus should still be resumed only after
+provider credits are confirmed and the operator intentionally chooses the fixed
+failure classes to retry.
 
 The 2026-04-22 hardening landing proof is rooted at
 `.artifacts/model-memory/soak-ui-validation/2026-04-22-hardening-land-soak/`.
@@ -133,6 +147,16 @@ runtime availability caveat. The affected item was rerun in isolation as
   `.artifacts/model-memory/document-ingest/2026-04-22-corpus/`
 - the MMV2 deep-ingest operator skill is installed in both repo-local OpenClaw
   skills and Codex global skills as `model-memory-deep-ingest`
+- 2026-04-22 QoL/runtime work is active in the live gateway:
+  - long assistant responses keep full text separate from compact preview
+  - the feed exposes full/open/copy/export actions for long responses
+  - queued prompts remain visible inline and transition to running
+  - memory activity is rendered as bounded metadata/timeline chips instead of
+    ordinary assistant transcript bubbles
+  - `resolve_openclaw_path` is available to prevent duplicate canonical-path
+    mistakes
+  - host-operator remains a scoped/audited design posture, not blanket Main
+    host access
 - legacy compatibility remains only as soak-window fallback:
   - legacy-shaped captured-object write compatibility
   - legacy-style read projection compatibility at edges where still needed
@@ -164,9 +188,12 @@ runtime availability caveat. The affected item was rerun in isolation as
 2. Treat `ContextEngine.ingest` and `ContextEngine.ingestBatch` hook evidence
    as production evidence only when it comes from real UI/gateway turns; do not
    fake production verification from direct internal calls.
-3. Resume the curated 304-source document-ingest corpus later from checkpoint
-   `checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json`; do not
-   resume it during build-focused hardening work.
+3. Do not resume the curated 304-source document-ingest corpus until provider
+   health/credit preflight passes. Resume
+   from checkpoint `checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json`
+   only with provider credits restored, bounded class-filtered failed-source
+   retry, the runner failure circuit breaker enabled, and the failed-source
+   quarantine report reviewed.
 4. Continue hardening Retrieval Runtime relevance and telemetry without
    mutating truth:
    - prefer fresh projection digests backed by active MMV2 ids

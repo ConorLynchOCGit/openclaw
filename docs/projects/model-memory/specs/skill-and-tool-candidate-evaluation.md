@@ -7,8 +7,12 @@ title: "Skill And Tool Candidate Evaluation"
 
 ## Objective
 
-Define how internal and third-party skill or tool candidates are judged before
-promotion.
+Define how internal and third-party skill, tool, and workflow candidates are
+judged before promotion.
+
+Candidate discovery may be proactive. The planner may create and surface
+candidate artifacts when repeated evidence crosses threshold, especially through
+heartbeat and locally relevant turns. Promotion remains approval-gated.
 
 ## Required checks
 
@@ -18,6 +22,14 @@ promotion.
 - contract validation
 - safety and permission review
 - operator approval
+
+### Workflow candidates
+
+- repeated successful workflow evidence
+- bounded reusable procedure or automation boundary
+- no raw prompt, transcript, or tool-log dependency
+- rollback or disable posture for any automation proposal
+- operator approval before standing automation
 
 ### Third-party candidates
 
@@ -56,3 +68,7 @@ The candidate should not proceed through that path.
 
 Under the current skills posture, approved install should be treated as live
 availability rather than staged quarantine.
+
+Workflow automation approval should be treated the same way: if approved and
+enabled, it is real behavior. Therefore the review artifact must clearly state
+the trigger, scope, disable path, and evidence before approval.

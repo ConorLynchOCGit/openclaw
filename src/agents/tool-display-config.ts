@@ -461,6 +461,37 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       title: "Agents",
       detailKeys: [],
     },
+    resolve_openclaw_path: {
+      emoji: "🧭",
+      title: "Resolve Path",
+      detailKeys: ["path", "actorProfile"],
+    },
+    host_operator_repo: {
+      emoji: "🔐",
+      title: "Host Operator",
+      actions: {
+        status: {
+          label: "status",
+          detailKeys: ["scope"],
+        },
+        list: {
+          label: "list",
+          detailKeys: ["scope", "path"],
+        },
+        read: {
+          label: "read",
+          detailKeys: ["scope", "path"],
+        },
+        edit: {
+          label: "edit",
+          detailKeys: ["scope", "path"],
+        },
+        exec: {
+          label: "exec",
+          detailKeys: ["scope", "path", "command"],
+        },
+      },
+    },
     memory_search: {
       emoji: "🧠",
       title: "Memory Search",

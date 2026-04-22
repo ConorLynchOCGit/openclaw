@@ -10,6 +10,7 @@ const ERROR_LABEL = "Copy failed";
 type CopyButtonOptions = {
   text: () => string;
   label?: string;
+  showLabel?: boolean;
 };
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
@@ -88,14 +89,22 @@ function createCopyButton(options: CopyButtonOptions): TemplateResult {
         <span class="chat-copy-btn__icon-copy">${icons.copy}</span>
         <span class="chat-copy-btn__icon-check">${icons.check}</span>
       </span>
+      ${options.showLabel ? html`<span class="chat-copy-btn__label">${idleLabel}</span>` : ""}
     </button>
   `;
 }
 
-export function renderCopyButton(text: string, label = COPY_LABEL): TemplateResult {
-  return createCopyButton({ text: () => text, label });
+export function renderCopyButton(
+  text: string,
+  label = COPY_LABEL,
+  options?: { showLabel?: boolean },
+): TemplateResult {
+  return createCopyButton({ text: () => text, label, showLabel: options?.showLabel });
 }
 
-export function renderCopyAsMarkdownButton(markdown: string): TemplateResult {
-  return renderCopyButton(markdown, COPY_LABEL);
+export function renderCopyAsMarkdownButton(
+  markdown: string,
+  options?: { showLabel?: boolean },
+): TemplateResult {
+  return renderCopyButton(markdown, COPY_LABEL, options);
 }

@@ -518,7 +518,31 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
         await repository.upsertDurableMemory(durableMemory);
       }
 
+      const knownMemoryIds = new Set(batch.durableMemories.map((memory) => memory.memory_id));
+      const deferredEdges: Array<{ edge: MemoryEdge; reason: string }> = [];
+      const validEdges: MemoryEdge[] = [];
       for (const edge of batch.memoryEdges) {
+        const endpointIds = [edge.from_memory_id, edge.to_memory_id];
+        for (const endpointId of endpointIds) {
+          if (!knownMemoryIds.has(endpointId) && (await repository.getDurableMemory(endpointId))) {
+            knownMemoryIds.add(endpointId);
+          }
+        }
+
+        const missingEndpointIds = endpointIds.filter(
+          (endpointId) => !knownMemoryIds.has(endpointId),
+        );
+        if (missingEndpointIds.length > 0) {
+          deferredEdges.push({
+            edge,
+            reason: `missing endpoint memory id(s): ${missingEndpointIds.join(", ")}`,
+          });
+          continue;
+        }
+        validEdges.push(edge);
+      }
+
+      for (const edge of validEdges) {
         await repository.upsertMemoryEdge(edge);
         if (edge.edge_type === "supersedes") {
           await repository.markDurableMemoryStatus({
@@ -531,7 +555,26 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
       }
 
       for (const event of batch.memoryEvents) {
-        await repository.insertMemoryEvent(event);
+        const deferredEdgesForMemory = deferredEdges.filter(
+          (entry) => entry.edge.from_memory_id === event.memory_id,
+        );
+        await repository.insertMemoryEvent(
+          deferredEdgesForMemory.length > 0
+            ? {
+                ...event,
+                payload: {
+                  ...event.payload,
+                  deferred_memory_edges: deferredEdgesForMemory.map((entry) => ({
+                    edge_id: entry.edge.edge_id,
+                    edge_type: entry.edge.edge_type,
+                    from_memory_id: entry.edge.from_memory_id,
+                    to_memory_id: entry.edge.to_memory_id,
+                    reason: entry.reason,
+                  })),
+                },
+              }
+            : event,
+        );
       }
     });
   }

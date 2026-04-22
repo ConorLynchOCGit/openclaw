@@ -55,9 +55,70 @@ raw-data stores, or prompt-injection vectors.
 
 ## Open Decisions
 
-- exact threshold for quarantine vs reject on prompt-injection text
-- whether high-risk source classes need mandatory review before projection use
-- retention policy for redacted safety findings
-- operator surface for blocked memory candidates
-- whether privacy-risk review should run before or after admission scoring for
-  each capture seam
+Remaining implementation decisions:
+
+- exact numeric thresholds for risk scoring by source class
+- retention duration for redacted safety findings by severity
+- exact heartbeat and daily-review UI shape for blocked candidate summaries
+- final config and kill-switch names
+
+2026-04-22 Phase 2 decision lock:
+
+- privacy and prompt-injection handling must not depend on manual review as the
+  normal path
+- hard-reject raw secrets, raw prompts, full transcripts, raw tool logs, and
+  private phrases from durable memory and telemetry
+- quarantine high-risk prompt-injection-looking text from normal retrieval,
+  projections, capsules, graph expansion, planner recommendations, and skill or
+  tool synthesis
+- allow redacted safety findings and source refs where useful, but do not turn
+  hostile or imperative external text into standing instructions
+- if the operator does not review a blocked or quarantined item, the safe
+  default is to keep it rejected, quarantined, expired, or inspection-only; it
+  must not silently graduate into normal memory use
+- heartbeat and daily review are the first operator surfaces for high-severity
+  blocked items; a dedicated UI can come later if volume justifies it
+
+## Automatic safe-default policy
+
+The first implementation should use automatic risk tiers.
+
+Suggested tiers:
+
+- `allow`
+- `allow_lower_authority`
+- `inspection_only`
+- `quarantine`
+- `reject`
+
+`allow` and `allow_lower_authority` records may flow through normal MMV2
+admission and retrieval policy when their source class permits it.
+
+`inspection_only` records may be visible in explicit operator inspection,
+security, or conflict packs, but should be excluded from normal context
+injection.
+
+`quarantine` records should retain only bounded ids, hashes, source refs,
+redacted findings, and reason codes. They should not appear in normal
+retrieval, projection, graph, capsule, planner, skill, or tool synthesis flows.
+
+`reject` records should leave no active durable semantic memory. Rejection
+evidence should remain bounded and redacted.
+
+Manual review can override these outcomes only through an explicit reviewed
+path. Lack of review should never promote a risky item.
+
+## Heartbeat privacy surface
+
+Heartbeat should surface only bounded privacy and prompt-injection summaries:
+
+- count by risk tier
+- affected source ids or hashes
+- reason codes
+- age
+- recommended safe action
+
+Heartbeat must not reveal raw secret values, raw prompts, full transcripts, raw
+tool logs, private phrases, or hostile imperative text. If no operator action
+is taken, stale quarantines should expire or remain inspection-only according
+to policy.

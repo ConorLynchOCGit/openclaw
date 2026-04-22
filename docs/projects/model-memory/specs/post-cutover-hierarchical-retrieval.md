@@ -31,12 +31,26 @@ multi-objective prompts after the Memory Retrieval Runtime V1 is proven.
 - graph/capsule/projection lanes are read-time candidate sources only and must
   be attributable to active MMV2 source ids
 
-Open decisions before implementation:
+2026-04-22 Phase 2 decision lock:
 
-- default sub-query budget for broad planning prompts
-- when model-assisted decomposition is allowed vs deterministic-only
-- how to merge duplicate candidates across sub-queries without semantic-family
-  collapse
+- use deterministic single-pass retrieval as the default and escalate only when
+  the prompt is broad or multi-objective
+- default broad-planning budget is at most `3` sub-queries, with up to `5` only
+  for explicit proof or operator inspection surfaces
+- model-assisted decomposition is allowed only to propose bounded sub-query
+  plans; it cannot define truth, write memory, create corrections, or infer
+  same-family identity
+- duplicate candidates across sub-queries merge by object id, source memory id,
+  source event id, source ref, projection/capsule digest id, and structural
+  scope, not fuzzy semantic family
+- hierarchical retrieval may use graph, capsule, projection, lexical, and
+  recency signals only as read-time ranking inputs
+
+Remaining implementation decisions:
+
+- exact shadow-eval threshold for enabling hierarchical retrieval by default on
+  broad prompts
+- default token budgets per pack family once project-state capsules exist
 
 The V1 retrieval runtime starts with:
 

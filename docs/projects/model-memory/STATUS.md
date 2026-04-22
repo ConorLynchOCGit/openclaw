@@ -7,7 +7,7 @@ title: "Model Memory Status"
 
 ## Overall
 
-State: `mmv2_hardening_landed_ingest_paused`
+State: `mmv2_hardening_landed_ingest_stopped_for_funnel_hardening`
 
 Current authority:
 
@@ -51,10 +51,27 @@ Current authority:
   `.artifacts/model-memory/post-landing/2026-04-22-verification-baseline/`
 - the current deep-ingest substrate pass uses a curated 304-source corpus
   rooted at `.artifacts/model-memory/document-ingest/2026-04-22-corpus/`
-- document ingest is paused for overnight continuation at
+- document ingest was resumed for overnight continuation at
   `checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json`
-  with 100 attempted, 92 completed, 8 failed, 204 pending, and no running
-  source at pause
+  and is now stopped for ingestion-funnel hardening with 200 completed,
+  79 failed, 24 pending, and one stale `running` source marker after operator
+  interruption; no active runner process remains
+- current document-ingest failure posture:
+  - provider missing-text responses became a systemic cascade in gateway docs
+  - prior OpenRouter 402 credit exhaustion remains a hard circuit-breaker class
+  - secondary failures: provider JSON-boundary, extraction repair,
+    capture-routing repair, canonicalization drift, stale-source timeout,
+    transient DB/provider connection terminations, and one DB edge
+    foreign-key failure
+  - do not broad-retry completed sources; resume only with explicit bounded
+    retry and the runner failure circuit breaker enabled
+  - do not solve failures with semantic forests, topic parsers, fuzzy
+    supersession, or legacy collision fallback
+- ingestion-funnel hardening now includes provider health/credit preflight,
+  strict missing-text retry caps, optional alternate model/provider fallback,
+  adaptive large-source splitting for fresh runs, failed-source quarantine
+  reports, class-filtered failed-source retry, progress/cost telemetry, and
+  FK-safe memory-edge deferral
 - legacy-shaped storage/object compatibility remains present only for the
   agreed soak-window fallback posture
 - old v1/spec-closure language is historical design provenance, not current
@@ -148,6 +165,11 @@ Current 2026-04-22 hardening progress:
   silently constructing legacy captured-object fallback stores
 - the document-ingest runner now uses the MMV2 JSON prompt contract directly
   and supports explicit failed-source retry on resume
+- runner resume is now hardened with provider preflight, strict missing-text
+  retry caps, optional alternate model/provider fallback, adaptive large-source
+  splitting, failed-source quarantine reports, class-filtered retry,
+  progress/cost telemetry, and invalid-edge deferral before `memory_edges`
+  writes
 - retrieval request scope persistence now hashes raw-like scope values instead
   of storing prompt/session-key/current-turn text fields
 - retrieval pack metrics now include exclusion-backed miss diagnostics such as
@@ -161,6 +183,16 @@ Current 2026-04-22 hardening progress:
 - live activity feed pickup was validated by rebuilding/recreating only
   `openclaw-gateway`; health checks passed and `modelMemory.enabled=true`
   remained active
+- 2026-04-22 QoL/runtime pickup is active in the live gateway:
+  - long response cards retain full markdown while rendering compact previews
+  - queued prompts remain visible inline with queue/running state
+  - memory activity is rendered as bounded metadata/timeline UI rather than
+    assistant transcript spam
+  - the `resolve_openclaw_path` tool resolves canonical repo/workspace/import
+    targets and blocks duplicate tree creation when a repo executor or
+    host-write bridge is required
+  - host-operator posture is scoped, audited, kill-switchable, and explicitly
+    not blanket Main host access
 - fallback quarantine tests now cover captured-object write fallback and the
   document-ingestion collision-adjudicator fallback import; both require the
   explicit rollback flag before legacy behavior is reachable
@@ -172,8 +204,11 @@ Current 2026-04-22 hardening progress:
 
 Remaining from the active pass:
 
-- keep document ingest paused until the overnight window and resume from the
-  checkpoint with the MMV2 skill/runbook
+- keep document ingest stopped until provider credits and provider response
+  stability are confirmed, then resume from the checkpoint with the MMV2
+  skill/runbook and failure circuit breaker; do not edit the durable DB
+  manually and do not use semantic/fuzzy compatibility to force failures past
+  admission
 - keep live retrieval availability under observation: the hardening recall
   rerun had projection-backed fresh-id evidence, but also logged one
   retrieval-context timeout before the final answer

@@ -122,6 +122,30 @@ Top-level bootstrap files are rendered views, not the primary generated store.
 For `memory-md`, the current live rendered view is the generated runtime
 artifact path, not the curated workspace file.
 
+## Phase 2 knowledge artifact root
+
+Phase 2 graph and capsule artifacts should use a derived knowledge namespace:
+
+- `.openclaw/knowledge/`
+
+The first approved subdirectory is:
+
+- `.openclaw/knowledge/capsules/`
+
+This path is for compiled knowledge artifacts, not canonical memory truth.
+MMV2 SQL remains the source of truth, and `.openclaw/model-memory/` remains the
+current root for existing model-memory projection/runtime artifacts.
+
+Before implementation, workspace topology docs should record
+`.openclaw/knowledge/` as a generated/derived artifact root. Generated knowledge
+artifacts must follow the same rules as projection artifacts:
+
+- content-hash-addressed output
+- source memory, event, and edge ids in digests
+- freshness, stale, and conflict markers
+- no generated write-back into root `USER.md` or `MEMORY.md`
+- no bypass around admission, reconciliation, or structural correction
+
 ## What belongs in bootstrap files
 
 Compile into bootstrap files only when the memory is:

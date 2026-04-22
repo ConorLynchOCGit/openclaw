@@ -1,0 +1,241 @@
+---
+summary: "Immediate and longer-term spec for OpenClaw operator UX quality-of-life work."
+title: "Operator UX QoL Roadmap"
+---
+
+# Operator UX QoL Roadmap
+
+## Problem
+
+The current operator loop has weak observability. Long tasks can appear idle, queued prompts can feel lost, memory events can clutter the transcript, and host permission state is not obvious. This makes OpenClaw feel unreliable even when work is progressing.
+
+## Project Ownership
+
+Operator Experience owns the UX and workflow layer.
+
+Related projects:
+
+- Workspace Topology owns canonical path resolution and host-operator access mechanics.
+- Model Memory owns MMV2 retrieval, capture, projection, and memory event semantics.
+- Agent Foundation owns agent/tool/skill packaging and role behavior.
+
+## Quick Wins
+
+### Persistent Elapsed-Time Status
+
+Show elapsed time on the active working card and keep it stable in the feed.
+
+Status: first pass implemented in the chat view.
+
+Requirements:
+
+- Show immediately on queued/running prompts.
+- Update at low frequency, such as once per second.
+- Preserve reduced-motion compatibility.
+- Fall back to `running` when detailed phases are unavailable.
+
+Validation:
+
+- UI test for queued-to-running-to-complete transition.
+- Manual proof that a long task has visible elapsed time.
+
+### Cancel and Retry on Working Card
+
+Expose run control where backend support exists.
+
+Status: cancel first pass is wired where abort support exists. Retry renders as unavailable with an explicit reason until durable replay support exists.
+
+Requirements:
+
+- Cancel for queued and running runs when cancellation is supported.
+- Retry for failed/completed runs when replay inputs are safe.
+- Disabled state with tooltip when unsupported.
+
+Validation:
+
+- Queue cancellation test.
+- Retry action test against a harmless failed run fixture.
+
+### Memory and Retrieval Timeline Chips
+
+Render memory activity as structured timeline chips/cards.
+
+Status: first pass implemented for structured model-memory activity messages and legacy `[Memory Activity]` compatibility messages.
+
+Chip types:
+
+- retrieval checked
+- pack injected
+- projection digest used
+- capture skipped
+- memory written
+- retrieval empty
+- miss diagnostic
+
+Expanded metadata:
+
+- retrieval request/result ids
+- selected memory ids
+- excluded ids and reasons
+- projection ids
+- capture event ids
+- pack ids
+
+Privacy rules:
+
+- No raw prompt text.
+- No full transcript.
+- No raw tool logs.
+- No private phrase or secret values.
+
+### Host-Operator Mode Badge
+
+Show current host permission state in the shell/header and per-run diagnostics.
+
+Status: first pass implemented in the operator diagnostics panel. Live backend tool-status telemetry remains pending.
+
+States:
+
+- ordinary
+- host-operator read-only
+- host-operator write-enabled
+- host-operator exec-enabled
+- disabled by kill switch
+
+Badge should include the active scope when relevant:
+
+- `live_repo`
+- `operator_workspace`
+
+### Copy Diagnostic Bundle
+
+Provide a one-click redacted bundle for debugging.
+
+Status: first pass implemented in working cards and operator diagnostics.
+
+Include:
+
+- run id
+- session id
+- queue state
+- current phase
+- elapsed time
+- tool names and statuses
+- retrieval/capture ids and counts
+- host-operator mode and audit ids
+- relevant artifact paths
+- client build/version when available
+
+Exclude by default:
+
+- raw prompts
+- full transcripts
+- raw tool logs
+- secrets
+- private phrases
+- root `USER.md` and `MEMORY.md` content
+
+## Medium Work
+
+### Durable Run-History Page
+
+Persist redacted run summaries so operators can review long-running and failed work after the feed moves on.
+
+Status: pending dedicated page. The chat view now includes a first-pass redacted run-history summary from loaded sessions.
+
+### Retrieval Proof Explorer
+
+Expose why a response did or did not use durable memory.
+
+Status: pending dedicated explorer. The chat view now includes a first-pass retrieval proof summary from visible memory activity events.
+
+Must show:
+
+- query hash or redacted query label
+- request/result ids
+- selected memories
+- excluded candidates and reasons
+- projection digest sources
+- `memory_existed_but_excluded` diagnostics
+
+### Projection Artifact Browser
+
+Browse materialized projection artifacts without treating them as truth.
+
+Status: pending dedicated browser. The chat view now includes a first-pass projection artifact summary from visible memory/projection activity events.
+
+Must show:
+
+- projection id/type
+- artifact path
+- content hash
+- freshness
+- source memory/event/edge ids
+- stale/conflict markers
+
+### Permission-Mode Switcher
+
+Let the operator intentionally switch from ordinary mode into host-operator read-only, write-enabled, or exec-enabled mode.
+
+Rules:
+
+- No default blanket host access.
+- Every escalation needs visible state and audit logging.
+- Write and exec remain separately kill-switch gated.
+
+### Queue Manager
+
+Manage queued and background work.
+
+Capabilities:
+
+- view queue
+- cancel queued work
+- edit before start when safe
+- retry failed work
+- pause/resume long jobs
+- show blocked state and reason
+
+### Diff, Test, and Build Status Cards
+
+Represent engineering work as structured status cards instead of prose.
+
+Status: first-pass command classification is implemented for visible tool messages. Full command lifecycle cards remain pending.
+
+Cards:
+
+- git status
+- diff summary
+- test command
+- build command
+- runtime pickup
+- push/commit state
+
+## Longer-Term Spec
+
+The target shape is an operator console that unifies:
+
+- current run status
+- durable run history
+- queue manager
+- host permission mode
+- git/diff/test/build state
+- artifacts and reports
+- memory/retrieval/projection evidence
+- diagnostic bundle export
+
+The console should keep the main transcript readable while preserving full operational detail one click away.
+
+## Guardrails
+
+- Do not store raw prompts, full transcripts, raw tool logs, secrets, or private phrases in diagnostic or memory activity records by default.
+- Do not show generated projection output as canonical truth.
+- Do not let host-operator mode imply broad host filesystem access.
+- Do not hide unsupported actions. Show disabled controls with exact reason.
+
+## Acceptance
+
+- A user can always tell whether a run is queued, running, blocked, failed, or complete.
+- A user can inspect memory/retrieval/capture activity without transcript spam.
+- A user can export a useful diagnostic bundle without leaking sensitive content.
+- A user can see whether Main has ordinary or host-operator permissions before asking it to touch files.

@@ -21,6 +21,25 @@ Each `project_state` capsule should identify:
 - `content_hash`
 - `built_at`
 
+## Materialization target
+
+`project_state` capsule artifacts should materialize under:
+
+- `/root/.openclaw/workspace/.openclaw/knowledge/capsules/`
+
+This is a derived knowledge artifact path, not canonical semantic storage.
+Before implementation, workspace topology docs should record
+`.openclaw/knowledge/` as the Phase 2 knowledge-artifact root.
+
+Each materialized capsule should include:
+
+- markdown page
+- JSON digest
+- manifest or index entry
+
+File names should be content-hash-addressed and should not overwrite root
+`USER.md` or `MEMORY.md`.
+
 ## Suggested sections
 
 ### Identity
@@ -75,6 +94,23 @@ Each `project_state` capsule should identify:
 - graph neighborhoods
 - supporting documents
 
+## Required provenance fields
+
+Every capsule digest should include:
+
+- `source_memory_ids`
+- `source_event_ids`
+- `source_edge_ids`
+- `content_hash`
+- `built_at`
+- `freshness`
+- `stale_markers`
+- `conflict_markers`
+- `artifact_paths`
+
+Retrieval may use the capsule only when all required source memory ids are
+active MMV2 ids or the request is explicitly inspection-oriented.
+
 ## Authority fields
 
 Each section should preserve:
@@ -92,3 +128,4 @@ Each section should preserve:
 - usefulness for project-oriented prompts
 - authored-doc alignment
 - contradiction visibility
+- root `USER.md` / `MEMORY.md` no-write proof

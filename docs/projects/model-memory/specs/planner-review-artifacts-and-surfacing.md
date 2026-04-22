@@ -51,6 +51,25 @@ Show:
 - all pending `must_surface`
 - summary counts for other pending classes
 
+Heartbeat is also the first runtime surface for proactive planner maintenance.
+When planner work exists, heartbeat should report bounded activity instead of
+returning only `HEARTBEAT_OK`.
+
+Heartbeat may surface:
+
+- skill candidates
+- tool candidates
+- workflow candidates
+- dirty graph, capsule, projection, or cache state
+- repeated retrieval misses
+- stale or conflicted derived artifacts
+- high-risk privacy or prompt-injection quarantine summaries
+
+Heartbeat may trigger reversible derived maintenance when enabled by policy. It
+must not silently write canonical MMV2 truth, install skills, enable tools,
+promote workflows, or reveal raw prompts, transcripts, tool logs, secrets, or
+private phrases.
+
 ### Daily operator review
 
 Show:
@@ -63,3 +82,18 @@ Show:
 
 The same `candidateId` must appear across turn, heartbeat, and daily review so
 operator cognition is not wasted on duplicated but renamed items.
+
+## Dedupe and expiry
+
+Planner candidates should dedupe by stable candidate id, target id, candidate
+type, source evidence refs, and recommended action.
+
+Repeated findings should update recurrence count and last-seen time instead of
+creating new candidate rows.
+
+Stale candidates should expire when:
+
+- the affected source memory ids are no longer active
+- the graph, capsule, projection, or cache state no longer reproduces the issue
+- the recommendation has been rejected
+- the configured TTL passes with no renewed evidence

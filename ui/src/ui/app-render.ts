@@ -1837,6 +1837,15 @@ export function renderApp(state: AppViewState) {
               onSessionKeyChange: (next) => {
                 switchChatSession(state, next);
               },
+              runId: state.chatRunId,
+              runtimeVersion: state.hello?.server?.version ?? null,
+              hostOperatorStatus: {
+                state: state.connected ? "read_only" : "ordinary",
+                scopes: ["live_repo", "operator_workspace"],
+                reason: state.connected
+                  ? "Scoped host-operator reads are available when the tool is enabled; writes and exec remain env kill-switch gated."
+                  : "Gateway disconnected.",
+              },
               thinkingLevel: state.chatThinkingLevel,
               showThinking,
               showToolCalls,

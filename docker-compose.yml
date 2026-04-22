@@ -38,6 +38,15 @@ services:
       MODEL_MEMORY_CAPTURE_SEAM_AGENT_END_ENABLED: ${MODEL_MEMORY_CAPTURE_SEAM_AGENT_END_ENABLED:-true}
       MODEL_MEMORY_TOOL_RESULT_PROOF_CAPTURE_ENABLED: ${MODEL_MEMORY_TOOL_RESULT_PROOF_CAPTURE_ENABLED:-true}
       MODEL_MEMORY_CONTEXT_INGEST_PRODUCTION_PROBE_ENABLED: ${MODEL_MEMORY_CONTEXT_INGEST_PRODUCTION_PROBE_ENABLED:-true}
+      OPENCLAW_HOST_OPERATOR_ENABLED: ${OPENCLAW_HOST_OPERATOR_ENABLED:-true}
+      OPENCLAW_HOST_OPERATOR_WRITE_ENABLED: ${OPENCLAW_HOST_OPERATOR_WRITE_ENABLED:-false}
+      OPENCLAW_HOST_OPERATOR_EXEC_ENABLED: ${OPENCLAW_HOST_OPERATOR_EXEC_ENABLED:-false}
+      OPENCLAW_HOST_OPERATOR_REPO_ROOT: ${OPENCLAW_HOST_OPERATOR_REPO_ROOT:-/home/node/.openclaw/host-operator/openclaw-live}
+      OPENCLAW_HOST_OPERATOR_CANONICAL_REPO_ROOT: ${OPENCLAW_HOST_OPERATOR_CANONICAL_REPO_ROOT:-/root/services/openclaw-roles/live}
+      OPENCLAW_HOST_OPERATOR_PRODUCT_IMPORT_ROOT: ${OPENCLAW_HOST_OPERATOR_PRODUCT_IMPORT_ROOT:-/home/node/.openclaw/workspace/imports/product_live/content}
+      OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT: ${OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT:-/home/node/.openclaw/workspace}
+      OPENCLAW_HOST_OPERATOR_CANONICAL_WORKSPACE_ROOT: ${OPENCLAW_HOST_OPERATOR_CANONICAL_WORKSPACE_ROOT:-/root/.openclaw/workspace}
+      OPENCLAW_HOST_OPERATOR_AUDIT_DIR: ${OPENCLAW_HOST_OPERATOR_AUDIT_DIR:-/home/node/.openclaw/workspace/.openclaw/host-operator-audit}
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
@@ -47,6 +56,8 @@ services:
       # Canonical workspace-visible host filesystem surfaces.
       - /:/home/node/.openclaw/workspace/system/hostfs:ro
       - /root/services/openclaw-roles/live:/home/node/.openclaw/workspace/imports/product_live/content:ro
+      # Scoped host-operator repo bridge. Workspace scope uses the existing workspace mount.
+      - /root/services/openclaw-roles/live:/home/node/.openclaw/host-operator/openclaw-live:rw
       - /root/openclaw-config:/home/node/.openclaw/workspace/imports/config_dr/content:ro
       - /root/services/webhook-gateway:/home/node/.openclaw/workspace/imports/webhook_gateway/content:ro
       - /root/.openclaw:/home/node/.openclaw/workspace/imports/runtime_state/content:ro
@@ -130,6 +141,15 @@ services:
       MODEL_MEMORY_CAPTURE_SEAM_AGENT_END_ENABLED: ${MODEL_MEMORY_CAPTURE_SEAM_AGENT_END_ENABLED:-true}
       MODEL_MEMORY_TOOL_RESULT_PROOF_CAPTURE_ENABLED: ${MODEL_MEMORY_TOOL_RESULT_PROOF_CAPTURE_ENABLED:-true}
       MODEL_MEMORY_CONTEXT_INGEST_PRODUCTION_PROBE_ENABLED: ${MODEL_MEMORY_CONTEXT_INGEST_PRODUCTION_PROBE_ENABLED:-true}
+      OPENCLAW_HOST_OPERATOR_ENABLED: ${OPENCLAW_HOST_OPERATOR_ENABLED:-true}
+      OPENCLAW_HOST_OPERATOR_WRITE_ENABLED: ${OPENCLAW_HOST_OPERATOR_WRITE_ENABLED:-false}
+      OPENCLAW_HOST_OPERATOR_EXEC_ENABLED: ${OPENCLAW_HOST_OPERATOR_EXEC_ENABLED:-false}
+      OPENCLAW_HOST_OPERATOR_REPO_ROOT: ${OPENCLAW_HOST_OPERATOR_REPO_ROOT:-/home/node/.openclaw/host-operator/openclaw-live}
+      OPENCLAW_HOST_OPERATOR_CANONICAL_REPO_ROOT: ${OPENCLAW_HOST_OPERATOR_CANONICAL_REPO_ROOT:-/root/services/openclaw-roles/live}
+      OPENCLAW_HOST_OPERATOR_PRODUCT_IMPORT_ROOT: ${OPENCLAW_HOST_OPERATOR_PRODUCT_IMPORT_ROOT:-/home/node/.openclaw/workspace/imports/product_live/content}
+      OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT: ${OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT:-/home/node/.openclaw/workspace}
+      OPENCLAW_HOST_OPERATOR_CANONICAL_WORKSPACE_ROOT: ${OPENCLAW_HOST_OPERATOR_CANONICAL_WORKSPACE_ROOT:-/root/.openclaw/workspace}
+      OPENCLAW_HOST_OPERATOR_AUDIT_DIR: ${OPENCLAW_HOST_OPERATOR_AUDIT_DIR:-/home/node/.openclaw/workspace/.openclaw/host-operator-audit}
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
@@ -139,6 +159,8 @@ services:
       # Canonical workspace-visible host filesystem surfaces.
       - /:/home/node/.openclaw/workspace/system/hostfs:ro
       - /root/services/openclaw-roles/live:/home/node/.openclaw/workspace/imports/product_live/content:ro
+      # Scoped host-operator repo bridge. Workspace scope uses the existing workspace mount.
+      - /root/services/openclaw-roles/live:/home/node/.openclaw/host-operator/openclaw-live:rw
       - /root/openclaw-config:/home/node/.openclaw/workspace/imports/config_dr/content:ro
       - /root/services/webhook-gateway:/home/node/.openclaw/workspace/imports/webhook_gateway/content:ro
       - /root/.openclaw:/home/node/.openclaw/workspace/imports/runtime_state/content:ro

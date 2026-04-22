@@ -29,7 +29,20 @@ Open decisions before implementation:
 
 - freshness TTLs for project/page/procedure/source/entity projection families
 - cache invalidation fan-out from memory events and edges
-- operator visibility for stale-but-injected or excluded projection digests
+- exact operator reporting shape for stale or excluded projection digests
+
+2026-04-22 Phase 2 decision lock:
+
+- stale projections and stale capsule artifacts are excluded from normal
+  injection unless explicitly requested for inspection
+- fresh projection and capsule digests get read-time preference only when backed
+  by active MMV2 source memory ids and current content hashes
+- cache/projection policy may schedule derived refreshes automatically through
+  heartbeat or planner ticks
+- planner recommendations should dedupe repeated stale/cache findings and
+  expire stale recommendations
+- policy reports should surface high-value capsule, skill, tool, and workflow
+  opportunities through heartbeat and daily review
 
 ## Objective
 
@@ -141,6 +154,18 @@ Policy should decide:
 - how long a capsule remains reusable before refresh
 - when a changed graph neighborhood actually requires rebuild
 
+Approved first cadence:
+
+- rebuild after document-ingest batches that touch the capsule target
+- rebuild after relevant correction, supersession, conflict, or lifecycle
+  changes
+- rebuild daily when dirty
+- otherwise build on demand
+
+Active project capsules should be eligible for eager refresh first. Broad
+subject capsules should remain on-demand until usage telemetry shows they are
+worth precompiling.
+
 ## Retrieval warmups
 
 The policy layer may schedule retrieval warmups for:
@@ -169,6 +194,11 @@ That includes deciding when:
 - packet family-specific shaping policies need review
 
 This should feed directly into context-engine layering.
+
+Normal context injection should never use a stale projection or capsule merely
+because it is available on disk. Stale artifacts can be exposed for inspection,
+debugging, or conflict review, but normal injection should prefer active MMV2
+memory ids and fresh derived digests.
 
 ## Cost and latency posture
 

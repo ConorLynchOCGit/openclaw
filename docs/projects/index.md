@@ -37,6 +37,9 @@ Each project should keep its own:
   <Card title="Model Memory" href="/projects/model-memory" icon="brain-circuit">
     Clean-room memory system built from first principles with model-owned semantics.
   </Card>
+  <Card title="Operator Experience" href="/projects/operator-experience" icon="panel-top">
+    Operator-facing run visibility, queueing, diagnostics, permissions, and workflow UX.
+  </Card>
   <Card title="Turborepo" href="/projects/turborepo" icon="workflow">
     Workspace task ownership, gate decomposition, and package-graph execution.
   </Card>

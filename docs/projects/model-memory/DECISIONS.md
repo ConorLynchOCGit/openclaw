@@ -5,6 +5,34 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-22 - Deep ingest failures require funnel hardening before resume
+
+Decision:
+
+- do not resume the paused 2026-04-22 deep-ingest corpus until provider
+  health/credit preflight succeeds
+- keep the runner failure circuit breaker enabled by default
+- retry failed sources only by explicit failure class after the matching code
+  path is fixed
+- treat malformed repair output and provider JSON-boundary output as quarantine
+  classes, not reasons to repeatedly re-query the provider
+- validate MMV2 memory-edge endpoints before writing `memory_edges`; defer
+  invalid edges into bounded event metadata rather than causing FK failures or
+  mutating target state
+- use progress/cost telemetry to stop expensive runs early when failure rate or
+  circuit-breaker reason says the funnel is unhealthy
+
+Reasoning:
+
+- the paused run showed systemic provider/funnel failures, not isolated bad
+  documents
+- blindly retrying the failed set burns credits and hides true failure classes
+- the right repair is better preflight, retry boundaries, quarantine reports,
+  endpoint validation, and operator telemetry while preserving MMV2 truth
+  semantics
+- none of these hardening changes justify semantic forests, topic parsers,
+  fuzzy write-path correction, or legacy collision fallback
+
 ## 2026-04-22 - Hardening landing accepted with explicit correction rerun evidence
 
 Decision:
@@ -1652,6 +1680,43 @@ Reasoning:
 - the system is not complete as a memory architecture without a read path
 - retrieval must stay aligned with the same first-principles semantic contract as writes
 - deterministic candidate recall avoids creating a new fuzzy semantic forest in the read path
+
+## 2026-04-22 - Phase 2 graph, capsule, planner, synthesis, and privacy decisions
+
+Decision:
+
+- graph runtime uses an authority trust ladder, not a review-only model
+- deterministic structural graph edges are automatically usable for read-time
+  retrieval when backed by MMV2 events, explicit edges, ids, source refs,
+  scope, status, or source lineage
+- inferred graph edges start as low-authority probationary read-time edges with
+  TTL, telemetry, decay, and promotion only after repeated useful retrieval
+  evidence
+- capsule artifacts will materialize under
+  `/root/.openclaw/workspace/.openclaw/knowledge/capsules/` after the derived
+  knowledge root is documented in workspace topology
+- hierarchical retrieval defaults to deterministic single-pass and escalates to
+  bounded multi-pass only for broad or multi-objective prompts
+- heartbeat becomes the primary proactive planner surface and should surface
+  skill, tool, and workflow opportunities alongside derived maintenance signals
+- skill, tool, and workflow candidate discovery may be proactive, but
+  promotion, installation, privileged enablement, and standing automation remain
+  approval-gated
+- privacy and prompt-injection hardening uses automatic safe defaults instead
+  of waiting indefinitely for manual review
+- stale projection and capsule artifacts are excluded from normal injection
+  unless explicitly requested for inspection
+
+Reasoning:
+
+- review-only behavior would leave most useful graph and privacy decisions
+  unactioned because manual review is unlikely to happen consistently
+- automatic use is acceptable only where it is read-time, reversible,
+  provenance-backed, and unable to mutate canonical MMV2 truth
+- heartbeat is the right first operator surface for proactive behavior because
+  it can batch low-friction decisions without requiring a dedicated UI
+- capsules belong to the derived knowledge graph layer, but they must remain
+  compiled artifacts rather than a second truth store
 
 ## 2026-04-13 - generated workspace projections own fenced zones only
 

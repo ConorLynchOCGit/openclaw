@@ -450,6 +450,83 @@ describe("model-memory live json executor", () => {
     });
   });
 
+  it("preflights provider health with a tiny bounded request", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: "openai/gpt-5.4-nano",
+            choices: [
+              {
+                message: {
+                  content: '{"ok":true}',
+                },
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    );
+    const executor = new OpenAICompatibleLiveJsonExecutor({
+      fetchImpl,
+      resolveAuth: async () => ({
+        apiKey: "sk-test",
+        mode: "api-key",
+        source: "test",
+      }),
+    });
+
+    const result = await executor.preflightModel("openrouter/openai/gpt-5.4-nano");
+
+    expect(result).toMatchObject({
+      ok: true,
+      provider: "openrouter",
+      providerModel: "openai/gpt-5.4-nano",
+      httpStatus: 200,
+    });
+    const call = fetchImpl.mock.calls[0];
+    expect(call).toBeDefined();
+    const [, init] = call as unknown as [string, RequestInit];
+    expect(parseRequestBody(init)).toMatchObject({
+      model: "openai/gpt-5.4-nano",
+      temperature: 0,
+      max_tokens: 16,
+      response_format: { type: "json_object" },
+    });
+  });
+
+  it("preflights provider credit failures without starting extraction work", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: { message: "Insufficient credits" } }), {
+          status: 402,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    const executor = new OpenAICompatibleLiveJsonExecutor({
+      fetchImpl,
+      resolveAuth: async () => ({
+        apiKey: "sk-test",
+        mode: "api-key",
+        source: "test",
+      }),
+    });
+
+    const result = await executor.preflightModel("openrouter/openai/gpt-5.4-nano");
+
+    expect(result).toMatchObject({
+      ok: false,
+      provider: "openrouter",
+      providerModel: "openai/gpt-5.4-nano",
+      httpStatus: 402,
+      failureStage: "request_time",
+      errorMessage: "Insufficient credits",
+    });
+  });
+
   it("classifies non-json provider success bodies as provider_parse failures", async () => {
     const fetchImpl = vi.fn(
       async () =>

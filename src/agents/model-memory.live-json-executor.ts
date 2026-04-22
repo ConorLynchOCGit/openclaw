@@ -57,6 +57,18 @@ export type ModelMemoryLiveJsonExecutorOptions = {
   onTrace?: (trace: ModelMemoryLiveExecutionTrace) => void;
 };
 
+export type ModelMemoryProviderPreflightResult = {
+  ok: boolean;
+  requestedModelId: string;
+  provider: string;
+  providerModel: string;
+  requestUrl: string;
+  httpStatus?: number;
+  resolvedModelId?: string;
+  failureStage?: ModelMemoryLiveExecutionFailureStage;
+  errorMessage?: string;
+};
+
 type OpenAICompatibleResponse = {
   model?: string;
   choices?: Array<{
@@ -261,6 +273,110 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
 
   getRequestSeed(): number | undefined {
     return this.requestSeed;
+  }
+
+  async preflightModel(modelId: string): Promise<ModelMemoryProviderPreflightResult> {
+    const model = resolveRequestModel(modelId, this.defaultProvider);
+    const auth = await this.resolveAuthImpl(model.provider, this.config);
+    const baseUrl = resolveProviderBaseUrl(this.config, model.provider);
+    const requestUrl = `${baseUrl}/chat/completions`;
+
+    if (!auth.apiKey) {
+      return {
+        ok: false,
+        requestedModelId: modelId,
+        provider: model.provider,
+        providerModel: model.model,
+        requestUrl,
+        failureStage: "request_time",
+        errorMessage: `model-memory live execution for provider "${model.provider}" requires an API key or OAuth token`,
+      };
+    }
+
+    const requestBody = {
+      model: model.model,
+      temperature: 0,
+      max_tokens: 16,
+      messages: [
+        {
+          role: "system",
+          content: "Return only compact JSON.",
+        },
+        {
+          role: "user",
+          content: '{"ok":true}',
+        },
+      ],
+      response_format: { type: "json_object" },
+    } satisfies Record<string, unknown>;
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(requestUrl, {
+        method: "POST",
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
+        headers: {
+          Authorization: `Bearer ${auth.apiKey}`,
+          "Content-Type": "application/json",
+          ...(model.provider === "openrouter"
+            ? {
+                "HTTP-Referer": "https://openclaw.ai",
+                "X-Title": "OpenClaw model-memory",
+              }
+            : {}),
+        },
+        body: JSON.stringify(requestBody),
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        requestedModelId: modelId,
+        provider: model.provider,
+        providerModel: model.model,
+        requestUrl,
+        failureStage: "request_time",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    const rawResponseText = await response.text();
+    if (!response.ok) {
+      return {
+        ok: false,
+        requestedModelId: modelId,
+        provider: model.provider,
+        providerModel: model.model,
+        requestUrl,
+        httpStatus: response.status,
+        failureStage: "request_time",
+        errorMessage: buildExcerpt(parseErrorText(rawResponseText)) ?? "provider returned error",
+      };
+    }
+
+    try {
+      const payload = JSON.parse(rawResponseText) as OpenAICompatibleResponse;
+      extractOutputText(payload);
+      return {
+        ok: true,
+        requestedModelId: modelId,
+        provider: model.provider,
+        providerModel: model.model,
+        requestUrl,
+        httpStatus: response.status,
+        resolvedModelId: readTrimmedString(payload.model) ?? `${model.provider}/${model.model}`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        requestedModelId: modelId,
+        provider: model.provider,
+        providerModel: model.model,
+        requestUrl,
+        httpStatus: response.status,
+        failureStage: "provider_response",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   async execute(request: JsonModelExecutionRequest): Promise<JsonModelExecutionResponse> {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildModelMemoryActivityFeedText,
+  buildModelMemoryActivityTranscriptMessage,
   emitModelMemoryActivityFeedEvent,
   resolveModelMemoryActivityFeedSettings,
 } from "./model-memory.activity-feed.js";
@@ -51,8 +52,36 @@ describe("model-memory activity feed", () => {
     expect(text).not.toContain("raw tool log must not persist");
   });
 
-  it("emits idempotent bounded transcript messages when enabled", async () => {
-    const appended: Array<{ text?: string; idempotencyKey?: string }> = [];
+  it("builds structured activity messages instead of assistant prose notes", () => {
+    const message = buildModelMemoryActivityTranscriptMessage({
+      kind: "retrieval",
+      status: "completed",
+      safeLabels: {
+        reason: "live_context",
+        prompt: "raw prompt must not persist",
+        private_phrase: "private-token",
+      },
+      metrics: { candidates: 7, selected: 2 },
+      ids: {
+        retrievalRequestId: "retrieval_request_123",
+        selectedMemoryIds: ["memory_1", "memory_2"],
+      },
+    });
+
+    expect(message.content[0]?.text).toBe("Memory activity");
+    expect(message.__openclaw.kind).toBe("model_memory_activity");
+    expect(message.__openclaw.eventType).toBe("memory_retrieval_checked");
+    expect(message.__openclaw.ids).toMatchObject({
+      retrievalRequestId: ["retrieval_request_123"],
+      selectedMemoryIds: ["memory_1", "memory_2"],
+    });
+    expect(JSON.stringify(message)).not.toContain("raw prompt must not persist");
+    expect(JSON.stringify(message)).not.toContain("private-token");
+    expect(JSON.stringify(message)).not.toContain("[Memory Activity]");
+  });
+
+  it("emits idempotent bounded structured transcript messages when enabled", async () => {
+    const appended: Array<{ message?: unknown; idempotencyKey?: string }> = [];
     const result = await emitModelMemoryActivityFeedEvent(
       {
         kind: "tool_result_capture",
@@ -67,7 +96,7 @@ describe("model-memory activity feed", () => {
       },
       {
         appendTranscript: async (params) => {
-          appended.push({ text: params.text, idempotencyKey: params.idempotencyKey });
+          appended.push({ message: params.message, idempotencyKey: params.idempotencyKey });
           return { ok: true, sessionFile: "/tmp/session.jsonl", messageId: "message-1" };
         },
       },
@@ -75,8 +104,14 @@ describe("model-memory activity feed", () => {
 
     expect(result).toEqual({ emitted: true, messageId: "message-1" });
     expect(appended).toHaveLength(1);
-    expect(appended[0]?.text).toContain("[Memory Activity] tool result capture completed");
-    expect(appended[0]?.text).toContain("hook=after_tool_call");
+    expect(appended[0]?.message).toMatchObject({
+      role: "assistant",
+      __openclaw: {
+        kind: "model_memory_activity",
+        eventType: "memory_written",
+        labels: { hook: "after_tool_call" },
+      },
+    });
     expect(appended[0]?.idempotencyKey).toMatch(/^model-memory-activity:/u);
   });
 });

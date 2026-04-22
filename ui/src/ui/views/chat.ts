@@ -50,6 +50,9 @@ import "../components/resizable-divider.ts";
 export type ChatProps = {
   sessionKey: string;
   onSessionKeyChange: (next: string) => void;
+  runId?: string | null;
+  runtimeVersion?: string | null;
+  hostOperatorStatus?: HostOperatorUiStatus | null;
   thinkingLevel: string | null;
   showThinking: boolean;
   showToolCalls: boolean;
@@ -115,6 +118,14 @@ export type ChatProps = {
   basePath?: string;
 };
 
+export type HostOperatorUiStatus = {
+  state: "ordinary" | "disabled" | "read_only" | "write_enabled" | "exec_enabled";
+  scopes?: string[];
+  auditId?: string | null;
+  auditPath?: string | null;
+  reason?: string | null;
+};
+
 const COMPACTION_TOAST_DURATION_MS = 5000;
 const FALLBACK_TOAST_DURATION_MS = 8000;
 
@@ -125,6 +136,11 @@ const deletedMessagesMap = new Map<string, DeletedMessages>();
 const expandedToolCardsBySession = new Map<string, Map<string, boolean>>();
 const initializedToolCardsBySession = new Map<string, Set<string>>();
 const lastAutoExpandPrefBySession = new Map<string, boolean>();
+const operatorPanelExpandedBySession = new Map<string, boolean>();
+
+function getOperatorPanelExpanded(sessionKey: string): boolean {
+  return getOrCreateSessionCacheValue(operatorPanelExpandedBySession, sessionKey, () => false);
+}
 
 function getInputHistory(sessionKey: string): InputHistory {
   return getOrCreateSessionCacheValue(inputHistories, sessionKey, () => new InputHistory());
@@ -324,6 +340,7 @@ export function resetChatViewState() {
     stopStt();
   }
   Object.assign(vs, createChatEphemeralState());
+  operatorPanelExpandedBySession.clear();
 }
 
 export const cleanupChatModuleState = resetChatViewState;
@@ -488,6 +505,632 @@ function renderSideResult(
       </div>
     </section>
   `;
+}
+
+function formatQueuedPromptText(item: ChatQueueItem): string {
+  const text = item.text.trim();
+  if (text) {
+    return text;
+  }
+  const attachmentCount = item.attachments?.length ?? 0;
+  return attachmentCount > 0 ? `Attachment prompt (${attachmentCount})` : "Queued prompt";
+}
+
+function renderQueuedPromptBubble(
+  item: ChatQueueItem,
+  position: number,
+  props: ChatProps,
+  requestUpdate: () => void,
+) {
+  const created = new Date(item.createdAt).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const elapsed = formatElapsed(Date.now() - item.createdAt);
+  const canEdit = !item.attachments?.length && !item.localCommandName;
+  return html`
+    <div class="chat-group user chat-group--queued">
+      <div class="chat-avatar user">${icons.messageSquare}</div>
+      <div class="chat-group-messages">
+        <div class="chat-bubble chat-queued-prompt">
+          <div class="chat-queued-prompt__meta">
+            <span>Queued #${position}</span>
+            <span>${created}</span>
+            <span>${elapsed} elapsed</span>
+            ${item.pendingRunId ? html`<span>run ${item.pendingRunId}</span>` : nothing}
+          </div>
+          <div class="chat-queued-prompt__text">${formatQueuedPromptText(item)}</div>
+          <div class="chat-queued-prompt__actions">
+            ${canEdit
+              ? html`
+                  <button
+                    class="btn btn--xs"
+                    type="button"
+                    @click=${() => {
+                      props.onQueueRemove(item.id);
+                      props.onDraftChange(item.text);
+                      requestUpdate();
+                    }}
+                  >
+                    Edit
+                  </button>
+                `
+              : nothing}
+            <button
+              class="btn btn--xs"
+              type="button"
+              aria-label="Cancel queued prompt"
+              @click=${() => props.onQueueRemove(item.id)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+        <div class="chat-group-footer">
+          <span class="chat-sender-name">You</span>
+          <span class="chat-group-timestamp">Queued</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function formatElapsed(durationMs: number): string {
+  const safeMs = Math.max(0, durationMs);
+  const totalSeconds = Math.floor(safeMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) {
+    return `${seconds}s`;
+  }
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function buildDiagnosticBundle(params: {
+  props: ChatProps;
+  activeSession: GatewaySessionRow | undefined;
+  chatItems: Array<ChatItem | MessageGroup>;
+}): string {
+  const { props, activeSession, chatItems } = params;
+  const activityItems = collectActivityItems(chatItems);
+  const statusItem = collectRunStatusItems(chatItems)[0] ?? buildRunStatusItem(props);
+  const bundle = {
+    schema_version: 1,
+    generated_at: new Date().toISOString(),
+    session_key: props.sessionKey,
+    session_id: activeSession?.sessionId ?? null,
+    run_id: props.runId ?? statusItem?.runId ?? null,
+    runtime_version: props.runtimeVersion ?? null,
+    queue: {
+      count: props.queue.length,
+      ids: props.queue.map((item) => item.id).slice(0, 20),
+    },
+    run_status: statusItem
+      ? {
+          phase: statusItem.phase,
+          started_at: statusItem.startedAt,
+          elapsed_ms: Math.max(0, Date.now() - statusItem.startedAt),
+          chips: statusItem.chips.map((chip) => chip.label),
+        }
+      : null,
+    tools: {
+      message_count: props.toolMessages.length,
+      names: collectToolNames(props.toolMessages).slice(0, 20),
+    },
+    memory_activity: {
+      count: activityItems.length,
+      labels: activityItems.map((item) => item.label).slice(0, 20),
+      chips: activityItems.flatMap((item) => item.chips.map((chip) => chip.label)).slice(0, 40),
+    },
+    host_operator: props.hostOperatorStatus
+      ? {
+          state: props.hostOperatorStatus.state,
+          scopes: props.hostOperatorStatus.scopes ?? [],
+          audit_id: props.hostOperatorStatus.auditId ?? null,
+          audit_path: props.hostOperatorStatus.auditPath ?? null,
+          reason: props.hostOperatorStatus.reason ?? null,
+        }
+      : null,
+    messages: {
+      count: props.messages.length,
+      rendered_limit: CHAT_HISTORY_RENDER_LIMIT,
+    },
+    privacy: {
+      raw_prompt_included: false,
+      transcript_included: false,
+      raw_tool_log_included: false,
+      secrets_included: false,
+      root_user_memory_content_included: false,
+    },
+  };
+  return JSON.stringify(bundle, null, 2);
+}
+
+function renderDiagnosticBundleButton(bundle: string, label = "Copy diagnostic bundle") {
+  return html`
+    <button
+      class="btn btn--xs operator-diagnostic-copy"
+      type="button"
+      title=${label}
+      aria-label=${label}
+      data-diagnostic-bundle=${bundle}
+      @click=${async (event: Event) => {
+        const btn = event.currentTarget as HTMLButtonElement | null;
+        if (!btn) {
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(bundle);
+          btn.dataset.copied = "1";
+          btn.textContent = "Copied diagnostic";
+          window.setTimeout(() => {
+            if (btn.isConnected) {
+              delete btn.dataset.copied;
+              btn.textContent = label;
+            }
+          }, 1500);
+        } catch {
+          btn.dataset.error = "1";
+        }
+      }}
+    >
+      ${label}
+    </button>
+  `;
+}
+
+function renderRunStatusCard(
+  item: Extract<ChatItem, { kind: "run-status" }>,
+  props: ChatProps,
+  diagnosticBundle: string,
+) {
+  const started = new Date(item.startedAt).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const elapsed = formatElapsed(Date.now() - item.startedAt);
+  const canCancel = Boolean(props.canAbort && props.onAbort);
+  return html`
+    <div class="chat-run-status" role="status" aria-live="polite">
+      <div class="chat-run-status__main">
+        <span class="chat-run-status__spinner" aria-hidden="true">${icons.loader}</span>
+        <span class="chat-run-status__title">Working...</span>
+        <span class="chat-run-status__phase">${item.phase}</span>
+        <span class="chat-run-status__time">${started}</span>
+        <span class="chat-run-status__elapsed">${elapsed} elapsed</span>
+        ${item.runId ? html`<span class="chat-run-status__run">run ${item.runId}</span>` : nothing}
+      </div>
+      ${item.chips.length
+        ? html`
+            <div class="chat-run-status__chips">
+              ${item.chips.map(
+                (chip) =>
+                  html`<span class="chat-memory-chip chat-memory-chip--${chip.tone ?? "muted"}"
+                    >${chip.label}</span
+                  >`,
+              )}
+            </div>
+          `
+        : nothing}
+      <div class="chat-run-status__actions">
+        <button
+          class="btn btn--xs"
+          type="button"
+          ?disabled=${!canCancel}
+          title=${canCancel ? "Cancel current run" : "Cancel unavailable for this run"}
+          @click=${() => props.onAbort?.()}
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn--xs"
+          type="button"
+          disabled
+          title="Retry requires durable run replay support"
+        >
+          Retry unavailable
+        </button>
+        ${renderDiagnosticBundleButton(diagnosticBundle)}
+      </div>
+    </div>
+  `;
+}
+
+function isSafeActivityScalar(value: unknown): value is string | number | boolean {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+function formatActivityRecord(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return [];
+  }
+  return Object.entries(value as Record<string, unknown>).flatMap(([key, entry]) => {
+    if (Array.isArray(entry)) {
+      const safeItems = entry.filter(isSafeActivityScalar).map(String).slice(0, 8);
+      return safeItems.length ? [`${key}=${safeItems.join(",")}`] : [];
+    }
+    if (entry && typeof entry === "object" && "count" in entry) {
+      const count = (entry as { count?: unknown }).count;
+      return typeof count === "number" ? [`${key}_count=${count}`] : [];
+    }
+    return isSafeActivityScalar(entry) ? [`${key}=${String(entry)}`] : [];
+  });
+}
+
+function parseStructuredMemoryActivityMessage(
+  message: unknown,
+): Extract<ChatItem, { kind: "activity" }> | null {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+  const raw = message as Record<string, unknown>;
+  const marker = raw.__openclaw as Record<string, unknown> | undefined;
+  if (!marker || marker.kind !== "model_memory_activity") {
+    return null;
+  }
+  const normalized = normalizeMessage(message);
+  const eventType = typeof marker.eventType === "string" ? marker.eventType : "memory_activity";
+  const label =
+    typeof marker.label === "string" && marker.label.trim()
+      ? marker.label.trim()
+      : eventType.replaceAll("_", " ");
+  const ids = formatActivityRecord(marker.ids);
+  const metrics = formatActivityRecord(marker.metrics);
+  const labels = formatActivityRecord(marker.labels);
+  const detail = [...ids, ...metrics, ...labels].join(" | ");
+  const status = typeof marker.status === "string" ? marker.status.toLowerCase() : "";
+  const tone =
+    status === "failed"
+      ? "warn"
+      : status === "completed"
+        ? "ok"
+        : status === "skipped"
+          ? "muted"
+          : "muted";
+  const chipLabel = eventType.replaceAll("_", " ");
+  return {
+    kind: "activity",
+    key: `activity:${normalized.timestamp ?? Date.now()}:${eventType}:${detail}`,
+    label,
+    detail,
+    timestamp:
+      typeof marker.observedAt === "number"
+        ? marker.observedAt
+        : (normalized.timestamp ?? Date.now()),
+    chips: [{ label: chipLabel, tone }],
+  };
+}
+
+function parseLegacyMemoryActivityMessage(
+  message: unknown,
+): Extract<ChatItem, { kind: "activity" }> | null {
+  const text = extractTextCached(message)?.trim() ?? "";
+  if (!text.startsWith("[Memory Activity]")) {
+    return null;
+  }
+  const normalized = normalizeMessage(message);
+  const body = text.replace(/^\[Memory Activity\]\s*/, "");
+  const parts = body
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const head = parts.shift() ?? "memory activity";
+  const chips: Array<{ label: string; tone?: "muted" | "ok" | "warn" }> = [];
+  const lowered = head.toLowerCase();
+  if (lowered.includes("retrieval")) {
+    chips.push({
+      label: "retrieval checked",
+      tone: lowered.includes("completed") ? "ok" : "muted",
+    });
+  }
+  if (lowered.includes("capture")) {
+    chips.push({
+      label: lowered.includes("skipped") ? "capture skipped" : "capture checked",
+      tone: lowered.includes("completed") ? "ok" : lowered.includes("failed") ? "warn" : "muted",
+    });
+  }
+  if (lowered.includes("projection")) {
+    chips.push({ label: "projection digest used", tone: "ok" });
+  }
+  const idParts = parts.filter((part) =>
+    /\b(id|ids|count|request|result|memory|projection)\b/i.test(part),
+  );
+  const detail = idParts.length ? idParts.join(" | ") : parts.slice(0, 4).join(" | ");
+  return {
+    kind: "activity",
+    key: `activity:${normalized.timestamp ?? Date.now()}:${head}:${detail}`,
+    label: head,
+    detail,
+    timestamp: normalized.timestamp ?? Date.now(),
+    chips,
+  };
+}
+
+function parseMemoryActivityMessage(
+  message: unknown,
+): Extract<ChatItem, { kind: "activity" }> | null {
+  return parseStructuredMemoryActivityMessage(message) ?? parseLegacyMemoryActivityMessage(message);
+}
+
+function renderMemoryActivityCard(item: Extract<ChatItem, { kind: "activity" }>) {
+  const timestamp = new Date(item.timestamp).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return html`
+    <details class="chat-memory-activity chat-memory-activity--tool-like">
+      <summary>
+        <span class="chat-memory-activity__icon" aria-hidden="true">${icons.brain}</span>
+        <span class="chat-memory-activity__label">${item.label}</span>
+        <span class="chat-memory-activity__time">${timestamp}</span>
+        ${item.chips.map(
+          (chip) => html`<span class="chat-memory-chip chat-memory-chip--${chip.tone ?? "muted"}"
+            >${chip.label}</span
+          >`,
+        )}
+      </summary>
+      ${item.detail
+        ? html`<div class="chat-memory-activity__detail">${item.detail}</div>`
+        : nothing}
+    </details>
+  `;
+}
+
+function collectActivityItems(
+  items: Array<ChatItem | MessageGroup>,
+): Array<Extract<ChatItem, { kind: "activity" }>> {
+  return items.filter(
+    (item): item is Extract<ChatItem, { kind: "activity" }> => item.kind === "activity",
+  );
+}
+
+function collectRunStatusItems(
+  items: Array<ChatItem | MessageGroup>,
+): Array<Extract<ChatItem, { kind: "run-status" }>> {
+  return items.filter(
+    (item): item is Extract<ChatItem, { kind: "run-status" }> => item.kind === "run-status",
+  );
+}
+
+function collectToolNames(toolMessages: unknown[]): string[] {
+  const names = new Set<string>();
+  for (let index = 0; index < toolMessages.length; index++) {
+    for (const card of extractToolCards(toolMessages[index], `tool-${index}`)) {
+      if (card.name.trim()) {
+        names.add(card.name.trim());
+      }
+    }
+    const raw = toolMessages[index] as Record<string, unknown>;
+    const name =
+      typeof raw.toolName === "string"
+        ? raw.toolName
+        : typeof raw.tool_name === "string"
+          ? raw.tool_name
+          : typeof raw.name === "string"
+            ? raw.name
+            : null;
+    if (name?.trim()) {
+      names.add(name.trim());
+    }
+  }
+  return [...names];
+}
+
+function classifyEngineeringTool(name: string): string | null {
+  const lowered = name.toLowerCase();
+  if (/\bgit\b|git_/.test(lowered)) {
+    return "git status";
+  }
+  if (/\b(pnpm|vitest|test)\b/.test(lowered)) {
+    return "test/build";
+  }
+  if (/\b(build|tsgo|docker|compose)\b/.test(lowered)) {
+    return "build/runtime";
+  }
+  return null;
+}
+
+function hostOperatorStateLabel(status: HostOperatorUiStatus | null | undefined): string {
+  if (!status) {
+    return "ordinary";
+  }
+  if (status.state === "read_only") {
+    return "host-operator read-only";
+  }
+  if (status.state === "write_enabled") {
+    return "host-operator write-enabled";
+  }
+  if (status.state === "exec_enabled") {
+    return "host-operator exec-enabled";
+  }
+  if (status.state === "disabled") {
+    return "host-operator disabled";
+  }
+  return "ordinary";
+}
+
+function renderOperatorExperiencePanel(params: {
+  props: ChatProps;
+  activeSession: GatewaySessionRow | undefined;
+  chatItems: Array<ChatItem | MessageGroup>;
+  diagnosticBundle: string;
+  requestUpdate: () => void;
+}) {
+  const { props, activeSession, chatItems, diagnosticBundle, requestUpdate } = params;
+  const expanded = getOperatorPanelExpanded(props.sessionKey);
+  const activityItems = collectActivityItems(chatItems);
+  const retrievalItems = activityItems.filter((item) =>
+    /retrieval|pack|miss|memory_existed|empty/i.test(`${item.label} ${item.detail}`),
+  );
+  const projectionItems = activityItems.filter((item) =>
+    /projection|artifact|digest/i.test(`${item.label} ${item.detail}`),
+  );
+  const toolNames = collectToolNames(props.toolMessages);
+  const engineeringCards = toolNames
+    .map((name) => ({ name, kind: classifyEngineeringTool(name) }))
+    .filter((entry): entry is { name: string; kind: string } => Boolean(entry.kind));
+  const sessions = props.sessions?.sessions?.slice(0, 5) ?? [];
+  const hostStatus = props.hostOperatorStatus ?? {
+    state: "ordinary" as const,
+    reason: "host-operator status not loaded in this client view",
+  };
+  return html`
+    <section class="operator-experience-panel" aria-label="Operator diagnostics">
+      <button
+        class="operator-experience-panel__toggle"
+        type="button"
+        aria-expanded=${String(expanded)}
+        @click=${() => {
+          operatorPanelExpandedBySession.set(props.sessionKey, !expanded);
+          requestUpdate();
+        }}
+      >
+        <span>Operator status</span>
+        <span class="operator-mode-badge operator-mode-badge--${hostStatus.state}">
+          ${hostOperatorStateLabel(hostStatus)}
+        </span>
+        <span class="operator-experience-panel__meta">
+          ${props.queue.length} queued · ${activityItems.length} memory events ·
+          ${props.toolMessages.length} tool events
+        </span>
+        <span class="collapse-chevron ${expanded ? "" : "collapse-chevron--collapsed"}"
+          >${icons.chevronDown}</span
+        >
+      </button>
+      ${expanded
+        ? html`
+            <div class="operator-experience-panel__grid">
+              <article class="operator-card">
+                <div class="operator-card__title">Host permissions</div>
+                <div class="operator-card__body">
+                  <div>${hostOperatorStateLabel(hostStatus)}</div>
+                  <div>
+                    Scopes: ${(hostStatus.scopes ?? ["live_repo", "operator_workspace"]).join(", ")}
+                  </div>
+                  ${hostStatus.auditId ? html`<div>Audit: ${hostStatus.auditId}</div>` : nothing}
+                  ${hostStatus.reason ? html`<div>${hostStatus.reason}</div>` : nothing}
+                </div>
+              </article>
+
+              <article class="operator-card">
+                <div class="operator-card__title">Run history</div>
+                <div class="operator-card__body">
+                  ${sessions.length
+                    ? sessions.map(
+                        (session) => html`
+                          <div class="operator-row">
+                            <span>${session.key}</span>
+                            <span
+                              >${session.updatedAt
+                                ? formatElapsed(Date.now() - session.updatedAt)
+                                : "unknown"}
+                              ago</span
+                            >
+                          </div>
+                        `,
+                      )
+                    : html`<div>No session history loaded.</div>`}
+                  ${activeSession?.sessionId
+                    ? html`<div>Current session: ${activeSession.sessionId}</div>`
+                    : nothing}
+                </div>
+              </article>
+
+              <article class="operator-card">
+                <div class="operator-card__title">Retrieval proof explorer</div>
+                <div class="operator-card__body">
+                  ${retrievalItems.length
+                    ? retrievalItems
+                        .slice(0, 5)
+                        .map(
+                          (item) =>
+                            html`<div class="operator-row">
+                              <span>${item.label}</span
+                              ><span>${item.detail || "ids on expand"}</span>
+                            </div>`,
+                        )
+                    : html`<div>No retrieval proof events in this visible thread.</div>`}
+                </div>
+              </article>
+
+              <article class="operator-card">
+                <div class="operator-card__title">Projection artifacts</div>
+                <div class="operator-card__body">
+                  ${projectionItems.length
+                    ? projectionItems
+                        .slice(0, 5)
+                        .map(
+                          (item) =>
+                            html`<div class="operator-row">
+                              <span>${item.label}</span
+                              ><span>${item.detail || "digest metadata"}</span>
+                            </div>`,
+                        )
+                    : html`<div>No projection artifact events in this visible thread.</div>`}
+                </div>
+              </article>
+
+              <article class="operator-card">
+                <div class="operator-card__title">Diff/test/build cards</div>
+                <div class="operator-card__body">
+                  ${engineeringCards.length
+                    ? engineeringCards
+                        .slice(0, 5)
+                        .map(
+                          (entry) =>
+                            html`<div class="operator-row">
+                              <span>${entry.kind}</span><span>${entry.name}</span>
+                            </div>`,
+                        )
+                    : html`<div>No engineering command cards in this visible thread.</div>`}
+                </div>
+              </article>
+
+              <article class="operator-card">
+                <div class="operator-card__title">Diagnostic bundle</div>
+                <div class="operator-card__body">
+                  <div>
+                    Redacted bundle excludes raw prompts, transcripts, raw tool logs, secrets, and
+                    root memory content.
+                  </div>
+                  ${renderDiagnosticBundleButton(diagnosticBundle)}
+                </div>
+              </article>
+            </div>
+          `
+        : nothing}
+    </section>
+  `;
+}
+
+function buildRunStatusItem(props: ChatProps): Extract<ChatItem, { kind: "run-status" }> | null {
+  const runActive = props.stream !== null || props.sending || props.canAbort === true;
+  if (!runActive) {
+    return null;
+  }
+  const hasTools = props.toolMessages.length > 0;
+  const hasText = Boolean(props.stream?.trim());
+  const phase = hasTools
+    ? "using tools"
+    : hasText
+      ? "writing"
+      : props.stream === null
+        ? "running"
+        : "retrieving memory";
+  const chips: Array<{ label: string; tone?: "muted" | "ok" | "warn" }> = [
+    { label: "memory activity visible on expand", tone: "muted" },
+  ];
+  if (hasTools) {
+    chips.push({ label: "using tools", tone: "ok" });
+  }
+  return {
+    kind: "run-status",
+    key: `run-status:${props.sessionKey}:${props.streamStartedAt ?? "active"}`,
+    phase,
+    startedAt: props.streamStartedAt ?? Date.now(),
+    runId: props.runId ?? null,
+    chips,
+  };
 }
 
 /**
@@ -1170,6 +1813,7 @@ export function renderChat(props: ChatProps) {
   const chatItems = buildChatItems(props);
   syncToolCardExpansionState(props.sessionKey, chatItems, Boolean(props.autoExpandToolCalls));
   const expandedToolCards = getExpandedToolCards(props.sessionKey);
+  const diagnosticBundle = buildDiagnosticBundle({ props, activeSession, chatItems });
   const toggleToolCardExpanded = (toolCardId: string) => {
     expandedToolCards.set(toolCardId, !expandedToolCards.get(toolCardId));
     requestUpdate();
@@ -1185,6 +1829,13 @@ export function renderChat(props: ChatProps) {
       @click=${handleCodeBlockCopy}
     >
       <div class="chat-thread-inner">
+        ${renderOperatorExperiencePanel({
+          props,
+          activeSession,
+          chatItems,
+          diagnosticBundle,
+          requestUpdate,
+        })}
         ${props.loading
           ? html`
               <div class="chat-loading-skeleton" aria-label="Loading chat">
@@ -1243,6 +1894,20 @@ export function renderChat(props: ChatProps) {
             }
             if (item.kind === "reading-indicator") {
               return renderReadingIndicatorGroup(assistantIdentity, props.basePath);
+            }
+            if (item.kind === "run-status") {
+              return renderRunStatusCard(item, props, diagnosticBundle);
+            }
+            if (item.kind === "queued-prompt") {
+              return renderQueuedPromptBubble(
+                item.item as ChatQueueItem,
+                item.position,
+                props,
+                requestUpdate,
+              );
+            }
+            if (item.kind === "activity") {
+              return renderMemoryActivityCard(item);
             }
             if (item.kind === "stream") {
               return renderStreamingGroup(
@@ -1485,33 +2150,6 @@ export function renderChat(props: ChatProps) {
           : nothing}
       </div>
 
-      ${props.queue.length
-        ? html`
-            <div class="chat-queue" role="status" aria-live="polite">
-              <div class="chat-queue__title">Queued (${props.queue.length})</div>
-              <div class="chat-queue__list">
-                ${props.queue.map(
-                  (item) => html`
-                    <div class="chat-queue__item">
-                      <div class="chat-queue__text">
-                        ${item.text ||
-                        (item.attachments?.length ? `Image (${item.attachments.length})` : "")}
-                      </div>
-                      <button
-                        class="btn chat-queue__remove"
-                        type="button"
-                        aria-label="Remove queued message"
-                        @click=${() => props.onQueueRemove(item.id)}
-                      >
-                        ${icons.x}
-                      </button>
-                    </div>
-                  `,
-                )}
-              </div>
-            </div>
-          `
-        : nothing}
       ${renderSideResult(props.sideResult, props.onDismissSideResult)}
       ${renderFallbackIndicator(props.fallbackStatus)}
       ${renderCompactionIndicator(props.compactionStatus)}
@@ -1656,6 +2294,20 @@ export function renderChat(props: ChatProps) {
                   >
                     ${icons.stop}
                   </button>
+                  <button
+                    class="chat-send-btn"
+                    @click=${() => {
+                      if (props.draft.trim()) {
+                        inputHistory.push(props.draft);
+                      }
+                      props.onSend();
+                    }}
+                    ?disabled=${!props.connected || !props.draft.trim()}
+                    title="Queue"
+                    aria-label="Queue message"
+                  >
+                    ${icons.send}
+                  </button>
                 `
               : html`
                   <button
@@ -1763,6 +2415,19 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       continue;
     }
 
+    const memoryActivity = parseMemoryActivityMessage(msg);
+    if (memoryActivity) {
+      if (
+        !vs.searchOpen ||
+        !vs.searchQuery.trim() ||
+        memoryActivity.label.toLowerCase().includes(vs.searchQuery.trim().toLowerCase()) ||
+        memoryActivity.detail.toLowerCase().includes(vs.searchQuery.trim().toLowerCase())
+      ) {
+        items.push(memoryActivity);
+      }
+      continue;
+    }
+
     if (!props.showToolCalls && normalized.role.toLowerCase() === "toolresult") {
       continue;
     }
@@ -1776,6 +2441,15 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       kind: "message",
       key: messageKey(msg, i),
       message: msg,
+    });
+  }
+  for (let i = 0; i < props.queue.length; i++) {
+    const queued = props.queue[i];
+    items.push({
+      kind: "queued-prompt",
+      key: `queued:${queued.id}`,
+      item: queued,
+      position: i + 1,
     });
   }
   const liftedCanvasSources = tools
@@ -1826,6 +2500,10 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
     }
   }
 
+  const statusItem = buildRunStatusItem(props);
+  if (statusItem) {
+    items.push(statusItem);
+  }
   if (props.stream !== null) {
     const key = `stream:${props.sessionKey}:${props.streamStartedAt ?? "live"}`;
     if (props.stream.trim().length > 0) {
@@ -1835,8 +2513,6 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
         text: props.stream,
         startedAt: props.streamStartedAt ?? Date.now(),
       });
-    } else {
-      items.push({ kind: "reading-indicator", key });
     }
   }
 

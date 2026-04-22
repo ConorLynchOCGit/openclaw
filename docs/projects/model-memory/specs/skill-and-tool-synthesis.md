@@ -35,6 +35,17 @@ Open decisions before implementation:
 - approval path for promoting an internal candidate into repo-local and Codex
   global skills
 
+2026-04-22 Phase 2 decision lock:
+
+- skill and tool ideas should be proactively surfaced to the operator
+- workflow opportunities are part of the same proactive synthesis surface
+- heartbeat is the default persistent surfacing channel for pending candidates
+- turn-level surfacing is allowed when a candidate is directly relevant to the
+  current work
+- candidate creation can be automatic when evidence thresholds are met, but
+  promotion, installation, privileged tool enablement, and standing workflow
+  automation remain approval-gated
+
 ## Objective
 
 Turn repeated successful interactions into reusable, auditable candidate skills
@@ -84,6 +95,7 @@ Suggested candidate types:
 - `internal_tool_candidate`
 - `third_party_skill_candidate`
 - `workflow_doc_candidate`
+- `workflow_automation_candidate`
 - `tooling_gap_candidate`
 
 ## Internal skill synthesis
@@ -231,6 +243,12 @@ Required surfacing:
 - heartbeat when pending candidates exist
 - daily operator review summary
 
+Skill, tool, and workflow candidates should not wait for manual discovery.
+Once a repeated workflow, tool gap, or reusable operator pattern crosses the
+evidence threshold, the system should produce a stable candidate artifact and
+surface it through heartbeat until it is installed, used as inspiration,
+rejected, or expired.
+
 ## Relationship to memory objects
 
 Skill and tool candidates are not canonical memory truth.
@@ -305,10 +323,11 @@ This spec does not authorize:
 
 1. candidate extraction only
 2. replay and contract validation
-3. review surfacing in turn, heartbeat, and daily operator review
+3. proactive surfacing in heartbeat, turn context, and daily operator review
 4. operator-approved internal skill promotion to repo-owned draft artifacts
-5. operator-approved third-party `install` or `inspire` outcomes
-6. only later consider staging or quarantine layers if the product needs them
+5. operator-approved workflow documentation or workflow automation proposal
+6. operator-approved third-party `install` or `inspire` outcomes
+7. only later consider staging or quarantine layers if the product needs them
 
 ## Related specs
 

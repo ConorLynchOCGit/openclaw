@@ -42,6 +42,8 @@ type AssistantAttachmentAvailability =
 
 const assistantAttachmentAvailabilityCache = new Map<string, AssistantAttachmentAvailability>();
 const ASSISTANT_ATTACHMENT_UNAVAILABLE_RETRY_MS = 5_000;
+const ASSISTANT_PREVIEW_CHAR_LIMIT = 6_000;
+const ASSISTANT_PREVIEW_LINE_LIMIT = 80;
 
 export function resetAssistantAttachmentAvailabilityCacheForTest() {
   assistantAttachmentAvailabilityCache.clear();
@@ -1014,17 +1016,126 @@ function jsonSummaryLabel(parsed: unknown): string {
   return "JSON";
 }
 
-function renderExpandButton(markdown: string, onOpenSidebar: (content: SidebarContent) => void) {
+function renderExpandButton(
+  markdown: string,
+  onOpenSidebar: (content: SidebarContent) => void,
+  label = "Open full",
+) {
   return html`
     <button
-      class="btn btn--xs chat-expand-btn"
+      class="btn btn--xs chat-expand-btn chat-bubble-action-btn"
       type="button"
-      title="Open in canvas"
-      aria-label="Open in canvas"
+      title=${label}
+      aria-label=${label}
       @click=${() => onOpenSidebar({ kind: "markdown", content: markdown })}
     >
       <span class="chat-expand-btn__icon" aria-hidden="true">${icons.panelRightOpen}</span>
+      <span class="chat-bubble-action-btn__label">${label}</span>
     </button>
+  `;
+}
+
+function renderExportMarkdownButton(markdown: string, messageKey: string) {
+  return html`
+    <button
+      class="btn btn--xs chat-export-btn chat-bubble-action-btn"
+      type="button"
+      title="Export markdown"
+      aria-label="Export markdown"
+      @click=${() => exportMarkdownFile(markdown, messageKey)}
+    >
+      <span class="chat-expand-btn__icon" aria-hidden="true">${icons.download}</span>
+      <span class="chat-bubble-action-btn__label">Export</span>
+    </button>
+  `;
+}
+
+function exportMarkdownFile(markdown: string, messageKey: string) {
+  if (!markdown) {
+    return;
+  }
+  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `openclaw-response-${messageKey.replace(/[^a-z0-9_-]+/gi, "-")}.md`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function buildAssistantPreview(markdown: string) {
+  const lines = markdown.split(/\r?\n/);
+  const charLimited = markdown.length > ASSISTANT_PREVIEW_CHAR_LIMIT;
+  const lineLimited = lines.length > ASSISTANT_PREVIEW_LINE_LIMIT;
+  if (!charLimited && !lineLimited) {
+    return {
+      text: markdown,
+      truncated: false,
+      totalChars: markdown.length,
+      totalLines: lines.length,
+    };
+  }
+  let preview = lineLimited ? lines.slice(0, ASSISTANT_PREVIEW_LINE_LIMIT).join("\n") : markdown;
+  if (preview.length > ASSISTANT_PREVIEW_CHAR_LIMIT) {
+    preview = preview.slice(0, ASSISTANT_PREVIEW_CHAR_LIMIT);
+  }
+  return {
+    text: preview.trimEnd(),
+    truncated: true,
+    totalChars: markdown.length,
+    totalLines: lines.length,
+  };
+}
+
+function hasSourceTruncationSignal(message: Record<string, unknown>): boolean {
+  if (
+    message.truncated === true ||
+    message.incomplete === true ||
+    message.isTruncated === true ||
+    message.sourceTruncated === true
+  ) {
+    return true;
+  }
+  const reason =
+    typeof message.stopReason === "string"
+      ? message.stopReason
+      : typeof message.stop_reason === "string"
+        ? message.stop_reason
+        : typeof message.finishReason === "string"
+          ? message.finishReason
+          : typeof message.finish_reason === "string"
+            ? message.finish_reason
+            : "";
+  return /^(length|max_tokens|max_output_tokens|incomplete)$/i.test(reason.trim());
+}
+
+function renderSourceTruncationWarning(markdown: string) {
+  return html`
+    <div class="chat-source-truncation-warning" role="note">
+      <strong>Response truncated at source.</strong>
+      <span>The model/provider ended before a complete response was received.</span>
+      <button
+        class="btn btn--xs"
+        type="button"
+        @click=${() => navigator.clipboard?.writeText(`Continue from this cutoff:\n\n${markdown}`)}
+      >
+        Copy continue prompt
+      </button>
+    </div>
+  `;
+}
+
+function renderAssistantPreviewNotice(preview: ReturnType<typeof buildAssistantPreview>) {
+  if (!preview.truncated) {
+    return nothing;
+  }
+  return html`
+    <div class="chat-preview-truncation-notice" role="note">
+      Preview only. Full response preserved (${preview.totalLines} lines, ${preview.totalChars}
+      chars).
+    </div>
   `;
 }
 
@@ -1087,13 +1198,27 @@ function renderGroupedMessage(
   const markdownBase = extractedText?.trim() ? extractedText : null;
   const reasoningMarkdown = extractedThinking ? formatReasoningMarkdown(extractedThinking) : null;
   const markdown = markdownBase;
-  const canCopyMarkdown = role === "assistant" && Boolean(markdown?.trim());
-  const canExpand = role === "assistant" && Boolean(onOpenSidebar && markdown?.trim());
+  const isAssistant = normalizedRole === "assistant";
+  const assistantPreview =
+    isAssistant && markdown && !opts.isStreaming ? buildAssistantPreview(markdown) : null;
+  const renderedMarkdown = assistantPreview?.text ?? markdown;
+  const sourceTruncated = isAssistant ? hasSourceTruncationSignal(m) : false;
+  const canCopyMarkdown = isAssistant && Boolean(markdown?.trim());
+  const canExpand = isAssistant && Boolean(onOpenSidebar && markdown?.trim());
+  const canExportMarkdown = isAssistant && Boolean(markdown?.trim());
 
   // Detect pure-JSON messages and render as collapsible block
-  const jsonResult = markdown && !opts.isStreaming ? detectJson(markdown) : null;
+  const jsonResult =
+    renderedMarkdown && !opts.isStreaming && !assistantPreview?.truncated
+      ? detectJson(renderedMarkdown)
+      : null;
 
-  const bubbleClasses = ["chat-bubble", opts.isStreaming ? "streaming" : "", "fade-in"]
+  const bubbleClasses = [
+    "chat-bubble",
+    opts.isStreaming ? "streaming" : "",
+    assistantPreview?.truncated ? "chat-bubble--preview-truncated" : "",
+    "fade-in",
+  ]
     .filter(Boolean)
     .join(" ");
 
@@ -1128,17 +1253,22 @@ function renderGroupedMessage(
         : "Tool call"
       : "Tool output";
 
-  const hasActions = canCopyMarkdown || canExpand;
+  const hasActions = canCopyMarkdown || canExpand || canExportMarkdown;
 
   return html`
     <div class="${bubbleClasses}">
       ${renderReplyPill(normalizedMessage.replyTarget)}
       ${hasActions
-        ? html`<div class="chat-bubble-actions">
-            ${canExpand ? renderExpandButton(markdown!, onOpenSidebar!) : nothing}
-            ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
+        ? html`<div class="chat-bubble-actions chat-bubble-actions--visible">
+            ${canExpand ? renderExpandButton(markdown!, onOpenSidebar!, "Open full") : nothing}
+            ${canCopyMarkdown
+              ? renderCopyAsMarkdownButton(markdown!, { showLabel: true })
+              : nothing}
+            ${canExportMarkdown ? renderExportMarkdownButton(markdown!, messageKey) : nothing}
           </div>`
         : nothing}
+      ${sourceTruncated && markdown ? renderSourceTruncationWarning(markdown) : nothing}
+      ${assistantPreview ? renderAssistantPreviewNotice(assistantPreview) : nothing}
       ${isToolMessage
         ? html`
             <div
@@ -1189,9 +1319,12 @@ function renderGroupedMessage(
                             </summary>
                             <pre class="chat-json-content"><code>${jsonResult.pretty}</code></pre>
                           </details>`
-                        : markdown
-                          ? html`<div class="chat-text" dir="${detectTextDirection(markdown)}">
-                              ${unsafeHTML(toSanitizedMarkdownHtml(markdown))}
+                        : renderedMarkdown
+                          ? html`<div
+                              class="chat-text"
+                              dir="${detectTextDirection(renderedMarkdown)}"
+                            >
+                              ${unsafeHTML(toSanitizedMarkdownHtml(renderedMarkdown))}
                             </div>`
                           : nothing}
                       ${hasToolCards
@@ -1251,11 +1384,21 @@ function renderGroupedMessage(
                   </summary>
                   <pre class="chat-json-content"><code>${jsonResult.pretty}</code></pre>
                 </details>`
-              : markdown
-                ? html`<div class="chat-text" dir="${detectTextDirection(markdown)}">
-                    ${unsafeHTML(toSanitizedMarkdownHtml(markdown))}
+              : renderedMarkdown
+                ? html`<div class="chat-text" dir="${detectTextDirection(renderedMarkdown)}">
+                    ${unsafeHTML(toSanitizedMarkdownHtml(renderedMarkdown))}
                   </div>`
                 : nothing}
+            ${assistantPreview?.truncated && markdown
+              ? html`
+                  <details class="chat-full-response">
+                    <summary>Expand full response inline</summary>
+                    <div class="chat-text" dir="${detectTextDirection(markdown)}">
+                      ${unsafeHTML(toSanitizedMarkdownHtml(markdown))}
+                    </div>
+                  </details>
+                `
+              : nothing}
             ${hasToolCards
               ? renderInlineToolCards(toolCards, {
                   messageKey,

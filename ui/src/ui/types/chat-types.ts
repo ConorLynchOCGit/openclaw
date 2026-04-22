@@ -7,7 +7,45 @@ export type ChatItem =
   | { kind: "message"; key: string; message: unknown }
   | { kind: "divider"; key: string; label: string; timestamp: number }
   | { kind: "stream"; key: string; text: string; startedAt: number }
-  | { kind: "reading-indicator"; key: string };
+  | { kind: "reading-indicator"; key: string }
+  | {
+      kind: "run-status";
+      key: string;
+      phase:
+        | "queued"
+        | "starting"
+        | "running"
+        | "reading context"
+        | "retrieving memory"
+        | "using tools"
+        | "writing"
+        | "finalizing"
+        | "complete"
+        | "error"
+        | "cancelled";
+      startedAt: number;
+      runId?: string | null;
+      chips: Array<{ label: string; tone?: "muted" | "ok" | "warn" }>;
+    }
+  | {
+      kind: "queued-prompt";
+      key: string;
+      item: {
+        id: string;
+        text: string;
+        createdAt: number;
+        attachments?: Array<unknown>;
+      };
+      position: number;
+    }
+  | {
+      kind: "activity";
+      key: string;
+      label: string;
+      detail: string;
+      timestamp: number;
+      chips: Array<{ label: string; tone?: "muted" | "ok" | "warn" }>;
+    };
 
 /** A group of consecutive messages from the same role (Slack-style layout) */
 export type MessageGroup = {

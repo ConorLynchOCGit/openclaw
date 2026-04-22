@@ -28,10 +28,24 @@ than merely floated:
 - retrieval may use graph expansion only as a read-time candidate lane with
   telemetry and exclusion reasons
 
-Open decisions before implementation:
+2026-04-22 Phase 2 decision lock:
 
-- which MMV2 edge types are high-authority enough for automatic graph edges
-- whether inferred graph edges need operator review before use in retrieval
+- graph runtime will use a trust ladder, not a review-only operating model
+- deterministic structural edges may be used automatically in read-time graph
+  retrieval when they are backed by MMV2 events, explicit edges, source refs,
+  ids, scopes, statuses, or source lineage
+- inferred graph edges start as probationary read-time edges with low authority,
+  TTL, telemetry, and automatic decay; they do not require manual review before
+  low-weight read-time use
+- inferred edges may auto-promote only after repeated successful retrieval use,
+  no conflicts, and active source evidence
+- manual review is reserved for high-risk, conflicting, privileged, or
+  behavior-changing outcomes, not for every graph edge
+
+Remaining implementation decisions:
+
+- exact edge-type mapping from MMV2 edge/event/source structures into graph
+  authority tiers
 - graph retention/invalidation policy when source memories are superseded,
   deleted, conflicted, or recompiled into projections
 
@@ -203,6 +217,45 @@ Suggested edge families:
 
 The graph must not allow freeform edge labels to become semantic truth.
 
+## Edge authority tiers
+
+The graph runtime should classify each edge into an authority tier.
+
+Suggested first tiers:
+
+- `authoritative_structural`
+- `derived_structural`
+- `probationary_inferred`
+- `promoted_inferred`
+- `blocked_or_decayed`
+
+`authoritative_structural` edges come from explicit MMV2 edges, structural
+supersession, exact source refs, exact ids, explicit user text, scope, status,
+and event lineage.
+
+`derived_structural` edges come from deterministic joins over accepted runtime
+inputs such as same source document, same ingest segment family, same project
+scope, explicit artifact provenance, tool or skill registry links, and runtime
+inventory links.
+
+`probationary_inferred` edges may be created from bounded model or lexical
+signals only after provenance binding. They are read-time-only, low weight,
+time-limited, and telemetry-backed. They must never drive admission,
+reconciliation, correction, supersession, or durable truth mutation.
+
+`promoted_inferred` edges are former probationary edges that have repeated
+successful retrieval usefulness, no active conflicts, and continuing source
+support. Promotion changes read-time ranking authority only; it still does not
+make the edge canonical semantic truth.
+
+`blocked_or_decayed` edges are edges that lost source support, conflicted with
+higher-authority evidence, expired, or received negative retrieval feedback.
+
+The default path is automatic safe use and automatic decay, not hidden manual
+review. Review is an exception path for conflicts, high-risk content,
+privileged action proposals, or graph signals that would otherwise change live
+behavior.
+
 ## Subject nodes
 
 The graph should introduce explicit derived `subject` nodes.
@@ -316,6 +369,12 @@ The graph should help retrieval answer:
 - what contradictions or supersession chains exist?
 
 It must not invent new facts.
+
+Graph expansion should expose edge authority in retrieval telemetry. Retrieval
+packs should identify which selected or excluded items came from structural
+edges, probationary edges, promoted edges, or blocked/decayed edges. This keeps
+the system observable without forcing every useful graph edge through a manual
+queue that is unlikely to be reviewed.
 
 ## Interaction with capsules
 

@@ -257,6 +257,22 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "resolve_openclaw_path",
+    label: "resolve_openclaw_path",
+    description: "Resolve canonical OpenClaw path ownership before file writes",
+    sectionId: "fs",
+    profiles: ["minimal", "coding", "messaging"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "host_operator_repo",
+    label: "host_operator_repo",
+    description: "Scoped audited host-operator access to the live OpenClaw repo",
+    sectionId: "fs",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "update_plan",
     label: "update_plan",
     description: UPDATE_PLAN_TOOL_DISPLAY_SUMMARY,

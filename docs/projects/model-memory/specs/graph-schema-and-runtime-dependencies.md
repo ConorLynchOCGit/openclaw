@@ -48,12 +48,31 @@ Suggested fields:
 - `from_node_id`
 - `to_node_id`
 - `strength`
+- `authority_tier`
+- `ttl_expires_at`
+- `promotion_state`
 - `provenance_ref`
+- `source_memory_ids`
+- `source_event_ids`
+- `source_edge_ids`
 - `derived_from_rule`
 - `trust_tier`
 - `visibility`
 - `created_at`
 - `updated_at`
+
+`authority_tier` should follow the graph-derived runtime trust ladder:
+
+- `authoritative_structural`
+- `derived_structural`
+- `probationary_inferred`
+- `promoted_inferred`
+- `blocked_or_decayed`
+
+Probationary inferred edges are read-time-only and must carry TTL/provenance
+data. They may decay automatically or promote only through repeated retrieval
+usefulness with active source support. They must not mutate MMV2 truth,
+admission, reconciliation, correction, or supersession.
 
 ### `graph_build_runs`
 
