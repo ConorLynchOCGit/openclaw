@@ -70,11 +70,16 @@ title: "Model Memory Roadmap"
     capture hit DB connection/statement timeouts and created no new memory
     rows for the durable capture prompts
 - Mechanical capture/ingest hardening is now the active stabilization lane:
-  live capture has structured job events, ordinary capture defers rebuilds,
-  rebuild locking is fail-fast by default, reconciliation is scoped, edge
-  endpoint checks are batched, DB pool knobs are configurable, strict-schema
-  preflight is available, prompt-cache usage can be reported, and ordinary-turn
-  source-window persistence is redacted.
+  Passes 1-5 now persist safe runtime-state capture jobs and dirty-state
+  snapshots/events, defer rebuilds, keep rebuild locking fail-fast by default,
+  scope reconciliation, add DB priority lanes and pool-pressure backoff, batch
+  live persistence with deferred invalid candidate/edge reports, and preflight
+  actual strict-schema provider contracts with safe provider/model scorecards.
+- Remaining mechanical work is split into explicit passes in
+  [Capture And Ingest Mechanical Hardening](/projects/model-memory/specs/capture-ingest-mechanical-hardening):
+  durable dirty/rebuild scheduling, DB pool lanes, batch
+  persistence/savepoints, provider schema scorecards, cache-aware benchmarks,
+  and final MEMMECH proof/soak.
 
 ## Current top priorities
 
@@ -88,35 +93,38 @@ title: "Model Memory Roadmap"
 3. keep fresh production verification for `ContextEngine.ingest` and
    `ingestBatch`; the 2026-04-22 current-runtime proof shows production
    runtime evidence, while synthetic-only hooks remain blocked
-4. run a narrow `MEMMECH-2026-04-22` proof after the completed gateway pickup,
-   then rerun the current-runtime soak before calling the soak clean. Do not
-   write synthetic proof/eval content into the live durable DB.
-5. populate MMV2 with the curated 2026-04 deep document-ingest corpus and
+4. complete the remaining mechanical hardening passes in order:
+   - cache-aware mini/nano and large-document compression benchmarks
+   - final `MEMMECH-2026-04-22` proof and current-runtime soak
+5. run a narrow `MEMMECH-2026-04-22` proof after the mechanical passes, then
+   rerun the current-runtime soak before calling the soak clean. Do not write
+   synthetic proof/eval content into the live durable DB.
+6. populate MMV2 with the curated 2026-04 deep document-ingest corpus and
    verify source/segment/memory/event evidence; resume from checkpoint during
    the overnight ingest window, not during build-focused hardening
-6. quarantine legacy captured-object write compatibility behind explicit
+7. quarantine legacy captured-object write compatibility behind explicit
    fallback/rollback flags
-7. harden Retrieval Runtime/projection relevance:
+8. harden Retrieval Runtime/projection relevance:
    - prefer fresh projection digests backed by active MMV2 ids
    - emit stale/superseded/deleted/conflicted/inactive exclusions
    - emit retrieval miss diagnostics when durable memories existed but were
      excluded
    - keep all ranking read-time only
-8. finish quarantine/removal of fallback compatibility after the clean
+9. finish quarantine/removal of fallback compatibility after the clean
    retrieval-runtime soak
-9. continue ordinary-turn MMV2 evaluation coverage where needed; the current
-   scripted matrix covers preference, directive, project fact, structural
-   correction, temp/privacy rejects, workspace scope, duplicate prevention,
-   source-ref merge, scoped conflict, and no-fuzzy source-ref conflict
-10. stabilize file-pack/provider variance
-11. implement remaining verified primary memory capture seam expansion
-12. keep live memory activity-feed visibility bounded:
+10. continue ordinary-turn MMV2 evaluation coverage where needed; the current
+    scripted matrix covers preference, directive, project fact, structural
+    correction, temp/privacy rejects, workspace scope, duplicate prevention,
+    source-ref merge, scoped conflict, and no-fuzzy source-ref conflict
+11. stabilize file-pack/provider variance
+12. implement remaining verified primary memory capture seam expansion
+13. keep live memory activity-feed visibility bounded:
     retrieval/capture lifecycle ids, counts, and statuses may appear in the
     main feed, but raw prompts, transcripts, and tool logs must not
-13. maintain the repo-local and Codex global `model-memory-deep-ingest` skill
+14. maintain the repo-local and Codex global `model-memory-deep-ingest` skill
     as the standard entry point for future ingest resume/monitor/pause work
-14. implement `memory-ops-closed-loop` instrumentation
-15. proceed to Phase 2 derived features:
+15. implement `memory-ops-closed-loop` instrumentation
+16. proceed to Phase 2 derived features:
 
 - graph runtime
 - project/subject capsules
@@ -175,7 +183,11 @@ the current live authority where it conflicts with MMV2-native durable truth.
 
 - [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
 
-13. Phase 2 graph runtime:
+13. Mechanical capture/ingest completion:
+
+- [Capture And Ingest Mechanical Hardening](/projects/model-memory/specs/capture-ingest-mechanical-hardening)
+
+14. Phase 2 graph runtime:
 
 - [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
 

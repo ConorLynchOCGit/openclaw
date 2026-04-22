@@ -12,6 +12,7 @@ import type {
   WorkspaceProjectionTargetRecord,
   WorkspaceProjectionVersionRecord,
 } from "../runtime-read-models.ts";
+import type { ModelMemoryDbLane } from "./pool-lanes.ts";
 import {
   readBoolean,
   readDate,
@@ -23,6 +24,7 @@ import {
   readStringArray,
 } from "./row-codecs.ts";
 import type { SqlClient } from "./sql-client.ts";
+import { withSqlClientLane } from "./sql-client.ts";
 
 const RUNTIME_REBUILD_LOCK_NAMESPACE = 42042;
 const RUNTIME_REBUILD_LOCK_ID = 1;
@@ -216,6 +218,10 @@ function decodeContextRunSegment(row: QueryResultRow): ContextRunSegmentRecord {
 
 export class RuntimeContextRepository {
   constructor(private readonly sql: SqlClient) {}
+
+  withDbLane(lane: ModelMemoryDbLane): RuntimeContextRepository {
+    return new RuntimeContextRepository(withSqlClientLane(this.sql, lane));
+  }
 
   withTransaction<T>(work: (repository: RuntimeContextRepository) => Promise<T>): Promise<T> {
     return this.sql.withTransaction((tx) => work(new RuntimeContextRepository(tx)));

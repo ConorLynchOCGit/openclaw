@@ -5,7 +5,16 @@ import type {
   JsonModelExecutionResponse,
   JsonModelExecutor,
 } from "../plugin-sdk/model-memory.js";
+import {
+  classifyMemoryIngestionFailure,
+  type MemoryIngestionFailureClass,
+} from "../plugin-sdk/model-memory.js";
 import { resolveApiKeyForProvider } from "./model-auth.js";
+import {
+  createModelMemoryProviderScorecardStore,
+  shouldRecordModelMemoryProviderScorecard,
+  type ModelMemoryProviderScorecardStore,
+} from "./model-memory.provider-scorecard.js";
 import { parseModelRef, type ModelRef } from "./model-selection.js";
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -47,7 +56,9 @@ export type ModelMemoryLiveExecutionTrace = {
   promptCacheRetention?: string;
   prefixHash?: string;
   schemaHash?: string;
+  latencyMs?: number;
   failureStage?: ModelMemoryLiveExecutionFailureStage;
+  failureClass?: MemoryIngestionFailureClass;
   errorMessage?: string;
 };
 
@@ -66,6 +77,7 @@ export type ModelMemoryLiveJsonExecutorOptions = {
   requestSeed?: number;
   resolveAuth?: (provider: string, config: OpenClawConfig | undefined) => Promise<ResolvedAuth>;
   onTrace?: (trace: ModelMemoryLiveExecutionTrace) => void;
+  scorecardStore?: ModelMemoryProviderScorecardStore | false;
 };
 
 export type ModelMemoryProviderPreflightResult = {
@@ -81,6 +93,7 @@ export type ModelMemoryProviderPreflightResult = {
   httpStatus?: number;
   resolvedModelId?: string;
   failureStage?: ModelMemoryLiveExecutionFailureStage;
+  failureClass?: MemoryIngestionFailureClass;
   errorMessage?: string;
 };
 
@@ -263,6 +276,126 @@ function buildSchemaHash(request: JsonModelExecutionRequest): string | undefined
   return sha256(JSON.stringify(transport.schema));
 }
 
+function strictObjectSchema(properties: Record<string, unknown>, required: string[]) {
+  return {
+    type: "object",
+    properties,
+    required,
+    additionalProperties: false,
+  };
+}
+
+export function buildModelMemoryStrictPreflightRequests(
+  modelId: string,
+): JsonModelExecutionRequest[] {
+  return [
+    {
+      contract: {
+        contractName: "semantic_extraction",
+        contractVersion: "mmv2-capture-routing-v1",
+        modelId,
+      },
+      systemPrompt: "preflight-only; not sent",
+      userPrompt: "preflight-only; not sent",
+      responseFormat: "json",
+      responseOptions: {
+        transport: {
+          type: "json_schema",
+          name: "capture_routing_batch",
+          strict: true,
+          schema: strictObjectSchema(
+            {
+              schema_version: { type: "string" },
+              routing_decisions: { type: "array", items: { type: "object" } },
+            },
+            ["schema_version", "routing_decisions"],
+          ),
+        },
+        provider: { requireParameters: true },
+        maxOutputTokens: 128,
+      },
+    },
+    {
+      contract: {
+        contractName: "semantic_extraction",
+        contractVersion: "mmv2-atomic-extraction-v1",
+        modelId,
+      },
+      systemPrompt: "preflight-only; not sent",
+      userPrompt: "preflight-only; not sent",
+      responseFormat: "json",
+      responseOptions: {
+        transport: {
+          type: "json_schema",
+          name: "atomic_extraction_batch",
+          strict: true,
+          schema: strictObjectSchema(
+            {
+              schema_version: { type: "string" },
+              candidates: { type: "array", items: { type: "object" } },
+            },
+            ["schema_version", "candidates"],
+          ),
+        },
+        provider: { requireParameters: true },
+        maxOutputTokens: 128,
+      },
+    },
+    {
+      contract: {
+        contractName: "semantic_extraction",
+        contractVersion: "mmv2-canonicalization-v1",
+        modelId,
+      },
+      systemPrompt: "preflight-only; not sent",
+      userPrompt: "preflight-only; not sent",
+      responseFormat: "json",
+      responseOptions: {
+        transport: {
+          type: "json_schema",
+          name: "canonical_candidate_batch",
+          strict: true,
+          schema: strictObjectSchema(
+            {
+              schema_version: { type: "string" },
+              canonical_candidates: { type: "array", items: { type: "object" } },
+            },
+            ["schema_version", "canonical_candidates"],
+          ),
+        },
+        provider: { requireParameters: true },
+        maxOutputTokens: 128,
+      },
+    },
+    {
+      contract: {
+        contractName: "retrieval_request_interpretation",
+        contractVersion: "v2",
+        modelId,
+      },
+      systemPrompt: "preflight-only; not sent",
+      userPrompt: "preflight-only; not sent",
+      responseFormat: "json",
+      responseOptions: {
+        transport: {
+          type: "json_schema",
+          name: "retrieval_request_interpretation",
+          strict: true,
+          schema: strictObjectSchema(
+            {
+              intent: { type: "string" },
+              memory_pack_types: { type: "array", items: { type: "string" } },
+            },
+            ["intent", "memory_pack_types"],
+          ),
+        },
+        provider: { requireParameters: true },
+        maxOutputTokens: 128,
+      },
+    },
+  ];
+}
+
 function buildTraceRequestBody(requestBody: Record<string, unknown>): Record<string, unknown> {
   const messages = Array.isArray(requestBody.messages) ? requestBody.messages : [];
   return {
@@ -352,6 +485,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
   private readonly requestSeed?: number;
   private readonly resolveAuthImpl: NonNullable<ModelMemoryLiveJsonExecutorOptions["resolveAuth"]>;
   private readonly onTrace?: (trace: ModelMemoryLiveExecutionTrace) => void;
+  private readonly scorecardStore?: ModelMemoryProviderScorecardStore;
 
   constructor(options: ModelMemoryLiveJsonExecutorOptions = {}) {
     this.config = options.config ?? loadConfig();
@@ -360,6 +494,13 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
     this.requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs);
     this.requestSeed = resolveRequestSeed(options.requestSeed);
     this.onTrace = options.onTrace;
+    this.scorecardStore =
+      options.scorecardStore === false
+        ? undefined
+        : (options.scorecardStore ??
+          (shouldRecordModelMemoryProviderScorecard()
+            ? createModelMemoryProviderScorecardStore()
+            : undefined));
     this.resolveAuthImpl =
       options.resolveAuth ??
       ((provider, config) =>
@@ -376,6 +517,178 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
 
   getRequestSeed(): number | undefined {
     return this.requestSeed;
+  }
+
+  private classifyProviderFailure(input: {
+    strictSchema?: boolean;
+    httpStatus?: number;
+    failureStage?: ModelMemoryLiveExecutionFailureStage;
+    errorMessage?: string;
+  }): MemoryIngestionFailureClass | undefined {
+    if (!input.failureStage && !input.httpStatus && !input.errorMessage) {
+      return undefined;
+    }
+    if (input.httpStatus === 402) {
+      return "provider_credit";
+    }
+    const failureClass = classifyMemoryIngestionFailure(input.errorMessage ?? "");
+    if (
+      input.strictSchema === true &&
+      (input.httpStatus === 400 ||
+        input.httpStatus === 422 ||
+        /schema|response_format|require_parameters|structured output/iu.test(
+          input.errorMessage ?? "",
+        ))
+    ) {
+      return "provider_json_boundary";
+    }
+    if (failureClass !== "other") {
+      return failureClass;
+    }
+    if (input.failureStage === "provider_parse") {
+      return "provider_json_boundary";
+    }
+    if (input.failureStage === "provider_response") {
+      return "provider_empty_response";
+    }
+    return failureClass;
+  }
+
+  private async recordScorecardEvent(input: {
+    status: "success" | "failed";
+    requestedModelId: string;
+    provider: string;
+    providerModel: string;
+    resolvedModelId?: string;
+    contractName?: string;
+    contractVersion?: string;
+    schemaName?: string;
+    schemaHash?: string;
+    strictSchema?: boolean;
+    httpStatus?: number;
+    failureClass?: MemoryIngestionFailureClass;
+    failureStage?: string;
+    latencyMs?: number;
+    promptTokenCount?: number;
+    outputTokenCount?: number;
+    cachedInputTokenCount?: number;
+    promptCacheKey?: string;
+  }): Promise<void> {
+    if (!this.scorecardStore) {
+      return;
+    }
+    await this.scorecardStore
+      .record({
+        schemaVersion: 1,
+        observedAt: new Date().toISOString(),
+        status: input.status,
+        requestedModelId: input.requestedModelId,
+        provider: input.provider,
+        providerModel: input.providerModel,
+        resolvedModelId: input.resolvedModelId,
+        contractName: input.contractName,
+        contractVersion: input.contractVersion,
+        schemaName: input.schemaName,
+        schemaHash: input.schemaHash,
+        strictSchema: input.strictSchema,
+        httpStatus: input.httpStatus,
+        failureClass: input.failureClass,
+        failureStage: input.failureStage,
+        latencyMs: input.latencyMs,
+        promptTokenCount: input.promptTokenCount,
+        outputTokenCount: input.outputTokenCount,
+        cachedInputTokenCount: input.cachedInputTokenCount,
+        promptCacheKey: input.promptCacheKey,
+        cacheHit:
+          input.promptCacheKey !== undefined && (input.cachedInputTokenCount ?? 0) > 0
+            ? true
+            : undefined,
+        rawContentPersisted: false,
+        containsPromptText: false,
+        containsTranscript: false,
+        containsRawToolLog: false,
+      })
+      .catch(() => undefined);
+  }
+
+  private async finishPreflightResult(
+    result: ModelMemoryProviderPreflightResult,
+    latencyMs: number,
+    schemaHash?: string,
+  ): Promise<ModelMemoryProviderPreflightResult> {
+    const strictSchema = result.strictSchema === true;
+    const failureClass = !result.ok
+      ? this.classifyProviderFailure({
+          strictSchema,
+          httpStatus: result.httpStatus,
+          failureStage: result.failureStage,
+          errorMessage: result.errorMessage,
+        })
+      : undefined;
+    const finished = failureClass ? { ...result, failureClass } : result;
+    await this.recordScorecardEvent({
+      status: finished.ok ? "success" : "failed",
+      requestedModelId: finished.requestedModelId,
+      provider: finished.provider,
+      providerModel: finished.providerModel,
+      resolvedModelId: finished.resolvedModelId,
+      contractName: finished.contractName,
+      contractVersion: finished.contractVersion,
+      schemaName: finished.schemaName,
+      schemaHash,
+      strictSchema: finished.strictSchema,
+      httpStatus: finished.httpStatus,
+      failureClass: finished.failureClass,
+      failureStage: finished.failureStage,
+      latencyMs,
+    });
+    return finished;
+  }
+
+  private async recordTraceScorecard(trace: ModelMemoryLiveExecutionTrace): Promise<void> {
+    const failureClass =
+      trace.failureStage || trace.httpStatus
+        ? this.classifyProviderFailure({
+            strictSchema: trace.requestBody.response_format
+              ? JSON.stringify(trace.requestBody.response_format).includes("json_schema")
+              : false,
+            httpStatus: trace.httpStatus,
+            failureStage: trace.failureStage,
+            errorMessage: trace.errorMessage,
+          })
+        : undefined;
+    await this.recordScorecardEvent({
+      status: trace.failureStage ? "failed" : "success",
+      requestedModelId: trace.requestedModelId,
+      provider: trace.provider,
+      providerModel: trace.providerModel,
+      resolvedModelId: trace.resolvedModelId,
+      contractName: trace.contractName,
+      contractVersion: trace.contractVersion,
+      schemaName:
+        typeof trace.requestBody.response_format === "object" &&
+        trace.requestBody.response_format !== null
+          ? (trace.requestBody.response_format as { json_schema?: { name?: string } }).json_schema
+              ?.name
+          : undefined,
+      schemaHash: trace.schemaHash,
+      strictSchema:
+        typeof trace.requestBody.response_format === "object" &&
+        trace.requestBody.response_format !== null
+          ? Boolean(
+              (trace.requestBody.response_format as { json_schema?: { strict?: boolean } })
+                .json_schema?.strict,
+            )
+          : false,
+      httpStatus: trace.httpStatus,
+      failureClass,
+      failureStage: trace.failureStage,
+      latencyMs: trace.latencyMs,
+      promptTokenCount: trace.promptTokenCount,
+      outputTokenCount: trace.outputTokenCount,
+      cachedInputTokenCount: trace.cachedInputTokenCount,
+      promptCacheKey: trace.promptCacheKey,
+    });
   }
 
   async preflightModel(modelId: string): Promise<ModelMemoryProviderPreflightResult> {
@@ -485,6 +798,9 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
   async preflightContract(
     request: JsonModelExecutionRequest,
   ): Promise<ModelMemoryProviderPreflightResult> {
+    const startedAt = Date.now();
+    const finish = (result: ModelMemoryProviderPreflightResult) =>
+      this.finishPreflightResult(result, Date.now() - startedAt, buildSchemaHash(request));
     const model = resolveRequestModel(request.contract.modelId, this.defaultProvider);
     const auth = await this.resolveAuthImpl(model.provider, this.config);
     const baseUrl = resolveProviderBaseUrl(this.config, model.provider);
@@ -492,7 +808,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
     const transport = request.responseOptions?.transport;
 
     if (!auth.apiKey) {
-      return {
+      return finish({
         ok: false,
         requestedModelId: request.contract.modelId,
         provider: model.provider,
@@ -504,7 +820,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         strictSchema: transport?.type === "json_schema" ? (transport.strict ?? true) : false,
         failureStage: "request_time",
         errorMessage: `model-memory live execution for provider "${model.provider}" requires an API key or OAuth token`,
-      };
+      });
     }
 
     const requestBody = {
@@ -547,7 +863,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         body: JSON.stringify(requestBody),
       });
     } catch (error) {
-      return {
+      return finish({
         ok: false,
         requestedModelId: request.contract.modelId,
         provider: model.provider,
@@ -559,12 +875,12 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         strictSchema: transport?.type === "json_schema" ? (transport.strict ?? true) : false,
         failureStage: "request_time",
         errorMessage: error instanceof Error ? error.message : String(error),
-      };
+      });
     }
 
     const rawResponseText = await response.text();
     if (!response.ok) {
-      return {
+      return finish({
         ok: false,
         requestedModelId: request.contract.modelId,
         provider: model.provider,
@@ -577,13 +893,13 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         httpStatus: response.status,
         failureStage: "request_time",
         errorMessage: buildExcerpt(parseErrorText(rawResponseText)) ?? "provider returned error",
-      };
+      });
     }
 
     try {
       const payload = JSON.parse(rawResponseText) as OpenAICompatibleResponse;
       extractOutputText(payload);
-      return {
+      return finish({
         ok: true,
         requestedModelId: request.contract.modelId,
         provider: model.provider,
@@ -595,9 +911,9 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         strictSchema: transport?.type === "json_schema" ? (transport.strict ?? true) : false,
         httpStatus: response.status,
         resolvedModelId: readTrimmedString(payload.model) ?? `${model.provider}/${model.model}`,
-      };
+      });
     } catch (error) {
-      return {
+      return finish({
         ok: false,
         requestedModelId: request.contract.modelId,
         provider: model.provider,
@@ -610,11 +926,12 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         httpStatus: response.status,
         failureStage: "provider_response",
         errorMessage: error instanceof Error ? error.message : String(error),
-      };
+      });
     }
   }
 
   async execute(request: JsonModelExecutionRequest): Promise<JsonModelExecutionResponse> {
+    const startedAt = Date.now();
     const model = resolveRequestModel(request.contract.modelId, this.defaultProvider);
     const auth = await this.resolveAuthImpl(model.provider, this.config);
     if (!auth.apiKey) {
@@ -681,11 +998,13 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         schemaHash,
         promptCacheKey,
         promptCacheRetention,
+        latencyMs: Date.now() - startedAt,
         responseOk: false,
         responseBodyReceived: false,
         failureStage: "request_time",
         errorMessage: error instanceof Error ? error.message : String(error),
       };
+      await this.recordTraceScorecard(trace);
       this.onTrace?.(trace);
       throw new ModelMemoryLiveExecutionError(
         `model-memory live execution failed for ${model.provider}/${model.model}: request_time ${trace.errorMessage}`,
@@ -711,6 +1030,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         schemaHash,
         promptCacheKey,
         promptCacheRetention,
+        latencyMs: Date.now() - startedAt,
         httpStatus: response.status,
         responseOk: false,
         responseBodyReceived: rawResponseText.trim().length > 0,
@@ -718,6 +1038,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         failureStage: "request_time",
         errorMessage: detail,
       };
+      await this.recordTraceScorecard(trace);
       this.onTrace?.(trace);
       throw new ModelMemoryLiveExecutionError(
         `model-memory live execution failed for ${model.provider}/${model.model}: ${response.status} ${detail}`,
@@ -741,6 +1062,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         schemaHash,
         promptCacheKey,
         promptCacheRetention,
+        latencyMs: Date.now() - startedAt,
         httpStatus: response.status,
         responseOk: true,
         responseBodyReceived: rawResponseText.trim().length > 0,
@@ -748,6 +1070,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         failureStage: "provider_parse",
         errorMessage: error instanceof Error ? error.message : String(error),
       };
+      await this.recordTraceScorecard(trace);
       this.onTrace?.(trace);
       throw new ModelMemoryLiveExecutionError(
         `model-memory live execution failed for ${model.provider}/${model.model}: provider_parse ${trace.errorMessage}`,
@@ -773,6 +1096,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         schemaHash,
         promptCacheKey,
         promptCacheRetention,
+        latencyMs: Date.now() - startedAt,
         httpStatus: response.status,
         responseOk: true,
         responseBodyReceived: rawResponseText.trim().length > 0,
@@ -782,6 +1106,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         failureStage: "provider_response",
         errorMessage: error instanceof Error ? error.message : String(error),
       };
+      await this.recordTraceScorecard(trace);
       this.onTrace?.(trace);
       throw new ModelMemoryLiveExecutionError(
         `model-memory live execution failed for ${model.provider}/${model.model}: provider_response ${trace.errorMessage}`,
@@ -803,6 +1128,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
       schemaHash,
       promptCacheKey,
       promptCacheRetention,
+      latencyMs: Date.now() - startedAt,
       httpStatus: response.status,
       responseOk: true,
       responseBodyReceived: rawResponseText.trim().length > 0,
@@ -811,6 +1137,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
       outputTextExcerpt: buildExcerpt(outputText),
       ...usageTrace,
     };
+    await this.recordTraceScorecard(trace);
     this.onTrace?.(trace);
 
     const executionResponse: JsonModelExecutionResponse = {

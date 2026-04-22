@@ -40,6 +40,9 @@ describe("shared memory ingestion pipeline", () => {
     expect(classifyMemoryIngestionFailure("invalid MMV2 canonicalization repair semantics")).toBe(
       "canonicalization",
     );
+    expect(classifyMemoryIngestionFailure("db pool pressure waiting count exceeded")).toBe(
+      "pool_pressure",
+    );
     expect(isMemoryIngestionProviderBoundaryFailure("provider_json_boundary")).toBe(true);
     expect(isMemoryIngestionProviderBoundaryFailure("canonicalization")).toBe(false);
   });
@@ -113,6 +116,14 @@ describe("shared memory ingestion pipeline", () => {
         alternateProviderVerified: true,
       }),
     ).toMatchObject({ retry: true, useAlternateProvider: true });
+
+    expect(
+      decideMemoryIngestionRetry({
+        failureClass: "pool_pressure",
+        priorAttempts: 0,
+        maxConnectionRetries: 1,
+      }),
+    ).toMatchObject({ retry: true, reduceConcurrency: true });
   });
 
   it("keeps prompt prefix stable and isolates dynamic source tail", () => {

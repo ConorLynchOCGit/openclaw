@@ -130,10 +130,36 @@ Current 2026-04-22 partial-corpus proof state:
   live capture path hit DB connection/statement timeouts
 - mechanical capture/ingest hardening has now landed in source for the timeout
   path:
+  - Pass 1 durable capture jobs now persist safe runtime-state job snapshots
+    and JSONL events under `$OPENCLAW_STATE_DIR/model-memory/capture-jobs/`
+    without a DB migration
+  - completed ordinary-turn capture routes through `MemoryCaptureJob`, with
+    bounded worker concurrency and safe job ids/status/failure classes
+  - retry scheduling is bounded to retryable provider/connection/timeout
+    classes; no-store/privacy/temp, schema unsupported, and deterministic
+    validation failures are not retried
+  - replay is inspection-only and cannot resurrect raw prompt, transcript,
+    assistant-turn, or raw tool-log content because the durable job store only
+    contains safe hashes, ids, labels, classes, and timestamps
   - live ordinary-turn capture emits structured safe capture job events instead
     of failing only through warning logs
-  - ordinary-turn capture defaults to deferred runtime rebuild with an
-    in-process dirty marker rather than synchronous full rebuild
+  - ordinary-turn and bounded tool-result capture default to deferred runtime
+    rebuild with durable/semi-durable dirty state rather than synchronous full
+    rebuild
+  - Pass 2 dirty snapshots/events are stored outside semantic durable memory at
+    `$OPENCLAW_STATE_DIR/model-memory/runtime-dirty/state.json` and
+    `$OPENCLAW_STATE_DIR/model-memory/runtime-dirty/events.jsonl`
+  - dirty/rebuild activity now includes `runtime_dirty_marked`,
+    `runtime_rebuild_deferred`, `runtime_rebuild_scheduled`,
+    `runtime_rebuild_started`, `runtime_rebuild_completed`,
+    `runtime_rebuild_failed`, `runtime_rebuild_skipped_lock_busy`,
+    `runtime_rebuild_coalesced`, `runtime_dirty_cleared`, and
+    `runtime_rebuild_admin_requested`
+  - rebuild scheduling coalesces by
+    `MODEL_MEMORY_RUNTIME_REBUILD_COALESCE_WRITES` or
+    `MODEL_MEMORY_RUNTIME_REBUILD_COALESCE_MS`, stays disabled through
+    `MODEL_MEMORY_RUNTIME_REBUILD_ENABLED=false`, and remains one worker at a
+    time by default through `MODEL_MEMORY_RUNTIME_REBUILD_MAX_CONCURRENCY=1`
   - runtime rebuild locking defaults to try-lock/fail-fast behavior with
     `MODEL_MEMORY_REBUILD_BLOCKING_LOCK_ENABLED=true` as rollback
   - ordinary-turn reconciliation uses scoped projected summaries by default
@@ -155,11 +181,45 @@ Current 2026-04-22 partial-corpus proof state:
     `status --json`
   - model-memory live runtime armed with 590 objects and 3 projection targets
   - root `USER.md` / `MEMORY.md` hashes stayed unchanged
+- runtime pickup for Passes 3-5 completed on 2026-04-22:
+  - rollback image:
+    `openclaw:rollback-pool-persistence-preflight-20260422T2230Z`
+  - rebuilt `openclaw:local`
+  - recreated only `openclaw-gateway`
+  - `/healthz`, websocket health, container health, and `status --json`
+    returned healthy/reachable
+  - root `USER.md` / `MEMORY.md` hashes stayed unchanged
 - this is not yet a clean runtime soak result; a future narrow
   `MEMMECH-2026-04-22` proof must show durable ordinary-turn rows, capture job
-  status, deferred rebuild behavior, and root no-write/no-dark-data evidence.
-  The pickup pass did not create artificial durable proof/eval memories in the
-  live DB.
+  status, dirty-state snapshots/events, coalesced rebuild behavior, and root
+  no-write/no-dark-data evidence. The pickup pass did not create artificial
+  durable proof/eval memories in the live DB.
+- Passes 3-5 of mechanical capture/ingest hardening are now implemented and
+  live-picked-up without a DB migration:
+  - DB pool lanes add safe pool snapshots, acquire/query/transaction latency
+    accounting, priority lane concurrency, and pool-pressure reasons that
+    defer capture/rebuild while keeping retrieval highest priority
+  - pool pressure is classified as a shared retryable failure class and can
+    back off capture jobs or leave runtime dirty instead of converting DB
+    contention into a semantic/source failure
+  - live persistence now batches durable memories, events, and edges where
+    safe, keeps batched endpoint validation, uses savepoint/per-record fallback
+    where supported, and emits safe deferred candidate/edge reports plus
+    operation/latency telemetry
+  - a non-mutating integrity audit reports memories without events, events
+    without source refs, edges without endpoints, stale projection references,
+    and orphan source/segment records
+  - provider preflight now builds actual strict-schema requests for capture
+    routing, extraction, canonicalization, and retrieval interpretation, with
+    OpenRouter `require_parameters` on strict-schema contracts
+  - provider scorecards persist only safe runtime-state events/summaries for
+    schema status, failure class, latency, prompt/output/cached tokens, cache
+    hit rate, and contract/schema version
+- the remaining mechanical work is documented as a pass map in
+  `docs/projects/model-memory/specs/capture-ingest-mechanical-hardening.md`
+  and must be completed in order:
+  - cache-aware mini/nano and large-document compression benchmarks
+  - final `MEMMECH-2026-04-22` proof and current-runtime soak
 - storage compatibility fallback identity now stays structural inside
   `extensions/model-memory/src/mmv2/storage-compatibility.ts` and no longer
   imports legacy `semantic-identity.ts`
@@ -225,20 +285,26 @@ Current near-term engineering sequence:
    duplicate-proof guarantees are proven
 3. keep hook production verification honest: only real UI/gateway probe
    evidence makes capture wiring eligible
-4. resume and complete the fresh curated 304-source deep document corpus during
-   the overnight ingest window
-5. update remaining ordinary-turn MMV2 evaluation coverage where needed
-6. harden Retrieval Runtime relevance, exclusions, miss diagnostics, and
+4. treat mechanical hardening Passes 1-5 as live-picked-up; the remaining
+   mechanical work is Pass 6 cache-aware mini/nano and large-document
+   compression benchmarking, then Pass 7 `MEMMECH-2026-04-22` proof/soak
+5. rerun narrow `MEMMECH-2026-04-22` proof only after Pass 6 planning or an
+   explicit decision to defer benchmarking, and do not write synthetic
+   proof/eval content into the live durable DB
+6. resume and complete the fresh curated 304-source deep document corpus only
+   after provider/funnel preconditions pass
+7. update remaining ordinary-turn MMV2 evaluation coverage where needed
+8. harden Retrieval Runtime relevance, exclusions, miss diagnostics, and
    empty-retrieval telemetry without mutating truth
-7. quarantine/remove remaining fallback compatibility in small reversible
+9. quarantine/remove remaining fallback compatibility in small reversible
    slices
-8. stabilize file-pack/provider variance
-9. implement the primary capture seam expansion specified in
-   [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
-   only for verified seams behind kill switches
-10. implement closed-loop operational instrumentation specified in
+10. stabilize file-pack/provider variance
+11. implement the primary capture seam expansion specified in
+    [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
+    only for verified seams behind kill switches
+12. implement closed-loop operational instrumentation specified in
     [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
-11. then proceed to Phase 2 graph, capsule, hierarchical retrieval, planner,
+13. then proceed to Phase 2 graph, capsule, hierarchical retrieval, planner,
     synthesis, and cache/projection features
 
 Current 2026-04-22 hardening progress:

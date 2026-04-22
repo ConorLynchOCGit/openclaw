@@ -112,6 +112,68 @@ describe("model-memory activity feed", () => {
     expect(JSON.stringify(message)).not.toContain("raw prompt-like error text");
   });
 
+  it("supports retry-scheduled capture job activity without raw retry payloads", () => {
+    const message = buildModelMemoryActivityTranscriptMessage({
+      kind: "ordinary_turn_capture",
+      status: "scheduled",
+      eventType: "capture_retry_scheduled",
+      safeLabels: {
+        failureClass: "provider_empty_response",
+        stage: "execution",
+        content: "raw replay content must not persist",
+      },
+      ids: {
+        captureJobId: "capture_job_retry",
+      },
+      metrics: {
+        retryCount: 1,
+      },
+    });
+
+    expect(message.__openclaw.eventType).toBe("capture_retry_scheduled");
+    expect(message.__openclaw.ids).toMatchObject({
+      captureJobId: ["capture_job_retry"],
+    });
+    expect(message.__openclaw.labels).toEqual({
+      failureClass: "provider_empty_response",
+      stage: "execution",
+    });
+    expect(JSON.stringify(message)).not.toContain("raw replay content");
+  });
+
+  it("supports runtime dirty/rebuild activity with safe ids only", () => {
+    const message = buildModelMemoryActivityTranscriptMessage({
+      kind: "ordinary_turn_capture",
+      status: "deferred",
+      eventType: "runtime_dirty_marked",
+      safeLabels: {
+        reason: "ordinary_turn_capture_written",
+        schedulerReason: "deferred",
+        prompt: "raw prompt must not persist",
+      },
+      ids: {
+        dirtyId: "runtime_dirty_001",
+        captureJobId: "capture_job_001",
+        memoryIds: ["memory-1", "memory-2"],
+      },
+      metrics: {
+        writeCountSinceLastRebuild: 2,
+      },
+    });
+
+    expect(message.__openclaw.eventType).toBe("runtime_dirty_marked");
+    expect(message.__openclaw.ids).toMatchObject({
+      dirtyId: ["runtime_dirty_001"],
+      captureJobId: ["capture_job_001"],
+      memoryIds: ["memory-1", "memory-2"],
+    });
+    expect(message.__openclaw.labels).toEqual({
+      reason: "ordinary_turn_capture_written",
+      schedulerReason: "deferred",
+    });
+    expect(JSON.stringify(message)).not.toContain("raw prompt must not persist");
+  });
+
   it("emits idempotent bounded structured transcript messages when enabled", async () => {
     const appended: Array<{ message?: unknown; idempotencyKey?: string }> = [];
     const result = await emitModelMemoryActivityFeedEvent(

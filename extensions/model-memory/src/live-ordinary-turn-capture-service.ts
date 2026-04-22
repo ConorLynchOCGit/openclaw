@@ -29,7 +29,7 @@ type MmV2AwareCanonicalRepository = ModelMemoryCanonicalRepository & {
     sessionId?: string | null;
     limit?: number;
   }) => Promise<ExistingMemorySummary[]>;
-  persistLiveMemoryBatch?: (batch: LiveMemoryBatch) => Promise<void>;
+  persistLiveMemoryBatch?: (batch: LiveMemoryBatch) => Promise<unknown>;
 };
 
 export type LiveOrdinaryTurnCaptureResult = OrdinaryTurnCaptureResult & {

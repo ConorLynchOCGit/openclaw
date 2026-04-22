@@ -4,6 +4,11 @@ import {
   type CapturedObjectWriteStore,
 } from "../../extensions/model-memory/src/db/captured-object-write-compatibility.ts";
 import { MmV2NativeRepository } from "../../extensions/model-memory/src/db/mmv2-native-repository.ts";
+import {
+  createModelMemoryDbLaneController,
+  type ModelMemoryDbLaneController,
+} from "../../extensions/model-memory/src/db/pool-lanes.ts";
+import { PgSqlClient } from "../../extensions/model-memory/src/db/sql-client.ts";
 import { resolveModelMemoryStorageEngine } from "../../extensions/model-memory/src/storage-engine.ts";
 import { loadConfig, type OpenClawConfig } from "../config/config.js";
 import {
@@ -38,6 +43,7 @@ export type ModelMemoryDatabaseRuntime = {
   storageEngine: "legacy" | "mmv2";
   pool: ModelMemoryPgPool;
   sqlClient: SqlClient;
+  dbLaneController: ModelMemoryDbLaneController;
   canonicalRepository: InstanceType<typeof ModelMemoryCanonicalRepository> | MmV2NativeRepository;
   runtimeRepository: InstanceType<typeof RuntimeContextRepository>;
   memoryStore: CapturedObjectWriteStore;
@@ -204,27 +210,8 @@ export async function createModelMemoryDatabaseRuntime(
 
   const poolFactory = input.createPool ?? createModelMemoryPgPool;
   const pool = poolFactory({ connectionString: resolution.connectionString });
-  const sqlClient: SqlClient = {
-    query: (text, params) => pool.query(text, params),
-    withTransaction: async (work) => {
-      const client = await pool.connect();
-      try {
-        await client.query("BEGIN");
-        const tx: SqlClient = {
-          query: (text, params) => client.query(text, params),
-          withTransaction: (nestedWork) => nestedWork(tx),
-        };
-        const result = await work(tx);
-        await client.query("COMMIT");
-        return result;
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-      } finally {
-        client.release();
-      }
-    },
-  };
+  const dbLaneController = createModelMemoryDbLaneController({ pool, env });
+  const sqlClient: SqlClient = new PgSqlClient(pool, { laneController: dbLaneController });
   const migrationRunner = input.migrationRunner ?? applyModelMemoryMigrations;
   const migrationNames = input.applyMigrations === false ? [] : await migrationRunner(sqlClient);
   const storageEngine = resolveModelMemoryStorageEngine(config, env);
@@ -254,6 +241,7 @@ export async function createModelMemoryDatabaseRuntime(
     storageEngine,
     pool,
     sqlClient,
+    dbLaneController,
     canonicalRepository,
     runtimeRepository,
     memoryStore,

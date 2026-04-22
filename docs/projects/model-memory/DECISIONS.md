@@ -5,6 +5,162 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-22 - Pool, persistence, and provider telemetry stay operational
+
+Decision:
+
+- implement Passes 3-5 without a SQL migration
+- use priority semaphores/queue lanes over separate physical DB pools for the
+  first live hardening pass
+- keep operational scorecards and pressure telemetry outside MMV2 semantic
+  truth as runtime-state artifacts or in-memory snapshots
+- classify `pool_pressure` as a retryable shared ingestion failure class
+- allow capture/rebuild to defer under pressure while retrieval remains the
+  highest-priority DB lane
+- batch persistence where idempotency is already deterministic, and defer
+  invalid candidates/edges with safe ids and reasons rather than rolling back
+  valid siblings
+- run document-ingest preflight against actual strict-schema contracts before
+  corpus work; generic JSON-object provider health is not sufficient proof
+
+Reasoning:
+
+- multiplying physical pools would risk increasing total DB connection pressure
+  before the live workload proves that separate pools are necessary
+- the immediate availability problem is starvation and write amplification, so
+  priority lanes plus circuit-breaker style deferral are lower risk and require
+  no migration
+- invalid candidates and bad edges are data-quality or persistence-boundary
+  events; they should be inspectable without causing source-wide failure
+- provider/model reliability needs scorecards, but scorecards are operational
+  telemetry, not semantic memory
+
+Rollback:
+
+- reduce lane concurrency through the `MODEL_MEMORY_DB_*_LANE_CONCURRENCY`
+  knobs
+- raise or disable pressure sensitivity by adjusting
+  `MODEL_MEMORY_DB_POOL_PRESSURE_*` thresholds
+- keep document ingest paused if strict-schema preflight fails for any required
+  contract
+- ignore or delete runtime-state provider scorecard artifacts if operational
+  telemetry needs a clean reset
+
+## 2026-04-22 - Durable capture jobs use runtime-state spool, not MMV2 DB tables
+
+Decision:
+
+- implement Pass 1 durable capture jobs without a DB migration
+- persist safe job snapshots and append-only job events under
+  `$OPENCLAW_STATE_DIR/model-memory/capture-jobs/`
+- keep the semantic durable-memory DB reserved for MMV2 truth, not job queue
+  bookkeeping
+- store only safe metadata:
+  - capture job id
+  - session id/key
+  - agent id
+  - source kind
+  - source hash/fingerprint
+  - status
+  - failure class/stage
+  - retry count and next attempt time
+  - timestamps
+  - model/provider labels
+  - safe related source/segment/memory/event/projection ids
+- keep raw user turns, assistant turns, transcripts, and tool logs out of the
+  durable job store
+- make replay an inspection marker only unless a future approved design adds a
+  source-preserving replay substrate with no raw-payload storage
+
+Reasoning:
+
+- this satisfies the storage gate without hiding an unapproved migration
+- capture outcomes now survive process restarts for inspection/replay planning
+  while raw turn payloads remain in-memory only during the immediate capture
+  execution/retry
+- later dirty-state scheduling, pool backoff, and MEMMECH proof can depend on
+  stable capture job ids without coupling job state to MMV2 semantic truth
+
+Rollback:
+
+- remove or ignore the runtime-state capture job spool
+- disable or reduce capture retries with `MODEL_MEMORY_CAPTURE_JOB_MAX_RETRIES`
+- set `MODEL_MEMORY_CAPTURE_JOB_CONCURRENCY=1` for the current conservative
+  default worker behavior
+
+## 2026-04-22 - Runtime dirty state uses the runtime-state spool, not MMV2 SQL
+
+Decision:
+
+- implement Pass 2 dirty state and rebuild scheduling without a DB migration
+- store dirty snapshots/events under
+  `$OPENCLAW_STATE_DIR/model-memory/runtime-dirty/`
+- keep runtime dirty state operational only; MMV2 SQL remains semantic truth
+- make ordinary-turn and bounded tool-result capture mark dirty and schedule or
+  defer rebuilds instead of synchronously rebuilding runtime/projection tables
+- coalesce rebuilds by write count or elapsed dirty age using:
+  - `MODEL_MEMORY_RUNTIME_REBUILD_ENABLED`
+  - `MODEL_MEMORY_RUNTIME_REBUILD_COALESCE_WRITES`
+  - `MODEL_MEMORY_RUNTIME_REBUILD_COALESCE_MS`
+  - `MODEL_MEMORY_RUNTIME_REBUILD_MAX_CONCURRENCY`
+  - `MODEL_MEMORY_RUNTIME_REBUILD_RETRY_DELAY_MS`
+  - `MODEL_MEMORY_RUNTIME_REBUILD_MAX_RETRIES`
+- preserve `MODEL_MEMORY_REBUILD_BLOCKING_LOCK_ENABLED=true` as the explicit
+  rollback flag for blocking advisory-lock behavior, while the default remains
+  fail-fast try-lock behavior
+
+Reasoning:
+
+- dirty/rebuild status must survive process reloads better than an in-process
+  marker, but it is operational scheduler state and does not belong in
+  semantic durable memory
+- capture jobs should not fail just because rebuild work is deferred, coalesced,
+  disabled, or lock-busy
+- runtime projections/read models are derived artifacts; delayed rebuilds must
+  not mutate canonical truth or write generated projections back to root
+  `USER.md` / `MEMORY.md`
+
+Rollback:
+
+- set `MODEL_MEMORY_RUNTIME_REBUILD_ENABLED=false` to keep marking dirty while
+  preventing automatic rebuild scheduling
+- remove or ignore `$OPENCLAW_STATE_DIR/model-memory/runtime-dirty/` if the
+  runtime-state spool needs a clean scheduler reset
+- set `MODEL_MEMORY_REBUILD_BLOCKING_LOCK_ENABLED=true` only as a temporary
+  compatibility rollback for older rebuild-lock behavior
+
+## 2026-04-22 - Remaining capture/ingest mechanical repair is split into passes
+
+Decision:
+
+- treat the bounded capture hardening already landed as groundwork, not the
+  full repair
+- complete the remaining mechanical work in this order, with Pass 1 now
+  complete and Pass 2 implemented in source:
+  - durable capture job queue/retry/replay (completed with runtime-state spool)
+  - durable dirty marker and coalesced rebuild scheduler (implemented with
+    runtime-state spool)
+  - DB pool lanes or priority semaphores with pool-pressure circuit breaker
+  - batch persistence and candidate savepoints/deferred invalid reports
+  - provider strict-schema preflight wiring and provider/model scorecards
+  - cache-aware mini/nano and large-document compression benchmarks
+  - final MEMMECH proof and current-runtime soak
+- make durable capture jobs the first major implementation pass because later
+  scheduling, pool backoff, replay, and proof surfaces need stable job ids and
+  durable status first
+- stop before implementation if durable job or dirty-state storage requires a
+  SQL migration that has not been explicitly approved
+
+Reasoning:
+
+- live capture failures must be durable and inspectable before retry,
+  scheduling, or pool-pressure behavior can be trusted
+- rebuild coalescing and pool lanes need capture jobs as backpressure inputs
+- batching/savepoints need durable failure records so valid/invalid candidate
+  outcomes can be audited without raw source replay
+- model benchmarks should wait until DB/rebuild mechanics stop dominating the
+  observed latency/failure signal
+
 ## 2026-04-22 - Capture performance hardening is mechanical, not semantic
 
 Decision:

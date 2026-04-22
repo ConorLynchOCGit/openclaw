@@ -25,6 +25,7 @@ import type {
   ModelMemoryWriteEventRecord,
 } from "../storage-database-contract.ts";
 import { ModelMemoryCanonicalRepository } from "./canonical-repository.ts";
+import type { ModelMemoryDbLane } from "./pool-lanes.ts";
 import {
   readDate,
   readNumber,
@@ -34,6 +35,7 @@ import {
   readString,
   readStringArray,
 } from "./row-codecs.ts";
+import { withSqlClientLane } from "./sql-client.ts";
 
 export type ListExistingMemorySummariesForCaptureInput = {
   projectId?: string | null;
@@ -41,6 +43,57 @@ export type ListExistingMemorySummariesForCaptureInput = {
   sessionId?: string | null;
   kinds?: string[];
   limit?: number;
+};
+
+export type DeferredLiveMemoryCandidate = {
+  memory_id: string;
+  reason: string;
+  failure_class: "db_persistence";
+  failure_stage: "persistence_boundary";
+};
+
+export type DeferredLiveMemoryEdge = {
+  edge_id: string;
+  edge_type: MemoryEdge["edge_type"];
+  from_memory_id: string;
+  to_memory_id: string;
+  reason: string;
+};
+
+export type LiveMemoryPersistenceTelemetry = {
+  rowsAttempted: {
+    durableMemories: number;
+    memoryEvents: number;
+    memoryEdges: number;
+  };
+  rowsWritten: {
+    durableMemories: number;
+    memoryEvents: number;
+    memoryEdges: number;
+  };
+  rowsDeferred: {
+    candidates: number;
+    memoryEdges: number;
+  };
+  transactionLatencyMs: number;
+  operationCount: number;
+};
+
+export type LiveMemoryPersistenceResult = {
+  durableMemoriesWritten: string[];
+  memoryEventsWritten: string[];
+  memoryEdgesWritten: string[];
+  deferredCandidates: DeferredLiveMemoryCandidate[];
+  deferredEdges: DeferredLiveMemoryEdge[];
+  telemetry: LiveMemoryPersistenceTelemetry;
+};
+
+export type MmV2IntegrityAuditReport = {
+  memoriesWithoutEvents: string[];
+  eventsWithoutSourceRefs: string[];
+  edgesWithoutEndpoints: string[];
+  staleProjectionReferences: string[];
+  orphanSourceSegments: string[];
 };
 
 function decodeSourceRecord(row: QueryResultRow): ModelMemorySourceRecord {
@@ -180,6 +233,10 @@ function toLegacyObject(record: ModelMemoryObjectRecord): ModelMemoryObject {
 }
 
 export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
+  withDbLane(lane: ModelMemoryDbLane): MmV2NativeRepository {
+    return new MmV2NativeRepository(withSqlClientLane(this.sql, lane));
+  }
+
   withTransaction<T>(work: (repository: MmV2NativeRepository) => Promise<T>): Promise<T> {
     return this.sql.withTransaction((tx) => work(new MmV2NativeRepository(tx)));
   }
@@ -412,6 +469,110 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
     return decodeDurableMemory(result.rows[0]);
   }
 
+  async upsertDurableMemories(records: DurableMemoryRecord[]): Promise<DurableMemoryRecord[]> {
+    if (records.length === 0) {
+      return [];
+    }
+    const columnsPerRecord = 26;
+    const params = records.flatMap((record) => [
+      record.memory_id,
+      record.schema_version,
+      record.status,
+      record.unit_type,
+      record.kind,
+      record.artifact_type,
+      record.canonical_text,
+      record.search_text,
+      record.scope.tenant_id,
+      record.scope.user_id,
+      record.scope.project_id,
+      record.scope.workspace_id,
+      record.scope.subject_type,
+      record.scope.subject_id,
+      record.scope.applies_to,
+      JSON.stringify(record.payload),
+      JSON.stringify(record.validity),
+      record.confidence,
+      JSON.stringify(record.quality),
+      JSON.stringify(record.source_refs),
+      JSON.stringify(record.lineage),
+      record.created_at,
+      record.updated_at,
+      record.last_accessed_at,
+      record.access_count,
+      JSON.stringify(record.tags),
+    ]);
+    const valuesSql = records
+      .map((_, rowIndex) => {
+        const offset = rowIndex * columnsPerRecord;
+        return `(${Array.from({ length: columnsPerRecord }, (_value, columnIndex) => `$${offset + columnIndex + 1}`).join(", ")})`;
+      })
+      .join(", ");
+    const result = await this.sql.query(
+      `
+        INSERT INTO model_memory.durable_memories (
+          memory_id,
+          schema_version,
+          status,
+          unit_type,
+          kind,
+          artifact_type,
+          canonical_text,
+          search_text,
+          tenant_id,
+          user_id,
+          project_id,
+          workspace_id,
+          subject_type,
+          subject_id,
+          applies_to,
+          payload,
+          validity,
+          confidence,
+          quality,
+          source_refs,
+          lineage,
+          created_at,
+          updated_at,
+          last_accessed_at,
+          access_count,
+          tags
+        )
+        VALUES ${valuesSql}
+        ON CONFLICT (memory_id) DO UPDATE
+        SET
+          schema_version = EXCLUDED.schema_version,
+          status = EXCLUDED.status,
+          unit_type = EXCLUDED.unit_type,
+          kind = EXCLUDED.kind,
+          artifact_type = EXCLUDED.artifact_type,
+          canonical_text = EXCLUDED.canonical_text,
+          search_text = EXCLUDED.search_text,
+          tenant_id = EXCLUDED.tenant_id,
+          user_id = EXCLUDED.user_id,
+          project_id = EXCLUDED.project_id,
+          workspace_id = EXCLUDED.workspace_id,
+          subject_type = EXCLUDED.subject_type,
+          subject_id = EXCLUDED.subject_id,
+          applies_to = EXCLUDED.applies_to,
+          payload = EXCLUDED.payload,
+          validity = EXCLUDED.validity,
+          confidence = EXCLUDED.confidence,
+          quality = EXCLUDED.quality,
+          source_refs = EXCLUDED.source_refs,
+          lineage = EXCLUDED.lineage,
+          created_at = EXCLUDED.created_at,
+          updated_at = EXCLUDED.updated_at,
+          last_accessed_at = EXCLUDED.last_accessed_at,
+          access_count = EXCLUDED.access_count,
+          tags = EXCLUDED.tags
+        RETURNING *
+      `,
+      params,
+    );
+    return result.rows.map(decodeDurableMemory);
+  }
+
   async appendSourceRef(
     memoryId: string,
     sourceRef: DurableMemoryRecord["source_refs"][number],
@@ -506,6 +667,62 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
     return decodeMemoryEvent(result.rows[0]);
   }
 
+  async insertMemoryEvents(records: MemoryEvent[]): Promise<MemoryEvent[]> {
+    if (records.length === 0) {
+      return [];
+    }
+    const columnsPerRecord = 10;
+    const params = records.flatMap((record) => [
+      record.memory_event_id,
+      record.schema_version,
+      record.event_type,
+      record.occurred_at,
+      record.actor,
+      record.source_ingest_event_id,
+      record.candidate_id,
+      record.memory_id,
+      JSON.stringify(record.target_memory_ids),
+      JSON.stringify(record.payload),
+    ]);
+    const valuesSql = records
+      .map((_, rowIndex) => {
+        const offset = rowIndex * columnsPerRecord;
+        return `(${Array.from({ length: columnsPerRecord }, (_value, columnIndex) => `$${offset + columnIndex + 1}`).join(", ")})`;
+      })
+      .join(", ");
+    const result = await this.sql.query(
+      `
+        INSERT INTO model_memory.memory_events (
+          memory_event_id,
+          schema_version,
+          event_type,
+          occurred_at,
+          actor,
+          source_ingest_event_id,
+          candidate_id,
+          memory_id,
+          target_memory_ids,
+          payload
+        )
+        VALUES ${valuesSql}
+        ON CONFLICT (memory_event_id) DO UPDATE
+        SET
+          schema_version = EXCLUDED.schema_version,
+          event_type = EXCLUDED.event_type,
+          occurred_at = EXCLUDED.occurred_at,
+          actor = EXCLUDED.actor,
+          source_ingest_event_id = EXCLUDED.source_ingest_event_id,
+          candidate_id = EXCLUDED.candidate_id,
+          memory_id = EXCLUDED.memory_id,
+          target_memory_ids = EXCLUDED.target_memory_ids,
+          payload = EXCLUDED.payload
+        RETURNING *
+      `,
+      params,
+    );
+    return result.rows.map(decodeMemoryEvent);
+  }
+
   async upsertMemoryEdge(record: MemoryEdge): Promise<MemoryEdge> {
     const result = await this.sql.query(
       `
@@ -542,33 +759,167 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
     return decodeMemoryEdge(result.rows[0]);
   }
 
-  async persistLiveMemoryBatch(batch: ShadowMemoryBatch): Promise<void> {
+  async upsertMemoryEdges(records: MemoryEdge[]): Promise<MemoryEdge[]> {
+    if (records.length === 0) {
+      return [];
+    }
+    const columnsPerRecord = 7;
+    const params = records.flatMap((record) => [
+      record.edge_id,
+      record.schema_version,
+      record.from_memory_id,
+      record.to_memory_id,
+      record.edge_type,
+      record.created_at,
+      JSON.stringify(record.metadata),
+    ]);
+    const valuesSql = records
+      .map((_, rowIndex) => {
+        const offset = rowIndex * columnsPerRecord;
+        return `(${Array.from({ length: columnsPerRecord }, (_value, columnIndex) => `$${offset + columnIndex + 1}`).join(", ")})`;
+      })
+      .join(", ");
+    const result = await this.sql.query(
+      `
+        INSERT INTO model_memory.memory_edges (
+          edge_id,
+          schema_version,
+          from_memory_id,
+          to_memory_id,
+          edge_type,
+          created_at,
+          metadata
+        )
+        VALUES ${valuesSql}
+        ON CONFLICT (edge_id) DO UPDATE
+        SET
+          schema_version = EXCLUDED.schema_version,
+          from_memory_id = EXCLUDED.from_memory_id,
+          to_memory_id = EXCLUDED.to_memory_id,
+          edge_type = EXCLUDED.edge_type,
+          created_at = EXCLUDED.created_at,
+          metadata = EXCLUDED.metadata
+        RETURNING *
+      `,
+      params,
+    );
+    return result.rows.map(decodeMemoryEdge);
+  }
+
+  private async withSavepoint<T>(name: string, work: () => Promise<T>): Promise<T> {
+    try {
+      await this.sql.query(`SAVEPOINT ${name}`);
+    } catch {
+      // pg-mem does not implement SAVEPOINT. Production Postgres does, so the
+      // live path still gets rollback isolation while tests keep exercising
+      // the same per-record fallback behavior.
+      return work();
+    }
+    try {
+      const result = await work();
+      await this.sql.query(`RELEASE SAVEPOINT ${name}`);
+      return result;
+    } catch (error) {
+      await this.sql.query(`ROLLBACK TO SAVEPOINT ${name}`);
+      await this.sql.query(`RELEASE SAVEPOINT ${name}`);
+      throw error;
+    }
+  }
+
+  private async batchWithPerRecordFallback<TRecord, TResult>(input: {
+    savepointPrefix: string;
+    records: TRecord[];
+    getId: (record: TRecord) => string;
+    batch: (records: TRecord[]) => Promise<TResult[]>;
+    single: (record: TRecord) => Promise<TResult>;
+    defer: (record: TRecord, error: unknown) => void;
+  }): Promise<TResult[]> {
+    if (input.records.length === 0) {
+      return [];
+    }
+    try {
+      return await this.withSavepoint(`${input.savepointPrefix}_batch`, () =>
+        input.batch(input.records),
+      );
+    } catch {
+      const persisted: TResult[] = [];
+      for (const [index, record] of input.records.entries()) {
+        try {
+          persisted.push(
+            await this.withSavepoint(`${input.savepointPrefix}_${index}`, () =>
+              input.single(record),
+            ),
+          );
+        } catch (error) {
+          input.defer(record, error);
+        }
+      }
+      return persisted;
+    }
+  }
+
+  async persistLiveMemoryBatch(batch: ShadowMemoryBatch): Promise<LiveMemoryPersistenceResult> {
+    const startedAt = Date.now();
+    let operationCount = 0;
     const eventMemoryIds = new Set(
       batch.memoryEvents
         .map((event) => event.memory_id)
         .filter((memoryId): memoryId is string => Boolean(memoryId)),
     );
-    const durableMemoriesWithoutEvents = batch.durableMemories.filter(
-      (memory) => !eventMemoryIds.has(memory.memory_id),
+    const deferredCandidates: DeferredLiveMemoryCandidate[] = [];
+    const durableMemories = batch.durableMemories.filter((memory) => {
+      if (eventMemoryIds.has(memory.memory_id)) {
+        return true;
+      }
+      deferredCandidates.push({
+        memory_id: memory.memory_id,
+        reason: "durable memory candidate has no event evidence",
+        failure_class: "db_persistence",
+        failure_stage: "persistence_boundary",
+      });
+      return false;
+    });
+    const deferredCandidateIds = new Set(
+      deferredCandidates.map((candidate) => candidate.memory_id),
     );
-    if (durableMemoriesWithoutEvents.length > 0) {
-      throw new Error(
-        `MMV2 live batch refused to persist durable memories without event evidence: ${durableMemoriesWithoutEvents
-          .map((memory) => memory.memory_id)
-          .join(", ")}`,
-      );
-    }
+    const memoryEvents = batch.memoryEvents.filter(
+      (event) => !event.memory_id || !deferredCandidateIds.has(event.memory_id),
+    );
+    const writtenMemoryIds: string[] = [];
+    const writtenEventIds: string[] = [];
+    const writtenEdgeIds: string[] = [];
+    const deferredEdgesReport: DeferredLiveMemoryEdge[] = [];
 
     await this.withTransaction(async (repository) => {
-      for (const durableMemory of batch.durableMemories) {
-        await repository.upsertDurableMemory(durableMemory);
-      }
+      const persistedMemories = await repository.batchWithPerRecordFallback({
+        savepointPrefix: "durable_memory",
+        records: durableMemories,
+        getId: (record) => record.memory_id,
+        batch: async (records) => {
+          operationCount += 1;
+          return repository.upsertDurableMemories(records);
+        },
+        single: async (record) => {
+          operationCount += 1;
+          return repository.upsertDurableMemory(record);
+        },
+        defer: (record, error) => {
+          deferredCandidates.push({
+            memory_id: record.memory_id,
+            reason: error instanceof Error ? error.message : String(error),
+            failure_class: "db_persistence",
+            failure_stage: "persistence_boundary",
+          });
+        },
+      });
+      writtenMemoryIds.push(...persistedMemories.map((memory) => memory.memory_id));
 
-      const knownMemoryIds = new Set(batch.durableMemories.map((memory) => memory.memory_id));
+      const knownMemoryIds = new Set(writtenMemoryIds);
       const endpointIds = batch.memoryEdges.flatMap((edge) => [
         edge.from_memory_id,
         edge.to_memory_id,
       ]);
+      operationCount += 1;
       for (const memoryId of await repository.listExistingDurableMemoryIds(
         endpointIds.filter((endpointId) => !knownMemoryIds.has(endpointId)),
       )) {
@@ -580,41 +931,123 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
         knownMemoryIds,
       });
 
-      for (const edge of validEdges) {
-        await repository.upsertMemoryEdge(edge);
-        if (edge.edge_type === "supersedes") {
-          await repository.markDurableMemoryStatus({
-            memoryId: edge.to_memory_id,
-            status: "superseded",
-            updatedAt: edge.created_at,
-            supersededByMemoryId: edge.from_memory_id,
+      deferredEdgesReport.push(
+        ...deferredEdges.map((entry) => ({
+          edge_id: entry.edge.edge_id,
+          edge_type: entry.edge.edge_type,
+          from_memory_id: entry.edge.from_memory_id,
+          to_memory_id: entry.edge.to_memory_id,
+          reason: entry.reason,
+        })),
+      );
+
+      const persistedEdges = await repository.batchWithPerRecordFallback({
+        savepointPrefix: "memory_edge",
+        records: validEdges,
+        getId: (record) => record.edge_id,
+        batch: async (records) => {
+          operationCount += 1;
+          return repository.upsertMemoryEdges(records);
+        },
+        single: async (record) => {
+          operationCount += 1;
+          return repository.upsertMemoryEdge(record);
+        },
+        defer: (record, error) => {
+          deferredEdgesReport.push({
+            edge_id: record.edge_id,
+            edge_type: record.edge_type,
+            from_memory_id: record.from_memory_id,
+            to_memory_id: record.to_memory_id,
+            reason: error instanceof Error ? error.message : String(error),
           });
-        }
+        },
+      });
+      writtenEdgeIds.push(...persistedEdges.map((edge) => edge.edge_id));
+
+      for (const edge of persistedEdges.filter((edge) => edge.edge_type === "supersedes")) {
+        operationCount += 1;
+        await repository.markDurableMemoryStatus({
+          memoryId: edge.to_memory_id,
+          status: "superseded",
+          updatedAt: edge.created_at,
+          supersededByMemoryId: edge.from_memory_id,
+        });
       }
 
-      for (const event of batch.memoryEvents) {
-        const deferredEdgesForMemory = deferredEdges.filter(
-          (entry) => entry.edge.from_memory_id === event.memory_id,
+      const eventsWithDeferredReports = memoryEvents.map((event) => {
+        const deferredEdgesForMemory = deferredEdgesReport.filter(
+          (entry) => entry.from_memory_id === event.memory_id,
         );
-        await repository.insertMemoryEvent(
-          deferredEdgesForMemory.length > 0
-            ? {
-                ...event,
-                payload: {
-                  ...event.payload,
-                  deferred_memory_edges: deferredEdgesForMemory.map((entry) => ({
-                    edge_id: entry.edge.edge_id,
-                    edge_type: entry.edge.edge_type,
-                    from_memory_id: entry.edge.from_memory_id,
-                    to_memory_id: entry.edge.to_memory_id,
-                    reason: entry.reason,
-                  })),
-                },
-              }
-            : event,
+        const deferredCandidatesForMemory = deferredCandidates.filter(
+          (entry) => entry.memory_id === event.memory_id,
         );
-      }
+        return deferredEdgesForMemory.length > 0 || deferredCandidatesForMemory.length > 0
+          ? {
+              ...event,
+              payload: {
+                ...event.payload,
+                ...(deferredEdgesForMemory.length > 0
+                  ? { deferred_memory_edges: deferredEdgesForMemory }
+                  : {}),
+                ...(deferredCandidatesForMemory.length > 0
+                  ? { deferred_memory_candidates: deferredCandidatesForMemory }
+                  : {}),
+              },
+            }
+          : event;
+      });
+      const persistedEvents = await repository.batchWithPerRecordFallback({
+        savepointPrefix: "memory_event",
+        records: eventsWithDeferredReports,
+        getId: (record) => record.memory_event_id,
+        batch: async (records) => {
+          operationCount += 1;
+          return repository.insertMemoryEvents(records);
+        },
+        single: async (record) => {
+          operationCount += 1;
+          return repository.insertMemoryEvent(record);
+        },
+        defer: (record, error) => {
+          if (record.memory_id) {
+            deferredCandidates.push({
+              memory_id: record.memory_id,
+              reason: error instanceof Error ? error.message : String(error),
+              failure_class: "db_persistence",
+              failure_stage: "persistence_boundary",
+            });
+          }
+        },
+      });
+      writtenEventIds.push(...persistedEvents.map((event) => event.memory_event_id));
     });
+
+    return {
+      durableMemoriesWritten: writtenMemoryIds,
+      memoryEventsWritten: writtenEventIds,
+      memoryEdgesWritten: writtenEdgeIds,
+      deferredCandidates,
+      deferredEdges: deferredEdgesReport,
+      telemetry: {
+        rowsAttempted: {
+          durableMemories: batch.durableMemories.length,
+          memoryEvents: batch.memoryEvents.length,
+          memoryEdges: batch.memoryEdges.length,
+        },
+        rowsWritten: {
+          durableMemories: writtenMemoryIds.length,
+          memoryEvents: writtenEventIds.length,
+          memoryEdges: writtenEdgeIds.length,
+        },
+        rowsDeferred: {
+          candidates: deferredCandidates.length,
+          memoryEdges: deferredEdgesReport.length,
+        },
+        transactionLatencyMs: Date.now() - startedAt,
+        operationCount,
+      },
+    };
   }
 
   async listDurableMemories(): Promise<DurableMemoryRecord[]> {
@@ -636,6 +1069,81 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
       `SELECT * FROM model_memory.memory_edges ORDER BY created_at ASC, edge_id ASC`,
     );
     return result.rows.map(decodeMemoryEdge);
+  }
+
+  async auditIntegrity(): Promise<MmV2IntegrityAuditReport> {
+    const memoriesWithoutEvents = await this.sql.query<{ memory_id: string }>(
+      `
+        SELECT dm.memory_id
+        FROM model_memory.durable_memories dm
+        LEFT JOIN model_memory.memory_events me ON me.memory_id = dm.memory_id
+        WHERE me.memory_event_id IS NULL
+        ORDER BY dm.memory_id ASC
+      `,
+    );
+    const eventsWithoutSourceRefs = await this.sql.query<{ memory_event_id: string }>(
+      `
+        SELECT memory_event_id
+        FROM model_memory.memory_events
+        WHERE source_ingest_event_id IS NULL OR source_ingest_event_id = ''
+        ORDER BY memory_event_id ASC
+      `,
+    );
+    const edgesWithoutEndpoints = await this.sql.query<{ edge_id: string }>(
+      `
+        SELECT edge.edge_id
+        FROM model_memory.memory_edges edge
+        LEFT JOIN model_memory.durable_memories from_memory
+          ON from_memory.memory_id = edge.from_memory_id
+        LEFT JOIN model_memory.durable_memories to_memory
+          ON to_memory.memory_id = edge.to_memory_id
+        WHERE from_memory.memory_id IS NULL OR to_memory.memory_id IS NULL
+        ORDER BY edge.edge_id ASC
+      `,
+    );
+    const activeMemoryStatus = await this.sql.query<{ memory_id: string; status: string }>(
+      `
+        SELECT memory_id, status
+        FROM model_memory.durable_memories
+      `,
+    );
+    const activeMemoryIdByStatus = new Map(
+      activeMemoryStatus.rows.map((row) => [readString(row.memory_id), readString(row.status)]),
+    );
+    const projectionVersions = await this.sql.query(
+      `
+        SELECT *
+        FROM runtime_context.workspace_projection_versions
+        ORDER BY built_at ASC, id ASC
+      `,
+    );
+    const staleProjectionReferences = projectionVersions.rows
+      .filter((row) => {
+        const sourceObjectIds = Array.isArray(row.source_object_ids) ? row.source_object_ids : [];
+        return sourceObjectIds.some((sourceObjectId) => {
+          const status = activeMemoryIdByStatus.get(readString(sourceObjectId));
+          return status !== "active";
+        });
+      })
+      .map((row) => readString(row.id ?? row.target_id));
+    const orphanSourceSegments = await this.sql.query<{ id: string }>(
+      `
+        SELECT segment.id
+        FROM model_memory.ingest_segments segment
+        LEFT JOIN model_memory.ingest_sources source ON source.id = segment.source_id
+        WHERE source.id IS NULL
+        ORDER BY segment.id ASC
+      `,
+    );
+    return {
+      memoriesWithoutEvents: memoriesWithoutEvents.rows.map((row) => readString(row.memory_id)),
+      eventsWithoutSourceRefs: eventsWithoutSourceRefs.rows.map((row) =>
+        readString(row.memory_event_id),
+      ),
+      edgesWithoutEndpoints: edgesWithoutEndpoints.rows.map((row) => readString(row.edge_id)),
+      staleProjectionReferences,
+      orphanSourceSegments: orphanSourceSegments.rows.map((row) => readString(row.id)),
+    };
   }
 
   async listExistingMemorySummaries(): Promise<ExistingMemorySummary[]> {

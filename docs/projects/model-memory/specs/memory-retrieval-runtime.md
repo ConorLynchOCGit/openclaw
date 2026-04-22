@@ -143,6 +143,19 @@ migration. Store records through the existing `runtime_context.retrieval_*`,
 `context_artifacts`, and projection-version surfaces until the runtime shape is
 proven.
 
+Implementation note, 2026-04-22:
+
+- retrieval DB access is the highest-priority model-memory DB lane
+- capture and rebuild lanes may defer under pool pressure rather than
+  consuming connections needed for user-facing retrieval/context assembly
+- provider preflight for retrieval interpretation now uses the actual
+  strict-schema contract instead of generic JSON-object health checks
+- provider/model scorecards may record retrieval interpretation schema status,
+  latency, token counts, cached-token counts, and failure class as safe
+  operational metadata only
+- these changes are availability/observability controls; ranking remains
+  read-time only and does not mutate MMV2 truth
+
 Implementation note, 2026-04-21:
 
 - the first no-migration runtime now carries typed `RetrievalPlan`,

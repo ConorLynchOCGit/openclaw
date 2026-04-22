@@ -20,6 +20,7 @@ export const MEMORY_INGESTION_FAILURE_CLASSES = [
   "capture_routing_repair",
   "canonicalization",
   "db_persistence",
+  "pool_pressure",
   "timeout",
   "other",
 ] as const;
@@ -146,6 +147,14 @@ export function classifyMemoryIngestionFailure(message: string): MemoryIngestion
   ) {
     return "db_persistence";
   }
+  if (
+    normalized.includes("pool pressure") ||
+    normalized.includes("pool_pressure") ||
+    normalized.includes("connection pool pressure") ||
+    normalized.includes("db pool pressure")
+  ) {
+    return "pool_pressure";
+  }
   if (normalized.includes("timeout") || normalized.includes("timed out")) {
     return "timeout";
   }
@@ -270,6 +279,17 @@ export function decideMemoryIngestionRetry(input: {
           reduceConcurrency: true,
         }
       : { retry: false, reason: "provider connection retry cap reached" };
+  }
+  if (input.failureClass === "pool_pressure") {
+    const cap = input.maxConnectionRetries ?? 2;
+    return input.priorAttempts < cap
+      ? {
+          retry: true,
+          reason: "database pool pressure retry with reduced background concurrency",
+          useAlternateProvider: false,
+          reduceConcurrency: true,
+        }
+      : { retry: false, reason: "database pool pressure retry cap reached" };
   }
   if (input.failureClass === "provider_json_boundary") {
     const cap = input.maxJsonSyntaxRepairAttempts ?? 1;

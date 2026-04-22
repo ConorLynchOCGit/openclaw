@@ -1,4 +1,9 @@
 import { Pool, type PoolConfig } from "pg";
+import {
+  createModelMemoryDbLaneController,
+  type ModelMemoryDbLaneController,
+  type ModelMemoryDbPoolPressureSnapshot,
+} from "./pool-lanes.ts";
 import { PgSqlClient } from "./sql-client.ts";
 
 export type ModelMemoryPgPool = Pool;
@@ -37,13 +42,20 @@ export type ModelMemoryPgPoolStats = {
   totalCount?: number;
   idleCount?: number;
   waitingCount?: number;
+  pressure?: boolean;
+  pressureReasons?: string[];
 };
 
-export function snapshotModelMemoryPgPoolStats(pool: Pool): ModelMemoryPgPoolStats {
+export function snapshotModelMemoryPgPoolStats(
+  pool: Pool,
+  pressure?: ModelMemoryDbPoolPressureSnapshot,
+): ModelMemoryPgPoolStats {
   return {
     totalCount: pool.totalCount,
     idleCount: pool.idleCount,
     waitingCount: pool.waitingCount,
+    pressure: pressure?.pressure,
+    pressureReasons: pressure?.reasons,
   };
 }
 
@@ -56,10 +68,21 @@ export function createModelMemoryPgPool(config: PoolConfig): Pool {
 export function createModelMemorySqlClientFromConnectionString(connectionString: string): {
   pool: Pool;
   sqlClient: PgSqlClient;
+  dbLaneController: ModelMemoryDbLaneController;
 } {
   const pool = createModelMemoryPgPool({ connectionString });
+  const dbLaneController = createModelMemoryDbLaneController({ pool });
   return {
     pool,
-    sqlClient: new PgSqlClient(pool),
+    sqlClient: new PgSqlClient(pool, { laneController: dbLaneController }),
+    dbLaneController,
   };
 }
+
+export { createModelMemoryDbLaneController } from "./pool-lanes.ts";
+export type {
+  ModelMemoryDbLane,
+  ModelMemoryDbLaneController,
+  ModelMemoryDbLaneSettings,
+  ModelMemoryDbPoolPressureSnapshot,
+} from "./pool-lanes.ts";

@@ -215,6 +215,7 @@ function createChunkFailureCircuitBreakerState(): ChunkFailureCircuitBreakerStat
       capture_routing_repair: 0,
       canonicalization: 0,
       db_persistence: 0,
+      pool_pressure: 0,
       timeout: 0,
       other: 0,
     },

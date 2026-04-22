@@ -24,11 +24,18 @@ export type ModelMemoryActivityEventType =
   | "capture_skipped"
   | "capture_failed"
   | "capture_written"
+  | "capture_retry_scheduled"
+  | "capture_replay_requested"
+  | "runtime_dirty_marked"
   | "runtime_rebuild_deferred"
   | "runtime_rebuild_scheduled"
+  | "runtime_rebuild_started"
   | "runtime_rebuild_completed"
   | "runtime_rebuild_failed"
-  | "runtime_rebuild_skipped_lock_busy";
+  | "runtime_rebuild_skipped_lock_busy"
+  | "runtime_rebuild_coalesced"
+  | "runtime_dirty_cleared"
+  | "runtime_rebuild_admin_requested";
 
 export type ModelMemoryActivityKind =
   | "retrieval"
@@ -44,7 +51,10 @@ export type ModelMemoryActivityStatus =
   | "skipped"
   | "failed"
   | "deferred"
-  | "scheduled";
+  | "scheduled"
+  | "rebuilding"
+  | "retry_scheduled"
+  | "replay_requested";
 
 export type ModelMemoryActivityFeedSettings = {
   enabled: boolean;

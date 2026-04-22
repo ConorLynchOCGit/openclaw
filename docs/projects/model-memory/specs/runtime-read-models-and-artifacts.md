@@ -65,6 +65,22 @@ Derived runtime state should live in a separate schema such as `runtime_context`
 
 This keeps operational state separate from canonical semantic storage.
 
+## Pool lanes and operational pressure
+
+The 2026-04-22 mechanical hardening pass adds DB lane control around runtime
+read/write/rebuild work without changing semantic truth:
+
+- retrieval reads use the highest-priority lane
+- capture writes use a lower-priority lane
+- rebuild/projection maintenance uses the lowest-priority lane
+- pressure snapshots report safe counts and timings only
+- capture/rebuild may defer under pool pressure while dirty state remains
+  recorded outside semantic memory
+
+Pool telemetry and pressure scorecards are operational state. They must not
+store raw prompts, source text, full transcripts, raw tool logs, secrets, or
+private phrases.
+
 ## `active_memory_slots`
 
 Use `active_memory_slots` for memories that should behave like a current single-valued slot.
@@ -293,3 +309,18 @@ through `MODEL_MEMORY_REBUILD_BLOCKING_LOCK_ENABLED=true`.
 Reconciliation reads used by live capture should use scoped projected summaries
 rather than broad full-row durable-memory scans. Broad scans remain acceptable
 for explicit admin/proof jobs where the operator knowingly pays the cost.
+
+Pass 2 implementation note, 2026-04-22:
+
+- runtime dirty state is persisted as operational runtime state, not semantic
+  truth, under `$OPENCLAW_STATE_DIR/model-memory/runtime-dirty/`
+- ordinary-turn and bounded tool-result capture mark dirty and schedule or
+  defer rebuilds through the runtime-state scheduler instead of synchronously
+  rebuilding
+- coalescing is controlled by `MODEL_MEMORY_RUNTIME_REBUILD_COALESCE_WRITES`
+  and `MODEL_MEMORY_RUNTIME_REBUILD_COALESCE_MS`
+- successful rebuild clears dirty state unless new dirty writes arrived during
+  rebuild; failed or lock-busy rebuilds keep dirty state for retry/admin
+  inspection
+- generated projections remain artifact-only and must not be written back to
+  root `USER.md` or `MEMORY.md`

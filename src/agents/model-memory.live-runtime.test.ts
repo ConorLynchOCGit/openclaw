@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+import { createMemoryCaptureJobStore } from "./model-memory.capture-jobs.js";
 import {
   buildLiveRetrievalEnvelope,
   buildProjectionBootstrapContextFiles,
   buildCompletedAssistantTurnCaptureInput,
+  captureModelMemoryAssistantTurn,
   getModelMemoryRuntimeDirtySnapshot,
   hasExplicitDurableCaptureSignal,
   markModelMemoryRuntimeDirty,
@@ -14,6 +19,10 @@ import {
   shouldSkipOrdinaryTurnCaptureForExplicitOptOut,
   shouldSkipOrdinaryTurnCaptureForToolDedupe,
 } from "./model-memory.live-runtime.ts";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("resolveModelMemoryLiveRuntimeStatus", () => {
   it("stays disabled by default", () => {
@@ -192,26 +201,64 @@ describe("buildCompletedAssistantTurnCaptureInput", () => {
     });
     expect(capture?.turn.currentTurnText).toBe(userText);
   });
+
+  it("routes completed turns through durable capture job state even when capture is skipped", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-live-capture-job-"));
+    vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
+    try {
+      await captureModelMemoryAssistantTurn({
+        sessionId: "session-001",
+        sessionKey: "agent:main:main",
+        agentId: "main",
+        userText: "Do not remember this temporary private phrase.",
+        assistantText: "Understood.",
+      });
+
+      const store = createMemoryCaptureJobStore({ env: process.env });
+      const jobs = await store.listJobs();
+
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]).toMatchObject({
+        sourceKind: "ordinary_turn",
+        status: "skipped",
+        stage: "disabled",
+        rawContentPersisted: false,
+        containsPromptText: false,
+        containsTranscript: false,
+        containsRawToolLog: false,
+      });
+      expect(JSON.stringify(jobs[0])).not.toContain("temporary private phrase");
+    } finally {
+      await fs.rm(stateDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("model-memory runtime dirty state", () => {
-  it("tracks deferred rebuild state without storing raw turn text", () => {
-    resetModelMemoryRuntimeDirtyStateForTests();
+  it("tracks deferred rebuild state durably without storing raw turn text", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-runtime-dirty-"));
+    vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
+    await resetModelMemoryRuntimeDirtyStateForTests({ env: process.env });
 
-    const snapshot = markModelMemoryRuntimeDirty({
+    const markedAt = new Date();
+    const snapshot = await markModelMemoryRuntimeDirty({
       reason: "ordinary_turn_capture_written",
       memoryIds: ["memory-2", "memory-1", "memory-1"],
-      markedAt: new Date("2026-04-22T00:00:00.000Z"),
+      markedAt,
+      env: process.env,
     });
 
     expect(snapshot).toMatchObject({
-      dirty: true,
-      reason: "ordinary_turn_capture_written",
+      status: "dirty",
+      dirtyReason: "ordinary_turn_capture_written",
       affectedMemoryIds: ["memory-1", "memory-2"],
       writeCountSinceLastRebuild: 1,
-      markedAt: "2026-04-22T00:00:00.000Z",
+      markedAt: markedAt.toISOString(),
     });
-    expect(JSON.stringify(getModelMemoryRuntimeDirtySnapshot())).not.toContain("Please remember");
+    expect(
+      JSON.stringify(await getModelMemoryRuntimeDirtySnapshot({ env: process.env })),
+    ).not.toContain("Please remember");
+    await fs.rm(stateDir, { recursive: true, force: true });
   });
 });
 

@@ -52,6 +52,7 @@ authority is MMV2-native durable truth unless a spec explicitly says otherwise.
 37. [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
 38. [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
 39. [Semantic Forest Quarantine](/projects/model-memory/specs/semantic-forest-quarantine)
+40. [Capture And Ingest Mechanical Hardening](/projects/model-memory/specs/capture-ingest-mechanical-hardening)
 
 ## Companion project docs
 

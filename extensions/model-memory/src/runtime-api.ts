@@ -12,6 +12,7 @@ export * from "./db/mmv2-memory-object-store.ts";
 export * from "./db/mmv2-native-repository.ts";
 export * from "./db/migrations.ts";
 export * from "./db/pg-runtime.ts";
+export * from "./db/pool-lanes.ts";
 export * from "./db/runtime-context-repository.ts";
 export * from "./db/sql-client.ts";
 export * from "./document-ingestion.ts";

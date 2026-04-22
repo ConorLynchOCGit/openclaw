@@ -1,8 +1,13 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildModelMemoryStrictPreflightRequests,
   ModelMemoryLiveExecutionError,
   OpenAICompatibleLiveJsonExecutor,
 } from "./model-memory.live-json-executor.js";
+import { createModelMemoryProviderScorecardStore } from "./model-memory.provider-scorecard.js";
 
 function parseRequestBody(init: RequestInit): Record<string, unknown> {
   if (typeof init.body !== "string") {
@@ -565,6 +570,53 @@ describe("model-memory live json executor", () => {
     });
   });
 
+  it("classifies unsupported strict-schema preflight as provider_json_boundary and records a scorecard", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ error: { message: "response_format json_schema is not supported" } }),
+          {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    );
+    const scorecardStore = createModelMemoryProviderScorecardStore({
+      baseDir: await mkdtemp(path.join(tmpdir(), "openclaw-scorecard-")),
+    });
+    const executor = new OpenAICompatibleLiveJsonExecutor({
+      fetchImpl,
+      scorecardStore,
+      resolveAuth: async () => ({
+        apiKey: "sk-test",
+        mode: "api-key",
+        source: "test",
+      }),
+    });
+
+    const result = await executor.preflightContract(
+      buildModelMemoryStrictPreflightRequests("openrouter/openai/gpt-5.4-nano")[0],
+    );
+    const events = await scorecardStore.readEvents();
+
+    expect(result).toMatchObject({
+      ok: false,
+      failureClass: "provider_json_boundary",
+      schemaName: "capture_routing_batch",
+      strictSchema: true,
+    });
+    expect(events[0]).toMatchObject({
+      status: "failed",
+      failureClass: "provider_json_boundary",
+      schemaName: "capture_routing_batch",
+      rawContentPersisted: false,
+      containsPromptText: false,
+      containsTranscript: false,
+      containsRawToolLog: false,
+    });
+    expect(JSON.stringify(events[0])).not.toContain("preflight-only");
+  });
+
   it("sends prompt-cache key metadata and returns cache usage when provided", async () => {
     const fetchImpl = vi.fn(
       async () =>
@@ -621,6 +673,70 @@ describe("model-memory live json executor", () => {
       cachedInputTokens: 800,
       promptCacheKey: "mmv2-extraction-v1-prefix",
     });
+  });
+
+  it("records token and cache metrics in the provider scorecard for model calls", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: "gpt-5.4-mini",
+            choices: [{ message: { content: '{"ok":true}' } }],
+            usage: {
+              prompt_tokens: 1000,
+              completion_tokens: 50,
+              prompt_tokens_details: { cached_tokens: 800 },
+            },
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    );
+    const scorecardStore = createModelMemoryProviderScorecardStore({
+      baseDir: await mkdtemp(path.join(tmpdir(), "openclaw-scorecard-")),
+    });
+    const executor = new OpenAICompatibleLiveJsonExecutor({
+      fetchImpl,
+      scorecardStore,
+      resolveAuth: async () => ({
+        apiKey: "oauth-test",
+        mode: "oauth",
+        source: "profile:openai-codex:default",
+      }),
+    });
+
+    await executor.execute({
+      contract: {
+        contractName: "semantic_extraction",
+        contractVersion: "mmv2-extraction-v1",
+        modelId: "openai-codex/gpt-5.4-mini",
+      },
+      systemPrompt: "stable static prefix",
+      userPrompt: "dynamic source tail",
+      responseFormat: "json",
+      responseOptions: {
+        promptCache: {
+          key: "mmv2-extraction-v1-prefix",
+          retention: "short",
+        },
+      },
+    });
+    const summary = await scorecardStore.buildSummary();
+
+    expect(summary.totalCalls).toBe(1);
+    expect(summary.byProviderModelContract[0]).toMatchObject({
+      provider: "openai-codex",
+      providerModel: "gpt-5.4-mini",
+      calls: 1,
+      successes: 1,
+      promptTokens: 1000,
+      outputTokens: 50,
+      cachedTokens: 800,
+      cacheHitRate: 1,
+    });
+    expect(JSON.stringify(await scorecardStore.readEvents())).not.toContain("dynamic source tail");
   });
 
   it("preflights provider credit failures without starting extraction work", async () => {

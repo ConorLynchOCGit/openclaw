@@ -26,6 +26,14 @@ import {
 } from "../plugin-sdk/model-memory.js";
 import { emitModelMemoryActivityFeedEvent } from "./model-memory.activity-feed.js";
 import {
+  buildMemoryCaptureJob,
+  buildOrdinaryTurnCaptureSourceHash,
+  createMemoryCaptureJobStore,
+  runMemoryCaptureJobTask,
+  type MemoryCaptureJobEvent,
+  type MemoryCaptureJobStatus,
+} from "./model-memory.capture-jobs.js";
+import {
   resolveModelMemoryCaptureSeamSettings,
   type ModelMemoryCaptureSeamName,
 } from "./model-memory.capture-seams.js";
@@ -34,6 +42,16 @@ import {
   resolveModelMemoryDatabaseResolution,
 } from "./model-memory.database.js";
 import { OpenAICompatibleLiveJsonExecutor } from "./model-memory.live-json-executor.js";
+import {
+  createModelMemoryRuntimeDirtyStore,
+  markModelMemoryRuntimeDirtyAndSchedule,
+  resetModelMemoryRuntimeDirtyStoreForTests,
+  type ModelMemoryRuntimeDirtyEvent,
+  type ModelMemoryRuntimeDirtyEventType,
+  type ModelMemoryRuntimeDirtyReason,
+  type ModelMemoryRuntimeDirtyState,
+  type ModelMemoryRuntimeDirtyStatus,
+} from "./model-memory.runtime-dirty.js";
 
 const log = createSubsystemLogger("model-memory/live-runtime");
 
@@ -52,11 +70,18 @@ type MmV2LiveRepositoryCapabilities = {
   listExistingMemorySummaries?: unknown;
   listExistingMemorySummariesForCapture?: unknown;
   persistLiveMemoryBatch?: (batch: unknown) => Promise<unknown>;
+  withDbLane?: (
+    lane: "retrieval" | "capture" | "rebuild" | "admin" | "default",
+  ) => MmV2LiveRepositoryCapabilities;
   withTransaction?: (
     work: (repository: MmV2LiveRepositoryCapabilities) => Promise<unknown>,
   ) => Promise<unknown>;
   persistSource?: (source: unknown) => Promise<unknown>;
   persistSourceWindows?: (windows: unknown[]) => Promise<unknown>;
+};
+
+type RuntimeRepositoryWithLane<T> = T & {
+  withDbLane?: (lane: "retrieval" | "capture" | "rebuild" | "admin" | "default") => T;
 };
 
 export type ModelMemoryLiveRuntimeStatus = {
@@ -148,7 +173,12 @@ export type ModelMemoryToolResultProofCaptureResult =
     }
   | {
       captured: false;
-      reason: "disabled" | "no_bounded_fact" | "model_memory_unavailable" | "write_unavailable";
+      reason:
+        | "disabled"
+        | "no_bounded_fact"
+        | "model_memory_unavailable"
+        | "write_unavailable"
+        | "pool_pressure";
     };
 
 let runtimeCache:
@@ -831,67 +861,164 @@ function sha256Text(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-export type ModelMemoryRuntimeDirtySnapshot = {
-  dirty: boolean;
-  reason?: string;
-  affectedMemoryIds: string[];
-  writeCountSinceLastRebuild: number;
-  markedAt?: string;
-  lastRebuildAt?: string;
-};
+export type ModelMemoryRuntimeDirtySnapshot = ModelMemoryRuntimeDirtyState;
 
-const runtimeDirtyState: {
-  dirty: boolean;
-  reason?: string;
-  affectedMemoryIds: Set<string>;
-  writeCountSinceLastRebuild: number;
-  markedAt?: Date;
-  lastRebuildAt?: Date;
-} = {
-  dirty: false,
-  affectedMemoryIds: new Set(),
-  writeCountSinceLastRebuild: 0,
-};
-
-function snapshotRuntimeDirtyState(): ModelMemoryRuntimeDirtySnapshot {
-  return {
-    dirty: runtimeDirtyState.dirty,
-    reason: runtimeDirtyState.reason,
-    affectedMemoryIds: [...runtimeDirtyState.affectedMemoryIds].toSorted(),
-    writeCountSinceLastRebuild: runtimeDirtyState.writeCountSinceLastRebuild,
-    markedAt: runtimeDirtyState.markedAt?.toISOString(),
-    lastRebuildAt: runtimeDirtyState.lastRebuildAt?.toISOString(),
-  };
-}
-
-export function markModelMemoryRuntimeDirty(input: {
-  reason: string;
-  memoryIds?: string[];
-  markedAt?: Date;
-}): ModelMemoryRuntimeDirtySnapshot {
-  runtimeDirtyState.dirty = true;
-  runtimeDirtyState.reason = input.reason;
-  runtimeDirtyState.markedAt = input.markedAt ?? new Date();
-  runtimeDirtyState.writeCountSinceLastRebuild += 1;
-  for (const memoryId of input.memoryIds ?? []) {
-    if (memoryId.trim()) {
-      runtimeDirtyState.affectedMemoryIds.add(memoryId);
-    }
+function mapRuntimeDirtyStatusToActivityStatus(
+  status: ModelMemoryRuntimeDirtyStatus,
+  eventType: ModelMemoryRuntimeDirtyEventType,
+) {
+  if (eventType === "runtime_rebuild_completed" || eventType === "runtime_dirty_cleared") {
+    return "completed" as const;
   }
-  return snapshotRuntimeDirtyState();
+  if (eventType === "runtime_rebuild_failed") {
+    return "failed" as const;
+  }
+  if (
+    eventType === "runtime_rebuild_scheduled" ||
+    eventType === "runtime_rebuild_admin_requested"
+  ) {
+    return "scheduled" as const;
+  }
+  if (eventType === "runtime_rebuild_started" || status === "rebuilding") {
+    return "rebuilding" as const;
+  }
+  if (
+    eventType === "runtime_rebuild_coalesced" ||
+    eventType === "runtime_rebuild_skipped_lock_busy"
+  ) {
+    return "deferred" as const;
+  }
+  return status === "failed" ? ("failed" as const) : ("deferred" as const);
 }
 
-export function getModelMemoryRuntimeDirtySnapshot(): ModelMemoryRuntimeDirtySnapshot {
-  return snapshotRuntimeDirtyState();
+async function emitRuntimeDirtyActivity(input: {
+  config?: OpenClawConfig;
+  kind?: "ordinary_turn_capture" | "tool_result_capture" | "projection";
+  eventType: ModelMemoryRuntimeDirtyEventType | "runtime_rebuild_deferred";
+  state: ModelMemoryRuntimeDirtyState;
+  event?: ModelMemoryRuntimeDirtyEvent;
+  captureJobId?: string;
+  sessionId?: string;
+  sessionKey?: string;
+  agentId?: string;
+  schedulerReason?: string;
+}) {
+  await emitModelMemoryActivityFeedEvent({
+    kind: input.kind ?? "ordinary_turn_capture",
+    status:
+      input.eventType === "runtime_rebuild_deferred"
+        ? "deferred"
+        : mapRuntimeDirtyStatusToActivityStatus(input.state.status, input.eventType),
+    eventType: input.eventType,
+    config: input.config,
+    sessionId: input.sessionId ?? input.event?.sessionId,
+    sessionKey: input.sessionKey ?? input.event?.sessionKey,
+    agentId: input.agentId ?? input.event?.agentId,
+    stableId: input.captureJobId ?? input.event?.captureJobId ?? input.state.dirtyId,
+    safeLabels: {
+      reason: input.state.dirtyReason,
+      schedulerReason: input.schedulerReason ?? input.event?.schedulerReason,
+      failureClass: input.event?.failureClass ?? input.state.lastFailureClass,
+      stage: input.event?.failureStage ?? input.state.lastFailureStage,
+    },
+    ids: {
+      dirtyId: input.state.dirtyId,
+      captureJobId: input.captureJobId ?? input.event?.captureJobId,
+      memoryIds: input.state.affectedMemoryIds,
+      sourceIds: input.state.affectedSourceIds,
+      eventIds: input.state.affectedEventIds,
+      projectionTargetIds: input.state.affectedProjectionTargetIds,
+    },
+    metrics: {
+      writeCountSinceLastRebuild: input.state.writeCountSinceLastRebuild,
+      rebuildAttemptCount: input.state.rebuildAttemptCount,
+      lastRebuildDurationMs: input.state.lastRebuildDurationMs,
+    },
+  }).catch(() => undefined);
 }
 
-export function resetModelMemoryRuntimeDirtyStateForTests(): void {
-  runtimeDirtyState.dirty = false;
-  runtimeDirtyState.reason = undefined;
-  runtimeDirtyState.affectedMemoryIds.clear();
-  runtimeDirtyState.writeCountSinceLastRebuild = 0;
-  runtimeDirtyState.markedAt = undefined;
-  runtimeDirtyState.lastRebuildAt = undefined;
+export async function markModelMemoryRuntimeDirty(input: {
+  config?: OpenClawConfig;
+  env?: NodeJS.ProcessEnv;
+  reason: ModelMemoryRuntimeDirtyReason;
+  captureJobId?: string;
+  sessionId?: string;
+  sessionKey?: string;
+  agentId?: string;
+  kind?: "ordinary_turn_capture" | "tool_result_capture" | "projection";
+  memoryIds?: string[];
+  sourceIds?: string[];
+  eventIds?: string[];
+  projectionTargetIds?: string[];
+  markedAt?: Date;
+  rebuild?: (state: ModelMemoryRuntimeDirtyState) => Promise<void>;
+}): Promise<ModelMemoryRuntimeDirtySnapshot> {
+  const store = createModelMemoryRuntimeDirtyStore({ env: input.env });
+  try {
+    const result = await markModelMemoryRuntimeDirtyAndSchedule({
+      store,
+      env: input.env,
+      dirty: {
+        reason: input.reason,
+        captureJobId: input.captureJobId,
+        sessionId: input.sessionId,
+        sessionKey: input.sessionKey,
+        agentId: input.agentId,
+        memoryIds: input.memoryIds,
+        sourceIds: input.sourceIds,
+        eventIds: input.eventIds,
+        projectionTargetIds: input.projectionTargetIds,
+        markedAt: input.markedAt,
+      },
+      rebuild: input.rebuild,
+      onEvent: async (event) => {
+        await emitRuntimeDirtyActivity({
+          config: input.config,
+          kind: input.kind,
+          state: await store.getState(),
+          event,
+          eventType: event.eventType,
+          captureJobId: input.captureJobId,
+          sessionId: input.sessionId,
+          sessionKey: input.sessionKey,
+          agentId: input.agentId,
+        });
+      },
+    });
+    if (result.schedulerReason === "deferred" || result.schedulerReason === "disabled") {
+      await emitRuntimeDirtyActivity({
+        config: input.config,
+        kind: input.kind,
+        state: result.state,
+        eventType: "runtime_rebuild_deferred",
+        captureJobId: input.captureJobId,
+        sessionId: input.sessionId,
+        sessionKey: input.sessionKey,
+        agentId: input.agentId,
+        schedulerReason: result.schedulerReason,
+      });
+    }
+    return result.state;
+  } catch (error) {
+    log.warn("model-memory runtime dirty marker failed", { error });
+    return store.getState();
+  }
+}
+
+export function getModelMemoryRuntimeDirtySnapshot(
+  input: {
+    env?: NodeJS.ProcessEnv;
+  } = {},
+): Promise<ModelMemoryRuntimeDirtySnapshot> {
+  return createModelMemoryRuntimeDirtyStore({ env: input.env }).getState();
+}
+
+export function resetModelMemoryRuntimeDirtyStateForTests(
+  input: {
+    env?: NodeJS.ProcessEnv;
+  } = {},
+): Promise<void> {
+  return resetModelMemoryRuntimeDirtyStoreForTests({ env: input.env });
 }
 
 function buildCaptureJobId(params: {
@@ -919,6 +1046,24 @@ function classifyCaptureFailure(error: unknown): MemoryIngestionFailureClass {
 
 function safeStringLabel(value: unknown, fallback: string): string {
   return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
+function mapCaptureJobActivityStatus(status: MemoryCaptureJobStatus) {
+  if (status === "written") {
+    return "completed" as const;
+  }
+  if (status === "retry_scheduled" || status === "replay_requested") {
+    return "scheduled" as const;
+  }
+  return status;
+}
+
+function buildPoolPressureError(lane: "capture" | "rebuild", reasons: string[] | undefined) {
+  return new Error(
+    `pool_pressure: model-memory ${lane} lane deferred due to database pool pressure${
+      reasons && reasons.length > 0 ? ` (${reasons.slice(0, 4).join(", ")})` : ""
+    }`,
+  );
 }
 
 export function shouldSkipOrdinaryTurnCaptureForExplicitOptOut(userText: string): boolean {
@@ -1018,156 +1163,159 @@ export async function captureModelMemoryAssistantTurn(params: {
   sourceMetadata?: Record<string, unknown>;
 }): Promise<void> {
   const captureJobId = buildCaptureJobId(params);
-  const status = resolveModelMemoryLiveRuntimeStatus(params.config);
-  if (!status.enabled || !status.captureWritesEnabled || !status.databaseConfigured) {
-    void emitModelMemoryActivityFeedEvent({
+  const modelId = resolveLiveModelRef(params.config);
+  const candidateModelId = resolveCandidateModelRef(params.config);
+  const providerLabel = safeStringLabel(params.sourceMetadata?.provider, "unknown");
+  const modelLabel = safeStringLabel(params.sourceMetadata?.model, modelId);
+  const captureJobStore = createMemoryCaptureJobStore();
+  const captureJob = buildMemoryCaptureJob({
+    jobId: captureJobId,
+    sourceKind: "ordinary_turn",
+    sessionId: params.sessionId,
+    sessionKey: params.sessionKey,
+    agentId: params.agentId,
+    sourceHash: buildOrdinaryTurnCaptureSourceHash(params),
+    provider: providerLabel,
+    model: modelLabel,
+  });
+  const emitJobEvent = (event: MemoryCaptureJobEvent) =>
+    emitModelMemoryActivityFeedEvent({
       kind: "ordinary_turn_capture",
-      status: "skipped",
-      eventType: "capture_skipped",
+      status: mapCaptureJobActivityStatus(event.status),
+      eventType: event.eventType,
       config: params.config,
       sessionId: params.sessionId,
       sessionKey: params.sessionKey,
       agentId: params.agentId,
       stableId: captureJobId,
-      safeLabels: { reason: "disabled" },
-      ids: { captureJobId },
-    }).catch(() => undefined);
+      safeLabels: {
+        provider: event.provider ?? providerLabel,
+        model: event.model ?? modelLabel,
+        failureClass: event.failureClass,
+        stage: event.stage,
+      },
+      ids: {
+        captureJobId: event.jobId,
+        sourceId: event.safeRelatedIds?.sourceId,
+        segmentIds: event.safeRelatedIds?.segmentIds,
+        memoryIds: event.safeRelatedIds?.memoryIds,
+        eventIds: event.safeRelatedIds?.eventIds,
+      },
+      metrics: event.metrics,
+    });
+
+  const status = resolveModelMemoryLiveRuntimeStatus(params.config);
+  if (!status.enabled || !status.captureWritesEnabled || !status.databaseConfigured) {
+    await runMemoryCaptureJobTask({
+      job: captureJob,
+      store: captureJobStore,
+      classifyFailure: classifyCaptureFailure,
+      execute: async () => ({ status: "skipped", reason: "disabled" }),
+      onEvent: async ({ event }) => {
+        await emitJobEvent(event);
+      },
+    });
     return;
   }
 
   const captureInput = buildCompletedAssistantTurnCaptureInput(params);
   if (!captureInput) {
-    void emitModelMemoryActivityFeedEvent({
-      kind: "ordinary_turn_capture",
-      status: "skipped",
-      eventType: "capture_skipped",
-      config: params.config,
-      sessionId: params.sessionId,
-      sessionKey: params.sessionKey,
-      agentId: params.agentId,
-      stableId: captureJobId,
-      safeLabels: { reason: "no_durable_candidate" },
-      ids: { captureJobId },
-    }).catch(() => undefined);
+    await runMemoryCaptureJobTask({
+      job: captureJob,
+      store: captureJobStore,
+      classifyFailure: classifyCaptureFailure,
+      execute: async () => ({ status: "skipped", reason: "no_durable_candidate" }),
+      onEvent: async ({ event }) => {
+        await emitJobEvent(event);
+      },
+    });
     return;
   }
 
-  const captureStartedAt = Date.now();
-  const modelId = resolveLiveModelRef(params.config);
-  const candidateModelId = resolveCandidateModelRef(params.config);
-  const emitCaptureEvent = (
-    event: Omit<
-      Parameters<typeof emitModelMemoryActivityFeedEvent>[0],
-      "kind" | "config" | "sessionId" | "sessionKey" | "agentId" | "stableId"
-    >,
-  ) =>
-    emitModelMemoryActivityFeedEvent({
-      kind: "ordinary_turn_capture",
-      config: params.config,
-      sessionId: params.sessionId,
-      sessionKey: params.sessionKey,
-      agentId: params.agentId,
-      stableId: captureJobId,
-      ...event,
-      ids: {
-        captureJobId,
-        ...event.ids,
-      },
-    });
-
-  void emitCaptureEvent({
-    status: "queued",
-    eventType: "capture_queued",
-    safeLabels: {
-      provider: safeStringLabel(params.sourceMetadata?.provider, "unknown"),
-      model: safeStringLabel(params.sourceMetadata?.model, modelId),
+  await runMemoryCaptureJobTask({
+    job: captureJob,
+    store: captureJobStore,
+    classifyFailure: classifyCaptureFailure,
+    onEvent: async ({ event }) => {
+      await emitJobEvent(event);
     },
-  }).catch(() => undefined);
-
-  try {
-    await emitCaptureEvent({
-      status: "started",
-      eventType: "capture_started",
-      safeLabels: {
-        provider: safeStringLabel(params.sourceMetadata?.provider, "unknown"),
-        model: safeStringLabel(params.sourceMetadata?.model, modelId),
-      },
-    }).catch(() => undefined);
-
-    const runtime = await getLiveRuntime(params.config);
-    const canonicalRepository = runtime.canonicalRepository as typeof runtime.canonicalRepository &
-      MmV2LiveRepositoryCapabilities;
-    const canUseMmV2LivePath =
-      typeof canonicalRepository.listExistingMemorySummaries === "function" &&
-      typeof canonicalRepository.persistLiveMemoryBatch === "function";
-    const result = await captureOrdinaryTurnLive({
-      canonicalRepository: runtime.canonicalRepository as never,
-      runtimeRepository: runtime.runtimeRepository,
-      memoryStore: runtime.memoryStore as never,
-      collisionAdjudicator: runtime.collisionAdjudicator,
-      capture: {
-        turn: captureInput.turn,
-        modelId,
-        candidateModelId,
-        interpreter: canUseMmV2LivePath
-          ? runtime.mmv2SemanticInterpreter
-          : runtime.semanticInterpreter,
-      },
-      rebuildRuntime: false,
-    });
-    const memoryIds = result.writeResults.flatMap((entry) =>
-      entry.memoryId ? [entry.memoryId] : [],
-    );
-    const dirtyState = markModelMemoryRuntimeDirty({
-      reason: "ordinary_turn_capture_written",
-      memoryIds,
-    });
-    await emitCaptureEvent({
-      status: "completed",
-      eventType: "capture_written",
-      ids: {
-        sourceId: result.source.id,
-        segmentIds: result.windows.map((window) => window.id),
+    execute: async () => {
+      const runtime = await getLiveRuntime(params.config);
+      const pressureSnapshot = runtime.dbLaneController.snapshot();
+      if (runtime.dbLaneController.shouldDeferLane("capture")) {
+        throw buildPoolPressureError("capture", pressureSnapshot.reasons);
+      }
+      const canonicalRepositoryBase =
+        runtime.canonicalRepository as typeof runtime.canonicalRepository &
+          MmV2LiveRepositoryCapabilities;
+      const canonicalRepository =
+        canonicalRepositoryBase.withDbLane?.("capture") ?? canonicalRepositoryBase;
+      const canUseMmV2LivePath =
+        typeof canonicalRepository.listExistingMemorySummaries === "function" &&
+        typeof canonicalRepository.persistLiveMemoryBatch === "function";
+      const result = await captureOrdinaryTurnLive({
+        canonicalRepository: runtime.canonicalRepository as never,
+        runtimeRepository: runtime.runtimeRepository,
+        memoryStore: runtime.memoryStore as never,
+        collisionAdjudicator: runtime.collisionAdjudicator,
+        capture: {
+          turn: captureInput.turn,
+          modelId,
+          candidateModelId,
+          interpreter: canUseMmV2LivePath
+            ? runtime.mmv2SemanticInterpreter
+            : runtime.semanticInterpreter,
+        },
+        rebuildRuntime: false,
+      });
+      const memoryIds = result.writeResults.flatMap((entry) =>
+        entry.memoryId ? [entry.memoryId] : [],
+      );
+      await markModelMemoryRuntimeDirty({
+        config: params.config,
+        reason: "ordinary_turn_capture_written",
+        captureJobId,
+        sessionId: params.sessionId,
+        sessionKey: params.sessionKey,
+        agentId: params.agentId,
         memoryIds,
-      },
-      metrics: {
-        latencyMs: Date.now() - captureStartedAt,
-        retryCount: 0,
-        segments: result.windows.length,
-        writeResults: result.writeResults.length,
-        memories: memoryIds.length,
-      },
-    }).catch(() => undefined);
-    await emitCaptureEvent({
-      status: "deferred",
-      eventType: "runtime_rebuild_deferred",
-      safeLabels: { reason: dirtyState.reason ?? "ordinary_turn_capture_written" },
-      ids: {
-        memoryIds: dirtyState.affectedMemoryIds,
-      },
-      metrics: {
-        writeCountSinceLastRebuild: dirtyState.writeCountSinceLastRebuild,
-      },
-    }).catch(() => undefined);
-  } catch (error) {
-    const failureClass = classifyCaptureFailure(error);
-    await emitCaptureEvent({
-      status: "failed",
-      eventType: "capture_failed",
-      safeLabels: {
-        failureClass,
-        stage:
-          failureClass === "db_persistence" || failureClass === "timeout"
-            ? "persistence_boundary"
-            : "execution",
-      },
-      metrics: {
-        latencyMs: Date.now() - captureStartedAt,
-        retryCount: 0,
-      },
-    }).catch(() => undefined);
-    throw error;
-  }
+        sourceIds: [result.source.id],
+        rebuild: async () => {
+          const rebuildPressureSnapshot = runtime.dbLaneController.snapshot();
+          if (runtime.dbLaneController.shouldDeferLane("rebuild")) {
+            throw buildPoolPressureError("rebuild", rebuildPressureSnapshot.reasons);
+          }
+          const rebuildCanonicalRepository =
+            (
+              runtime.canonicalRepository as typeof runtime.canonicalRepository &
+                MmV2LiveRepositoryCapabilities
+            ).withDbLane?.("rebuild") ?? runtime.canonicalRepository;
+          await rebuildDerivedRuntimeState({
+            canonicalRepository: rebuildCanonicalRepository as never,
+            runtimeRepository:
+              (
+                runtime.runtimeRepository as RuntimeRepositoryWithLane<
+                  typeof runtime.runtimeRepository
+                >
+              ).withDbLane?.("rebuild") ?? runtime.runtimeRepository,
+          });
+        },
+      });
+      return {
+        status: "written" as const,
+        safeRelatedIds: {
+          sourceId: result.source.id,
+          segmentIds: result.windows.map((window) => window.id),
+          memoryIds,
+        },
+        metrics: {
+          segments: result.windows.length,
+          writeResults: result.writeResults.length,
+          memories: memoryIds.length,
+        },
+      };
+    },
+  });
 }
 
 export async function captureModelMemoryToolResultProof(params: {
@@ -1253,8 +1401,17 @@ export async function captureModelMemoryToolResultProof(params: {
   if (!runtime) {
     return emitToolCaptureActivity({ captured: false, reason: "model_memory_unavailable" });
   }
-  const canonicalRepository = runtime.canonicalRepository as typeof runtime.canonicalRepository &
-    MmV2LiveRepositoryCapabilities;
+  if (runtime.dbLaneController.shouldDeferLane("capture")) {
+    return emitToolCaptureActivity({
+      captured: false,
+      reason: "pool_pressure",
+    });
+  }
+  const canonicalRepositoryBase =
+    runtime.canonicalRepository as typeof runtime.canonicalRepository &
+      MmV2LiveRepositoryCapabilities;
+  const canonicalRepository =
+    canonicalRepositoryBase.withDbLane?.("capture") ?? canonicalRepositoryBase;
   const persistLiveMemoryBatch = canonicalRepository.persistLiveMemoryBatch;
   if (typeof persistLiveMemoryBatch !== "function") {
     return emitToolCaptureActivity({ captured: false, reason: "write_unavailable" });
@@ -1280,17 +1437,44 @@ export async function captureModelMemoryToolResultProof(params: {
     await runtime.canonicalRepository.persistSourceWindows(built.windows);
     await persistLiveMemoryBatch(built.liveMemoryBatch);
   }
-  await rebuildDerivedRuntimeState({
-    canonicalRepository: runtime.canonicalRepository as never,
-    runtimeRepository: runtime.runtimeRepository,
+  const memoryIds = built.liveMemoryBatch.durableMemories.map((memory) => memory.memory_id);
+  const eventIds = built.liveMemoryBatch.memoryEvents.map((event) => event.memory_event_id);
+  await markModelMemoryRuntimeDirty({
+    config: params.config,
+    kind: "tool_result_capture",
+    reason: "tool_result_capture_written",
+    sessionId: params.sessionId,
+    sessionKey: params.sessionKey,
+    agentId: params.agentId,
+    memoryIds,
+    sourceIds: [built.source.id],
+    eventIds,
+    rebuild: async () => {
+      const rebuildPressureSnapshot = runtime.dbLaneController.snapshot();
+      if (runtime.dbLaneController.shouldDeferLane("rebuild")) {
+        throw buildPoolPressureError("rebuild", rebuildPressureSnapshot.reasons);
+      }
+      const rebuildCanonicalRepository =
+        (
+          runtime.canonicalRepository as typeof runtime.canonicalRepository &
+            MmV2LiveRepositoryCapabilities
+        ).withDbLane?.("rebuild") ?? runtime.canonicalRepository;
+      await rebuildDerivedRuntimeState({
+        canonicalRepository: rebuildCanonicalRepository as never,
+        runtimeRepository:
+          (
+            runtime.runtimeRepository as RuntimeRepositoryWithLane<typeof runtime.runtimeRepository>
+          ).withDbLane?.("rebuild") ?? runtime.runtimeRepository,
+      });
+    },
   });
 
   return emitToolCaptureActivity({
     captured: true,
     sourceId: built.source.id,
     segmentIds: built.windows.map((window) => window.id),
-    memoryIds: built.liveMemoryBatch.durableMemories.map((memory) => memory.memory_id),
-    eventIds: built.liveMemoryBatch.memoryEvents.map((event) => event.memory_event_id),
+    memoryIds,
+    eventIds,
     boundedFact: built.boundedFact as Record<string, unknown>,
   });
 }

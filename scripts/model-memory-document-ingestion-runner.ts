@@ -18,6 +18,7 @@ import {
   LARGE_DOCUMENT_EVIDENCE_REQUEST_TIMEOUT_MS,
 } from "../src/agents/model-memory.large-document-evidence.js";
 import {
+  buildModelMemoryStrictPreflightRequests,
   ModelMemoryLiveExecutionError,
   OpenAICompatibleLiveJsonExecutor,
 } from "../src/agents/model-memory.live-json-executor.js";
@@ -422,32 +423,41 @@ async function resolvePreflightModel(input: {
     return input.primaryModelId;
   }
 
-  const primary = await input.executor.preflightModel(input.primaryModelId);
-  if (primary.ok) {
+  const preflightStrictContracts = async (modelId: string) => {
+    const results = [];
+    for (const request of buildModelMemoryStrictPreflightRequests(modelId)) {
+      results.push(await input.executor.preflightContract(request));
+    }
+    return results;
+  };
+  const primaryResults = await preflightStrictContracts(input.primaryModelId);
+  const primaryFailure = primaryResults.find((result) => !result.ok);
+  if (!primaryFailure) {
     process.stderr.write(
-      `[model-memory-runner] provider preflight ok provider=${primary.provider} model=${primary.providerModel}\n`,
+      `[model-memory-runner] provider strict-schema preflight ok model=${input.primaryModelId} contracts=${primaryResults.length}\n`,
     );
     return input.primaryModelId;
   }
 
   process.stderr.write(
-    `[model-memory-runner] provider preflight failed provider=${primary.provider} model=${primary.providerModel} status=${primary.httpStatus ?? "n/a"} error=${primary.errorMessage ?? "unknown"}\n`,
+    `[model-memory-runner] provider strict-schema preflight failed provider=${primaryFailure.provider} model=${primaryFailure.providerModel} contract=${primaryFailure.contractVersion ?? primaryFailure.contractName ?? "unknown"} status=${primaryFailure.httpStatus ?? "n/a"} class=${primaryFailure.failureClass ?? "unknown"} error=${primaryFailure.errorMessage ?? "unknown"}\n`,
   );
   if (input.alternateModelId) {
-    const alternate = await input.executor.preflightModel(input.alternateModelId);
-    if (alternate.ok) {
+    const alternateResults = await preflightStrictContracts(input.alternateModelId);
+    const alternateFailure = alternateResults.find((result) => !result.ok);
+    if (!alternateFailure) {
       process.stderr.write(
-        `[model-memory-runner] alternate provider preflight ok provider=${alternate.provider} model=${alternate.providerModel}\n`,
+        `[model-memory-runner] alternate provider strict-schema preflight ok model=${input.alternateModelId} contracts=${alternateResults.length}\n`,
       );
       return input.alternateModelId;
     }
     throw new Error(
-      `model-memory provider preflight failed for primary and alternate models: primary=${primary.errorMessage ?? primary.httpStatus ?? "unknown"} alternate=${alternate.errorMessage ?? alternate.httpStatus ?? "unknown"}`,
+      `model-memory provider strict-schema preflight failed for primary and alternate models: primary=${primaryFailure.errorMessage ?? primaryFailure.httpStatus ?? "unknown"} alternate=${alternateFailure.errorMessage ?? alternateFailure.httpStatus ?? "unknown"}`,
     );
   }
 
   throw new Error(
-    `model-memory provider preflight failed before runner start: ${primary.httpStatus ?? "n/a"} ${primary.errorMessage ?? "unknown"}`,
+    `model-memory provider strict-schema preflight failed before runner start: ${primaryFailure.httpStatus ?? "n/a"} ${primaryFailure.errorMessage ?? "unknown"}`,
   );
 }
 

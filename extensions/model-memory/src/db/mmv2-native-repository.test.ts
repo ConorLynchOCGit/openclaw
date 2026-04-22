@@ -312,21 +312,30 @@ describe("MmV2NativeRepository", () => {
     }
   });
 
-  it("refuses live batches that would create durable memories without event evidence", async () => {
+  it("defers live candidates that would create durable memories without event evidence", async () => {
     const database = await createPgMemTestDatabase();
     try {
       await applyModelMemoryMigrations(database.sql);
       const repository = new MmV2NativeRepository(database.sql);
 
-      await expect(
-        repository.persistLiveMemoryBatch({
-          durableMemories: [buildMinimalDurableMemory("memory-without-event")],
-          memoryEdges: [],
-          memoryEvents: [],
-        }),
-      ).rejects.toThrow("without event evidence");
+      const result = await repository.persistLiveMemoryBatch({
+        durableMemories: [buildMinimalDurableMemory("memory-without-event")],
+        memoryEdges: [],
+        memoryEvents: [],
+      });
 
       expect(await repository.listDurableMemories()).toEqual([]);
+      expect(result.deferredCandidates).toEqual([
+        expect.objectContaining({
+          memory_id: "memory-without-event",
+          failure_class: "db_persistence",
+        }),
+      ]);
+      expect(result.telemetry).toMatchObject({
+        rowsAttempted: { durableMemories: 1, memoryEvents: 0, memoryEdges: 0 },
+        rowsWritten: { durableMemories: 0, memoryEvents: 0, memoryEdges: 0 },
+        rowsDeferred: { candidates: 1, memoryEdges: 0 },
+      });
     } finally {
       await database.close();
     }
@@ -338,7 +347,7 @@ describe("MmV2NativeRepository", () => {
       await applyModelMemoryMigrations(database.sql);
       const repository = new MmV2NativeRepository(database.sql);
 
-      await repository.persistLiveMemoryBatch({
+      const result = await repository.persistLiveMemoryBatch({
         durableMemories: [buildMinimalDurableMemory("memory-with-invalid-edge")],
         memoryEdges: [
           {
@@ -368,6 +377,13 @@ describe("MmV2NativeRepository", () => {
       });
 
       expect(await repository.listMemoryEdges()).toEqual([]);
+      expect(result.deferredEdges).toEqual([
+        expect.objectContaining({
+          edge_id: "edge-invalid-001",
+          from_memory_id: "memory-with-invalid-edge",
+          to_memory_id: "memory-does-not-exist",
+        }),
+      ]);
       const events = await repository.listMemoryEvents();
       expect(events[0]?.payload).toMatchObject({
         deferred_memory_edges: [
@@ -382,6 +398,72 @@ describe("MmV2NativeRepository", () => {
       expect((await repository.getDurableMemory("memory-with-invalid-edge"))?.status).toBe(
         "active",
       );
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("persists valid siblings when one live candidate is deferred", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const repository = new MmV2NativeRepository(database.sql);
+
+      const result = await repository.persistLiveMemoryBatch({
+        durableMemories: [
+          buildMinimalDurableMemory("memory-valid-sibling"),
+          buildMinimalDurableMemory("memory-invalid-sibling"),
+        ],
+        memoryEdges: [],
+        memoryEvents: [
+          {
+            memory_event_id: "event-valid-sibling",
+            schema_version: "memory_event.v1",
+            event_type: "memory_inserted",
+            occurred_at: "2026-04-21T00:00:00.000Z",
+            actor: "system",
+            source_ingest_event_id: "source-event-001",
+            candidate_id: "candidate-valid",
+            memory_id: "memory-valid-sibling",
+            target_memory_ids: [],
+            payload: { decision: "write" },
+          },
+        ],
+      });
+
+      expect(await repository.getDurableMemory("memory-valid-sibling")).toBeDefined();
+      expect(await repository.getDurableMemory("memory-invalid-sibling")).toBeUndefined();
+      expect(result.durableMemoriesWritten).toEqual(["memory-valid-sibling"]);
+      expect(result.memoryEventsWritten).toEqual(["event-valid-sibling"]);
+      expect(result.deferredCandidates).toEqual([
+        expect.objectContaining({
+          memory_id: "memory-invalid-sibling",
+          reason: "durable memory candidate has no event evidence",
+        }),
+      ]);
+      expect(result.telemetry.rowsWritten).toMatchObject({
+        durableMemories: 1,
+        memoryEvents: 1,
+        memoryEdges: 0,
+      });
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("reports integrity issues without mutating the database", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const repository = new MmV2NativeRepository(database.sql);
+
+      await repository.upsertDurableMemory(buildMinimalDurableMemory("memory-no-event"));
+      const before = await repository.listDurableMemories();
+
+      const report = await repository.auditIntegrity();
+
+      expect(report.memoriesWithoutEvents).toContain("memory-no-event");
+      expect(await repository.listDurableMemories()).toEqual(before);
     } finally {
       await database.close();
     }
