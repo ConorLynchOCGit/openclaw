@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => {
     loadedSkillNames: null,
     loadedState: "not_available",
     loadedStateReason: "test fixture",
+    hotReloadState: "not_available",
     skills: [
       {
         name: "calendar",

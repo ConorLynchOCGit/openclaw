@@ -80,6 +80,26 @@ MODEL_MEMORY_LEGACY_CAPTURED_OBJECT_WRITE_FALLBACK_ENABLED=true
 Default behavior is fail-closed for legacy captured-object fallback. MMV2
 native recording remains the normal live write path.
 
+2026-04-23 expanded compatibility classification:
+
+- plugin loader `memory-core` assumptions remain `still_required` compatibility
+  debt while SDK/runtime tests and loader behavior are migrated
+- `memory_search` / `memory_get` are `explicit_fallback_only`; use requires
+  an explicit rollback/fallback flag and must not be described as canonical
+  MMV2 semantic truth
+- status/doctor/config surfaces remain `still_required` only so operators can
+  detect and suppress stale legacy memory configuration during cutover
+- QA/runtime tests and SDK/docs exports remain `still_required` until
+  replacement MMV2 public contracts are published
+- session-memory continuity is `quarantined`: it can support continuity
+  artifacts, but it is not canonical MMV2 semantic truth
+
+Additional explicit fallback flag:
+
+```text
+MODEL_MEMORY_LEGACY_MEMORY_TOOLS_ENABLED=true
+```
+
 The 2026-04-22 follow-on ordinary-turn proof fix preserves structural
 candidate identity across single-batch extraction, canonicalization, admission,
 and reconciliation. It does not add topic-specific parsing, fuzzy

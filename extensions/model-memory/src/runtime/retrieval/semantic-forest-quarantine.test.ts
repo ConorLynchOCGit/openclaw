@@ -107,6 +107,10 @@ describe("semantic forest quarantine", () => {
         "semantic-identity.ts",
         "runtime-api.ts / index.ts broad legacy exports",
         "write-policy.ts legacy semantic identity dependency",
+        "plugin loader memory-core assumptions",
+        "memory_search / memory_get tools",
+        "status/doctor/config legacy memory surfaces",
+        "session-memory continuity contract",
       ]),
     );
     expect(surfaces.every((surface) => !surface.defaultLivePathAllowed)).toBe(true);

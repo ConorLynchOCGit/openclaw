@@ -7,7 +7,23 @@ title: "Memory Retrieval Runtime"
 
 ## Status
 
-Status: current blocking architecture as of 2026-04-21.
+Status: current read-side hardening architecture as of 2026-04-23.
+
+2026-04-23 implementation update:
+
+- retrieval metrics now emit `emptyRetrievalReason` so operators can
+  distinguish no candidates, candidates found but excluded, threshold
+  suppression, stale/conflict suppression, provider/schema failure, and
+  timeout/pool-pressure classes when those surfaces report them
+- projection exclusions now distinguish stale, conflicted, inactive, and
+  hash-invalid derived artifacts
+- metrics include read-time ranking feature summaries for fielded, lexical,
+  source-lineage, projection-digest, conflict-lane, temporal, scope, stale,
+  conflict, and inactive suppression signals
+- `memory_existed_but_excluded` remains the diagnostic shape for durable
+  memories or projections that existed but were filtered out
+- projection digest preference remains read-time only and only applies to
+  fresh projection digests backed by active MMV2 source memory ids
 
 The MMV2-native write path and durable SQL truth are live, but the clean soak
 hit a read-side wall:

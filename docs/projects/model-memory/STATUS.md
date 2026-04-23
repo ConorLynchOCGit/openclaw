@@ -9,6 +9,33 @@ title: "Model Memory Status"
 
 State: `pre_phase_2_memory_gates_live_proven`
 
+2026-04-23 final hardening update:
+
+- shared ingestion now has executable closeout/quarantine report helpers for
+  active capture/ingest paths; reports are runtime-state/artifact outputs and
+  include only safe ids, hashes, counts, classes, provider/model/schema labels,
+  scorecard references, integrity-audit references, and dirty-state status
+- candidate-level quarantine reporting covers invalid candidates and deferred
+  edges without rolling back valid siblings; evidence quotes are excluded from
+  quarantine reports unless a bounded evidence field is explicitly approved
+- retrieval/projection telemetry now includes explicit empty-retrieval reasons,
+  ranking feature summaries, selected projection ids, backing active MMV2 ids,
+  stale/superseded/conflicted/inactive/deleted/hash-invalid exclusion counts,
+  and `memory_existed_but_excluded` diagnostics
+- projection digest preference remains read-time only and only uses fresh
+  projection digests backed by active MMV2 source memory ids
+- legacy/fallback pruning status is explicit for the remaining coupled
+  blockers: plugin loader assumptions, `memory_search` / `memory_get`,
+  status/doctor/config surfaces, QA/runtime tests, SDK/docs exports, and
+  session-memory continuity contracts
+- strict capture/ingest default remains `openai-codex/gpt-5.4-mini`; live
+  mini validation is currently blocked by provider quota (`429` in gateway
+  logs), not by model-memory routing or schema wiring
+- `openclaw agents skills-status --agent <id> --json` can now report persisted
+  warm-session loaded skill snapshots as current or stale when the session
+  store contains one; otherwise it reports `not_available` with the concrete
+  missing-snapshot reason
+
 Current authority:
 
 - MMV2-native SQL storage is the live semantic source of truth:

@@ -113,6 +113,7 @@ export type RetrievalExclusionReason =
   | "budget"
   | "sensitive"
   | "stale"
+  | "hash_invalid"
   | "inactive"
   | "quarantined";
 
@@ -135,6 +136,31 @@ export type RetrievalMissDiagnostic = {
   status?: RetrievalCandidateStatus;
   scopeMatch?: RetrievalCandidate["scopeMatch"];
   detail?: string;
+};
+
+export type RetrievalEmptyReason =
+  | "none"
+  | "no_candidates_found"
+  | "candidates_found_but_excluded"
+  | "ranking_threshold_too_strict"
+  | "provider_schema_failure"
+  | "timeout_or_pool_pressure"
+  | "stale_conflict_suppression";
+
+export type RetrievalRankingFeatureSummary = {
+  fielded: number;
+  lexical: number;
+  sourceLineage: number;
+  projectionDigest: number;
+  conflictLane: number;
+  vector: number;
+  temporal: number;
+  scopeExact: number;
+  scopePartial: number;
+  scopeBroad: number;
+  staleSuppression: number;
+  conflictSuppression: number;
+  inactiveSuppression: number;
 };
 
 export type ProjectionDigest = {
@@ -168,6 +194,7 @@ export type RetrievalMetrics = {
   deletedFilteredCount: number;
   conflictedFilteredCount: number;
   inactiveFilteredCount: number;
+  hashInvalidProjectionFilteredCount: number;
   candidateCount: number;
   selectedCount: number;
   injectedCount: number;
@@ -175,6 +202,8 @@ export type RetrievalMetrics = {
   selectedSourceMemoryIds: string[];
   missDiagnostics: RetrievalMissDiagnostic[];
   emptyRetrieval: boolean;
+  emptyRetrievalReason: RetrievalEmptyReason;
+  rankingFeatures: RetrievalRankingFeatureSummary;
   estimatedTokens: number;
 };
 

@@ -1,4 +1,11 @@
 import path from "node:path";
+import {
+  loadSessionStore,
+  resolveAgentMainSessionKey,
+  resolveSessionStoreEntry,
+  resolveStorePath,
+  type SessionSkillSnapshot,
+} from "../config/sessions.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { evaluateEntryRequirementsForCurrentPlatform } from "../shared/entry-status.js";
 import type { RequirementConfigCheck, Requirements } from "../shared/requirements.js";
@@ -17,6 +24,7 @@ import {
   type SkillsInstallPreferences,
 } from "./skills.js";
 import { resolveBundledSkillsContext } from "./skills/bundled-context.js";
+import { getSkillsSnapshotVersion, shouldRefreshSnapshotForVersion } from "./skills/refresh.js";
 import { resolveSkillSource } from "./skills/source.js";
 
 export type SkillStatusConfigCheck = RequirementConfigCheck;
@@ -49,6 +57,15 @@ export type SkillStatusEntry = {
   install: SkillInstallOption[];
 };
 
+export type SkillLoadedSnapshotStatus = {
+  sessionKey?: string;
+  sessionId?: string;
+  updatedAt?: number;
+  skillsSnapshot?: SessionSkillSnapshot;
+  currentSnapshotVersion?: number;
+  unavailableReason?: string;
+};
+
 export type SkillStatusReport = {
   workspaceDir: string;
   managedSkillsDir: string;
@@ -57,6 +74,12 @@ export type SkillStatusReport = {
   loadedSkillNames: string[] | null;
   loadedState: "not_available" | "available";
   loadedStateReason?: string;
+  loadedSessionKey?: string;
+  loadedSessionId?: string;
+  loadedSnapshotVersion?: number;
+  currentSnapshotVersion?: number;
+  hotReloadState: "current" | "stale" | "unknown" | "not_available";
+  lastSnapshotPersistedAt?: number;
   skills: SkillStatusEntry[];
 };
 
@@ -230,6 +253,114 @@ function buildSkillStatus(
   };
 }
 
+function loadedSkillNamesFromSnapshot(snapshot: SessionSkillSnapshot): string[] {
+  const resolvedNames =
+    snapshot.resolvedSkills
+      ?.map((skill) => skill.name)
+      .filter((name): name is string => typeof name === "string" && name.trim().length > 0) ?? [];
+  const promptNames = snapshot.skills
+    .map((skill) => skill.name)
+    .filter((name): name is string => typeof name === "string" && name.trim().length > 0);
+  return [...new Set([...resolvedNames, ...promptNames])].toSorted();
+}
+
+export function resolveAgentLoadedSkillSnapshotStatus(params: {
+  config: OpenClawConfig;
+  agentId: string;
+  workspaceDir: string;
+}): SkillLoadedSnapshotStatus {
+  const currentSnapshotVersion = getSkillsSnapshotVersion(params.workspaceDir);
+  const sessionKey = resolveAgentMainSessionKey({
+    cfg: params.config,
+    agentId: params.agentId,
+  });
+  const storePath = resolveStorePath(params.config.session?.store, { agentId: params.agentId });
+  try {
+    const store = loadSessionStore(storePath);
+    const resolved = resolveSessionStoreEntry({ store, sessionKey });
+    const entry = resolved.existing;
+    if (!entry) {
+      return {
+        sessionKey: resolved.normalizedKey,
+        currentSnapshotVersion,
+        unavailableReason: "no persisted main-session entry was found for this agent",
+      };
+    }
+    return {
+      sessionKey: resolved.normalizedKey,
+      sessionId: entry.sessionId,
+      updatedAt: entry.updatedAt,
+      skillsSnapshot: entry.skillsSnapshot,
+      currentSnapshotVersion,
+      unavailableReason: entry.skillsSnapshot
+        ? undefined
+        : "persisted session exists but has no skills snapshot yet",
+    };
+  } catch (error) {
+    return {
+      sessionKey,
+      currentSnapshotVersion,
+      unavailableReason: `session store unavailable: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
+function buildLoadedState(
+  loadedSession?: SkillLoadedSnapshotStatus,
+): Pick<
+  SkillStatusReport,
+  | "loadedSkillNames"
+  | "loadedState"
+  | "loadedStateReason"
+  | "loadedSessionKey"
+  | "loadedSessionId"
+  | "loadedSnapshotVersion"
+  | "currentSnapshotVersion"
+  | "hotReloadState"
+  | "lastSnapshotPersistedAt"
+> {
+  if (!loadedSession) {
+    return {
+      loadedSkillNames: null,
+      loadedState: "not_available",
+      loadedStateReason:
+        "This diagnostic can prove installed/discovered skills; pass a persisted session snapshot to prove warm-session loaded state.",
+      hotReloadState: "not_available",
+    };
+  }
+  if (!loadedSession.skillsSnapshot) {
+    return {
+      loadedSkillNames: null,
+      loadedState: "not_available",
+      loadedStateReason: loadedSession.unavailableReason ?? "warm-session skills snapshot missing",
+      loadedSessionKey: loadedSession.sessionKey,
+      loadedSessionId: loadedSession.sessionId,
+      currentSnapshotVersion: loadedSession.currentSnapshotVersion,
+      hotReloadState: "not_available",
+      lastSnapshotPersistedAt: loadedSession.updatedAt,
+    };
+  }
+
+  const snapshotVersion = loadedSession.skillsSnapshot.version;
+  const stale = shouldRefreshSnapshotForVersion(
+    snapshotVersion,
+    loadedSession.currentSnapshotVersion,
+  );
+  return {
+    loadedSkillNames: loadedSkillNamesFromSnapshot(loadedSession.skillsSnapshot),
+    loadedState: "available",
+    loadedStateReason: stale
+      ? "persisted warm-session skills snapshot is stale and will refresh on the next run"
+      : "persisted warm-session skills snapshot is current",
+    loadedSessionKey: loadedSession.sessionKey,
+    loadedSessionId: loadedSession.sessionId,
+    loadedSnapshotVersion: snapshotVersion,
+    currentSnapshotVersion: loadedSession.currentSnapshotVersion,
+    hotReloadState: stale ? "stale" : "current",
+    lastSnapshotPersistedAt: loadedSession.updatedAt,
+  };
+}
+
 export function buildWorkspaceSkillStatus(
   workspaceDir: string,
   opts?: {
@@ -237,6 +368,7 @@ export function buildWorkspaceSkillStatus(
     managedSkillsDir?: string;
     entries?: SkillEntry[];
     eligibility?: SkillEligibilityContext;
+    loadedSession?: SkillLoadedSnapshotStatus;
   },
 ): SkillStatusReport {
   const managedSkillsDir = opts?.managedSkillsDir ?? path.join(CONFIG_DIR, "skills");
@@ -260,15 +392,13 @@ export function buildWorkspaceSkillStatus(
   if (bundledContext.dir) {
     configuredSkillDirs.push({ kind: "bundled", path: bundledContext.dir });
   }
+  const loadedState = buildLoadedState(opts?.loadedSession);
   return {
     workspaceDir,
     managedSkillsDir,
     configuredSkillDirs,
     discoveredSkillNames: skillStatuses.map((skill) => skill.name).toSorted(),
-    loadedSkillNames: null,
-    loadedState: "not_available",
-    loadedStateReason:
-      "This diagnostic can prove installed/discovered skills; warm-session in-memory loaded state is not exposed by the current runner.",
+    ...loadedState,
     skills: skillStatuses,
   };
 }

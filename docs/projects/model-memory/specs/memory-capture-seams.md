@@ -55,6 +55,10 @@ with clear provenance and authority.
   statuses, and classes only
 - active seams route through the shared MMV2 capture/ingest contracts and
   capture-job/activity metadata surfaces
+- shared ingestion closeout reports now provide the common end-of-run contract
+  for seam proof: safe source/job/event ids, candidate counts, quarantine
+  counts, failure classes, provider/schema labels, dirty-state result, and
+  no-dark-data scan status
 - cross-seam dedupe keys are deterministic and no active seam stores raw
   prompts, full transcripts, raw tool logs, secrets, or private phrases
 - ordinary-turn capture now treats durable user preferences/directives about

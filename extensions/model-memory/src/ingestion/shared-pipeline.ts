@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 export const MEMORY_INGESTION_PATHS = [
   "document_ingest",
@@ -6,6 +8,8 @@ export const MEMORY_INGESTION_PATHS = [
   "tool_result_capture",
   "daily_recovery",
   "bootstrap_import",
+  "memory_file_import",
+  "capture_replay_inspection",
   "heartbeat_proactive_capture",
 ] as const;
 
@@ -30,15 +34,28 @@ export const MEMORY_INGESTION_FAILURE_CLASSES = [
 export type MemoryIngestionFailureClass = (typeof MEMORY_INGESTION_FAILURE_CLASSES)[number];
 
 export type MemoryIngestionStage =
+  | "source_intake"
+  | "source_fingerprint"
+  | "privacy_gate"
+  | "capture_routing"
   | "provider_boundary"
   | "prompt_plan"
+  | "extraction"
+  | "extraction_repair"
   | "execution"
   | "parse_boundary"
   | "semantic_contract_boundary"
   | "canonicalization_boundary"
   | "reconciliation_boundary"
+  | "admission_validation"
+  | "candidate_quarantine"
   | "persistence_boundary"
+  | "edge_endpoint_validation"
+  | "runtime_dirty"
+  | "provider_scorecard"
+  | "integrity_audit"
   | "projection_refresh"
+  | "closeout_report"
   | "telemetry";
 
 export type MemoryIngestionProviderCapability = {
@@ -486,6 +503,76 @@ export type CandidateQuarantineRecord = {
   sourceRefs: MemoryIngestionCandidateRef[];
 };
 
+export type MemoryIngestionQuarantineReportRecord = {
+  source_id?: string;
+  source_hash?: string;
+  candidate_id?: string;
+  candidate_type?: MemoryIngestionCandidateType | "unknown";
+  memory_id?: string;
+  event_id?: string;
+  edge_id?: string;
+  failure_class: MemoryIngestionFailureClass;
+  failure_stage: MemoryIngestionStage;
+  validation_reason: string;
+  provider?: string;
+  model?: string;
+  schema?: string;
+  source_refs?: Array<{
+    source_id: string;
+    segment_id: string;
+    start_char?: number;
+    end_char?: number;
+  }>;
+};
+
+export type MemoryIngestionCloseoutReport = {
+  schema_version: "memory_ingestion_closeout.v1";
+  generated_at: string;
+  path: MemoryIngestionPath;
+  run_id?: string;
+  source_id?: string;
+  source_hash?: string;
+  job_id?: string;
+  counts: {
+    telemetry_events: number;
+    candidates_extracted: number;
+    candidates_valid: number;
+    candidates_repaired: number;
+    candidates_quarantined: number;
+    candidates_admitted: number;
+    candidates_rejected: number;
+    edges_deferred: number;
+    failures: number;
+    skipped: number;
+  };
+  failure_class_breakdown: Partial<Record<MemoryIngestionFailureClass, number>>;
+  quarantined: MemoryIngestionQuarantineReportRecord[];
+  provider_scorecard_refs: Array<{
+    provider?: string;
+    model?: string;
+    contract?: string;
+    scorecard_path?: string;
+    status?: string;
+  }>;
+  integrity_audit_refs: Array<{
+    report_path?: string;
+    finding_count?: number;
+    status?: string;
+  }>;
+  dirty_state?: {
+    status: "marked" | "deferred" | "failed" | "not_required";
+    reason?: string;
+  };
+  no_dark_data_scan: {
+    passed: true;
+    scanned_fields: string[];
+  };
+  retention: {
+    storage: "runtime_state_artifact";
+    cleanup: "runtime-state JSON/JSONL rotation and artifact pruning";
+  };
+};
+
 const VALID_SCOPES = new Set<MemoryIngestionCandidate["scope"]>([
   "global",
   "workspace",
@@ -620,6 +707,189 @@ export function partitionMemoryEdgesByKnownEndpoints<
     }
   }
   return { validEdges, deferredEdges };
+}
+
+function redactSourceRefsForReport(
+  refs: MemoryIngestionCandidateRef[],
+): MemoryIngestionQuarantineReportRecord["source_refs"] {
+  return refs.map((ref) => ({
+    source_id: ref.sourceId,
+    segment_id: ref.segmentId,
+    ...(typeof ref.startChar === "number" ? { start_char: ref.startChar } : {}),
+    ...(typeof ref.endChar === "number" ? { end_char: ref.endChar } : {}),
+  }));
+}
+
+function summarizeCandidateErrors(errors: CandidateValidationError[]): string {
+  return errors.map((error) => error.code).join(",") || "candidate_validation_failed";
+}
+
+export function buildCandidateQuarantineReportRecords(input: {
+  sourceId?: string;
+  sourceHash?: string;
+  provider?: string;
+  model?: string;
+  schema?: string;
+  quarantinedCandidates?: CandidateQuarantineRecord[];
+  deferredEdges?: Array<{
+    edgeId?: string;
+    fromMemoryId?: string;
+    toMemoryId?: string;
+    reason: string;
+  }>;
+}): MemoryIngestionQuarantineReportRecord[] {
+  const candidateRecords = (input.quarantinedCandidates ?? []).map((candidate) => ({
+    source_id: input.sourceId,
+    source_hash: input.sourceHash,
+    candidate_id: candidate.candidateId,
+    candidate_type: candidate.candidateType,
+    failure_class: candidate.failureClass,
+    failure_stage: "candidate_quarantine" as const,
+    validation_reason: summarizeCandidateErrors(candidate.errors),
+    provider: input.provider,
+    model: input.model,
+    schema: input.schema,
+    source_refs: redactSourceRefsForReport(candidate.sourceRefs),
+  }));
+  const edgeRecords = (input.deferredEdges ?? []).map((edge) => ({
+    source_id: input.sourceId,
+    source_hash: input.sourceHash,
+    edge_id: edge.edgeId,
+    memory_id: [edge.fromMemoryId, edge.toMemoryId].filter(Boolean).join("->") || undefined,
+    failure_class: "db_persistence" as const,
+    failure_stage: "edge_endpoint_validation" as const,
+    validation_reason: edge.reason,
+    provider: input.provider,
+    model: input.model,
+    schema: input.schema,
+  }));
+  return [...candidateRecords, ...edgeRecords].map((record) =>
+    assertMemoryIngestionReportRecordHasNoDarkData(record),
+  );
+}
+
+function countFailuresByClass(
+  events: MemoryIngestionTelemetryEvent[],
+): Partial<Record<MemoryIngestionFailureClass, number>> {
+  const counts: Partial<Record<MemoryIngestionFailureClass, number>> = {};
+  for (const event of events) {
+    if (!event.failure_class) {
+      continue;
+    }
+    counts[event.failure_class] = (counts[event.failure_class] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function sumCandidateCount(
+  events: MemoryIngestionTelemetryEvent[],
+  key: keyof NonNullable<MemoryIngestionTelemetryEvent["candidate_counts"]>,
+): number {
+  return events.reduce((sum, event) => sum + (event.candidate_counts?.[key] ?? 0), 0);
+}
+
+function sanitizeReportFileId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "") || "closeout";
+}
+
+function assertMemoryIngestionReportRecordHasNoDarkData<T>(record: T): T {
+  assertNoDarkDataValue(record, "report");
+  return record;
+}
+
+export function buildMemoryIngestionCloseoutReport(input: {
+  path: MemoryIngestionPath;
+  runId?: string;
+  sourceId?: string;
+  sourceHash?: string;
+  jobId?: string;
+  telemetryEvents?: MemoryIngestionTelemetryEvent[];
+  quarantinedCandidates?: CandidateQuarantineRecord[];
+  deferredEdges?: Array<{
+    edgeId?: string;
+    fromMemoryId?: string;
+    toMemoryId?: string;
+    reason: string;
+  }>;
+  providerScorecards?: MemoryIngestionCloseoutReport["provider_scorecard_refs"];
+  integrityAudits?: MemoryIngestionCloseoutReport["integrity_audit_refs"];
+  dirtyState?: MemoryIngestionCloseoutReport["dirty_state"];
+  provider?: string;
+  model?: string;
+  schema?: string;
+  generatedAt?: Date;
+}): MemoryIngestionCloseoutReport {
+  const telemetryEvents = input.telemetryEvents ?? [];
+  const quarantined = buildCandidateQuarantineReportRecords({
+    sourceId: input.sourceId,
+    sourceHash: input.sourceHash,
+    provider: input.provider,
+    model: input.model,
+    schema: input.schema,
+    quarantinedCandidates: input.quarantinedCandidates,
+    deferredEdges: input.deferredEdges,
+  });
+  const report: MemoryIngestionCloseoutReport = {
+    schema_version: "memory_ingestion_closeout.v1",
+    generated_at: (input.generatedAt ?? new Date()).toISOString(),
+    path: input.path,
+    run_id: input.runId,
+    source_id: input.sourceId,
+    source_hash: input.sourceHash,
+    job_id: input.jobId,
+    counts: {
+      telemetry_events: telemetryEvents.length,
+      candidates_extracted: sumCandidateCount(telemetryEvents, "extracted"),
+      candidates_valid: sumCandidateCount(telemetryEvents, "valid"),
+      candidates_repaired: sumCandidateCount(telemetryEvents, "repaired"),
+      candidates_quarantined:
+        sumCandidateCount(telemetryEvents, "quarantined") +
+        (input.quarantinedCandidates?.length ?? 0),
+      candidates_admitted: sumCandidateCount(telemetryEvents, "admitted"),
+      candidates_rejected: sumCandidateCount(telemetryEvents, "rejected"),
+      edges_deferred: input.deferredEdges?.length ?? 0,
+      failures: telemetryEvents.filter((event) => event.status === "failed").length,
+      skipped: telemetryEvents.filter((event) => event.status === "skipped").length,
+    },
+    failure_class_breakdown: countFailuresByClass(telemetryEvents),
+    quarantined,
+    provider_scorecard_refs: input.providerScorecards ?? [],
+    integrity_audit_refs: input.integrityAudits ?? [],
+    dirty_state: input.dirtyState,
+    no_dark_data_scan: {
+      passed: true,
+      scanned_fields: [
+        "ids",
+        "counts",
+        "failure_classes",
+        "quarantine_records",
+        "provider_scorecard_refs",
+        "integrity_audit_refs",
+      ],
+    },
+    retention: {
+      storage: "runtime_state_artifact",
+      cleanup: "runtime-state JSON/JSONL rotation and artifact pruning",
+    },
+  };
+  return assertMemoryIngestionReportRecordHasNoDarkData(report);
+}
+
+export async function writeMemoryIngestionCloseoutReport(input: {
+  report: MemoryIngestionCloseoutReport;
+  artifactDir: string;
+}): Promise<{ path: string; contentHash: string }> {
+  await fs.mkdir(input.artifactDir, { recursive: true });
+  const reportId = sanitizeReportFileId(
+    input.report.run_id ?? input.report.job_id ?? input.report.source_id ?? input.report.path,
+  );
+  const reportPath = path.join(input.artifactDir, `${reportId}.closeout.json`);
+  const serialized = `${JSON.stringify(input.report, null, 2)}\n`;
+  await fs.writeFile(reportPath, serialized, "utf8");
+  return {
+    path: reportPath,
+    contentHash: stableHash(serialized),
+  };
 }
 
 export type MemoryIngestionTelemetryEvent = {

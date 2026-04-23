@@ -10,6 +10,28 @@ title: "Capture And Ingest Mechanical Hardening"
 This is both the pass plan and the implementation record for the mechanical
 hardening work completed so far.
 
+2026-04-23 final hardening follow-up:
+
+- shared ingestion contracts now include explicit executable stage names for
+  source intake, fingerprinting, privacy gate, routing, prompt planning,
+  provider boundary, extraction/repair, canonicalization, reconciliation,
+  admission validation, candidate quarantine, persistence, edge endpoint
+  validation, runtime dirty marking, scorecard update, integrity audit,
+  projection refresh, closeout reporting, and telemetry
+- closeout reports are artifact-safe runtime-state outputs with run/source/job
+  ids, attempted/written/deferred/skipped counts, failure-class breakdown,
+  provider/model/schema labels, provider scorecard references, integrity audit
+  references, dirty-state result, and no-dark-data scan status
+- candidate-level quarantine reports include source id/hash, candidate id,
+  memory/event/edge ids where available, failure class/stage, validation
+  reason, and provider/model/schema labels; they deliberately exclude raw
+  prompts, transcripts, raw tool logs, secrets, and unbounded source text
+- per-candidate fallback/savepoint behavior remains bounded and idempotent:
+  invalid candidates and invalid edges are reported/deferred while valid
+  siblings can continue through MMV2-native persistence
+- no SQL migration was added; report retention is runtime-state artifact
+  rotation/pruning, not durable semantic storage
+
 The first bounded hardening slice already landed in source and runtime:
 
 - safe capture activity events

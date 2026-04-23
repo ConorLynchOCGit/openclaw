@@ -50,11 +50,17 @@ Required runtime artifacts:
 - `retrieval_plan` structured payloads
 - `retrieval_run` telemetry with `query_text_hash`, selected ids, excluded ids,
   pack ids, indexes used, and injection target
+- `retrieval_run.metrics.emptyRetrievalReason` and ranking feature summaries
+  for diagnosing empty retrieval, threshold suppression, stale/conflict
+  suppression, projection digest selection, and source-lineage matches
 - `memory_pack` artifacts for operating, user profile, project state,
   procedure, source reference, episode continuity, projection digest, and
   conflict packs
 - `projection_digest` artifacts with active `source_memory_ids`, content hash,
   freshness, stale/conflict markers, and source refs
+- `memory_ingestion_closeout.v1` artifacts for shared ingestion runs, with
+  candidate/edge quarantine records, provider scorecard refs, integrity audit
+  refs, dirty-state status, and no-dark-data scan status
 
 Raw prompt text, full transcripts, raw tool logs, secrets, and unbounded user
 content must not be persisted in these runtime artifacts.

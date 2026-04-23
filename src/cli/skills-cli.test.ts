@@ -38,6 +38,7 @@ function createMockReport(skills: SkillStatusEntry[]): SkillStatusReport {
     loadedSkillNames: null,
     loadedState: "not_available",
     loadedStateReason: "test fixture",
+    hotReloadState: "not_available",
     skills,
   };
 }

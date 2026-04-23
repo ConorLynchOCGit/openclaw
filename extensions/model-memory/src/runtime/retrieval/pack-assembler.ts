@@ -15,6 +15,7 @@ import type {
   MemoryPackType,
   ProjectionDigest,
   RetrievalCandidate,
+  RetrievalEmptyReason,
   RetrievalExclusion,
   RetrievalMetrics,
   RetrievalPackAssemblyInput,
@@ -286,6 +287,68 @@ function countExclusionReasons(exclusions: RetrievalExclusion[]): Record<string,
   return counts;
 }
 
+function buildRankingFeatureSummary(input: {
+  retrievalResultItems: RetrievalResultItemRecord[];
+  exclusions: RetrievalExclusion[];
+  projectionDigests?: ProjectionDigest[];
+}): RetrievalMetrics["rankingFeatures"] {
+  const reasonCodes = input.retrievalResultItems.flatMap((item) => item.retrievalReasonCodes);
+  const countReason = (reason: string) => reasonCodes.filter((code) => code === reason).length;
+  const countLane = (lane: string) =>
+    input.exclusions.filter((exclusion) => exclusion.sourceLane === lane).length;
+  return {
+    fielded:
+      countReason("class_match") +
+      countReason("kind_match") +
+      countReason("scope_exact_match") +
+      countReason("scope_partial_match") +
+      countReason("scope_broad_match") +
+      countLane("fielded"),
+    lexical:
+      countReason("subject_match") +
+      countReason("text_match") +
+      countReason("lexical_baseline") +
+      countLane("lexical"),
+    sourceLineage: countReason("source_lineage_match") + countLane("source_lineage"),
+    projectionDigest: (input.projectionDigests ?? []).length + countLane("projection_digest"),
+    conflictLane: countLane("conflict_lane"),
+    vector: 0,
+    temporal: countReason("recent_memory"),
+    scopeExact: countReason("scope_exact_match"),
+    scopePartial: countReason("scope_partial_match"),
+    scopeBroad: countReason("scope_broad_match"),
+    staleSuppression: input.exclusions.filter((exclusion) => exclusion.reason === "stale").length,
+    conflictSuppression: input.exclusions.filter((exclusion) => exclusion.reason === "conflicted")
+      .length,
+    inactiveSuppression: input.exclusions.filter((exclusion) => exclusion.reason === "inactive")
+      .length,
+  };
+}
+
+function resolveEmptyRetrievalReason(input: {
+  selectedCount: number;
+  candidateCount: number;
+  exclusions: RetrievalExclusion[];
+}): RetrievalEmptyReason {
+  if (input.selectedCount > 0) {
+    return "none";
+  }
+  if (input.exclusions.length > 0) {
+    const allSuppressed = input.exclusions.every(
+      (exclusion) =>
+        exclusion.reason === "stale" ||
+        exclusion.reason === "conflicted" ||
+        exclusion.reason === "inactive" ||
+        exclusion.reason === "hash_invalid",
+    );
+    return allSuppressed ? "stale_conflict_suppression" : "candidates_found_but_excluded";
+  }
+  if (input.candidateCount > 0) {
+    return "ranking_threshold_too_strict";
+  }
+  return "no_candidates_found";
+}
+
 export function buildRetrievalMetrics(input: {
   retrievalResultItems: RetrievalResultItemRecord[];
   exclusions: RetrievalExclusion[];
@@ -311,6 +374,11 @@ export function buildRetrievalMetrics(input: {
   const estimatedTokens =
     input.memoryPacks?.reduce((sum, pack) => sum + pack.estimatedTokens, 0) ?? 0;
   const exclusionReasons = countExclusionReasons(input.exclusions);
+  const emptyRetrievalReason = resolveEmptyRetrievalReason({
+    selectedCount,
+    candidateCount: input.candidateCount,
+    exclusions: input.exclusions,
+  });
   return {
     selectedIds,
     excludedIds: input.exclusions.map((exclusion) => exclusion.id),
@@ -320,6 +388,7 @@ export function buildRetrievalMetrics(input: {
     deletedFilteredCount: exclusionReasons.deleted ?? 0,
     conflictedFilteredCount: exclusionReasons.conflicted ?? 0,
     inactiveFilteredCount: exclusionReasons.inactive ?? 0,
+    hashInvalidProjectionFilteredCount: exclusionReasons.hash_invalid ?? 0,
     candidateCount: input.candidateCount,
     selectedCount,
     injectedCount,
@@ -336,6 +405,12 @@ export function buildRetrievalMetrics(input: {
       detail: exclusion.detail,
     })),
     emptyRetrieval: selectedCount === 0,
+    emptyRetrievalReason,
+    rankingFeatures: buildRankingFeatureSummary({
+      retrievalResultItems: input.retrievalResultItems,
+      exclusions: input.exclusions,
+      projectionDigests: input.projectionDigests,
+    }),
     estimatedTokens,
   };
 }

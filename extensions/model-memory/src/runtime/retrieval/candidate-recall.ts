@@ -500,6 +500,29 @@ function buildProjectionDigestExclusions(input: {
         },
       ];
     }
+    const hashInvalidMarkers = [...(version.staleMarkers ?? []), version.freshness?.reason ?? ""]
+      .map((marker) => marker.toLowerCase())
+      .filter(
+        (marker) =>
+          marker.includes("hash_invalid") ||
+          marker.includes("invalid_hash") ||
+          marker.includes("content_hash_invalid") ||
+          marker.includes("source_hash_invalid") ||
+          marker.includes("hash validation failed") ||
+          marker.includes("hash_validation_failed"),
+      );
+    if (hashInvalidMarkers.length > 0) {
+      return [
+        {
+          id: version.id,
+          idType: "projection" as const,
+          reason: "hash_invalid" as const,
+          detail: hashInvalidMarkers.join(",") || "hash_invalid_projection_digest",
+          sourceLane: "projection_digest" as const,
+          status: "inactive" as const,
+        },
+      ];
+    }
     const stale = version.freshness?.status === "stale" || (version.staleMarkers?.length ?? 0) > 0;
     if (stale) {
       return [

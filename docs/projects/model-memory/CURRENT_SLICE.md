@@ -5,6 +5,30 @@ title: "Model Memory Current Slice"
 
 # Current Slice
 
+## 2026-04-23 Final Pre-Phase-2 Hardening Follow-Up
+
+This slice now includes the final pre-Phase-2 hardening follow-up:
+
+- the shared ingestion funnel is no longer only a taxonomy; it now has
+  artifact-safe closeout and candidate/edge quarantine report helpers that can
+  consume telemetry, provider scorecards, integrity-audit references,
+  dirty-state scheduling results, and capture-job ids without persisting raw
+  prompts, transcripts, tool logs, secrets, or unbounded source text
+- retrieval telemetry now records explicit empty-retrieval reasons, ranking
+  feature summaries, hash-invalid projection exclusions, selected projection
+  ids, backing active MMV2 memory ids, and `memory_existed_but_excluded`
+  diagnostics while keeping ranking read-time only
+- legacy/fallback posture is narrower and more explicit:
+  plugin loader assumptions, `memory_search` / `memory_get`,
+  status/doctor/config surfaces, QA/runtime/SDK/docs exports, and
+  session-memory continuity are compatibility debt, not normal MMV2 truth
+- strict capture/ingest still defaults to `openai-codex/gpt-5.4-mini`; live
+  mini validation in this session is blocked by provider quota (`429`), so the
+  blocker is external and must not be papered over with synthetic success
+- skill status now reports persisted warm-session skill snapshots when present,
+  including current/stale hot-load state; true in-memory state still depends on
+  the runner persisting an up-to-date session snapshot
+
 ## Slice
 
 `pre-phase-2-memory-gates`

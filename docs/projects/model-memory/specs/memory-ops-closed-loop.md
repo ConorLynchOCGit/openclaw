@@ -78,6 +78,11 @@ Main UX audit follow-up:
 - bounded tool-result operational facts are allowed Memory Ops input when they
   describe safe blocker classes and remediation hints without raw command
   output, raw tool parameters, prompts, transcripts, or secrets
+- shared ingestion closeout reports are valid Memory Ops input. Memory Ops may
+  consume their safe counts, ids, classes, provider scorecard refs, integrity
+  audit refs, dirty-state status, and quarantine records, but must not promote
+  closeout artifacts into durable semantic memories or use them to perform
+  semantic auto-fix.
 - host-operator tool failure logs must use safe parameter metadata and content
   redaction so Memory Ops and gateway logs do not become raw-tool-log storage
 

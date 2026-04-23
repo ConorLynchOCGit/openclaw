@@ -5,6 +5,62 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-23 - Closeout reports and retrieval miss telemetry are operational artifacts, not truth
+
+Decision:
+
+- shared ingestion closeout/quarantine reports are runtime-state/artifact
+  outputs, not SQL semantic truth
+- retrieval/projection miss diagnostics and ranking-feature telemetry remain
+  read-time only
+- hash-invalid, stale, conflicted, inactive, deleted, and superseded records
+  are excluded from normal runtime packs unless explicitly requested for
+  inspection
+
+Reasoning:
+
+- operators need to know whether memory existed but was excluded, which stage
+  failed, and which provider/model/schema was involved
+- writing these diagnostics into durable semantic tables would create a second
+  truth layer and invite auto-fix pressure
+- artifact-safe reports can be rotated/pruned without touching canonical MMV2
+  memory rows
+
+## 2026-04-23 - Mini remains strict capture default while quota blocks live validation
+
+Decision:
+
+- `openai-codex/gpt-5.4-mini` remains the strict MMV2 capture/ingest default
+- nano remains explicit low-risk/benchmark-only until strict-schema and
+  evidence-quality parity is proven
+- current live validation evidence is classified as externally blocked when
+  provider calls fail with quota (`429`)
+
+Reasoning:
+
+- prior measured runs showed mini succeeds strict-schema capture while nano
+  route quality remains unresolved for strict admission
+- a provider quota failure is not a source failure, not a model-quality result,
+  and not permission to fake benchmark success
+
+## 2026-04-23 - Warm skill-load state is session-snapshot truth
+
+Decision:
+
+- skill-status may report installed and discovered skills from the workspace
+  and managed skill directories
+- loaded/current/stale state is reported only from persisted session skill
+  snapshots
+- if no persisted snapshot exists, the diagnostic must say `not_available`
+  with the exact reason
+
+Reasoning:
+
+- claiming warm-session loaded state without runtime evidence creates false
+  operator confidence
+- persisted session snapshots are the narrow truthful surface currently
+  available without adding a live in-memory agent-inspection channel
+
 ## 2026-04-23 - Strict MMV2 admission defaults to mini after live nano boundary failures
 
 Decision:

@@ -3,7 +3,10 @@ import {
   resolveAgentWorkspaceDir,
   resolveDefaultAgentId,
 } from "../agents/agent-scope.js";
-import { buildWorkspaceSkillStatus } from "../agents/skills-status.js";
+import {
+  buildWorkspaceSkillStatus,
+  resolveAgentLoadedSkillSnapshotStatus,
+} from "../agents/skills-status.js";
 import { loadConfig } from "../config/config.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { type RuntimeEnv, defaultRuntime, writeRuntimeJson } from "../runtime.js";
@@ -31,16 +34,26 @@ export async function agentsSkillsStatusCommand(
   }
 
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
-  const report = buildWorkspaceSkillStatus(workspaceDir, { config: cfg });
+  const loadedSession = resolveAgentLoadedSkillSnapshotStatus({
+    config: cfg,
+    agentId,
+    workspaceDir,
+  });
+  const report = buildWorkspaceSkillStatus(workspaceDir, { config: cfg, loadedSession });
   const payload = {
     agentId,
-    sessionId: null,
+    sessionId: report.loadedSessionId ?? null,
+    sessionKey: report.loadedSessionKey ?? null,
     workspaceDir: report.workspaceDir,
     configuredSkillDirs: report.configuredSkillDirs,
     discoveredSkillNames: report.discoveredSkillNames,
     loadedSkillNames: report.loadedSkillNames,
     loadedState: report.loadedState,
     loadedStateReason: report.loadedStateReason,
+    hotReloadState: report.hotReloadState,
+    loadedSnapshotVersion: report.loadedSnapshotVersion,
+    currentSnapshotVersion: report.currentSnapshotVersion,
+    lastSnapshotPersistedAt: report.lastSnapshotPersistedAt,
     skillCount: report.skills.length,
     skills: report.skills.map((skill) => ({
       name: skill.name,
@@ -67,6 +80,11 @@ export async function agentsSkillsStatusCommand(
     }`,
     `Loaded-state: ${report.loadedState}${
       report.loadedStateReason ? ` (${report.loadedStateReason})` : ""
+    }`,
+    `Hot-reload: ${report.hotReloadState}${
+      report.loadedSnapshotVersion !== undefined || report.currentSnapshotVersion !== undefined
+        ? ` (loaded=${report.loadedSnapshotVersion ?? "unknown"}, current=${report.currentSnapshotVersion ?? "unknown"})`
+        : ""
     }`,
   ];
   runtime.log(lines.join("\n"));

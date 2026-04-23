@@ -24,6 +24,14 @@ title: "Model Memory Roadmap"
 
 ## Progress snapshot
 
+- Final pre-Phase-2 hardening now adds executable shared-ingestion closeout
+  reports, candidate/edge quarantine report helpers, retrieval miss reason
+  telemetry, projection hash-invalid exclusion, expanded legacy/fallback
+  registry coverage, and persisted-session skill hot-load status reporting.
+- Mini remains the strict capture/ingest default. Live mini validation in the
+  current session is externally blocked by provider quota (`429`); this is a
+  provider/account readiness item, not a reason to fall back to nano for
+  strict MMV2 admission.
 - Phase 0 is complete.
 - Phase 1 is complete.
 - Phase 2 is complete.

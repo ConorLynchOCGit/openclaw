@@ -353,6 +353,42 @@ describe("memory retrieval runtime", () => {
     );
   });
 
+  it("excludes hash-invalid projection digests with explicit miss diagnostics", () => {
+    const recalled = recallCanonicalCandidates({
+      request,
+      memoryObjects: [memory({ id: "memory-active" })],
+      projectionVersions: [
+        {
+          id: "projection-hash-invalid",
+          targetId: "catalog-project-page",
+          projectionType: "project_page",
+          contentHash: "hash-invalid",
+          canonicalArtifactPath: ".openclaw/model-memory/projections/project/page.md",
+          sourceObjectIds: ["memory-active"],
+          sourceSlotKeys: [],
+          sourceSetKeys: [],
+          tokenEstimate: 10,
+          builtAt: new Date(0),
+          freshness: { status: "stale", reason: "hash_validation_failed" },
+          staleMarkers: ["content_hash_invalid"],
+          conflictMarkers: [],
+        },
+      ],
+    });
+
+    expect(recalled.selectedProjectionDigests).toEqual([]);
+    expect(recalled.exclusions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "projection-hash-invalid",
+          idType: "projection",
+          reason: "hash_invalid",
+          sourceLane: "projection_digest",
+        }),
+      ]),
+    );
+  });
+
   it("prioritizes bounded tool-result proof memories for explicit tool-result recall", () => {
     const toolResultRequest: InterpretedRetrievalRequest = {
       goal: "what bounded tool-result evidence was captured",
@@ -550,7 +586,78 @@ describe("memory retrieval runtime", () => {
         selectedCount: 0,
         injectedCount: 0,
         emptyRetrieval: true,
+        emptyRetrievalReason: "no_candidates_found",
       }),
+    );
+  });
+
+  it("emits exclusion-based empty reasons and ranking feature telemetry", () => {
+    const plan = buildRetrievalPlan({
+      request,
+      queryTextHash: "hash-excluded",
+      requestPurpose: "context_injection",
+      sessionId: "session-excluded",
+    });
+    const retrievalRequest = {
+      id: "request-excluded",
+      sessionId: "session-excluded",
+      queryText: redactRetrievalQueryForStorage("query where memory exists but is stale"),
+      requestPurpose: "context_injection",
+      scope: { projectId: "project-001", retrievalRuntimeQueryHash: "hash-excluded" },
+      desiredResultCount: 10,
+      contractName: "retrieval_request_interpretation",
+      contractVersion: "v1",
+      modelId: "model-001",
+      createdAt: new Date(0),
+    };
+    const exclusions = [
+      {
+        id: "projection-stale",
+        idType: "projection" as const,
+        reason: "stale" as const,
+        sourceLane: "projection_digest" as const,
+      },
+      {
+        id: "memory-conflict",
+        idType: "memory" as const,
+        reason: "conflicted" as const,
+        sourceLane: "conflict_lane" as const,
+        status: "conflicted" as const,
+      },
+    ];
+    const run = buildRetrievalRun({
+      retrievalRequest,
+      queryTextHash: "hash-excluded",
+      retrievalPlanId: plan.planId,
+      corpora: plan.corpora,
+      indexesUsed: plan.queries.flatMap((query) => query.indexes),
+      candidateCount: 2,
+      retrievalResultItems: [],
+      selectedProjectionIds: [],
+      exclusions,
+      memoryPacks: [],
+    });
+
+    expect(run.metrics).toMatchObject({
+      emptyRetrieval: true,
+      emptyRetrievalReason: "stale_conflict_suppression",
+      staleFilteredCount: 1,
+      conflictedFilteredCount: 1,
+      rankingFeatures: {
+        projectionDigest: 1,
+        conflictLane: 1,
+        staleSuppression: 1,
+        conflictSuppression: 1,
+      },
+    });
+    expect(run.metrics.missDiagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          diagnosticType: "memory_existed_but_excluded",
+          id: "projection-stale",
+          reason: "stale",
+        }),
+      ]),
     );
   });
 });

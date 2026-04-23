@@ -10,7 +10,10 @@ import {
   updateSkillsFromClawHub,
 } from "../../agents/skills-clawhub.js";
 import { installSkill } from "../../agents/skills-install.js";
-import { buildWorkspaceSkillStatus } from "../../agents/skills-status.js";
+import {
+  buildWorkspaceSkillStatus,
+  resolveAgentLoadedSkillSnapshotStatus,
+} from "../../agents/skills-status.js";
 import { loadWorkspaceSkillEntries, type SkillEntry } from "../../agents/skills.js";
 import { listAgentWorkspaceDirs } from "../../agents/workspace-dirs.js";
 import { loadConfig, writeConfigFile } from "../../config/config.js";
@@ -93,8 +96,14 @@ export const skillsHandlers: GatewayRequestHandlers = {
       }
     }
     const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+    const loadedSession = resolveAgentLoadedSkillSnapshotStatus({
+      config: cfg,
+      agentId,
+      workspaceDir,
+    });
     const report = buildWorkspaceSkillStatus(workspaceDir, {
       config: cfg,
+      loadedSession,
       eligibility: {
         remote: getRemoteSkillEligibility({
           advertiseExecNode: canExecRequestNode({

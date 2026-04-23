@@ -41,6 +41,9 @@ Implementation update, 2026-04-23:
 - retrieval packs now include projection digest packs for selected fresh
   projection versions
 - pack telemetry records selected projection ids and backing source memory ids
+- retrieval-run telemetry now records empty-retrieval reasons, ranking feature
+  summaries, stale/superseded/conflicted/inactive/deleted/hash-invalid
+  exclusions, and `memory_existed_but_excluded` diagnostics
 - context assembly can inject the selected projection digest pack into the
   semi-stable context segment
 - live projection behavior proof shows each intended projection type can affect

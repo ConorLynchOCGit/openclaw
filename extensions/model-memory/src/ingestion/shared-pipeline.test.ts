@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCandidateRepairPayload,
+  buildCandidateQuarantineReportRecords,
+  buildMemoryIngestionCloseoutReport,
   buildMemoryPromptPlan,
   buildMemoryPromptCacheHealthReport,
   classifyMemoryIngestionFailure,
@@ -23,6 +25,8 @@ describe("shared memory ingestion pipeline", () => {
       "tool_result_capture",
       "daily_recovery",
       "bootstrap_import",
+      "memory_file_import",
+      "capture_replay_inspection",
       "heartbeat_proactive_capture",
     ]);
     expect(classifyMemoryIngestionFailure("OpenRouter 402 insufficient credits")).toBe(
@@ -253,6 +257,129 @@ describe("shared memory ingestion pipeline", () => {
     expect(result.validEdges.map((edge) => edge.edge_id)).toEqual(["edge-ok"]);
     expect(result.deferredEdges).toHaveLength(1);
     expect(result.deferredEdges[0]?.reason).toContain("missing");
+  });
+
+  it("builds artifact-safe quarantine records without evidence quotes", () => {
+    const candidate: MemoryIngestionCandidate = {
+      candidateId: "cand-invalid",
+      candidateType: "project_fact",
+      canonicalText: "",
+      scope: "workspace",
+      sourceRefs: [
+        {
+          sourceId: "src-1",
+          segmentId: "seg-1",
+          evidenceQuote: "bounded evidence quote stays out of reports",
+          startChar: 10,
+          endChar: 20,
+        },
+      ],
+    };
+    const partitioned = partitionMemoryIngestionCandidates([candidate]);
+
+    const records = buildCandidateQuarantineReportRecords({
+      sourceId: "source-001",
+      sourceHash: "hash-001",
+      provider: "openai-codex",
+      model: "gpt-5.4-mini",
+      schema: "mmv2-extraction.v1",
+      quarantinedCandidates: partitioned.quarantinedCandidates,
+      deferredEdges: [
+        {
+          edgeId: "edge-invalid",
+          fromMemoryId: "memory-a",
+          toMemoryId: "missing",
+          reason: "missing endpoint memory id(s): missing",
+        },
+      ],
+    });
+
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_id: "source-001",
+          candidate_id: "cand-invalid",
+          failure_stage: "candidate_quarantine",
+          validation_reason: "missing_canonical_text",
+          source_refs: [{ source_id: "src-1", segment_id: "seg-1", start_char: 10, end_char: 20 }],
+        }),
+        expect.objectContaining({
+          edge_id: "edge-invalid",
+          failure_stage: "edge_endpoint_validation",
+          validation_reason: "missing endpoint memory id(s): missing",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(records)).not.toContain("bounded evidence quote");
+  });
+
+  it("builds closeout reports from telemetry, scorecards, audits, and quarantine records", () => {
+    const telemetry = [
+      createMemoryIngestionTelemetryEvent({
+        path: "ordinary_turn_capture",
+        stage: "source_intake",
+        status: "completed",
+      }),
+      createMemoryIngestionTelemetryEvent({
+        path: "ordinary_turn_capture",
+        stage: "persistence_boundary",
+        status: "completed",
+        candidate_counts: { extracted: 2, valid: 1, admitted: 1 },
+      }),
+      createMemoryIngestionTelemetryEvent({
+        path: "ordinary_turn_capture",
+        stage: "candidate_quarantine",
+        status: "quarantined",
+        failure_class: "canonicalization",
+        candidate_counts: { quarantined: 1 },
+      }),
+    ];
+
+    const report = buildMemoryIngestionCloseoutReport({
+      path: "ordinary_turn_capture",
+      runId: "run-001",
+      sourceId: "source-001",
+      sourceHash: "hash-001",
+      jobId: "capture-job-001",
+      telemetryEvents: telemetry,
+      quarantinedCandidates: [
+        {
+          candidateId: "cand-invalid",
+          candidateType: "project_fact",
+          failureClass: "canonicalization",
+          errors: [{ code: "missing_canonical_text", message: "canonical text is required" }],
+          sourceRefs: [{ sourceId: "source-001", segmentId: "segment-001" }],
+        },
+      ],
+      providerScorecards: [{ provider: "openai-codex", model: "gpt-5.4-mini", status: "ok" }],
+      integrityAudits: [{ report_path: ".artifacts/integrity.json", finding_count: 0 }],
+      dirtyState: { status: "marked" },
+      provider: "openai-codex",
+      model: "gpt-5.4-mini",
+      schema: "mmv2-extraction.v1",
+      generatedAt: new Date(0),
+    });
+
+    expect(report).toMatchObject({
+      schema_version: "memory_ingestion_closeout.v1",
+      path: "ordinary_turn_capture",
+      run_id: "run-001",
+      source_id: "source-001",
+      job_id: "capture-job-001",
+      counts: {
+        telemetry_events: 3,
+        candidates_extracted: 2,
+        candidates_valid: 1,
+        candidates_quarantined: 2,
+        candidates_admitted: 1,
+      },
+      failure_class_breakdown: { canonicalization: 1 },
+      dirty_state: { status: "marked" },
+      no_dark_data_scan: { passed: true },
+    });
+    expect(report.provider_scorecard_refs[0]).toMatchObject({ model: "gpt-5.4-mini" });
+    expect(report.integrity_audit_refs[0]).toMatchObject({ finding_count: 0 });
+    expect(JSON.stringify(report)).not.toContain("raw prompt");
   });
 
   it("rejects dark-data fields from telemetry", () => {

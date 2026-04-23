@@ -33,6 +33,9 @@ Canonical run artifacts:
 - use the measured Codex-auth mini route for strict-schema corpus work by
   default; nano is only an explicit low-risk or benchmark lane until it proves
   strict structured-output support and evidence-quality parity
+- if mini returns provider quota (`429`) or credit failures, stop corpus work
+  and classify the issue as external provider/account readiness; do not
+  silently route strict MMV2 admission back to nano
 - run with `MODEL_MEMORY_DOCUMENT_INGEST_STRATEGY=auto` unless intentionally
   testing a specific strategy; in `auto`, direct rigid capture handles small
   docs and section-map candidate hints handle large docs above
@@ -43,6 +46,10 @@ Canonical run artifacts:
 - the 2026-04-23 five-document audit found section-map evidence failures on
   two docs; unsupported hints must be quarantined and broad default-safe use
   waits on adaptive stricter-evidence retry proof
+- every run should emit or reference a shared ingestion closeout report that
+  consumes provider scorecards, integrity audit refs, deferred candidate/edge
+  reports, capture job results, and dirty-state scheduling without writing
+  benchmark/proof/eval artifacts into the live durable-memory DB
 - do not change the corpus ordering during the run
 - do not delete or overwrite prior evidence artifacts unless you are explicitly
   replacing this exact pass

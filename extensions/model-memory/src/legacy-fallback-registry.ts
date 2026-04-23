@@ -90,6 +90,47 @@ export const LEGACY_FALLBACK_SURFACES: readonly LegacyFallbackSurface[] = [
     reason:
       "write-policy now depends on neutral structural identity helpers instead of legacy semantic-family identity",
   },
+  {
+    surface: "plugin loader memory-core assumptions",
+    status: "still_required",
+    defaultLivePathAllowed: false,
+    auditRequired: true,
+    reason:
+      "plugin loader still carries legacy memory-core compatibility for SDK/runtime tests; model-memory live cutover keeps the memory slot disabled",
+  },
+  {
+    surface: "memory_search / memory_get tools",
+    status: "explicit_fallback_only",
+    defaultLivePathAllowed: false,
+    rollbackFlag: "MODEL_MEMORY_LEGACY_MEMORY_TOOLS_ENABLED",
+    auditRequired: true,
+    reason:
+      "tool-facing legacy reads remain compatibility-only until MMV2 retrieval/read commands replace the user-facing contract",
+  },
+  {
+    surface: "status/doctor/config legacy memory surfaces",
+    status: "still_required",
+    defaultLivePathAllowed: false,
+    auditRequired: true,
+    reason:
+      "operator diagnostics still need to identify and suppress legacy memory-core configuration during the cutover window",
+  },
+  {
+    surface: "QA/runtime tests and SDK/docs exports",
+    status: "still_required",
+    defaultLivePathAllowed: false,
+    auditRequired: true,
+    reason:
+      "legacy exports remain for compatibility tests and external SDK consumers until replacement MMV2 contracts are published",
+  },
+  {
+    surface: "session-memory continuity contract",
+    status: "quarantined",
+    defaultLivePathAllowed: false,
+    auditRequired: true,
+    reason:
+      "session-memory continuity remains artifact/support behavior and is not canonical MMV2 semantic truth",
+  },
 ];
 
 export function listLegacyFallbackSurfaces(): readonly LegacyFallbackSurface[] {

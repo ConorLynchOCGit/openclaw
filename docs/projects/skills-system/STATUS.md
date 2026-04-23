@@ -38,8 +38,12 @@ The current outcomes are:
   documented shape, validate-only mode, clearer validation errors, and safe
   redacted failure logging
 - `openclaw agents skills-status --agent <id> --json` reports discovered
-  installed skills and explicitly marks warm-session loaded-state proof as
-  unavailable when it cannot be inspected
+  installed skills, and now reports persisted warm-session skill snapshots as
+  loaded/current or loaded/stale when the session store contains a snapshot
+  version
+- if no persisted session snapshot exists, skill status still returns
+  `not_available` with the concrete missing-session or missing-snapshot reason
+  instead of pretending to inspect in-memory runner state
 - ClawHub search output is treated as remote marketplace discovery; local
   `skills info` works after install, and CLI help now says that directly
 
