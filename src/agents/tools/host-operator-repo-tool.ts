@@ -142,6 +142,7 @@ const HostOperatorRepoToolSchema = Type.Object({
   expectedHash: Type.Optional(Type.String()),
   sourcePath: Type.Optional(Type.String()),
   overwrite: Type.Optional(Type.Boolean()),
+  validateOnly: Type.Optional(Type.Boolean()),
   skillName: Type.Optional(Type.String()),
   files: Type.Optional(
     Type.Array(
@@ -398,10 +399,10 @@ function readBooleanParam(value: unknown): boolean {
   return value === true || value === "true" || value === "1";
 }
 
-function readContentParam(record: Record<string, unknown>): string {
+function readContentParam(record: Record<string, unknown>, label = "content"): string {
   const raw = record.content;
   if (typeof raw !== "string" || raw.length === 0) {
-    throw new ToolInputError("content required");
+    throw new ToolInputError(`${label} required`);
   }
   const content = raw;
   assertSafeWriteContent(content);
@@ -453,16 +454,51 @@ function readSkillName(record: Record<string, unknown>): string {
   return skillName;
 }
 
+function readSkillFrontmatterName(content: string): string | undefined {
+  if (!content.startsWith("---\n")) {
+    return undefined;
+  }
+  const end = content.indexOf("\n---", 4);
+  if (end < 0) {
+    return undefined;
+  }
+  const frontmatter = content.slice(4, end);
+  const match = /^name:\s*["']?([A-Za-z0-9-]+)["']?\s*$/imu.exec(frontmatter);
+  return match?.[1]?.toLowerCase();
+}
+
 function readSkillFiles(
   record: Record<string, unknown>,
   skillName: string,
 ): HostOperatorFileInput[] {
-  const content = readContentParam(record);
-  const files: HostOperatorFileInput[] = [{ path: "SKILL.md", content }];
-  if (!content.startsWith("---\n") || !content.includes(`name: ${skillName}`)) {
-    throw new ToolInputError("skill SKILL.md must include frontmatter with matching name");
-  }
   const extraFiles = Array.isArray(record.files) ? record.files : [];
+  const primaryFile = extraFiles.find(
+    (entry) =>
+      entry &&
+      typeof entry === "object" &&
+      typeof (entry as Record<string, unknown>).path === "string" &&
+      normalizeRelativePath((entry as Record<string, unknown>).path as string) === "SKILL.md" &&
+      typeof (entry as Record<string, unknown>).content === "string",
+  ) as Record<string, unknown> | undefined;
+  const content =
+    typeof record.content === "string" && record.content.length > 0
+      ? readContentParam(record)
+      : typeof primaryFile?.content === "string"
+        ? primaryFile.content
+        : undefined;
+  if (!content) {
+    throw new ToolInputError(
+      'install_skill requires top-level content or files[{path:"SKILL.md",content}]. Example: {action:"install_skill",scope:"live_repo",skillName:"my-skill",content:"---\\nname: my-skill\\ndescription: ...\\n---\\n# My Skill\\n"}',
+    );
+  }
+  assertSafeWriteContent(content);
+  const frontmatterName = readSkillFrontmatterName(content);
+  if (frontmatterName !== skillName) {
+    throw new ToolInputError(
+      `skill SKILL.md frontmatter name must match skillName "${skillName}" (received ${frontmatterName ?? "missing"})`,
+    );
+  }
+  const files: HostOperatorFileInput[] = [{ path: "SKILL.md", content }];
   for (const entry of extraFiles) {
     if (!entry || typeof entry !== "object") {
       continue;
@@ -472,6 +508,9 @@ function readSkillFiles(
       continue;
     }
     const relativePath = normalizeRelativePath(candidate.path);
+    if (relativePath === "SKILL.md") {
+      continue;
+    }
     if (
       relativePath === "." ||
       path.posix.isAbsolute(relativePath) ||
@@ -674,7 +713,7 @@ export function createHostOperatorRepoTool(opts?: {
     ownerOnly: true,
     displaySummary: "Scoped host-operator access to OpenClaw canonical paths.",
     description:
-      "Read, list, edit, or run allowlisted commands in scoped OpenClaw canonical paths when host-operator kill switches are enabled. Emits an audit record for every call.",
+      'Read, list, edit, install skills, or run allowlisted commands in scoped OpenClaw canonical paths when host-operator kill switches are enabled. install_skill accepts {action:"install_skill",scope:"live_repo",skillName:"my-skill",content:"---\\nname: my-skill\\ndescription: ...\\n---\\n# My Skill\\n"} or files[{path:"SKILL.md",content}]. Emits an audit record for every call.',
     parameters: HostOperatorRepoToolSchema,
     execute: async (_callId, rawParams) => {
       const params = rawParams && typeof rawParams === "object" ? rawParams : {};
@@ -992,6 +1031,28 @@ export function createHostOperatorRepoTool(opts?: {
         const files = readSkillFiles(record, skillName);
         for (const file of files) {
           assertLiveRepoWriteAllowed(path.posix.join(skillRoot.relativePath, file.path));
+        }
+        if (readBooleanParam(record.validateOnly)) {
+          const auditPath = await writeAudit(settings, {
+            ...auditBase,
+            action: "install_skill",
+            relative_path: skillRoot.relativePath,
+            skill_name: skillName,
+            file_count: files.length,
+            validated_only: true,
+          });
+          return jsonResult({
+            auditId,
+            auditPath,
+            scope: "live_repo",
+            canonicalPath: normalizePath(
+              path.posix.join(settings.canonicalRepoRoot, skillRoot.relativePath),
+            ),
+            validated: true,
+            installed: false,
+            skillName,
+            fileCount: files.length,
+          });
         }
         const existing = await fs.lstat(skillRoot.target).catch(() => null);
         if (existing && !readBooleanParam(record.overwrite)) {

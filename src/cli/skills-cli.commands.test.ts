@@ -10,6 +10,11 @@ const mocks = vi.hoisted(() => {
   const skillStatusReportFixture = {
     workspaceDir: "/tmp/workspace",
     managedSkillsDir: "/tmp/workspace/skills",
+    configuredSkillDirs: [{ kind: "workspace", path: "/tmp/workspace/skills" }],
+    discoveredSkillNames: ["calendar"],
+    loadedSkillNames: null,
+    loadedState: "not_available",
+    loadedStateReason: "test fixture",
     skills: [
       {
         name: "calendar",
@@ -184,6 +189,9 @@ describe("skills cli commands", () => {
       limit: undefined,
     });
     expect(runtimeLogs.some((line) => line.includes("calendar v1.2.3  Calendar"))).toBe(true);
+    expect(runtimeLogs.some((line) => line.includes("Remote search returns ClawHub slugs"))).toBe(
+      true,
+    );
   });
 
   it("installs a skill from ClawHub into the active workspace", async () => {

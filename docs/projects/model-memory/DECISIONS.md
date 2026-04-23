@@ -5,6 +5,66 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-23 - Strict MMV2 admission defaults to mini after live nano boundary failures
+
+Decision:
+
+- default strict MMV2 capture/ingest model routing now resolves to
+  `openai-codex/gpt-5.4-mini`
+- keep explicit rollback/override through `MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID`
+  and document-ingest-specific model env controls
+- retain nano only for explicit low-risk/high-volume lanes such as
+  deterministic classification, ranking/filtering, benchmark comparison, or
+  other non-admission first-pass work
+- do not let nano silently become the default strict canonical admission route
+  unless it later passes strict-schema and evidence-quality gates
+
+Reasoning:
+
+- the measured configured nano route repeatedly failed strict structured-output
+  contracts at the provider boundary
+- mini was materially slower but passed the strict-schema capture/ingest
+  quality bar; correctness is the higher-priority gate for canonical memory
+  admission
+
+Rollback:
+
+- set `MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID` or
+  `MODEL_MEMORY_DOCUMENT_INGEST_MODEL_ID` to the intended explicit route for a
+  controlled run
+- keep benchmark model routing independent so nano experiments do not alter
+  live strict admission defaults
+
+## 2026-04-23 - Main UX audit fixes are operational hardening, not semantic redesign
+
+Decision:
+
+- repair runtime-dirty filesystem ownership narrowly for gateway UID `1000`
+- classify dirty-state permission/write failures as operational persistence
+  failures instead of generic `other`
+- capture durable operational preferences/directives about safe blocker
+  handling through the general ordinary-turn directive/preference path
+- capture tool-result operational blockers as bounded facts with no raw tool
+  log persistence
+- keep skill-vetting reports in the writable operator workspace report tree
+  and keep host-operator skill installation explicit, audited, and redacted
+
+Reasoning:
+
+- the audited UX failures were mechanical capability and observability gaps:
+  permission denial, poor tool-shape discoverability, weak operational fact
+  capture, and unsafe log verbosity
+- these fixes improve live operations without changing MMV2 semantic truth or
+  adding a migration
+
+Rollback:
+
+- disable affected capture seams with their existing capture-seam/env kill
+  switches
+- restore prior model routes only through explicit env overrides
+- disable host-operator writes with `OPENCLAW_HOST_OPERATOR_WRITE_ENABLED=false`
+  if canonical skill/doc writes need to be paused
+
 ## 2026-04-23 - Live pre-Phase-2 gates use approved durable proof plus artifact-only benchmarks
 
 Decision:

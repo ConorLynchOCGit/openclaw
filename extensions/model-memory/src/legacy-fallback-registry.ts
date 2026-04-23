@@ -47,11 +47,11 @@ export const LEGACY_FALLBACK_SURFACES: readonly LegacyFallbackSurface[] = [
   },
   {
     surface: "runtime-api.ts / index.ts broad legacy exports",
-    status: "still_required",
+    status: "quarantined",
     defaultLivePathAllowed: false,
     auditRequired: true,
     reason:
-      "public compatibility facade still serves plugin SDK and older admin/proof scripts; default MMV2 hot-path import tests enforce quarantine",
+      "default public surfaces no longer export legacy semantic/collision/store bridges; retained consumers must use legacy-admin-api explicitly",
   },
   {
     surface: "memory-object-store.ts / mmv2-memory-object-store.ts",
@@ -84,10 +84,11 @@ export const LEGACY_FALLBACK_SURFACES: readonly LegacyFallbackSurface[] = [
   },
   {
     surface: "write-policy.ts legacy semantic identity dependency",
-    status: "quarantined",
+    status: "retired",
     defaultLivePathAllowed: false,
     auditRequired: true,
-    reason: "legacy write policy cannot participate in default MMV2 capture or reconciliation",
+    reason:
+      "write-policy now depends on neutral structural identity helpers instead of legacy semantic-family identity",
   },
 ];
 

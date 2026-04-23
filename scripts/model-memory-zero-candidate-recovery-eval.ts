@@ -14,7 +14,10 @@ import {
 } from "../src/agents/model-memory.zero-candidate-recovery-eval.js";
 
 const DEFAULT_MODEL_REF =
-  process.env.MODEL_MEMORY_CANDIDATE_MODEL?.trim() || "openrouter/openai/gpt-5.4-nano";
+  process.env.MODEL_MEMORY_CANDIDATE_MODEL?.trim() ||
+  process.env.MODEL_MEMORY_STRICT_CANDIDATE_MODEL_ID?.trim() ||
+  process.env.MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID?.trim() ||
+  "openai-codex/gpt-5.4-mini";
 const DEFAULT_REQUEST_TIMEOUT_MS =
   Number.parseInt(process.env.MODEL_MEMORY_REQUEST_TIMEOUT_MS?.trim() ?? "", 10) || 180_000;
 const DEFAULT_REQUEST_SEED =

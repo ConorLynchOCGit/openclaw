@@ -1,14 +1,8 @@
 import { createHash } from "node:crypto";
 import type { ModelMemoryObject } from "./semantic-schema.ts";
-
-export type MemoryIdentityDescriptor = {
-  identityKey: string;
-  slotKey?: string;
-  scopeKey: string;
-  normalizedSubject?: string;
-  normalizedTitle?: string;
-  normalizedSearchText: string;
-};
+import type { MemoryIdentityDescriptor } from "./structural-identity.ts";
+export type { MemoryIdentityDescriptor } from "./structural-identity.ts";
+export { isDeterministicSameSlotSupersession } from "./structural-identity.ts";
 
 export type DecisiveFieldAgreementDetail = {
   field: string;
@@ -1234,22 +1228,4 @@ export function deriveMemoryIdentity(object: ModelMemoryObject): MemoryIdentityD
     normalizedTitle,
     normalizedSearchText: buildNormalizedSearchText(object),
   };
-}
-
-export function isDeterministicSameSlotSupersession(
-  prior: Pick<MemoryIdentityDescriptor, "identityKey" | "slotKey"> & {
-    kind: ModelMemoryObject["kind"];
-  },
-  next: Pick<MemoryIdentityDescriptor, "identityKey" | "slotKey"> & {
-    kind: ModelMemoryObject["kind"];
-  },
-): boolean {
-  return (
-    SAME_SLOT_KINDS.has(prior.kind) &&
-    SAME_SLOT_KINDS.has(next.kind) &&
-    prior.kind === next.kind &&
-    !!prior.slotKey &&
-    prior.slotKey === next.slotKey &&
-    prior.identityKey !== next.identityKey
-  );
 }

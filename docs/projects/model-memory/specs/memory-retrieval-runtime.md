@@ -73,6 +73,20 @@ Projections must never bypass admission. A projection may suggest candidate
 updates, but those updates must re-enter the same ingestion, admission, and
 reconciliation pipeline.
 
+## Strict Model Routing Posture
+
+Strict MMV2 capture/ingest paths default to
+`openai-codex/gpt-5.4-mini` after the live nano route failed strict structured
+output at the provider boundary. Retrieval interpretation may keep its own
+explicit override, but any route that feeds canonical admission must prove the
+actual strict schema contract before it becomes the default.
+
+Nano remains available for explicit low-risk lanes such as deterministic
+ranking/filtering, benchmark-only comparisons, or non-admission first-pass
+work. It must not silently become the default strict canonical admission route
+until it passes strict-schema, no-empty-response, and evidence-validation
+gates.
+
 ## Layer model
 
 The retrieval runtime has six layers.

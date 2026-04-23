@@ -8,11 +8,16 @@ fi
 
 slug="$1"
 version="${2:-unknown}"
+if [[ ! "${slug}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "invalid skill slug: ${slug}" >&2
+  exit 64
+fi
 date_stamp="$(date -u +%F)"
 iso_stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 template="${repo_root}/skills/skill-vetting/references/operator-vetting-report-template.md"
-out_dir="${repo_root}/docs/projects/skills-system/skill-vetting/reports"
+workspace_root="${OPENCLAW_WORKSPACE_DIR:-${HOME}/.openclaw/workspace}"
+out_dir="${OPENCLAW_SKILL_VETTING_REPORT_ROOT:-${workspace_root}/docs/projects/skills-system/skill-vetting/reports}"
 out_file="${out_dir}/${date_stamp}-${slug}-review.md"
 
 mkdir -p "${out_dir}"

@@ -84,6 +84,9 @@ export function registerSkillsCli(program: Command) {
           const summary = entry.summary ? `  ${entry.summary}` : "";
           defaultRuntime.log(`${entry.slug}${version}  ${entry.displayName}${summary}`);
         }
+        defaultRuntime.log(
+          'Remote search returns ClawHub slugs. Use `openclaw skills install <slug>` first, or `openclaw gateway call skills.detail --params \'{"slug":"<slug>"}\' --json` for remote detail when available; `openclaw skills info <name>` reports installed/local skills.',
+        );
       } catch (err) {
         defaultRuntime.error(String(err));
         defaultRuntime.exit(1);

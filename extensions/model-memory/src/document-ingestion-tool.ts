@@ -20,7 +20,10 @@ import { isLegacyCapturedObjectWriteFallbackEnabled } from "./db/captured-object
 import type { JsonModelExecutor } from "./model-execution.ts";
 import { ExecutorBackedSemanticInterpreter } from "./real-semantic-interpreter.ts";
 
-const DEFAULT_MODEL_REF = "openrouter/openai/gpt-5.4-nano";
+const DEFAULT_MODEL_REF =
+  process.env.MODEL_MEMORY_DOCUMENT_INGEST_MODEL_ID?.trim() ||
+  process.env.MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID?.trim() ||
+  "openai-codex/gpt-5.4-mini";
 const DEFAULT_REQUEST_TIMEOUT_MS = 180_000;
 const DEFAULT_REQUEST_SEED = 7;
 const DEFAULT_MAX_WORDS_PER_WINDOW = 1500;

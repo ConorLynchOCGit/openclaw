@@ -339,10 +339,16 @@ function isAssistantBehaviorInstructionSegment(segment: SegmentedIngestSegment):
     return false;
   }
   const normalized = normalizedSegmentText(segment);
-  if (!/^(?:use|avoid|do not|never|always|keep|write|respond|format|give)\b/iu.test(normalized)) {
+  const startsLikeInstruction =
+    /^(?:use|avoid|do not|don't|never|always|keep|write|respond|format|give|ask|continue|figure|solve|inspect|check|when|if)\b/iu.test(
+      normalized,
+    ) || /\b(?:should|must|need to|prefer you to|want you to)\b/iu.test(normalized);
+  if (!startsLikeInstruction) {
     return false;
   }
-  return /\b(?:answer|response|instructions?|format|bullets?|numbered|steps?)\b/iu.test(normalized);
+  return /\b(?:answer|response|instructions?|format|bullets?|numbered|steps?|ask|continue|blocker|blocked|schema|tool|permission|credentials?|migration|safe path|reasonable path|solvable)\b/iu.test(
+    normalized,
+  );
 }
 
 function isAbstractExplanatoryListItem(line: string): boolean {
@@ -669,6 +675,20 @@ function classifyDeterministically(segment: SegmentedIngestSegment): CaptureRout
     });
   }
 
+  if (isAssistantBehaviorInstructionSegment(segment)) {
+    return buildDeterministicDecision({
+      segment,
+      route: "atomic_candidate",
+      candidateSummary: "Assistant behavior instruction.",
+      memoryLikelihood: 0.78,
+      durabilityLikelihood: 0.65,
+      compositeLikelihood: 0.04,
+      reasonCodes: ["assistant_behavior_instruction", "explicit_user_preference"],
+      confidence: 0.82,
+      evidenceQuote: segment.text,
+    });
+  }
+
   if (isSourcePointerSegment(segment)) {
     return buildDeterministicDecision({
       segment,
@@ -679,20 +699,6 @@ function classifyDeterministically(segment: SegmentedIngestSegment): CaptureRout
       compositeLikelihood: 0.04,
       reasonCodes: ["source_pointer"],
       confidence: 0.84,
-      evidenceQuote: segment.text,
-    });
-  }
-
-  if (isAssistantBehaviorInstructionSegment(segment)) {
-    return buildDeterministicDecision({
-      segment,
-      route: "atomic_candidate",
-      candidateSummary: "Assistant behavior instruction.",
-      memoryLikelihood: 0.78,
-      durabilityLikelihood: 0.65,
-      compositeLikelihood: 0.04,
-      reasonCodes: ["assistant_behavior_instruction"],
-      confidence: 0.82,
       evidenceQuote: segment.text,
     });
   }

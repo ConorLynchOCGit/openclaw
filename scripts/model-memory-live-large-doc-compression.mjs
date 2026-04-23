@@ -73,35 +73,6 @@ function stripFence(text) {
     .replace(/\s*```$/iu, "");
 }
 
-function splitSections(text) {
-  const lines = text.split(/\r?\n/u);
-  const sections = [];
-  let current = { id: "section-000", title: "preamble", lines: [] };
-  for (const line of lines) {
-    const heading = line.match(/^(#{1,6})\s+(.+)$/u);
-    if (heading) {
-      if (current.lines.join("\n").trim().length > 0) {
-        sections.push(current);
-      }
-      current = {
-        id: `section-${String(sections.length + 1).padStart(3, "0")}`,
-        title: heading[2].trim(),
-        lines: [line],
-      };
-      continue;
-    }
-    current.lines.push(line);
-  }
-  if (current.lines.join("\n").trim().length > 0) {
-    sections.push(current);
-  }
-  return sections.map((section) => ({
-    ...section,
-    text: section.lines.join("\n").trim(),
-    hash: sha256(section.lines.join("\n").trim()),
-  }));
-}
-
 function sectionMapText(sections) {
   return sections
     .map((section) => {
@@ -326,6 +297,10 @@ async function main() {
     path.join(root, "extensions/model-memory/src/benchmark/benchmark-runner.ts"),
     import.meta.url,
   );
+  const sectionMapApi = await tsImport(
+    path.join(root, "extensions/model-memory/src/ingestion/section-map-candidate-hints.ts"),
+    import.meta.url,
+  );
   const { OpenAICompatibleLiveJsonExecutor } = await tsImport(
     path.join(root, "src/agents/model-memory.live-json-executor.ts"),
     import.meta.url,
@@ -336,8 +311,19 @@ async function main() {
   );
   const sourceAbsolutePath = path.resolve(root, args.sourcePath);
   const sourceText = await readFile(sourceAbsolutePath, "utf8");
-  const sections = splitSections(sourceText);
   const sourceId = `source:${args.sourcePath}:${sha256(sourceText).slice(0, 16)}`;
+  const sectionMap = sectionMapApi.buildSectionMapDocument({
+    sourceId,
+    sourcePath: args.sourcePath,
+    text: sourceText,
+  });
+  const sections = sectionMap.sections.map((section) => ({
+    id: section.sectionId,
+    title: section.title,
+    text: section.text,
+    hash: section.sectionHash,
+    spanId: section.spanId,
+  }));
   const executor = shouldUseCodexAppServer(args.modelId)
     ? new CodexAppServerJsonExecutor({
         cwd: root,
@@ -424,6 +410,14 @@ async function main() {
   report.modelId = args.modelId;
   report.sourceHash = sha256(sourceText);
   report.sectionCount = sections.length;
+  report.sectionMapStrategy = {
+    strategy: "section_map_candidate_hints",
+    sourceId,
+    sourceHash: sectionMap.sourceHash,
+    sectionIds: sectionMap.sections.map((section) => section.sectionId),
+    rawContentPersisted: false,
+    canonicalTruth: false,
+  };
   report.speedControls = {
     api_reasoning_effort: args.apiReasoningEffort,
     codex_reasoning_effort: args.codexReasoningEffort,

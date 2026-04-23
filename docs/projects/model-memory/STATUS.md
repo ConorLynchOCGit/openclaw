@@ -217,7 +217,41 @@ Current 2026-04-22 partial-corpus proof state:
     hit rate, and contract/schema version
 - the remaining mechanical work is documented as a pass map in
   `docs/projects/model-memory/specs/capture-ingest-mechanical-hardening.md`
-  and must be completed in order:
+  and remains the implementation record:
+
+2026-04-23 Main UX/capture-ops follow-up:
+
+- runtime-dirty runtime-state files were repaired with a narrow UID `1000`
+  ownership fix so the gateway can write dirty snapshots/events again
+- dirty-state permission/write failures now classify as
+  `runtime_dirty_persistence` or `permission`, not generic `other`
+- ordinary-turn capture now has deterministic support for durable operational
+  preferences/directives about safe blocker handling and continuation
+- bounded tool-result capture now converts operational blockers into safe
+  facts with tool/action/error/path-category/remediation metadata only
+- strict MMV2 capture/ingest defaults to `openai-codex/gpt-5.4-mini`; nano is
+  retained only for explicit low-risk or benchmark lanes
+- document-ingest strategy selection defaults to `auto`, using
+  `section_map_candidate_hints` for large docs above the configured threshold
+  and direct rigid capture for smaller docs
+- five-doc section-map benchmark artifact:
+  `.artifacts/model-memory/large-doc-section-map/2026-04-23-live-audit/summary.json`
+  - `DECISIONS.md`: 8 section-map valid candidates, 0 evidence failures
+  - `STATUS.md`: 6 section-map valid candidates, 2 evidence failures
+  - `deep-document-ingest-runbook.md`: 7 valid, 0 evidence failures
+  - `capture-ingest-mechanical-hardening.md`: 13 valid, 0 evidence failures
+  - `canonical-path-resolution-and-host-operator.md`: 7 valid, 2 evidence
+    failures
+- recommendation: keep section-map above-threshold mode controlled by
+  original-source validation/quarantine and do not declare it broadly
+  default-safe until adaptive retry reduces those evidence failures to zero
+- skill-vetting report initialization writes to the writable operator
+  workspace reports tree rather than the read-only product import mirror
+- host-operator `install_skill` now exposes a clearer accepted shape,
+  validate-only mode, and redacted failure logging
+- the skill-status diagnostic reports discovered installed skills and clearly
+  labels warm-session loaded-state introspection as unavailable when the
+  runtime cannot prove it
   - cache-aware mini/nano and large-document compression benchmarks
   - final `MEMMECH-2026-04-22` proof and current-runtime soak
 - storage compatibility fallback identity now stays structural inside

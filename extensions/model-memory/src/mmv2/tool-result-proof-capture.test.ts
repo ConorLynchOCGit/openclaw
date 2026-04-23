@@ -124,4 +124,81 @@ describe("tool-result proof capture", () => {
     expect(serialized).not.toContain("raw compiler output");
     expect(serialized).not.toContain("secret-ish stack details");
   });
+
+  it("captures bounded host-operator schema failures without raw tool params", () => {
+    const fact = buildBoundedToolResultProofFact({
+      toolName: "host_operator_repo",
+      observedAt: new Date("2026-04-23T04:27:00.000Z"),
+      isError: true,
+      result: {
+        status: "error",
+        tool: "host_operator_repo",
+        error: 'install_skill requires top-level content or files[{path:"SKILL.md",content}]',
+        input: {
+          keys: ["action", "content", "scope", "skillName"],
+          action: "install_skill",
+          scope: "live_repo",
+          skillName: "web-researcher",
+          content: "<redacted:1220b>",
+        },
+      },
+    });
+
+    expect(fact).toEqual(
+      expect.objectContaining({
+        status: "failure",
+        toolName: "host_operator_repo",
+        actionName: "install_skill",
+        remediationHint: "retry with install_skill shape containing skillName and SKILL.md content",
+      }),
+    );
+    const built = buildToolResultProofLiveCapture({
+      toolName: "host_operator_repo",
+      observedAt: new Date("2026-04-23T04:27:00.000Z"),
+      isError: true,
+      result: {
+        status: "error",
+        tool: "host_operator_repo",
+        error: 'install_skill requires top-level content or files[{path:"SKILL.md",content}]',
+        input: {
+          keys: ["action", "content", "scope", "skillName"],
+          action: "install_skill",
+          scope: "live_repo",
+          skillName: "web-researcher",
+          content: "<redacted:1220b>",
+        },
+      },
+    });
+
+    const serialized = JSON.stringify(built);
+    expect(serialized).toContain("Action: install_skill");
+    expect(serialized).not.toContain("Full skill body");
+    expect(serialized).not.toContain("---\\nname:");
+  });
+
+  it("captures runtime dirty EACCES as a bounded operational blocker", () => {
+    const built = buildToolResultProofLiveCapture({
+      toolName: "model_memory_runtime_dirty",
+      observedAt: new Date("2026-04-23T05:00:00.000Z"),
+      isError: true,
+      result: {
+        status: "error",
+        code: "EACCES",
+        error:
+          "EACCES: permission denied, open '/home/node/.openclaw/model-memory/runtime-dirty/state.json'",
+      },
+    });
+
+    expect(built?.boundedFact).toEqual(
+      expect.objectContaining({
+        status: "failure",
+        errorClass: "EACCES",
+        pathCategory: "runtime_dirty_state",
+        remediationHint: "inspect writable target or ACL before retrying",
+      }),
+    );
+    const serialized = JSON.stringify(built);
+    expect(serialized).toContain("runtime_dirty_state");
+    expect(serialized).not.toContain("raw tool log");
+  });
 });

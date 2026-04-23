@@ -1,5 +1,3 @@
-import type { MemoryIdentityDescriptor } from "./semantic-identity.ts";
-import { isDeterministicSameSlotSupersession } from "./semantic-identity.ts";
 import type { ReviewMode, ModelMemoryObject } from "./semantic-schema.ts";
 import type {
   ModelMemoryActivationBasis,
@@ -7,6 +5,10 @@ import type {
   ModelMemorySourceKind,
   ModelMemorySupportKind,
 } from "./storage-database-contract.ts";
+import {
+  isDeterministicSameSlotSupersession,
+  type MemoryIdentityDescriptor,
+} from "./structural-identity.ts";
 
 export type WriteDecisionCode =
   | "write_structural_accept"

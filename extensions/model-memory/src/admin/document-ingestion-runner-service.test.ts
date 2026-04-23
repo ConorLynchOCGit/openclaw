@@ -112,6 +112,73 @@ describe("document-ingestion-runner-service", () => {
     expect(persisted.totals.docsFailed).toBe(1);
   });
 
+  it("records section-map candidate-hints strategy telemetry for auto large docs without live writes", async () => {
+    const originalStrategy = process.env.MODEL_MEMORY_DOCUMENT_INGEST_STRATEGY;
+    const originalThreshold = process.env.MODEL_MEMORY_DOCUMENT_INGEST_LARGE_DOC_WORD_THRESHOLD;
+    process.env.MODEL_MEMORY_DOCUMENT_INGEST_STRATEGY = "auto";
+    process.env.MODEL_MEMORY_DOCUMENT_INGEST_LARGE_DOC_WORD_THRESHOLD = "10";
+    try {
+      const service = new ModelMemoryDocumentIngestionRunnerService({
+        async processSource() {
+          return {
+            lineCount: 4,
+            windowCount: 0,
+            capturedClaimCount: 0,
+            writeDecisionCounts: {},
+            ignoredWindowCount: 0,
+            rejectedWindowCount: 0,
+            rejectReasons: [],
+          };
+        },
+      });
+      const [source] = buildSources();
+      const record = await service.executeRun({
+        runId: "run-section-map",
+        sources: [
+          {
+            ...source,
+            document: {
+              externalSourceId: "docs/large.md",
+              text: `# Large\n${"word ".repeat(60)}\n\n## Decisions\nDecision: keep benchmark artifacts out of durable memory.`,
+            },
+          },
+        ],
+        interpreter: {
+          interpret() {
+            throw new Error("unused");
+          },
+        },
+        modelId: "openai-codex/gpt-5.4-mini",
+        candidateModelId: "openai-codex/gpt-5.4-mini",
+        chunkSize: 1,
+      });
+
+      expect(record.sources[0]).toMatchObject({
+        ingestStrategy: "section_map_candidate_hints",
+      });
+      expect(record.sources[0]?.strategyTelemetry).toMatchObject({
+        strategy: "section_map_candidate_hints",
+        hintCount: 0,
+        validatedCount: 0,
+        quarantinedCount: 0,
+      });
+      expect(JSON.stringify(record.sources[0]?.strategyTelemetry)).not.toContain(
+        "Decision: keep benchmark artifacts",
+      );
+    } finally {
+      if (originalStrategy === undefined) {
+        delete process.env.MODEL_MEMORY_DOCUMENT_INGEST_STRATEGY;
+      } else {
+        process.env.MODEL_MEMORY_DOCUMENT_INGEST_STRATEGY = originalStrategy;
+      }
+      if (originalThreshold === undefined) {
+        delete process.env.MODEL_MEMORY_DOCUMENT_INGEST_LARGE_DOC_WORD_THRESHOLD;
+      } else {
+        process.env.MODEL_MEMORY_DOCUMENT_INGEST_LARGE_DOC_WORD_THRESHOLD = originalThreshold;
+      }
+    }
+  });
+
   it("resumes by skipping sources already recorded as completed or failed", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "model-memory-runner-resume-"));
     const recordPath = path.join(tempDir, "run.json");

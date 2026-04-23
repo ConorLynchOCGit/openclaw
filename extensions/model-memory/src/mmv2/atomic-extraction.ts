@@ -229,6 +229,60 @@ function buildExplicitCorrectionPreferenceCandidate(
   });
 }
 
+function boundedEvidenceQuote(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= 240) {
+    return trimmed;
+  }
+  return trimmed.slice(0, 240).trimEnd();
+}
+
+function buildAssistantBehaviorDirectiveCandidate(
+  routedCandidate: AtomicRoutedCandidate,
+): AtomicCandidate | null {
+  if (!routedCandidate.reason_codes.includes("assistant_behavior_instruction")) {
+    return null;
+  }
+  const text = ensureSentence(routedCandidate.text);
+  const normalized = text.toLowerCase();
+  const hard =
+    /\b(?:must|always|never|do not|don't|required|require)\b/iu.test(normalized) &&
+    !/\b(?:when safe|reasonable safe path|unless)\b/iu.test(normalized);
+  const trigger = /\b(?:when|if)\b/iu.test(normalized)
+    ? "the assistant encounters the described task or blocker"
+    : "general_response";
+  return AtomicCandidateSchema.parse({
+    candidate_id: `det-assistant-directive:${routedCandidate.segment_id}`,
+    source_segment_id: routedCandidate.segment_id,
+    kind: "directive",
+    raw_statement: text,
+    normalized_statement: text,
+    evidence_quote: boundedEvidenceQuote(routedCandidate.text),
+    source_grounding: "explicit",
+    scope: defaultScope("assistant"),
+    payload: {
+      payload_type: "directive",
+      directive_type: "workflow_behavior",
+      authority: "user",
+      target: "assistant",
+      strength: hard ? "hard_constraint" : "soft_default",
+      trigger,
+      action: text,
+      exceptions: [
+        "external permission required",
+        "unsafe action requested",
+        "unapproved migration required",
+        "unsafe durable write required",
+        "required credentials unavailable",
+      ],
+      overridable: true,
+      derived_from_claim_candidate_ids: [],
+    },
+    confidence: Math.max(0.72, routedCandidate.confidence),
+    risk_flags: ["none"],
+  });
+}
+
 function inferSubjectType(value: unknown): AtomicCandidate["scope"]["subject_type"] {
   if (
     value === "user" ||
@@ -255,6 +309,11 @@ function buildDeterministicAtomicCandidate(
   const explicitCorrectionPreference = buildExplicitCorrectionPreferenceCandidate(routedCandidate);
   if (explicitCorrectionPreference) {
     return explicitCorrectionPreference;
+  }
+
+  const assistantBehaviorDirective = buildAssistantBehaviorDirectiveCandidate(routedCandidate);
+  if (assistantBehaviorDirective) {
+    return assistantBehaviorDirective;
   }
 
   const parsed = parseFencedJson(routedCandidate.text);

@@ -27,6 +27,10 @@ Current delivered outputs:
     acquires into `/tmp/openclaw-skill-vetting/...`
   - `docker exec openclaw-runtime openclaw skills search "task-progress-stream"`
     returns live marketplace results
+- `skills/skill-vetting/scripts/init_vetting_report.sh` now writes reports to
+  the writable operator workspace reports tree by default, not the read-only
+  product import mirror
+- report slugs are path-confined and traversal-like slugs are rejected
 
 ## Current risk posture
 

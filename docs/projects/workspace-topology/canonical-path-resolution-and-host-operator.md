@@ -52,12 +52,15 @@ Main must use index-first discovery:
 - read the relevant local `INDEX.md`
 - use targeted `rg`
 - avoid broad `find /root/.openclaw/workspace`
+- avoid traversing read-only import mirrors unless the task explicitly asks for
+  imported canonical-source inspection
 
 Default prunes:
 
 - `system/hostfs/proc/**`
 - `system/hostfs/sys/**`
 - `system/hostfs/dev/**`
+- `imports/*/content/**` unless explicitly requested
 - Docker/cache directories
 - credential roots
 - session JSONL unless explicitly requested
@@ -188,6 +191,24 @@ automatic behavior. It only writes operator-provided bounded content under
 frontmatter name, blocks obvious secrets/raw transcripts/raw tool logs, and
 audits content hashes. External skills still require vetting before the
 operator asks Main to install them.
+
+Accepted install shape:
+
+```json
+{
+  "action": "install_skill",
+  "scope": "live_repo",
+  "skillName": "example-skill",
+  "content": "---\nname: example-skill\ndescription: ...\n---\n# Example Skill\n...",
+  "validateOnly": false
+}
+```
+
+The alternate `files` shape is also accepted when `SKILL.md` is supplied as a
+bounded support file. Validation errors should name the missing field or
+frontmatter mismatch directly. Tool failure logs must never include full
+`content` or support-file bodies; they log safe parameter keys, action/scope,
+safe path/skill name, error class, and content byte counts only.
 
 Physical write permission for the container `node` user must be granted only on
 approved live-repo surfaces, for example via ACLs or group ownership on:

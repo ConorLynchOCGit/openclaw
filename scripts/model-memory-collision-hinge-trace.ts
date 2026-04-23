@@ -5,12 +5,14 @@ import {
   DatabaseMemoryObjectStore,
   type DatabaseMemoryObjectStoreObserver,
   ExecutorBackedSemanticCollisionAdjudicator,
-  ExecutorBackedSemanticInterpreter,
-  ingestDocumentLive,
   type CollisionAdjudicationBatchDecision,
   type CollisionCandidate,
-  type ModelMemoryObject,
   type SemanticCollisionAdjudicator,
+} from "../extensions/model-memory/legacy-admin-api.js";
+import {
+  ExecutorBackedSemanticInterpreter,
+  ingestDocumentLive,
+  type ModelMemoryObject,
 } from "../extensions/model-memory/runtime-api.js";
 import {
   assessStructuralSameClaimDelta,
@@ -32,7 +34,9 @@ import {
 } from "../src/agents/model-memory.run-config.js";
 
 const DEFAULT_MODEL_REF =
-  process.env.MODEL_MEMORY_EVIDENCE_MODEL?.trim() || "openrouter/openai/gpt-5.4-nano";
+  process.env.MODEL_MEMORY_EVIDENCE_MODEL?.trim() ||
+  process.env.MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID?.trim() ||
+  "openai-codex/gpt-5.4-mini";
 const DEFAULT_CANDIDATE_MODEL_REF =
   process.env.MODEL_MEMORY_CANDIDATE_MODEL?.trim() || "openrouter/openai/gpt-5.4-nano";
 const DEFAULT_REQUEST_TIMEOUT_MS =

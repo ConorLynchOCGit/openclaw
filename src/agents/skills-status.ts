@@ -52,6 +52,11 @@ export type SkillStatusEntry = {
 export type SkillStatusReport = {
   workspaceDir: string;
   managedSkillsDir: string;
+  configuredSkillDirs: Array<{ kind: string; path: string }>;
+  discoveredSkillNames: string[];
+  loadedSkillNames: string[] | null;
+  loadedState: "not_available" | "available";
+  loadedStateReason?: string;
   skills: SkillStatusEntry[];
 };
 
@@ -244,11 +249,26 @@ export function buildWorkspaceSkillStatus(
       bundledSkillsDir: bundledContext.dir,
     });
   const prefs = resolveSkillsInstallPreferences(opts?.config);
+  const skillStatuses = skillEntries.map((entry) =>
+    buildSkillStatus(entry, opts?.config, prefs, opts?.eligibility, bundledContext.names),
+  );
+  const configuredSkillDirs: SkillStatusReport["configuredSkillDirs"] = [
+    { kind: "workspace", path: path.join(workspaceDir, "skills") },
+    { kind: "workspace_agents", path: path.join(workspaceDir, ".agents", "skills") },
+    { kind: "managed", path: managedSkillsDir },
+  ];
+  if (bundledContext.dir) {
+    configuredSkillDirs.push({ kind: "bundled", path: bundledContext.dir });
+  }
   return {
     workspaceDir,
     managedSkillsDir,
-    skills: skillEntries.map((entry) =>
-      buildSkillStatus(entry, opts?.config, prefs, opts?.eligibility, bundledContext.names),
-    ),
+    configuredSkillDirs,
+    discoveredSkillNames: skillStatuses.map((skill) => skill.name).toSorted(),
+    loadedSkillNames: null,
+    loadedState: "not_available",
+    loadedStateReason:
+      "This diagnostic can prove installed/discovered skills; warm-session in-memory loaded state is not exposed by the current runner.",
+    skills: skillStatuses,
   };
 }

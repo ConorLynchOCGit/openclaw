@@ -5,6 +5,7 @@ import {
   agentsBindingsCommand,
   agentsBindCommand,
   agentsDeleteCommand,
+  agentsSkillsStatusCommand,
   agentsListCommand,
   agentsSetIdentityCommand,
   agentsUnbindCommand,
@@ -102,6 +103,25 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.openclaw.ai/cli/age
       await runCommandWithRuntime(defaultRuntime, async () => {
         await agentsListCommand(
           { json: Boolean(opts.json), bindings: Boolean(opts.bindings) },
+          defaultRuntime,
+        );
+      });
+    });
+
+  agents
+    .command("skills-status")
+    .description(
+      "Show installed/discovered skills for an agent and whether warm-session loaded state is known",
+    )
+    .option("--agent <id>", "Agent id (defaults to current default agent)")
+    .option("--json", "Output JSON instead of text", false)
+    .action(async (opts) => {
+      await runCommandWithRuntime(defaultRuntime, async () => {
+        await agentsSkillsStatusCommand(
+          {
+            agent: opts.agent as string | undefined,
+            json: Boolean(opts.json),
+          },
           defaultRuntime,
         );
       });

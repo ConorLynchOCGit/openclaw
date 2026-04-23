@@ -225,6 +225,209 @@ function shouldUseCodexAppServer(modelId) {
   return provider === "openai-codex" || provider === "codex";
 }
 
+function routeFailureObservation({ api, preflight, latencyMs }) {
+  const failureClass =
+    api.classifyBenchmarkRouteFailure({
+      httpStatus: preflight.httpStatus,
+      failureClass: preflight.failureClass,
+      errorMessage: preflight.errorMessage,
+    }) ?? "unknown_route_failure";
+  return {
+    requestedModelId: preflight.requestedModelId,
+    provider: preflight.provider,
+    providerModel: preflight.providerModel,
+    resolvedModelId: preflight.resolvedModelId,
+    httpStatus: preflight.httpStatus,
+    strictSchemaSupported: preflight.ok === true && preflight.strictSchema === true,
+    responseFormatSupported: preflight.ok === true,
+    usageFieldsPresent: false,
+    latencyMs,
+    failureClass,
+    errorMessage: preflight.errorMessage,
+  };
+}
+
+function tinyStrictPreflightRequest(modelId) {
+  return {
+    contract: {
+      contractName: "benchmark_route_preflight",
+      contractVersion: "v1",
+      modelId,
+    },
+    systemPrompt: "preflight-only; not persisted",
+    userPrompt: "preflight-only; not persisted",
+    responseFormat: "json",
+    responseOptions: {
+      transport: {
+        type: "json_schema",
+        name: "benchmark_route_preflight",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            ok: { type: "boolean" },
+          },
+          required: ["ok"],
+          additionalProperties: false,
+        },
+      },
+      provider: { requireParameters: true },
+      maxOutputTokens: 64,
+    },
+  };
+}
+
+async function preflightCodexStrictRoute({ api, executor, modelId }) {
+  const startedAt = Date.now();
+  try {
+    const response = await executor.execute({
+      ...tinyStrictPreflightRequest(modelId),
+      systemPrompt: "Return exactly one JSON object matching the provided route preflight schema.",
+      userPrompt: '{"ok":true}',
+    });
+    parseJsonOutput(response.outputText);
+    return {
+      requestedModelId: modelId,
+      provider: providerFromModelId(modelId),
+      providerModel: modelId.slice(modelId.indexOf("/") + 1),
+      resolvedModelId: response.resolvedModelId,
+      strictSchemaSupported: true,
+      jsonModeSupported: true,
+      responseFormatSupported: true,
+      usageFieldsPresent: Boolean(response.usage),
+      latencyMs: Date.now() - startedAt,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      requestedModelId: modelId,
+      provider: providerFromModelId(modelId),
+      providerModel: modelId.slice(modelId.indexOf("/") + 1),
+      strictSchemaSupported: false,
+      jsonModeSupported: false,
+      responseFormatSupported: false,
+      usageFieldsPresent: false,
+      latencyMs: Date.now() - startedAt,
+      failureClass:
+        api.classifyBenchmarkRouteFailure({
+          failureClass: "provider_connection",
+          errorMessage,
+        }) ?? "unknown_route_failure",
+      errorMessage,
+    };
+  }
+}
+
+async function discoverNanoRoute({ api, httpExecutor, codexExecutor, explicitNanoModelId }) {
+  const candidateModelIds = new Set();
+  if (explicitNanoModelId) {
+    candidateModelIds.add(explicitNanoModelId);
+  }
+  candidateModelIds.add("openai-codex/gpt-5.4-nano");
+  candidateModelIds.add("openai/gpt-5.4-nano");
+  candidateModelIds.add(api.DEFAULT_CACHE_AWARE_NANO_MODEL_ID);
+
+  let availableModelIds;
+  const modelMetadataByOpenRouterId = new Map();
+  const modelList = await httpExecutor.listProviderModels("openrouter").catch((error) => ({
+    ok: false,
+    modelIds: [],
+    models: [],
+    errorMessage: error instanceof Error ? error.message : String(error),
+  }));
+  if (modelList.ok) {
+    availableModelIds = modelList.modelIds;
+    for (const model of modelList.models ?? []) {
+      modelMetadataByOpenRouterId.set(model.id, model);
+    }
+    for (const modelId of modelList.modelIds) {
+      if (/gpt-5\.4-nano/iu.test(modelId)) {
+        candidateModelIds.add(`openrouter/${modelId}`);
+      }
+    }
+  }
+
+  const observations = [];
+  for (const modelId of candidateModelIds) {
+    const openRouterModelId = modelId.startsWith("openrouter/")
+      ? modelId.slice("openrouter/".length)
+      : modelId;
+    const modelMetadata = modelMetadataByOpenRouterId.get(openRouterModelId);
+    if (shouldUseCodexAppServer(modelId)) {
+      observations.push({
+        ...(await preflightCodexStrictRoute({ api, executor: codexExecutor, modelId })),
+        supportedParameters: modelMetadata?.supportedParameters,
+      });
+      continue;
+    }
+    const jsonStartedAt = Date.now();
+    const jsonMode = await httpExecutor.preflightModel(modelId).catch((error) => ({
+      ok: false,
+      requestedModelId: modelId,
+      provider: providerFromModelId(modelId),
+      providerModel: modelId.slice(modelId.indexOf("/") + 1),
+      requestUrl: "",
+      errorMessage: error instanceof Error ? error.message : String(error),
+    }));
+    const strictStartedAt = Date.now();
+    const strict = await httpExecutor
+      .preflightContract(tinyStrictPreflightRequest(modelId))
+      .catch((error) => ({
+        ok: false,
+        requestedModelId: modelId,
+        provider: providerFromModelId(modelId),
+        providerModel: modelId.slice(modelId.indexOf("/") + 1),
+        requestUrl: "",
+        failureStage: "request_time",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      }));
+    const routeObservation = strict.ok
+      ? {
+          requestedModelId: strict.requestedModelId,
+          provider: strict.provider,
+          providerModel: strict.providerModel,
+          resolvedModelId: strict.resolvedModelId,
+          httpStatus: strict.httpStatus,
+          strictSchemaSupported: true,
+          jsonModeSupported: jsonMode.ok === true,
+          responseFormatSupported: true,
+          supportedParameters: modelMetadata?.supportedParameters,
+          usageFieldsPresent: false,
+          latencyMs: Date.now() - strictStartedAt,
+        }
+      : {
+          ...routeFailureObservation({
+            api,
+            preflight: strict,
+            latencyMs: Date.now() - strictStartedAt,
+          }),
+          supportedParameters: modelMetadata?.supportedParameters,
+        };
+    if (jsonMode.ok === true) {
+      routeObservation.jsonModeSupported = true;
+    } else if (routeObservation.jsonModeSupported === undefined) {
+      routeObservation.jsonModeSupported = false;
+    }
+    routeObservation.jsonModePreflightLatencyMs = Date.now() - jsonStartedAt;
+    observations.push(routeObservation);
+  }
+
+  const report = api.buildBenchmarkRouteDiscoveryReport({
+    candidateModelIds: [...candidateModelIds],
+    requestedNanoModelId: explicitNanoModelId ?? null,
+    availableModelIds,
+    observations,
+  });
+  return {
+    report,
+    selectedNanoModelId: report.selectedNanoModelId,
+    jsonRepairLaneModelId:
+      report.selectedNanoModelId === null
+        ? observations.find((observation) => observation.jsonModeSupported)?.requestedModelId
+        : null,
+  };
+}
+
 function speedOptionsForModel(modelId, args) {
   const reasoningEffort = shouldUseCodexAppServer(modelId)
     ? args.codexReasoningEffort
@@ -337,7 +540,7 @@ async function main() {
   );
 
   const miniModelId = args.miniModelId ?? api.DEFAULT_CACHE_AWARE_MINI_MODEL_ID;
-  const nanoModelId = args.nanoModelId ?? api.DEFAULT_CACHE_AWARE_NANO_MODEL_ID;
+  const requestedNanoModelId = args.nanoModelId ?? api.DEFAULT_CACHE_AWARE_NANO_MODEL_ID;
   const traces = [];
   const httpExecutor = new OpenAICompatibleLiveJsonExecutor({
     requestTimeoutMs: args.requestTimeoutMs,
@@ -349,9 +552,25 @@ async function main() {
     reasoningEffort: args.codexReasoningEffort,
     ...(args.serviceTier ? { serviceTier: args.serviceTier } : {}),
   });
+  const miniPreflight = await preflightCodexStrictRoute({
+    api,
+    executor: codexExecutor,
+    modelId: miniModelId,
+  });
+  const nanoDiscovery = await discoverNanoRoute({
+    api,
+    httpExecutor,
+    codexExecutor,
+    explicitNanoModelId: args.nanoModelId,
+  });
+  const nanoModelId = nanoDiscovery.selectedNanoModelId ?? requestedNanoModelId;
 
   const work = [];
-  for (const modelId of [miniModelId, nanoModelId]) {
+  const strictModelIds = [
+    miniModelId,
+    ...(nanoDiscovery.selectedNanoModelId ? [nanoDiscovery.selectedNanoModelId] : []),
+  ];
+  for (const modelId of strictModelIds) {
     for (const caseDef of benchmarkCases) {
       for (let runIndex = 0; runIndex < args.runs; runIndex += 1) {
         work.push({ modelId, caseDef, runIndex });
@@ -360,6 +579,63 @@ async function main() {
   }
 
   const observations = [];
+  if (!miniPreflight.strictSchemaSupported) {
+    observations.push({
+      caseId: "mini-route-preflight",
+      caseKind: "strict_schema_adherence",
+      runIndex: 0,
+      modelId: miniModelId,
+      provider: miniPreflight.provider,
+      resolvedModelId: miniPreflight.resolvedModelId,
+      contractName: "benchmark_route_preflight",
+      contractVersion: "v1",
+      promptVersion: "live-route-preflight-v1",
+      staticPrefixHash: "preflight",
+      schemaHash: "preflight",
+      latencyMs: miniPreflight.latencyMs,
+      promptTokenCount: 0,
+      cachedInputTokenCount: 0,
+      outputTokenCount: 0,
+      schemaAdherent: false,
+      emptyResponse: false,
+      repairAttempted: false,
+      repairSucceeded: false,
+      validCandidateCount: 0,
+      invalidCandidateCount: 0,
+      falsePositiveCount: 0,
+      missedDurableFactCount: 0,
+      failureClass: miniPreflight.failureClass ?? "provider_connection",
+      routeFailure: true,
+    });
+  }
+  if (!nanoDiscovery.selectedNanoModelId) {
+    observations.push({
+      caseId: "nano-route-preflight",
+      caseKind: "strict_schema_adherence",
+      runIndex: 0,
+      modelId: requestedNanoModelId,
+      provider: providerFromModelId(requestedNanoModelId),
+      contractName: "benchmark_route_preflight",
+      contractVersion: "v1",
+      promptVersion: "live-route-preflight-v1",
+      staticPrefixHash: "preflight",
+      schemaHash: "preflight",
+      latencyMs: 0,
+      promptTokenCount: 0,
+      cachedInputTokenCount: 0,
+      outputTokenCount: 0,
+      schemaAdherent: false,
+      emptyResponse: false,
+      repairAttempted: false,
+      repairSucceeded: false,
+      validCandidateCount: 0,
+      invalidCandidateCount: 0,
+      falsePositiveCount: 0,
+      missedDurableFactCount: 0,
+      failureClass: nanoDiscovery.report.unresolvedReason ?? "nano_route_unresolved",
+      routeFailure: true,
+    });
+  }
   for (const item of shuffled(work)) {
     const plan = api.buildCacheAwarePromptPlan({
       contractName: item.caseDef.contractName,
@@ -436,11 +712,100 @@ async function main() {
     }
   }
 
+  if (nanoDiscovery.jsonRepairLaneModelId) {
+    const jsonLaneModelId = nanoDiscovery.jsonRepairLaneModelId;
+    const jsonLaneLabel = `${jsonLaneModelId}#nano_json_repair_lane`;
+    const jsonLaneWork = [];
+    for (const caseDef of benchmarkCases) {
+      for (let runIndex = 0; runIndex < args.runs; runIndex += 1) {
+        jsonLaneWork.push({
+          modelId: jsonLaneModelId,
+          modelLabel: jsonLaneLabel,
+          caseDef,
+          runIndex,
+        });
+      }
+    }
+    for (const item of shuffled(jsonLaneWork, 20260424)) {
+      const plan = api.buildCacheAwarePromptPlan({
+        contractName: item.caseDef.contractName,
+        contractVersion: "v1",
+        promptVersion: "live-pass6-json-repair-lane-v1",
+        staticPrefix:
+          "You are executing an OpenClaw MMV2 JSON repair-lane benchmark contract. Return only JSON matching the schema shape. Use only the source span in the dynamic tail. This lane is not strict-schema equivalent.",
+        schema: responseSchema,
+        dynamicTail: item.caseDef.dynamicTail,
+        sourceText: item.caseDef.dynamicTail,
+      });
+      const startedAt = Date.now();
+      try {
+        const response = await withTimeout(
+          httpExecutor.execute({
+            contract: {
+              contractName: `${item.caseDef.contractName}_json_repair_lane`,
+              contractVersion: "v1",
+              modelId: item.modelId,
+            },
+            systemPrompt: `${plan.staticPrefix}\n\nSchema hash: ${plan.schemaHash}.`,
+            userPrompt: plan.dynamicTail,
+            responseFormat: "json",
+            responseOptions: {
+              transport: { type: "json_object" },
+              provider: { requireParameters: true },
+              promptCache: { key: plan.promptCacheKey },
+              maxOutputTokens: 900,
+              ...speedOptionsForModel(item.modelId, args),
+            },
+          }),
+          60_000,
+          `${jsonLaneLabel}/${item.caseDef.caseId}`,
+        );
+        const parsed = parseJsonOutput(response.outputText);
+        const scored = scoreParsed(item.caseDef, parsed);
+        observations.push({
+          caseId: item.caseDef.caseId,
+          caseKind: item.caseDef.caseKind,
+          runIndex: item.runIndex,
+          modelId: item.modelLabel,
+          provider: providerFromModelId(item.modelId),
+          resolvedModelId: response.resolvedModelId,
+          contractName: plan.contractName,
+          contractVersion: plan.contractVersion,
+          promptVersion: plan.promptVersion,
+          staticPrefixHash: plan.staticPrefixHash,
+          schemaHash: plan.schemaHash,
+          promptCacheKey: plan.promptCacheKey,
+          latencyMs: Date.now() - startedAt,
+          promptTokenCount: response.usage?.promptTokens ?? 0,
+          cachedInputTokenCount: response.usage?.cachedInputTokens ?? 0,
+          outputTokenCount: response.usage?.outputTokens ?? 0,
+          emptyResponse: response.outputText.trim().length === 0,
+          ...scored,
+          repairAttempted: !scored.schemaAdherent || scored.invalidCandidateCount > 0,
+        });
+      } catch (error) {
+        observations.push({
+          ...observationFromFailure({
+            api,
+            caseDef: item.caseDef,
+            runIndex: item.runIndex,
+            modelId: item.modelLabel,
+            plan,
+            error,
+            startedAt,
+          }),
+          repairAttempted: true,
+        });
+      }
+    }
+  }
+
   const report = api.buildCacheAwareBenchmarkReport({
     observations,
     miniModelId,
     nanoModelId,
     durableDbWrites: "disabled",
+    routeDiscovery: nanoDiscovery.report,
   });
   report.executionMetadata = {
     live_provider_calls_attempted: observations.length,
@@ -458,6 +823,19 @@ async function main() {
         "https://developers.openai.com/api/docs/guides/priority-processing",
       ],
     },
+    mini_route_preflight: miniPreflight,
+    nano_json_repair_lane: nanoDiscovery.jsonRepairLaneModelId
+      ? {
+          status:
+            args.runs > 0
+              ? "executed_not_equivalent_to_strict"
+              : "available_not_equivalent_to_strict",
+          modelId: nanoDiscovery.jsonRepairLaneModelId,
+          note: "JSON-mode repair lane is secondary and must not be compared as strict-schema parity.",
+        }
+      : {
+          status: "not_available",
+        },
   };
   report.pricingAssumptionsPerMillionTokens = {
     "openai-codex/gpt-5.4-mini": { input: 0.75, cached_input: 0.075, output: 4.5 },
@@ -500,6 +878,15 @@ async function main() {
       2,
     )}\n`,
   );
+  const discoveryDir = path.resolve(
+    root,
+    ".artifacts/model-memory/benchmarks/nano-route-discovery",
+  );
+  await mkdir(discoveryDir, { recursive: true });
+  await writeFile(
+    path.join(discoveryDir, "route-discovery-report.json"),
+    `${JSON.stringify(nanoDiscovery.report, null, 2)}\n`,
+  );
 
   console.log(
     JSON.stringify(
@@ -507,7 +894,9 @@ async function main() {
         benchmarkReport: path.join(outputDir, "benchmark-report.json"),
         benchmarkMarkdown: path.join(outputDir, "benchmark-report.md"),
         sanitizedTraces: path.join(outputDir, "sanitized-traces.json"),
+        routeDiscoveryReport: path.join(discoveryDir, "route-discovery-report.json"),
         observations: observations.length,
+        selectedNanoModelId: nanoDiscovery.selectedNanoModelId,
       },
       null,
       2,
@@ -522,7 +911,16 @@ async function main() {
   }
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error(error instanceof Error ? error.stack || error.message : String(error));
+  try {
+    const { clearSharedCodexAppServerClient } = await tsImport(
+      path.join(repoRoot(), "extensions/codex/src/app-server/shared-client.ts"),
+      import.meta.url,
+    );
+    clearSharedCodexAppServerClient();
+  } catch {
+    // Best-effort cleanup only.
+  }
   process.exitCode = 1;
 });

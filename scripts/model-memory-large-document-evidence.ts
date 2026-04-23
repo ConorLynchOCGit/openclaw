@@ -15,9 +15,13 @@ import {
 } from "../src/agents/model-memory.run-config.js";
 
 const DEFAULT_MODEL_REF =
-  process.env.MODEL_MEMORY_EVIDENCE_MODEL?.trim() || "openrouter/openai/gpt-5.4-nano";
+  process.env.MODEL_MEMORY_EVIDENCE_MODEL?.trim() ||
+  process.env.MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID?.trim() ||
+  "openai-codex/gpt-5.4-mini";
 const DEFAULT_CANDIDATE_MODEL_REF =
-  process.env.MODEL_MEMORY_CANDIDATE_MODEL?.trim() || "openrouter/openai/gpt-5.4-nano";
+  process.env.MODEL_MEMORY_CANDIDATE_MODEL?.trim() ||
+  process.env.MODEL_MEMORY_STRICT_CANDIDATE_MODEL_ID?.trim() ||
+  DEFAULT_MODEL_REF;
 const CASE_FILTER = process.env.MODEL_MEMORY_EVIDENCE_CASES?.trim();
 const DEFAULT_RERUN_MODE =
   process.env.MODEL_MEMORY_EVIDENCE_RERUN_MODE?.trim() === "first_run_only"

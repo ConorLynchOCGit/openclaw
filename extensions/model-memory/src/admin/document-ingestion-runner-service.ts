@@ -4,6 +4,12 @@ import type { ModelMemoryCanonicalRepository } from "../db/canonical-repository.
 import type { CapturedObjectWriteStore } from "../db/captured-object-write-compatibility.ts";
 import type { RuntimeContextRepository } from "../db/runtime-context-repository.ts";
 import {
+  buildSectionMapDocument,
+  buildSectionMapStrategyTelemetry,
+  selectDocumentIngestStrategy,
+  type SECTION_MAP_CANDIDATE_HINTS_STRATEGY,
+} from "../ingestion/section-map-candidate-hints.ts";
+import {
   classifyMemoryIngestionFailure,
   isMemoryIngestionProviderBoundaryFailure,
   type MemoryIngestionFailureClass,
@@ -62,6 +68,21 @@ export type DocumentIngestionRunnerSourceRecord = {
   ignoredWindowCount: number;
   rejectedWindowCount: number;
   rejectReasons: string[];
+  ingestStrategy?: "direct_rigid_capture" | typeof SECTION_MAP_CANDIDATE_HINTS_STRATEGY;
+  strategyTelemetry?: {
+    strategy: string;
+    sourceId: string;
+    sourceHash: string;
+    sectionCount: number;
+    hintCount: number;
+    validatedCount: number;
+    quarantinedCount: number;
+    admittedCount: number;
+    missedKnownFactCount: number;
+    partial: boolean;
+    retrySections: string[];
+    stricterEvidenceRetrySections: string[];
+  };
   errorMessage?: string;
   startedAt?: string;
   completedAt?: string;
@@ -152,6 +173,8 @@ export type DocumentIngestionRunnerProcessedSource = {
   ignoredWindowCount: number;
   rejectedWindowCount: number;
   rejectReasons: string[];
+  ingestStrategy?: "direct_rigid_capture" | typeof SECTION_MAP_CANDIDATE_HINTS_STRATEGY;
+  strategyTelemetry?: DocumentIngestionRunnerSourceRecord["strategyTelemetry"];
 };
 
 export interface DocumentIngestionRunRecordStore {
@@ -216,6 +239,8 @@ function createChunkFailureCircuitBreakerState(): ChunkFailureCircuitBreakerStat
       canonicalization: 0,
       db_persistence: 0,
       pool_pressure: 0,
+      permission: 0,
+      runtime_dirty_persistence: 0,
       timeout: 0,
       other: 0,
     },
@@ -362,6 +387,43 @@ function mergeCounts(
 
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].toSorted((left, right) => left.localeCompare(right));
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function buildDocumentIngestStrategyPreview(
+  source: DocumentIngestionRunnerSource,
+): Pick<DocumentIngestionRunnerProcessedSource, "ingestStrategy" | "strategyTelemetry"> {
+  const ingestStrategy = selectDocumentIngestStrategy({
+    requestedStrategy: process.env.MODEL_MEMORY_DOCUMENT_INGEST_STRATEGY,
+    sourceText: source.document.text,
+    largeDocWordThreshold: readPositiveIntegerEnv(
+      "MODEL_MEMORY_DOCUMENT_INGEST_LARGE_DOC_WORD_THRESHOLD",
+      2500,
+    ),
+  });
+  if (ingestStrategy !== "section_map_candidate_hints") {
+    return { ingestStrategy };
+  }
+  const sectionMap = buildSectionMapDocument({
+    sourceId: source.sourceId,
+    sourcePath: source.displayPath,
+    text: source.document.text,
+  });
+  return {
+    ingestStrategy,
+    strategyTelemetry: buildSectionMapStrategyTelemetry({
+      document: sectionMap,
+      validations: [],
+    }),
+  };
 }
 
 function buildInitialRunRecord(input: {
@@ -718,6 +780,8 @@ export class ModelMemoryDocumentIngestionRunnerService {
               ignoredWindowCount: processed.ignoredWindowCount,
               rejectedWindowCount: processed.rejectedWindowCount,
               rejectReasons: processed.rejectReasons,
+              ingestStrategy: processed.ingestStrategy,
+              strategyTelemetry: processed.strategyTelemetry,
               startedAt: sourceRecord?.startedAt ?? new Date().toISOString(),
               completedAt: new Date().toISOString(),
             };
@@ -853,7 +917,13 @@ export class ModelMemoryDocumentIngestionRunnerService {
     rebuildRuntime: boolean;
   }): Promise<DocumentIngestionRunnerProcessedSource> {
     if (this.deps.processSource) {
-      return this.deps.processSource(input.source);
+      const processed = await this.deps.processSource(input.source);
+      const preview = buildDocumentIngestStrategyPreview(input.source);
+      return {
+        ...processed,
+        ingestStrategy: processed.ingestStrategy ?? preview.ingestStrategy,
+        strategyTelemetry: processed.strategyTelemetry ?? preview.strategyTelemetry,
+      };
     }
 
     if (!this.deps.canonicalRepository) {
@@ -862,6 +932,7 @@ export class ModelMemoryDocumentIngestionRunnerService {
       );
     }
 
+    const strategyPreview = buildDocumentIngestStrategyPreview(input.source);
     const result = await ingestDocumentLive({
       canonicalRepository: this.deps.canonicalRepository,
       runtimeRepository: this.deps.runtimeRepository,
@@ -891,6 +962,8 @@ export class ModelMemoryDocumentIngestionRunnerService {
           entry.action === "reject" ? entry.errors.map((error) => error.message) : [],
         ),
       ),
+      ingestStrategy: strategyPreview.ingestStrategy,
+      strategyTelemetry: strategyPreview.strategyTelemetry,
     };
   }
 }

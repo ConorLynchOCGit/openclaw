@@ -14,6 +14,8 @@ import {
   markModelMemoryRuntimeDirty,
   parseMmV2RawJsonOutput,
   resetModelMemoryRuntimeDirtyStateForTests,
+  resolveCandidateModelRef,
+  resolveLiveModelRef,
   resolveModelMemoryLiveRuntimeStatus,
   shouldAttemptLiveRetrievalContext,
   shouldSkipOrdinaryTurnCaptureForExplicitOptOut,
@@ -98,6 +100,26 @@ describe("resolveModelMemoryLiveRuntimeStatus", () => {
 
     expect(status.enabled).toBe(false);
     expect(status.source).toBe("disabled");
+  });
+});
+
+describe("strict MMV2 model routing", () => {
+  it("defaults strict capture to mini rather than nano", () => {
+    expect(resolveLiveModelRef({} as OpenClawConfig, {})).toBe("openai-codex/gpt-5.4-mini");
+  });
+
+  it("lets explicit strict capture and candidate env overrides opt into another route", () => {
+    expect(
+      resolveLiveModelRef({} as OpenClawConfig, {
+        MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID: "openrouter/openai/gpt-5.4-nano",
+      }),
+    ).toBe("openrouter/openai/gpt-5.4-nano");
+    expect(
+      resolveCandidateModelRef({} as OpenClawConfig, {
+        MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID: "openai-codex/gpt-5.4-mini",
+        MODEL_MEMORY_STRICT_CANDIDATE_MODEL_ID: "openrouter/openai/gpt-5.4-nano",
+      }),
+    ).toBe("openrouter/openai/gpt-5.4-nano");
   });
 });
 

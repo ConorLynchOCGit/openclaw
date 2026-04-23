@@ -102,6 +102,28 @@ describe("mmv2/capture-routing", () => {
     expect(result.routing_decisions[0].route).toBe("composite_candidate");
   });
 
+  it("deterministically routes operational blocker-handling instructions as durable assistant behavior", async () => {
+    const source = createMmV2TestSource(
+      "If a tool schema is wrong but discoverable, inspect the tool/schema/logs and continue instead of stopping to ask.",
+    );
+    const interpreter = createScriptedMmV2Interpreter({});
+
+    const result = await routeCaptureCandidates({
+      rawEvent: source.rawEvent,
+      segmented: source.segmented,
+      sourceKind: "ordinary_turn",
+      sourceId: source.sourceId,
+      sourceWindow: source.sourceWindow,
+      modelId: "model-001",
+      interpreter,
+    });
+
+    expect(result.routing_decisions[0]).toMatchObject({
+      route: "atomic_candidate",
+      reason_codes: ["assistant_behavior_instruction", "explicit_user_preference"],
+    });
+  });
+
   it("materializes typed routed candidates with explicit source_route ownership", async () => {
     const source = createMmV2TestSource("I prefer concise answers.");
     const segment = source.segmented.segments[0];

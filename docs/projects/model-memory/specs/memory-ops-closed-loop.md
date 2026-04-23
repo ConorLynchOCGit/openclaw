@@ -70,6 +70,17 @@ The 2026-04-23 proof executed eight Safe Level 1 actions and left semantic
 auto-fix disabled. The latest report remains
 `.openclaw-memory-ops/reports/latest.md`.
 
+Main UX audit follow-up:
+
+- runtime-dirty spool writeability is an operational health prerequisite; EACCES
+  on `$OPENCLAW_STATE_DIR/model-memory/runtime-dirty/` should be classified as
+  `runtime_dirty_persistence`, not semantic capture failure
+- bounded tool-result operational facts are allowed Memory Ops input when they
+  describe safe blocker classes and remediation hints without raw command
+  output, raw tool parameters, prompts, transcripts, or secrets
+- host-operator tool failure logs must use safe parameter metadata and content
+  redaction so Memory Ops and gateway logs do not become raw-tool-log storage
+
 ## Core Principle
 
 DO NOT RECORD DARK DATA.

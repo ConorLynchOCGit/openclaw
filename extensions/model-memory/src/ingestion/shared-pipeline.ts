@@ -21,6 +21,8 @@ export const MEMORY_INGESTION_FAILURE_CLASSES = [
   "canonicalization",
   "db_persistence",
   "pool_pressure",
+  "permission",
+  "runtime_dirty_persistence",
   "timeout",
   "other",
 ] as const;
@@ -81,6 +83,26 @@ export type ProviderBoundaryDecision =
 
 export function classifyMemoryIngestionFailure(message: string): MemoryIngestionFailureClass {
   const normalized = message.toLowerCase();
+  if (
+    (normalized.includes("runtime_dirty") ||
+      normalized.includes("runtime dirty") ||
+      normalized.includes("runtime-dirty")) &&
+    (normalized.includes("eacces") ||
+      normalized.includes("eperm") ||
+      normalized.includes("permission denied") ||
+      normalized.includes("read-only") ||
+      normalized.includes("readonly"))
+  ) {
+    return "runtime_dirty_persistence";
+  }
+  if (
+    normalized.includes("eacces") ||
+    normalized.includes("eperm") ||
+    normalized.includes("permission denied") ||
+    normalized.includes("operation not permitted")
+  ) {
+    return "permission";
+  }
   if (
     normalized.includes("402") ||
     normalized.includes("insufficient credits") ||

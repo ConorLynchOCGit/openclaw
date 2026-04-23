@@ -31,6 +31,17 @@ The current outcomes are:
     `/tmp/openclaw-skill-vetting/...`
   - native `openclaw skills search "task-progress-stream"` inside the runtime
     container
+- skill-vetting report initialization now writes to the writable operator
+  workspace reports tree by default:
+  `/root/.openclaw/workspace/docs/projects/skills-system/skill-vetting/reports/`
+- canonical skill installation through `host_operator_repo install_skill` has a
+  documented shape, validate-only mode, clearer validation errors, and safe
+  redacted failure logging
+- `openclaw agents skills-status --agent <id> --json` reports discovered
+  installed skills and explicitly marks warm-session loaded-state proof as
+  unavailable when it cannot be inspected
+- ClawHub search output is treated as remote marketplace discovery; local
+  `skills info` works after install, and CLI help now says that directly
 
 ## Current judgment
 

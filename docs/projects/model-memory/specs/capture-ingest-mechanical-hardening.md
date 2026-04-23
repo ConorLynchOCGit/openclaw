@@ -69,6 +69,31 @@ benchmark/eval output out of semantic memory:
   admitted candidates must validate against original source spans, and
   section-map plus candidate hints is the current recommendation
 
+2026-04-23 operational follow-up:
+
+- runtime-dirty state persistence was failing because the runtime-state spool
+  was host-owned by root while the gateway runs as UID `1000`; the approved
+  fix is a narrow ownership/ACL repair on
+  `$OPENCLAW_STATE_DIR/model-memory/runtime-dirty/`, never a broad chmod or DB
+  mutation
+- dirty-state write/permission failures now map to
+  `runtime_dirty_persistence` or `permission`, with capture-job stage
+  `runtime_dirty` where applicable
+- strict capture/ingest defaults now resolve to
+  `openai-codex/gpt-5.4-mini`; nano is retained only behind explicit
+  low-risk/benchmark overrides until strict-schema and evidence-quality parity
+  is proven
+- large-document ingest strategy selection now defaults to `auto`: small docs
+  use direct rigid capture, while docs above
+  `MODEL_MEMORY_DOCUMENT_INGEST_LARGE_DOC_WORD_THRESHOLD` use
+  `section_map_candidate_hints`
+- section-map candidate hints are non-canonical projection/cache artifacts;
+  only original-source-validated hints may narrow rigid MMV2 admission
+- a five-doc artifact-only section-map audit on 2026-04-23 showed zero
+  evidence failures on three docs and two failures each on `STATUS.md` and the
+  host-operator topology spec; unsupported hints must remain quarantined and
+  adaptive stricter-evidence retry is required before broad default-safe use
+
 ## Guardrails
 
 - MMV2 durable SQL remains semantic truth.

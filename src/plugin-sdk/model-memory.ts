@@ -1,5 +1,6 @@
 // Manual facade. Keep loader boundary explicit and host-facing.
 type FacadeModule = typeof import("@openclaw/model-memory/runtime-api.js");
+type LegacyFacadeModule = typeof import("@openclaw/model-memory/legacy-admin-api.js");
 import {
   createLazyFacadeArrayValue,
   createLazyFacadeObjectValue,
@@ -13,9 +14,25 @@ function loadFacadeModule(): FacadeModule {
   });
 }
 
+function loadLegacyFacadeModule(): LegacyFacadeModule {
+  return loadBundledPluginPublicSurfaceModuleSync<LegacyFacadeModule>({
+    dirName: "model-memory",
+    artifactBasename: "legacy-admin-api.js",
+  });
+}
+
 function bindFacadeFunction<K extends keyof FacadeModule>(key: K): FacadeModule[K] {
   return ((...args: unknown[]) =>
     (loadFacadeModule()[key] as (...args: unknown[]) => unknown)(...args)) as FacadeModule[K];
+}
+
+function bindLegacyFacadeFunction<K extends keyof LegacyFacadeModule>(
+  key: K,
+): LegacyFacadeModule[K] {
+  return ((...args: unknown[]) =>
+    (loadLegacyFacadeModule()[key] as (...args: unknown[]) => unknown)(
+      ...args,
+    )) as LegacyFacadeModule[K];
 }
 
 function createLazyFacadeClassValue<K extends keyof FacadeModule>(key: K): FacadeModule[K] {
@@ -67,26 +84,37 @@ function createLazyFacadeClassValue<K extends keyof FacadeModule>(key: K): Facad
   }) as FacadeModule[K];
 }
 
+function createLazyLegacyFacadeClassValue<K extends keyof LegacyFacadeModule>(
+  key: K,
+): LegacyFacadeModule[K] {
+  const target = function legacyFacadeClassProxy() {} as unknown as object;
+  return new Proxy(target, {
+    apply(_target, thisArg, args) {
+      return Reflect.apply(loadLegacyFacadeModule()[key] as CallableFunction, thisArg, args);
+    },
+    construct(_target, args, newTarget) {
+      return Reflect.construct(
+        loadLegacyFacadeModule()[key] as new (...args: unknown[]) => object,
+        args,
+        newTarget as new (...args: unknown[]) => object,
+      );
+    },
+    get(_target, property, receiver) {
+      return Reflect.get(loadLegacyFacadeModule()[key] as object, property, receiver);
+    },
+  }) as LegacyFacadeModule[K];
+}
+
 export type {
   ActiveMemorySetRecord,
   ActiveMemorySlotRecord,
-  BoundedCandidateAdjudicationBatchDecision,
-  BoundedCandidateAdjudicationRequest,
-  BoundedCandidateAdjudicationSource,
-  ClaimFieldComparison,
-  CollisionAdjudicationBatchDecision,
-  CollisionAdjudicationDecision,
-  CollisionAdjudicationRequest,
-  CollisionCandidate,
   ContextArtifactRecord,
-  DatabaseMemoryObjectStoreObserver,
   InterpretedRetrievalRequest,
   JsonModelExecutionRequest,
   JsonModelExecutionResponse,
   JsonModelExecutor,
   MemoryIngestionFailureClass,
   ModelMemoryStorageEngine,
-  MemoryIdentityDescriptor,
   ModelMemoryLifecycleState,
   ModelMemoryObject,
   ModelMemoryObjectRecord,
@@ -97,7 +125,6 @@ export type {
   ModelMemorySourceWindowRecord,
   ModelMemorySupportItemRecord,
   ModelMemoryWriteEventRecord,
-  PackagingDriftType,
   ProjectionMaterializationResult,
   ProductionHookProbeRecord,
   RetrievalEnvelope,
@@ -105,26 +132,40 @@ export type {
   RuntimeCompatibleMemoryRecord,
   RuntimeMemoryRecord,
   RuntimeRebuildResult,
-  SameClaimConfidence,
-  SearchTextOverlap,
-  SemanticCollisionAdjudicator,
   SemanticInterpreter,
   SemanticInterpreterInput,
   SemanticInterpreterResult,
   SessionContextStateRecord,
   SqlClient,
-  StructuralDeltaClass,
   ToolResultProofCaptureBuildResult,
   ToolResultProofCaptureInput,
   WorkspaceProjectionTargetRecord,
   WorkspaceProjectionVersionRecord,
 } from "@openclaw/model-memory/runtime-api.js";
 
+export type {
+  BoundedCandidateAdjudicationBatchDecision,
+  BoundedCandidateAdjudicationRequest,
+  BoundedCandidateAdjudicationSource,
+  ClaimFieldComparison,
+  CollisionAdjudicationBatchDecision,
+  CollisionAdjudicationDecision,
+  CollisionAdjudicationRequest,
+  CollisionCandidate,
+  DatabaseMemoryObjectStoreObserver,
+  MemoryIdentityDescriptor,
+  PackagingDriftType,
+  SameClaimConfidence,
+  SearchTextOverlap,
+  SemanticCollisionAdjudicator,
+  StructuralDeltaClass,
+} from "@openclaw/model-memory/legacy-admin-api.js";
+
 export const CanonicalClassSchema: FacadeModule["CanonicalClassSchema"] =
   createLazyFacadeObjectValue(() => loadFacadeModule().CanonicalClassSchema);
 
-export const DatabaseMemoryObjectStore: FacadeModule["DatabaseMemoryObjectStore"] =
-  createLazyFacadeClassValue("DatabaseMemoryObjectStore");
+export const DatabaseMemoryObjectStore: LegacyFacadeModule["DatabaseMemoryObjectStore"] =
+  createLazyLegacyFacadeClassValue("DatabaseMemoryObjectStore");
 
 export const DatabaseRetrievalStore: FacadeModule["DatabaseRetrievalStore"] =
   createLazyFacadeClassValue("DatabaseRetrievalStore");
@@ -135,8 +176,8 @@ export const DEFAULT_WORKSPACE_PROJECTION_TARGETS: FacadeModule["DEFAULT_WORKSPA
 export const ExecutorBackedRetrievalRequestInterpreter: FacadeModule["ExecutorBackedRetrievalRequestInterpreter"] =
   createLazyFacadeClassValue("ExecutorBackedRetrievalRequestInterpreter");
 
-export const ExecutorBackedSemanticCollisionAdjudicator: FacadeModule["ExecutorBackedSemanticCollisionAdjudicator"] =
-  createLazyFacadeClassValue("ExecutorBackedSemanticCollisionAdjudicator");
+export const ExecutorBackedSemanticCollisionAdjudicator: LegacyFacadeModule["ExecutorBackedSemanticCollisionAdjudicator"] =
+  createLazyLegacyFacadeClassValue("ExecutorBackedSemanticCollisionAdjudicator");
 
 export const ExecutorBackedSemanticInterpreter: FacadeModule["ExecutorBackedSemanticInterpreter"] =
   createLazyFacadeClassValue("ExecutorBackedSemanticInterpreter");
@@ -151,8 +192,8 @@ export const MemoryKindSchema: FacadeModule["MemoryKindSchema"] = createLazyFaca
 export const ModelMemoryCanonicalRepository: FacadeModule["ModelMemoryCanonicalRepository"] =
   createLazyFacadeClassValue("ModelMemoryCanonicalRepository");
 
-export const MmV2DatabaseMemoryObjectStore: FacadeModule["MmV2DatabaseMemoryObjectStore"] =
-  createLazyFacadeClassValue("MmV2DatabaseMemoryObjectStore");
+export const MmV2DatabaseMemoryObjectStore: LegacyFacadeModule["MmV2DatabaseMemoryObjectStore"] =
+  createLazyLegacyFacadeClassValue("MmV2DatabaseMemoryObjectStore");
 
 export const MmV2NativeRepository: FacadeModule["MmV2NativeRepository"] =
   createLazyFacadeClassValue("MmV2NativeRepository");
@@ -165,9 +206,11 @@ export const RuntimeContextRepository: FacadeModule["RuntimeContextRepository"] 
 
 export const adaptOrdinaryTurnSource = bindFacadeFunction("adaptOrdinaryTurnSource");
 export const applyModelMemoryMigrations = bindFacadeFunction("applyModelMemoryMigrations");
-export const assessStructuralSameClaimDelta = bindFacadeFunction("assessStructuralSameClaimDelta");
+export const assessStructuralSameClaimDelta = bindLegacyFacadeFunction(
+  "assessStructuralSameClaimDelta",
+);
 export const buildCalibrationReport = bindFacadeFunction("buildCalibrationReport");
-export const buildCollisionCandidates = bindFacadeFunction("buildCollisionCandidates");
+export const buildCollisionCandidates = bindLegacyFacadeFunction("buildCollisionCandidates");
 export const buildContextArtifact = bindFacadeFunction("buildContextArtifact");
 export const buildDeterministicUuid = bindFacadeFunction("buildDeterministicUuid");
 export const buildHarnessProjectionOutputs = bindFacadeFunction("buildHarnessProjectionOutputs");
@@ -182,26 +225,30 @@ export const buildToolResultProofLiveCapture = bindFacadeFunction(
 export const buildWorkspaceProjectionVersion = bindFacadeFunction(
   "buildWorkspaceProjectionVersion",
 );
-export const buildZeroCandidateRecoverySelection = bindFacadeFunction(
+export const buildZeroCandidateRecoverySelection = bindLegacyFacadeFunction(
   "buildZeroCandidateRecoverySelection",
 );
-export const calculateSearchTextOverlap = bindFacadeFunction("calculateSearchTextOverlap");
+export const calculateSearchTextOverlap = bindLegacyFacadeFunction("calculateSearchTextOverlap");
 export const captureOrdinaryTurnLive = bindFacadeFunction("captureOrdinaryTurnLive");
 export const classifyMemoryIngestionFailure = bindFacadeFunction("classifyMemoryIngestionFailure");
 export const compileProjection = bindFacadeFunction("compileProjection");
 export const createModelMemoryPgPool = bindFacadeFunction("createModelMemoryPgPool");
-export const deriveMemoryIdentity = bindFacadeFunction("deriveMemoryIdentity");
-export const describeClaimFieldComparison = bindFacadeFunction("describeClaimFieldComparison");
-export const describeDecisiveFieldAgreement = bindFacadeFunction("describeDecisiveFieldAgreement");
+export const deriveMemoryIdentity = bindLegacyFacadeFunction("deriveMemoryIdentity");
+export const describeClaimFieldComparison = bindLegacyFacadeFunction(
+  "describeClaimFieldComparison",
+);
+export const describeDecisiveFieldAgreement = bindLegacyFacadeFunction(
+  "describeDecisiveFieldAgreement",
+);
 export const evaluateModelMemoryReadiness = bindFacadeFunction("evaluateModelMemoryReadiness");
 export const executeRetrieval = bindFacadeFunction("executeRetrieval");
 export const ingestDocumentLive = bindFacadeFunction("ingestDocumentLive");
-export const isDeterministicSameSlotSupersession = bindFacadeFunction(
+export const isDeterministicSameSlotSupersession = bindLegacyFacadeFunction(
   "isDeterministicSameSlotSupersession",
 );
 export const listRuntimeMemoryRecords = bindFacadeFunction("listRuntimeMemoryRecords");
 export const materializeProjectionArtifacts = bindFacadeFunction("materializeProjectionArtifacts");
-export const normalizeIdentityText = bindFacadeFunction("normalizeIdentityText");
+export const normalizeIdentityText = bindLegacyFacadeFunction("normalizeIdentityText");
 export const rankRetrievalCandidates = bindFacadeFunction("rankRetrievalCandidates");
 export const rebuildDerivedRuntimeState = bindFacadeFunction("rebuildDerivedRuntimeState");
 export const recoverDailyContinuityCandidatesLive = bindFacadeFunction(
@@ -211,14 +258,14 @@ export const recordProductionHookProbe = bindFacadeFunction("recordProductionHoo
 export const resolveModelMemoryStorageEngine = bindFacadeFunction(
   "resolveModelMemoryStorageEngine",
 );
-export const runLiveDocumentShadow = bindFacadeFunction("runLiveDocumentShadow");
+export const runLiveDocumentShadow = bindLegacyFacadeFunction("runLiveDocumentShadow");
 export const runModelMemoryContextEngine = bindFacadeFunction("runModelMemoryContextEngine");
-export const selectDeterministicAttachCollisionCandidate = bindFacadeFunction(
+export const selectDeterministicAttachCollisionCandidate = bindLegacyFacadeFunction(
   "selectDeterministicAttachCollisionCandidate",
 );
-export const toBoundedCandidateAdjudicationCandidatesFromRetained = bindFacadeFunction(
+export const toBoundedCandidateAdjudicationCandidatesFromRetained = bindLegacyFacadeFunction(
   "toBoundedCandidateAdjudicationCandidatesFromRetained",
 );
-export const toBoundedCandidateAdjudicationCandidatesFromSearch = bindFacadeFunction(
+export const toBoundedCandidateAdjudicationCandidatesFromSearch = bindLegacyFacadeFunction(
   "toBoundedCandidateAdjudicationCandidatesFromSearch",
 );

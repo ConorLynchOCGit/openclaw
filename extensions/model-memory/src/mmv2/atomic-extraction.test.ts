@@ -83,6 +83,54 @@ describe("mmv2/atomic-extraction", () => {
     expect(result.atomic_candidates[0].payload.payload_type).toBe("directive");
   });
 
+  it("deterministically extracts operational assistant behavior directives without calling the model", async () => {
+    const text =
+      "If a tool schema is wrong but discoverable, inspect the tool/schema/logs and continue instead of stopping to ask.";
+    const source = createMmV2TestSource(text);
+    const segment = source.segmented.segments[0];
+    let callCount = 0;
+    const interpreter = createScriptedMmV2Interpreter({
+      "mmv2-atomic-extraction-v1": () => {
+        callCount += 1;
+        return captureOne({
+          schema_version: "atomic_extraction.v1",
+          event_id: source.rawEvent.event_id,
+          atomic_candidates: [],
+        });
+      },
+    });
+
+    const result = await extractAtomicCandidates({
+      rawEvent: source.rawEvent,
+      sourceKind: "ordinary_turn",
+      sourceId: source.sourceId,
+      sourceWindow: source.sourceWindow,
+      modelId: "model-001",
+      interpreter,
+      routedCandidates: [
+        buildAtomicRoutedCandidate(segment, {
+          reason_codes: ["assistant_behavior_instruction", "explicit_user_preference"],
+          evidence_quote: text,
+        }),
+      ],
+    });
+
+    expect(callCount).toBe(0);
+    expect(result.atomic_candidates[0]).toMatchObject({
+      kind: "directive",
+      source_grounding: "explicit",
+      payload: expect.objectContaining({
+        payload_type: "directive",
+        directive_type: "workflow_behavior",
+        authority: "user",
+        target: "assistant",
+        strength: "soft_default",
+        trigger: "the assistant encounters the described task or blocker",
+      }),
+    });
+    expect(JSON.stringify(result)).not.toContain("raw tool log");
+  });
+
   it("returns an empty batch without calling the model when there are no routed atomic segments", async () => {
     const source = createMmV2TestSource("I prefer concise answers.");
     let callCount = 0;

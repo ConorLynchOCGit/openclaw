@@ -97,6 +97,22 @@ export type ModelMemoryProviderPreflightResult = {
   errorMessage?: string;
 };
 
+export type ModelMemoryProviderModelListResult = {
+  ok: boolean;
+  provider: string;
+  requestUrl: string;
+  httpStatus?: number;
+  modelIds: string[];
+  models?: Array<{
+    id: string;
+    supportedParameters: string[];
+    contextLength?: number;
+    maxCompletionTokens?: number;
+  }>;
+  failureClass?: MemoryIngestionFailureClass;
+  errorMessage?: string;
+};
+
 type OpenAICompatibleResponse = {
   model?: string;
   choices?: Array<{
@@ -216,7 +232,23 @@ function buildProviderOptions(
   return { require_parameters: true };
 }
 
-function buildPromptCacheOptions(request: JsonModelExecutionRequest): Record<string, unknown> {
+function buildTemperatureOptions(
+  request: JsonModelExecutionRequest,
+  provider: string,
+): Record<string, unknown> {
+  if (provider === "openrouter" && request.responseOptions?.provider?.requireParameters === true) {
+    return {};
+  }
+  return { temperature: 0 };
+}
+
+function buildPromptCacheOptions(
+  request: JsonModelExecutionRequest,
+  provider: string,
+): Record<string, unknown> {
+  if (provider === "openrouter" && request.responseOptions?.provider?.requireParameters === true) {
+    return {};
+  }
   const promptCache = request.responseOptions?.promptCache;
   return {
     ...(promptCache?.key ? { prompt_cache_key: promptCache.key } : {}),
@@ -224,7 +256,20 @@ function buildPromptCacheOptions(request: JsonModelExecutionRequest): Record<str
   };
 }
 
-function buildModelPerformanceOptions(request: JsonModelExecutionRequest): Record<string, unknown> {
+function buildModelPerformanceOptions(
+  request: JsonModelExecutionRequest,
+  provider: string,
+): Record<string, unknown> {
+  if (provider === "openrouter" && request.responseOptions?.provider?.requireParameters === true) {
+    return request.responseOptions?.reasoningEffort
+      ? {
+          reasoning: {
+            effort: request.responseOptions.reasoningEffort,
+            exclude: true,
+          },
+        }
+      : {};
+  }
   return {
     ...(request.responseOptions?.reasoningEffort
       ? { reasoning_effort: request.responseOptions.reasoningEffort }
@@ -813,6 +858,120 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
     }
   }
 
+  async listProviderModels(provider: string): Promise<ModelMemoryProviderModelListResult> {
+    const auth = await this.resolveAuthImpl(provider, this.config);
+    const baseUrl = resolveProviderBaseUrl(this.config, provider);
+    const requestUrl = `${baseUrl}/models`;
+
+    if (!auth.apiKey) {
+      return {
+        ok: false,
+        provider,
+        requestUrl,
+        modelIds: [],
+        failureClass: "provider_connection",
+        errorMessage: `model-memory model listing for provider "${provider}" requires an API key or OAuth token`,
+      };
+    }
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(requestUrl, {
+        method: "GET",
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
+        headers: {
+          Authorization: `Bearer ${auth.apiKey}`,
+          ...(provider === "openrouter"
+            ? {
+                "HTTP-Referer": "https://openclaw.ai",
+                "X-Title": "OpenClaw model-memory",
+              }
+            : {}),
+        },
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        provider,
+        requestUrl,
+        modelIds: [],
+        failureClass: "provider_connection",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    const rawResponseText = await response.text();
+    if (!response.ok) {
+      const errorMessage =
+        buildExcerpt(parseErrorText(rawResponseText)) ?? "provider returned error";
+      return {
+        ok: false,
+        provider,
+        requestUrl,
+        httpStatus: response.status,
+        modelIds: [],
+        failureClass: this.classifyProviderFailure({
+          httpStatus: response.status,
+          failureStage: "request_time",
+          errorMessage,
+        }),
+        errorMessage,
+      };
+    }
+
+    try {
+      const payload = JSON.parse(rawResponseText) as {
+        data?: Array<{
+          id?: unknown;
+          supported_parameters?: unknown;
+          context_length?: unknown;
+          top_provider?: { max_completion_tokens?: unknown };
+        }>;
+      };
+      const models = (payload.data ?? [])
+        .map((entry) => {
+          const id = typeof entry.id === "string" ? entry.id : undefined;
+          if (!id) {
+            return undefined;
+          }
+          return {
+            id,
+            supportedParameters: Array.isArray(entry.supported_parameters)
+              ? entry.supported_parameters.filter(
+                  (value): value is string => typeof value === "string",
+                )
+              : [],
+            contextLength:
+              typeof entry.context_length === "number" ? entry.context_length : undefined,
+            maxCompletionTokens:
+              typeof entry.top_provider?.max_completion_tokens === "number"
+                ? entry.top_provider.max_completion_tokens
+                : undefined,
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+        .toSorted((left, right) => left.id.localeCompare(right.id));
+      return {
+        ok: true,
+        provider,
+        requestUrl,
+        httpStatus: response.status,
+        modelIds: models.map((model) => model.id),
+        models,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        provider,
+        requestUrl,
+        httpStatus: response.status,
+        modelIds: [],
+        failureClass: "provider_json_boundary",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   async preflightContract(
     request: JsonModelExecutionRequest,
   ): Promise<ModelMemoryProviderPreflightResult> {
@@ -843,7 +1002,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
 
     const requestBody = {
       model: model.model,
-      temperature: 0,
+      ...buildTemperatureOptions(request, model.provider),
       max_tokens: Math.min(resolveMaxOutputTokens(request.responseOptions?.maxOutputTokens), 64),
       messages: [
         {
@@ -860,8 +1019,8 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
       ...(buildProviderOptions(request, model.provider)
         ? { provider: buildProviderOptions(request, model.provider) }
         : {}),
-      ...buildPromptCacheOptions(request),
-      ...buildModelPerformanceOptions(request),
+      ...buildPromptCacheOptions(request, model.provider),
+      ...buildModelPerformanceOptions(request, model.provider),
     } satisfies Record<string, unknown>;
 
     let response: Response;
@@ -963,7 +1122,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
     const requestUrl = `${baseUrl}/chat/completions`;
     const requestBody = {
       model: model.model,
-      temperature: 0,
+      ...buildTemperatureOptions(request, model.provider),
       max_tokens: resolveMaxOutputTokens(request.responseOptions?.maxOutputTokens),
       ...(this.requestSeed !== undefined ? { seed: this.requestSeed } : {}),
       messages: [
@@ -980,8 +1139,8 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
       ...(buildProviderOptions(request, model.provider)
         ? { provider: buildProviderOptions(request, model.provider) }
         : {}),
-      ...buildPromptCacheOptions(request),
-      ...buildModelPerformanceOptions(request),
+      ...buildPromptCacheOptions(request, model.provider),
+      ...buildModelPerformanceOptions(request, model.provider),
     } satisfies Record<string, unknown>;
     const prefixHash = sha256(request.systemPrompt);
     const schemaHash = buildSchemaHash(request);

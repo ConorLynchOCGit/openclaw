@@ -71,17 +71,30 @@ describe("semantic forest quarantine", () => {
     expect(source).toContain('await import("./semantic-collision-adjudication.ts")');
   });
 
-  it("keeps legacy semantic/collision public exports classified as compatibility-only", () => {
+  it("keeps legacy semantic/collision exports off default public runtime surfaces", () => {
     for (const file of [
       "extensions/model-memory/src/index.ts",
       "extensions/model-memory/src/runtime-api.ts",
     ]) {
       const source = readRepoFile(file);
-      expect(source).toContain('export * from "./semantic-collision-adjudication.ts"');
-      expect(source).toContain('export * from "./semantic-identity.ts"');
-      expect(source).toContain('export * from "./write-policy.ts"');
+      expect(source).not.toContain('export * from "./semantic-collision-adjudication.ts"');
+      expect(source).not.toContain('export * from "./semantic-identity.ts"');
+      expect(source).not.toContain('export * from "./write-policy.ts"');
+      expect(source).not.toContain('export * from "./db/database-memory-object-store.ts"');
       expect(source).toContain('export * from "./legacy-fallback-registry.ts"');
     }
+    const legacySource = readRepoFile("extensions/model-memory/src/legacy-admin-api.ts");
+    expect(legacySource).toContain('export * from "./semantic-collision-adjudication.ts"');
+    expect(legacySource).toContain('export * from "./semantic-identity.ts"');
+    expect(legacySource).toContain('export * from "./write-policy.ts"');
+    expect(legacySource).toContain('export * from "./db/database-memory-object-store.ts"');
+  });
+
+  it("keeps legacy write-policy on neutral structural identity rather than semantic-family identity", () => {
+    const source = readRepoFile("extensions/model-memory/src/write-policy.ts");
+
+    expect(source).toContain('from "./structural-identity.ts"');
+    expect(source).not.toContain('from "./semantic-identity.ts"');
   });
 
   it("classifies every retained fallback surface as non-default", () => {

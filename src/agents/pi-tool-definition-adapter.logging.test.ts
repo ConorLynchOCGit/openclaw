@@ -34,7 +34,7 @@ describe("pi tool definition adapter logging", () => {
     mocks.logDebug.mockReset();
   });
 
-  it("logs raw malformed edit params when required aliases are missing", async () => {
+  it("logs only safe malformed edit param metadata when required aliases are missing", async () => {
     const baseTool = {
       name: "edit",
       label: "Edit",
@@ -64,9 +64,53 @@ describe("pi tool definition adapter logging", () => {
 
     expect(logError).toHaveBeenCalledWith(
       expect.stringContaining(
-        '[tools] edit failed: Missing required parameter: edits (received: path). Supply correct parameters before retrying. raw_params={"path":"notes.txt"}',
+        '[tools] edit failed: Missing required parameter: edits (received: path). Supply correct parameters before retrying. raw_params_metadata={"keys":["path"],"path":"notes.txt"}',
       ),
     );
+  });
+
+  it("redacts full tool content from failure logs and returned safe input metadata", async () => {
+    const secretContent =
+      "---\nname: wrong-skill\ndescription: Test\n---\n# Skill\nFull skill body must not be logged.\n";
+    const baseTool = {
+      name: "host_operator_repo",
+      label: "Host operator repo",
+      description: "host writes",
+      parameters: Type.Object({
+        action: Type.String(),
+        skillName: Type.String(),
+        content: Type.String(),
+      }),
+      execute: async () => {
+        throw new Error("frontmatter name mismatch");
+      },
+    } satisfies AgentTool;
+
+    const [def] = toToolDefinitions([baseTool]);
+    if (!def) {
+      throw new Error("missing tool definition");
+    }
+
+    const result = await def.execute(
+      "call-host-operator",
+      {
+        action: "install_skill",
+        scope: "live_repo",
+        skillName: "canonical-skill",
+        content: secretContent,
+      },
+      undefined,
+      undefined,
+      extensionContext,
+    );
+    const serializedResult = JSON.stringify(result);
+    const logLine = vi.mocked(logError).mock.calls.at(-1)?.[0] ?? "";
+
+    expect(logLine).toContain("raw_params_metadata=");
+    expect(logLine).toContain('"content":"<redacted:');
+    expect(logLine).not.toContain("Full skill body must not be logged");
+    expect(serializedResult).toContain('"content":"<redacted:');
+    expect(serializedResult).not.toContain("Full skill body must not be logged");
   });
 
   it("accepts nested edits arrays for the current edit schema", async () => {

@@ -63,7 +63,10 @@ const LIVE_MODEL_MEMORY_ENABLED_ENV = "MODEL_MEMORY_LIVE_ENABLED";
 const MODEL_MEMORY_PROJECTION_ARTIFACTS_ENABLED_ENV = "MODEL_MEMORY_PROJECTION_ARTIFACTS_ENABLED";
 const MODEL_MEMORY_TOOL_RESULT_PROOF_CAPTURE_ENABLED_ENV =
   "MODEL_MEMORY_TOOL_RESULT_PROOF_CAPTURE_ENABLED";
-const DEFAULT_LIVE_MODEL_REF = "openrouter/openai/gpt-5.4-nano";
+export const DEFAULT_STRICT_MMV2_MODEL_REF = "openai-codex/gpt-5.4-mini";
+const MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID_ENV = "MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID";
+const MODEL_MEMORY_STRICT_CANDIDATE_MODEL_ID_ENV = "MODEL_MEMORY_STRICT_CANDIDATE_MODEL_ID";
+const MODEL_MEMORY_RETRIEVAL_MODEL_ID_ENV = "MODEL_MEMORY_RETRIEVAL_MODEL_ID";
 const MODEL_MEMORY_CONTEXT_PATH_PREFIX = ".openclaw/model-memory/context";
 const MODEL_MEMORY_RETRIEVAL_CONTEXT_PATH = `${MODEL_MEMORY_CONTEXT_PATH_PREFIX}/retrieval-pack.md`;
 const BOOTSTRAP_PROJECTION_TARGET_IDS = new Set(["memory-md", "user-md"]);
@@ -349,7 +352,7 @@ function resolveToolResultProofCaptureEnabled(
   const toolResultProof = isRecord(captureSeams.toolResultProofCapture)
     ? captureSeams.toolResultProofCapture
     : {};
-  return readBoolean(toolResultProof.enabled) ?? false;
+  return readBoolean(toolResultProof.enabled) ?? true;
 }
 
 export function resolveModelMemoryLiveRuntimeStatus(
@@ -415,19 +418,41 @@ export function resolveModelMemoryLiveRuntimeStatus(
   }
 }
 
-function resolveLiveModelRef(config?: OpenClawConfig): string {
+export function resolveLiveModelRef(
+  config?: OpenClawConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   const liveConfig = readLiveConfig(config);
-  return readTrimmedString(liveConfig.modelId) ?? DEFAULT_LIVE_MODEL_REF;
+  return (
+    readTrimmedString(env[MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID_ENV]) ??
+    readTrimmedString(liveConfig.modelId) ??
+    DEFAULT_STRICT_MMV2_MODEL_REF
+  );
 }
 
-function resolveCandidateModelRef(config?: OpenClawConfig): string {
+export function resolveCandidateModelRef(
+  config?: OpenClawConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   const liveConfig = readLiveConfig(config);
-  return readTrimmedString(liveConfig.candidateModelId) ?? resolveLiveModelRef(config);
+  return (
+    readTrimmedString(env[MODEL_MEMORY_STRICT_CANDIDATE_MODEL_ID_ENV]) ??
+    readTrimmedString(env.MODEL_MEMORY_CANDIDATE_MODEL) ??
+    readTrimmedString(liveConfig.candidateModelId) ??
+    resolveLiveModelRef(config, env)
+  );
 }
 
-function resolveRetrievalModelRef(config?: OpenClawConfig): string {
+function resolveRetrievalModelRef(
+  config?: OpenClawConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
   const liveConfig = readLiveConfig(config);
-  return readTrimmedString(liveConfig.retrievalModelId) ?? resolveLiveModelRef(config);
+  return (
+    readTrimmedString(env[MODEL_MEMORY_RETRIEVAL_MODEL_ID_ENV]) ??
+    readTrimmedString(liveConfig.retrievalModelId) ??
+    resolveLiveModelRef(config, env)
+  );
 }
 
 function resolveLiveRetrievalMaxResults(config?: OpenClawConfig): number {
@@ -1015,8 +1040,13 @@ export async function markModelMemoryRuntimeDirty(input: {
     }
     return result.state;
   } catch (error) {
-    log.warn("model-memory runtime dirty marker failed", { error });
-    return store.getState();
+    const message = error instanceof Error ? error.message : String(error);
+    const failureClass = classifyCaptureFailure(error);
+    log.warn("model-memory runtime dirty marker failed", {
+      failureClass,
+      error: message,
+    });
+    throw new Error(`${failureClass}: runtime_dirty marker failed`, { cause: error });
   }
 }
 
@@ -1056,7 +1086,14 @@ function buildCaptureJobId(params: {
 }
 
 function classifyCaptureFailure(error: unknown): MemoryIngestionFailureClass {
-  return classifyMemoryIngestionFailure(error instanceof Error ? error.message : String(error));
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    /runtime[-_\s]?dirty/iu.test(message) &&
+    /\b(?:EACCES|EPERM|permission denied|read-only|readonly)\b/iu.test(message)
+  ) {
+    return "runtime_dirty_persistence";
+  }
+  return classifyMemoryIngestionFailure(message);
 }
 
 function safeStringLabel(value: unknown, fallback: string): string {

@@ -617,6 +617,130 @@ describe("model-memory live json executor", () => {
     expect(JSON.stringify(events[0])).not.toContain("preflight-only");
   });
 
+  it("lists provider model ids without persisting prompts or secrets", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "openai/gpt-5.4-nano",
+                supported_parameters: ["max_tokens", "response_format", "structured_outputs"],
+                context_length: 400000,
+                top_provider: { max_completion_tokens: 128000 },
+              },
+              { id: "openai/gpt-5.4-mini", supported_parameters: ["max_tokens"] },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    );
+    const executor = new OpenAICompatibleLiveJsonExecutor({
+      fetchImpl,
+      resolveAuth: async () => ({
+        apiKey: "sk-test",
+        mode: "api-key",
+        source: "test",
+      }),
+    });
+
+    const result = await executor.listProviderModels("openrouter");
+
+    expect(result).toMatchObject({
+      ok: true,
+      provider: "openrouter",
+      httpStatus: 200,
+      modelIds: ["openai/gpt-5.4-mini", "openai/gpt-5.4-nano"],
+    });
+    expect(result.models?.find((model) => model.id === "openai/gpt-5.4-nano")).toMatchObject({
+      supportedParameters: ["max_tokens", "response_format", "structured_outputs"],
+      contextLength: 400000,
+      maxCompletionTokens: 128000,
+    });
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://openrouter.ai/api/v1/models");
+    expect(init.method).toBe("GET");
+    expect(JSON.stringify(result)).not.toContain("sk-test");
+  });
+
+  it("omits unsupported OpenRouter extras when require_parameters is enabled", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: "openai/gpt-5.4-nano",
+            choices: [{ message: { content: '{"ok":true}' } }],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    );
+    const executor = new OpenAICompatibleLiveJsonExecutor({
+      fetchImpl,
+      resolveAuth: async () => ({
+        apiKey: "sk-test",
+        mode: "api-key",
+        source: "test",
+      }),
+    });
+
+    await executor.execute({
+      contract: {
+        contractName: "benchmark",
+        contractVersion: "v1",
+        modelId: "openrouter/openai/gpt-5.4-nano",
+      },
+      systemPrompt: "stable static prefix",
+      userPrompt: "dynamic tail",
+      responseFormat: "json",
+      responseOptions: {
+        transport: {
+          type: "json_schema",
+          name: "tiny",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: { ok: { type: "boolean" } },
+            required: ["ok"],
+            additionalProperties: false,
+          },
+        },
+        provider: { requireParameters: true },
+        promptCache: { key: "must-not-send-to-openrouter-require-parameters" },
+        reasoningEffort: "none",
+        verbosity: "low",
+        serviceTier: "priority",
+      },
+    });
+
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const body = parseRequestBody(init);
+    expect(body).toMatchObject({
+      model: "openai/gpt-5.4-nano",
+      max_tokens: 4096,
+      reasoning: {
+        effort: "none",
+        exclude: true,
+      },
+      response_format: {
+        type: "json_schema",
+      },
+      provider: {
+        require_parameters: true,
+      },
+    });
+    expect(body).not.toHaveProperty("temperature");
+    expect(body).not.toHaveProperty("reasoning_effort");
+    expect(body).not.toHaveProperty("verbosity");
+    expect(body).not.toHaveProperty("service_tier");
+    expect(body).not.toHaveProperty("prompt_cache_key");
+  });
+
   it("sends prompt-cache key metadata and returns cache usage when provided", async () => {
     const fetchImpl = vi.fn(
       async () =>

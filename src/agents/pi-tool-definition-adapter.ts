@@ -96,10 +96,66 @@ function serializeToolParams(value: unknown): string {
 }
 
 function formatToolParamPreview(label: string, value: unknown): string {
+  if (isPlainObject(value)) {
+    return formatToolParamMetadata(label, value);
+  }
   const serialized = serializeToolParams(value);
   const redacted = redactToolDetail(serialized);
   const preview = sanitizeForConsole(redacted, TOOL_ERROR_PARAM_PREVIEW_MAX_CHARS) ?? "<empty>";
   return `${label}=${preview}`;
+}
+
+function safeMetadataValue(value: unknown): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+    return undefined;
+  }
+  const text = String(value).trim();
+  if (!text || text.length > 160) {
+    return undefined;
+  }
+  const redacted = redactToolDetail(text);
+  return sanitizeForConsole(redacted, 180) ?? undefined;
+}
+
+function formatToolFileMetadata(value: unknown): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const paths = value
+    .flatMap((entry) =>
+      isPlainObject(entry) && typeof entry.path === "string" ? [entry.path.slice(0, 120)] : [],
+    )
+    .slice(0, 12);
+  return `count:${value.length}${paths.length > 0 ? ` paths:${paths.join(",")}` : ""}`;
+}
+
+function buildSafeToolParamSummary(value: unknown): Record<string, unknown> {
+  if (!isPlainObject(value)) {
+    return {};
+  }
+  const record = value;
+  const summary: Record<string, unknown> = {
+    keys: Object.keys(record).toSorted(),
+  };
+  for (const key of ["action", "scope", "path", "sourcePath", "skillName"]) {
+    const safe = safeMetadataValue(record[key]);
+    if (safe) {
+      summary[key] = safe;
+    }
+  }
+  const files = formatToolFileMetadata(record.files);
+  if (files) {
+    summary.files = files;
+  }
+  if (typeof record.content === "string") {
+    summary.content = `<redacted:${Buffer.byteLength(record.content, "utf-8")}b>`;
+  }
+  return summary;
+}
+
+function formatToolParamMetadata(label: string, value: Record<string, unknown>): string {
+  const summary = buildSafeToolParamSummary(value);
+  return `${label}_metadata=${JSON.stringify(summary)}`;
 }
 
 function describeToolFailureInputs(params: {
@@ -137,11 +193,13 @@ function normalizeToolExecutionResult(params: {
 function buildToolExecutionErrorResult(params: {
   toolName: string;
   message: string;
+  rawParams?: unknown;
 }): AgentToolResult<unknown> {
   return jsonResult({
     status: "error",
     tool: params.toolName,
     error: params.message,
+    input: buildSafeToolParamSummary(params.rawParams),
   });
 }
 
@@ -268,6 +326,7 @@ export function toToolDefinitions(tools: AnyAgentTool[]): ToolDefinition[] {
           return buildToolExecutionErrorResult({
             toolName: normalizedName,
             message: described.message,
+            rawParams: params,
           });
         }
       },

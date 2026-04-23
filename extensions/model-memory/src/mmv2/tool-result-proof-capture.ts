@@ -44,6 +44,9 @@ export type BoundedToolResultProofFact = {
   fileCount?: number;
   exitCode?: number;
   errorClass?: string;
+  actionName?: string;
+  pathCategory?: string;
+  remediationHint?: string;
   resultKind: string;
   rawOutputSha256?: string;
 };
@@ -99,6 +102,10 @@ function readString(value: unknown): string | undefined {
 
 function readNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
 }
 
 function collectStringLeaves(value: unknown, maxEntries = 80): string[] {
@@ -262,6 +269,69 @@ function inferErrorClass(input: {
   return candidate.replace(/[^a-z0-9_.:-]+/giu, "_").slice(0, 80);
 }
 
+function inferActionName(details: Record<string, unknown> | undefined): string | undefined {
+  const input = readRecord(details?.input);
+  const action = readString(input?.action);
+  if (!action) {
+    return undefined;
+  }
+  return action.replace(/[^a-z0-9_.:-]+/giu, "_").slice(0, 80);
+}
+
+function inferPathCategory(details: Record<string, unknown> | undefined, scanText: string) {
+  const input = readRecord(details?.input);
+  const candidates = [
+    readString(input?.path),
+    readString(input?.sourcePath),
+    readString(details?.path),
+    readString(details?.filePath),
+    scanText,
+  ].filter((value): value is string => Boolean(value));
+  const text = candidates.join("\n");
+  if (/runtime-dirty|model-memory\/runtime-dirty|state\.json|events\.jsonl/iu.test(text)) {
+    return "runtime_dirty_state";
+  }
+  if (/docs\/agents|docs\/projects|\.agents\/skills|\/skills\//iu.test(text)) {
+    return "canonical_repo_approved_surface";
+  }
+  if (/imports\/|system\/hostfs|\.git|\.env|USER\.md|MEMORY\.md/iu.test(text)) {
+    return "protected_or_readonly_surface";
+  }
+  if (/\/root\/\.openclaw\/workspace|\/home\/node\/\.openclaw\/workspace/iu.test(text)) {
+    return "operator_workspace";
+  }
+  return undefined;
+}
+
+function inferOperationalRemediation(input: {
+  details: Record<string, unknown> | undefined;
+  scanText: string;
+  status: ToolResultProofStatus;
+}): string | undefined {
+  if (input.status !== "failure" && input.status !== "timeout") {
+    return undefined;
+  }
+  const text = input.scanText;
+  const inputRecord = readRecord(input.details?.input);
+  const action = readString(inputRecord?.action);
+  if (/EACCES|EPERM|permission denied|read-only/iu.test(text)) {
+    return "inspect writable target or ACL before retrying";
+  }
+  if (
+    action === "install_skill" &&
+    /skillName required|content required|frontmatter|SKILL\.md/iu.test(text)
+  ) {
+    return "retry with install_skill shape containing skillName and SKILL.md content";
+  }
+  if (/pool_pressure|timeout/iu.test(text)) {
+    return "schedule bounded retry after pressure clears";
+  }
+  if (/not approved|blocked|protected/iu.test(text)) {
+    return "use an approved canonical surface or request explicit operator approval";
+  }
+  return undefined;
+}
+
 export function buildBoundedToolResultProofFact(
   input: ToolResultProofCaptureInput,
 ): BoundedToolResultProofFact {
@@ -289,6 +359,9 @@ export function buildBoundedToolResultProofFact(
   const fileCount =
     readNumber(details?.fileCount) ?? readNumber(details?.count) ?? extractFileCount(scanText);
   const status = inferStatus(input);
+  const actionName = inferActionName(details);
+  const pathCategory = inferPathCategory(details, scanText);
+  const remediationHint = inferOperationalRemediation({ details, scanText, status });
   return {
     status,
     toolName: input.toolName,
@@ -307,6 +380,9 @@ export function buildBoundedToolResultProofFact(
     ...(inferErrorClass({ result: input.result, status })
       ? { errorClass: inferErrorClass({ result: input.result, status }) }
       : {}),
+    ...(actionName ? { actionName } : {}),
+    ...(pathCategory ? { pathCategory } : {}),
+    ...(remediationHint ? { remediationHint } : {}),
     resultKind: resultKind(input.result),
     ...(scanText ? { rawOutputSha256: sha256(scanText) } : {}),
   };
@@ -343,6 +419,15 @@ function renderBoundedFactText(fact: BoundedToolResultProofFact): string {
   if (fact.errorClass) {
     parts.push(`Error class: ${fact.errorClass}.`);
   }
+  if (fact.actionName) {
+    parts.push(`Action: ${fact.actionName}.`);
+  }
+  if (fact.pathCategory) {
+    parts.push(`Path category: ${fact.pathCategory}.`);
+  }
+  if (fact.remediationHint) {
+    parts.push(`Remediation: ${fact.remediationHint}.`);
+  }
   return parts.join(" ");
 }
 
@@ -375,6 +460,8 @@ function buildCandidate(input: {
       docsOrRunbooks: input.fact.docsOrRunbooks,
       fileCount: input.fact.fileCount,
       errorClass: input.fact.errorClass,
+      actionName: input.fact.actionName,
+      pathCategory: input.fact.pathCategory,
     }),
   );
   const canonicalText = normalizeWhitespace(input.evidenceText);
@@ -393,6 +480,9 @@ function buildCandidate(input: {
         ...input.fact.urls,
         ...input.fact.docsOrRunbooks,
         input.fact.errorClass,
+        input.fact.actionName,
+        input.fact.pathCategory,
+        input.fact.remediationHint,
         typeof input.fact.fileCount === "number" ? `file count ${input.fact.fileCount}` : undefined,
       ]
         .filter(Boolean)

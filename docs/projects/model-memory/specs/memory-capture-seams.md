@@ -57,6 +57,15 @@ with clear provenance and authority.
   capture-job/activity metadata surfaces
 - cross-seam dedupe keys are deterministic and no active seam stores raw
   prompts, full transcripts, raw tool logs, secrets, or private phrases
+- ordinary-turn capture now treats durable user preferences/directives about
+  assistant operating behavior as admissible when they are general, safe, and
+  not privacy/no-store/session-only; examples include instructions to inspect
+  discoverable tool/schema/log blockers and continue when a safe path exists
+- tool-result capture may admit bounded operational blocker facts such as
+  permission denied, read-only path, host-operator schema failure, dirty-state
+  EACCES, route/config/tool availability, or pool pressure, but only as
+  tool/action/error-class/path-category/remediation summaries with bounded
+  evidence ids/hashes
 
 ## 2026-04-23 Activation Record
 

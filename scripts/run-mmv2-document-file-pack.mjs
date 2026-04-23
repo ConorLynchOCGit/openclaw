@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 import { tsImport } from "tsx/esm/api";
 
 const DEFAULT_MODEL_ID =
-  process.env.MODEL_MEMORY_EVIDENCE_MODEL?.trim() || "openrouter/openai/gpt-5.4-nano";
+  process.env.MODEL_MEMORY_EVIDENCE_MODEL?.trim() ||
+  process.env.MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID?.trim() ||
+  "openai-codex/gpt-5.4-mini";
 
 function providerFromModelId(modelId) {
   const trimmed = typeof modelId === "string" ? modelId.trim() : "";

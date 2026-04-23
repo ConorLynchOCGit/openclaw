@@ -43,6 +43,12 @@ describe("shared memory ingestion pipeline", () => {
     expect(classifyMemoryIngestionFailure("db pool pressure waiting count exceeded")).toBe(
       "pool_pressure",
     );
+    expect(
+      classifyMemoryIngestionFailure(
+        "runtime_dirty persistence failed: EACCES permission denied opening state.json",
+      ),
+    ).toBe("runtime_dirty_persistence");
+    expect(classifyMemoryIngestionFailure("EACCES: permission denied")).toBe("permission");
     expect(isMemoryIngestionProviderBoundaryFailure("provider_json_boundary")).toBe(true);
     expect(isMemoryIngestionProviderBoundaryFailure("canonicalization")).toBe(false);
   });

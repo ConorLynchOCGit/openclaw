@@ -3,9 +3,11 @@ import {
   DEFAULT_CACHE_AWARE_MINI_MODEL_ID,
   DEFAULT_CACHE_AWARE_NANO_MODEL_ID,
   buildBenchmarkSummary,
+  buildBenchmarkRouteDiscoveryReport,
   buildCacheAwareBenchmarkReport,
   buildCacheAwarePromptPlan,
   buildLargeDocumentCompressionReport,
+  classifyBenchmarkRouteFailure,
   validateSourcePreservingSummaryArtifact,
 } from "./benchmark-runner.ts";
 
@@ -162,6 +164,79 @@ describe("benchmark runner", () => {
     expect(report.cacheHealth.cachedTokenPercentage).toBe(0.35);
     expect(report.recommendation.preferredModelId).toBe(DEFAULT_CACHE_AWARE_MINI_MODEL_ID);
     expect(JSON.stringify(report)).not.toContain("raw prompt");
+  });
+
+  it("classifies nano route failures separately from model-quality failures", () => {
+    expect(
+      classifyBenchmarkRouteFailure({
+        httpStatus: 404,
+        failureClass: "provider_json_boundary",
+        errorMessage: "No endpoints found for model id",
+      }),
+    ).toBe("model_route_not_found");
+    expect(
+      classifyBenchmarkRouteFailure({
+        httpStatus: 400,
+        failureClass: "provider_json_boundary",
+        errorMessage: "response_format json_schema is not supported",
+      }),
+    ).toBe("unsupported_strict_schema");
+
+    const discovery = buildBenchmarkRouteDiscoveryReport({
+      generatedAt: new Date("2026-04-23T00:00:00.000Z"),
+      requestedNanoModelId: "openrouter/openai/gpt-5.4-nano",
+      candidateModelIds: ["openrouter/openai/gpt-5.4-nano"],
+      observations: [
+        {
+          requestedModelId: "openrouter/openai/gpt-5.4-nano",
+          provider: "openrouter",
+          providerModel: "openai/gpt-5.4-nano",
+          httpStatus: 404,
+          strictSchemaSupported: false,
+          latencyMs: 10,
+          failureClass: "model_route_not_found",
+        },
+      ],
+    });
+    const report = buildCacheAwareBenchmarkReport({
+      generatedAt: new Date("2026-04-23T00:00:00.000Z"),
+      miniModelId: DEFAULT_CACHE_AWARE_MINI_MODEL_ID,
+      nanoModelId: DEFAULT_CACHE_AWARE_NANO_MODEL_ID,
+      routeDiscovery: discovery,
+      observations: [
+        {
+          caseId: "route-preflight",
+          caseKind: "strict_schema_adherence",
+          runIndex: 0,
+          modelId: DEFAULT_CACHE_AWARE_NANO_MODEL_ID,
+          contractName: "preflight",
+          contractVersion: "v1",
+          promptVersion: "prompt-v1",
+          staticPrefixHash: "prefix",
+          schemaHash: "schema",
+          latencyMs: 10,
+          promptTokenCount: 0,
+          cachedInputTokenCount: 0,
+          outputTokenCount: 0,
+          schemaAdherent: false,
+          emptyResponse: false,
+          repairAttempted: false,
+          repairSucceeded: false,
+          validCandidateCount: 0,
+          invalidCandidateCount: 0,
+          falsePositiveCount: 0,
+          missedDurableFactCount: 0,
+          failureClass: "model_route_not_found",
+          routeFailure: true,
+        },
+      ],
+    });
+
+    expect(discovery.selectedNanoModelId).toBeNull();
+    expect(discovery.unresolvedReason).toBe("model_route_not_found");
+    expect(report.modelSummaries).toEqual([]);
+    expect(report.cacheHealth.totalCalls).toBe(0);
+    expect(JSON.stringify(discovery)).not.toContain("raw prompt");
   });
 
   it("validates source-preserving compression artifacts as non-canonical cache/projection outputs", () => {

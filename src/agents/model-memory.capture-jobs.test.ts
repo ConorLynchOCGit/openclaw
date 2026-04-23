@@ -162,6 +162,30 @@ describe("memory capture jobs", () => {
     });
   });
 
+  it("classes runtime dirty persistence failures with runtime_dirty stage", async () => {
+    await withTempCaptureStore(async ({ store }) => {
+      await expect(
+        runMemoryCaptureJobTask({
+          job: testJob("capture_job_runtime_dirty_permission"),
+          store,
+          maxRetries: 0,
+          classifyFailure,
+          execute: async () => {
+            throw new Error(
+              "runtime_dirty persistence failed: EACCES: permission denied, open '/home/node/.openclaw/model-memory/runtime-dirty/state.json'",
+            );
+          },
+        }),
+      ).rejects.toThrow("runtime_dirty persistence failed");
+
+      expect(await store.getJob("capture_job_runtime_dirty_permission")).toMatchObject({
+        status: "failed",
+        failureClass: "runtime_dirty_persistence",
+        stage: "runtime_dirty",
+      });
+    });
+  });
+
   it("schedules one bounded retry for provider empty responses", async () => {
     await withTempCaptureStore(async ({ store }) => {
       const events: string[] = [];

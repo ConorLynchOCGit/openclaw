@@ -573,6 +573,23 @@ function releaseWorkerSlot() {
   next?.();
 }
 
+function captureFailureStageForClass(failureClass: MemoryIngestionFailureClass): string {
+  if (failureClass === "runtime_dirty_persistence") {
+    return "runtime_dirty";
+  }
+  if (failureClass === "permission") {
+    return "permission";
+  }
+  if (
+    failureClass === "db_persistence" ||
+    failureClass === "pool_pressure" ||
+    failureClass === "timeout"
+  ) {
+    return "persistence_boundary";
+  }
+  return "execution";
+}
+
 async function notifyEvent(
   input: MemoryCaptureJobTaskInput,
   transition: { job: MemoryCaptureJob; event: MemoryCaptureJobEvent },
@@ -664,12 +681,7 @@ export async function runMemoryCaptureJobTask(
         }
         transition = await store.markFailed(input.job.jobId, {
           failureClass,
-          stage:
-            failureClass === "db_persistence" ||
-            failureClass === "pool_pressure" ||
-            failureClass === "timeout"
-              ? "persistence_boundary"
-              : "execution",
+          stage: captureFailureStageForClass(failureClass),
           retryCount: attempt,
           metrics: {
             latencyMs: Date.now() - startedAt,

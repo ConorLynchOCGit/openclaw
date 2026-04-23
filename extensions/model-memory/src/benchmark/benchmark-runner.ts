@@ -97,6 +97,7 @@ export type CacheAwareModelCallObservation = {
   falsePositiveCount: number;
   missedDurableFactCount: number;
   failureClass?: string;
+  routeFailure?: boolean;
 };
 
 export type CacheAwareBenchmarkModelSummary = {
@@ -146,6 +147,50 @@ export type CacheAwareBenchmarkReport = {
     reason: string;
     caveats: string[];
   };
+  routeDiscovery?: BenchmarkRouteDiscoveryReport;
+};
+
+export type BenchmarkRouteFailureClass =
+  | "model_route_not_found"
+  | "unsupported_strict_schema"
+  | "missing_model"
+  | "provider_mismatch"
+  | "auth_failure"
+  | "quota_failure"
+  | "provider_json_boundary"
+  | "provider_connection"
+  | "nano_route_unresolved"
+  | "unknown_route_failure";
+
+export type BenchmarkRoutePreflightObservation = {
+  requestedModelId: string;
+  provider: string;
+  providerModel: string;
+  resolvedModelId?: string;
+  httpStatus?: number;
+  strictSchemaSupported: boolean;
+  jsonModeSupported?: boolean;
+  responseFormatSupported?: boolean;
+  supportedParameters?: string[];
+  usageFieldsPresent?: boolean;
+  latencyMs: number;
+  failureClass?: BenchmarkRouteFailureClass;
+  errorMessage?: string;
+};
+
+export type BenchmarkRouteDiscoveryReport = {
+  schemaVersion: "model_memory_benchmark_route_discovery.v1";
+  generatedAt: string;
+  selectedNanoModelId: string | null;
+  requestedNanoModelId: string | null;
+  candidateModelIds: string[];
+  availableModelIds?: string[];
+  preflightObservations: BenchmarkRoutePreflightObservation[];
+  unresolvedReason?: BenchmarkRouteFailureClass;
+  rawContentPersisted: false;
+  containsPromptText: false;
+  containsTranscript: false;
+  containsRawToolLog: false;
 };
 
 export type LargeDocumentCompressionStrategy =
@@ -280,6 +325,78 @@ function countBy(values: string[]): Record<string, number> {
   return counts;
 }
 
+export function classifyBenchmarkRouteFailure(input: {
+  httpStatus?: number;
+  failureClass?: string;
+  errorMessage?: string;
+}): BenchmarkRouteFailureClass | undefined {
+  const errorMessage = input.errorMessage ?? "";
+  if (
+    input.httpStatus === 401 ||
+    input.httpStatus === 403 ||
+    /auth|api key|token/iu.test(errorMessage)
+  ) {
+    return "auth_failure";
+  }
+  if (input.httpStatus === 402 || /quota|billing|credit|insufficient/iu.test(errorMessage)) {
+    return "quota_failure";
+  }
+  if (
+    input.httpStatus === 404 ||
+    /not found|no endpoints|model id|unknown model|does not exist/iu.test(errorMessage)
+  ) {
+    return "model_route_not_found";
+  }
+  if (/provider mismatch|wrong provider|provider.*model/iu.test(errorMessage)) {
+    return "provider_mismatch";
+  }
+  if (/missing model|model is required/iu.test(errorMessage)) {
+    return "missing_model";
+  }
+  if (
+    input.failureClass === "provider_json_boundary" ||
+    /schema|response_format|structured output|require_parameters|json_schema/iu.test(errorMessage)
+  ) {
+    return "unsupported_strict_schema";
+  }
+  if (
+    input.failureClass === "provider_connection" ||
+    /timeout|network|fetch failed|connection/iu.test(errorMessage)
+  ) {
+    return "provider_connection";
+  }
+  if (input.failureClass) {
+    return "unknown_route_failure";
+  }
+  return undefined;
+}
+
+export function buildBenchmarkRouteDiscoveryReport(input: {
+  candidateModelIds: string[];
+  requestedNanoModelId?: string | null;
+  availableModelIds?: string[];
+  observations: BenchmarkRoutePreflightObservation[];
+  generatedAt?: Date;
+}): BenchmarkRouteDiscoveryReport {
+  const selected = input.observations.find((observation) => observation.strictSchemaSupported);
+  return {
+    schemaVersion: "model_memory_benchmark_route_discovery.v1",
+    generatedAt: (input.generatedAt ?? new Date()).toISOString(),
+    selectedNanoModelId: selected?.requestedModelId ?? null,
+    requestedNanoModelId: input.requestedNanoModelId ?? null,
+    candidateModelIds: [...new Set(input.candidateModelIds)],
+    availableModelIds: input.availableModelIds ? [...new Set(input.availableModelIds)] : undefined,
+    preflightObservations: input.observations,
+    unresolvedReason: selected
+      ? undefined
+      : (input.observations[0]?.failureClass ?? "nano_route_unresolved"),
+    rawContentPersisted: false,
+    containsPromptText: false,
+    containsTranscript: false,
+    containsRawToolLog: false,
+  };
+}
+
 function summarizeModelObservations(
   modelId: string,
   observations: CacheAwareModelCallObservation[],
@@ -373,30 +490,38 @@ export function buildCacheAwareBenchmarkReport(input: {
   miniModelId?: string;
   nanoModelId?: string;
   durableDbWrites?: CacheAwareBenchmarkReport["durableDbWrites"];
+  routeDiscovery?: BenchmarkRouteDiscoveryReport;
 }): CacheAwareBenchmarkReport {
   const observations = [...input.observations];
-  const modelSummaries = [...new Set(observations.map((observation) => observation.modelId))]
+  const qualityObservations = observations.filter(
+    (observation) => observation.routeFailure !== true,
+  );
+  const modelSummaries = [...new Set(qualityObservations.map((observation) => observation.modelId))]
     .toSorted((left, right) => left.localeCompare(right))
     .map((modelId) =>
       summarizeModelObservations(
         modelId,
-        observations.filter((observation) => observation.modelId === modelId),
+        qualityObservations.filter((observation) => observation.modelId === modelId),
       ),
     );
-  const totalPromptTokens = observations.reduce(
+  const totalPromptTokens = qualityObservations.reduce(
     (sum, observation) => sum + observation.promptTokenCount,
     0,
   );
-  const totalCachedTokens = observations.reduce(
+  const totalCachedTokens = qualityObservations.reduce(
     (sum, observation) => sum + observation.cachedInputTokenCount,
     0,
   );
-  const cacheableCalls = observations.filter((observation) => observation.promptCacheKey).length;
-  const cacheHits = observations.filter(
+  const cacheableCalls = qualityObservations.filter(
+    (observation) => observation.promptCacheKey,
+  ).length;
+  const cacheHits = qualityObservations.filter(
     (observation) => observation.cachedInputTokenCount > 0,
   ).length;
-  const cached = observations.filter((observation) => observation.cachedInputTokenCount > 0);
-  const uncached = observations.filter((observation) => observation.cachedInputTokenCount === 0);
+  const cached = qualityObservations.filter((observation) => observation.cachedInputTokenCount > 0);
+  const uncached = qualityObservations.filter(
+    (observation) => observation.cachedInputTokenCount === 0,
+  );
   const miniModelId = input.miniModelId ?? DEFAULT_CACHE_AWARE_MINI_MODEL_ID;
   const nanoModelId = input.nanoModelId ?? DEFAULT_CACHE_AWARE_NANO_MODEL_ID;
   const mini = modelSummaries.find((summary) => summary.modelId === miniModelId);
@@ -418,13 +543,13 @@ export function buildCacheAwareBenchmarkReport(input: {
     observations,
     modelSummaries,
     cacheHealth: {
-      totalCalls: observations.length,
+      totalCalls: qualityObservations.length,
       cacheableCalls,
       cacheHits,
       cacheHitRate: cacheableCalls === 0 ? 0 : cacheHits / cacheableCalls,
       cachedTokenPercentage: totalPromptTokens === 0 ? 0 : totalCachedTokens / totalPromptTokens,
       averageCachedTokensPerCall:
-        observations.length === 0 ? 0 : totalCachedTokens / observations.length,
+        qualityObservations.length === 0 ? 0 : totalCachedTokens / qualityObservations.length,
       averageLatencyCachedMs: average(cached.map((observation) => observation.latencyMs)),
       averageLatencyUncachedMs: average(uncached.map((observation) => observation.latencyMs)),
     },
@@ -437,8 +562,14 @@ export function buildCacheAwareBenchmarkReport(input: {
       caveats: [
         "benchmark/eval output is artifact-only and must not be written into the live durable-memory DB",
         "prompt-cache gains are meaningful only when static prefix and schema remain byte-stable",
+        ...(input.routeDiscovery?.selectedNanoModelId
+          ? []
+          : [
+              "nano model quality is inconclusive until route discovery selects a strict-schema route",
+            ]),
       ],
     },
+    routeDiscovery: input.routeDiscovery,
   };
 }
 

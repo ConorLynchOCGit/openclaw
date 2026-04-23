@@ -149,6 +149,42 @@ pre-idempotency proof rerun remains disclosed in the MEMMECH artifact as
 non-blocking runtime-state history; the capture job runner now returns an
 already-written job idempotently instead of regressing it to queued/failed.
 
+The 2026-04-23 Main UX audit follow-up is an operational hardening slice on top
+of that proof:
+
+- the runtime-dirty spool ownership was narrowed so gateway UID `1000` can
+  write `$OPENCLAW_STATE_DIR/model-memory/runtime-dirty/` again; the fix did
+  not touch durable memory tables or root memory files
+- dirty-state persistence/permission failures are classified as
+  `runtime_dirty_persistence` or `permission` instead of generic `other`, with
+  safe `runtime_dirty` failure-stage metadata on capture jobs
+- ordinary-turn routing/extraction now admits general operational preferences
+  and directives about assistant blocker handling, tool/schema discovery,
+  continuation, and safe escalation without exact prompt/topic parsing
+- bounded tool-result proof capture now preserves operational blocker facts
+  such as host-operator schema failures, read-only paths, dirty-state EACCES,
+  and pool pressure as safe summaries only
+- strict MMV2 capture/ingest now defaults to
+  `openai-codex/gpt-5.4-mini`; nano remains explicit opt-in for low-risk,
+  non-admission or benchmark lanes
+- large document ingest strategy selection defaults to `auto`: direct rigid
+  capture for small docs and `section_map_candidate_hints` above the large-doc
+  threshold, with hint output treated as non-canonical and original-source
+  validation required before rigid MMV2 admission
+- a five-document artifact-only section-map benchmark is recorded at
+  `.artifacts/model-memory/large-doc-section-map/2026-04-23-live-audit/summary.json`;
+  it found useful validated candidates but had evidence-validation failures on
+  two sources, so section-map remains controlled/validated large-doc mode and
+  is not yet declared broadly default-safe
+- skill-vetting reports default to the writable operator workspace reports
+  tree instead of the read-only product import mirror
+- host-operator skill install validation is more discoverable, supports
+  validate-only, and gateway tool-failure logging redacts raw parameter values
+  and skill content
+- `openclaw agents skills-status --agent <id> --json` now distinguishes
+  installed/discovered skills from unavailable warm-session loaded-state
+  introspection
+
 ## Current Outcome
 
 - MMV2-native SQL storage is live semantic truth:

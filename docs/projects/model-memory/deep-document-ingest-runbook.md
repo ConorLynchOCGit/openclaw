@@ -30,11 +30,19 @@ Canonical run artifacts:
 - run the strict-schema provider preflight for every required contract before
   corpus work; generic JSON-object health does not prove the capture,
   extraction, canonicalization, or retrieval schemas
-- prefer the measured Codex-auth mini route for strict-schema corpus work until
-  the configured nano route proves strict structured-output support
-- if using Pass 6 compression, use the section-map plus candidate-hints path
-  as a source-preserving projection/cache artifact and validate every admitted
-  candidate against original source spans
+- use the measured Codex-auth mini route for strict-schema corpus work by
+  default; nano is only an explicit low-risk or benchmark lane until it proves
+  strict structured-output support and evidence-quality parity
+- run with `MODEL_MEMORY_DOCUMENT_INGEST_STRATEGY=auto` unless intentionally
+  testing a specific strategy; in `auto`, direct rigid capture handles small
+  docs and section-map candidate hints handle large docs above
+  `MODEL_MEMORY_DOCUMENT_INGEST_LARGE_DOC_WORD_THRESHOLD`
+- section-map candidate hints are a source-preserving projection/cache
+  artifact only; every admitted candidate must validate against original source
+  spans and then enter the normal rigid MMV2 admission path
+- the 2026-04-23 five-document audit found section-map evidence failures on
+  two docs; unsupported hints must be quarantined and broad default-safe use
+  waits on adaptive stricter-evidence retry proof
 - do not change the corpus ordering during the run
 - do not delete or overwrite prior evidence artifacts unless you are explicitly
   replacing this exact pass
@@ -56,11 +64,12 @@ Run the canonical model-memory document-ingest operator surface over that full o
 - chunkSize: 10
 - maxConcurrency: 1
 - resume: true
-- modelId: openrouter/openai/gpt-5.4-nano
-- candidateModelId: openrouter/openai/gpt-5.4-nano
+- modelId: openai-codex/gpt-5.4-mini
+- candidateModelId: openai-codex/gpt-5.4-mini
 - requestTimeoutMs: 180000
 - requestSeed: 7
 - maxWordsPerWindow: 1500
+- strategy: auto
 
 Requirements:
 - use the canonical model-memory document-ingest path, not a proof script or alternate ingest flow
@@ -171,6 +180,9 @@ execution is not the right control surface. Use the runner plan JSON, not the
 human corpus manifest JSON. The 2026-04-22b pass uses:
 
 ```bash
+MODEL_MEMORY_DOCUMENT_INGEST_STRATEGY=auto \
+MODEL_MEMORY_DOCUMENT_INGEST_LARGE_DOC_WORD_THRESHOLD=2500 \
+MODEL_MEMORY_DOCUMENT_INGEST_MODEL_ID=openai-codex/gpt-5.4-mini \
 MODEL_MEMORY_RUNNER_RUN_ID=model-memory-deep-pass-2026-04-22b \
 MODEL_MEMORY_RUNNER_RECORD_PATH=checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json \
 MODEL_MEMORY_RUNNER_PLAN_PATH=.artifacts/model-memory/document-ingest/2026-04-22-corpus/runner-plan.json \

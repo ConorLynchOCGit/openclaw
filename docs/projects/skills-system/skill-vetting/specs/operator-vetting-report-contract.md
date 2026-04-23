@@ -10,6 +10,14 @@ under:
 
 - `docs/projects/skills-system/skill-vetting/reports/`
 
+The report writer must target the writable operator workspace copy by default,
+for example:
+
+- `/root/.openclaw/workspace/docs/projects/skills-system/skill-vetting/reports/`
+
+It must not write generated review reports into read-only imported product
+mirrors such as `imports/product_live/content/...`.
+
 ## Filename contract
 
 Default report path:

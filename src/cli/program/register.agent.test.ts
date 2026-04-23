@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   agentsBindingsCommandMock: vi.fn(),
   agentsBindCommandMock: vi.fn(),
   agentsDeleteCommandMock: vi.fn(),
+  agentsSkillsStatusCommandMock: vi.fn(),
   agentsListCommandMock: vi.fn(),
   agentsSetIdentityCommandMock: vi.fn(),
   agentsUnbindCommandMock: vi.fn(),
@@ -25,6 +26,7 @@ const agentsAddCommandMock = mocks.agentsAddCommandMock;
 const agentsBindingsCommandMock = mocks.agentsBindingsCommandMock;
 const agentsBindCommandMock = mocks.agentsBindCommandMock;
 const agentsDeleteCommandMock = mocks.agentsDeleteCommandMock;
+const agentsSkillsStatusCommandMock = mocks.agentsSkillsStatusCommandMock;
 const agentsListCommandMock = mocks.agentsListCommandMock;
 const agentsSetIdentityCommandMock = mocks.agentsSetIdentityCommandMock;
 const agentsUnbindCommandMock = mocks.agentsUnbindCommandMock;
@@ -41,6 +43,7 @@ vi.mock("../../commands/agents.js", () => ({
   agentsBindingsCommand: mocks.agentsBindingsCommandMock,
   agentsBindCommand: mocks.agentsBindCommandMock,
   agentsDeleteCommand: mocks.agentsDeleteCommandMock,
+  agentsSkillsStatusCommand: mocks.agentsSkillsStatusCommandMock,
   agentsListCommand: mocks.agentsListCommandMock,
   agentsSetIdentityCommand: mocks.agentsSetIdentityCommandMock,
   agentsUnbindCommand: mocks.agentsUnbindCommandMock,
@@ -73,6 +76,7 @@ describe("registerAgentCommands", () => {
     agentsBindingsCommandMock.mockResolvedValue(undefined);
     agentsBindCommandMock.mockResolvedValue(undefined);
     agentsDeleteCommandMock.mockResolvedValue(undefined);
+    agentsSkillsStatusCommandMock.mockResolvedValue(undefined);
     agentsListCommandMock.mockResolvedValue(undefined);
     agentsSetIdentityCommandMock.mockResolvedValue(undefined);
     agentsUnbindCommandMock.mockResolvedValue(undefined);
@@ -170,6 +174,17 @@ describe("registerAgentCommands", () => {
     expect(agentsBindingsCommandMock).toHaveBeenCalledWith(
       {
         agent: "ops",
+        json: true,
+      },
+      runtime,
+    );
+  });
+
+  it("forwards agents skills-status options", async () => {
+    await runCli(["agents", "skills-status", "--agent", "writer", "--json"]);
+    expect(agentsSkillsStatusCommandMock).toHaveBeenCalledWith(
+      {
+        agent: "writer",
         json: true,
       },
       runtime,

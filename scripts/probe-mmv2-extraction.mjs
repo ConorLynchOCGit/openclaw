@@ -8,7 +8,9 @@ import { tsImport } from "tsx/esm/api";
 import { z } from "zod";
 
 const DEFAULT_MODEL_ID =
-  process.env.MODEL_MEMORY_EVIDENCE_MODEL?.trim() || "openrouter/openai/gpt-5.4-nano";
+  process.env.MODEL_MEMORY_EVIDENCE_MODEL?.trim() ||
+  process.env.MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID?.trim() ||
+  "openai-codex/gpt-5.4-mini";
 
 const MODE_LABELS = {
   json_object: "current json_object",

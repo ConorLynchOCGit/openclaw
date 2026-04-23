@@ -96,8 +96,9 @@ title: "Model Memory Roadmap"
    later event
 3. keep Memory Ops Safe Level 1 limited to operational job/artifact/scheduler
    actions; semantic truth changes continue to require operator approval
-4. use Codex-auth mini for strict-schema capture/retrieval/compression work
-   until nano has a proven strict-schema route
+4. use Codex-auth mini for strict-schema capture/ingest work by default; nano
+   may be used only through explicit low-risk or benchmark lanes until it has a
+   proven strict-schema route and evidence-quality parity
 5. populate MMV2 with the curated 2026-04 deep document-ingest corpus and
    verify source/segment/memory/event evidence; resume from checkpoint during
    the overnight ingest window, not during build-focused hardening
@@ -129,6 +130,20 @@ title: "Model Memory Roadmap"
 - proactive planner
 - skill/tool synthesis
 - cache/projection policy
+
+Operational hardening note, 2026-04-23:
+
+- runtime dirty-state writeability, capture failure classification, bounded
+  tool-result operational facts, host-operator skill-install UX, and
+  skill-status introspection are now part of the pre-Phase-2 stability gate
+- large-document ingest should run in `auto` strategy mode: direct rigid
+  capture for small docs and section-map candidate hints above the threshold,
+  with validated hints only narrowing rigid MMV2 admission
+- section-map strategy remains default-safe only after the multi-document
+  benchmark stays evidence-clean; the 2026-04-23 five-doc audit produced
+  useful candidates but still had evidence failures on two docs, so the next
+  narrow fix is adaptive stricter-evidence retry for failing sections before
+  broad default-safe declaration
 
 These are ordered. Do not wire unverified capture seams, reintroduce semantic
 forests, use fuzzy write-path correction, or jump to graph/capsule/planner work

@@ -33,6 +33,11 @@ function createMockReport(skills: SkillStatusEntry[]): SkillStatusReport {
   return {
     workspaceDir: "/workspace",
     managedSkillsDir: "/managed",
+    configuredSkillDirs: [{ kind: "workspace", path: "/workspace/skills" }],
+    discoveredSkillNames: skills.map((skill) => skill.name).toSorted(),
+    loadedSkillNames: null,
+    loadedState: "not_available",
+    loadedStateReason: "test fixture",
     skills,
   };
 }

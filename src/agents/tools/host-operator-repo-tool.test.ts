@@ -344,7 +344,29 @@ describe("host_operator_repo tool", () => {
         skillName: "canonical-test-skill",
         content: "---\nname: other-skill\n---\n# Bad\n",
       }),
-    ).rejects.toThrow("matching name");
+    ).rejects.toThrow("frontmatter name must match skillName");
+
+    const validated = readJsonResult(
+      await writeTool.execute("call-validate", {
+        action: "install_skill",
+        skillName: "canonical-test-skill",
+        validateOnly: true,
+        files: [
+          {
+            path: "SKILL.md",
+            content:
+              "---\nname: canonical-test-skill\ndescription: Test skill installed by host operator.\n---\n# Canonical Test Skill\n",
+          },
+        ],
+      }),
+    );
+
+    expect(validated).toMatchObject({
+      validated: true,
+      installed: false,
+      skillName: "canonical-test-skill",
+      fileCount: 1,
+    });
 
     const installed = readJsonResult(
       await writeTool.execute("call-3", {

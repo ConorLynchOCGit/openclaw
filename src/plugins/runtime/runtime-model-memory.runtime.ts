@@ -1,6 +1,6 @@
 type OpenClawConfig = import("../../config/types.openclaw.js").OpenClawConfig;
 type DatabaseMemoryObjectStore =
-  import("@openclaw/model-memory/runtime-api.js").DatabaseMemoryObjectStore;
+  import("@openclaw/model-memory/legacy-admin-api.js").DatabaseMemoryObjectStore;
 type ModelMemoryCanonicalRepository =
   import("@openclaw/model-memory/runtime-api.js").ModelMemoryCanonicalRepository;
 type RuntimeContextRepository =
