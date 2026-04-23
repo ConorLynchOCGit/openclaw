@@ -27,9 +27,22 @@ jobs:
         with:
           node-version: "22.18.0"
 
+      - name: Determine docs sync auth mode
+        id: docs_sync_auth_mode
+        env:
+          OPENCLAW_DOCS_SYNC_APP_ID: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_ID }}
+          OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -n "${OPENCLAW_DOCS_SYNC_APP_ID:-}" ] && [ -n "${OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY:-}" ]; then
+            echo "use_app=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "use_app=0" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Generate docs sync GitHub App token
         id: docs_sync_app_token
-        if: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_ID != '' && secrets.OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY != '' }}
+        if: ${{ steps.docs_sync_auth_mode.outputs.use_app == '1' }}
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_ID }}
