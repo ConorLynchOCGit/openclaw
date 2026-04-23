@@ -8,6 +8,7 @@ import {
   resolveChangedTargetArgs,
   resolveParallelFullSuiteConcurrency,
 } from "../../scripts/test-projects.test-support.mjs";
+import { fullSuiteVitestShards } from "../vitest/vitest.test-shards.mjs";
 
 describe("scripts/test-projects changed-target routing", () => {
   it("maps changed source files into scoped lane targets", () => {
@@ -99,6 +100,35 @@ describe("scripts/test-projects changed-target routing", () => {
     ]);
   });
 
+  it("routes doctor commands tests to the dedicated doctor lane", () => {
+    const plans = buildVitestRunPlans(
+      ["src/commands/doctor/repair-sequencing.test.ts"],
+      process.cwd(),
+    );
+
+    expect(plans).toEqual([
+      {
+        config: "test/vitest/vitest.commands-doctor.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/commands/doctor/repair-sequencing.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("routes onboarding/auth command tests to the dedicated onboarding lane", () => {
+    const plans = buildVitestRunPlans(["src/commands/onboard-auth.test.ts"], process.cwd());
+
+    expect(plans).toEqual([
+      {
+        config: "test/vitest/vitest.commands-onboard.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/commands/onboard-auth.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
   it("routes unit-fast light tests to the cache-friendly unit-fast lane", () => {
     const plans = buildVitestRunPlans(
       ["src/commands/status-overview-values.test.ts"],
@@ -174,6 +204,63 @@ describe("scripts/test-projects changed-target routing", () => {
         config: "test/vitest/vitest.commands.config.ts",
         forwardedArgs: [],
         includePatterns: ["src/commands/**/*.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("routes changed runtime-config sessions files to the dedicated sessions lane", () => {
+    const plans = buildVitestRunPlans(["--changed", "origin/main"], process.cwd(), () => [
+      "src/config/sessions/store.pruning.ts",
+    ]);
+
+    expect(plans).toEqual([
+      {
+        config: "test/vitest/vitest.runtime-config-sessions.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/config/sessions/**/*.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("routes PI agent tests to the dedicated PI lane", () => {
+    const plans = buildVitestRunPlans(
+      ["src/agents/pi-embedded-runner/model.test.ts"],
+      process.cwd(),
+    );
+
+    expect(plans).toEqual([
+      {
+        config: "test/vitest/vitest.agents-pi.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/agents/pi-embedded-runner/model.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("routes subagent tests to the dedicated subagent lane", () => {
+    const plans = buildVitestRunPlans(["src/agents/subagent-control.test.ts"], process.cwd());
+
+    expect(plans).toEqual([
+      {
+        config: "test/vitest/vitest.agents-subagents.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/agents/subagent-control.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("routes agent tool tests to the dedicated tools lane", () => {
+    const plans = buildVitestRunPlans(["src/agents/tools/image-tool.test.ts"], process.cwd());
+
+    expect(plans).toEqual([
+      {
+        config: "test/vitest/vitest.agents-tools.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/agents/tools/image-tool.test.ts"],
         watchMode: false,
       },
     ]);
@@ -388,7 +475,8 @@ describe("scripts/test-projects full-suite sharding", () => {
     try {
       const configs = buildFullSuiteVitestRunPlans([], process.cwd()).map((plan) => plan.config);
 
-      expect(configs).toContain("test/vitest/vitest.gateway-server.config.ts");
+      expect(configs).not.toContain("test/vitest/vitest.gateway-server.config.ts");
+      expect(configs).toContain("test/vitest/vitest.commands-onboard.config.ts");
       expect(configs).toContain("test/vitest/vitest.extension-telegram.config.ts");
       expect(configs).not.toContain("test/vitest/vitest.full-agentic.config.ts");
       expect(configs).not.toContain("test/vitest/vitest.full-core-unit-fast.config.ts");
@@ -464,7 +552,9 @@ describe("scripts/test-projects full-suite sharding", () => {
 
   it("can expand full-suite shards to project configs for perf experiments", () => {
     const previous = process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS;
+    const previousIncludeSlow = process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
     process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS = "1";
+    process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS = "1";
     let plans: ReturnType<typeof buildFullSuiteVitestRunPlans>;
     try {
       plans = buildFullSuiteVitestRunPlans([], process.cwd());
@@ -474,72 +564,16 @@ describe("scripts/test-projects full-suite sharding", () => {
       } else {
         process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS = previous;
       }
+      if (previousIncludeSlow === undefined) {
+        delete process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
+      } else {
+        process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS = previousIncludeSlow;
+      }
     }
 
-    expect(plans.map((plan) => plan.config)).toEqual([
-      "test/vitest/vitest.unit-fast.config.ts",
-      "test/vitest/vitest.unit-src.config.ts",
-      "test/vitest/vitest.unit-security.config.ts",
-      "test/vitest/vitest.unit-ui.config.ts",
-      "test/vitest/vitest.unit-support.config.ts",
-      "test/vitest/vitest.unit-support-slow.config.ts",
-      "test/vitest/vitest.boundary.config.ts",
-      "test/vitest/vitest.tooling.config.ts",
-      "test/vitest/vitest.contracts.config.ts",
-      "test/vitest/vitest.bundled.config.ts",
-      "test/vitest/vitest.infra.config.ts",
-      "test/vitest/vitest.hooks.config.ts",
-      "test/vitest/vitest.acp.config.ts",
-      "test/vitest/vitest.runtime-config.config.ts",
-      "test/vitest/vitest.secrets.config.ts",
-      "test/vitest/vitest.logging.config.ts",
-      "test/vitest/vitest.process.config.ts",
-      "test/vitest/vitest.cron.config.ts",
-      "test/vitest/vitest.media.config.ts",
-      "test/vitest/vitest.media-understanding.config.ts",
-      "test/vitest/vitest.shared-core.config.ts",
-      "test/vitest/vitest.tasks.config.ts",
-      "test/vitest/vitest.tui.config.ts",
-      "test/vitest/vitest.ui.config.ts",
-      "test/vitest/vitest.utils.config.ts",
-      "test/vitest/vitest.wizard.config.ts",
-      "test/vitest/vitest.gateway-core.config.ts",
-      "test/vitest/vitest.gateway-client.config.ts",
-      "test/vitest/vitest.gateway-methods.config.ts",
-      "test/vitest/vitest.gateway-server.config.ts",
-      "test/vitest/vitest.cli.config.ts",
-      "test/vitest/vitest.commands-light.config.ts",
-      "test/vitest/vitest.commands.config.ts",
-      "test/vitest/vitest.agents.config.ts",
-      "test/vitest/vitest.daemon.config.ts",
-      "test/vitest/vitest.plugin-sdk-light.config.ts",
-      "test/vitest/vitest.plugin-sdk.config.ts",
-      "test/vitest/vitest.plugins.config.ts",
-      "test/vitest/vitest.channels.config.ts",
-      "test/vitest/vitest.auto-reply-core.config.ts",
-      "test/vitest/vitest.auto-reply-top-level.config.ts",
-      "test/vitest/vitest.auto-reply-reply.config.ts",
-      "test/vitest/vitest.extension-acpx.config.ts",
-      "test/vitest/vitest.extension-bluebubbles.config.ts",
-      "test/vitest/vitest.extension-channels.config.ts",
-      "test/vitest/vitest.extension-diffs.config.ts",
-      "test/vitest/vitest.extension-feishu.config.ts",
-      "test/vitest/vitest.extension-irc.config.ts",
-      "test/vitest/vitest.extension-mattermost.config.ts",
-      "test/vitest/vitest.extension-matrix.config.ts",
-      "test/vitest/vitest.extension-memory.config.ts",
-      "test/vitest/vitest.extension-messaging.config.ts",
-      "test/vitest/vitest.extension-msteams.config.ts",
-      "test/vitest/vitest.extension-providers.config.ts",
-      "test/vitest/vitest.extension-telegram.config.ts",
-      "test/vitest/vitest.extension-voice-call.config.ts",
-      "test/vitest/vitest.extension-whatsapp.config.ts",
-      "test/vitest/vitest.extension-zalo.config.ts",
-      "test/vitest/vitest.extension-browser.config.ts",
-      "test/vitest/vitest.extension-qa.config.ts",
-      "test/vitest/vitest.extension-media.config.ts",
-      "test/vitest/vitest.extension-misc.config.ts",
-    ]);
+    expect(plans.map((plan) => plan.config)).toEqual(
+      fullSuiteVitestShards.flatMap((shard) => shard.projects),
+    );
     expect(plans).toEqual(
       plans.map((plan) => ({
         config: plan.config,
@@ -571,6 +605,38 @@ describe("scripts/test-projects full-suite sharding", () => {
         delete process.env.OPENCLAW_TEST_SKIP_FULL_EXTENSIONS_SHARD;
       } else {
         process.env.OPENCLAW_TEST_SKIP_FULL_EXTENSIONS_SHARD = previousSkipExtensions;
+      }
+    }
+  });
+
+  it("skips the slowest local configs by default on local full-suite runs", () => {
+    const previousLeafShards = process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS;
+    const previousIncludeSlow = process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
+    process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS = "1";
+    delete process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
+    try {
+      const configs = buildFullSuiteVitestRunPlans([], process.cwd()).map((plan) => plan.config);
+
+      expect(configs).not.toContain("test/vitest/vitest.gateway-server-http.config.ts");
+      expect(configs).not.toContain("test/vitest/vitest.gateway-server.config.ts");
+      expect(configs).not.toContain("test/vitest/vitest.commands-doctor.config.ts");
+      expect(configs).not.toContain("test/vitest/vitest.commands.config.ts");
+      expect(configs).not.toContain("test/vitest/vitest.agents-pi.config.ts");
+      expect(configs).not.toContain("test/vitest/vitest.agents-tools.config.ts");
+      expect(configs).not.toContain("test/vitest/vitest.agents.config.ts");
+      expect(configs).not.toContain("test/vitest/vitest.runtime-config.config.ts");
+      expect(configs).toContain("test/vitest/vitest.commands-onboard.config.ts");
+      expect(configs).toContain("test/vitest/vitest.runtime-config-sessions.config.ts");
+    } finally {
+      if (previousLeafShards === undefined) {
+        delete process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS;
+      } else {
+        process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS = previousLeafShards;
+      }
+      if (previousIncludeSlow === undefined) {
+        delete process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
+      } else {
+        process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS = previousIncludeSlow;
       }
     }
   });

@@ -22,7 +22,12 @@ function buildRootTestEnv(baseEnv) {
   };
 }
 
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const includeSlow = rawArgs.includes("--include-slow");
+const args = rawArgs.filter((arg) => arg !== "--include-slow");
+const rootGateEnv = includeSlow
+  ? { ...process.env, OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS: "1" }
+  : process.env;
 const { targetArgs } = parseTestProjectsArgs(args, process.cwd());
 const changedTargetArgs =
   targetArgs.length === 0 ? resolveChangedTargetArgs(args, process.cwd()) : null;
@@ -33,12 +38,12 @@ if (isFullSuiteRootGate) {
     runPnpmStep(["turbo:test:root"]);
   } else {
     runNodeStep(["scripts/test-projects.mjs"], {
-      env: buildRootTestEnv(process.env),
+      env: buildRootTestEnv(rootGateEnv),
     });
   }
   process.exit(0);
 }
 
 runNodeStep(["scripts/test-projects.mjs", ...args], {
-  env: process.env,
+  env: rootGateEnv,
 });

@@ -37,12 +37,17 @@ import { resolveVitestCliEntry, resolveVitestNodeArgs } from "./run-vitest.mjs";
 
 const DEFAULT_VITEST_CONFIG = "test/vitest/vitest.unit.config.ts";
 const AGENTS_VITEST_CONFIG = "test/vitest/vitest.agents.config.ts";
+const AGENTS_PI_VITEST_CONFIG = "test/vitest/vitest.agents-pi.config.ts";
+const AGENTS_SUBAGENTS_VITEST_CONFIG = "test/vitest/vitest.agents-subagents.config.ts";
+const AGENTS_TOOLS_VITEST_CONFIG = "test/vitest/vitest.agents-tools.config.ts";
 const ACP_VITEST_CONFIG = "test/vitest/vitest.acp.config.ts";
 const AUTO_REPLY_VITEST_CONFIG = "test/vitest/vitest.auto-reply.config.ts";
 const BOUNDARY_VITEST_CONFIG = "test/vitest/vitest.boundary.config.ts";
 const BUNDLED_VITEST_CONFIG = "test/vitest/vitest.bundled.config.ts";
 const CHANNEL_VITEST_CONFIG = "test/vitest/vitest.channels.config.ts";
 const CLI_VITEST_CONFIG = "test/vitest/vitest.cli.config.ts";
+const COMMANDS_DOCTOR_VITEST_CONFIG = "test/vitest/vitest.commands-doctor.config.ts";
+const COMMANDS_ONBOARD_VITEST_CONFIG = "test/vitest/vitest.commands-onboard.config.ts";
 const COMMANDS_LIGHT_VITEST_CONFIG = "test/vitest/vitest.commands-light.config.ts";
 const COMMANDS_VITEST_CONFIG = "test/vitest/vitest.commands.config.ts";
 const CONTRACTS_VITEST_CONFIG = "test/vitest/vitest.contracts.config.ts";
@@ -78,6 +83,8 @@ const PLUGIN_SDK_VITEST_CONFIG = "test/vitest/vitest.plugin-sdk.config.ts";
 const PLUGINS_VITEST_CONFIG = "test/vitest/vitest.plugins.config.ts";
 const UNIT_FAST_VITEST_CONFIG = "test/vitest/vitest.unit-fast.config.ts";
 const PROCESS_VITEST_CONFIG = "test/vitest/vitest.process.config.ts";
+const RUNTIME_CONFIG_SESSIONS_VITEST_CONFIG =
+  "test/vitest/vitest.runtime-config-sessions.config.ts";
 const RUNTIME_CONFIG_VITEST_CONFIG = "test/vitest/vitest.runtime-config.config.ts";
 const SECRETS_VITEST_CONFIG = "test/vitest/vitest.secrets.config.ts";
 const SHARED_CORE_VITEST_CONFIG = "test/vitest/vitest.shared-core.config.ts";
@@ -93,12 +100,17 @@ const CHANGED_ARGS_PATTERN = /^--changed(?:=(.+))?$/u;
 const VITEST_CONFIG_BY_KIND = {
   acp: ACP_VITEST_CONFIG,
   agent: AGENTS_VITEST_CONFIG,
+  agentPi: AGENTS_PI_VITEST_CONFIG,
+  agentSubagents: AGENTS_SUBAGENTS_VITEST_CONFIG,
+  agentTools: AGENTS_TOOLS_VITEST_CONFIG,
   autoReply: AUTO_REPLY_VITEST_CONFIG,
   boundary: BOUNDARY_VITEST_CONFIG,
   bundled: BUNDLED_VITEST_CONFIG,
   channel: CHANNEL_VITEST_CONFIG,
   cli: CLI_VITEST_CONFIG,
   command: COMMANDS_VITEST_CONFIG,
+  commandDoctor: COMMANDS_DOCTOR_VITEST_CONFIG,
+  commandOnboard: COMMANDS_ONBOARD_VITEST_CONFIG,
   commandLight: COMMANDS_LIGHT_VITEST_CONFIG,
   contracts: CONTRACTS_VITEST_CONFIG,
   cron: CRON_VITEST_CONFIG,
@@ -131,8 +143,9 @@ const VITEST_CONFIG_BY_KIND = {
   pluginSdk: PLUGIN_SDK_VITEST_CONFIG,
   pluginSdkLight: PLUGIN_SDK_LIGHT_VITEST_CONFIG,
   process: PROCESS_VITEST_CONFIG,
-  unitFast: UNIT_FAST_VITEST_CONFIG,
+  runtimeConfigSessions: RUNTIME_CONFIG_SESSIONS_VITEST_CONFIG,
   runtimeConfig: RUNTIME_CONFIG_VITEST_CONFIG,
+  unitFast: UNIT_FAST_VITEST_CONFIG,
   secrets: SECRETS_VITEST_CONFIG,
   sharedCore: SHARED_CORE_VITEST_CONFIG,
   tasks: TASKS_VITEST_CONFIG,
@@ -151,15 +164,37 @@ const BROAD_CHANGED_RERUN_PATTERNS = [
   /^scripts\/run-vitest\.mjs$/u,
   /^scripts\/test-projects(?:\.test-support)?\.mjs$/u,
 ];
+const LOCAL_SLOW_FULL_SUITE_CONFIGS = [
+  "test/vitest/vitest.gateway-server-http.config.ts",
+  "test/vitest/vitest.gateway-server.config.ts",
+  "test/vitest/vitest.commands-doctor.config.ts",
+  "test/vitest/vitest.commands.config.ts",
+  "test/vitest/vitest.agents-pi.config.ts",
+  "test/vitest/vitest.agents-tools.config.ts",
+  "test/vitest/vitest.agents.config.ts",
+  "test/vitest/vitest.runtime-config.config.ts",
+];
 
 function resolveSkippedVitestConfigs(env = process.env) {
   const raw = env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS ?? "";
-  return new Set(
+  const skipped = new Set(
     raw
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
   );
+  if (!isCiLikeEnv(env) && env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS !== "1") {
+    for (const config of LOCAL_SLOW_FULL_SUITE_CONFIGS) {
+      skipped.add(config);
+    }
+  }
+  return skipped;
+}
+
+export function resolveDefaultLocalSlowFullSuiteConfigs(env = process.env) {
+  return !isCiLikeEnv(env) && env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS !== "1"
+    ? [...LOCAL_SLOW_FULL_SUITE_CONFIGS]
+    : [];
 }
 
 function normalizePathPattern(value) {
@@ -271,6 +306,56 @@ function shouldKeepBroadChangedRun(changedPaths) {
 
 function isRoutableChangedTarget(changedPath) {
   return /^(?:src|test|extensions|ui|packages|apps)(?:\/|$)/u.test(changedPath);
+}
+
+function isCommandsDoctorTarget(relative) {
+  const basename = path.posix.basename(relative);
+  return (
+    relative.startsWith("src/commands/doctor/") ||
+    basename.startsWith("doctor") ||
+    basename === "oauth-tls-preflight.doctor.test.ts"
+  );
+}
+
+function isCommandsOnboardTarget(relative) {
+  const basename = path.posix.basename(relative);
+  return (
+    relative.startsWith("src/commands/onboard/") ||
+    basename.startsWith("onboard") ||
+    basename.startsWith("auth-choice") ||
+    basename.startsWith("configure.gateway-auth") ||
+    basename === "chutes-oauth.test.ts" ||
+    basename === "oauth-tls-preflight.test.ts"
+  );
+}
+
+function isAgentsPiTarget(relative) {
+  const basename = path.posix.basename(relative);
+  return (
+    relative.startsWith("src/agents/pi-embedded-runner/") ||
+    relative.startsWith("src/agents/pi-hooks/") ||
+    basename.startsWith("pi-embedded-runner") ||
+    basename.startsWith("pi-embedded-helpers")
+  );
+}
+
+function isAgentsSubagentsTarget(relative) {
+  const basename = path.posix.basename(relative);
+  return basename.startsWith("subagent") || basename === "spawned-context.test.ts";
+}
+
+function isAgentsToolsTarget(relative) {
+  const basename = path.posix.basename(relative);
+  return (
+    relative.startsWith("src/agents/tools/") ||
+    basename.startsWith("tool-") ||
+    basename === "tools-effective-inventory.test.ts"
+  );
+}
+
+function isRuntimeConfigSessionsTarget(relative) {
+  const basename = path.posix.basename(relative);
+  return relative.startsWith("src/config/sessions/") || basename.startsWith("sessions");
 }
 
 export function resolveChangedTargetArgs(
@@ -390,6 +475,9 @@ function classifyTarget(arg, cwd) {
     return "infra";
   }
   if (relative.startsWith("src/config/")) {
+    if (isRuntimeConfigSessionsTarget(relative)) {
+      return "runtimeConfigSessions";
+    }
     return "runtimeConfig";
   }
   if (relative.startsWith("src/cron/")) {
@@ -432,12 +520,27 @@ function classifyTarget(arg, cwd) {
     return "cli";
   }
   if (relative.startsWith("src/commands/")) {
+    if (isCommandsDoctorTarget(relative)) {
+      return "commandDoctor";
+    }
+    if (isCommandsOnboardTarget(relative)) {
+      return "commandOnboard";
+    }
     return isCommandsLightTarget(relative) ? "commandLight" : "command";
   }
   if (relative.startsWith("src/auto-reply/")) {
     return "autoReply";
   }
   if (relative.startsWith("src/agents/")) {
+    if (isAgentsPiTarget(relative)) {
+      return "agentPi";
+    }
+    if (isAgentsSubagentsTarget(relative)) {
+      return "agentSubagents";
+    }
+    if (isAgentsToolsTarget(relative)) {
+      return "agentTools";
+    }
     return "agent";
   }
   if (relative.startsWith("src/plugins/")) {
@@ -553,6 +656,7 @@ export function buildVitestRunPlans(
     "gateway",
     "hooks",
     "infra",
+    "runtimeConfigSessions",
     "runtimeConfig",
     "cron",
     "daemon",
@@ -568,9 +672,14 @@ export function buildVitestRunPlans(
     "mediaUnderstanding",
     "acp",
     "cli",
+    "commandDoctor",
+    "commandOnboard",
     "commandLight",
     "command",
     "autoReply",
+    "agentPi",
+    "agentSubagents",
+    "agentTools",
     "agent",
     "plugin",
     "ui",

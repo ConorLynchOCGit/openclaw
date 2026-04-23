@@ -1355,6 +1355,7 @@
     "test:fast": "node scripts/test-projects.mjs --changed origin/main",
     "test:file": "node scripts/test-projects.mjs",
     "test:force": "node --import tsx scripts/test-force.ts",
+    "test:full:local": "node scripts/test-root-gate.mjs --include-slow",
     "test:gateway": "node scripts/run-vitest.mjs run --config test/vitest/vitest.gateway.config.ts",
     "test:gateway:watch-regression": "node scripts/check-gateway-watch-regression.mjs",
     "test:install:e2e": "bash scripts/test-install-sh-e2e-docker.sh",

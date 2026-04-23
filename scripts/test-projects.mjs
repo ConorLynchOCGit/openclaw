@@ -16,6 +16,7 @@ import {
   buildFullSuiteVitestRunPlans,
   createVitestRunSpecs,
   parseTestProjectsArgs,
+  resolveDefaultLocalSlowFullSuiteConfigs,
   resolveParallelFullSuiteConcurrency,
   resolveChangedTargetArgs,
   shouldAcquireLocalHeavyCheckLock,
@@ -35,17 +36,24 @@ let lockReleased = false;
 const FULL_SUITE_CONFIG_WEIGHT = new Map([
   // Stagger the heaviest gateway shards across other large lanes so local
   // full-suite runs do not start four gateway-intensive configs at once.
-  ["test/vitest/vitest.gateway.config.ts", 180],
-  ["test/vitest/vitest.gateway-server.config.ts", 179],
-  ["test/vitest/vitest.commands.config.ts", 178],
-  ["test/vitest/vitest.agents.config.ts", 177],
-  ["test/vitest/vitest.gateway-core.config.ts", 176],
-  ["test/vitest/vitest.runtime-config.config.ts", 175],
-  ["test/vitest/vitest.gateway-client.config.ts", 174],
-  ["test/vitest/vitest.gateway-methods.config.ts", 173],
-  ["test/vitest/vitest.extension-voice-call.config.ts", 172],
-  ["test/vitest/vitest.extensions.config.ts", 171],
-  ["test/vitest/vitest.extension-channels.config.ts", 170],
+  ["test/vitest/vitest.gateway.config.ts", 184],
+  ["test/vitest/vitest.gateway-server-http.config.ts", 183],
+  ["test/vitest/vitest.gateway-server.config.ts", 182],
+  ["test/vitest/vitest.commands-doctor.config.ts", 181],
+  ["test/vitest/vitest.commands-onboard.config.ts", 180],
+  ["test/vitest/vitest.agents-pi.config.ts", 179],
+  ["test/vitest/vitest.agents-subagents.config.ts", 178],
+  ["test/vitest/vitest.agents-tools.config.ts", 177],
+  ["test/vitest/vitest.commands.config.ts", 176],
+  ["test/vitest/vitest.agents.config.ts", 175],
+  ["test/vitest/vitest.gateway-core.config.ts", 174],
+  ["test/vitest/vitest.runtime-config-sessions.config.ts", 173],
+  ["test/vitest/vitest.runtime-config.config.ts", 172],
+  ["test/vitest/vitest.gateway-client.config.ts", 171],
+  ["test/vitest/vitest.gateway-methods.config.ts", 170],
+  ["test/vitest/vitest.extension-voice-call.config.ts", 169],
+  ["test/vitest/vitest.extensions.config.ts", 168],
+  ["test/vitest/vitest.extension-channels.config.ts", 167],
   ["test/vitest/vitest.contracts.config.ts", 165],
   ["test/vitest/vitest.tasks.config.ts", 165],
   ["test/vitest/vitest.channels.config.ts", 164],
@@ -306,6 +314,14 @@ async function main() {
           baseEnv: process.env,
           cwd: process.cwd(),
         });
+  if (targetArgs.length === 0 && changedTargetArgs === null) {
+    const skippedSlowConfigs = resolveDefaultLocalSlowFullSuiteConfigs(process.env);
+    if (skippedSlowConfigs.length > 0) {
+      console.error(
+        `[test] local default skips slow configs: ${skippedSlowConfigs.join(", ")} (use --include-slow for the full local suite)`,
+      );
+    }
+  }
   const runSpecsWithCachePaths = applyParallelVitestCachePaths(runSpecs, {
     cwd: process.cwd(),
     env: process.env,
