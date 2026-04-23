@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { isCiLikeEnv } from "./lib/vitest-local-scheduling.mjs";
 import { runNodeStep, runPnpmStep } from "./root-gate-runtime.mjs";
 import { parseTestProjectsArgs, resolveChangedTargetArgs } from "./test-projects.test-support.mjs";
 
@@ -28,10 +29,16 @@ const changedTargetArgs =
 const isFullSuiteRootGate = targetArgs.length === 0 && changedTargetArgs === null;
 
 if (isFullSuiteRootGate) {
-  runPnpmStep(["turbo:test:root"]);
+  if (isCiLikeEnv(process.env)) {
+    runPnpmStep(["turbo:test:root"]);
+  } else {
+    runNodeStep(["scripts/test-projects.mjs"], {
+      env: buildRootTestEnv(process.env),
+    });
+  }
   process.exit(0);
 }
 
 runNodeStep(["scripts/test-projects.mjs", ...args], {
-  env: isFullSuiteRootGate ? buildRootTestEnv(process.env) : process.env,
+  env: process.env,
 });

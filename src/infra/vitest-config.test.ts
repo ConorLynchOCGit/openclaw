@@ -224,9 +224,8 @@ describe("test scripts", () => {
     expect(pkg.scripts?.["test:serial"]).toBe(
       "OPENCLAW_TEST_PROJECTS_SERIAL=1 OPENCLAW_VITEST_MAX_WORKERS=1 node scripts/test-projects.mjs",
     );
-    expect(pkg.scripts?.["test:fast"]).toBe(
-      "node scripts/run-vitest.mjs run --config test/vitest/vitest.unit.config.ts",
-    );
+    expect(pkg.scripts?.["test:fast"]).toBe("node scripts/test-projects.mjs --changed origin/main");
+    expect(pkg.scripts?.["test:file"]).toBe("node scripts/test-projects.mjs");
     expect(pkg.scripts?.["test:unit"]).toBe(
       "pnpm test:unit:fast && node scripts/run-vitest.mjs run --config test/vitest/vitest.unit.config.ts",
     );
@@ -235,6 +234,12 @@ describe("test scripts", () => {
     );
     expect(pkg.scripts?.["test:unit:fast:audit"]).toBe("node scripts/test-unit-fast-audit.mjs");
     expect(pkg.scripts?.["test"]).toBe("node scripts/test-root-gate.mjs");
+    expect(pkg.scripts?.["check:preflight"]).toBe("node scripts/check-preflight.mjs");
+    expect(pkg.scripts?.["check:fast"]).toBe("node scripts/check-fast.mjs");
+    expect(pkg.scripts?.["build:fast"]).toBe("node scripts/build-root-gate.mjs --fast");
+    expect(pkg.scripts?.["tsgo"]).toBe("pnpm tsgo:full");
+    expect(pkg.scripts?.["tsgo:fast"]).toBe("node scripts/run-tsgo-fast.mjs");
+    expect(pkg.scripts?.["tsgo:full"]).toBe("node scripts/run-tsgo.mjs");
     expect(pkg.scripts?.["test:force"]).toBe("node --import tsx scripts/test-force.ts");
     expect(pkg.scripts?.["test:gateway"]).toBe(
       "node scripts/run-vitest.mjs run --config test/vitest/vitest.gateway.config.ts",

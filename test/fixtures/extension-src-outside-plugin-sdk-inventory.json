@@ -1,0 +1,26 @@
+[
+  {
+    "file": "extensions/model-memory/src/document-ingestion-tool.ts",
+    "line": 10,
+    "kind": "import",
+    "specifier": "../../../src/agents/workspace-memory-generated-zones.js",
+    "resolvedPath": "src/agents/workspace-memory-generated-zones.js",
+    "reason": "imports core src path outside plugin-sdk from an extension"
+  },
+  {
+    "file": "extensions/model-memory/src/document-ingestion-tool.ts",
+    "line": 11,
+    "kind": "import",
+    "specifier": "../../../src/infra/repo-canonical-paths.js",
+    "resolvedPath": "src/infra/repo-canonical-paths.js",
+    "reason": "imports core src path outside plugin-sdk from an extension"
+  },
+  {
+    "file": "extensions/model-memory/src/read-tools.ts",
+    "line": 3,
+    "kind": "import",
+    "specifier": "../../../src/agents/tools/common.js",
+    "resolvedPath": "src/agents/tools/common.js",
+    "reason": "imports core src path outside plugin-sdk from an extension"
+  }
+]

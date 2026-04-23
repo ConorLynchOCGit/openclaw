@@ -86,7 +86,7 @@ describe("local-heavy-check-runtime", () => {
     expect(shortFlag.args).toEqual(["-d"]);
   });
 
-  it("defaults local tsgo to throttled mode on roomy hosts", () => {
+  it("defaults local tsgo to auto full-speed mode on roomy hosts", () => {
     const { args, env } = applyLocalTsgoPolicy([], makeEnv(), ROOMY_HOST);
 
     expect(args).toEqual([
@@ -95,12 +95,9 @@ describe("local-heavy-check-runtime", () => {
       "--incremental",
       "--tsBuildInfoFile",
       ".artifacts/tsgo-cache/root.tsbuildinfo",
-      "--singleThreaded",
-      "--checkers",
-      "1",
     ]);
-    expect(env.GOGC).toBe("30");
-    expect(env.GOMEMLIMIT).toBe("3GiB");
+    expect(env.GOGC).toBeUndefined();
+    expect(env.GOMEMLIMIT).toBeUndefined();
   });
 
   it("uses the configured local tsgo build info file", () => {
@@ -211,7 +208,7 @@ describe("local-heavy-check-runtime", () => {
     ]);
   });
 
-  it("defaults local oxlint to one thread on roomy hosts", () => {
+  it("defaults local oxlint to auto full-speed mode on roomy hosts", () => {
     const { args } = applyLocalOxlintPolicy([], makeEnv(), ROOMY_HOST);
 
     expect(args).toEqual([
@@ -220,7 +217,6 @@ describe("local-heavy-check-runtime", () => {
       "tsconfig.oxlint.json",
       "--report-unused-disable-directives-severity",
       "error",
-      "--threads=1",
     ]);
   });
 

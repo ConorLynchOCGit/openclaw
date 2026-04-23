@@ -11,8 +11,8 @@ const DEFAULT_LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_LOCK_POLL_MS = 500;
 const DEFAULT_LOCK_PROGRESS_MS = 15 * 1000;
 const DEFAULT_STALE_LOCK_MS = 30 * 1000;
-const DEFAULT_FAST_LOCAL_CHECK_MIN_MEMORY_BYTES = 48 * GIB;
-const DEFAULT_FAST_LOCAL_CHECK_MIN_CPUS = 12;
+const DEFAULT_FAST_LOCAL_CHECK_MIN_MEMORY_BYTES = 24 * GIB;
+const DEFAULT_FAST_LOCAL_CHECK_MIN_CPUS = 8;
 const SLEEP_BUFFER = new Int32Array(new SharedArrayBuffer(4));
 
 export function isLocalCheckEnabled(env) {
@@ -257,6 +257,26 @@ export function acquireLocalHeavyCheckLockSync(params) {
   }
 }
 
+export function peekLocalHeavyCheckLockSync(params) {
+  const env = params.env ?? process.env;
+  if (!isLocalCheckEnabled(env)) {
+    return null;
+  }
+  const commonDir = resolveGitCommonDir(params.cwd);
+  const locksDir = path.join(commonDir, "openclaw-local-checks");
+  const lockDir = path.join(locksDir, `${params.lockName ?? "heavy-check"}.lock`);
+  const ownerPath = path.join(lockDir, "owner.json");
+  if (!fs.existsSync(lockDir)) {
+    return null;
+  }
+  const owner = readOwnerFile(ownerPath);
+  return {
+    lockDir,
+    owner,
+    heldBySelf: Boolean(owner && typeof owner.pid === "number" && owner.pid === process.pid),
+  };
+}
+
 export function resolveGitCommonDir(cwd) {
   const result = spawnSync("git", ["rev-parse", "--git-common-dir"], {
     cwd,
@@ -298,7 +318,7 @@ function insertBeforeSeparator(args, ...items) {
   args.splice(insertIndex, 0, ...items);
 }
 
-function readLocalCheckMode(env) {
+export function readLocalCheckMode(env) {
   const raw = env.OPENCLAW_LOCAL_CHECK_MODE?.trim().toLowerCase();
   if (raw === "throttled" || raw === "low-memory") {
     return "throttled";
@@ -306,12 +326,10 @@ function readLocalCheckMode(env) {
   if (raw === "full" || raw === "fast") {
     return "full";
   }
-  // Keep local heavy checks conservative by default. Developers can still opt
-  // into full-speed runs explicitly with OPENCLAW_LOCAL_CHECK_MODE=full.
-  return "throttled";
+  return "auto";
 }
 
-function resolveHostResources(hostResources) {
+export function resolveHostResources(hostResources) {
   if (hostResources) {
     return hostResources;
   }

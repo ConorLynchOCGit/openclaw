@@ -27,42 +27,75 @@ jobs:
         with:
           node-version: "22.18.0"
 
-      - name: Clone publish repo
+      - name: Generate docs sync GitHub App token
+        id: docs_sync_app_token
+        if: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_ID != '' && secrets.OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY != '' }}
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_ID }}
+          private-key: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY }}
+          owner: openclaw
+          repositories: docs
+
+      - name: Resolve docs sync credential
         env:
-          OPENCLAW_DOCS_SYNC_TOKEN: ${{ secrets.OPENCLAW_DOCS_SYNC_TOKEN }}
+          OPENCLAW_DOCS_SYNC_APP_TOKEN: ${{ steps.docs_sync_app_token.outputs.token }}
+          OPENCLAW_DOCS_SYNC_TOKEN_FALLBACK: ${{ secrets.OPENCLAW_DOCS_SYNC_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${OPENCLAW_DOCS_SYNC_TOKEN:-}" ]; then
-            echo "::error title=Missing OPENCLAW_DOCS_SYNC_TOKEN::Set OPENCLAW_DOCS_SYNC_TOKEN on ConorLynchOCGit/openclaw to a fine-grained PAT or GitHub App installation token with Contents read/write on openclaw/docs."
+          if [ -n "${OPENCLAW_DOCS_SYNC_APP_TOKEN:-}" ]; then
+            printf 'DOCS_SYNC_TOKEN=%s\n' "${OPENCLAW_DOCS_SYNC_APP_TOKEN}" >> "$GITHUB_ENV"
+            echo "DOCS_SYNC_TOKEN_SOURCE=github-app" >> "$GITHUB_ENV"
+          elif [ -n "${OPENCLAW_DOCS_SYNC_TOKEN_FALLBACK:-}" ]; then
+            printf 'DOCS_SYNC_TOKEN=%s\n' "${OPENCLAW_DOCS_SYNC_TOKEN_FALLBACK}" >> "$GITHUB_ENV"
+            echo "DOCS_SYNC_TOKEN_SOURCE=fine-grained-pat" >> "$GITHUB_ENV"
+          else
+            echo "::error title=Missing docs sync credential::Set OPENCLAW_DOCS_SYNC_APP_ID and OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY for the long-term GitHub App flow, or set OPENCLAW_DOCS_SYNC_TOKEN as a stopgap fine-grained PAT with Contents read/write on openclaw/docs."
+            exit 1
+          fi
+          echo "PUBLISH_REPO_DIR=${RUNNER_TEMP}/openclaw-docs-publish-${GITHUB_RUN_ID}" >> "$GITHUB_ENV"
+
+      - name: Clone publish repo
+        env:
+          DOCS_SYNC_TOKEN: ${{ env.DOCS_SYNC_TOKEN }}
+          DOCS_SYNC_TOKEN_SOURCE: ${{ env.DOCS_SYNC_TOKEN_SOURCE }}
+          PUBLISH_REPO_DIR: ${{ env.PUBLISH_REPO_DIR }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DOCS_SYNC_TOKEN:-}" ]; then
+            echo "::error title=Missing docs sync credential::Credential resolution did not produce DOCS_SYNC_TOKEN."
             exit 1
           fi
 
-          git clone "https://github.com/openclaw/docs.git" publish
+          git clone "https://github.com/openclaw/docs.git" "${PUBLISH_REPO_DIR}"
 
-          auth_header="$(printf 'x-access-token:%s' "${OPENCLAW_DOCS_SYNC_TOKEN}" | base64 | tr -d '\n')"
-          git -C publish config --local \
+          auth_header="$(printf 'x-access-token:%s' "${DOCS_SYNC_TOKEN}" | base64 | tr -d '\n')"
+          git -C "${PUBLISH_REPO_DIR}" config --local \
             http.https://github.com/openclaw/docs.git.extraheader \
             "AUTHORIZATION: basic ${auth_header}"
+          echo "Using docs sync credential source: ${DOCS_SYNC_TOKEN_SOURCE}"
 
-          if ! git -C publish ls-remote --exit-code origin refs/heads/main >/dev/null; then
-            echo "::error title=Docs sync token cannot read publish repo::OPENCLAW_DOCS_SYNC_TOKEN must be valid for openclaw/docs."
+          if ! git -C "${PUBLISH_REPO_DIR}" ls-remote --exit-code origin refs/heads/main >/dev/null; then
+            echo "::error title=Docs sync credential cannot read publish repo::The resolved credential must be valid for openclaw/docs."
             exit 1
           fi
 
-          if ! git -C publish push --dry-run origin HEAD:main >/dev/null; then
-            echo "::error title=Docs sync token cannot push publish repo::OPENCLAW_DOCS_SYNC_TOKEN must have Contents read/write on openclaw/docs. Password authentication is not supported."
+          if ! git -C "${PUBLISH_REPO_DIR}" push --dry-run origin HEAD:main >/dev/null; then
+            echo "::error title=Docs sync credential cannot push publish repo::The resolved credential must have Contents read/write on openclaw/docs. Password authentication is not supported."
             exit 1
           fi
 
       - name: Sync docs into publish repo
+        env:
+          PUBLISH_REPO_DIR: ${{ env.PUBLISH_REPO_DIR }}
         run: |
           node scripts/docs-sync-publish.mjs \
-            --target "$GITHUB_WORKSPACE/publish" \
+            --target "$PUBLISH_REPO_DIR" \
             --source-repo "$GITHUB_REPOSITORY" \
             --source-sha "$GITHUB_SHA"
 
       - name: Commit publish repo sync
-        working-directory: publish
+        working-directory: ${{ env.PUBLISH_REPO_DIR }}
         run: |
           set -euo pipefail
           if git diff --quiet -- docs .openclaw-sync; then

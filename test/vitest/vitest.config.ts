@@ -9,6 +9,26 @@ import {
 
 export { resolveDefaultVitestPool, resolveLocalVitestMaxWorkers, resolveLocalVitestScheduling };
 
+function hasExplicitVitestConfigArg(argv = process.argv.slice(2)) {
+  return argv.some(
+    (arg, index) =>
+      arg === "--config" ||
+      (index > 0 && argv[index - 1] === "--config") ||
+      arg.startsWith("--config="),
+  );
+}
+
+export function assertRootVitestConfigUsage(argv = process.argv.slice(2), env = process.env) {
+  if (env.OPENCLAW_ALLOW_ROOT_VITEST_PROJECTS === "1" || hasExplicitVitestConfigArg(argv)) {
+    return;
+  }
+  throw new Error(
+    "[vitest] root multi-project execution without --config is unsupported for local repo runs. Use `pnpm test:file <path>` or pass an explicit --config.",
+  );
+}
+
+assertRootVitestConfigUsage();
+
 export const rootVitestProjects = [
   "test/vitest/vitest.unit.config.ts",
   "test/vitest/vitest.infra.config.ts",

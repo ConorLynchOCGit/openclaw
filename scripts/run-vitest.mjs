@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import path from "node:path";
-import { isCiLikeEnv } from "./lib/vitest-local-scheduling.mjs";
+import { isCiLikeEnv, resolveLocalVitestMaxWorkers } from "./lib/vitest-local-scheduling.mjs";
 import { spawnPnpmRunner } from "./pnpm-runner.mjs";
 import {
   forwardSignalToVitestProcessGroup,
@@ -58,6 +58,24 @@ export function resolveVitestCliEntry() {
 
 export function resolveVitestNoOutputTimeoutMs(env = process.env) {
   return parsePositiveInt(env.OPENCLAW_VITEST_NO_OUTPUT_TIMEOUT_MS);
+}
+
+export function resolveVitestConfig(argv = []) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--config") {
+      const next = argv[index + 1];
+      return next && !next.startsWith("-") ? next : null;
+    }
+    if (arg.startsWith("--config=")) {
+      return arg.slice("--config=".length);
+    }
+  }
+  return null;
+}
+
+export function hasExplicitVitestConfig(argv = []) {
+  return resolveVitestConfig(argv) !== null;
 }
 
 export function resolveVitestCacheIdentity(argv = []) {
@@ -123,6 +141,24 @@ export function resolveVitestSpawnParams(env = process.env, platform = process.p
 
 export function shouldSuppressVitestStderrLine(line) {
   return SUPPRESSED_VITEST_STDERR_PATTERNS.some((pattern) => line.includes(pattern));
+}
+
+export function resolveVitestMaxWorkers(argv = [], env = process.env) {
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--maxWorkers") {
+      return argv[index + 1] ?? "default";
+    }
+    if (arg.startsWith("--maxWorkers=")) {
+      return arg.slice("--maxWorkers=".length);
+    }
+  }
+  return String(resolveLocalVitestMaxWorkers(env));
+}
+
+export function extractVitestPluginTimingName(line) {
+  const match = line.match(/plugin `([^`]+)`/u);
+  return match?.[1] ?? null;
 }
 
 export function installVitestNoOutputWatchdog(params) {
@@ -245,9 +281,20 @@ function main(argv = process.argv.slice(2), env = process.env) {
     console.error("usage: node scripts/run-vitest.mjs <vitest args...>");
     process.exit(1);
   }
+  if (!hasExplicitVitestConfig(argv) && env.OPENCLAW_ALLOW_ROOT_VITEST_PROJECTS !== "1") {
+    console.error(
+      "[vitest] root multi-project execution without --config is unsupported for local repo runs. Use `pnpm test:file <path>` or pass an explicit --config.",
+    );
+    process.exit(1);
+  }
 
   const executionEnv = resolveVitestExecutionEnv(argv, { env });
   const spawnParams = resolveVitestSpawnParams(executionEnv);
+  const pluginTimingCounts = new Map();
+  const resolvedConfig = resolveVitestConfig(argv);
+  console.error(
+    `[vitest] config=${resolvedConfig ?? "root-projects"} workers=${resolveVitestMaxWorkers(argv, executionEnv)} cache=${executionEnv[FS_MODULE_CACHE_PATH_ENV_KEY] ?? "disabled"} no-output-timeout=${resolveVitestNoOutputTimeoutMs(executionEnv) ?? "off"} auto-resolved=${resolvedConfig ? "no" : "n/a"}`,
+  );
   const child = spawnPnpmRunner({
     pnpmArgs: [
       "exec",
@@ -282,11 +329,28 @@ function main(argv = process.argv.slice(2), env = process.env) {
     },
   });
   forwardVitestOutput(child.stdout, process.stdout);
-  forwardVitestOutput(child.stderr, process.stderr, shouldSuppressVitestStderrLine);
+  forwardVitestOutput(child.stderr, process.stderr, (line) => {
+    if (!shouldSuppressVitestStderrLine(line)) {
+      return false;
+    }
+    const pluginName = extractVitestPluginTimingName(line);
+    if (pluginName) {
+      pluginTimingCounts.set(pluginName, (pluginTimingCounts.get(pluginName) ?? 0) + 1);
+    }
+    return true;
+  });
 
   child.on("exit", (code, signal) => {
     teardownChildCleanup();
     teardownNoOutputWatchdog();
+    if (pluginTimingCounts.size > 0) {
+      const summary = [...pluginTimingCounts.entries()]
+        .map(([pluginName, count]) => `${pluginName} x${count}`)
+        .join(", ");
+      console.error(
+        `[vitest] suppressed rolldown plugin timing warnings for ${resolvedConfig ?? "root-projects"}: ${summary}`,
+      );
+    }
     if (signal) {
       process.kill(process.pid, signal);
       return;

@@ -4,7 +4,10 @@ import { createAgentsVitestConfig } from "./vitest/vitest.agents.config.ts";
 import bundledConfig from "./vitest/vitest.bundled.config.ts";
 import { createCommandsLightVitestConfig } from "./vitest/vitest.commands-light.config.ts";
 import { createCommandsVitestConfig } from "./vitest/vitest.commands.config.ts";
-import baseConfig, { rootVitestProjects } from "./vitest/vitest.config.ts";
+import baseConfig, {
+  assertRootVitestConfigUsage,
+  rootVitestProjects,
+} from "./vitest/vitest.config.ts";
 import { createContractsVitestConfig } from "./vitest/vitest.contracts.config.ts";
 import { createGatewayVitestConfig } from "./vitest/vitest.gateway.config.ts";
 import { createPluginSdkLightVitestConfig } from "./vitest/vitest.plugin-sdk-light.config.ts";
@@ -16,6 +19,23 @@ import { createUnitVitestConfig } from "./vitest/vitest.unit.config.ts";
 describe("projects vitest config", () => {
   it("defines the native root project list for all non-live Vitest lanes", () => {
     expect(baseConfig.test?.projects).toEqual([...rootVitestProjects]);
+  });
+
+  it("rejects local root multi-project usage without an explicit config", () => {
+    expect(() =>
+      assertRootVitestConfigUsage(["run", "test/scripts/run-vitest.test.ts"], {}),
+    ).toThrow(/without --config is unsupported/u);
+    expect(() =>
+      assertRootVitestConfigUsage(
+        [
+          "run",
+          "--config",
+          "test/vitest/vitest.tooling.config.ts",
+          "test/scripts/run-vitest.test.ts",
+        ],
+        {},
+      ),
+    ).not.toThrow();
   });
 
   it("disables vite env-file loading for vitest lanes", () => {

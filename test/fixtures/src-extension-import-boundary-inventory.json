@@ -1,0 +1,50 @@
+[
+  {
+    "file": "src/agents/model-memory.database.ts",
+    "line": 5,
+    "kind": "import",
+    "specifier": "../../extensions/model-memory/src/db/captured-object-write-compatibility.ts",
+    "resolvedPath": "extensions/model-memory/src/db/captured-object-write-compatibility.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory.database.ts",
+    "line": 6,
+    "kind": "import",
+    "specifier": "../../extensions/model-memory/src/db/mmv2-native-repository.ts",
+    "resolvedPath": "extensions/model-memory/src/db/mmv2-native-repository.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory.database.ts",
+    "line": 10,
+    "kind": "import",
+    "specifier": "../../extensions/model-memory/src/db/pool-lanes.ts",
+    "resolvedPath": "extensions/model-memory/src/db/pool-lanes.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory.database.ts",
+    "line": 11,
+    "kind": "import",
+    "specifier": "../../extensions/model-memory/src/db/sql-client.ts",
+    "resolvedPath": "extensions/model-memory/src/db/sql-client.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory.database.ts",
+    "line": 12,
+    "kind": "import",
+    "specifier": "../../extensions/model-memory/src/storage-engine.ts",
+    "resolvedPath": "extensions/model-memory/src/storage-engine.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory.database.ts",
+    "line": 227,
+    "kind": "dynamic-import",
+    "specifier": "../../extensions/model-memory/src/db/mmv2-memory-object-store.ts",
+    "resolvedPath": "extensions/model-memory/src/db/mmv2-memory-object-store.ts",
+    "reason": "dynamically imports bundled plugin file from src boundary"
+  }
+]

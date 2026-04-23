@@ -6,6 +6,7 @@ import ts from "typescript";
 import { BUNDLED_PLUGIN_PATH_PREFIX } from "./lib/bundled-plugin-paths.mjs";
 import {
   collectTypeScriptInventory,
+  diffInventoryEntries,
   normalizeRepoPath,
   resolveRepoSpecifier,
   visitModuleSpecifiers,
@@ -106,6 +107,10 @@ export async function collectSrcExtensionImportBoundaryInventory() {
     cachedInventoryPromise = null;
     throw error;
   }
+}
+
+export function diffInventory(expected, actual) {
+  return diffInventoryEntries(expected, actual, compareEntries);
 }
 
 function formatInventoryHuman(inventory) {

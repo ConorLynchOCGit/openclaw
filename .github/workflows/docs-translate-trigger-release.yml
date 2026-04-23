@@ -12,9 +12,34 @@ jobs:
   dispatch-translate:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate docs sync GitHub App token
+        id: docs_sync_app_token
+        if: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_ID != '' && secrets.OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY != '' }}
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_ID }}
+          private-key: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY }}
+          owner: openclaw
+          repositories: docs
+
+      - name: Resolve docs dispatch credential
+        env:
+          OPENCLAW_DOCS_SYNC_APP_TOKEN: ${{ steps.docs_sync_app_token.outputs.token }}
+          OPENCLAW_DOCS_SYNC_TOKEN_FALLBACK: ${{ secrets.OPENCLAW_DOCS_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${OPENCLAW_DOCS_SYNC_APP_TOKEN:-}" ]; then
+            printf 'DOCS_SYNC_TOKEN=%s\n' "${OPENCLAW_DOCS_SYNC_APP_TOKEN}" >> "$GITHUB_ENV"
+          elif [ -n "${OPENCLAW_DOCS_SYNC_TOKEN_FALLBACK:-}" ]; then
+            printf 'DOCS_SYNC_TOKEN=%s\n' "${OPENCLAW_DOCS_SYNC_TOKEN_FALLBACK}" >> "$GITHUB_ENV"
+          else
+            echo "::error title=Missing docs dispatch credential::Set OPENCLAW_DOCS_SYNC_APP_ID and OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY for the long-term GitHub App flow, or set OPENCLAW_DOCS_SYNC_TOKEN as a stopgap fine-grained PAT with Contents read/write on openclaw/docs."
+            exit 1
+          fi
+
       - name: Trigger locale translates in publish repo
         env:
-          GH_TOKEN: ${{ secrets.OPENCLAW_DOCS_SYNC_TOKEN }}
+          GH_TOKEN: ${{ env.DOCS_SYNC_TOKEN }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail

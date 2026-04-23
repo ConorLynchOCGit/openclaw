@@ -3,6 +3,7 @@ import { acquireLocalHeavyCheckLockSync } from "./lib/local-heavy-check-runtime.
 import { isCiLikeEnv, resolveLocalFullSuiteProfile } from "./lib/vitest-local-scheduling.mjs";
 import { spawnPnpmRunner } from "./pnpm-runner.mjs";
 import {
+  extractVitestPluginTimingName,
   forwardVitestOutput,
   installVitestNoOutputWatchdog,
   resolveVitestCliEntry,
@@ -55,6 +56,7 @@ const FULL_SUITE_CONFIG_WEIGHT = new Map([
   ["test/vitest/vitest.cron.config.ts", 135],
   ["test/vitest/vitest.wizard.config.ts", 130],
   ["test/vitest/vitest.unit-src.config.ts", 125],
+  ["test/vitest/vitest.unit-support-slow.config.ts", 110],
   ["test/vitest/vitest.extension-matrix.config.ts", 100],
   ["test/vitest/vitest.extension-providers.config.ts", 96],
   ["test/vitest/vitest.extension-telegram.config.ts", 94],
@@ -92,6 +94,7 @@ const releaseLockOnce = () => {
   lockReleased = true;
   releaseLock();
 };
+const SLOW_CONFIG_THRESHOLD_MS = 20_000;
 
 function cleanupVitestRunSpec(spec) {
   if (!spec.includeFilePath) {
@@ -108,7 +111,9 @@ function runVitestSpec(spec) {
   if (spec.includeFilePath && spec.includePatterns) {
     writeVitestIncludeFile(spec.includeFilePath, spec.includePatterns);
   }
+  const startedAt = Date.now();
   return new Promise((resolve, reject) => {
+    const pluginTimingCounts = new Map();
     const child = spawnPnpmRunner({
       cwd: process.cwd(),
       detached: shouldUseDetachedVitestProcessGroup(),
@@ -141,13 +146,30 @@ function runVitestSpec(spec) {
     });
 
     forwardVitestOutput(child.stdout, process.stdout);
-    forwardVitestOutput(child.stderr, process.stderr, shouldSuppressVitestStderrLine);
+    forwardVitestOutput(child.stderr, process.stderr, (line) => {
+      if (!shouldSuppressVitestStderrLine(line)) {
+        return false;
+      }
+      const pluginName = extractVitestPluginTimingName(line);
+      if (pluginName) {
+        pluginTimingCounts.set(pluginName, (pluginTimingCounts.get(pluginName) ?? 0) + 1);
+      }
+      return true;
+    });
 
     child.on("exit", (code, signal) => {
       teardownChildCleanup();
       teardownNoOutputWatchdog();
       cleanupVitestRunSpec(spec);
-      resolve({ code: code ?? 1, signal });
+      if (pluginTimingCounts.size > 0) {
+        const summary = [...pluginTimingCounts.entries()]
+          .map(([pluginName, count]) => `${pluginName} x${count}`)
+          .join(", ");
+        console.error(
+          `[test] ${spec.config} suppressed rolldown plugin timing warnings: ${summary}`,
+        );
+      }
+      resolve({ code: code ?? 1, signal, durationMs: Date.now() - startedAt });
     });
 
     child.on("error", (error) => {
@@ -240,6 +262,10 @@ async function runVitestSpecsParallel(specs, concurrency) {
         releaseLockOnce();
         process.kill(process.pid, result.signal);
         return;
+      }
+      console.error(`[test] completed ${spec.config} in ${(result.durationMs / 1000).toFixed(1)}s`);
+      if (result.durationMs >= SLOW_CONFIG_THRESHOLD_MS) {
+        console.error(`[test] slow config lane: ${spec.config}`);
       }
       if (result.code !== 0) {
         exitCode = exitCode || result.code;
@@ -347,6 +373,10 @@ async function main() {
       releaseLockOnce();
       process.kill(process.pid, result.signal);
       return;
+    }
+    console.error(`[test] completed ${spec.config} in ${(result.durationMs / 1000).toFixed(1)}s`);
+    if (result.durationMs >= SLOW_CONFIG_THRESHOLD_MS) {
+      console.error(`[test] slow config lane: ${spec.config}`);
     }
     if (result.code !== 0) {
       exitCode = exitCode || result.code;

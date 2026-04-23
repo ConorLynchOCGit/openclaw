@@ -1,10 +1,14 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import {
+  extractVitestPluginTimingName,
+  hasExplicitVitestConfig,
   installVitestNoOutputWatchdog,
+  resolveVitestConfig,
   resolveVitestCacheIdentity,
   resolveVitestExecutionEnv,
   resolveVitestFsModuleCachePath,
+  resolveVitestMaxWorkers,
   resolveVitestNodeArgs,
   resolveVitestNoOutputTimeoutMs,
   resolveVitestSpawnParams,
@@ -71,6 +75,35 @@ describe("scripts/run-vitest", () => {
       ),
     ).toBe(true);
     expect(shouldSuppressVitestStderrLine("real failure output\n")).toBe(false);
+  });
+
+  it("parses the explicit vitest config when present", () => {
+    expect(resolveVitestConfig(["run", "--config", "test/vitest/vitest.tooling.config.ts"])).toBe(
+      "test/vitest/vitest.tooling.config.ts",
+    );
+    expect(resolveVitestConfig(["run", "--config=test/vitest/vitest.tooling.config.ts"])).toBe(
+      "test/vitest/vitest.tooling.config.ts",
+    );
+    expect(hasExplicitVitestConfig(["run", "test/scripts/run-vitest.test.ts"])).toBe(false);
+  });
+
+  it("resolves the local vitest worker budget unless explicitly overridden", () => {
+    expect(
+      resolveVitestMaxWorkers(["run", "test/scripts/run-vitest.test.ts"], {
+        OPENCLAW_VITEST_MAX_WORKERS: "3",
+      }),
+    ).toBe("3");
+    expect(
+      resolveVitestMaxWorkers(["run", "--maxWorkers=7", "test/scripts/run-vitest.test.ts"], {}),
+    ).toBe("7");
+  });
+
+  it("extracts the rolldown plugin timing name for summarized stderr output", () => {
+    expect(
+      extractVitestPluginTimingName(
+        "\u001b[33m[PLUGIN_TIMINGS] Warning:\u001b[0m plugin `externalize-deps` was slow\n",
+      ),
+    ).toBe("externalize-deps");
   });
 
   it("derives a stable cache identity from config and targets", () => {

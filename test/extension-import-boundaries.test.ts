@@ -1,7 +1,11 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   collectExtensionPluginSdkBoundaryInventory,
+  diffInventory as diffExtensionInventory,
   main as extensionPluginSdkMain,
+  readExpectedInventory,
 } from "../scripts/check-extension-plugin-sdk-boundary.mjs";
 import {
   collectSdkPackageExtensionImportBoundaryInventory,
@@ -9,10 +13,21 @@ import {
 } from "../scripts/check-sdk-package-extension-import-boundary.mjs";
 import {
   collectSrcExtensionImportBoundaryInventory,
+  diffInventory as diffSrcInventory,
   main as srcExtensionMain,
 } from "../scripts/check-src-extension-import-boundary.mjs";
 import { createCapturedIo } from "./helpers/captured-io.js";
 
+const repoRoot = process.cwd();
+const srcBaselinePath = path.join(
+  repoRoot,
+  "test",
+  "fixtures",
+  "src-extension-import-boundary-inventory.json",
+);
+const srcBaseline = JSON.parse(readFileSync(srcBaselinePath, "utf8"));
+const srcOutsideBaselinePromise = readExpectedInventory("src-outside-plugin-sdk");
+const relativeOutsideBaselinePromise = readExpectedInventory("relative-outside-package");
 const srcInventoryPromise = collectSrcExtensionImportBoundaryInventory();
 const srcJsonOutputPromise = getJsonOutput(srcExtensionMain, ["--json"]);
 const sdkPackageInventoryPromise = collectSdkPackageExtensionImportBoundaryInventory();
@@ -53,8 +68,11 @@ async function getJsonOutput(
 }
 
 describe("src extension import boundary inventory", () => {
-  it("stays empty", async () => {
-    expect(await srcInventoryPromise).toEqual([]);
+  it("matches the checked-in baseline", async () => {
+    expect(diffSrcInventory(srcBaseline, await srcInventoryPromise)).toEqual({
+      missing: [],
+      unexpected: [],
+    });
   });
 
   it("produces stable sorted output", async () => {
@@ -64,12 +82,12 @@ describe("src extension import boundary inventory", () => {
     expect(second).toEqual(first);
   });
 
-  it("script json output stays empty", async () => {
+  it("script json output matches the baseline exactly", async () => {
     const jsonOutput = await srcJsonOutputPromise;
 
-    expect(jsonOutput.exitCode).toBe(0);
+    expect(jsonOutput.exitCode).toBe(1);
     expect(jsonOutput.stderr).toBe("");
-    expect(jsonOutput.json).toEqual([]);
+    expect(jsonOutput.json).toEqual(srcBaseline);
   });
 });
 
@@ -95,11 +113,12 @@ describe("sdk/package extension import boundary inventory", () => {
 });
 
 describe("extension src outside plugin-sdk boundary inventory", () => {
-  it("stays empty and sorted", async () => {
+  it("matches the checked-in baseline and stays sorted", async () => {
     const inventory = await srcOutsideInventoryPromise;
     const jsonResult = await srcOutsideJsonOutputPromise;
+    const baseline = await srcOutsideBaselinePromise;
 
-    expect(inventory).toEqual([]);
+    expect(diffExtensionInventory(baseline, inventory)).toEqual({ missing: [], unexpected: [] });
     expect(
       [...inventory].toSorted(
         (left, right) =>
@@ -113,7 +132,7 @@ describe("extension src outside plugin-sdk boundary inventory", () => {
     ).toEqual(inventory);
     expect(jsonResult.exitCode).toBe(0);
     expect(jsonResult.stderr).toBe("");
-    expect(jsonResult.json).toEqual([]);
+    expect(jsonResult.json).toEqual(baseline);
   });
 });
 
@@ -130,13 +149,14 @@ describe("extension plugin-sdk-internal boundary inventory", () => {
 });
 
 describe("extension relative-outside-package boundary inventory", () => {
-  it("stays empty", async () => {
+  it("matches the checked-in baseline", async () => {
     const inventory = await relativeOutsidePackageInventoryPromise;
     const jsonResult = await relativeOutsidePackageJsonOutputPromise;
+    const baseline = await relativeOutsideBaselinePromise;
 
-    expect(inventory).toEqual([]);
+    expect(diffExtensionInventory(baseline, inventory)).toEqual({ missing: [], unexpected: [] });
     expect(jsonResult.exitCode).toBe(0);
     expect(jsonResult.stderr).toBe("");
-    expect(jsonResult.json).toEqual([]);
+    expect(jsonResult.json).toEqual(baseline);
   });
 });

@@ -9,7 +9,7 @@
     "build:root:all": {
       "cache": false,
       "outputs": [],
-      "dependsOn": ["build:root:write-cli-compat"]
+      "dependsOn": ["build:root:postbuild"]
     },
     "build:root:build-stamp": {
       "cache": false,
@@ -40,10 +40,14 @@
       "outputs": [],
       "dependsOn": ["build:root:canvas-a2ui-copy"]
     },
-    "build:root:plugin-sdk-dts": {
+    "build:root:postbuild": {
       "cache": false,
       "outputs": [],
-      "dependsOn": ["build:root:build-stamp"]
+      "dependsOn": ["build:root:plugin-sdk-dts", "build:root:tsdown"]
+    },
+    "build:root:plugin-sdk-dts": {
+      "cache": true,
+      "outputs": ["dist/plugin-sdk/**", ".artifacts/build-cache/plugin-sdk-dts.json"]
     },
     "build:root:runtime-postbuild": {
       "cache": false,
@@ -194,6 +198,10 @@
       "cache": true,
       "outputs": []
     },
+    "test:root:core-unit-support-slow": {
+      "cache": true,
+      "outputs": []
+    },
     "test:root:core-unit-ui": {
       "cache": true,
       "outputs": []
@@ -211,6 +219,7 @@
         "test:root:core-unit-security",
         "test:root:core-unit-ui",
         "test:root:core-unit-support",
+        "test:root:core-unit-support-slow",
         "test:root:core-support-boundary",
         "test:root:core-contracts",
         "test:root:core-bundled",

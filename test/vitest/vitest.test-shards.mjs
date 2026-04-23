@@ -33,6 +33,11 @@ export const fullSuiteVitestShards = [
     projects: ["test/vitest/vitest.unit-support.config.ts"],
   },
   {
+    config: "test/vitest/vitest.full-core-unit-support-slow.config.ts",
+    name: "core-unit-support-slow",
+    projects: ["test/vitest/vitest.unit-support-slow.config.ts"],
+  },
+  {
     config: "test/vitest/vitest.full-core-support-boundary.config.ts",
     name: "core-support-boundary",
     projects: ["test/vitest/vitest.boundary.config.ts", "test/vitest/vitest.tooling.config.ts"],

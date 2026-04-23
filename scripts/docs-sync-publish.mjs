@@ -3,7 +3,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..");
@@ -135,6 +135,36 @@ function parseArgs(argv) {
   }
 
   return args;
+}
+
+function normalizeResolvedPath(filePath) {
+  return path.resolve(filePath);
+}
+
+function isSameOrNestedPath(candidatePath, basePath) {
+  const normalizedCandidate = normalizeResolvedPath(candidatePath);
+  const normalizedBase = normalizeResolvedPath(basePath);
+  return (
+    normalizedCandidate === normalizedBase ||
+    normalizedCandidate.startsWith(`${normalizedBase}${path.sep}`)
+  );
+}
+
+export function assertSyncTargetIsSafe(
+  targetRoot,
+  { allowSourceRepoTarget = process.env.OPENCLAW_DOCS_SYNC_ALLOW_SOURCE_REPO_TARGET === "1" } = {},
+) {
+  if (!fs.existsSync(targetRoot)) {
+    throw new Error(`target does not exist: ${targetRoot}`);
+  }
+  if (!allowSourceRepoTarget && isSameOrNestedPath(targetRoot, ROOT)) {
+    throw new Error(
+      `target must live outside the source repo worktree: ${targetRoot}. Use a separate clone, such as $RUNNER_TEMP/openclaw-docs-publish.`,
+    );
+  }
+  if (!fs.existsSync(path.join(targetRoot, ".git"))) {
+    throw new Error(`target must be a git worktree root: ${targetRoot}`);
+  }
 }
 
 function run(command, args, options = {}) {
@@ -288,16 +318,16 @@ function writeSyncMetadata(targetRoot, args) {
   writeJson(path.join(targetRoot, ".openclaw-sync", "source.json"), metadata);
 }
 
-function main() {
-  const args = parseArgs(process.argv.slice(2));
+export function main(argv = process.argv.slice(2)) {
+  const args = parseArgs(argv);
   const targetRoot = path.resolve(args.target);
 
-  if (!fs.existsSync(targetRoot)) {
-    throw new Error(`target does not exist: ${targetRoot}`);
-  }
+  assertSyncTargetIsSafe(targetRoot);
 
   syncDocsTree(targetRoot);
   writeSyncMetadata(targetRoot, args);
 }
 
-main();
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main();
+}
