@@ -34,15 +34,26 @@ Passes 3-5 are now implemented and live-picked-up with no DB migration:
   capture routing, extraction, canonicalization, and retrieval interpretation;
   provider scorecards record safe schema/latency/token/cache metrics.
 
-The current-runtime partial-corpus soak remains `not_clean` until a fresh
-runtime proof shows durable ordinary-turn capture creates rows under gateway
-load without DB timeouts or raw-turn persistence.
+The 2026-04-23 current-runtime MEMMECH proof is clean for the approved live
+payload path:
 
-Pass 6 is implemented as a safe benchmark/compression harness and artifact
-report, not live semantic memory:
+- artifact:
+  `.artifacts/model-memory/memmech-proof/2026-04-23-live/memmech-live-proof.json`
+- approved durable payload produced `capture_written` and live durable rows
+- no-store, privacy, and temp/session-only prompts produced no active durable
+  rows
+- root `USER.md` / `MEMORY.md` hashes stayed unchanged
+- runtime-state jobs/events, dirty state, pool telemetry, strict-schema
+  preflight, cache metric proof, and no-raw-turn persistence checks are present
+- a historical failed duplicate capture job from the pre-idempotency proof
+  rerun is disclosed as non-blocking runtime-state history; already-written
+  jobs now return idempotently and are not re-enqueued
 
-- `scripts/model-memory-cache-aware-benchmark.mjs` writes reports under
-  `.artifacts/model-memory/pass6-cache-aware-benchmark/2026-04-22-pass6/`
+Pass 6 is implemented as a real live benchmark/compression pass while keeping
+benchmark/eval output out of semantic memory:
+
+- `scripts/model-memory-live-cache-aware-benchmark.mjs` writes reports under
+  `.artifacts/model-memory/pass6-live-benchmark/2026-04-23/`
 - prompt-cache keys are derived from contract/schema/prompt version plus
   static prefix hash
 - static prompt/schema content stays first and source/window text stays in the
@@ -50,17 +61,13 @@ report, not live semantic memory:
 - mini/nano comparison records latency, token usage, cached-token percentage,
   schema adherence, empty-response rate, repair rate, valid-candidate rate,
   and safe cost estimates
-- large-document compression is evaluated as source-preserving projection/cache
-  only; admitted candidates must validate against original source spans
-
-Pass 7 artifact proof is present at
-`.artifacts/model-memory/memmech-proof/2026-04-22-pass-7/`. It proves capture
-job runtime-state, dirty-state runtime-state, provider/cache metric surfaces,
-all 10 projection types in the live projection index, root write-back disabled,
-and no raw runtime-state payloads. It does not create synthetic durable
-memories in the live DB. A fully clean current-runtime soak still needs an
-operator-approved durable live payload or isolated/staging DB proof for durable
-ordinary-turn row creation.
+- `openai-codex/gpt-5.4-mini` passed the strict-schema benchmark; the
+  configured nano route failed every strict-schema call with
+  `provider_json_boundary`
+- large-document compression is evaluated against the real
+  `docs/projects/model-memory/DECISIONS.md` source as projection/cache only;
+  admitted candidates must validate against original source spans, and
+  section-map plus candidate hints is the current recommendation
 
 ## Guardrails
 

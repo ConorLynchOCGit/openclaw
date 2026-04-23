@@ -14,10 +14,12 @@ import type {
   JsonModelExecutionRequest,
   JsonModelExecutionResponse,
   JsonModelExecutor,
+  JsonModelReasoningEffort,
 } from "../model-execution.ts";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
 const MODEL_MEMORY_REQUEST_TIMEOUT_ENV = "MODEL_MEMORY_REQUEST_TIMEOUT_MS";
+const MODEL_MEMORY_CODEX_REASONING_EFFORT_ENV = "MODEL_MEMORY_CODEX_REASONING_EFFORT";
 
 type ParsedModelRef = {
   provider: string;
@@ -32,10 +34,38 @@ type AssistantCaptureState = {
 export type CodexAppServerJsonExecutorOptions = {
   cwd?: string;
   requestTimeoutMs?: number;
+  serviceTier?: string;
+  reasoningEffort?: JsonModelReasoningEffort;
 };
 
 function readTrimmedString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function resolveCodexReasoningEffort(
+  requested: JsonModelReasoningEffort | undefined,
+): "minimal" | "low" | "medium" | "high" | "xhigh" | undefined {
+  if (
+    requested === "minimal" ||
+    requested === "low" ||
+    requested === "medium" ||
+    requested === "high" ||
+    requested === "xhigh"
+  ) {
+    return requested;
+  }
+  return undefined;
+}
+
+function readReasoningEffort(value: unknown): JsonModelReasoningEffort | undefined {
+  return value === "none" ||
+    value === "minimal" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh"
+    ? value
+    : undefined;
 }
 
 function resolveRequestTimeoutMs(
@@ -136,6 +166,27 @@ function captureTurnItems(state: AssistantCaptureState, turn: CodexTurn): void {
   }
 }
 
+function buildCodexDeveloperInstructions(request: JsonModelExecutionRequest): string {
+  const transport = request.responseOptions?.transport;
+  const schemaInstruction =
+    transport?.type === "json_schema"
+      ? [
+          "Structured output contract:",
+          `- contract: ${request.contract.contractName}/${request.contract.contractVersion}`,
+          `- schema name: ${transport.name}`,
+          `- strict: ${transport.strict ?? true}`,
+          "Return exactly one JSON object matching this JSON Schema. Do not wrap the JSON in markdown.",
+          JSON.stringify(transport.schema),
+        ].join("\n")
+      : [
+          "Structured output contract:",
+          `- contract: ${request.contract.contractName}/${request.contract.contractVersion}`,
+          "Return exactly one compact JSON object. Do not wrap the JSON in markdown.",
+        ].join("\n");
+
+  return [request.systemPrompt, schemaInstruction].filter((section) => section.trim()).join("\n\n");
+}
+
 function readCompletedTurn(
   notification: CodexServerNotification,
   threadId: string,
@@ -230,6 +281,7 @@ async function waitForCompletedTurn(input: {
   model: string;
   cwd: string;
   userPrompt: string;
+  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 }): Promise<{ turn: CodexTurn; assistantState: AssistantCaptureState }> {
   const pendingNotifications: CodexServerNotification[] = [];
   const assistantState: AssistantCaptureState = {
@@ -299,6 +351,7 @@ async function waitForCompletedTurn(input: {
         approvalsReviewer: input.runtime.approvalsReviewer,
         model: input.model,
         ...(input.runtime.serviceTier ? { serviceTier: input.runtime.serviceTier } : {}),
+        ...(input.reasoningEffort ? { effort: input.reasoningEffort } : {}),
       },
       { timeoutMs: input.requestTimeoutMs },
     );
@@ -332,14 +385,22 @@ export class CodexAppServerJsonExecutor implements JsonModelExecutor {
   private readonly runtime: CodexAppServerRuntimeOptions;
   private readonly requestTimeoutMs: number;
   private readonly cwd: string;
+  private readonly defaultReasoningEffort?: JsonModelReasoningEffort;
 
   constructor(options: CodexAppServerJsonExecutorOptions = {}) {
-    this.runtime = resolveCodexAppServerRuntimeOptions();
+    const runtime = resolveCodexAppServerRuntimeOptions();
+    this.runtime = {
+      ...runtime,
+      ...(readTrimmedString(options.serviceTier) ? { serviceTier: options.serviceTier } : {}),
+    };
     this.requestTimeoutMs = resolveRequestTimeoutMs(
       options.requestTimeoutMs,
       this.runtime.requestTimeoutMs,
     );
     this.cwd = options.cwd ?? process.cwd();
+    this.defaultReasoningEffort =
+      options.reasoningEffort ??
+      readReasoningEffort(process.env[MODEL_MEMORY_CODEX_REASONING_EFFORT_ENV]);
   }
 
   async execute(request: JsonModelExecutionRequest): Promise<JsonModelExecutionResponse> {
@@ -359,7 +420,7 @@ export class CodexAppServerJsonExecutor implements JsonModelExecutor {
         sandbox: this.runtime.sandbox,
         ...(this.runtime.serviceTier ? { serviceTier: this.runtime.serviceTier } : {}),
         serviceName: "OpenClaw MMV2",
-        developerInstructions: request.systemPrompt,
+        developerInstructions: buildCodexDeveloperInstructions(request),
         ephemeral: true,
         dynamicTools: [],
         experimentalRawEvents: true,
@@ -375,6 +436,9 @@ export class CodexAppServerJsonExecutor implements JsonModelExecutor {
       model: parsedModel.model,
       cwd: this.cwd,
       userPrompt: request.userPrompt,
+      reasoningEffort: resolveCodexReasoningEffort(
+        request.responseOptions?.reasoningEffort ?? this.defaultReasoningEffort,
+      ),
     });
 
     if (completed.turn.status === "failed") {

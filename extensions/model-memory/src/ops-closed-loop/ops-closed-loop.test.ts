@@ -23,7 +23,7 @@ import {
   buildRecommendationsFromSignals,
 } from "./recommendations.ts";
 import { generateMemoryOpsHealthReport, writeMemoryOpsHealthReport } from "./report.ts";
-import { buildSafeLevel1AutoFixPlan } from "./safe-level1-autofix.ts";
+import { buildSafeLevel1AutoFixPlan, executeSafeLevel1AutoFixPlan } from "./safe-level1-autofix.ts";
 import {
   createMemoryOpsSignal,
   prepareSignalForPersistence,
@@ -303,6 +303,81 @@ describe("memory ops closed loop", () => {
     );
     expect(JSON.stringify(plan)).not.toContain("full prompt");
     expect(plan.actions.every((entry) => !entry.contains_transcript)).toBe(true);
+  });
+
+  it("executes safe Level 1 auto-fixes against operational artifacts without semantic truth mutation", async () => {
+    const jsonlPath = path.join(tempDir, "model-memory/capture-jobs/events.jsonl");
+    await mkdir(path.dirname(jsonlPath), { recursive: true });
+    await writeFile(jsonlPath, '{"event":"safe"}\n', "utf8");
+    const plan = buildSafeLevel1AutoFixPlan({
+      captureJobs: [{ jobId: "job-timeout", status: "failed", failureClass: "timeout" }],
+      runtimeDirtyStates: [{ dirtyId: "dirty-1", status: "dirty" }],
+      projections: [
+        {
+          projectionId: "projection-stale",
+          freshnessStatus: "stale",
+          staleMarkers: ["source_hash_changed"],
+          hashValid: true,
+          activeSourceMemoryIdsValid: true,
+        },
+        {
+          projectionId: "projection-invalid",
+          freshnessStatus: "fresh",
+          hashValid: false,
+          activeSourceMemoryIdsValid: true,
+        },
+      ],
+      providerRoutes: [
+        {
+          routeId: "openrouter/openai/gpt-5.4-nano",
+          failoverSafe: true,
+          schemaSuccessRate: 0.5,
+        },
+      ],
+      runtimeStateJsonlPaths: ["model-memory/capture-jobs/events.jsonl"],
+      semanticTruthTouchRequested: [
+        { ticketId: "approval-1", reason: "would touch semantic truth" },
+      ],
+    });
+
+    const dryRun = await executeSafeLevel1AutoFixPlan({
+      plan,
+      baseDir: tempDir,
+      mode: "dry_run",
+      enabled: true,
+      now: new Date(NOW),
+    });
+    const executed = await executeSafeLevel1AutoFixPlan({
+      plan,
+      baseDir: tempDir,
+      mode: "execute",
+      enabled: true,
+      now: new Date(NOW),
+    });
+
+    expect(dryRun.dry_run_count).toBe(plan.actions.length);
+    expect(executed.executed_count).toBe(plan.actions.length);
+    expect(executed.semantic_truth_mutated).toBe(false);
+    expect(executed.results.map((entry) => entry.action_kind)).toEqual(
+      expect.arrayContaining([
+        "retry_failed_capture_job",
+        "mark_runtime_dirty_and_schedule_rebuild",
+        "rebuild_stale_projection_artifact",
+        "quarantine_invalid_projection_artifact",
+        "rotate_runtime_state_jsonl",
+        "refresh_provider_scorecard",
+        "disable_failover_safe_model_route",
+        "operator_approval_ticket",
+      ]),
+    );
+    const executionText = await readFile(
+      path.join(tempDir, "auto-fix/safe-level1-execution.json"),
+      "utf8",
+    );
+    expect(executionText).toContain("memory_ops_safe_level1_autofix_execution.v1");
+    expect(executionText).not.toContain("full prompt");
+    expect(executionText).not.toContain("full transcript");
+    expect(await readFile(jsonlPath, "utf8")).toBe("");
   });
 
   it("discovers hook surfaces and writes an artifact with honest non-fired statuses", async () => {

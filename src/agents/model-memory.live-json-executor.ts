@@ -224,6 +224,18 @@ function buildPromptCacheOptions(request: JsonModelExecutionRequest): Record<str
   };
 }
 
+function buildModelPerformanceOptions(request: JsonModelExecutionRequest): Record<string, unknown> {
+  return {
+    ...(request.responseOptions?.reasoningEffort
+      ? { reasoning_effort: request.responseOptions.reasoningEffort }
+      : {}),
+    ...(request.responseOptions?.verbosity ? { verbosity: request.responseOptions.verbosity } : {}),
+    ...(request.responseOptions?.serviceTier
+      ? { service_tier: request.responseOptions.serviceTier }
+      : {}),
+  };
+}
+
 function resolveRequestModel(modelId: string, defaultProvider: string): ModelRef {
   const parsed = parseModelRef(modelId, defaultProvider);
   if (!parsed) {
@@ -528,15 +540,20 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
     if (!input.failureStage && !input.httpStatus && !input.errorMessage) {
       return undefined;
     }
-    if (input.httpStatus === 402) {
+    if (
+      input.httpStatus === 402 ||
+      (input.httpStatus === 429 &&
+        /quota|billing|credit|insufficient_quota|payment/iu.test(input.errorMessage ?? ""))
+    ) {
       return "provider_credit";
     }
     const failureClass = classifyMemoryIngestionFailure(input.errorMessage ?? "");
     if (
       input.strictSchema === true &&
       (input.httpStatus === 400 ||
+        input.httpStatus === 404 ||
         input.httpStatus === 422 ||
-        /schema|response_format|require_parameters|structured output/iu.test(
+        /schema|response_format|require_parameters|structured output|no endpoints|model id/iu.test(
           input.errorMessage ?? "",
         ))
     ) {
@@ -647,7 +664,8 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
 
   private async recordTraceScorecard(trace: ModelMemoryLiveExecutionTrace): Promise<void> {
     const failureClass =
-      trace.failureStage || trace.httpStatus
+      trace.failureClass ??
+      (trace.failureStage || trace.httpStatus
         ? this.classifyProviderFailure({
             strictSchema: trace.requestBody.response_format
               ? JSON.stringify(trace.requestBody.response_format).includes("json_schema")
@@ -656,7 +674,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
             failureStage: trace.failureStage,
             errorMessage: trace.errorMessage,
           })
-        : undefined;
+        : undefined);
     await this.recordScorecardEvent({
       status: trace.failureStage ? "failed" : "success",
       requestedModelId: trace.requestedModelId,
@@ -843,6 +861,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         ? { provider: buildProviderOptions(request, model.provider) }
         : {}),
       ...buildPromptCacheOptions(request),
+      ...buildModelPerformanceOptions(request),
     } satisfies Record<string, unknown>;
 
     let response: Response;
@@ -962,6 +981,7 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         ? { provider: buildProviderOptions(request, model.provider) }
         : {}),
       ...buildPromptCacheOptions(request),
+      ...buildModelPerformanceOptions(request),
     } satisfies Record<string, unknown>;
     const prefixHash = sha256(request.systemPrompt);
     const schemaHash = buildSchemaHash(request);
@@ -1004,6 +1024,11 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         failureStage: "request_time",
         errorMessage: error instanceof Error ? error.message : String(error),
       };
+      trace.failureClass = this.classifyProviderFailure({
+        strictSchema: JSON.stringify(requestBody.response_format).includes("json_schema"),
+        failureStage: trace.failureStage,
+        errorMessage: trace.errorMessage,
+      });
       await this.recordTraceScorecard(trace);
       this.onTrace?.(trace);
       throw new ModelMemoryLiveExecutionError(
@@ -1038,6 +1063,12 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         failureStage: "request_time",
         errorMessage: detail,
       };
+      trace.failureClass = this.classifyProviderFailure({
+        strictSchema: JSON.stringify(requestBody.response_format).includes("json_schema"),
+        httpStatus: trace.httpStatus,
+        failureStage: trace.failureStage,
+        errorMessage: trace.errorMessage,
+      });
       await this.recordTraceScorecard(trace);
       this.onTrace?.(trace);
       throw new ModelMemoryLiveExecutionError(
@@ -1070,6 +1101,12 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         failureStage: "provider_parse",
         errorMessage: error instanceof Error ? error.message : String(error),
       };
+      trace.failureClass = this.classifyProviderFailure({
+        strictSchema: JSON.stringify(requestBody.response_format).includes("json_schema"),
+        httpStatus: trace.httpStatus,
+        failureStage: trace.failureStage,
+        errorMessage: trace.errorMessage,
+      });
       await this.recordTraceScorecard(trace);
       this.onTrace?.(trace);
       throw new ModelMemoryLiveExecutionError(
@@ -1106,6 +1143,12 @@ export class OpenAICompatibleLiveJsonExecutor implements JsonModelExecutor {
         failureStage: "provider_response",
         errorMessage: error instanceof Error ? error.message : String(error),
       };
+      trace.failureClass = this.classifyProviderFailure({
+        strictSchema: JSON.stringify(requestBody.response_format).includes("json_schema"),
+        httpStatus: trace.httpStatus,
+        failureStage: trace.failureStage,
+        errorMessage: trace.errorMessage,
+      });
       await this.recordTraceScorecard(trace);
       this.onTrace?.(trace);
       throw new ModelMemoryLiveExecutionError(

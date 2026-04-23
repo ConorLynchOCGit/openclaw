@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { mkdir, rename, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type { MemoryOpsClosedLoopConfig } from "./config.ts";
 
 export type SafeLevel1AutoFixActionKind =
@@ -72,6 +74,42 @@ export type SafeLevel1AutoFixPlan = {
   generated_at: string;
   actions: SafeLevel1AutoFixAction[];
   forbidden_semantic_truth_actions: string[];
+};
+
+export type SafeLevel1AutoFixExecutionMode = "dry_run" | "execute";
+
+export type SafeLevel1AutoFixExecutionResult = {
+  action_id: string;
+  action_kind: SafeLevel1AutoFixActionKind;
+  target_id: string;
+  mode: SafeLevel1AutoFixExecutionMode;
+  status: "executed" | "dry_run" | "skipped";
+  reason: string;
+  artifact_path?: string;
+  rollback: string;
+  raw_content_persisted: false;
+  contains_prompt_text: false;
+  contains_transcript: false;
+  contains_raw_tool_log: false;
+  semantic_truth_mutated: false;
+};
+
+export type SafeLevel1AutoFixExecutionReport = {
+  schema_version: "memory_ops_safe_level1_autofix_execution.v1";
+  generated_at: string;
+  mode: SafeLevel1AutoFixExecutionMode;
+  enabled: boolean;
+  action_count: number;
+  executed_count: number;
+  dry_run_count: number;
+  skipped_count: number;
+  results: SafeLevel1AutoFixExecutionResult[];
+  forbidden_semantic_truth_actions: string[];
+  raw_content_persisted: false;
+  contains_prompt_text: false;
+  contains_transcript: false;
+  contains_raw_tool_log: false;
+  semantic_truth_mutated: false;
 };
 
 const RETRYABLE_CAPTURE_FAILURES = new Set(["timeout", "provider_connection", "pool_pressure"]);
@@ -241,4 +279,177 @@ export function buildSafeLevel1AutoFixPlan(
       "root_user_memory_write_back",
     ],
   };
+}
+
+function safeFileSegment(value: string): string {
+  const normalized = value.replace(/[^A-Za-z0-9_.-]+/gu, "-").replace(/^-+|-+$/gu, "");
+  return normalized.slice(0, 96) || stableActionId(["safe-file", value]);
+}
+
+function actionArtifactRelativePath(action: SafeLevel1AutoFixAction): string {
+  switch (action.action_kind) {
+    case "retry_failed_capture_job":
+      return `auto-fix/capture-retries/${safeFileSegment(action.target_id)}.json`;
+    case "mark_runtime_dirty_and_schedule_rebuild":
+      return `auto-fix/runtime-dirty-schedule/${safeFileSegment(action.target_id)}.json`;
+    case "rebuild_stale_projection_artifact":
+      return `auto-fix/projection-rebuilds/${safeFileSegment(action.target_id)}.json`;
+    case "quarantine_invalid_projection_artifact":
+      return `auto-fix/projection-quarantine/${safeFileSegment(action.target_id)}.json`;
+    case "rotate_runtime_state_jsonl":
+      return `auto-fix/runtime-state-rotation/${stableActionId([action.target_id])}.json`;
+    case "refresh_provider_scorecard":
+      return `auto-fix/provider-scorecards/${safeFileSegment(action.target_id)}.json`;
+    case "disable_failover_safe_model_route":
+      return `auto-fix/provider-route-disable/${safeFileSegment(action.target_id)}.json`;
+    case "operator_approval_ticket":
+      return `auto-fix/operator-approval-tickets/${safeFileSegment(action.target_id)}.json`;
+    default:
+      return `auto-fix/unknown/${stableActionId([action.target_id, action.action_kind])}.json`;
+  }
+}
+
+async function writeJsonArtifact(baseDir: string, relativePath: string, value: unknown) {
+  const outputPath = path.resolve(baseDir, relativePath);
+  const resolvedBase = path.resolve(baseDir);
+  if (!outputPath.startsWith(`${resolvedBase}${path.sep}`)) {
+    throw new Error(`unsafe safe-level1 artifact path: ${relativePath}`);
+  }
+  await mkdir(path.dirname(outputPath), { recursive: true, mode: 0o700 });
+  await writeFile(outputPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  return outputPath;
+}
+
+async function appendJsonLine(baseDir: string, relativePath: string, value: unknown) {
+  const outputPath = path.resolve(baseDir, relativePath);
+  const resolvedBase = path.resolve(baseDir);
+  if (!outputPath.startsWith(`${resolvedBase}${path.sep}`)) {
+    throw new Error(`unsafe safe-level1 JSONL path: ${relativePath}`);
+  }
+  await mkdir(path.dirname(outputPath), { recursive: true, mode: 0o700 });
+  await writeFile(outputPath, `${JSON.stringify(value)}\n`, { flag: "a", mode: 0o600 });
+}
+
+async function maybeRotateRuntimeStateJsonl(input: {
+  baseDir: string;
+  targetId: string;
+  enabled: boolean;
+  now: Date;
+}): Promise<{ rotated: boolean; reason: string; rotatedPath?: string }> {
+  if (!input.enabled) {
+    return { rotated: false, reason: "dry_run" };
+  }
+  const baseDir = path.resolve(input.baseDir);
+  const targetPath = path.resolve(input.baseDir, input.targetId);
+  if (!targetPath.startsWith(`${baseDir}${path.sep}`) || !targetPath.endsWith(".jsonl")) {
+    return { rotated: false, reason: "path_not_under_base_dir_or_not_jsonl" };
+  }
+  try {
+    const info = await stat(targetPath);
+    if (!info.isFile() || info.size === 0) {
+      return { rotated: false, reason: "empty_or_not_file" };
+    }
+    const rotatedPath = `${targetPath}.${input.now.toISOString().replace(/[:.]/gu, "-")}.bak`;
+    await rename(targetPath, rotatedPath);
+    await writeFile(targetPath, "", { mode: 0o600 });
+    return { rotated: true, reason: "rotated", rotatedPath };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { rotated: false, reason: "missing" };
+    }
+    throw error;
+  }
+}
+
+export async function executeSafeLevel1AutoFixPlan(input: {
+  plan: SafeLevel1AutoFixPlan;
+  baseDir: string;
+  mode?: SafeLevel1AutoFixExecutionMode;
+  enabled?: boolean;
+  now?: Date;
+  env?: NodeJS.ProcessEnv;
+}): Promise<SafeLevel1AutoFixExecutionReport> {
+  const now = input.now ?? new Date();
+  const mode = input.mode ?? "dry_run";
+  const env = input.env ?? process.env;
+  const enabled =
+    input.enabled ?? /^(1|true|yes|on)$/iu.test(env.MODEL_MEMORY_SAFE_LEVEL1_AUTOFIX_ENABLED ?? "");
+  const results: SafeLevel1AutoFixExecutionResult[] = [];
+
+  for (const planned of input.plan.actions) {
+    const actionEnvName = `MODEL_MEMORY_SAFE_LEVEL1_${planned.action_kind.toUpperCase()}_ENABLED`;
+    const actionEnabled = /^(1|true|yes|on)$/iu.test(env[actionEnvName] ?? "true");
+    const shouldExecute = enabled && actionEnabled && planned.enabled && mode === "execute";
+    const relativePath = actionArtifactRelativePath(planned);
+    const artifactPayload = {
+      schema_version: "memory_ops_safe_level1_action.v1",
+      generated_at: now.toISOString(),
+      mode,
+      action: planned,
+      semantic_truth_mutated: false,
+      raw_content_persisted: false,
+      contains_prompt_text: false,
+      contains_transcript: false,
+      contains_raw_tool_log: false,
+    };
+    let reason = shouldExecute ? planned.reason : enabled ? "dry_run" : "global_disabled";
+    if (!actionEnabled) {
+      reason = "action_disabled";
+    }
+    let artifactPath: string | undefined;
+    if (shouldExecute || mode === "dry_run") {
+      if (planned.action_kind === "rotate_runtime_state_jsonl") {
+        const rotation = await maybeRotateRuntimeStateJsonl({
+          baseDir: input.baseDir,
+          targetId: planned.target_id,
+          enabled: shouldExecute,
+          now,
+        });
+        reason = rotation.reason;
+        artifactPath = await writeJsonArtifact(input.baseDir, relativePath, {
+          ...artifactPayload,
+          rotation,
+        });
+      } else {
+        artifactPath = await writeJsonArtifact(input.baseDir, relativePath, artifactPayload);
+      }
+    }
+    const result: SafeLevel1AutoFixExecutionResult = {
+      action_id: planned.action_id,
+      action_kind: planned.action_kind,
+      target_id: planned.target_id,
+      mode,
+      status: shouldExecute ? "executed" : mode === "dry_run" && enabled ? "dry_run" : "skipped",
+      reason,
+      artifact_path: artifactPath ? path.relative(input.baseDir, artifactPath) : undefined,
+      rollback: planned.rollback,
+      raw_content_persisted: false,
+      contains_prompt_text: false,
+      contains_transcript: false,
+      contains_raw_tool_log: false,
+      semantic_truth_mutated: false,
+    };
+    results.push(result);
+    await appendJsonLine(input.baseDir, "auto-fix/actions.jsonl", result);
+  }
+
+  const report: SafeLevel1AutoFixExecutionReport = {
+    schema_version: "memory_ops_safe_level1_autofix_execution.v1",
+    generated_at: now.toISOString(),
+    mode,
+    enabled,
+    action_count: results.length,
+    executed_count: results.filter((result) => result.status === "executed").length,
+    dry_run_count: results.filter((result) => result.status === "dry_run").length,
+    skipped_count: results.filter((result) => result.status === "skipped").length,
+    results,
+    forbidden_semantic_truth_actions: input.plan.forbidden_semantic_truth_actions,
+    raw_content_persisted: false,
+    contains_prompt_text: false,
+    contains_transcript: false,
+    contains_raw_tool_log: false,
+    semantic_truth_mutated: false,
+  };
+  await writeJsonArtifact(input.baseDir, "auto-fix/safe-level1-execution.json", report);
+  return report;
 }

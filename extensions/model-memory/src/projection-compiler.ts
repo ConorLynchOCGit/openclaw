@@ -257,6 +257,289 @@ function renderSourceMemorySummary(memoryObjects: RuntimeMemoryRecord[]): string
     .join("\n");
 }
 
+function payloadStringField(object: RuntimeMemoryRecord, keys: string[]): string | undefined {
+  if (!object.payload || typeof object.payload !== "object" || Array.isArray(object.payload)) {
+    return undefined;
+  }
+  const payload = object.payload;
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function payloadStringArrayField(object: RuntimeMemoryRecord, keys: string[]): string[] {
+  if (!object.payload || typeof object.payload !== "object" || Array.isArray(object.payload)) {
+    return [];
+  }
+  const payload = object.payload;
+  for (const key of keys) {
+    const value = payload[key];
+    if (Array.isArray(value)) {
+      return value
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter((entry) => entry.length > 0)
+        .slice(0, 12);
+    }
+  }
+  return [];
+}
+
+function memorySubject(object: RuntimeMemoryRecord): string {
+  return (
+    object.normalizedSubject ||
+    object.normalizedTitle ||
+    payloadStringField(object, ["subject", "title", "entity", "path"]) ||
+    "unspecified"
+  );
+}
+
+function memorySummary(object: RuntimeMemoryRecord): string {
+  return summarizeModelMemoryPayload({
+    kind: object.kind,
+    payload: object.payload,
+  });
+}
+
+function memorySourceLabel(object: RuntimeMemoryRecord): string {
+  const span = object.provenance?.[0];
+  if (!span) {
+    return "source unavailable";
+  }
+  const sourceId = typeof span.sourceId === "string" ? span.sourceId : undefined;
+  const blockId = typeof span.blockId === "string" ? span.blockId : undefined;
+  return [sourceId, blockId].filter(Boolean).join("#") || "source unavailable";
+}
+
+function renderMemoryBullets(
+  memoryObjects: RuntimeMemoryRecord[],
+  options: { max?: number; includeSource?: boolean } = {},
+): string {
+  if (memoryObjects.length === 0) {
+    return "- none";
+  }
+  return memoryObjects
+    .toSorted((left, right) => {
+      const created = right.createdAt.getTime() - left.createdAt.getTime();
+      return created !== 0 ? created : left.id.localeCompare(right.id);
+    })
+    .slice(0, options.max ?? 12)
+    .map((object) => {
+      const source = options.includeSource ? `; source=${memorySourceLabel(object)}` : "";
+      return `- ${memorySubject(object)}: ${memorySummary(object)} [memory=${object.id}; kind=${object.kind}${source}]`;
+    })
+    .join("\n");
+}
+
+function renderProcedureBullets(memoryObjects: RuntimeMemoryRecord[]): string {
+  if (memoryObjects.length === 0) {
+    return "- none";
+  }
+  return memoryObjects
+    .toSorted((left, right) => memorySubject(left).localeCompare(memorySubject(right)))
+    .slice(0, 12)
+    .map((object) => {
+      const steps = payloadStringArrayField(object, ["steps", "checklist", "items"]);
+      const renderedSteps =
+        steps.length === 0
+          ? "no structured checklist"
+          : steps.map((step, index) => `${index + 1}. ${step}`).join(" ");
+      return `- ${memorySubject(object)} [memory=${object.id}; source=${memorySourceLabel(object)}]: ${renderedSteps}`;
+    })
+    .join("\n");
+}
+
+function searchText(object: RuntimeMemoryRecord): string {
+  return [
+    object.kind,
+    object.canonicalClass,
+    object.normalizedSubject,
+    object.normalizedTitle,
+    object.normalizedSearchText,
+    memorySummary(object),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function renderRichProjectionBody(input: {
+  registryEntry: ProjectionRegistryEntry;
+  digest: ProjectionDigestArtifact;
+  activeSourceObjects: RuntimeMemoryRecord[];
+}): string {
+  const { registryEntry, activeSourceObjects } = input;
+  const decisions = activeSourceObjects.filter((object) => searchText(object).includes("decision"));
+  const blockers = activeSourceObjects.filter((object) =>
+    /\b(blocker|blocked|blocking|failed|failure|timeout|pending|stale)\b/u.test(searchText(object)),
+  );
+  const procedures = activeSourceObjects.filter((object) => object.kind === "procedure");
+  const references = activeSourceObjects.filter(
+    (object) => object.kind === "reference" || object.canonicalClass === "reference",
+  );
+  const preferences = activeSourceObjects.filter(
+    (object) => object.kind === "preference" || object.canonicalClass === "user",
+  );
+
+  switch (registryEntry.projectionType) {
+    case "project_page":
+      return [
+        "## Active Project State",
+        "",
+        renderMemoryBullets(activeSourceObjects, { max: 10, includeSource: true }),
+        "",
+        "## Blockers",
+        "",
+        renderMemoryBullets(blockers, { max: 8, includeSource: true }),
+        "",
+        "## Recent Decisions",
+        "",
+        renderMemoryBullets(decisions, { max: 8, includeSource: true }),
+      ].join("\n");
+    case "procedure_page":
+      return [
+        "## Operational Runbooks And Checklists",
+        "",
+        renderProcedureBullets(procedures.length > 0 ? procedures : activeSourceObjects),
+        "",
+        "## Preconditions And Rollback Evidence",
+        "",
+        renderMemoryBullets(activeSourceObjects, { max: 8, includeSource: true }),
+      ].join("\n");
+    case "decision_log":
+      return [
+        "## Prior Decisions",
+        "",
+        renderMemoryBullets(decisions.length > 0 ? decisions : activeSourceObjects, {
+          max: 12,
+          includeSource: true,
+        }),
+        "",
+        "## Conflict And Stale Markers",
+        "",
+        renderList([...input.digest.conflictMarkers, ...input.digest.staleMarkers]),
+      ].join("\n");
+    case "source_page":
+      return [
+        "## Canonical Source Evidence",
+        "",
+        renderMemoryBullets(references.length > 0 ? references : activeSourceObjects, {
+          max: 12,
+          includeSource: true,
+        }),
+        "",
+        "## Linked Memories",
+        "",
+        renderList(input.digest.sourceMemoryIds),
+      ].join("\n");
+    case "user_profile_page":
+      return [
+        "## Stable Task-Relevant Preferences",
+        "",
+        renderMemoryBullets(preferences.length > 0 ? preferences : activeSourceObjects, {
+          max: 12,
+          includeSource: true,
+        }),
+        "",
+        "## Scope And Confidence",
+        "",
+        renderMemoryBullets(activeSourceObjects, { max: 8 }),
+      ].join("\n");
+    case "entity_page": {
+      const bySubject = new Map<string, RuntimeMemoryRecord[]>();
+      for (const object of activeSourceObjects) {
+        const subject = memorySubject(object);
+        bySubject.set(subject, [...(bySubject.get(subject) ?? []), object]);
+      }
+      const grouped = [...bySubject.entries()]
+        .toSorted(([left], [right]) => left.localeCompare(right))
+        .slice(0, 10)
+        .flatMap(([subject, objects]) => [
+          `### ${subject}`,
+          "",
+          renderMemoryBullets(objects, { max: 6, includeSource: true }),
+          "",
+        ])
+        .join("\n");
+      return ["## Entity Knowledge", "", grouped || "- none"].join("\n");
+    }
+    case "timeline_page":
+      return [
+        "## Change Timeline",
+        "",
+        activeSourceObjects.length === 0
+          ? "- none"
+          : activeSourceObjects
+              .toSorted((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+              .slice(0, 18)
+              .map(
+                (object) =>
+                  `- ${object.createdAt.toISOString()}: ${memorySubject(object)} [memory=${object.id}; event=${input.digest.sourceEventIds[0] ?? "unknown"}]`,
+              )
+              .join("\n"),
+      ].join("\n");
+    case "dashboard":
+      return [
+        "## Memory Health Dashboard",
+        "",
+        `- active_source_memories: ${input.digest.sourceMemoryIds.length}`,
+        `- source_events: ${input.digest.sourceEventIds.length}`,
+        `- source_edges: ${input.digest.sourceEdgeIds.length}`,
+        `- stale_marker_count: ${input.digest.staleMarkers.length}`,
+        `- conflict_marker_count: ${input.digest.conflictMarkers.length}`,
+        `- freshness: ${input.digest.freshness.status}`,
+        "",
+        "## Status Samples",
+        "",
+        renderMemoryBullets(activeSourceObjects, { max: 10 }),
+      ].join("\n");
+    case "agent_digest":
+      return [
+        "## Compact Agent Context",
+        "",
+        "```json",
+        JSON.stringify(
+          {
+            role: registryEntry.retrievalRole,
+            runtime_use_case: registryEntry.runtimeUseCase,
+            active_memory_ids: input.digest.sourceMemoryIds.slice(0, 20),
+            blocker_memory_ids: blockers.map((object) => object.id).slice(0, 10),
+            procedure_memory_ids: procedures.map((object) => object.id).slice(0, 10),
+          },
+          null,
+          2,
+        ),
+        "```",
+      ].join("\n");
+    case "projection_digest":
+      return [
+        "## Projection Retrieval Index",
+        "",
+        "```json",
+        JSON.stringify(
+          {
+            projection_id: input.digest.projectionId,
+            projection_type: input.digest.projectionType,
+            retrieval_role: registryEntry.retrievalRole,
+            source_memory_ids: input.digest.sourceMemoryIds.slice(0, 30),
+            source_event_ids: input.digest.sourceEventIds.slice(0, 30),
+            freshness: input.digest.freshness,
+          },
+          null,
+          2,
+        ),
+        "```",
+      ].join("\n");
+    case "workspace_projection":
+      return renderMemoryBullets(activeSourceObjects, { max: 12, includeSource: true });
+    default:
+      return renderMemoryBullets(activeSourceObjects, { max: 12, includeSource: true });
+  }
+}
+
 function buildProjectionDigestArtifact(input: {
   projectionType: MemoryProjectionType;
   title: string;
@@ -445,6 +728,10 @@ function renderProjectionCatalogPage(input: {
     `- title: ${digest.retrievalDigest.title}`,
     `- summary: ${digest.retrievalDigest.summary}`,
     `- content_hash: ${digest.retrievalDigest.contentHash}`,
+    "",
+    "## Rich Runtime Page",
+    "",
+    renderRichProjectionBody(input),
     "",
     "## Source Summaries",
     "",

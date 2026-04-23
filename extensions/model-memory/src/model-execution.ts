@@ -36,12 +36,26 @@ export const JsonModelPromptCacheOptionsSchema = z
 
 export type JsonModelPromptCacheOptions = z.infer<typeof JsonModelPromptCacheOptionsSchema>;
 
+export const JsonModelReasoningEffortSchema = z.enum([
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]);
+
+export type JsonModelReasoningEffort = z.infer<typeof JsonModelReasoningEffortSchema>;
+
 export const JsonModelExecutionResponseOptionsSchema = z
   .object({
     transport: JsonModelResponseTransportSchema.optional(),
     provider: JsonModelProviderOptionsSchema.optional(),
     maxOutputTokens: z.number().int().positive().optional(),
     promptCache: JsonModelPromptCacheOptionsSchema.optional(),
+    reasoningEffort: JsonModelReasoningEffortSchema.optional(),
+    verbosity: z.enum(["low", "medium", "high"]).optional(),
+    serviceTier: z.string().trim().min(1).optional(),
   })
   .strict();
 

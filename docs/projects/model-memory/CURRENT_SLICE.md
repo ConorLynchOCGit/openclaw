@@ -100,33 +100,54 @@ Passes 3-5 are now implemented and live-picked-up without a DB migration:
   capture routing, extraction, canonicalization, and retrieval interpretation,
   and provider scorecards record safe schema/latency/token/cache metrics.
 
-Pass 6 and the artifact-safe portion of Pass 7 are now implemented in source
-and proof artifacts:
+The 2026-04-23 live pre-Phase-2 pass completed the previously missing
+operator-approved proof and measured Pass 6 with real provider/model calls:
 
-- cache-aware mini/nano benchmarking is available through
-  `scripts/model-memory-cache-aware-benchmark.mjs` and records stable
-  prompt-cache keys, prefix/schema hashes, cached-token percentages, latency,
-  schema adherence, empty-response rate, repair rate, and valid-candidate rate
-  without durable DB writes
-- large-document compression research compares direct rigid capture,
-  source-preserving summary then capture, and section-map candidate hints; the
-  summary path remains projection/cache-only and every admitted candidate must
-  validate against original source spans
-- capture seam policy now makes production-verified seams active behind global
-  and seam-specific kill switches, keeps `message:received` and
-  `message:transcribed` fallback-only, and records deterministic dedupe keys
-- full rich projection catalog materialization now writes all 10 projection
-  types under `/root/.openclaw/workspace/.openclaw/model-memory/projections/`
-  with root write-back disabled
-- Memory Ops Safe Level 1 auto-fix planning is active for artifact/job/runtime
-  maintenance only; semantic truth mutation still generates operator approval
-  tickets instead of auto-fix
-- `MEMMECH-2026-04-22` artifact proof is rooted at
-  `.artifacts/model-memory/memmech-proof/2026-04-22-pass-7/`
+- cache-aware live mini/nano benchmark:
+  `.artifacts/model-memory/pass6-live-benchmark/2026-04-23/benchmark-report.json`
+  ran 72 real calls, three runs per model/case, with benchmark/eval output
+  kept artifact-only and out of the live durable-memory DB
+- `openai-codex/gpt-5.4-mini` completed all 36 calls with strict-schema
+  adherence `1.0`, p50 latency about `4425ms`, p95 about `7963ms`, no empty
+  responses, valid-candidate rate about `0.944`, and no provider failure
+  classes; the Codex app-server path did not expose token/cache usage
+- configured nano route `openrouter/openai/gpt-5.4-nano` returned
+  `provider_json_boundary` for all 36 strict-schema calls in this environment,
+  so nano remains blocked until the configured provider route supports the
+  required strict structured-output contracts
+- large-document compression against
+  `docs/projects/model-memory/DECISIONS.md` is recorded at
+  `.artifacts/model-memory/large-doc-compression/2026-04-23/large-doc-compression.json`;
+  section-map plus candidate hints is the preferred strategy because it
+  admitted six source-validated candidates with zero evidence-validation
+  failures and lower latency than direct rigid capture
+- active capture seams are proven at
+  `.artifacts/model-memory/capture-seams/2026-04-23/capture-seams-live-proof.json`
+  for `message:preprocessed`, `ContextEngine.ingest`,
+  `ContextEngine.ingestBatch`, `tool_result_persist`, `after_tool_call`,
+  `ContextEngine.afterTurn`, `agent_end`, `agent:bootstrap`, and
+  `memory_file_import`; `message:received` and `message:transcribed` remain
+  fallback-only
+- hash-gated bootstrap/memory-file import is implemented as a no-migration
+  runtime-state import surface with changed-hash import, unchanged-hash skip,
+  safe provenance, and no raw generated root write-back
+- all ten projection types have rich materialized renderers and live
+  projection-backed behavior proof at
+  `.artifacts/model-memory/projection-live-behavior/2026-04-23/projection-live-behavior-proof.json`
+- Memory Ops Safe Level 1 auto-fixes now run as operational artifact/job/state
+  actions through `scripts/run-memory-ops-closed-loop.mjs`; semantic truth
+  mutations still produce operator approval tickets instead of auto-fix
+- live `MEMMECH-LIVE-2026-04-23` proof is rooted at
+  `.artifacts/model-memory/memmech-proof/2026-04-23-live/` and includes a
+  `capture_written` event plus durable rows for the single operator-approved
+  long-term workspace project fact
 
-The current pass did not create an artificial durable memory in the live DB.
-Durable ordinary-turn row proof is covered by isolated pg-mem tests unless an
-operator-approved long-term live durable payload is provided.
+The approved live proof reused only the operator-approved durable payload.
+It did not write benchmark/eval/proof/file-pack artifacts to the live
+durable-memory DB. A historical duplicate failed capture job from the
+pre-idempotency proof rerun remains disclosed in the MEMMECH artifact as
+non-blocking runtime-state history; the capture job runner now returns an
+already-written job idempotently instead of regressing it to queued/failed.
 
 ## Current Outcome
 

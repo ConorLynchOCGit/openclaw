@@ -122,7 +122,7 @@ Top-level bootstrap files are rendered views, not the primary generated store.
 For `memory-md`, the current live rendered view is the generated runtime
 artifact path, not the curated workspace file.
 
-The rich projection catalog pages added on 2026-04-22 are artifact-only
+The rich projection catalog pages completed on 2026-04-23 are artifact-only
 runtime views under `.openclaw/model-memory/projections/`. They cover:
 
 - `user_profile_page`
@@ -141,15 +141,28 @@ freshness, stale markers, conflict markers, and retrieval digest metadata.
 They are never allowed to write generated content back into root `USER.md` or
 `MEMORY.md`.
 
-2026-04-22 live materialization record:
+2026-04-23 live materialization/proof record:
 
-- command: `node scripts/model-memory-materialize-projection-catalog.mjs`
-- live MMV2 runtime records read: 590
-- active source memory ids: 542
+- command:
+  `node scripts/model-memory-live-projection-behavior-proof.mjs`
+- proof artifact:
+  `.artifacts/model-memory/projection-live-behavior/2026-04-23/projection-live-behavior-proof.json`
 - projection artifacts written: 10
-- projection index:
-  `/root/.openclaw/workspace/.openclaw/model-memory/projections/index.json`
+- projection index: `.openclaw/model-memory/projections/index.json`
 - root write-back status: disabled
+- selected projection ids and active backing source memory ids are recorded in
+  the proof for every projection type
+
+Hash-gated imports:
+
+- bootstrap and memory-file imports are implemented through
+  `extensions/model-memory/src/imports/hash-gated-import.ts`
+- source content is hashed before import; unchanged hashes skip, changed hashes
+  proceed through the shared MMV2 ingestion/capture path
+- root `USER.md` and `MEMORY.md` remain human-owned compatibility files and
+  are never overwritten by generated projection output
+- import records persist safe source ids, source hashes, path authority, import
+  timestamps, counts, and bounded evidence hashes only
 
 Runtime consumers:
 

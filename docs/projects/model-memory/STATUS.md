@@ -7,7 +7,7 @@ title: "Model Memory Status"
 
 ## Overall
 
-State: `pre_phase_2_memory_gates_partially_landed`
+State: `pre_phase_2_memory_gates_live_proven`
 
 Current authority:
 
@@ -224,20 +224,38 @@ Current 2026-04-22 partial-corpus proof state:
   `extensions/model-memory/src/mmv2/storage-compatibility.ts` and no longer
   imports legacy `semantic-identity.ts`
 
-Pre-Phase-2 gate status, 2026-04-22:
+Pre-Phase-2 gate status, 2026-04-23:
 
-- Pass 6 source/artifact implementation is landed:
-  - cache-aware benchmark harness covers mini/nano model summaries, stable
-    cache keys, prefix/schema hashes, cached-token percentages, latency,
-    schema adherence, empty responses, repair rate, valid candidate rate, and
-    safe cost estimates
-  - the benchmark artifact root is
-    `.artifacts/model-memory/pass6-cache-aware-benchmark/2026-04-22-pass6/`
-  - the recorded recommendation prefers mini in the fixture report because it
-    has higher valid-candidate/schema behavior while nano remains the cheaper
-    high-volume route to evaluate under live provider conditions
-  - large-document compression is documented as source-preserving projection
-    cache only, not canonical truth
+- Pass 6 is now backed by real live model calls, not fixture-only output:
+  - benchmark artifact:
+    `.artifacts/model-memory/pass6-live-benchmark/2026-04-23/benchmark-report.json`
+  - run count: 72 calls, three runs per model/case across 12 cases
+  - `openai-codex/gpt-5.4-mini`: 36 calls, p50 latency about `4425ms`,
+    p95 about `7963ms`, strict-schema adherence `1.0`, empty-response rate
+    `0`, valid-candidate rate about `0.944`
+  - configured nano route `openrouter/openai/gpt-5.4-nano`: 36 calls, all
+    blocked as `provider_json_boundary` because the configured route did not
+    satisfy required strict structured-output contracts
+  - live recommendation: use Codex-auth mini for strict-schema capture,
+    retrieval interpretation, and compression benchmark paths until nano has a
+    proven strict-schema route
+  - speed controls used: API calls defaulted to `reasoning_effort=none`;
+    Codex app-server calls used `reasoning_effort=low` because `minimal`
+    conflicts with the app-server web-search tool in this environment; no
+    priority/fast service tier was forced
+  - cache-health report recorded 72 cacheable calls and 0 reported cache hits;
+    Codex app-server did not expose token/cache usage for the mini lane
+- large-document compression was benchmarked against the real
+  `docs/projects/model-memory/DECISIONS.md` source:
+  - artifact:
+    `.artifacts/model-memory/large-doc-compression/2026-04-23/large-doc-compression.json`
+  - direct rigid capture: 12 admitted candidates but 3 evidence-validation
+    failures
+  - source-preserving summary then rigid capture: 3 admitted candidates and
+    zero evidence-validation failures
+  - section-map plus candidate hints: 6 admitted candidates, zero
+    evidence-validation failures, and the lowest latency; this is the
+    recommended large-document compression path
 - capture seam activation policy is now encoded in
   `src/agents/model-memory.capture-seams.ts`:
   - active when global switch is enabled and seam-specific switch is not off:
@@ -258,6 +276,27 @@ Pre-Phase-2 gate status, 2026-04-22:
   - active source memory count: 542
   - projection count: 10
   - root write-back status: disabled
+- all ten projection types now have rich renderer output and live
+  projection-backed model behavior proof:
+  `.artifacts/model-memory/projection-live-behavior/2026-04-23/projection-live-behavior-proof.json`
+- hash-gated bootstrap and memory-file import are implemented through
+  `extensions/model-memory/src/imports/hash-gated-import.ts`; unchanged source
+  hashes skip, changed hashes import through the shared MMV2 path, and root
+  `USER.md` / `MEMORY.md` remain human-owned compatibility files
+- Safe Level 1 Memory Ops auto-fixes execute operationally for retryable
+  capture-job classes, dirty scheduling, stale projection rebuild, invalid
+  projection quarantine, JSONL rotation/prune, provider scorecard refresh,
+  failover-safe route-disable recommendations, and operator approval tickets;
+  semantic auto-fix remains disabled
+- live `MEMMECH-LIVE-2026-04-23` proof is recorded at
+  `.artifacts/model-memory/memmech-proof/2026-04-23-live/memmech-live-proof.json`
+  with `capture_written`, durable rows for the approved project fact, clean
+  no-store/privacy/temp rejection, strict-schema preflight evidence, cache
+  metric proof, no raw-turn persistence proof, and unchanged root hashes
+- a historical failed duplicate capture-job snapshot from the earlier proof
+  rerun is disclosed in the MEMMECH artifact as non-blocking runtime-state
+  history; `runMemoryCaptureJobTask` is now idempotent for already-written
+  jobs so a duplicate proof run cannot regress the job to failed
   - artifact index:
     `/root/.openclaw/workspace/.openclaw/model-memory/projections/index.json`
 - runtime retrieval/context tests prove selected projection digests enter

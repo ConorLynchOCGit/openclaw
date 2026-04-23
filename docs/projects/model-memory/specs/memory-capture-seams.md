@@ -46,17 +46,23 @@ with clear provenance and authority.
   switch. The default posture is disabled unless explicitly enabled for
   bounded evidence collection.
 
-2026-04-22 implementation posture:
+2026-04-23 implementation posture:
 
 - active seams default on only when the global kill switch is enabled and the
   seam-specific switch is not explicitly off
 - fallback-only seams remain disabled unless explicitly enabled
 - all seam evidence and activity records store safe ids, hashes, counts,
   statuses, and classes only
+- active seams route through the shared MMV2 capture/ingest contracts and
+  capture-job/activity metadata surfaces
+- cross-seam dedupe keys are deterministic and no active seam stores raw
+  prompts, full transcripts, raw tool logs, secrets, or private phrases
 
-## 2026-04-22 Activation Record
+## 2026-04-23 Activation Record
 
 Current policy is encoded in `src/agents/model-memory.capture-seams.ts`.
+Fresh proof is recorded at
+`.artifacts/model-memory/capture-seams/2026-04-23/capture-seams-live-proof.json`.
 
 Active when global capture seams are enabled:
 
@@ -75,16 +81,18 @@ Fallback-only unless explicitly enabled:
 - `message:received`
 - `message:transcribed`
 
-Blocked:
+Generic file-change watcher seams remain blocked unless a production
+file-change firing surface is later proven. The production bootstrap and
+memory-file import paths are active through explicit hash-gated import seams,
+not through unbounded file watchers.
 
-- changed bootstrap files without a production file-change firing surface
-- changed memory files without a production file-change firing surface
-
-The latest Memory Ops hook discovery artifact marked
-`message:preprocessed`, `ContextEngine.ingest`, `ContextEngine.ingestBatch`,
-`ContextEngine.assemble`, `tool_result_persist`, `after_tool_call`,
-`agent_end`, and `ContextEngine.afterTurn` as production-verified. Synthetic
-or fallback hooks are not promoted to primary capture.
+The latest Memory Ops hook discovery artifact marks `message:preprocessed`,
+`ContextEngine.ingest`, `ContextEngine.ingestBatch`, `ContextEngine.assemble`,
+`tool_result_persist`, `after_tool_call`, `agent_end`,
+`ContextEngine.afterTurn`, `agent:bootstrap`, and `memory_file_import` as
+production-verified. `ContextEngine.assemble` remains retrieval/injection
+telemetry only unless a separate write-safe design is approved. Synthetic or
+fallback hooks are not promoted to primary capture.
 
 ## Verification Status Values
 
@@ -98,18 +106,18 @@ or fallback hooks are not promoted to primary capture.
 
 ## Target Seam Matrix
 
-| Seam                                       | Status           | Primary Role                            | Feeds                                                      |
-| ------------------------------------------ | ---------------- | --------------------------------------- | ---------------------------------------------------------- |
-| `message:preprocessed`                     | `verified`       | Primary user-input capture              | Primary memory capture                                     |
-| `message:received`                         | `fallback_only`  | Raw user-message fallback               | Primary memory capture only if later seam missing          |
-| `message:transcribed`                      | `fallback_only`  | Voice/media fallback                    | Primary memory capture only if no later preprocessed event |
-| `ContextEngine.ingest()` / `ingestBatch()` | `verified`       | Catchall and batch user-message capture | Primary capture plus closed-loop indexing                  |
-| `tool_result_persist`                      | `verified`       | Tool-derived facts and proof            | Primary capture plus provenance                            |
-| `after_tool_call`                          | `verified`       | Normalized tool-result lane if it fires | Primary capture plus provenance                            |
-| `agent_end`                                | `verified`       | Final task outcome capture              | Primary capture with lower assistant authority             |
-| `ContextEngine.afterTurn()`                | `verified`       | Completed turn delta capture            | Primary capture and session summary                        |
-| `agent:bootstrap` plus bootstrap files     | `synthetic_only` | Standing rules and bootstrap imports    | Primary capture on first import or hash change             |
-| Changed memory files                       | `blocked`        | Curated memory and daily-note imports   | Primary capture on hash change                             |
+| Seam                                       | Status          | Primary Role                            | Feeds                                                      |
+| ------------------------------------------ | --------------- | --------------------------------------- | ---------------------------------------------------------- |
+| `message:preprocessed`                     | `verified`      | Primary user-input capture              | Primary memory capture                                     |
+| `message:received`                         | `fallback_only` | Raw user-message fallback               | Primary memory capture only if later seam missing          |
+| `message:transcribed`                      | `fallback_only` | Voice/media fallback                    | Primary memory capture only if no later preprocessed event |
+| `ContextEngine.ingest()` / `ingestBatch()` | `verified`      | Catchall and batch user-message capture | Primary capture plus closed-loop indexing                  |
+| `tool_result_persist`                      | `verified`      | Tool-derived facts and proof            | Primary capture plus provenance                            |
+| `after_tool_call`                          | `verified`      | Normalized tool-result lane if it fires | Primary capture plus provenance                            |
+| `agent_end`                                | `verified`      | Final task outcome capture              | Primary capture with lower assistant authority             |
+| `ContextEngine.afterTurn()`                | `verified`      | Completed turn delta capture            | Primary capture and session summary                        |
+| `agent:bootstrap` plus bootstrap files     | `verified`      | Standing rules and bootstrap imports    | Hash-gated import on first import or hash change           |
+| Changed memory files                       | `verified`      | Curated memory and daily-note imports   | Hash-gated memory-file import                              |
 
 ## `message:preprocessed`
 

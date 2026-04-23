@@ -156,7 +156,7 @@ Implementation note, 2026-04-22:
 - these changes are availability/observability controls; ranking remains
   read-time only and does not mutate MMV2 truth
 
-Implementation note, 2026-04-22 pre-Phase-2 gate:
+Implementation note, 2026-04-23 pre-Phase-2 gate:
 
 - all 10 rich projection types can now be materialized into the live projection
   artifact index from active MMV2 runtime records
@@ -170,6 +170,11 @@ Implementation note, 2026-04-22 pre-Phase-2 gate:
 - projection-backed context is valid only when the selected digest is backed by
   active MMV2 source memory ids; workspace-file-only context is still not
   recall proof
+- live projection behavior proof covers `user_profile_page`, `project_page`,
+  `procedure_page`, `source_page`, `decision_log`, `timeline_page`,
+  `entity_page`, `dashboard`, `agent_digest`, and `projection_digest`; each
+  proof records the selected projection id, source memory ids, artifact path,
+  and a model response using the projection context
 
 Implementation note, 2026-04-21:
 

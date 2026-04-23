@@ -17,6 +17,7 @@ export * from "./db/runtime-context-repository.ts";
 export * from "./db/sql-client.ts";
 export * from "./document-ingestion.ts";
 export * from "./ingestion/shared-pipeline.ts";
+export * from "./imports/hash-gated-import.ts";
 export * from "./legacy-fallback-registry.ts";
 export * from "./live-document-ingestion-service.ts";
 export * from "./live-daily-continuity-recovery-service.ts";

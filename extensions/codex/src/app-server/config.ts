@@ -142,8 +142,13 @@ export function resolveCodexAppServerRuntimeOptions(
     approvalsReviewer:
       resolveApprovalsReviewer(config.approvalsReviewer) ??
       (env.OPENCLAW_CODEX_APP_SERVER_GUARDIAN === "1" ? "guardian_subagent" : "user"),
-    ...(readNonEmptyString(config.serviceTier)
-      ? { serviceTier: readNonEmptyString(config.serviceTier) }
+    ...((readNonEmptyString(config.serviceTier) ??
+    readNonEmptyString(env.OPENCLAW_CODEX_APP_SERVER_SERVICE_TIER))
+      ? {
+          serviceTier:
+            readNonEmptyString(config.serviceTier) ??
+            readNonEmptyString(env.OPENCLAW_CODEX_APP_SERVER_SERVICE_TIER),
+        }
       : {}),
   };
 }

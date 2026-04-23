@@ -5,6 +5,55 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-23 - Live pre-Phase-2 gates use approved durable proof plus artifact-only benchmarks
+
+Decision:
+
+- run Pass 6 benchmarks with real provider/model calls, but keep all
+  benchmark/eval output artifact-only
+- use `openai-codex/gpt-5.4-mini` for strict-schema benchmark/capture routes
+  until the configured nano route proves strict structured-output support
+- treat `provider_json_boundary` from the configured nano route as an external
+  route capability blocker, not a source/document failure
+- use `reasoning_effort=none` for direct API benchmark calls and
+  `reasoning_effort=low` for Codex app-server calls; do not force a paid
+  priority/fast service tier unless explicitly configured
+- prefer section-map plus candidate-hints for large documents after the
+  measured `DECISIONS.md` run because it preserved original-source validation
+  better than direct rigid capture
+- allow exactly the operator-approved `MEMMECH-LIVE-2026-04-23` project fact
+  to enter live durable memory as long-term workspace state
+- keep all other proof, soak, benchmark, and projection artifacts out of the
+  live durable-memory DB
+- make capture job execution idempotent once a job is `written`; duplicate
+  proof reruns must not regress job state to queued/failed
+- keep generated projections under the projection artifact root and ignore
+  repo-local `.openclaw/` artifacts in git
+
+Reasoning:
+
+- the mechanical path needed real latency/schema/failure evidence, but that
+  evidence is operational telemetry, not semantic memory
+- the approved durable payload is legitimate long-term project state, so it is
+  the only safe live row proof payload for the clean MEMMECH soak
+- strict-schema conformance matters more than raw latency for capture and
+  retrieval-interpretation correctness
+- Codex app-server currently exposes less token/cache telemetry than direct
+  API routes, so cache-health reports should distinguish "zero reported
+  cached tokens" from "provider definitely did not cache"
+
+Rollback:
+
+- disable capture seams globally with `MODEL_MEMORY_CAPTURE_SEAMS_ENABLED=false`
+- disable Safe Level 1 execution with its global/per-action kill switches
+- ignore/regenerate `.artifacts/model-memory/pass6-live-benchmark/`,
+  `.artifacts/model-memory/large-doc-compression/`,
+  `.artifacts/model-memory/projection-live-behavior/`, and
+  `.artifacts/model-memory/memmech-proof/`
+- keep the approved durable project fact as normal workspace state unless the
+  operator explicitly asks for a semantic correction through the normal MMV2
+  correction path
+
 ## 2026-04-22 - Pre-Phase-2 gates prefer artifact-safe proof over fake live DB writes
 
 Decision:

@@ -112,6 +112,28 @@ tests for retained compatibility surfaces:
 - every retained fallback surface is classified as non-default, rollback-only,
   admin-only, quarantined, or still required with an explicit blocker
 
+The 2026-04-23 live pre-Phase-2 pass keeps that classification as the
+completion posture for fallback compatibility:
+
+- no default MMV2 live capture, document ingestion, daily recovery, retrieval,
+  projection, or runtime context path may import legacy semantic-family or
+  collision modules
+- retained captured-object write fallback remains fail-closed by default and
+  requires
+  `MODEL_MEMORY_LEGACY_CAPTURED_OBJECT_WRITE_FALLBACK_ENABLED=true`
+- `semantic-collision-adjudication.ts`, `live-shadow-adapters.ts`,
+  `runtime-comparison.ts`, and `proof/object-comparison.ts` remain
+  admin/proof diagnostics only
+- `semantic-identity.ts`, `memory-object-store.ts`,
+  `mmv2-memory-object-store.ts`, and `write-policy.ts` remain quarantined
+  compatibility surfaces and are not normal MMV2 capture authority
+- broad public compatibility exports are retained only where SDK/admin/proof
+  consumers still require them; the guardrail is static hot-path import
+  testing plus the registry classification, not treating those exports as
+  normal MMV2 write behavior
+- semantic auto-fix, fuzzy write-path correction, fuzzy supersession,
+  topic-specific parsing, and semantic forests remain forbidden
+
 ## Forbidden Write-Path Inference
 
 Forbidden by default:

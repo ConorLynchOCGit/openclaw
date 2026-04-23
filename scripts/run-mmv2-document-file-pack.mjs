@@ -376,10 +376,15 @@ export async function runMmV2DocumentFilePackCli(options = {}) {
   const mmv2Module = await tsImport("../extensions/model-memory/src/mmv2/index.ts", {
     parentURL: import.meta.url,
   });
+  const codexExecutorModule = shouldUseCodexAppServer(args.modelId)
+    ? await tsImport("../extensions/model-memory/src/mmv2/codex-app-server-json-executor.ts", {
+        parentURL: import.meta.url,
+      })
+    : null;
   const executor =
     options.executor ??
     (shouldUseCodexAppServer(args.modelId)
-      ? new mmv2Module.CodexAppServerJsonExecutor({
+      ? new codexExecutorModule.CodexAppServerJsonExecutor({
           requestTimeoutMs: options.requestTimeoutMs,
         })
       : new (

@@ -8,13 +8,14 @@ title: "Memory Ops Closed Loop"
 ## Status
 
 This is now an implemented observe/report surface with Safe Level 1 auto-fix
-planning. It remains forbidden to mutate semantic truth automatically.
+dry-run and execution for operational artifact/job/runtime-state actions. It
+remains forbidden to mutate semantic truth automatically.
 
 Future module/plugin name:
 
 - `memory-ops-closed-loop`
 
-## 2026-04-22 Implementation Record
+## 2026-04-23 Implementation Record
 
 Current surfaces:
 
@@ -22,9 +23,9 @@ Current surfaces:
 - JSONL recommendations under `.openclaw-memory-ops/recommendations/`
 - reports under `.openclaw-memory-ops/reports/`
 - hook discovery artifacts under `.openclaw-memory-ops/hook-discovery/`
-- Safe Level 1 plans under `.openclaw-memory-ops/auto-fix/`
+- Safe Level 1 plans/actions under `.openclaw-memory-ops/auto-fix/`
 
-Enabled Safe Level 1 planning actions:
+Enabled Safe Level 1 operational actions:
 
 - retry failed capture jobs only for `timeout`, `provider_connection`, and
   `pool_pressure`
@@ -36,6 +37,17 @@ Enabled Safe Level 1 planning actions:
 - refresh provider scorecards
 - disable failing routes only when they are already failover-safe
 - generate operator approval tickets for semantic-truth mutations
+
+Execution constraints:
+
+- Safe Level 1 actions have dry-run and execute modes.
+- Every action writes bounded audit artifacts with safe ids/classes only.
+- Runtime-state JSONL rotation/prune must not delete durable DB data, root
+  memory files, canonical source docs, or accepted proof baselines.
+- Invalid projection quarantine and stale projection rebuild operate only on
+  derived projection artifacts backed by active MMV2 source ids.
+- Failing model routes are disabled only for new benchmark/ingest runs and
+  only when already configured as failover-safe.
 
 Forbidden:
 
@@ -49,11 +61,14 @@ Forbidden:
 Latest proof command:
 
 ```bash
-node scripts/run-memory-ops-closed-loop.mjs --hook-discovery --hook-canary --report-fixture --safe-level1-autofix --base-dir .openclaw-memory-ops
+node scripts/run-memory-ops-closed-loop.mjs --hook-discovery --hook-canary --report-fixture --safe-level1-autofix --safe-level1-dry-run --safe-level1-execute --base-dir .openclaw-memory-ops
 ```
 
 The hook discovery pass was optimized to read the source corpus once and scan
 in memory. This avoids the previous per-hook repeated file-read timeout.
+The 2026-04-23 proof executed eight Safe Level 1 actions and left semantic
+auto-fix disabled. The latest report remains
+`.openclaw-memory-ops/reports/latest.md`.
 
 ## Core Principle
 

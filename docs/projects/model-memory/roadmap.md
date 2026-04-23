@@ -69,61 +69,59 @@ title: "Model Memory Roadmap"
   - the current-runtime soak is not clean because ordinary-turn durable
     capture hit DB connection/statement timeouts and created no new memory
     rows for the durable capture prompts
-- Mechanical capture/ingest hardening is now mostly landed for pre-Phase-2:
+- Mechanical capture/ingest hardening is now live-proven for pre-Phase-2:
   Passes 1-6 persist safe runtime-state capture jobs and dirty-state
   snapshots/events, defer rebuilds, keep rebuild locking fail-fast by default,
   scope reconciliation, add DB priority lanes and pool-pressure backoff, batch
   live persistence with deferred invalid candidate/edge reports, preflight
   actual strict-schema provider contracts with safe provider/model scorecards,
-  and provide cache-aware mini/nano plus large-document compression reports.
-- Pass 7 artifact-safe MEMMECH proof is present, but live durable ordinary-turn
-  row proof still requires an operator-approved durable payload or isolated
-  staging DB before the current-runtime soak can be called fully clean.
+  and now provide real live cache-aware mini/nano plus large-document
+  compression reports.
+- Pass 7 has live approved-payload proof at
+  `.artifacts/model-memory/memmech-proof/2026-04-23-live/`: capture jobs emit
+  `capture_written`, the approved project fact exists as durable workspace
+  state, no-store/privacy/temp prompts create no active rows, dirty-state and
+  pool telemetry are visible, strict-schema preflight runs actual contracts,
+  and root `USER.md` / `MEMORY.md` hashes stay unchanged.
 
 ## Current top priorities
 
-1. verify the landed bounded tool-result proof/capture lane:
-   - `tool_result_persist`
-   - `after_tool_call`
-   - no raw prompts, transcripts, or tool logs
-   - all writes route through MMV2 admission/reconciliation
-2. keep `message:preprocessed` routing/telemetry-only until no-duplicate and
-   no-raw-prompt guarantees are proven
-3. keep fresh production verification for `ContextEngine.ingest` and
-   `ingestBatch`; the 2026-04-22 current-runtime proof shows production
-   runtime evidence, while synthetic-only hooks remain blocked
-4. run an operator-approved live durable capture proof or staging-DB proof for
-   `MEMMECH-2026-04-22`; do not write synthetic proof/eval content into the
-   live durable DB
-5. rerun the current-runtime soak after the durable-row proof and only call it
-   clean if capture jobs, dirty state, projection-backed context injection,
-   Memory Ops Level 1, and no-dark-data gates all pass
-6. populate MMV2 with the curated 2026-04 deep document-ingest corpus and
+1. keep capture seam proof fresh for the active seams:
+   `message:preprocessed`, `ContextEngine.ingest`,
+   `ContextEngine.ingestBatch`, `tool_result_persist`, `after_tool_call`,
+   `agent_end`, `ContextEngine.afterTurn`, `agent:bootstrap`, and
+   `memory_file_import`
+2. keep `message:received` and `message:transcribed` fallback-only unless the
+   primary preprocessed seam fails or the media/voice path has no normalized
+   later event
+3. keep Memory Ops Safe Level 1 limited to operational job/artifact/scheduler
+   actions; semantic truth changes continue to require operator approval
+4. use Codex-auth mini for strict-schema capture/retrieval/compression work
+   until nano has a proven strict-schema route
+5. populate MMV2 with the curated 2026-04 deep document-ingest corpus and
    verify source/segment/memory/event evidence; resume from checkpoint during
    the overnight ingest window, not during build-focused hardening
-7. quarantine legacy captured-object write compatibility behind explicit
+6. quarantine legacy captured-object write compatibility behind explicit
    fallback/rollback flags
-8. harden Retrieval Runtime/projection relevance:
+7. harden Retrieval Runtime/projection relevance:
    - prefer fresh projection digests backed by active MMV2 ids
    - emit stale/superseded/deleted/conflicted/inactive exclusions
    - emit retrieval miss diagnostics when durable memories existed but were
      excluded
    - keep all ranking read-time only
-9. finish quarantine/removal of fallback compatibility after the clean
+8. finish quarantine/removal of fallback compatibility after the clean
    retrieval-runtime soak
-10. continue ordinary-turn MMV2 evaluation coverage where needed; the current
-    scripted matrix covers preference, directive, project fact, structural
-    correction, temp/privacy rejects, workspace scope, duplicate prevention,
-    source-ref merge, scoped conflict, and no-fuzzy source-ref conflict
-11. stabilize file-pack/provider variance
-12. implement remaining verified primary memory capture seam expansion
-13. keep live memory activity-feed visibility bounded:
+9. continue ordinary-turn MMV2 evaluation coverage where needed; the current
+   scripted matrix covers preference, directive, project fact, structural
+   correction, temp/privacy rejects, workspace scope, duplicate prevention,
+   source-ref merge, scoped conflict, and no-fuzzy source-ref conflict
+10. stabilize file-pack/provider variance
+11. keep live memory activity-feed visibility bounded:
     retrieval/capture lifecycle ids, counts, and statuses may appear in the
     main feed, but raw prompts, transcripts, and tool logs must not
-14. maintain the repo-local and Codex global `model-memory-deep-ingest` skill
+12. maintain the repo-local and Codex global `model-memory-deep-ingest` skill
     as the standard entry point for future ingest resume/monitor/pause work
-15. implement `memory-ops-closed-loop` instrumentation
-16. proceed to Phase 2 derived features:
+13. proceed to Phase 2 derived features:
 
 - graph runtime
 - project/subject capsules

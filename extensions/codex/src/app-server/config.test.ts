@@ -51,6 +51,22 @@ describe("Codex app-server config", () => {
     ).toEqual({});
   });
 
+  it("reads service tier from the environment when plugin config does not set one", () => {
+    const runtime = resolveCodexAppServerRuntimeOptions({
+      pluginConfig: {
+        appServer: {
+          approvalPolicy: "never",
+          sandbox: "workspace-write",
+        },
+      },
+      env: {
+        OPENCLAW_CODEX_APP_SERVER_SERVICE_TIER: "priority",
+      },
+    });
+
+    expect(runtime.serviceTier).toBe("priority");
+  });
+
   it("requires a websocket url when websocket transport is configured", () => {
     expect(() =>
       resolveCodexAppServerRuntimeOptions({

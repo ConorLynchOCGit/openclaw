@@ -18,6 +18,9 @@ import {
   materializeProjectionArtifacts,
   rebuildDerivedRuntimeState,
   type ContextArtifactRecord,
+  type JsonModelExecutionRequest,
+  type JsonModelExecutionResponse,
+  type JsonModelExecutor,
   type RuntimeMemoryRecord,
   type SemanticInterpreter,
   type SemanticInterpreterInput,
@@ -246,7 +249,7 @@ export function parseMmV2RawJsonOutput(outputText: string): unknown {
 }
 
 class ExecutorBackedMmV2SemanticInterpreter implements SemanticInterpreter {
-  constructor(private readonly executor: OpenAICompatibleLiveJsonExecutor) {}
+  constructor(private readonly executor: JsonModelExecutor) {}
 
   async interpret(input: SemanticInterpreterInput) {
     const response = await this.executor.execute({
@@ -260,6 +263,18 @@ class ExecutorBackedMmV2SemanticInterpreter implements SemanticInterpreter {
       action: "capture" as const,
       objects: [parseMmV2RawJsonOutput(response.outputText)],
     };
+  }
+}
+
+class CompositeModelMemoryJsonExecutor implements JsonModelExecutor {
+  private readonly httpExecutor: OpenAICompatibleLiveJsonExecutor;
+
+  constructor(private readonly config?: OpenClawConfig) {
+    this.httpExecutor = new OpenAICompatibleLiveJsonExecutor({ config });
+  }
+
+  async execute(request: JsonModelExecutionRequest): Promise<JsonModelExecutionResponse> {
+    return await this.httpExecutor.execute(request);
   }
 }
 
@@ -484,7 +499,7 @@ async function getLiveRuntime(config?: OpenClawConfig): Promise<LiveRuntimeDeps>
       key: cacheKey,
       promise: (async () => {
         const db = await createModelMemoryDatabaseRuntime({ config });
-        const executor = new OpenAICompatibleLiveJsonExecutor({ config });
+        const executor = new CompositeModelMemoryJsonExecutor(config);
         return {
           ...db,
           semanticInterpreter: new ExecutorBackedSemanticInterpreter(executor),

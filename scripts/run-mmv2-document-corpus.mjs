@@ -309,10 +309,15 @@ export async function runMmV2DocumentCorpus(options = {}) {
 
   let runResult;
   if (parsedArgs.mode === "real-model") {
+    const codexExecutorModule = shouldUseCodexAppServer(parsedArgs.modelId)
+      ? await tsImport("../extensions/model-memory/src/mmv2/codex-app-server-json-executor.ts", {
+          parentURL: import.meta.url,
+        })
+      : null;
     const executor =
       options.executor ??
       (shouldUseCodexAppServer(parsedArgs.modelId)
-        ? new moduleExports.CodexAppServerJsonExecutor({
+        ? new codexExecutorModule.CodexAppServerJsonExecutor({
             requestTimeoutMs: options.requestTimeoutMs,
           })
         : new (

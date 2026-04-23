@@ -101,6 +101,40 @@ describe("memory capture jobs", () => {
     });
   });
 
+  it("does not regress an already-written job on duplicate execution", async () => {
+    await withTempCaptureStore(async ({ store }) => {
+      const events: string[] = [];
+      const job = testJob("capture_job_duplicate_written");
+      const first = await runMemoryCaptureJobTask({
+        job,
+        store,
+        classifyFailure,
+        execute: async () => ({
+          status: "written",
+          safeRelatedIds: { memoryIds: ["memory_written_once"] },
+        }),
+      });
+
+      const second = await runMemoryCaptureJobTask({
+        job,
+        store,
+        classifyFailure,
+        execute: async () => {
+          throw new Error("duplicate execution should not run");
+        },
+        onEvent: async ({ event }) => {
+          events.push(event.eventType);
+        },
+      });
+
+      expect(first.status).toBe("written");
+      expect(second.status).toBe("written");
+      expect(second.safeRelatedIds?.memoryIds).toEqual(["memory_written_once"]);
+      expect(events).toEqual([]);
+      expect((await store.getJob(job.jobId))?.status).toBe("written");
+    });
+  });
+
   it("classes DB timeout failures as failed capture jobs", async () => {
     await withTempCaptureStore(async ({ store }) => {
       const events: Array<{ type: string; failureClass?: string }> = [];

@@ -675,6 +675,53 @@ describe("model-memory live json executor", () => {
     });
   });
 
+  it("sends low-latency reasoning, verbosity, and service-tier options when requested", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: "gpt-5.4-mini",
+            choices: [{ message: { content: '{"ok":true}' } }],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    );
+    const executor = new OpenAICompatibleLiveJsonExecutor({
+      fetchImpl,
+      resolveAuth: async () => ({
+        apiKey: "oauth-test",
+        mode: "oauth",
+        source: "profile:openai-codex:default",
+      }),
+    });
+
+    await executor.execute({
+      contract: {
+        contractName: "mmv2-benchmark",
+        contractVersion: "v1",
+        modelId: "openai-codex/gpt-5.4-mini",
+      },
+      systemPrompt: "stable static prefix",
+      userPrompt: "dynamic source tail",
+      responseFormat: "json",
+      responseOptions: {
+        reasoningEffort: "none",
+        verbosity: "low",
+        serviceTier: "priority",
+      },
+    });
+
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(parseRequestBody(init)).toMatchObject({
+      reasoning_effort: "none",
+      verbosity: "low",
+      service_tier: "priority",
+    });
+  });
+
   it("records token and cache metrics in the provider scorecard for model calls", async () => {
     const fetchImpl = vi.fn(
       async () =>

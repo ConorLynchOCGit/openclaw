@@ -27,6 +27,14 @@ Canonical run artifacts:
 
 - use the live OpenClaw deployment
 - confirm `/readyz` is healthy before posting the prompt
+- run the strict-schema provider preflight for every required contract before
+  corpus work; generic JSON-object health does not prove the capture,
+  extraction, canonicalization, or retrieval schemas
+- prefer the measured Codex-auth mini route for strict-schema corpus work until
+  the configured nano route proves strict structured-output support
+- if using Pass 6 compression, use the section-map plus candidate-hints path
+  as a source-preserving projection/cache artifact and validate every admitted
+  candidate against original source spans
 - do not change the corpus ordering during the run
 - do not delete or overwrite prior evidence artifacts unless you are explicitly
   replacing this exact pass

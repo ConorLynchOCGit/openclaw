@@ -231,15 +231,17 @@ Generated projection pages materialize only under the projection artifact root,
 currently `/root/.openclaw/workspace/.openclaw/model-memory/projections/`.
 They must never be written back into root `USER.md` or `MEMORY.md`.
 
-2026-04-22 live materialization record:
+2026-04-23 live materialization and behavior proof:
 
-- command: `node scripts/model-memory-materialize-projection-catalog.mjs`
-- live runtime records read: 590
-- active source memory ids: 542
+- materialization/behavior proof command:
+  `node scripts/model-memory-live-projection-behavior-proof.mjs`
+- proof artifact:
+  `.artifacts/model-memory/projection-live-behavior/2026-04-23/projection-live-behavior-proof.json`
 - projection artifacts written: 10
-- projection index:
-  `/root/.openclaw/workspace/.openclaw/model-memory/projections/index.json`
+- projection index: `.openclaw/model-memory/projections/index.json`
 - root write-back status: disabled
+- all projection use-case proofs passed and the model response for each proof
+  cited the selected projection id and active source memory ids
 
 Runtime use:
 

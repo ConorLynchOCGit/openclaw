@@ -585,6 +585,10 @@ export async function runMemoryCaptureJobTask(
 ): Promise<MemoryCaptureJob> {
   const env = input.env ?? process.env;
   const store = input.store ?? createMemoryCaptureJobStore({ env });
+  const existingJob = await store.getJob(input.job.jobId);
+  if (existingJob?.status === "written") {
+    return existingJob;
+  }
   const maxRetries =
     input.maxRetries ??
     readPositiveInteger(env.MODEL_MEMORY_CAPTURE_JOB_MAX_RETRIES, DEFAULT_MAX_RETRIES, 5);

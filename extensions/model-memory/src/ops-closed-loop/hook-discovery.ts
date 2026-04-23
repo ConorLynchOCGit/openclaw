@@ -128,6 +128,17 @@ const TARGET_SPECS: HookTargetSpec[] = [
     primaryPatterns: ["agent:bootstrap", '"agent", "bootstrap"', '"agent","bootstrap"'],
   },
   {
+    hookName: "memory_file_import",
+    primaryPatterns: [
+      "memory_file_import",
+      "MODEL_MEMORY_CAPTURE_SEAM_MEMORY_FILE_IMPORT_ENABLED",
+      "createHashGatedImportStore",
+    ],
+    notes: [
+      "Hash-gated import seam; production proof is emitted by the import surface, not a generic file watcher.",
+    ],
+  },
+  {
     hookName: "changed bootstrap files",
     primaryPatterns: ["bootstrapFiles", "AGENTS.md", "BOOTSTRAP.md"],
     futureOnly: true,

@@ -205,6 +205,7 @@ describe("projection compiler", () => {
         `${page.registryEntry.artifactPathPrefix}/page.md`,
       );
       expect(page.renderedText).toContain("This projection is a compiled MMV2 view");
+      expect(page.renderedText).toContain("## Rich Runtime Page");
       expect(page.renderedText).toContain(`- projection_id: ${page.digest.projectionId}`);
       expect(page.renderedText).toContain(`- projection_type: ${page.digest.projectionType}`);
       expect(page.renderedText).toContain(`- content_hash: ${page.digest.contentHash}`);
@@ -221,6 +222,36 @@ describe("projection compiler", () => {
     expect(
       pages.find((page) => page.digest.projectionType === "project_page")?.digest.sourceMemoryIds,
     ).toEqual(["memory-decision", "memory-proc", "memory-project"]);
+    expect(
+      pages.find((page) => page.digest.projectionType === "project_page")?.renderedText,
+    ).toContain("## Active Project State");
+    expect(
+      pages.find((page) => page.digest.projectionType === "procedure_page")?.renderedText,
+    ).toContain("## Operational Runbooks And Checklists");
+    expect(
+      pages.find((page) => page.digest.projectionType === "decision_log")?.renderedText,
+    ).toContain("## Prior Decisions");
+    expect(
+      pages.find((page) => page.digest.projectionType === "source_page")?.renderedText,
+    ).toContain("## Canonical Source Evidence");
+    expect(
+      pages.find((page) => page.digest.projectionType === "user_profile_page")?.renderedText,
+    ).toContain("## Stable Task-Relevant Preferences");
+    expect(
+      pages.find((page) => page.digest.projectionType === "entity_page")?.renderedText,
+    ).toContain("## Entity Knowledge");
+    expect(
+      pages.find((page) => page.digest.projectionType === "timeline_page")?.renderedText,
+    ).toContain("## Change Timeline");
+    expect(
+      pages.find((page) => page.digest.projectionType === "dashboard")?.renderedText,
+    ).toContain("## Memory Health Dashboard");
+    expect(
+      pages.find((page) => page.digest.projectionType === "agent_digest")?.renderedText,
+    ).toContain("## Compact Agent Context");
+    expect(
+      pages.find((page) => page.digest.projectionType === "projection_digest")?.renderedText,
+    ).toContain("## Projection Retrieval Index");
     expect(
       pages.find((page) => page.digest.projectionType === "projection_digest")?.digest
         .conflictMarkers,

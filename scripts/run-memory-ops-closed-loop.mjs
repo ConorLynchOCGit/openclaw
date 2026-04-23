@@ -19,6 +19,8 @@ function parseArgs(argv) {
     hookCanary: argv.includes("--hook-canary"),
     reportFixture: argv.includes("--report-fixture"),
     safeLevel1AutoFix: argv.includes("--safe-level1-autofix"),
+    safeLevel1DryRun: argv.includes("--safe-level1-dry-run"),
+    safeLevel1Execute: argv.includes("--safe-level1-execute"),
     baseDir: readArgValue(argv, "--base-dir") ?? ".openclaw-memory-ops",
     repoRoot: readArgValue(argv, "--repo-root") ?? getRepoRoot(),
   };
@@ -145,7 +147,7 @@ async function main() {
     output.latestReportPath = report.latestPath;
   }
 
-  if (args.safeLevel1AutoFix) {
+  if (args.safeLevel1AutoFix || args.safeLevel1DryRun || args.safeLevel1Execute) {
     const plan = api.buildSafeLevel1AutoFixPlan({
       captureJobs: [
         { jobId: "fixture-timeout-job", status: "failed", failureClass: "timeout" },
@@ -188,6 +190,21 @@ async function main() {
     const planPath = path.join(planDir, "safe-level1-plan.json");
     await fs.writeFile(planPath, `${JSON.stringify(plan, null, 2)}\n`, "utf8");
     output.safeLevel1AutoFixPlanPath = planPath;
+    if (args.safeLevel1DryRun || args.safeLevel1Execute) {
+      const execution = await api.executeSafeLevel1AutoFixPlan({
+        plan,
+        baseDir: args.baseDir,
+        mode: args.safeLevel1Execute ? "execute" : "dry_run",
+        enabled: true,
+      });
+      output.safeLevel1AutoFixExecutionPath = path.join(
+        args.baseDir,
+        "auto-fix/safe-level1-execution.json",
+      );
+      output.safeLevel1AutoFixExecuted = execution.executed_count;
+      output.safeLevel1AutoFixDryRun = execution.dry_run_count;
+      output.safeLevel1AutoFixSkipped = execution.skipped_count;
+    }
   }
 
   console.log(JSON.stringify(output, null, 2));
