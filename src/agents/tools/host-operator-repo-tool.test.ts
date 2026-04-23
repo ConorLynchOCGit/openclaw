@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -31,6 +32,10 @@ function readJsonResult(
   return JSON.parse(text) as Record<string, unknown>;
 }
 
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 beforeEach(async () => {
   tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-host-operator-"));
   repoRoot = path.join(tempRoot, "repo");
@@ -40,8 +45,13 @@ beforeEach(async () => {
   canonicalWorkspaceRoot = "/root/.openclaw/workspace";
   auditDir = path.join(tempRoot, "audit");
   await fs.mkdir(path.join(repoRoot, "docs/agents/web-researcher"), { recursive: true });
+  await fs.mkdir(path.join(repoRoot, ".agents/skills"), { recursive: true });
+  await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
+  await fs.mkdir(path.join(repoRoot, ".openclaw"), { recursive: true });
+  await fs.mkdir(path.join(repoRoot, "imports/product_live"), { recursive: true });
   await fs.mkdir(path.join(importRoot, "docs/agents/web-researcher"), { recursive: true });
   await fs.mkdir(path.join(workspaceRoot, "docs/agents/web-researcher"), { recursive: true });
+  await fs.mkdir(path.join(workspaceRoot, "imports/runtime_state/content"), { recursive: true });
   await fs.mkdir(path.join(workspaceRoot, "projects/ops"), { recursive: true });
   await fs.mkdir(path.join(workspaceRoot, "system/hostfs"), { recursive: true });
   await fs.writeFile(
@@ -61,6 +71,8 @@ beforeEach(async () => {
   );
   await fs.writeFile(path.join(workspaceRoot, "USER.md"), "private user profile\n", "utf-8");
   await fs.writeFile(path.join(workspaceRoot, "system/hostfs/secret.txt"), "secret\n", "utf-8");
+  await fs.writeFile(path.join(repoRoot, ".env"), "SECRET=value\n", "utf-8");
+  await fs.writeFile(path.join(repoRoot, ".git/config"), "repo config\n", "utf-8");
 });
 
 afterEach(async () => {
@@ -171,6 +183,191 @@ describe("host_operator_repo tool", () => {
     ).resolves.toContain("updated web researcher docs");
   });
 
+  it("blocks live repo writes outside the explicit docs and skills allowlist", async () => {
+    const writeTool = createHostOperatorRepoTool({
+      env: await makeEnv({
+        OPENCLAW_HOST_OPERATOR_ENABLED: "1",
+        OPENCLAW_HOST_OPERATOR_WRITE_ENABLED: "1",
+      }),
+    });
+
+    await expect(
+      writeTool.execute("call-1", {
+        action: "edit",
+        path: ".env",
+        edits: [{ oldText: "SECRET", newText: "SAFE" }],
+      }),
+    ).rejects.toThrow("env files");
+    await expect(
+      writeTool.execute("call-2", {
+        action: "create_file",
+        path: ".git/probe",
+        content: "probe\n",
+      }),
+    ).rejects.toThrow("blocked");
+    await expect(
+      writeTool.execute("call-3", {
+        action: "mkdir",
+        path: "src/generated-by-main",
+      }),
+    ).rejects.toThrow("not approved");
+    await expect(
+      writeTool.execute("call-4", {
+        action: "create_file",
+        path: "imports/product_live/probe.md",
+        content: "probe\n",
+      }),
+    ).rejects.toThrow("blocked");
+  });
+
+  it("creates directories and files under canonical agent docs with audit records", async () => {
+    const writeTool = createHostOperatorRepoTool({
+      env: await makeEnv({
+        OPENCLAW_HOST_OPERATOR_ENABLED: "1",
+        OPENCLAW_HOST_OPERATOR_WRITE_ENABLED: "1",
+      }),
+    });
+
+    const mkdir = readJsonResult(
+      await writeTool.execute("call-1", {
+        action: "mkdir",
+        path: "docs/agents/web-researcher/proofs",
+      }),
+    );
+    const created = readJsonResult(
+      await writeTool.execute("call-2", {
+        action: "create_file",
+        path: "docs/agents/web-researcher/proofs/main-can-write.md",
+        content: "host-operator probe\n",
+      }),
+    );
+
+    expect(mkdir.created).toBe(true);
+    expect(created.created).toBe(true);
+    expect(String(created.auditPath)).toContain(auditDir);
+    await expect(
+      fs.readFile(
+        path.join(repoRoot, "docs/agents/web-researcher/proofs/main-can-write.md"),
+        "utf-8",
+      ),
+    ).resolves.toBe("host-operator probe\n");
+  });
+
+  it("hash-guards writes and deletes bounded probe files", async () => {
+    const writeTool = createHostOperatorRepoTool({
+      env: await makeEnv({
+        OPENCLAW_HOST_OPERATOR_ENABLED: "1",
+        OPENCLAW_HOST_OPERATOR_WRITE_ENABLED: "1",
+      }),
+    });
+    const target = "docs/agents/web-researcher/hash-guard.md";
+    await fs.writeFile(path.join(repoRoot, target), "before\n", "utf-8");
+
+    await expect(
+      writeTool.execute("call-1", {
+        action: "write_file_if_hash_matches",
+        path: target,
+        expectedHash: sha256("wrong\n"),
+        content: "after\n",
+      }),
+    ).rejects.toThrow("expectedHash");
+    const written = readJsonResult(
+      await writeTool.execute("call-2", {
+        action: "write_file_if_hash_matches",
+        path: target,
+        expectedHash: sha256("before\n"),
+        content: "after\n",
+      }),
+    );
+    expect(written.written).toBe(true);
+
+    const probe = "docs/agents/web-researcher/.host-operator-probe";
+    await fs.writeFile(path.join(repoRoot, probe), "", "utf-8");
+    const deleted = readJsonResult(
+      await writeTool.execute("call-3", {
+        action: "delete_empty_probe_file",
+        path: probe,
+      }),
+    );
+    expect(deleted.deleted).toBe(true);
+  });
+
+  it("copies and moves workspace draft files into canonical agent docs", async () => {
+    const writeTool = createHostOperatorRepoTool({
+      env: await makeEnv({
+        OPENCLAW_HOST_OPERATOR_ENABLED: "1",
+        OPENCLAW_HOST_OPERATOR_WRITE_ENABLED: "1",
+      }),
+    });
+
+    const copied = readJsonResult(
+      await writeTool.execute("call-1", {
+        action: "copy_from_workspace",
+        sourcePath: "docs/agents/web-researcher/Identity.md",
+        path: "docs/agents/web-researcher/Identity.copy.md",
+      }),
+    );
+    const moved = readJsonResult(
+      await writeTool.execute("call-2", {
+        action: "move_from_workspace",
+        sourcePath: "docs/agents/web-researcher",
+        path: "docs/agents/web-researcher/from-workspace",
+      }),
+    );
+
+    expect(copied.fileCount).toBe(1);
+    expect(moved.fileCount).toBeGreaterThan(0);
+    await expect(
+      fs.readFile(path.join(repoRoot, "docs/agents/web-researcher/Identity.copy.md"), "utf-8"),
+    ).resolves.toContain("workspace web researcher identity");
+    await expect(fs.stat(path.join(workspaceRoot, "docs/agents/web-researcher"))).rejects.toThrow();
+  });
+
+  it("installs canonical skills under .agents/skills with vetted local content only", async () => {
+    const writeTool = createHostOperatorRepoTool({
+      env: await makeEnv({
+        OPENCLAW_HOST_OPERATOR_ENABLED: "1",
+        OPENCLAW_HOST_OPERATOR_WRITE_ENABLED: "1",
+      }),
+    });
+
+    await expect(
+      writeTool.execute("call-1", {
+        action: "install_skill",
+        skillName: "../bad",
+        content: "---\nname: bad\n---\n# Bad\n",
+      }),
+    ).rejects.toThrow("skillName");
+    await expect(
+      writeTool.execute("call-2", {
+        action: "install_skill",
+        skillName: "canonical-test-skill",
+        content: "---\nname: other-skill\n---\n# Bad\n",
+      }),
+    ).rejects.toThrow("matching name");
+
+    const installed = readJsonResult(
+      await writeTool.execute("call-3", {
+        action: "install_skill",
+        skillName: "canonical-test-skill",
+        content:
+          "---\nname: canonical-test-skill\ndescription: Test skill installed by host operator.\n---\n# Canonical Test Skill\n",
+        files: [{ path: "references/example.md", content: "bounded reference\n" }],
+      }),
+    );
+
+    expect(installed.installed).toBe(true);
+    await expect(
+      fs.readFile(path.join(repoRoot, ".agents/skills/canonical-test-skill/SKILL.md"), "utf-8"),
+    ).resolves.toContain("name: canonical-test-skill");
+    await expect(
+      fs.readFile(
+        path.join(repoRoot, ".agents/skills/canonical-test-skill/references/example.md"),
+        "utf-8",
+      ),
+    ).resolves.toBe("bounded reference\n");
+  });
+
   it("edits approved workspace project docs but protects root human-owned memory files", async () => {
     const writeTool = createHostOperatorRepoTool({
       env: await makeEnv({
@@ -199,6 +396,14 @@ describe("host_operator_repo tool", () => {
         edits: [{ oldText: "private", newText: "changed" }],
       }),
     ).rejects.toThrow("protected");
+    await expect(
+      writeTool.execute("call-3", {
+        action: "create_file",
+        scope: "operator_workspace",
+        path: "imports/runtime_state/content/probe.md",
+        content: "probe\n",
+      }),
+    ).rejects.toThrow("not approved");
   });
 
   it("blocks noisy or sensitive workspace mirrors", async () => {

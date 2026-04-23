@@ -1,12 +1,26 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam, ToolAuthorizationError, ToolInputError } from "./common.js";
 
-type HostOperatorAction = "status" | "list" | "read" | "edit" | "exec";
+type HostOperatorAction =
+  | "status"
+  | "list"
+  | "read"
+  | "edit"
+  | "mkdir"
+  | "create_file"
+  | "write_file_if_hash_matches"
+  | "copy_from_workspace"
+  | "move_from_workspace"
+  | "install_skill"
+  | "delete_empty_probe_file"
+  | "delete_if_hash_matches"
+  | "exec";
 type HostOperatorScope = "live_repo" | "operator_workspace";
 
 type HostOperatorSettings = {
@@ -34,6 +48,11 @@ type EditReplacement = {
   newText: string;
 };
 
+type HostOperatorFileInput = {
+  path: string;
+  content: string;
+};
+
 const DEFAULT_REPO_ROOT = "/home/node/.openclaw/host-operator/openclaw-live";
 const DEFAULT_CANONICAL_REPO_ROOT = "/root/services/openclaw-roles/live";
 const DEFAULT_PRODUCT_IMPORT_ROOT = "/home/node/.openclaw/workspace/imports/product_live/content";
@@ -41,8 +60,35 @@ const DEFAULT_WORKSPACE_ROOT = "/home/node/.openclaw/workspace";
 const DEFAULT_CANONICAL_WORKSPACE_ROOT = "/root/.openclaw/workspace";
 const DEFAULT_AUDIT_DIR = "/home/node/.openclaw/workspace/.openclaw/host-operator-audit";
 const MAX_READ_BYTES = 200_000;
+const MAX_WRITE_BYTES = 200_000;
+const MAX_COPY_FILE_BYTES = 200_000;
+const MAX_COPY_TOTAL_BYTES = 1_000_000;
+const MAX_COPY_FILES = 100;
+const MAX_SKILL_FILE_COUNT = 25;
 const MAX_LIST_ENTRIES = 200;
 const MAX_EXEC_OUTPUT_BYTES = 120_000;
+const LIVE_REPO_ALLOWED_WRITE_PREFIXES = [
+  "docs/agents",
+  "docs/projects",
+  ".agents/skills",
+  "skills",
+];
+const LIVE_REPO_BLOCKED_WRITE_PREFIXES = [
+  ".git",
+  ".openclaw",
+  ".artifacts",
+  ".openclaw-memory-ops",
+  "node_modules",
+  "dist",
+  "coverage",
+  "state",
+  "checkpoints",
+  "audits",
+  "imports",
+  "system",
+  "credentials",
+  "secrets",
+];
 const WORKSPACE_BLOCKED_READ_PREFIXES = [
   ".git",
   ".openclaw",
@@ -72,6 +118,14 @@ const HostOperatorRepoToolSchema = Type.Object({
     Type.Literal("list"),
     Type.Literal("read"),
     Type.Literal("edit"),
+    Type.Literal("mkdir"),
+    Type.Literal("create_file"),
+    Type.Literal("write_file_if_hash_matches"),
+    Type.Literal("copy_from_workspace"),
+    Type.Literal("move_from_workspace"),
+    Type.Literal("install_skill"),
+    Type.Literal("delete_empty_probe_file"),
+    Type.Literal("delete_if_hash_matches"),
     Type.Literal("exec"),
   ]),
   scope: Type.Optional(Type.Union([Type.Literal("live_repo"), Type.Literal("operator_workspace")])),
@@ -81,6 +135,19 @@ const HostOperatorRepoToolSchema = Type.Object({
       Type.Object({
         oldText: Type.String(),
         newText: Type.String(),
+      }),
+    ),
+  ),
+  content: Type.Optional(Type.String()),
+  expectedHash: Type.Optional(Type.String()),
+  sourcePath: Type.Optional(Type.String()),
+  overwrite: Type.Optional(Type.Boolean()),
+  skillName: Type.Optional(Type.String()),
+  files: Type.Optional(
+    Type.Array(
+      Type.Object({
+        path: Type.String(),
+        content: Type.String(),
       }),
     ),
   ),
@@ -132,6 +199,10 @@ function pathMatchesPrefix(relativePath: string, prefix: string): boolean {
 }
 
 function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function sha256Buffer(value: Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
@@ -274,6 +345,33 @@ function assertWorkspaceWriteAllowed(relativePath: string) {
   throw new ToolAuthorizationError("workspace path is not approved for host-operator edits");
 }
 
+function assertLiveRepoWriteAllowed(relativePath: string) {
+  const normalized = normalizeRelativePath(relativePath);
+  if (normalized === "." || normalized === "") {
+    throw new ToolAuthorizationError("live repo root is not approved for host-operator edits");
+  }
+  if (/^\.env(?:$|\.)/u.test(normalized) || normalized.includes("/.env")) {
+    throw new ToolAuthorizationError(
+      "live repo env files are not approved for host-operator edits",
+    );
+  }
+  if (LIVE_REPO_BLOCKED_WRITE_PREFIXES.some((prefix) => pathMatchesPrefix(normalized, prefix))) {
+    throw new ToolAuthorizationError("live repo path is blocked from host-operator edits");
+  }
+  if (LIVE_REPO_ALLOWED_WRITE_PREFIXES.some((prefix) => pathMatchesPrefix(normalized, prefix))) {
+    return;
+  }
+  throw new ToolAuthorizationError("live repo path is not approved for host-operator edits");
+}
+
+function assertWriteAllowed(resolved: HostOperatorResolvedTarget) {
+  if (resolved.scope === "operator_workspace") {
+    assertWorkspaceWriteAllowed(resolved.relativePath);
+    return;
+  }
+  assertLiveRepoWriteAllowed(resolved.relativePath);
+}
+
 function readAction(params: Record<string, unknown>): HostOperatorAction {
   const action = readStringParam(params, "action", { required: true, label: "action" });
   if (
@@ -281,11 +379,123 @@ function readAction(params: Record<string, unknown>): HostOperatorAction {
     action === "list" ||
     action === "read" ||
     action === "edit" ||
+    action === "mkdir" ||
+    action === "create_file" ||
+    action === "write_file_if_hash_matches" ||
+    action === "copy_from_workspace" ||
+    action === "move_from_workspace" ||
+    action === "install_skill" ||
+    action === "delete_empty_probe_file" ||
+    action === "delete_if_hash_matches" ||
     action === "exec"
   ) {
     return action;
   }
   throw new ToolInputError("unsupported host-operator action");
+}
+
+function readBooleanParam(value: unknown): boolean {
+  return value === true || value === "true" || value === "1";
+}
+
+function readContentParam(record: Record<string, unknown>): string {
+  const raw = record.content;
+  if (typeof raw !== "string" || raw.length === 0) {
+    throw new ToolInputError("content required");
+  }
+  const content = raw;
+  assertSafeWriteContent(content);
+  return content;
+}
+
+function readExpectedHash(record: Record<string, unknown>, required = true): string | null {
+  const expectedHash = readStringParam(record, "expectedHash", {
+    required,
+    label: "expectedHash",
+  });
+  if (!expectedHash) {
+    return null;
+  }
+  if (!/^[a-f0-9]{64}$/u.test(expectedHash)) {
+    throw new ToolInputError("expectedHash must be a sha256 hex digest");
+  }
+  return expectedHash;
+}
+
+function assertSafeWriteContent(content: string) {
+  if (Buffer.byteLength(content, "utf-8") > MAX_WRITE_BYTES) {
+    throw new ToolInputError("content exceeds host-operator write size limit");
+  }
+  const secretPatterns = [
+    /\bsk-[A-Za-z0-9_-]{20,}\b/u,
+    /\bsk-or-v1-[A-Za-z0-9_-]{20,}\b/u,
+    /\bghp_[A-Za-z0-9]{20,}\b/u,
+    /\bgithub_pat_[A-Za-z0-9_]{20,}\b/u,
+    /\bAKIA[0-9A-Z]{16}\b/u,
+    /\bBEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY\b/u,
+  ];
+  if (secretPatterns.some((pattern) => pattern.test(content))) {
+    throw new ToolInputError("content appears to contain a secret");
+  }
+  if (/BEGIN (?:RAW )?(?:TRANSCRIPT|TOOL LOG)/iu.test(content)) {
+    throw new ToolInputError("content appears to contain raw transcript or tool-log data");
+  }
+}
+
+function readSkillName(record: Record<string, unknown>): string {
+  const skillName = readStringParam(record, "skillName", {
+    required: true,
+    label: "skillName",
+  }).toLowerCase();
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(skillName)) {
+    throw new ToolInputError("skillName must be a slug of lowercase letters, digits, and hyphens");
+  }
+  return skillName;
+}
+
+function readSkillFiles(
+  record: Record<string, unknown>,
+  skillName: string,
+): HostOperatorFileInput[] {
+  const content = readContentParam(record);
+  const files: HostOperatorFileInput[] = [{ path: "SKILL.md", content }];
+  if (!content.startsWith("---\n") || !content.includes(`name: ${skillName}`)) {
+    throw new ToolInputError("skill SKILL.md must include frontmatter with matching name");
+  }
+  const extraFiles = Array.isArray(record.files) ? record.files : [];
+  for (const entry of extraFiles) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const candidate = entry as Record<string, unknown>;
+    if (typeof candidate.path !== "string" || typeof candidate.content !== "string") {
+      continue;
+    }
+    const relativePath = normalizeRelativePath(candidate.path);
+    if (
+      relativePath === "." ||
+      path.posix.isAbsolute(relativePath) ||
+      relativePath.startsWith("../") ||
+      relativePath.includes("/../") ||
+      relativePath === "SKILL.md"
+    ) {
+      throw new ToolAuthorizationError("skill support file path is not approved");
+    }
+    assertSafeWriteContent(candidate.content);
+    files.push({ path: relativePath, content: candidate.content });
+  }
+  if (files.length > MAX_SKILL_FILE_COUNT) {
+    throw new ToolInputError("too many skill files");
+  }
+  return files;
+}
+
+async function assertHashMatches(filePath: string, expectedHash: string) {
+  const content = await fs.readFile(filePath);
+  const actual = sha256Buffer(content);
+  if (actual !== expectedHash) {
+    throw new ToolInputError("expectedHash does not match current file content");
+  }
 }
 
 function readEdits(value: unknown): EditReplacement[] {
@@ -343,6 +553,87 @@ async function writeAudit(settings: HostOperatorSettings, event: Record<string, 
   const auditPath = path.posix.join(settings.auditDir, `${day}.jsonl`);
   await fs.appendFile(auditPath, `${JSON.stringify(event)}\n`, { encoding: "utf-8" });
   return auditPath;
+}
+
+async function collectCopyEntries(sourcePath: string, targetPath: string) {
+  const sourceStat = await fs.lstat(sourcePath);
+  if (sourceStat.isSymbolicLink()) {
+    throw new ToolAuthorizationError("symlink copy is not allowed");
+  }
+  if (sourceStat.isFile()) {
+    if (sourceStat.size > MAX_COPY_FILE_BYTES || sourceStat.size > MAX_COPY_TOTAL_BYTES) {
+      throw new ToolInputError("source file exceeds host-operator copy size limit");
+    }
+    return [{ source: sourcePath, target: targetPath, size: sourceStat.size }];
+  }
+  if (!sourceStat.isDirectory()) {
+    throw new ToolAuthorizationError("source path is not a file or directory");
+  }
+  const entries: Array<{ source: string; target: string; size: number }> = [];
+  let totalBytes = 0;
+  async function walk(currentSource: string, currentTarget: string) {
+    const children = await fs.readdir(currentSource, { withFileTypes: true });
+    for (const child of children) {
+      const childSource = path.posix.join(currentSource, child.name);
+      const childTarget = path.posix.join(currentTarget, child.name);
+      if (child.isSymbolicLink()) {
+        throw new ToolAuthorizationError("symlink copy is not allowed");
+      }
+      if (child.isDirectory()) {
+        await walk(childSource, childTarget);
+        continue;
+      }
+      if (!child.isFile()) {
+        continue;
+      }
+      const stat = await fs.stat(childSource);
+      if (stat.size > MAX_COPY_FILE_BYTES) {
+        throw new ToolInputError("source file exceeds host-operator copy size limit");
+      }
+      totalBytes += stat.size;
+      if (entries.length >= MAX_COPY_FILES || totalBytes > MAX_COPY_TOTAL_BYTES) {
+        throw new ToolInputError("source copy exceeds host-operator copy limits");
+      }
+      entries.push({ source: childSource, target: childTarget, size: stat.size });
+    }
+  }
+  await walk(sourcePath, targetPath);
+  return entries;
+}
+
+async function copyEntries(
+  entries: Array<{ source: string; target: string; size: number }>,
+  overwrite: boolean,
+) {
+  for (const entry of entries) {
+    const existing = await fs.lstat(entry.target).catch(() => null);
+    if (existing && !overwrite) {
+      throw new ToolInputError("target exists; set overwrite=true to replace");
+    }
+    if (existing?.isDirectory()) {
+      throw new ToolInputError("target path is an existing directory");
+    }
+  }
+  for (const entry of entries) {
+    const content = await fs.readFile(entry.source, "utf-8");
+    assertSafeWriteContent(content);
+    await fs.mkdir(path.posix.dirname(entry.target), { recursive: true });
+    await fs.writeFile(entry.target, content, "utf-8");
+  }
+}
+
+function resolveWorkspaceSourcePath(
+  record: Record<string, unknown>,
+  settings: HostOperatorSettings,
+) {
+  const sourcePath = readStringParam(record, "sourcePath", {
+    required: true,
+    label: "sourcePath",
+  });
+  const source = resolveScopedPath(sourcePath, settings, "operator_workspace");
+  assertWorkspaceReadAllowed(source.relativePath);
+  assertWorkspaceWriteAllowed(source.relativePath);
+  return source;
 }
 
 async function runExec(
@@ -417,11 +708,26 @@ export function createHostOperatorRepoTool(opts?: {
       if (action === "status") {
         const repoStat = await fs.stat(settings.repoRoot).catch(() => null);
         const workspaceStat = await fs.stat(settings.workspaceRoot).catch(() => null);
+        const repoWritable = await fs
+          .access(settings.repoRoot, fsConstants.W_OK)
+          .then(() => true)
+          .catch(() => false);
+        const docsAgentsWritable = await fs
+          .access(path.posix.join(settings.repoRoot, "docs/agents"), fsConstants.W_OK)
+          .then(() => true)
+          .catch(() => false);
+        const skillsWritable = await fs
+          .access(path.posix.join(settings.repoRoot, ".agents/skills"), fsConstants.W_OK)
+          .then(() => true)
+          .catch(() => false);
         const auditPath = await writeAudit(settings, {
           ...auditBase,
           enabled: settings.enabled,
           write_enabled: settings.writeEnabled,
           exec_enabled: settings.execEnabled,
+          repo_writable: repoWritable,
+          docs_agents_writable: docsAgentsWritable,
+          agent_skills_writable: skillsWritable,
         });
         return jsonResult({
           auditId,
@@ -434,6 +740,11 @@ export function createHostOperatorRepoTool(opts?: {
           workspaceRoot: settings.workspaceRoot,
           canonicalWorkspaceRoot: settings.canonicalWorkspaceRoot,
           mounted: Boolean(repoStat?.isDirectory()),
+          physicalWrite: {
+            repoRoot: repoWritable,
+            docsAgents: docsAgentsWritable,
+            agentSkills: skillsWritable,
+          },
           roots: [
             {
               scope: "live_repo",
@@ -514,9 +825,7 @@ export function createHostOperatorRepoTool(opts?: {
         if (!settings.writeEnabled) {
           throw new ToolAuthorizationError("host-operator writes are disabled");
         }
-        if (resolved.scope === "operator_workspace") {
-          assertWorkspaceWriteAllowed(resolved.relativePath);
-        }
+        assertWriteAllowed(resolved);
         const edits = readEdits(record.edits);
         if (edits.length === 0) {
           throw new ToolInputError("edits required");
@@ -543,6 +852,214 @@ export function createHostOperatorRepoTool(opts?: {
           ),
           edited: true,
           editCount: edits.length,
+        });
+      }
+
+      if (
+        action === "mkdir" ||
+        action === "create_file" ||
+        action === "write_file_if_hash_matches" ||
+        action === "copy_from_workspace" ||
+        action === "move_from_workspace" ||
+        action === "install_skill" ||
+        action === "delete_empty_probe_file" ||
+        action === "delete_if_hash_matches"
+      ) {
+        if (!settings.writeEnabled) {
+          throw new ToolAuthorizationError("host-operator writes are disabled");
+        }
+      }
+
+      if (action === "mkdir") {
+        assertWriteAllowed(resolved);
+        await fs.mkdir(resolved.target, { recursive: true });
+        const auditPath = await writeAudit(settings, {
+          ...auditBase,
+          created_directory: true,
+        });
+        return jsonResult({
+          auditId,
+          auditPath,
+          scope: resolved.scope,
+          path: resolved.target,
+          canonicalPath: normalizePath(
+            path.posix.join(resolved.canonicalRoot, resolved.relativePath),
+          ),
+          created: true,
+        });
+      }
+
+      if (action === "create_file") {
+        assertWriteAllowed(resolved);
+        const content = readContentParam(record);
+        const existing = await fs.lstat(resolved.target).catch(() => null);
+        if (existing) {
+          throw new ToolInputError("target file already exists");
+        }
+        await fs.mkdir(path.posix.dirname(resolved.target), { recursive: true });
+        await fs.writeFile(resolved.target, content, "utf-8");
+        const auditPath = await writeAudit(settings, {
+          ...auditBase,
+          bytes_written: Buffer.byteLength(content, "utf-8"),
+          content_hash: sha256(content),
+        });
+        return jsonResult({
+          auditId,
+          auditPath,
+          scope: resolved.scope,
+          path: resolved.target,
+          canonicalPath: normalizePath(
+            path.posix.join(resolved.canonicalRoot, resolved.relativePath),
+          ),
+          created: true,
+          contentHash: sha256(content),
+        });
+      }
+
+      if (action === "write_file_if_hash_matches") {
+        assertWriteAllowed(resolved);
+        const expectedHash = readExpectedHash(record);
+        if (!expectedHash) {
+          throw new ToolInputError("expectedHash required");
+        }
+        const content = readContentParam(record);
+        await assertHashMatches(resolved.target, expectedHash);
+        await fs.writeFile(resolved.target, content, "utf-8");
+        const auditPath = await writeAudit(settings, {
+          ...auditBase,
+          bytes_written: Buffer.byteLength(content, "utf-8"),
+          previous_hash: expectedHash,
+          content_hash: sha256(content),
+        });
+        return jsonResult({
+          auditId,
+          auditPath,
+          scope: resolved.scope,
+          path: resolved.target,
+          canonicalPath: normalizePath(
+            path.posix.join(resolved.canonicalRoot, resolved.relativePath),
+          ),
+          written: true,
+          previousHash: expectedHash,
+          contentHash: sha256(content),
+        });
+      }
+
+      if (action === "copy_from_workspace" || action === "move_from_workspace") {
+        if (resolved.scope !== "live_repo") {
+          throw new ToolAuthorizationError("workspace copy target must be live_repo");
+        }
+        assertLiveRepoWriteAllowed(resolved.relativePath);
+        const source = resolveWorkspaceSourcePath(record, settings);
+        const overwrite = readBooleanParam(record.overwrite);
+        const entries = await collectCopyEntries(source.target, resolved.target);
+        for (const entry of entries) {
+          assertLiveRepoWriteAllowed(relativeTo(settings.repoRoot, entry.target));
+        }
+        await copyEntries(entries, overwrite);
+        if (action === "move_from_workspace") {
+          await fs.rm(source.target, { recursive: true, force: true });
+        }
+        const auditPath = await writeAudit(settings, {
+          ...auditBase,
+          source_scope: source.scope,
+          source_relative_path: source.relativePath,
+          file_count: entries.length,
+          bytes_written: entries.reduce((sum, entry) => sum + entry.size, 0),
+          moved: action === "move_from_workspace",
+        });
+        return jsonResult({
+          auditId,
+          auditPath,
+          scope: resolved.scope,
+          path: resolved.target,
+          canonicalPath: normalizePath(
+            path.posix.join(resolved.canonicalRoot, resolved.relativePath),
+          ),
+          sourceCanonicalPath: normalizePath(
+            path.posix.join(source.canonicalRoot, source.relativePath),
+          ),
+          copied: true,
+          moved: action === "move_from_workspace",
+          fileCount: entries.length,
+        });
+      }
+
+      if (action === "install_skill") {
+        const skillName = readSkillName(record);
+        const skillRoot = resolveScopedPath(`.agents/skills/${skillName}`, settings, "live_repo");
+        assertLiveRepoWriteAllowed(skillRoot.relativePath);
+        const files = readSkillFiles(record, skillName);
+        for (const file of files) {
+          assertLiveRepoWriteAllowed(path.posix.join(skillRoot.relativePath, file.path));
+        }
+        const existing = await fs.lstat(skillRoot.target).catch(() => null);
+        if (existing && !readBooleanParam(record.overwrite)) {
+          throw new ToolInputError("skill already exists; set overwrite=true to replace");
+        }
+        await fs.mkdir(skillRoot.target, { recursive: true });
+        for (const file of files) {
+          const output = path.posix.join(skillRoot.target, file.path);
+          await fs.mkdir(path.posix.dirname(output), { recursive: true });
+          await fs.writeFile(output, file.content, "utf-8");
+        }
+        const auditPath = await writeAudit(settings, {
+          ...auditBase,
+          action: "install_skill",
+          relative_path: skillRoot.relativePath,
+          skill_name: skillName,
+          file_count: files.length,
+          content_hashes: files.map((file) => ({
+            path: file.path,
+            hash: sha256(file.content),
+          })),
+        });
+        return jsonResult({
+          auditId,
+          auditPath,
+          scope: "live_repo",
+          path: skillRoot.target,
+          canonicalPath: normalizePath(
+            path.posix.join(settings.canonicalRepoRoot, skillRoot.relativePath),
+          ),
+          installed: true,
+          skillName,
+          fileCount: files.length,
+        });
+      }
+
+      if (action === "delete_empty_probe_file" || action === "delete_if_hash_matches") {
+        assertWriteAllowed(resolved);
+        const stat = await fs.lstat(resolved.target);
+        if (!stat.isFile()) {
+          throw new ToolAuthorizationError("delete target must be a file");
+        }
+        if (action === "delete_empty_probe_file") {
+          if (stat.size !== 0 || !resolved.relativePath.includes(".host-operator-probe")) {
+            throw new ToolAuthorizationError("only empty host-operator probe files can be deleted");
+          }
+        } else {
+          const expectedHash = readExpectedHash(record);
+          if (!expectedHash) {
+            throw new ToolInputError("expectedHash required");
+          }
+          await assertHashMatches(resolved.target, expectedHash);
+        }
+        await fs.unlink(resolved.target);
+        const auditPath = await writeAudit(settings, {
+          ...auditBase,
+          deleted: true,
+          deleted_bytes: stat.size,
+        });
+        return jsonResult({
+          auditId,
+          auditPath,
+          scope: resolved.scope,
+          path: resolved.target,
+          canonicalPath: normalizePath(
+            path.posix.join(resolved.canonicalRoot, resolved.relativePath),
+          ),
+          deleted: true,
         });
       }
 

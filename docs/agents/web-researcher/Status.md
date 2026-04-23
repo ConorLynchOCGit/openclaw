@@ -2,16 +2,29 @@
 
 ## Maturity
 
-`live_specialist_with_hardened_browsing_contract`
+`design-expanded_specialist_pack`
+
+## Current Strengths
+
+- bounded public-web role is clear
+- prompt-injection defense is explicit
+- retrieval-first contract is strong
+- exact-page read discipline is already well aligned with runtime policy
 
 ## Gaps
 
-- historical runtime-source foothold existed before the richer durable pack
-- prompt-injection defense needed to be made explicit at both runtime and durable layers
-- broader live operator proof for hostile-page handling still belongs in future
-  browsing validation work
+The remaining gaps are mostly runtime integration and validation work, not role
+definition.
+
+## Current Gaps Closed By This Expansion
+
+- output interfaces were previously implicit
+- research workflow frameworks were previously under-specified
+- source-evaluation and citation procedures were not explicit enough for a top-tier specialist
+- monitoring and competitive-brief behavior needed clearer operating rules
 
 ## Follow-Up
 
-- keep the defense contract aligned with the real browsing tools
-- add more direct operator proof as the live replay and browsing validation lanes expand
+- align runtime-facing compatibility files to the richer durable pack
+- convert the workflow specs into installable first-party skills if desired
+- add proof-oriented validation examples for hostile-page handling, comparison accuracy, and citation traceability

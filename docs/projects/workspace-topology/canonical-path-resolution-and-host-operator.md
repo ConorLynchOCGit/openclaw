@@ -109,6 +109,18 @@ Allowed tool actions:
 - `list`: lists bounded directory entries inside the repo mount
 - `read`: reads bounded file content inside the repo mount
 - `edit`: exact-match replacements only, write kill switch required
+- `mkdir`: creates approved directories, write kill switch required
+- `create_file`: creates a new bounded file, write kill switch required
+- `write_file_if_hash_matches`: replaces an existing bounded file only when
+  its current SHA-256 matches the caller-provided hash
+- `copy_from_workspace`: copies approved operator-workspace draft files into
+  approved live-repo destinations
+- `move_from_workspace`: copies approved operator-workspace draft files into
+  approved live-repo destinations, then removes the workspace draft source
+- `install_skill`: installs an operator-provided canonical skill under
+  `.agents/skills/<skill-name>/`
+- `delete_empty_probe_file` and `delete_if_hash_matches`: bounded cleanup
+  helpers for explicit probes or exact-hash files only
 - `exec`: allowlisted commands only, exec kill switch required
 
 Workspace write access is intentionally narrower than workspace read access. The host-operator tool may edit:
@@ -141,6 +153,49 @@ The workspace scope blocks noisy or sensitive roots by default:
 - `audits/**`
 
 This gives Main direct canonical document access for operator/project work without granting broad host filesystem access or turning memory compatibility files into generic write targets.
+
+Live repo write access is also allowlisted when
+`OPENCLAW_HOST_OPERATOR_WRITE_ENABLED=true`. Approved live-repo write roots are:
+
+- `docs/agents/**`
+- `docs/projects/**`
+- `.agents/skills/**`
+- `skills/**`
+
+Blocked live-repo write roots include:
+
+- `.git/**`
+- `.env*`
+- `.openclaw/**`
+- `.artifacts/**`
+- `.openclaw-memory-ops/**`
+- `node_modules/**`
+- `dist/**`
+- `state/**`
+- `checkpoints/**`
+- `audits/**`
+- `imports/**`
+- credential and secret roots
+
+Main should still not write `/root/services/openclaw-roles/live/...` directly.
+For canonical product repo writes it should resolve the target and use the
+`live_repo` host-operator bridge rooted at
+`/home/node/.openclaw/host-operator/openclaw-live`.
+
+Canonical skill installation is an explicit host-operator action, not an
+automatic behavior. It only writes operator-provided bounded content under
+`.agents/skills/<skill-name>/`, validates the skill slug and `SKILL.md`
+frontmatter name, blocks obvious secrets/raw transcripts/raw tool logs, and
+audits content hashes. External skills still require vetting before the
+operator asks Main to install them.
+
+Physical write permission for the container `node` user must be granted only on
+approved live-repo surfaces, for example via ACLs or group ownership on:
+
+- `/root/services/openclaw-roles/live/docs/agents`
+- `/root/services/openclaw-roles/live/docs/projects`
+- `/root/services/openclaw-roles/live/.agents/skills`
+- `/root/services/openclaw-roles/live/skills`
 
 Main should use:
 

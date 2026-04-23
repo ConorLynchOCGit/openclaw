@@ -10,6 +10,9 @@ title: "Operator Experience Status"
 - Stable working-card and structured memory activity work has begun, and the first operator diagnostics panel is implemented in the chat view.
 - Host-operator access exists as a scoped tool, and the chat view now has a visible host-operator mode badge/panel.
 - Main must be able to inspect canonical live repo paths and approved canonical workspace documents without falling back to duplicate workspace trees.
+- Host-operator write mode is now the intended route for operator-approved
+  canonical agent-doc and skill work. Main should write approved live-repo
+  surfaces through `host_operator_repo`, not raw `/root/services/...` paths.
 
 ## Landed First-Pass UI
 
@@ -26,7 +29,10 @@ title: "Operator Experience Status"
 2. Replace first-pass in-chat run-history summary with a dedicated durable run-history page.
 3. Add backend-backed retrieval proof and projection artifact APIs for richer explorer/browser views.
 4. Connect host-operator badge to live tool-status telemetry instead of static configured mode.
-5. Add UI proof artifacts and runtime pickup validation after the next gateway rebuild.
+5. Show live host-operator permission state as `read-only`, `write-enabled`,
+   `exec-enabled`, or `blocked by filesystem ACL` using backend status
+   telemetry.
+6. Add UI proof artifacts and runtime pickup validation after the next gateway rebuild.
 
 ## Medium-Term Targets
 
@@ -34,5 +40,8 @@ title: "Operator Experience Status"
 - Retrieval proof explorer.
 - Projection artifact browser.
 - Permission-mode switcher.
+- Canonical skill install flow that requires explicit operator instruction,
+  shows target path and audit id, and never auto-installs external skills
+  without vetting.
 - Queue manager.
 - Diff/test/build status cards.

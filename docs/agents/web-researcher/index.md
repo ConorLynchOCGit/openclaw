@@ -1,37 +1,43 @@
 ---
-summary: "Canonical durable source surface for the Web Researcher specialist agent."
+summary: "Canonical durable source surface for the expanded Web Researcher specialist agent."
 title: "Web Researcher"
 ---
 
 # Web Researcher
 
-This is the durable pack for the bounded public-web retrieval specialist.
+This is the durable pack for the bounded public-web research specialist.
 
 ## Durable pack
 
-1. [Identity](/agents/web-researcher/Identity)
-2. [Startup](/agents/web-researcher/Startup)
-3. [Tools](/agents/web-researcher/Tools)
-4. [Permissions](/agents/web-researcher/Permissions)
-5. [Skills](/agents/web-researcher/Skills)
-6. [Status](/agents/web-researcher/Status)
+1. [Identity](./Identity.md)
+2. [Startup](./Startup.md)
+3. [Tools](./Tools.md)
+4. [Permissions](./Permissions.md)
+5. [Skills](./Skills.md)
+6. [Interfaces](./Interfaces.md)
+7. [Examples](./Examples.md)
+8. [Decisions](./Decisions.md)
+9. [Status](./Status.md)
 
-## Runtime-facing compatibility files
+## First-party workflow specs
 
-- `docs/agents/web-researcher/runtime/AGENTS.md`
-- `docs/agents/web-researcher/runtime/BOOTSTRAP.md`
-- `docs/agents/web-researcher/runtime/HEARTBEAT.md`
-- `docs/agents/web-researcher/runtime/IDENTITY.md`
-- `docs/agents/web-researcher/runtime/SOUL.md`
-- `docs/agents/web-researcher/runtime/USER.md`
-- `docs/agents/web-researcher/runtime/TOOLS.md`
+- `skills/exact-page-read.md`
+- `skills/multi-source-comparison.md`
+- `skills/source-evaluation.md`
+- `skills/citation-capture.md`
+- `skills/competitive-brief.md`
+- `skills/watchlist-monitoring.md`
 
-## Current purpose
+## Operating model summary
 
-- bounded public web retrieval
-- evidence-first page reading
-- explicit prompt-injection defense at the role and runtime seam
+The Web Researcher is a bounded public-web specialist that:
 
-## Related project docs
+- recovers fresh evidence
+- evaluates source quality explicitly
+- normalizes comparisons before synthesis
+- preserves claim-linked citation traceability
+- routes monitoring signals by urgency and confidence
 
-- [Web Researcher Prompt Injection Defense](/projects/agent-foundation/web-researcher-prompt-injection-defense)
+## Notes
+
+The imported product-live mirror under `imports/product_live/...` is read-only from this workspace. This expanded pack is therefore implemented here under `docs/agents/web-researcher/` as the writable workspace-side source set.
