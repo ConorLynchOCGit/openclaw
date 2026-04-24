@@ -9,7 +9,7 @@ title: "Git And Auth Posture"
   core
 - use the downstream product repo as the default push target
 - keep the legacy fork push-disabled
-- keep docs-sync/publish credentials off the integration repo and off the
-  legacy fork; they belong on the downstream product repo only
+- keep downstream docs workflows same-repo; do not reintroduce a cross-repo
+  docs publish credential unless a future owned docs host actually requires it
 - keep the legacy fork visibly marked as legacy-only while it remains retained
 - keep GitHub CLI on SSH-backed auth

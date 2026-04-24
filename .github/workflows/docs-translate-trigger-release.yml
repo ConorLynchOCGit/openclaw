@@ -1,4 +1,4 @@
-name: Docs Trigger Locale Translate On Release
+name: Docs Release Bundle
 
 on:
   release:
@@ -9,73 +9,37 @@ permissions:
   contents: read
 
 jobs:
-  dispatch-translate:
+  build-release-docs-bundle:
     if: ${{ github.repository == 'ConorLynchOCGit/openclaw-platform' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Determine docs sync auth mode
-        id: docs_sync_auth_mode
-        env:
-          OPENCLAW_DOCS_SYNC_APP_ID: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_ID }}
-          OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -n "${OPENCLAW_DOCS_SYNC_APP_ID:-}" ] && [ -n "${OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY:-}" ]; then
-            echo "use_app=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "use_app=0" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Generate docs sync GitHub App token
-        id: docs_sync_app_token
-        if: ${{ steps.docs_sync_auth_mode.outputs.use_app == '1' }}
-        uses: actions/create-github-app-token@v1
+      - name: Checkout source repo
+        uses: actions/checkout@v4
         with:
-          app-id: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_ID }}
-          private-key: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY }}
-          owner: openclaw
-          repositories: docs
+          fetch-depth: 0
 
-      - name: Resolve docs dispatch credential
-        env:
-          OPENCLAW_DOCS_SYNC_APP_TOKEN: ${{ steps.docs_sync_app_token.outputs.token }}
-          OPENCLAW_DOCS_SYNC_TOKEN_FALLBACK: ${{ secrets.OPENCLAW_DOCS_SYNC_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -n "${OPENCLAW_DOCS_SYNC_APP_TOKEN:-}" ]; then
-            printf 'DOCS_SYNC_TOKEN=%s\n' "${OPENCLAW_DOCS_SYNC_APP_TOKEN}" >> "$GITHUB_ENV"
-          elif [ -n "${OPENCLAW_DOCS_SYNC_TOKEN_FALLBACK:-}" ]; then
-            printf 'DOCS_SYNC_TOKEN=%s\n' "${OPENCLAW_DOCS_SYNC_TOKEN_FALLBACK}" >> "$GITHUB_ENV"
-          else
-            echo "::error title=Missing docs dispatch credential::Set OPENCLAW_DOCS_SYNC_APP_ID and OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY for the long-term GitHub App flow, or set OPENCLAW_DOCS_SYNC_TOKEN as a stopgap fine-grained PAT with Contents read/write on openclaw/docs."
-            exit 1
-          fi
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.18.0"
 
-      - name: Trigger locale translates in publish repo
+      - name: Build release-tagged docs bundle
         env:
-          GH_TOKEN: ${{ env.DOCS_SYNC_TOKEN }}
+          DOCS_BUNDLE_DIR: ${{ runner.temp }}/openclaw-release-docs-bundle-${{ github.run_id }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          for event_type in \
-            translate-zh-cn-release \
-            translate-ja-jp-release \
-            translate-es-release \
-            translate-pt-br-release \
-            translate-ko-release \
-            translate-de-release \
-            translate-fr-release \
-            translate-ar-release \
-            translate-it-release \
-            translate-tr-release \
-            translate-uk-release \
-            translate-id-release \
-            translate-pl-release
-          do
-            gh api repos/openclaw/docs/dispatches \
-              --method POST \
-              -f event_type="${event_type}" \
-              -f client_payload[release_tag]="${RELEASE_TAG}" \
-              -f client_payload[source_repository]="${GITHUB_REPOSITORY}" \
-              -f client_payload[source_sha]="${GITHUB_SHA}"
-          done
+          echo "Cross-repo locale dispatch is retired for the downstream repo. Building a same-repo release bundle artifact instead."
+          node scripts/docs-sync-publish.mjs \
+            --target "${DOCS_BUNDLE_DIR}" \
+            --source-repo "${GITHUB_REPOSITORY}" \
+            --source-sha "${GITHUB_SHA}" \
+            --release-tag "${RELEASE_TAG}"
+
+      - name: Upload release docs bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-docs-bundle-${{ github.event.release.tag_name }}
+          path: ${{ runner.temp }}/openclaw-release-docs-bundle-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 30

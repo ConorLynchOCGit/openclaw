@@ -6,10 +6,9 @@ import { assertSyncTargetIsSafe, buildSyncMetadata } from "../../scripts/docs-sy
 
 const tempDirs = [];
 
-function createTempGitDir(prefix) {
+function createTempDir(prefix) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   tempDirs.push(dir);
-  fs.mkdirSync(path.join(dir, ".git"));
   return dir;
 }
 
@@ -23,32 +22,28 @@ describe("scripts/docs-sync-publish", () => {
   it("rejects nested publish targets inside the source repo", () => {
     const nestedTarget = path.join(process.cwd(), ".artifacts", "docs-sync-test-target");
     tempDirs.push(nestedTarget);
-    fs.mkdirSync(path.join(nestedTarget, ".git"), { recursive: true });
+    fs.mkdirSync(nestedTarget, { recursive: true });
 
     expect(() => assertSyncTargetIsSafe(nestedTarget)).toThrow(/outside the source repo worktree/u);
   });
 
-  it("requires the target to be a git worktree root", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-docs-sync-no-git-"));
-    tempDirs.push(dir);
-
-    expect(() => assertSyncTargetIsSafe(dir)).toThrow(/git worktree root/u);
+  it("accepts a standalone output directory outside the source repo", () => {
+    expect(() => assertSyncTargetIsSafe(createTempDir("openclaw-docs-sync-"))).not.toThrow();
   });
 
-  it("accepts a separate clone outside the source repo", () => {
-    expect(() => assertSyncTargetIsSafe(createTempGitDir("openclaw-docs-sync-"))).not.toThrow();
-  });
-
-  it("writes stable sync metadata without volatile timestamps", () => {
+  it("writes stable bundle metadata without volatile timestamps", () => {
     expect(
       buildSyncMetadata({
-        target: "/tmp/publish-repo",
-        sourceRepo: "ConorLynchOCGit/openclaw",
+        target: "/tmp/docs-bundle",
+        sourceRepo: "ConorLynchOCGit/openclaw-platform",
         sourceSha: "abc123",
+        releaseTag: "v1.2.3",
       }),
     ).toEqual({
-      repository: "ConorLynchOCGit/openclaw",
+      mode: "same-repo-bundle",
+      repository: "ConorLynchOCGit/openclaw-platform",
       sha: "abc123",
+      releaseTag: "v1.2.3",
     });
   });
 });

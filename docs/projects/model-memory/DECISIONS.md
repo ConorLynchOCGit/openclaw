@@ -518,7 +518,7 @@ Reasoning:
   the scripted MMV2 path; it must not be worked around with topic parsers,
   semantic forests, or fuzzy supersession
 
-## 2026-04-22 - Docs sync auth requires a write-scoped external credential
+## 2026-04-22 - Docs sync auth requires a write-scoped external credential (historical, superseded)
 
 Decision:
 
@@ -542,6 +542,8 @@ Reasoning:
   account only has READ permission on `openclaw/docs`
 - workflow logic can be hardened locally, but successful publishing requires a
   credential owned by the organization/repo with write access to the docs repo
+
+Superseded by the 2026-04-24 downstream same-repo docs bundle posture.
 
 ## 2026-04-22 - Deep ingest failures require funnel hardening before resume
 

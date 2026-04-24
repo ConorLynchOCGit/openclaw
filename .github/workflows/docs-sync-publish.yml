@@ -1,4 +1,4 @@
-name: Docs Sync Publish Repo
+name: Docs Build Bundle
 
 on:
   push:
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  sync-publish-repo:
+  build-docs-bundle:
     if: ${{ github.repository == 'ConorLynchOCGit/openclaw-platform' }}
     runs-on: ubuntu-latest
     steps:
@@ -28,115 +28,21 @@ jobs:
         with:
           node-version: "22.18.0"
 
-      - name: Determine docs sync auth mode
-        id: docs_sync_auth_mode
+      - name: Build same-repo docs bundle
         env:
-          OPENCLAW_DOCS_SYNC_APP_ID: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_ID }}
-          OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY }}
+          DOCS_BUNDLE_DIR: ${{ runner.temp }}/openclaw-docs-bundle-${{ github.run_id }}
         run: |
           set -euo pipefail
-          if [ -n "${OPENCLAW_DOCS_SYNC_APP_ID:-}" ] && [ -n "${OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY:-}" ]; then
-            echo "use_app=1" >> "$GITHUB_OUTPUT"
-          else
-            echo "use_app=0" >> "$GITHUB_OUTPUT"
-          fi
+          echo "Cross-repo docs publish is retired for the downstream repo. Building a same-repo bundle artifact instead."
+          node scripts/docs-sync-publish.mjs \
+            --target "${DOCS_BUNDLE_DIR}" \
+            --source-repo "${GITHUB_REPOSITORY}" \
+            --source-sha "${GITHUB_SHA}"
 
-      - name: Generate docs sync GitHub App token
-        id: docs_sync_app_token
-        if: ${{ steps.docs_sync_auth_mode.outputs.use_app == '1' }}
-        uses: actions/create-github-app-token@v1
+      - name: Upload docs bundle artifact
+        uses: actions/upload-artifact@v4
         with:
-          app-id: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_ID }}
-          private-key: ${{ secrets.OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY }}
-          owner: openclaw
-          repositories: docs
-
-      - name: Resolve docs sync credential
-        env:
-          OPENCLAW_DOCS_SYNC_APP_TOKEN: ${{ steps.docs_sync_app_token.outputs.token }}
-          OPENCLAW_DOCS_SYNC_TOKEN_FALLBACK: ${{ secrets.OPENCLAW_DOCS_SYNC_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -n "${OPENCLAW_DOCS_SYNC_APP_TOKEN:-}" ]; then
-            printf 'DOCS_SYNC_TOKEN=%s\n' "${OPENCLAW_DOCS_SYNC_APP_TOKEN}" >> "$GITHUB_ENV"
-            echo "DOCS_SYNC_TOKEN_SOURCE=github-app" >> "$GITHUB_ENV"
-          elif [ -n "${OPENCLAW_DOCS_SYNC_TOKEN_FALLBACK:-}" ]; then
-            printf 'DOCS_SYNC_TOKEN=%s\n' "${OPENCLAW_DOCS_SYNC_TOKEN_FALLBACK}" >> "$GITHUB_ENV"
-            echo "DOCS_SYNC_TOKEN_SOURCE=fine-grained-pat" >> "$GITHUB_ENV"
-          else
-            echo "::error title=Missing docs sync credential::Set OPENCLAW_DOCS_SYNC_APP_ID and OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY for the long-term GitHub App flow, or set OPENCLAW_DOCS_SYNC_TOKEN as a stopgap fine-grained PAT with Contents read/write on openclaw/docs."
-            exit 1
-          fi
-          echo "PUBLISH_REPO_DIR=${RUNNER_TEMP}/openclaw-docs-publish-${GITHUB_RUN_ID}" >> "$GITHUB_ENV"
-
-      - name: Sync, commit, and push publish repo
-        env:
-          DOCS_SYNC_TOKEN: ${{ env.DOCS_SYNC_TOKEN }}
-          DOCS_SYNC_TOKEN_SOURCE: ${{ env.DOCS_SYNC_TOKEN_SOURCE }}
-          PUBLISH_REPO_DIR: ${{ env.PUBLISH_REPO_DIR }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${DOCS_SYNC_TOKEN:-}" ]; then
-            echo "::error title=Missing docs sync credential::Credential resolution did not produce DOCS_SYNC_TOKEN."
-            exit 1
-          fi
-
-          auth_header="$(printf 'x-access-token:%s' "${DOCS_SYNC_TOKEN}" | base64 | tr -d '\n')"
-
-          prepare_publish_repo() {
-            local repo_dir="$1"
-            git clone "https://github.com/openclaw/docs.git" "${repo_dir}"
-            git -C "${repo_dir}" config --local \
-              http.https://github.com/openclaw/docs.git.extraheader \
-              "AUTHORIZATION: basic ${auth_header}"
-          }
-
-          validate_publish_repo_access() {
-            local repo_dir="$1"
-            if ! git -C "${repo_dir}" ls-remote --exit-code origin refs/heads/main >/dev/null; then
-              echo "::error title=Docs sync credential cannot read publish repo::The resolved credential must be valid for openclaw/docs."
-              return 1
-            fi
-
-            if ! git -C "${repo_dir}" push --dry-run origin HEAD:main >/dev/null; then
-              echo "::error title=Docs sync credential cannot push publish repo::The resolved credential must have Contents read/write on openclaw/docs. Password authentication is not supported."
-              return 1
-            fi
-
-            return 0
-          }
-
-          sync_commit_and_push() {
-            local repo_dir="$1"
-            prepare_publish_repo "${repo_dir}"
-            validate_publish_repo_access "${repo_dir}"
-            node scripts/docs-sync-publish.mjs \
-              --target "${repo_dir}" \
-              --source-repo "$GITHUB_REPOSITORY" \
-              --source-sha "$GITHUB_SHA"
-
-            if git -C "${repo_dir}" diff --quiet -- docs .openclaw-sync; then
-              echo "No publish-repo changes."
-              return 0
-            fi
-
-            git -C "${repo_dir}" config user.name "openclaw-docs-sync[bot]"
-            git -C "${repo_dir}" config user.email "openclaw-docs-sync[bot]@users.noreply.github.com"
-            git -C "${repo_dir}" add docs .openclaw-sync
-            git -C "${repo_dir}" commit -m "chore(sync): mirror docs from $GITHUB_REPOSITORY@$GITHUB_SHA"
-            git -C "${repo_dir}" push origin HEAD:main
-          }
-
-          echo "Using docs sync credential source: ${DOCS_SYNC_TOKEN_SOURCE}"
-          for attempt in 1 2 3 4 5; do
-            attempt_repo_dir="${PUBLISH_REPO_DIR}-${attempt}"
-            if sync_commit_and_push "${attempt_repo_dir}"; then
-              exit 0
-            fi
-            echo "Publish sync attempt ${attempt} failed; retrying from a fresh clone."
-            sleep $((attempt * 2))
-          done
-
-          echo "Failed to push publish-repo sync after retries."
-          exit 1
+          name: docs-bundle-${{ github.sha }}
+          path: ${{ runner.temp }}/openclaw-docs-bundle-${{ github.run_id }}
+          if-no-files-found: error
+          retention-days: 14

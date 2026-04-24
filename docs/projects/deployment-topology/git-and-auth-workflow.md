@@ -20,7 +20,7 @@ GitHub CLI posture:
 - `origin` should point at `ConorLynchOCGit/openclaw-platform`
 - `integration` should point at `ConorLynchOCGit/openclaw-integration`
 - legacy fork pushes should remain disabled
-- docs-sync GitHub App or PAT secrets should exist only on
-  `ConorLynchOCGit/openclaw-platform`
+- downstream docs workflows now stay same-repo and artifact-only, so they do
+  not require a cross-repo publish credential on the VPS
 - `ConorLynchOCGit/openclaw` should stay visibly marked as the legacy
   rollback/reference fork until a later owner decision archives or removes it

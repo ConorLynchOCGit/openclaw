@@ -1,6 +1,6 @@
 # Decisions
 
-## 2026-04-22 - Docs sync publish auth uses scoped external credential
+## 2026-04-22 - Docs sync publish auth uses scoped external credential (historical, superseded)
 
 - Docs Sync Publish Repo should publish to `openclaw/docs` using a credential
   scoped to that publish repo, not the source repo's default `GITHUB_TOKEN`.
@@ -12,6 +12,8 @@
   Contents read/write, with expiration/rotation.
 - Workflow hardening should fail fast on missing/invalid token and avoid
   token-bearing remote URLs.
+
+Superseded by the 2026-04-24 same-repo downstream docs decision below.
 
 ## 2026-04-24 - Docs sync publish retries from fresh clones with stable source metadata
 
@@ -62,13 +64,21 @@
 
 ## 2026-04-24 - Boundary follow-through stays conservative
 
-- docs-sync secrets belong only on `ConorLynchOCGit/openclaw-platform`
-- if the credential values are not present in the current environment or
-  approved VPS config surfaces, stop and document the exact provisioning step;
-  do not invent alternate storage or place the secrets on the legacy fork or
-  the clean integration repo
 - keep `ConorLynchOCGit/openclaw` unarchived for now, but mark it clearly in
   GitHub metadata as a legacy rollback/reference fork
 - keep org transfer deferred until actual org access exists
 - after this boundary-follow-through slice, the next slice should be the
   migration regression audit and stale-reference cleanup, not UI cleanup
+
+## 2026-04-24 - Downstream docs publishing stays same-repo until an owned host exists
+
+- `ConorLynchOCGit/openclaw-platform` must not assume write access to the
+  upstream-owned `openclaw/docs` repository
+- downstream docs workflows now stay in the same repo and build bundle
+  artifacts instead of cloning, pushing, or dispatching into another repo
+- downstream docs workflow auth no longer depends on
+  `OPENCLAW_DOCS_SYNC_APP_ID`,
+  `OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY`, or `OPENCLAW_DOCS_SYNC_TOKEN`
+- the current safe posture is:
+  same-repo bundle artifacts now, choose a real owned downstream docs host
+  later if and when one is actually needed

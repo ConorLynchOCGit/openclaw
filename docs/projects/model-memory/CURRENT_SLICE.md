@@ -539,17 +539,14 @@ The next remaining pre-Phase-2 blocker is now:
   provider/funnel preconditions: the report-only failed-source quarantine has
   79 failed, 200 completed, 25 pending, `runStatus=running`, and a hard
   `provider_credit` no-retry class
-- Docs Sync Publish Repo is workflow-hardened but still blocked until
-  `OPENCLAW_DOCS_SYNC_TOKEN` is set to a credential with Contents read/write
-  on `openclaw/docs`
+- downstream docs workflows now stay same-repo and no longer block on an
+  external `openclaw/docs` credential
 
 ## Current Work Queue
 
-1. Set or replace docs-sync credentials on
-   `ConorLynchOCGit/openclaw-platform` with either
-   `OPENCLAW_DOCS_SYNC_APP_ID` + `OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY` or, only
-   as a fallback, `OPENCLAW_DOCS_SYNC_TOKEN`, all scoped to `openclaw/docs`
-   with Contents read/write; then rerun Docs Sync Publish Repo.
+1. Keep the same-repo docs bundle workflows artifact-only until a real owned
+   downstream docs host is chosen; do not restore the old `openclaw/docs`
+   publish assumption.
 2. Keep `message:preprocessed` routing/telemetry-only until dedupe and
    no-raw-prompt guarantees are proven.
 3. Treat `ContextEngine.ingest` and `ContextEngine.ingestBatch` hook evidence

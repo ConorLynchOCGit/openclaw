@@ -6,58 +6,27 @@
 - canonical_repo_entry: `docs/projects/github/index.md`
 - role: GitHub digest, webhook, auth, and reporting project workspace
 
-## 2026-04-24 Docs Sync Publish Repo
+## 2026-04-24 Downstream Docs Bundle Workflows
 
-- workflow: `.github/workflows/docs-sync-publish.yml`
-- target publish repo: `openclaw/docs`
+- workflows:
+  - `.github/workflows/docs-sync-publish.yml`
+  - `.github/workflows/docs-translate-trigger-release.yml`
 - canonical downstream source repo is now `ConorLynchOCGit/openclaw-platform`
 - clean upstream integration repo is now `ConorLynchOCGit/openclaw-integration`
 - retained legacy fork is `ConorLynchOCGit/openclaw`, but it is no longer the
   canonical work or workflow home
-- latest legacy-fork run reviewed: `24901253876` on `ConorLynchOCGit/openclaw`
-- current failure class on that legacy fork run: missing docs-sync secrets at
-  credential resolution time
-- current repo secret status on `ConorLynchOCGit/openclaw-platform`: no Actions
-  secrets are present
-- current repo secret status on `ConorLynchOCGit/openclaw-integration`: no
-  Actions secrets are present
-- current repo secret status on `ConorLynchOCGit/openclaw`: no Actions secrets
-  are present
-- current local provisioning audit result:
-  `OPENCLAW_DOCS_SYNC_APP_ID`,
-  `OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY`, and `OPENCLAW_DOCS_SYNC_TOKEN` are not
-  present in the live checkout env, `/root/.openclaw/.env`,
-  `/root/.openclaw/openclaw.json`, or the current VPS repo `.env`
-- upstream repo-side failure also inspected: `openclaw/openclaw` run
-  `24901113806` authenticated successfully but failed by rebasing a stale clone
-  into `.openclaw-sync/source.json` conflicts
-- workflow hardening landed:
-  - prefer GitHub App credentials:
-    `OPENCLAW_DOCS_SYNC_APP_ID` + `OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY`
-  - keep `OPENCLAW_DOCS_SYNC_TOKEN` as stopgap fallback only
-  - fail fast when no docs-sync credential is present
-  - clone the publish repo without embedding a token in the remote URL
-  - configure token auth as a local Git extra header only inside the runner
-  - verify read access with `git ls-remote`
-  - verify push access with `git push --dry-run`
-  - retry from a fresh publish clone instead of rebasing a stale local commit
-  - keep `.openclaw-sync/source.json` stable with repository + sha only
-  - run publish/translate jobs only from
-    `ConorLynchOCGit/openclaw-platform`
-- remaining required external fix:
-  - add `OPENCLAW_DOCS_SYNC_APP_ID` and
-    `OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY` to
-    `ConorLynchOCGit/openclaw-platform`
-  - fallback only if needed: `OPENCLAW_DOCS_SYNC_TOKEN`
-  - required installation scope: `openclaw/docs`
-  - required permission: Contents read/write
-  - do not print, log, or commit the credential
-  - exact next operator step:
-    run `gh secret set OPENCLAW_DOCS_SYNC_APP_ID --repo ConorLynchOCGit/openclaw-platform`
-    and
-    `gh secret set OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY --repo ConorLynchOCGit/openclaw-platform`
-    from a shell that actually has the GitHub App values available, then rerun
-    Docs Sync Publish Repo and Docs Trigger Locale Translate On Release
+- downstream docs no longer target `openclaw/docs`
+- cross-repo publish credentials are no longer required for the current
+  downstream posture
+- `.github/workflows/docs-sync-publish.yml` now builds a same-repo docs bundle
+  artifact on docs changes
+- `.github/workflows/docs-translate-trigger-release.yml` now builds a
+  release-tagged same-repo docs bundle artifact on published releases
+- `scripts/docs-sync-publish.mjs` now materializes a bundle directory and
+  writes `.openclaw-docs-build/source.json` metadata instead of cloning and
+  pushing to another repository
+- downstream docs hosting remains intentionally undecided; bundle artifacts are
+  the safe current output until an owned host is chosen
 
 ## 2026-04-24 Repo Boundary Split
 

@@ -108,6 +108,7 @@ function parseArgs(argv) {
     target: "",
     sourceRepo: "",
     sourceSha: "",
+    releaseTag: "",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -123,6 +124,10 @@ function parseArgs(argv) {
         break;
       case "--source-sha":
         args.sourceSha = argv[index + 1] ?? "";
+        index += 1;
+        break;
+      case "--release-tag":
+        args.releaseTag = argv[index + 1] ?? "";
         index += 1;
         break;
       default:
@@ -154,16 +159,10 @@ export function assertSyncTargetIsSafe(
   targetRoot,
   { allowSourceRepoTarget = process.env.OPENCLAW_DOCS_SYNC_ALLOW_SOURCE_REPO_TARGET === "1" } = {},
 ) {
-  if (!fs.existsSync(targetRoot)) {
-    throw new Error(`target does not exist: ${targetRoot}`);
-  }
   if (!allowSourceRepoTarget && isSameOrNestedPath(targetRoot, ROOT)) {
     throw new Error(
-      `target must live outside the source repo worktree: ${targetRoot}. Use a separate clone, such as $RUNNER_TEMP/openclaw-docs-publish.`,
+      `target must live outside the source repo worktree: ${targetRoot}. Use a separate output directory, such as $RUNNER_TEMP/openclaw-docs-bundle.`,
     );
-  }
-  if (!fs.existsSync(path.join(targetRoot, ".git"))) {
-    throw new Error(`target must be a git worktree root: ${targetRoot}`);
   }
 }
 
@@ -190,8 +189,10 @@ function writeJson(filePath, value) {
 
 export function buildSyncMetadata(args) {
   return {
+    mode: "same-repo-bundle",
     repository: args.sourceRepo || "",
     sha: args.sourceSha || "",
+    ...(args.releaseTag ? { releaseTag: args.releaseTag } : {}),
   };
 }
 
@@ -277,48 +278,17 @@ function composeDocsConfig() {
   };
 }
 
-function syncDocsTree(targetRoot) {
+function buildDocsTree(targetRoot) {
   const targetDocsDir = path.join(targetRoot, "docs");
   ensureDir(targetDocsDir);
 
-  const localeFilters = GENERATED_LOCALES.flatMap((entry) => [
-    "--filter",
-    `P ${entry.dir}/`,
-    "--filter",
-    `P .i18n/${entry.tmFile}`,
-    "--exclude",
-    `${entry.dir}/`,
-    "--exclude",
-    `.i18n/${entry.tmFile}`,
-  ]);
-
-  run("rsync", [
-    "-a",
-    "--delete",
-    "--filter",
-    "P .i18n/README.md",
-    "--exclude",
-    ".i18n/README.md",
-    ...localeFilters,
-    `${SOURCE_DOCS_DIR}/`,
-    `${targetDocsDir}/`,
-  ]);
-
-  for (const locale of GENERATED_LOCALES) {
-    const sourceTmPath = path.join(SOURCE_DOCS_DIR, ".i18n", locale.tmFile);
-    const targetTmPath = path.join(targetDocsDir, ".i18n", locale.tmFile);
-    if (!fs.existsSync(targetTmPath) && fs.existsSync(sourceTmPath)) {
-      ensureDir(path.dirname(targetTmPath));
-      fs.copyFileSync(sourceTmPath, targetTmPath);
-    }
-  }
-
+  run("rsync", ["-a", "--delete", `${SOURCE_DOCS_DIR}/`, `${targetDocsDir}/`]);
   writeJson(path.join(targetDocsDir, "docs.json"), composeDocsConfig());
 }
 
 function writeSyncMetadata(targetRoot, args) {
   const metadata = buildSyncMetadata(args);
-  writeJson(path.join(targetRoot, ".openclaw-sync", "source.json"), metadata);
+  writeJson(path.join(targetRoot, ".openclaw-docs-build", "source.json"), metadata);
 }
 
 export function main(argv = process.argv.slice(2)) {
@@ -326,8 +296,9 @@ export function main(argv = process.argv.slice(2)) {
   const targetRoot = path.resolve(args.target);
 
   assertSyncTargetIsSafe(targetRoot);
+  ensureDir(targetRoot);
 
-  syncDocsTree(targetRoot);
+  buildDocsTree(targetRoot);
   writeSyncMetadata(targetRoot, args);
 }
 
