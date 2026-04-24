@@ -21,6 +21,13 @@
   secrets are present
 - current repo secret status on `ConorLynchOCGit/openclaw-integration`: no
   Actions secrets are present
+- current repo secret status on `ConorLynchOCGit/openclaw`: no Actions secrets
+  are present
+- current local provisioning audit result:
+  `OPENCLAW_DOCS_SYNC_APP_ID`,
+  `OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY`, and `OPENCLAW_DOCS_SYNC_TOKEN` are not
+  present in the live checkout env, `/root/.openclaw/.env`,
+  `/root/.openclaw/openclaw.json`, or the current VPS repo `.env`
 - upstream repo-side failure also inspected: `openclaw/openclaw` run
   `24901113806` authenticated successfully but failed by rebasing a stale clone
   into `.openclaw-sync/source.json` conflicts
@@ -45,6 +52,12 @@
   - required installation scope: `openclaw/docs`
   - required permission: Contents read/write
   - do not print, log, or commit the credential
+  - exact next operator step:
+    run `gh secret set OPENCLAW_DOCS_SYNC_APP_ID --repo ConorLynchOCGit/openclaw-platform`
+    and
+    `gh secret set OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY --repo ConorLynchOCGit/openclaw-platform`
+    from a shell that actually has the GitHub App values available, then rerun
+    Docs Sync Publish Repo and Docs Trigger Locale Translate On Release
 
 ## 2026-04-24 Repo Boundary Split
 
@@ -54,9 +67,15 @@
   `ConorLynchOCGit/openclaw-integration`
 - the old public fork `ConorLynchOCGit/openclaw` remains in place only as a
   temporary rollback/reference surface
+- the old public fork is now also marked in GitHub metadata as:
+  `Legacy rollback/reference fork after downstream repo split. Canonical downstream repo moved off this fork.`
 - a full all-refs upstream mirror into the integration repo was attempted and
   rejected by GitHub with `pack exceeds maximum allowed size (2.00 GiB)`
 - the safe fallback is a clean `main`-only integration seed from
   `openclaw/openclaw`, which is enough for normal upstream-sync and
   upstreamable-patch work without keeping the downstream product trapped in the
   fork network
+- org transfer remains deferred because no GitHub organization access is
+  currently visible from this environment
+- next bounded follow-on is the migration regression audit and stale-reference
+  cleanup slice, not UI cleanup or full-suite stabilization

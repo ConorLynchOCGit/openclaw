@@ -59,3 +59,16 @@
   - do not adopt `git subtree` unless a one-checkout workflow becomes worth
     the mixed history, larger vendor-update churn, and harder provenance line
     between upstream code and downstream platform work
+
+## 2026-04-24 - Boundary follow-through stays conservative
+
+- docs-sync secrets belong only on `ConorLynchOCGit/openclaw-platform`
+- if the credential values are not present in the current environment or
+  approved VPS config surfaces, stop and document the exact provisioning step;
+  do not invent alternate storage or place the secrets on the legacy fork or
+  the clean integration repo
+- keep `ConorLynchOCGit/openclaw` unarchived for now, but mark it clearly in
+  GitHub metadata as a legacy rollback/reference fork
+- keep org transfer deferred until actual org access exists
+- after this boundary-follow-through slice, the next slice should be the
+  migration regression audit and stale-reference cleanup, not UI cleanup

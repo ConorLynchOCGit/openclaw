@@ -13,6 +13,14 @@
   `ConorLynchOCGit/openclaw-platform`
 - keep docs publish retries fresh-clone based so `.openclaw-sync/source.json`
   metadata updates do not rebase-conflict on a stale publish clone
-- remaining external blocker:
-  provision the docs-sync secrets on `ConorLynchOCGit/openclaw-platform`, then
-  rerun Docs Sync Publish Repo and Docs Trigger Locale Translate On Release
+- keep `ConorLynchOCGit/openclaw` visibly marked as the legacy
+  rollback/reference fork; do not treat it as the canonical work or workflow
+  home
+- current external blocker:
+  the docs-sync credential material is not present in the live repo checkout,
+  runtime env files, or current VPS config surfaces, so provisioning on
+  `ConorLynchOCGit/openclaw-platform` still requires an explicit operator step
+- defer org transfer until org access exists; do not block stabilization on it
+- next slice boundary:
+  run the migration regression audit and stale-reference cleanup without mixing
+  in UI cleanup or full-suite stabilization yet
