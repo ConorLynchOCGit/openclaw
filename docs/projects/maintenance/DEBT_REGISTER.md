@@ -43,6 +43,52 @@ parallel roadmap.
 
 ## Current open items
 
+### MD-014
+
+- `id`: `MD-014`
+- `category`: `repo-hygiene`
+- `status`: `in_progress`
+- `risk`: `high`
+- `owner_or_surface`: `model-memory runtime/public boundary`
+- `description`: the default MMV2 runtime/public path still crosses explicit
+  legacy admin/proof seams and rollback toggles that should be isolated more
+  aggressively before Phase 2 feature growth resumes.
+- `next_action`: keep the remaining package-root compatibility exports explicit
+  and then rerank whether any more boundary retirement is worth doing before
+  moving to the top-ranked orchestration split.
+- `notes`: diagnosis backlog item `RC-001`; default plugin-sdk runtime facade
+  no longer loads `legacy-admin-api`, and `extensions/model-memory/src/runtime-api.ts`
+  no longer exports the legacy fallback registry.
+
+### MD-015
+
+- `id`: `MD-015`
+- `category`: `repo-hygiene`
+- `status`: `planned`
+- `risk`: `medium`
+- `owner_or_surface`: `model-memory hot-path orchestration`
+- `description`: several Phase-2-critical files remain oversized orchestration
+  seams, especially `model-memory.live-runtime.ts`,
+  `mmv2-native-repository.ts`, and `shared-pipeline.ts`.
+- `next_action`: execute the first extraction slice after boundary narrowing so
+  capture, retrieval, dirty-state, persistence, and ingestion concerns are
+  split into smaller modules without behavior change.
+- `notes`: diagnosis backlog items `RC-002` and `RC-003`.
+
+### MD-016
+
+- `id`: `MD-016`
+- `category`: `repo-hygiene`
+- `status`: `planned`
+- `risk`: `medium`
+- `owner_or_surface`: `model-memory validation and helper duplication`
+- `description`: session-turn proof, entry-validation harness code, and several
+  runtime helpers still duplicate parsing, shaping, and status-mapping logic
+  that should be centralized before more Phase 2 features land on top.
+- `next_action`: execute the helper-centralization slice after the large-file
+  extraction packets are green.
+- `notes`: diagnosis backlog items `RC-004` and `RC-005`.
+
 ### MD-013
 
 - `id`: `MD-013`

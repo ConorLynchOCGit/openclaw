@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { DatabaseMemoryObjectStore } from "../plugin-sdk/model-memory-legacy.js";
 import {
-  DatabaseMemoryObjectStore,
   rebuildDerivedRuntimeState,
   type ActiveMemorySetRecord,
   type ActiveMemorySlotRecord,

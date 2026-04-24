@@ -47,12 +47,12 @@ export const LEGACY_FALLBACK_SURFACES: readonly LegacyFallbackSurface[] = [
     reason: "fallback use requires an explicit flag and must not disguise itself as normal capture",
   },
   {
-    surface: "runtime-api.ts / index.ts broad legacy exports",
+    surface: "index.ts broad legacy exports",
     status: "quarantined",
     defaultLivePathAllowed: false,
     auditRequired: true,
     reason:
-      "default public surfaces no longer export legacy semantic/collision/store bridges; retained consumers must use legacy-admin-api explicitly",
+      "runtime-api is now runtime-only; retained package-root legacy exports remain quarantined and explicit consumers must use legacy-admin-api when possible",
   },
   {
     surface: "memory-object-store.ts / mmv2-memory-object-store.ts",

@@ -19,3 +19,9 @@ title: "Maintenance Roadmap"
 
 - keep maintenance debt and verification posture aligned with the actual live
   deployment as rescue work completes
+
+## Phase 4
+
+- own the pre-Phase-2 code cleanup/refactor diagnosis and slice backlog
+- keep the cleanup lane bounded to high-leverage packets with an explicit stop
+  rule

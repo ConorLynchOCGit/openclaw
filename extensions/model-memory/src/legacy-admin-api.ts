@@ -2,6 +2,7 @@ export * from "./db/captured-object-write-compatibility.ts";
 export * from "./db/database-memory-object-store.ts";
 export * from "./db/default-memory-store.ts";
 export * from "./db/mmv2-memory-object-store.ts";
+export * from "./legacy-fallback-registry.ts";
 export * from "./live-shadow-adapters.ts";
 export * from "./memory-object-store.ts";
 export * from "./proof/object-comparison.ts";

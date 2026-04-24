@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { normalizeIdentityText } from "../plugin-sdk/model-memory.js";
+import { normalizeIdentityText } from "../plugin-sdk/model-memory-legacy.js";
 import type {
   ModelMemoryObjectRecord,
   ModelMemorySourceRecord,

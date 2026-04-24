@@ -1,4 +1,4 @@
-import { normalizeIdentityText } from "../plugin-sdk/model-memory.js";
+import { normalizeIdentityText } from "../plugin-sdk/model-memory-legacy.js";
 
 function normalizeCasePath(value: string): string {
   return value.replace(/\\/g, "/").trim();

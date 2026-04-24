@@ -10,6 +10,7 @@ The active maintenance control surface currently lives in:
 - [Debt Register](/projects/maintenance/DEBT_REGISTER)
 - [Test Matrix](/projects/maintenance/TEST_MATRIX)
 - [Workspace Refactor Foundation](/projects/maintenance/WORKSPACE_REFACTOR_FOUNDATION)
+- [Pre-Phase-2 Code Cleanup Program](/projects/maintenance/specs/pre-phase2-code-cleanup-program)
 - [Built-In Skills Audit](/projects/maintenance/BUILT_IN_SKILLS_AUDIT)
 - [Memory Push Spec](/projects/maintenance/MEMORY_PUSH_SPEC)
 

@@ -10,15 +10,15 @@ import {
   type PackagingDriftType,
   type SameClaimConfidence,
   type StructuralDeltaClass,
-} from "../plugin-sdk/model-memory.js";
-import type { ModelMemoryObject } from "../plugin-sdk/model-memory.js";
-import type {
+} from "../plugin-sdk/model-memory-legacy.js";
+import {
   ModelMemoryObjectRecord,
   ModelMemorySourceRecord,
   ModelMemorySourceWindowRecord,
   ModelMemorySupportItemRecord,
   ModelMemoryWriteEventRecord,
 } from "../plugin-sdk/model-memory.js";
+import type { ModelMemoryObject } from "../plugin-sdk/model-memory.js";
 import { buildModelMemoryCaseIdentity } from "./model-memory.case-identity.ts";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import { summarizeModelMemoryPayload } from "./model-memory.payload-summary.ts";

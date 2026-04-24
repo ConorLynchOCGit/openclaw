@@ -72,11 +72,15 @@ describe("semantic forest quarantine", () => {
   });
 
   it("keeps legacy semantic/collision exports off default public runtime surfaces", () => {
-    for (const file of [
-      "extensions/model-memory/src/index.ts",
-      "extensions/model-memory/src/runtime-api.ts",
-    ]) {
-      const source = readRepoFile(file);
+    const runtimeSource = readRepoFile("extensions/model-memory/src/runtime-api.ts");
+    expect(runtimeSource).not.toContain('export * from "./semantic-collision-adjudication.ts"');
+    expect(runtimeSource).not.toContain('export * from "./semantic-identity.ts"');
+    expect(runtimeSource).not.toContain('export * from "./write-policy.ts"');
+    expect(runtimeSource).not.toContain('export * from "./db/database-memory-object-store.ts"');
+    expect(runtimeSource).not.toContain('export * from "./legacy-fallback-registry.ts"');
+
+    const packageSource = readRepoFile("extensions/model-memory/src/index.ts");
+    for (const source of [packageSource]) {
       expect(source).not.toContain('export * from "./semantic-collision-adjudication.ts"');
       expect(source).not.toContain('export * from "./semantic-identity.ts"');
       expect(source).not.toContain('export * from "./write-policy.ts"');
@@ -88,6 +92,17 @@ describe("semantic forest quarantine", () => {
     expect(legacySource).toContain('export * from "./semantic-identity.ts"');
     expect(legacySource).toContain('export * from "./write-policy.ts"');
     expect(legacySource).toContain('export * from "./db/database-memory-object-store.ts"');
+    expect(legacySource).toContain('export * from "./legacy-fallback-registry.ts"');
+  });
+
+  it("keeps the default plugin-sdk facade free of legacy-admin loading", () => {
+    const runtimeFacadeSource = readRepoFile("src/plugin-sdk/model-memory.ts");
+    const legacyFacadeSource = readRepoFile("src/plugin-sdk/model-memory-legacy.ts");
+
+    expect(runtimeFacadeSource).not.toContain("legacy-admin-api.js");
+    expect(runtimeFacadeSource).not.toContain("loadLegacyFacadeModule");
+    expect(legacyFacadeSource).toContain("legacy-admin-api.js");
+    expect(legacyFacadeSource).toContain("loadLegacyFacadeModule");
   });
 
   it("keeps legacy write-policy on neutral structural identity rather than semantic-family identity", () => {
@@ -105,7 +120,7 @@ describe("semantic forest quarantine", () => {
         "legacy captured-object write fallback",
         "semantic-collision-adjudication.ts",
         "semantic-identity.ts",
-        "runtime-api.ts / index.ts broad legacy exports",
+        "index.ts broad legacy exports",
         "write-policy.ts legacy semantic identity dependency",
         "plugin loader memory-core assumptions",
         "memory_search / memory_get tools",

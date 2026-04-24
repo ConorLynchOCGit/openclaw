@@ -3,18 +3,20 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import type { OpenClawConfig } from "../config/config.ts";
 import {
+  DatabaseMemoryObjectStore,
+  ExecutorBackedSemanticCollisionAdjudicator,
+  runLiveDocumentShadow,
+} from "../plugin-sdk/model-memory-legacy.js";
+import {
   buildCalibrationReport,
   buildRetrievalPackArtifact,
-  DatabaseMemoryObjectStore,
   executeRetrieval,
   ExecutorBackedRetrievalRequestInterpreter,
-  ExecutorBackedSemanticCollisionAdjudicator,
   ExecutorBackedSemanticInterpreter,
   ModelMemoryCanonicalRepository,
   ModelMemoryOperatorInspection,
   RuntimeContextRepository,
   rebuildDerivedRuntimeState,
-  runLiveDocumentShadow,
   evaluateModelMemoryReadiness,
   runModelMemoryContextEngine,
   type ContextArtifactRecord,

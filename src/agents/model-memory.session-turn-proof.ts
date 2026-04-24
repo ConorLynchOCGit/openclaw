@@ -6,22 +6,26 @@ import type {
   CollisionAdjudicationRequest,
   CollisionCandidate,
   DatabaseMemoryObjectStoreObserver,
+  SemanticCollisionAdjudicator,
+} from "../plugin-sdk/model-memory-legacy.js";
+import {
+  DatabaseMemoryObjectStore,
+  ExecutorBackedSemanticCollisionAdjudicator,
+} from "../plugin-sdk/model-memory-legacy.js";
+import type {
   JsonModelExecutionRequest,
   JsonModelExecutionResponse,
   JsonModelExecutor,
   ModelMemoryObject,
-  SemanticInterpreter,
-  SemanticCollisionAdjudicator,
   SemanticInterpreterInput,
   SemanticInterpreterResult,
 } from "../plugin-sdk/model-memory.js";
 import {
   adaptOrdinaryTurnSource,
   captureOrdinaryTurnLive,
-  DatabaseMemoryObjectStore,
-  ExecutorBackedSemanticCollisionAdjudicator,
   ExecutorBackedSemanticInterpreter,
 } from "../plugin-sdk/model-memory.js";
+import type { SemanticInterpreter } from "../plugin-sdk/model-memory.js";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import { resetModelMemoryEvidenceDatabase } from "./model-memory.large-document-evidence.ts";
 import { OpenAICompatibleLiveJsonExecutor } from "./model-memory.live-json-executor.ts";

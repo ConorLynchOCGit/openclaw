@@ -259,6 +259,66 @@ export function loadBundledPluginPublicSurfaceModuleSync<T extends object>(
   });
 }
 
+export function bindFacadeFunction<TModule extends object, K extends keyof TModule>(
+  loadModule: () => TModule,
+  key: K,
+): TModule[K] {
+  return ((...args: unknown[]) =>
+    (loadModule()[key] as (...args: unknown[]) => unknown)(...args)) as TModule[K];
+}
+
+export function createLazyFacadeClassValue<TModule extends object, K extends keyof TModule>(
+  loadModule: () => TModule,
+  key: K,
+): TModule[K] {
+  const target = function facadeClassProxy() {} as unknown as object;
+  return new Proxy(target, {
+    apply(_target, thisArg, args) {
+      return Reflect.apply(loadModule()[key] as CallableFunction, thisArg, args);
+    },
+    construct(_target, args, newTarget) {
+      return Reflect.construct(
+        loadModule()[key] as new (...args: unknown[]) => object,
+        args,
+        newTarget as new (...args: unknown[]) => object,
+      );
+    },
+    defineProperty(_target, property, descriptor) {
+      return Reflect.defineProperty(loadModule()[key] as object, property, descriptor);
+    },
+    deleteProperty(_target, property) {
+      return Reflect.deleteProperty(loadModule()[key] as object, property);
+    },
+    get(_target, property, receiver) {
+      return Reflect.get(loadModule()[key] as object, property, receiver);
+    },
+    getOwnPropertyDescriptor(_target, property) {
+      return Reflect.getOwnPropertyDescriptor(loadModule()[key] as object, property);
+    },
+    getPrototypeOf() {
+      return Reflect.getPrototypeOf(loadModule()[key] as object);
+    },
+    has(_target, property) {
+      return Reflect.has(loadModule()[key] as object, property);
+    },
+    isExtensible() {
+      return Reflect.isExtensible(loadModule()[key] as object);
+    },
+    ownKeys() {
+      return Reflect.ownKeys(loadModule()[key] as object);
+    },
+    preventExtensions() {
+      return Reflect.preventExtensions(loadModule()[key] as object);
+    },
+    set(_target, property, value, receiver) {
+      return Reflect.set(loadModule()[key] as object, property, value, receiver);
+    },
+    setPrototypeOf(_target, prototype) {
+      return Reflect.setPrototypeOf(loadModule()[key] as object, prototype);
+    },
+  }) as TModule[K];
+}
+
 export function canLoadActivatedBundledPluginPublicSurface(params: {
   dirName: string;
   artifactBasename: string;

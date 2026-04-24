@@ -19,7 +19,6 @@ export * from "./ingestion/closeout-artifacts.ts";
 export * from "./ingestion/shared-pipeline.ts";
 export * from "./ingestion/section-map-candidate-hints.ts";
 export * from "./imports/hash-gated-import.ts";
-export * from "./legacy-fallback-registry.ts";
 export * from "./live-document-ingestion-service.ts";
 export * from "./live-daily-continuity-recovery-service.ts";
 export * from "./live-ordinary-turn-capture-service.ts";

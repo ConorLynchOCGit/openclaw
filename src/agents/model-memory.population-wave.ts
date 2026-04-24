@@ -4,6 +4,8 @@ import type { OpenClawConfig } from "../config/config.ts";
 import {
   DatabaseMemoryObjectStore,
   ExecutorBackedSemanticCollisionAdjudicator,
+} from "../plugin-sdk/model-memory-legacy.js";
+import {
   ExecutorBackedSemanticInterpreter,
   ingestDocumentLive,
   rebuildDerivedRuntimeState,

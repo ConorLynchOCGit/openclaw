@@ -7,11 +7,14 @@ title: "Maintenance Current Slice"
 
 ## Active slice
 
-`restoration-pass-1-maintenance-canonization`
+`pre-phase2-model-memory-boundary-narrowing`
 
 ## Goals
 
-1. move the weekly maintenance guard inputs into canonical repo ownership
-2. keep bounded maintenance debt visible and auditable
-3. preserve the workspace-refactor critique without treating it as immediate
-   restructure work
+1. keep the cleanup/refactor program canonically owned by maintenance docs plus
+   the generated diagnosis artifacts under
+   `.artifacts/refactor-prephase2/2026-04-24/diagnosis/`
+2. narrow the default MMV2 runtime/plugin-sdk boundary so legacy admin/proof
+   seams are explicit instead of piggybacking on the normal runtime facade
+3. leave the next cleanup slice ready to target the highest-ranked hot-path
+   orchestration extraction work

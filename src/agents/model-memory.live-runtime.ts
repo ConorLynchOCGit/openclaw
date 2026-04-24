@@ -3,11 +3,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { ExecutorBackedSemanticCollisionAdjudicator } from "../plugin-sdk/model-memory-legacy.js";
 import {
   DEFAULT_WORKSPACE_PROJECTION_TARGETS,
   buildOrdinaryTurnMemoryTraceId,
   ExecutorBackedRetrievalRequestInterpreter,
-  ExecutorBackedSemanticCollisionAdjudicator,
   ExecutorBackedSemanticInterpreter,
   buildRetrievalPackArtifact,
   buildToolResultMemoryTraceId,

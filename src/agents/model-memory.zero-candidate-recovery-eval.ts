@@ -9,14 +9,14 @@ import {
   type BoundedCandidateAdjudicationSource,
   type MemoryIdentityDescriptor,
   type SemanticCollisionAdjudicator,
-} from "../plugin-sdk/model-memory.js";
-import type { ModelMemoryObject } from "../plugin-sdk/model-memory.js";
-import type {
+} from "../plugin-sdk/model-memory-legacy.js";
+import {
   ModelMemoryObjectRecord,
   ModelMemorySourceRecord,
   ModelMemorySourceWindowRecord,
   ModelMemorySupportItemRecord,
 } from "../plugin-sdk/model-memory.js";
+import type { ModelMemoryObject } from "../plugin-sdk/model-memory.js";
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import type {
   DuplicateAuditReport,
