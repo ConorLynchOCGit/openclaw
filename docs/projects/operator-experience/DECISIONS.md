@@ -41,3 +41,25 @@ Constraints:
 - Diagnostic bundles remain redacted by default.
 - Retrieval/projection views show ids, hashes, artifact paths, and reasons only where those are already available.
 - Retry remains disabled with an explicit reason until durable replay support exists.
+
+## 2026-04-24: Cross-Root Operator Artifacts Resolve Through Explicit Resources
+
+Operator-facing generated artifacts that live outside the workspace-first
+default search surface must resolve through explicit resource ids and aliases,
+not broad fuzzy search.
+
+Examples:
+
+- `memory_ops.latest_report`
+- `ops.generated_current.memory_ops_report_current`
+- `ops.daily_operator_review.current_context`
+
+Rationale:
+
+- The current host-operator posture already gives scoped access to the live repo
+  and operator workspace.
+- The failure mode was discovery and provenance, not missing raw access.
+- Default broad search intentionally prunes runtime artifact trees such as
+  `.openclaw-memory-ops/**`.
+- Operator UX is better when summary lines carry deterministic resource ids and
+  provenance that can be handed to a resolver/tool directly.

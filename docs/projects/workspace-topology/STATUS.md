@@ -69,6 +69,12 @@ now live in the repo.
   - `workspace/projects/ops/` remains the one justified writable compatibility
     surface because it still owns `generated_current/` and a few stable host
     script paths
+- cross-root operator artifacts now resolve through explicit registered
+  resources instead of relying on workspace-first fuzzy search
+- default broad search remains intentionally pruned away from
+  `.openclaw-memory-ops/**`; the explicit resource resolver is the supported
+  route for Memory Ops, generated-current aliases, and archived operator
+  reports
 
 ## Delivered in this slice
 

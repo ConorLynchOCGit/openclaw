@@ -26,6 +26,7 @@ import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
 import { createPdfTool } from "./tools/pdf-tool.js";
 import { createResolveOpenClawPathTool } from "./tools/resolve-openclaw-path-tool.js";
+import { createResolveOpenClawResourceTool } from "./tools/resolve-openclaw-resource-tool.js";
 import { createSessionStatusTool } from "./tools/session-status-tool.js";
 import { createSessionsHistoryTool } from "./tools/sessions-history-tool.js";
 import { createSessionsListTool } from "./tools/sessions-list-tool.js";
@@ -246,6 +247,9 @@ export function createOpenClawTools(
       config: options?.config,
     }),
     createResolveOpenClawPathTool({
+      workspaceDir,
+    }),
+    createResolveOpenClawResourceTool({
       workspaceDir,
     }),
     createHostOperatorRepoTool(),

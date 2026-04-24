@@ -704,6 +704,14 @@
         "actorProfile"
       ]
     },
+    "resolve_openclaw_resource": {
+      "emoji": "🗂️",
+      "title": "Resolve Resource",
+      "detailKeys": [
+        "action",
+        "query"
+      ]
+    },
     "host_operator_repo": {
       "emoji": "🔐",
       "title": "Host Operator",

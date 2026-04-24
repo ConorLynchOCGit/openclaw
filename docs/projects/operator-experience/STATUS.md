@@ -13,6 +13,10 @@ title: "Operator Experience Status"
 - Host-operator write mode is now the intended route for operator-approved
   canonical agent-doc and skill work. Main should write approved live-repo
   surfaces through `host_operator_repo`, not raw `/root/services/...` paths.
+- Cross-root operator artifacts now need explicit resource resolution and
+  provenance, not just scoped file access. The active fix is to resolve
+  generated/current/archive report surfaces through stable resource ids and
+  aliases instead of broad workspace-first search.
 
 ## Landed First-Pass UI
 

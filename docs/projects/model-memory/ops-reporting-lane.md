@@ -29,6 +29,16 @@ Repo-owned review-support scripts may still generate bounded memory evidence for
 operator-review context assembly. That does not revive the old standalone cron
 lane as the primary reporting model.
 
+Current concrete surfaces:
+
+- canonical report artifact:
+  - `/root/services/openclaw-roles/live/.openclaw-memory-ops/reports/latest.md`
+- workspace-visible current alias:
+  - `/root/.openclaw/workspace/projects/ops/generated_current/memory_ops_health_report_current.md`
+- daily operator review context should reference the report through explicit
+  resource/provenance data and continue to state that the standalone host cron
+  lane is retired
+
 ## Rule
 
 - keep the standalone legacy memory reporting cron jobs retired

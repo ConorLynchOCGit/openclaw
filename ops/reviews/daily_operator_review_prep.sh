@@ -10,6 +10,7 @@ source "$REPO_ROOT/ops/host/lib/workspace_memory_guard.sh"
 OPS_DIR="$REPO_ROOT/ops/reviews"
 GENERATED_DIR="$WORKSPACE/projects/ops/generated_current"
 OUT="$GENERATED_DIR/daily_operator_review_context_current.md"
+MEMORY_OPS_ALIAS_HOST="$GENERATED_DIR/memory_ops_health_report_current.md"
 ARCHIVE_DIR="$WORKSPACE/archives/daily_operator_reviews"
 CRON_HEALTH_DIR="$WORKSPACE/archives/cron_health_rollups"
 HYGIENE_DIR="$WORKSPACE/archives/cron_session_hygiene"
@@ -122,31 +123,107 @@ SYSTEM_MEMORY_SNIPPET="$(sed -n '1,220p' "$REPO_ROOT/docs/system/memory.md" 2>/d
 GITHUB_AUTOMATION_SNIPPET="$(sed -n '1,180p' "$REPO_ROOT/docs/projects/deployment-topology/github-automation.md" 2>/dev/null || true)"
 MEMORY_OPS_REPORT_HOST="$REPO_ROOT/.openclaw-memory-ops/reports/latest.md"
 MEMORY_OPS_REPORT_RUNTIME="/app/.openclaw-memory-ops/reports/latest.md"
+MEMORY_OPS_ALIAS_RUNTIME="/home/node/.openclaw/workspace/projects/ops/generated_current/memory_ops_health_report_current.md"
+MEMORY_OPS_RESOURCE_ID="memory_ops.latest_report"
+MEMORY_OPS_ALIAS_RESOURCE_ID="ops.generated_current.memory_ops_report_current"
+
+memory_ops_field() {
+  local field="$1"
+  if [[ ! -f "$MEMORY_OPS_REPORT_HOST" ]]; then
+    return 0
+  fi
+  sed -n "s/^- ${field}:[[:space:]]*//p" "$MEMORY_OPS_REPORT_HOST" | head -n 1
+}
+
+write_memory_ops_alias() {
+  local source_status="missing"
+  local source_generated_at=""
+  local source_mode=""
+  local source_label=""
+
+  if [[ -f "$MEMORY_OPS_REPORT_HOST" ]]; then
+    source_status="present"
+    source_generated_at="$(memory_ops_field generated_at_utc)"
+    source_mode="$(memory_ops_field mode)"
+    source_label="$(memory_ops_field source)"
+  fi
+
+  {
+    printf '# Memory Ops Health Report — Current Alias\n\n'
+    printf '%s\n' 'This is a generated current alias for operator/workspace discovery.'
+    printf '%s\n' 'Canonical ownership remains the live repo Memory Ops evidence tree.'
+    printf '\n'
+    printf -- '- generated_at_utc: %s\n' "$GENERATED_AT"
+    printf -- '- resource_id: %s\n' "$MEMORY_OPS_RESOURCE_ID"
+    printf -- '- alias_resource_id: %s\n' "$MEMORY_OPS_ALIAS_RESOURCE_ID"
+    printf -- '- alias_kind: generated_current_alias\n'
+    printf -- '- canonical_owner: memory_ops\n'
+    printf -- '- canonical_host_path: %s\n' "$MEMORY_OPS_REPORT_HOST"
+    printf -- '- canonical_runtime_path: %s\n' "$MEMORY_OPS_REPORT_RUNTIME"
+    printf -- '- alias_host_path: %s\n' "$MEMORY_OPS_ALIAS_HOST"
+    printf -- '- alias_runtime_path: %s\n' "$MEMORY_OPS_ALIAS_RUNTIME"
+    printf -- '- producer_type: workspace_generated_alias\n'
+    printf -- '- standalone_host_cron_lane: retired\n'
+    printf -- '- source_status: %s\n' "$source_status"
+    printf -- '- source_generated_at_utc: %s\n' "${source_generated_at:-unknown}"
+    printf -- '- source_mode: %s\n' "${source_mode:-unknown}"
+    printf -- '- source_label: %s\n' "${source_label:-unknown}"
+    printf '\n## Guidance\n\n'
+    printf '%s\n' '- Read the canonical live repo artifact when exact truth matters.'
+    printf '%s\n' '- Do not hand-edit this alias; regenerate it through daily operator review prep.'
+    printf '%s\n' '- The legacy standalone Memory Ops host cron lane remains retired.'
+    printf '\n## Canonical Report Snapshot\n\n'
+    if [[ -f "$MEMORY_OPS_REPORT_HOST" ]]; then
+      sed -n '1,160p' "$MEMORY_OPS_REPORT_HOST"
+    else
+      printf '%s\n' 'Source report is currently missing.'
+    fi
+  } > "$MEMORY_OPS_ALIAS_HOST"
+  chown ubuntu:ubuntu "$MEMORY_OPS_ALIAS_HOST"
+}
 
 memory_ops_report_note() {
   if [[ -f "$MEMORY_OPS_REPORT_HOST" ]]; then
-    printf 'latest_path_host: %s\nlatest_path_runtime: %s\nstatus: present\n' "$MEMORY_OPS_REPORT_HOST" "$MEMORY_OPS_REPORT_RUNTIME"
+    printf 'resource_id: %s\nalias_resource_id: %s\ncanonical_owner: memory_ops\nproducer_type: repo_owned_report_artifact\nstandalone_host_cron_lane: retired\nlatest_path_host: %s\nlatest_path_runtime: %s\nalias_path_host: %s\nalias_path_runtime: %s\nstatus: present\n' \
+      "$MEMORY_OPS_RESOURCE_ID" \
+      "$MEMORY_OPS_ALIAS_RESOURCE_ID" \
+      "$MEMORY_OPS_REPORT_HOST" \
+      "$MEMORY_OPS_REPORT_RUNTIME" \
+      "$MEMORY_OPS_ALIAS_HOST" \
+      "$MEMORY_OPS_ALIAS_RUNTIME"
     sed -n '1,120p' "$MEMORY_OPS_REPORT_HOST"
   else
-    printf 'latest_path_host: %s\nlatest_path_runtime: %s\nstatus: missing\n' "$MEMORY_OPS_REPORT_HOST" "$MEMORY_OPS_REPORT_RUNTIME"
+    printf 'resource_id: %s\nalias_resource_id: %s\ncanonical_owner: memory_ops\nproducer_type: repo_owned_report_artifact\nstandalone_host_cron_lane: retired\nlatest_path_host: %s\nlatest_path_runtime: %s\nalias_path_host: %s\nalias_path_runtime: %s\nstatus: missing\n' \
+      "$MEMORY_OPS_RESOURCE_ID" \
+      "$MEMORY_OPS_ALIAS_RESOURCE_ID" \
+      "$MEMORY_OPS_REPORT_HOST" \
+      "$MEMORY_OPS_REPORT_RUNTIME" \
+      "$MEMORY_OPS_ALIAS_HOST" \
+      "$MEMORY_OPS_ALIAS_RUNTIME"
   fi
 }
 
 cron_health_note() {
   if [[ -n "$LATEST_CRON_HEALTH_HOST" && -f "$LATEST_CRON_HEALTH_HOST" ]]; then
-    printf 'latest_path: %s\nstatus: present\n' "${LATEST_CRON_HEALTH_HOST#$WORKSPACE/}"
+    printf 'resource_id: ops.cron_health.latest_rollup\nlatest_path: %s\nlatest_runtime_path: /home/node/.openclaw/workspace/%s\nstatus: present\n' \
+      "${LATEST_CRON_HEALTH_HOST#$WORKSPACE/}" \
+      "${LATEST_CRON_HEALTH_HOST#$WORKSPACE/}"
   else
-    printf 'latest_path: none\nstatus: missing\n'
+    printf 'resource_id: ops.cron_health.latest_rollup\nlatest_path: none\nlatest_runtime_path: none\nstatus: missing\n'
   fi
 }
 
 hygiene_note() {
   if [[ -n "$LATEST_HYGIENE_HOST" && -f "$LATEST_HYGIENE_HOST" ]]; then
-    printf 'latest_path: %s\nstatus: present\n' "${LATEST_HYGIENE_HOST#$WORKSPACE/}"
+    printf 'resource_id: ops.cron_session_hygiene.latest_report\nlatest_path: %s\nlatest_runtime_path: /home/node/.openclaw/workspace/%s\nstatus: present\n' \
+      "${LATEST_HYGIENE_HOST#$WORKSPACE/}" \
+      "${LATEST_HYGIENE_HOST#$WORKSPACE/}"
   else
-    printf 'latest_path: none\nstatus: missing\n'
+    printf 'resource_id: ops.cron_session_hygiene.latest_report\nlatest_path: none\nlatest_runtime_path: none\nstatus: missing\n'
   fi
 }
+
+write_memory_ops_alias
 
 cat > "$OUT" <<EOF
 # Daily Operator Review Context
@@ -158,6 +235,9 @@ cat > "$OUT" <<EOF
 - review_type: daily operator review
 - future_daily_review_artifact_runtime_path: $FUTURE_DAILY_ARTIFACT_RUNTIME
 - daily_memory_evidence_runtime_path: $DAILY_MEMORY_EVIDENCE_RUNTIME
+- memory_ops_resource_id: $MEMORY_OPS_RESOURCE_ID
+- memory_ops_alias_resource_id: $MEMORY_OPS_ALIAS_RESOURCE_ID
+- memory_ops_alias_runtime_path: $MEMORY_OPS_ALIAS_RUNTIME
 - dedicated_session_key: \`$DAILY_OPERATOR_REVIEW_SESSION_KEY\`
 - mode: report-only, lighter-than-weekly daily grounding
 
@@ -268,7 +348,9 @@ $(workspace_memory_writeability_guard_note "$WORKSPACE")
 - \`docs/projects/maintenance/DEBT_REGISTER.md\` remains the authority for unresolved maintenance debt when directly relevant.
 - \`archives/daily_memory_evidence/$TODAY.md\` is the durable memory-evidence layer for this review.
 - \`docs/projects/deployment-topology/github-automation.md\` is the authority for the GitHub digest lane contract.
-- \`.openclaw-memory-ops/reports/latest.md\` is the observe/report-only memory-ops recommendation surface when present.
+- \`.openclaw-memory-ops/reports/latest.md\` is the canonical observe/report-only memory-ops recommendation surface when present.
+- \`projects/ops/generated_current/memory_ops_health_report_current.md\` is the workspace-visible current alias for that report.
+- Memory Ops lookups should resolve through the explicit resource ids above instead of fuzzy workspace search.
 - Legacy workspace \`core/ROADMAP.md\` and workspace \`MEMORY.md\` are no longer authoritative for this review and must not override the canonical docs.
 - Use these files selectively; do not restate large excerpts in the daily review.
 

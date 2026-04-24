@@ -62,6 +62,7 @@ describe("sandbox explain helpers", () => {
       "edit",
       "apply_patch",
       "resolve_openclaw_path",
+      "resolve_openclaw_resource",
       "host_operator_repo",
       "image",
     ]);

@@ -24,6 +24,17 @@ The `resolve_openclaw_path` tool resolves a requested path or topic into:
 
 Before creating docs or editing implementation-owned files, Main should call the resolver. If the resolver returns `needs repo executor / host write bridge`, Main must stop or switch to an approved executor profile. It must not create a parallel workspace tree.
 
+For operator-facing generated artifacts that may live outside the workspace-first
+default search surface, Main should use `resolve_openclaw_resource` before
+falling back to fuzzy search. That resource resolver is the explicit
+cross-root discovery layer for high-value operator artifacts such as:
+
+- `memory_ops.latest_report`
+- `ops.generated_current.memory_ops_report_current`
+- `ops.daily_operator_review.current_context`
+- `ops.cron_health.latest_rollup`
+- `ops.cron_session_hygiene.latest_report`
+
 The resolver accepts explicit workspace scoping for ambiguous document paths:
 
 - `scope: "live_repo"` means `docs/...` resolves under `/root/services/openclaw-roles/live`.
@@ -66,6 +77,11 @@ Default prunes:
 - session JSONL unless explicitly requested
 - `.artifacts/**`
 - `.openclaw-memory-ops/**`
+
+Those prunes are intentional. They keep broad search away from noisy/runtime
+artifact trees. They do not mean the artifacts are inaccessible. High-value
+operator artifacts in those trees should resolve through the explicit resource
+registry instead of broad `rg`/`find` traversal.
 
 ## Host-operator profile
 

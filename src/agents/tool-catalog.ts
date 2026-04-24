@@ -283,6 +283,14 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "resolve_openclaw_resource",
+    label: "resolve_openclaw_resource",
+    description: "Resolve cross-root operator artifacts by stable id, path, or alias",
+    sectionId: "fs",
+    profiles: ["minimal", "coding", "messaging"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "host_operator_repo",
     label: "host_operator_repo",
     description: "Scoped audited host-operator access to the live OpenClaw repo",

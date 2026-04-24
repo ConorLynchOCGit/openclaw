@@ -1461,6 +1461,11 @@ for usage/billing and raise limits as needed.
     `workspace` to the repo root. The OpenClaw repo is just source code; keep the
     workspace separate unless you intentionally want the agent to work inside it.
 
+    For operator-facing generated artifacts that live across the live repo,
+    workspace, and archive/report surfaces, prefer explicit resolver/resource
+    tooling over broad fuzzy search. Access is not the same thing as
+    discoverability.
+
     Example (repo as default cwd):
 
     ```json5

@@ -26,6 +26,8 @@ title: "Workspace Topology Current Slice"
     wherever runtime-generated writable state is not required
 11. keep only the narrow justified writable compatibility surfaces, starting
     with `workspace/projects/ops/generated_current/`
+12. make high-value cross-root operator artifacts resolvable through explicit
+    resource ids and aliases instead of broad workspace-first search
 
 ## Exit criteria
 
@@ -47,3 +49,5 @@ title: "Workspace Topology Current Slice"
   “two project systems” drift
 - legacy workspace project names resolve back to the canonical repo-owned
   project tree rather than acting as a parallel registry
+- high-value operator artifacts in pruned/generated trees resolve through a
+  first-class resource layer rather than ad hoc search

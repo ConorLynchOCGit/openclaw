@@ -40,6 +40,7 @@ Guide to recurring operator scripts and generated current context.
 Under `workspace/projects/ops/generated_current/`:
 
 - `daily_operator_review_context_current.md`
+- `memory_ops_health_report_current.md`
 - `memory_projection_report_current.json`
 - `memory_projection_summary_current.md`
 - `memory_projection_orchestration_current.json`
@@ -51,6 +52,10 @@ These are live working artifacts, not archive records. The writable
 `workspace/projects/ops/` overlay remains justified specifically for these
 generated-current outputs and a small set of host paths that have not yet been
 fully repointed.
+
+The Memory Ops current report alias is intentionally a generated convenience
+surface. Canonical ownership remains the live repo evidence artifact at
+`.openclaw-memory-ops/reports/latest.md`.
 
 ## Dedicated report sessions
 
