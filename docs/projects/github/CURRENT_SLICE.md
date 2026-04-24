@@ -13,6 +13,10 @@
   downstream docs host is chosen
 - keep the release workflow building a release-tagged same-repo docs bundle
   instead of dispatching locale jobs into an upstream-owned repo
+- treat the following behaviors as intentionally retired for the downstream
+  repo, not as missing follow-up work:
+  - cross-repo publish to `openclaw/docs`
+  - cross-repo locale dispatch on release
 - keep `ConorLynchOCGit/openclaw` visibly marked as the legacy
   rollback/reference fork; do not treat it as the canonical work or workflow
   home
@@ -20,5 +24,6 @@
   workflows no longer depend on external write credentials
 - defer org transfer until org access exists; do not block stabilization on it
 - next slice boundary:
-  run the migration regression audit and stale-reference cleanup without mixing
-  in UI cleanup or full-suite stabilization yet
+  after the migration-residue cleanup closes, move to Slice 3: the UI
+  ghost-stream fix and local worktree cleanup without broadening into the full
+  stability gate yet

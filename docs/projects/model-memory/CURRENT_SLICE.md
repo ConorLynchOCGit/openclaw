@@ -546,7 +546,7 @@ The next remaining pre-Phase-2 blocker is now:
 
 1. Keep the same-repo docs bundle workflows artifact-only until a real owned
    downstream docs host is chosen; do not restore the old `openclaw/docs`
-   publish assumption.
+   publish assumption or the old cross-repo locale-dispatch path.
 2. Keep `message:preprocessed` routing/telemetry-only until dedupe and
    no-raw-prompt guarantees are proven.
 3. Treat `ContextEngine.ingest` and `ContextEngine.ingestBatch` hook evidence

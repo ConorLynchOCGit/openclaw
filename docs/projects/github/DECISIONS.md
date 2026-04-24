@@ -2,6 +2,9 @@
 
 ## 2026-04-22 - Docs sync publish auth uses scoped external credential (historical, superseded)
 
+Historical provenance only. Do not use this decision as the current downstream
+operator path.
+
 - Docs Sync Publish Repo should publish to `openclaw/docs` using a credential
   scoped to that publish repo, not the source repo's default `GITHUB_TOKEN`.
 - Preferred credential: GitHub App installation token with Contents read/write
@@ -82,3 +85,6 @@ Superseded by the 2026-04-24 same-repo downstream docs decision below.
 - the current safe posture is:
   same-repo bundle artifacts now, choose a real owned downstream docs host
   later if and when one is actually needed
+- this also intentionally retires:
+  - cross-repo publish to `openclaw/docs`
+  - cross-repo locale dispatch on release

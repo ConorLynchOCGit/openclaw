@@ -606,6 +606,9 @@ Remaining from the active pass:
   downstream repo; docs workflows now stay in
   `ConorLynchOCGit/openclaw-platform` and emit bundle artifacts instead of
   trying to publish into `openclaw/docs`
+- the old cross-repo locale-dispatch-on-release behavior is also intentionally
+  retired for the downstream repo; release workflows now emit a release-tagged
+  same-repo docs bundle artifact instead
 - keep document ingest stopped until provider credits and provider response
   stability are confirmed, then resume from the checkpoint with the MMV2
   skill/runbook and failure circuit breaker; do not edit the durable DB

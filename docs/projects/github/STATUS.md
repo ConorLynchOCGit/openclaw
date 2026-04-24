@@ -27,6 +27,14 @@
   pushing to another repository
 - downstream docs hosting remains intentionally undecided; bundle artifacts are
   the safe current output until an owned host is chosen
+- functionality-loss audit result for this migration lane:
+  - no accidental regression found in the current downstream docs path
+  - intentional retirements:
+    - cross-repo publish to `openclaw/docs`
+    - cross-repo locale dispatch on release
+  - preserved current capability:
+    - same-repo docs bundle generation on docs changes
+    - same-repo release-tagged docs bundle generation on releases
 
 ## 2026-04-24 Repo Boundary Split
 
@@ -46,5 +54,5 @@
   fork network
 - org transfer remains deferred because no GitHub organization access is
   currently visible from this environment
-- next bounded follow-on is the migration regression audit and stale-reference
-  cleanup slice, not UI cleanup or full-suite stabilization
+- next bounded follow-on after the migration-residue cleanup closes is Slice 3:
+  UI ghost-stream fix and local worktree cleanup, not the full stability gate

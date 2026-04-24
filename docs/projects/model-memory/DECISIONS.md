@@ -520,6 +520,9 @@ Reasoning:
 
 ## 2026-04-22 - Docs sync auth requires a write-scoped external credential (historical, superseded)
 
+Historical provenance only. Do not use this decision as the current downstream
+operator path.
+
 Decision:
 
 - keep `.github/workflows/docs-sync-publish.yml` using
@@ -543,7 +546,8 @@ Reasoning:
 - workflow logic can be hardened locally, but successful publishing requires a
   credential owned by the organization/repo with write access to the docs repo
 
-Superseded by the 2026-04-24 downstream same-repo docs bundle posture.
+Superseded by the 2026-04-24 downstream same-repo docs bundle posture, which
+also retires the old cross-repo locale-dispatch path.
 
 ## 2026-04-22 - Deep ingest failures require funnel hardening before resume
 
