@@ -330,6 +330,11 @@ This is a starting point. Add your own conventions, style, and rules as you figu
 - startup docs/projects/model-memory/STARTUP.md
 - current slice docs/projects/model-memory/CURRENT_SLICE.md
 - status docs/projects/model-memory/STATUS.md
+- Active durable project workspace: Operator Experience
+- workspace docs/projects/operator-experience
+- startup docs/projects/operator-experience/STARTUP.md
+- current slice docs/projects/operator-experience/CURRENT_SLICE.md
+- status docs/projects/operator-experience/STATUS.md
 - Active durable project workspace: Deployment Topology
 - workspace docs/projects/deployment-topology
 - startup docs/projects/deployment-topology/STARTUP.md

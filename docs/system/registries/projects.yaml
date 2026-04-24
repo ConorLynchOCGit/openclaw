@@ -45,6 +45,19 @@ projects:
     specsIndexPath: docs/projects/model-memory/specs/index.md
     ownerClass: project_workspace
     priority: 3
+  - id: operator-experience
+    title: Operator Experience
+    status: active
+    workspacePath: docs/projects/operator-experience
+    indexPath: docs/projects/operator-experience/index.md
+    startupPath: docs/projects/operator-experience/STARTUP.md
+    statusPath: docs/projects/operator-experience/STATUS.md
+    currentSlicePath: docs/projects/operator-experience/CURRENT_SLICE.md
+    decisionsPath: docs/projects/operator-experience/DECISIONS.md
+    roadmapPath: docs/projects/operator-experience/roadmap.md
+    specsIndexPath: docs/projects/operator-experience/specs/index.md
+    ownerClass: project_workspace
+    priority: 4
   - id: deployment-topology
     title: Deployment Topology
     status: active
@@ -57,7 +70,7 @@ projects:
     roadmapPath: docs/projects/deployment-topology/roadmap.md
     specsIndexPath: docs/projects/deployment-topology/specs/index.md
     ownerClass: project_workspace
-    priority: 4
+    priority: 5
   - id: qa-program
     title: QA Program
     status: active
@@ -70,7 +83,7 @@ projects:
     roadmapPath: docs/projects/qa-program/roadmap.md
     specsIndexPath: docs/projects/qa-program/specs/index.md
     ownerClass: project_workspace
-    priority: 5
+    priority: 6
   - id: maintenance
     title: Maintenance
     status: active
@@ -83,7 +96,7 @@ projects:
     roadmapPath: docs/projects/maintenance/roadmap.md
     specsIndexPath: docs/projects/maintenance/specs/index.md
     ownerClass: project_workspace
-    priority: 6
+    priority: 7
   - id: turborepo
     title: Turborepo
     status: queued
@@ -96,7 +109,7 @@ projects:
     roadmapPath: docs/projects/turborepo/roadmap.md
     specsIndexPath: docs/projects/turborepo/specs/index.md
     ownerClass: project_workspace
-    priority: 7
+    priority: 8
   - id: intake-routing
     title: Intake Routing
     status: queued
@@ -109,7 +122,7 @@ projects:
     roadmapPath: docs/projects/intake-routing/roadmap.md
     specsIndexPath: docs/projects/intake-routing/specs/index.md
     ownerClass: project_workspace
-    priority: 8
+    priority: 9
   - id: skills-system
     title: Skills System
     status: active
@@ -122,7 +135,7 @@ projects:
     roadmapPath: docs/projects/skills-system/roadmap.md
     specsIndexPath: docs/projects/skills-system/specs/index.md
     ownerClass: project_workspace
-    priority: 9
+    priority: 10
   - id: build-performance
     title: Build Performance
     status: active
@@ -135,7 +148,7 @@ projects:
     roadmapPath: docs/projects/build-performance/roadmap.md
     specsIndexPath: docs/projects/build-performance/specs/index.md
     ownerClass: project_workspace
-    priority: 10
+    priority: 11
   - id: channel-identity
     title: Channel Identity
     status: active
@@ -148,7 +161,7 @@ projects:
     roadmapPath: docs/projects/channel-identity/roadmap.md
     specsIndexPath: docs/projects/channel-identity/specs/index.md
     ownerClass: project_workspace
-    priority: 11
+    priority: 12
   - id: github
     title: GitHub
     status: active
@@ -161,7 +174,7 @@ projects:
     roadmapPath: docs/projects/github/roadmap.md
     specsIndexPath: docs/projects/github/specs/index.md
     ownerClass: project_workspace
-    priority: 12
+    priority: 13
   - id: live-app-patches
     title: Live App Patches
     status: active
@@ -174,7 +187,7 @@ projects:
     roadmapPath: docs/projects/live-app-patches/roadmap.md
     specsIndexPath: docs/projects/live-app-patches/specs/index.md
     ownerClass: project_workspace
-    priority: 13
+    priority: 14
   - id: ops
     title: Ops
     status: active
@@ -187,7 +200,7 @@ projects:
     roadmapPath: docs/projects/ops/roadmap.md
     specsIndexPath: docs/projects/ops/specs/index.md
     ownerClass: project_workspace
-    priority: 14
+    priority: 15
   - id: roles
     title: Roles
     status: active
@@ -200,7 +213,7 @@ projects:
     roadmapPath: docs/projects/roles/roadmap.md
     specsIndexPath: docs/projects/roles/specs/index.md
     ownerClass: project_workspace
-    priority: 15
+    priority: 16
   - id: web-stack
     title: Web Stack
     status: active
@@ -213,7 +226,7 @@ projects:
     roadmapPath: docs/projects/web-stack/roadmap.md
     specsIndexPath: docs/projects/web-stack/specs/index.md
     ownerClass: project_workspace
-    priority: 16
+    priority: 17
   - id: workflows
     title: Workflows
     status: active
@@ -226,4 +239,4 @@ projects:
     roadmapPath: docs/projects/workflows/roadmap.md
     specsIndexPath: docs/projects/workflows/specs/index.md
     ownerClass: project_workspace
-    priority: 17
+    priority: 18

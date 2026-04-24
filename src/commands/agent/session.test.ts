@@ -72,6 +72,23 @@ describe("resolveSessionKeyForRequest", () => {
     expect(result.sessionKey).toBe("agent:main:main");
   });
 
+  it("keeps CLI --to on the canonical main session even when dmScope is per-channel-peer", async () => {
+    mocks.resolveStorePath.mockReturnValue(MAIN_STORE_PATH);
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:main:main": { sessionId: "sess-1", updatedAt: 0 },
+    });
+
+    const result = resolveSessionKeyForRequest({
+      cfg: {
+        session: {
+          dmScope: "per-channel-peer",
+        },
+      },
+      to: "+15551234567",
+    });
+    expect(result.sessionKey).toBe("agent:main:main");
+  });
+
   it("finds session by sessionId via reverse lookup in primary store", async () => {
     mocks.resolveStorePath.mockReturnValue(MAIN_STORE_PATH);
     mocks.loadSessionStore.mockReturnValue({

@@ -99,6 +99,11 @@ Execution status after the first implementation wave:
   `.artifacts/model-memory/phase2-entry-validation/2026-04-24-cleanup-rerun-06/`
 - `RC-004` proof/harness isolation is now re-ranked as optional / low
   leverage rather than the planned next slice
+- the post-cleanup backlog/topology audit kept `RC-004` deferred, closed
+  `MD-013` as stale CLI-routing debt, and found only narrow topology registry
+  drift rather than a justified new project split
+- cleanup wave status: complete enough to stop; reopen only with fresh
+  evidence
 
 ## First-Wave Backlog
 

@@ -63,12 +63,21 @@ weekly maintenance guard depends on explicit control inputs.
 - after `RC-005`, the remaining `RC-004` proof/harness isolation work is no
   longer treated as the next planned packet because it does not currently
   clear the diminishing-returns bar for pre-Phase-2 cleanup
+- a bounded post-cleanup audit confirmed `RC-004` should stay deferred because
+  reopening it now would be proof-surface churn rather than risk reduction
+- the same audit closed `MD-013` as stale debt: the current CLI session
+  resolver keeps `--to` on `agent:main:main` even under channel-scoped DM
+  config, so there is no live `unknown` transport token to replace
+- the same audit found real topology drift in workspace-topology registry docs
+  plus an omitted `operator-experience` registry entry and one missing
+  project-pack file under `docs/projects/operator-experience/`; those are now
+  corrected, and no new project bucket split cleared the justification bar
 
 ## Immediate next move
 
 - keep the debt register current
 - keep the QA matrix aligned with the real maintenance packet bar
-- stop the pre-Phase-2 cleanup wave unless fresh proof/harness work makes
-  `RC-004` materially valuable again
-- if a later slice reopens `RC-004`, treat it as optional proof-surface
-  hygiene rather than a Phase-2-readiness blocker
+- treat the pre-Phase-2 cleanup wave as complete unless fresh evidence makes
+  `RC-004` or another bounded hygiene slice materially valuable again
+- start or resume Phase 2 work on the current green safety posture rather than
+  continuing cleanup for its own sake

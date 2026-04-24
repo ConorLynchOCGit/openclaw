@@ -41,7 +41,7 @@ parallel roadmap.
 - `qa-sentinel`
 - `repo-hygiene`
 
-## Current open items
+## Current tracked items
 
 ### MD-014
 
@@ -101,20 +101,22 @@ parallel roadmap.
 
 - `id`: `MD-013`
 - `category`: `repo-hygiene`
-- `status`: `open`
+- `status`: `closed`
 - `risk`: `low`
 - `owner_or_surface`: `CLI session routing`
-- `description`: CLI-originated direct Main sessions still derive a
-  non-canonical `unknown` channel token because the CLI does not carry a real
-  source transport channel.
-- `next_action`: decide whether CLI-originated direct sessions should keep the
-  current `unknown` token or move to an explicit synthetic token such as `cli`,
-  then apply the narrow session-key update only if that convention is accepted.
-- `notes`: this is an ergonomics debt item, not the earlier canonical-Main
-  precedence bug.
+- `description`: audit whether CLI-originated direct Main sessions still derive
+  a non-canonical `unknown` channel token.
+- `next_action`: none unless a future CLI session-routing change reintroduces a
+  non-canonical direct-session token.
+- `notes`: focused audit of `src/agents/command/session.ts` and
+  `src/commands/agent/session.test.ts` proved the current resolver keeps
+  `--to` on `agent:main:main` even under `dmScope: per-channel-peer`. No live
+  call site currently emits `agent:main:unknown:direct:*`, so no synthetic
+  `cli` token change was justified.
 
 ## Historical note
 
 Closed legacy maintenance items remain valid historical evidence in the legacy
-workspace and archive surfaces, but this canonical register tracks the live
-open debt that still matters operationally.
+workspace and archive surfaces, and this canonical register tracks the current
+maintenance debt posture plus recent audit closures that still matter
+operationally.

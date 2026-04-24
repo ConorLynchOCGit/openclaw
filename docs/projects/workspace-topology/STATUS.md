@@ -17,24 +17,21 @@ now live in the repo.
 
 - canonical project workspace root already exists:
   - `docs/projects/`
-- existing project workspaces now cover the active and queued topology-owned
-  surfaces, including:
-  - `docs/projects/model-memory/`
-  - `docs/projects/workspace-topology/`
-  - `docs/projects/agent-foundation/`
-  - `docs/projects/deployment-topology/`
-  - `docs/projects/maintenance/`
-  - `docs/projects/qa-program/`
-  - `docs/projects/turborepo/`
-  - `docs/projects/intake-routing/`
-  - `docs/projects/skills-system/`
+- registered project workspaces now match the full canonical `docs/projects/*`
+  tree recorded in
+  [Runtime Project Surfaces](/projects/workspace-topology/runtime-project-surfaces),
+  including `operator-experience/` and the other active engineering buckets
 - canonical `docs/system/` root now exists
 - canonical `docs/agents/` root now exists
 - scattered project-like material has now been explicitly classified for later
   migration
 - bounded runtime-source agent packs now exist in this repo under
   `docs/agents/`
-- registered project workspaces are now base-pack compliant
+- registered project workspaces are now base-pack compliant; the last missing
+  pack file was `docs/projects/operator-experience/specs/index.md`
+- the latest topology audit found registry drift in docs surfaces, not a
+  materially incoherent project-bucket split; no new top-level project
+  workspace is justified right now
 - durable/generated ownership is now a repo-wide written policy
 - deterministic topology and pack checks now exist in `scripts/`
 - roadmap-like surfaces are now being normalized into:

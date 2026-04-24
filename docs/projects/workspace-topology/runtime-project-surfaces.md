@@ -31,6 +31,7 @@ They currently include:
 - `live-app-patches`
 - `maintenance`
 - `model-memory`
+- `operator-experience`
 - `ops`
 - `qa-program`
 - `roles`
