@@ -17,6 +17,7 @@ const STARTUP_CHAT_HISTORY_RETRY_TIMEOUT_MS = 60_000;
 const STARTUP_CHAT_HISTORY_DEFAULT_RETRY_MS = 500;
 const STARTUP_CHAT_HISTORY_MAX_RETRY_MS = 5_000;
 const chatHistoryRequestVersions = new WeakMap<object, number>();
+const chatTerminalSeqByRun = new WeakMap<object, Map<string, number>>();
 
 function beginChatHistoryRequest(state: ChatState): number {
   const key = state as object;
@@ -27,6 +28,57 @@ function beginChatHistoryRequest(state: ChatState): number {
 
 function isLatestChatHistoryRequest(state: ChatState, version: number): boolean {
   return chatHistoryRequestVersions.get(state as object) === version;
+}
+
+function getChatTerminalSeqMap(state: ChatState): Map<string, number> {
+  const key = state as object;
+  let runSeqMap = chatTerminalSeqByRun.get(key);
+  if (!runSeqMap) {
+    runSeqMap = new Map<string, number>();
+    chatTerminalSeqByRun.set(key, runSeqMap);
+  }
+  return runSeqMap;
+}
+
+function resolveChatEventSeq(payload?: Pick<ChatEventPayload, "seq">): number | null {
+  const seq = payload?.seq;
+  return typeof seq === "number" && Number.isFinite(seq) && seq >= 0 ? seq : null;
+}
+
+function shouldIgnoreStaleTerminalizedEvent(
+  state: ChatState,
+  payload?: Pick<ChatEventPayload, "runId" | "seq">,
+): boolean {
+  if (!payload?.runId) {
+    return false;
+  }
+  const seq = resolveChatEventSeq(payload);
+  if (seq === null) {
+    return false;
+  }
+  const terminalSeq = chatTerminalSeqByRun.get(state as object)?.get(payload.runId);
+  return typeof terminalSeq === "number" && seq <= terminalSeq;
+}
+
+function recordTerminalChatEvent(
+  state: ChatState,
+  payload?: Pick<ChatEventPayload, "runId" | "seq">,
+) {
+  if (!payload?.runId) {
+    return;
+  }
+  const seq = resolveChatEventSeq(payload);
+  if (seq === null) {
+    return;
+  }
+  const runSeqMap = getChatTerminalSeqMap(state);
+  runSeqMap.set(payload.runId, seq);
+  if (runSeqMap.size > 200) {
+    const oldestRunId = runSeqMap.keys().next().value;
+    if (typeof oldestRunId === "string") {
+      runSeqMap.delete(oldestRunId);
+    }
+  }
 }
 
 function shouldApplyChatHistoryResult(
@@ -119,6 +171,7 @@ export type ChatState = {
 export type ChatEventPayload = {
   runId: string;
   sessionKey: string;
+  seq?: number;
   state: "delta" | "final" | "aborted" | "error";
   message?: unknown;
   errorMessage?: string;
@@ -409,17 +462,24 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   if (payload.sessionKey !== state.sessionKey) {
     return null;
   }
+  if (shouldIgnoreStaleTerminalizedEvent(state, payload)) {
+    return null;
+  }
 
   // Final from another run (e.g. sub-agent announce): refresh history to show new message.
   // See https://github.com/openclaw/openclaw/issues/1909
   if (payload.runId && state.chatRunId && payload.runId !== state.chatRunId) {
     if (payload.state === "final") {
+      recordTerminalChatEvent(state, payload);
       const finalMessage = normalizeFinalAssistantMessage(payload.message);
       if (finalMessage && !isAssistantSilentReply(finalMessage)) {
         state.chatMessages = [...state.chatMessages, finalMessage];
         return null;
       }
       return "final";
+    }
+    if (payload.state === "aborted" || payload.state === "error") {
+      recordTerminalChatEvent(state, payload);
     }
     return null;
   }
@@ -430,6 +490,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       state.chatStream = next;
     }
   } else if (payload.state === "final") {
+    recordTerminalChatEvent(state, payload);
     const finalMessage = normalizeFinalAssistantMessage(payload.message);
     if (finalMessage && !isAssistantSilentReply(finalMessage)) {
       state.chatMessages = [...state.chatMessages, finalMessage];
@@ -447,6 +508,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
   } else if (payload.state === "aborted") {
+    recordTerminalChatEvent(state, payload);
     const normalizedMessage = normalizeAbortedAssistantMessage(payload.message);
     if (normalizedMessage && !isAssistantSilentReply(normalizedMessage)) {
       state.chatMessages = [...state.chatMessages, normalizedMessage];
@@ -467,6 +529,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
   } else if (payload.state === "error") {
+    recordTerminalChatEvent(state, payload);
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;

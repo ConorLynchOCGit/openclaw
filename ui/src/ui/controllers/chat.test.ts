@@ -133,6 +133,94 @@ describe("handleChatEvent", () => {
     expect(state.chatMessages[0]).toEqual(payload.message);
   });
 
+  it("ignores duplicate final payloads once a terminal seq was already processed", () => {
+    const finalMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "Reply" }],
+      timestamp: 101,
+    };
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: "Reply",
+      chatStreamStartedAt: 100,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      seq: 3,
+      state: "final",
+      message: finalMessage,
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(handleChatEvent(state, payload)).toBe(null);
+    expect(state.chatMessages).toEqual([finalMessage]);
+    expect(state.chatRunId).toBe(null);
+    expect(state.chatStream).toBe(null);
+  });
+
+  it("ignores stale same-run deltas after a terminal seq closed the run", () => {
+    const finalMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "Reply" }],
+      timestamp: 101,
+    };
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: "Reply",
+      chatStreamStartedAt: 100,
+    });
+    const finalPayload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      seq: 3,
+      state: "final",
+      message: finalMessage,
+    };
+    const staleDeltaPayload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      seq: 2,
+      state: "delta",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Reply" }],
+      },
+    };
+
+    expect(handleChatEvent(state, finalPayload)).toBe("final");
+    expect(handleChatEvent(state, staleDeltaPayload)).toBe(null);
+    expect(state.chatMessages).toEqual([finalMessage]);
+    expect(state.chatRunId).toBe(null);
+    expect(state.chatStream).toBe(null);
+    expect(state.chatStreamStartedAt).toBe(null);
+  });
+
+  it("still accepts foreign-run deltas when no terminal seq exists for that run", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: null,
+      chatStream: null,
+      chatStreamStartedAt: null,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-foreign",
+      sessionKey: "main",
+      seq: 1,
+      state: "delta",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Foreign run reply" }],
+      },
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("delta");
+    expect(state.chatStream).toBe("Foreign run reply");
+    expect(state.chatRunId).toBe(null);
+  });
+
   it("drops NO_REPLY final payload from another run without clearing active stream", () => {
     const state = createActiveStreamingState();
     const payload = createOtherRunNoReplyFinalPayload();

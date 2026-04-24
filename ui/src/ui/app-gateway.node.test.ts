@@ -95,9 +95,11 @@ vi.mock("./controllers/chat.ts", async (importOriginal) => {
 });
 
 type TestGatewayHost = Parameters<typeof connectGateway>[0] & {
+  chatMessages: unknown[];
   chatSideResult: unknown;
   chatSideResultTerminalRuns: Set<string>;
   chatStream: string | null;
+  chatStreamStartedAt: number | null;
   chatToolMessages: Record<string, unknown>[];
   toolStreamById: Map<string, unknown>;
   toolStreamOrder: string[];
@@ -775,6 +777,62 @@ describe("connectGateway", () => {
       },
     });
 
+    expect(loadChatHistoryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores stale same-run deltas after a terminal seq already closed the run", () => {
+    const { host, client } = connectHostGateway();
+    loadChatHistoryMock.mockClear();
+    host.chatRunId = "main-run-ghost";
+    host.chatStream = "Reply";
+    host.chatStreamStartedAt = 100;
+
+    client.emitEvent({
+      event: "chat",
+      payload: {
+        runId: "main-run-ghost",
+        sessionKey: "main",
+        seq: 3,
+        state: "final",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Reply" }],
+        },
+      },
+    });
+
+    expect(host.chatRunId).toBeNull();
+    expect(host.chatStream).toBeNull();
+    expect(host.chatMessages).toEqual([
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Reply" }],
+      },
+    ]);
+    expect(loadChatHistoryMock).toHaveBeenCalledTimes(1);
+
+    client.emitEvent({
+      event: "chat",
+      payload: {
+        runId: "main-run-ghost",
+        sessionKey: "main",
+        seq: 2,
+        state: "delta",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Reply" }],
+        },
+      },
+    });
+
+    expect(host.chatRunId).toBeNull();
+    expect(host.chatStream).toBeNull();
+    expect(host.chatMessages).toEqual([
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Reply" }],
+      },
+    ]);
     expect(loadChatHistoryMock).toHaveBeenCalledTimes(1);
   });
 });
