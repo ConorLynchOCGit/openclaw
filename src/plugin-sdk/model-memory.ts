@@ -218,8 +218,10 @@ export const buildHarnessProjectionOutputs = bindFacadeFunction("buildHarnessPro
 export const buildLexicalBaselineRetrievalRequest = bindFacadeFunction(
   "buildLexicalBaselineRetrievalRequest",
 );
+export const buildOrdinaryTurnMemoryTraceId = bindFacadeFunction("buildOrdinaryTurnMemoryTraceId");
 export const buildRetrievalPackArtifact = bindFacadeFunction("buildRetrievalPackArtifact");
 export const buildRetrievalRequestPrompt = bindFacadeFunction("buildRetrievalRequestPrompt");
+export const buildToolResultMemoryTraceId = bindFacadeFunction("buildToolResultMemoryTraceId");
 export const buildToolResultProofLiveCapture = bindFacadeFunction(
   "buildToolResultProofLiveCapture",
 );
@@ -257,7 +259,9 @@ export const listRuntimeMemoryRecords = bindFacadeFunction("listRuntimeMemoryRec
 export const materializeProjectionArtifacts = bindFacadeFunction("materializeProjectionArtifacts");
 export const normalizeIdentityText = bindLegacyFacadeFunction("normalizeIdentityText");
 export const rankRetrievalCandidates = bindFacadeFunction("rankRetrievalCandidates");
+export const readMemoryTraceIdFromScope = bindFacadeFunction("readMemoryTraceIdFromScope");
 export const rebuildDerivedRuntimeState = bindFacadeFunction("rebuildDerivedRuntimeState");
+export const sanitizeMemoryTraceId = bindFacadeFunction("sanitizeMemoryTraceId");
 export const recoverDailyContinuityCandidatesLive = bindFacadeFunction(
   "recoverDailyContinuityCandidatesLive",
 );

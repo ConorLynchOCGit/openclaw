@@ -49,6 +49,14 @@ Already landed in the active source tree:
   document ingest, and imports all preserve valid siblings, defer invalid
   candidates safely, and defer invalid edges without burning the rest of the
   batch
+- a shared safe trace-id contract now follows ordinary-turn and tool-result
+  work across capture job state, closeout artifacts, runtime-dirty events,
+  retrieval request scope, retrieval packs, and retrieval/injection activity
+  without persisting raw prompts, raw transcripts, or raw tool output
+- the new operator DB-gates report now exposes pre-Phase-2 SLO definitions,
+  `pg_stat_statements` query-family baselines, DB lane/pool snapshots, and
+  read-only maintenance health for memory-critical tables through
+  `scripts/model-memory-phase2-db-gates.ts`
 
 ## Slice
 
@@ -225,9 +233,8 @@ of that proof:
   tree instead of the read-only product import mirror
 
 The next remaining pre-Phase-2 blockers are now the operational slices after
-persistence isolation:
+traceability/DB baselines:
 
-- Slice 4 traceability, SLOs, and DB baselines
 - Slice 5 recovery and restore proof
 - Slice 6 Phase-2 entry validation pack
 - host-operator skill install validation is more discoverable, supports

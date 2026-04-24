@@ -10,7 +10,10 @@ describe("retrieval packs", () => {
         sessionId: "session-001",
         queryText: "Find deployment information",
         requestPurpose: "context_injection",
-        scope: { projectId: "project-001" },
+        scope: {
+          projectId: "project-001",
+          memoryTraceId: "memory_trace_turn_tracepack001",
+        },
         desiredResultCount: 2,
         contractName: "retrieval_request_interpretation",
         contractVersion: "v1",
@@ -70,6 +73,7 @@ describe("retrieval packs", () => {
     expect(artifact.renderedText).toContain("sha256:");
     expect(artifact.renderedText).not.toContain("Find deployment information");
     expect(artifact.structuredPayload?.schemaVersion).toBe("memory_retrieval_runtime.v1");
+    expect(artifact.structuredPayload?.memoryTraceId).toBe("memory_trace_turn_tracepack001");
     expect(artifact.structuredPayload?.retrievalRun).toEqual(
       expect.objectContaining({
         rawQueryPersisted: false,

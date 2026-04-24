@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { mergeMemoryTraceIds } from "../../extensions/model-memory/runtime-api.js";
 import { resolveStateDir } from "../config/paths.js";
 import type { MemoryIngestionFailureClass } from "../plugin-sdk/model-memory.js";
 
@@ -60,6 +61,7 @@ export type ModelMemoryRuntimeDirtyState = {
   dirtyId: string;
   status: ModelMemoryRuntimeDirtyStatus;
   dirtyReason?: ModelMemoryRuntimeDirtyReason;
+  traceIds?: string[];
   affectedMemoryIds: string[];
   affectedSourceIds: string[];
   affectedEventIds: string[];
@@ -90,6 +92,7 @@ export type ModelMemoryRuntimeDirtyEvent = {
   status: ModelMemoryRuntimeDirtyStatus;
   observedAt: string;
   dirtyReason?: ModelMemoryRuntimeDirtyReason;
+  traceIds?: string[];
   captureJobId?: string;
   sessionId?: string;
   sessionKey?: string;
@@ -131,6 +134,7 @@ export type ModelMemoryRuntimeDirtyStore = {
   markRebuildCompleted(input?: {
     startedGeneration?: number;
     durationMs?: number;
+    traceIds?: string[];
   }): Promise<{ state: ModelMemoryRuntimeDirtyState; event: ModelMemoryRuntimeDirtyEvent }>;
   markRebuildFailed(
     input: ModelMemoryRuntimeDirtyTransitionInput & {
@@ -155,6 +159,7 @@ export type ModelMemoryRuntimeDirtyStore = {
 
 export type ModelMemoryRuntimeDirtyMarkInput = {
   reason: ModelMemoryRuntimeDirtyReason;
+  traceIds?: string[];
   captureJobId?: string;
   sessionId?: string;
   sessionKey?: string;
@@ -168,6 +173,7 @@ export type ModelMemoryRuntimeDirtyMarkInput = {
 };
 
 export type ModelMemoryRuntimeDirtyTransitionInput = {
+  traceIds?: string[];
   captureJobId?: string;
   sessionId?: string;
   sessionKey?: string;
@@ -258,6 +264,7 @@ function cleanState(): ModelMemoryRuntimeDirtyState {
     schemaVersion: RUNTIME_DIRTY_SCHEMA_VERSION,
     dirtyId: "runtime_dirty_clean",
     status: "clean",
+    traceIds: undefined,
     affectedMemoryIds: [],
     affectedSourceIds: [],
     affectedEventIds: [],
@@ -286,6 +293,7 @@ function normalizeState(state: Partial<ModelMemoryRuntimeDirtyState> | undefined
     dirtyId,
     status: state.status ?? fallback.status,
     dirtyReason: state.dirtyReason,
+    traceIds: mergeMemoryTraceIds(state.traceIds, undefined),
     affectedMemoryIds: sanitizeIdList(state.affectedMemoryIds) ?? [],
     affectedSourceIds: sanitizeIdList(state.affectedSourceIds) ?? [],
     affectedEventIds: sanitizeIdList(state.affectedEventIds) ?? [],
@@ -328,6 +336,7 @@ function buildEvent(input: {
     status: input.state.status,
     observedAt: nowIso(),
     dirtyReason: input.state.dirtyReason,
+    traceIds: mergeMemoryTraceIds(input.transition?.traceIds, input.state.traceIds) ?? undefined,
     captureJobId: sanitizeSafeSegment(input.transition?.captureJobId, 96),
     sessionId: sanitizeSafeSegment(input.transition?.sessionId),
     sessionKey: sanitizeSafeSegment(input.transition?.sessionKey),
@@ -494,6 +503,7 @@ export function createModelMemoryRuntimeDirtyStore(
             dirtyId: existingDirty ? current.dirtyId : `runtime_dirty_${randomUUID()}`,
             status,
             dirtyReason: input.reason,
+            traceIds: mergeMemoryTraceIds(current.traceIds, input.traceIds),
             affectedMemoryIds: mergeIdLists(current.affectedMemoryIds, input.memoryIds),
             affectedSourceIds: mergeIdLists(current.affectedSourceIds, input.sourceIds),
             affectedEventIds: mergeIdLists(current.affectedEventIds, input.eventIds),
@@ -542,6 +552,7 @@ export function createModelMemoryRuntimeDirtyStore(
     markRebuildCompleted(input) {
       return transition({
         eventType: "runtime_rebuild_completed",
+        transition: { traceIds: input?.traceIds },
         durationMs: input?.durationMs,
         update(current) {
           const concurrentDirty =
@@ -725,6 +736,7 @@ export async function runModelMemoryRuntimeRebuildWorker(input: {
     const completed = await store.markRebuildCompleted({
       startedGeneration,
       durationMs: Date.now() - startedAt,
+      traceIds: started.state.traceIds,
     });
     await notifyEvent(completed.event, input.onEvent);
     return completed.state;

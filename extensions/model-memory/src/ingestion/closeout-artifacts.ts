@@ -28,6 +28,7 @@ function resolveCloseoutArtifactDir(
 export async function emitMemoryIngestionCloseoutIfConfigured(input: {
   env?: NodeJS.ProcessEnv;
   path: MemoryIngestionPath;
+  traceId?: string;
   runId?: string;
   sourceId?: string;
   sourceHash?: string;
@@ -46,6 +47,7 @@ export async function emitMemoryIngestionCloseoutIfConfigured(input: {
 
   const report = buildMemoryIngestionCloseoutReport({
     path: input.path,
+    traceId: input.traceId,
     runId: input.runId,
     sourceId: input.sourceId,
     sourceHash: input.sourceHash,

@@ -337,6 +337,7 @@ describe("shared memory ingestion pipeline", () => {
 
     const report = buildMemoryIngestionCloseoutReport({
       path: "ordinary_turn_capture",
+      traceId: "memory_trace_turn_aaaaaaaaaaaaaaaaaaaaaaaa",
       runId: "run-001",
       sourceId: "source-001",
       sourceHash: "hash-001",
@@ -363,6 +364,7 @@ describe("shared memory ingestion pipeline", () => {
     expect(report).toMatchObject({
       schema_version: "memory_ingestion_closeout.v1",
       path: "ordinary_turn_capture",
+      trace_id: "memory_trace_turn_aaaaaaaaaaaaaaaaaaaaaaaa",
       run_id: "run-001",
       source_id: "source-001",
       job_id: "capture-job-001",

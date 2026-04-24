@@ -11,6 +11,7 @@ import {
   hashRuntimeValue,
   projectLegacyRecordToRuntimeMemoryRecord,
 } from "../../runtime-read-models.ts";
+import { readMemoryTraceIdFromScope } from "../../trace-id.ts";
 import { buildContextArtifact } from "../context-artifacts.ts";
 import type {
   ProjectionDigest,
@@ -172,6 +173,7 @@ export function buildRetrievalPackArtifact(input: {
     queryTextHash,
     memoryPacks,
   });
+  const memoryTraceId = readMemoryTraceIdFromScope(input.retrievalRequest.scope);
 
   return buildContextArtifact({
     artifactType: "retrieval_pack",
@@ -180,6 +182,7 @@ export function buildRetrievalPackArtifact(input: {
     renderedText,
     structuredPayload: {
       schemaVersion: "memory_retrieval_runtime.v1",
+      ...(memoryTraceId ? { memoryTraceId } : {}),
       retrievalRequestId: input.retrievalRequest.id,
       retrievalResultSetId: input.retrievalResultSet.id,
       retrievalPlan,

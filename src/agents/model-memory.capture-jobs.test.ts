@@ -43,6 +43,7 @@ function testJob(jobId = "capture_job_test") {
       sessionKey: "agent:main:main",
       agentId: "main",
     }),
+    traceId: "memory_trace_turn_aaaaaaaaaaaaaaaaaaaaaaaa",
     provider: "openai",
     model: "gpt-test",
   });
@@ -65,6 +66,7 @@ describe("memory capture jobs", () => {
       expect(jobs).toHaveLength(1);
       expect(jobs[0]).toMatchObject({
         jobId: job.jobId,
+        traceId: "memory_trace_turn_aaaaaaaaaaaaaaaaaaaaaaaa",
         status: "failed",
         failureClass: "timeout",
         rawContentPersisted: false,
@@ -97,6 +99,7 @@ describe("memory capture jobs", () => {
 
       expect(result.status).toBe("written");
       expect(events).toEqual(["capture_queued", "capture_started", "capture_written"]);
+      expect(result.traceId).toBe("memory_trace_turn_aaaaaaaaaaaaaaaaaaaaaaaa");
       expect(result.safeRelatedIds?.memoryIds).toEqual(["memory_1"]);
     });
   });

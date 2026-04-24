@@ -53,6 +53,7 @@ export async function captureOrdinaryTurnLive(input: {
   capture: OrdinaryTurnCaptureInput;
   rebuildRuntime?: boolean;
   allowLegacyCapturedObjectWriteFallback?: boolean;
+  traceId?: string;
   closeoutJobId?: string;
   env?: NodeJS.ProcessEnv;
 }): Promise<LiveOrdinaryTurnCaptureResult> {
@@ -155,6 +156,7 @@ export async function captureOrdinaryTurnLive(input: {
         extracted: result.capturedObjects.length,
         valid: result.capturedObjects.length,
       },
+      ids: input.traceId ? { memory_trace_ids: [input.traceId] } : undefined,
     }),
     createMemoryIngestionTelemetryEvent({
       path: "ordinary_turn_capture",
@@ -173,6 +175,7 @@ export async function captureOrdinaryTurnLive(input: {
           ).length,
       },
       ids: {
+        ...(input.traceId ? { memory_trace_ids: [input.traceId] } : {}),
         memory_ids: writeResults
           .map((entry) => entry.memoryId)
           .filter((entry): entry is string => Boolean(entry)),
@@ -182,6 +185,7 @@ export async function captureOrdinaryTurnLive(input: {
   const closeoutArtifact = await emitMemoryIngestionCloseoutIfConfigured({
     env: input.env,
     path: "ordinary_turn_capture",
+    traceId: input.traceId,
     sourceId: source.id,
     sourceHash: source.sourceFingerprint,
     jobId: input.closeoutJobId,

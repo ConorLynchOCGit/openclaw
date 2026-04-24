@@ -48,6 +48,7 @@ export async function ingestDocumentLive(input: {
   ingestion: DocumentIngestionInput;
   rebuildRuntime?: boolean;
   allowLegacyCapturedObjectWriteFallback?: boolean;
+  traceId?: string;
   closeoutRunId?: string;
   env?: NodeJS.ProcessEnv;
 }): Promise<LiveDocumentIngestionResult> {
@@ -133,6 +134,7 @@ export async function ingestDocumentLive(input: {
         extracted: result.capturedObjects.length,
         valid: result.capturedObjects.length,
       },
+      ids: input.traceId ? { memory_trace_ids: [input.traceId] } : undefined,
     }),
     createMemoryIngestionTelemetryEvent({
       path: "document_ingest",
@@ -151,6 +153,7 @@ export async function ingestDocumentLive(input: {
           ).length,
       },
       ids: {
+        ...(input.traceId ? { memory_trace_ids: [input.traceId] } : {}),
         memory_ids: writeResults
           .map((entry) => entry.memoryId)
           .filter((entry): entry is string => Boolean(entry)),
@@ -160,6 +163,7 @@ export async function ingestDocumentLive(input: {
   const closeoutArtifact = await emitMemoryIngestionCloseoutIfConfigured({
     env: input.env,
     path: "document_ingest",
+    traceId: input.traceId,
     runId: input.closeoutRunId,
     sourceId: source.id,
     sourceHash: source.sourceFingerprint,

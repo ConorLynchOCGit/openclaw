@@ -5,10 +5,12 @@ import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
   DEFAULT_WORKSPACE_PROJECTION_TARGETS,
+  buildOrdinaryTurnMemoryTraceId,
   ExecutorBackedRetrievalRequestInterpreter,
   ExecutorBackedSemanticCollisionAdjudicator,
   ExecutorBackedSemanticInterpreter,
   buildRetrievalPackArtifact,
+  buildToolResultMemoryTraceId,
   buildToolResultProofLiveCapture,
   captureOrdinaryTurnLive,
   classifyMemoryIngestionFailure,
@@ -18,6 +20,7 @@ import {
   executeRetrieval,
   listRuntimeMemoryRecords,
   materializeProjectionArtifacts,
+  readMemoryTraceIdFromScope,
   rebuildDerivedRuntimeState,
   type ContextArtifactRecord,
   type JsonModelExecutionRequest,
@@ -489,6 +492,7 @@ export function buildLiveRetrievalEnvelope(params: {
   agentId?: string;
   currentTurnText: string;
   maxResults?: number;
+  traceId?: string;
 }) {
   const scope: Record<string, unknown> = {
     liveContextPath: "bootstrap_context",
@@ -499,6 +503,9 @@ export function buildLiveRetrievalEnvelope(params: {
   }
   if (params.agentId) {
     scope.agentId = params.agentId;
+  }
+  if (params.traceId) {
+    scope.memoryTraceId = params.traceId;
   }
 
   return {
@@ -699,6 +706,7 @@ async function buildLiveRetrievalContextArtifact(params: {
   agentId?: string;
   currentTurnText: string;
   maxResults?: number;
+  traceId?: string;
 }): Promise<ContextArtifactRecord | undefined> {
   const envelope = buildLiveRetrievalEnvelope({
     sessionId: params.sessionId,
@@ -706,6 +714,7 @@ async function buildLiveRetrievalContextArtifact(params: {
     agentId: params.agentId,
     currentTurnText: params.currentTurnText,
     maxResults: params.maxResults ?? resolveLiveRetrievalMaxResults(params.config),
+    traceId: params.traceId,
   });
   if (!envelope.queryText) {
     return undefined;
@@ -741,6 +750,7 @@ async function buildLiveRetrievalContextArtifact(params: {
     retrieval.retrievalResultSet.id,
     persisted.id,
   );
+  const memoryTraceId = readMemoryTraceIdFromScope(retrieval.retrievalRequest.scope);
   void emitModelMemoryActivityFeedEvent({
     kind: "retrieval",
     status: "completed",
@@ -748,12 +758,13 @@ async function buildLiveRetrievalContextArtifact(params: {
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
     agentId: params.agentId,
-    stableId: retrieval.retrievalResultSet.id,
+    stableId: memoryTraceId ?? retrieval.retrievalResultSet.id,
     safeLabels: {
       purpose: retrieval.retrievalRequest.requestPurpose,
       artifact: "retrieval_pack",
     },
     ids: {
+      memoryTraceId,
       retrievalRequestId: retrieval.retrievalRequest.id,
       retrievalResultSetId: retrieval.retrievalResultSet.id,
       retrievalPackArtifactId: persisted.id,
@@ -815,6 +826,7 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
   agentId?: string;
   workspaceDir?: string;
   currentTurnText?: string;
+  traceId?: string;
 }): Promise<ModelMemoryBootstrapOverlay | null> {
   const status = resolveModelMemoryLiveRuntimeStatus(params.config);
   if (!status.enabled || !status.databaseConfigured) {
@@ -829,6 +841,16 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
       workspaceDir: params.workspaceDir,
     });
     let retrievalArtifact: ContextArtifactRecord | undefined;
+    const memoryTraceId =
+      params.currentTurnText && params.currentTurnText.trim().length > 0
+        ? (params.traceId ??
+          buildOrdinaryTurnMemoryTraceId({
+            sessionId: params.sessionId,
+            sessionKey: params.sessionKey,
+            agentId: params.agentId,
+            currentTurnText: params.currentTurnText,
+          }))
+        : undefined;
     if (
       shouldAttemptLiveRetrievalContext({
         status,
@@ -843,9 +865,12 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
         sessionId: params.sessionId,
         sessionKey: params.sessionKey,
         agentId: params.agentId,
-        stableId: params.sessionId ?? params.sessionKey,
+        stableId: memoryTraceId ?? params.sessionId ?? params.sessionKey,
         safeLabels: {
           purpose: "live_context_injection",
+        },
+        ids: {
+          memoryTraceId,
         },
       }).catch(() => undefined);
       try {
@@ -857,6 +882,7 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
           sessionKey: params.sessionKey,
           agentId: params.agentId,
           currentTurnText: params.currentTurnText!,
+          traceId: memoryTraceId,
         });
       } catch (error) {
         log.warn(`model-memory live retrieval context unavailable: ${String(error)}`);
@@ -868,10 +894,13 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
           sessionId: params.sessionId,
           sessionKey: params.sessionKey,
           agentId: params.agentId,
-          stableId: params.sessionId ?? params.sessionKey,
+          stableId: memoryTraceId ?? params.sessionId ?? params.sessionKey,
           safeLabels: {
             purpose: "live_context_injection",
             reason: "retrieval_unavailable",
+          },
+          ids: {
+            memoryTraceId,
           },
         }).catch(() => undefined);
       }
@@ -1005,6 +1034,7 @@ async function emitRuntimeDirtyActivity(input: {
     ids: {
       dirtyId: input.state.dirtyId,
       captureJobId: input.captureJobId ?? input.event?.captureJobId,
+      memoryTraceIds: input.event?.traceIds ?? input.state.traceIds,
       memoryIds: input.state.affectedMemoryIds,
       sourceIds: input.state.affectedSourceIds,
       eventIds: input.state.affectedEventIds,
@@ -1022,6 +1052,7 @@ export async function markModelMemoryRuntimeDirty(input: {
   config?: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
   reason: ModelMemoryRuntimeDirtyReason;
+  traceIds?: string[];
   captureJobId?: string;
   sessionId?: string;
   sessionKey?: string;
@@ -1041,6 +1072,7 @@ export async function markModelMemoryRuntimeDirty(input: {
       env: input.env,
       dirty: {
         reason: input.reason,
+        traceIds: input.traceIds,
         captureJobId: input.captureJobId,
         sessionId: input.sessionId,
         sessionKey: input.sessionKey,
@@ -1282,8 +1314,17 @@ export async function captureModelMemoryAssistantTurn(params: {
   userText: string;
   assistantText: string;
   sourceMetadata?: Record<string, unknown>;
+  traceId?: string;
 }): Promise<void> {
   const captureJobId = buildCaptureJobId(params);
+  const memoryTraceId =
+    params.traceId ??
+    buildOrdinaryTurnMemoryTraceId({
+      sessionId: params.sessionId,
+      sessionKey: params.sessionKey,
+      agentId: params.agentId,
+      currentTurnText: params.userText,
+    });
   const modelId = resolveLiveModelRef(params.config);
   const candidateModelId = resolveCandidateModelRef(params.config);
   const providerLabel = safeStringLabel(params.sourceMetadata?.provider, "unknown");
@@ -1291,6 +1332,7 @@ export async function captureModelMemoryAssistantTurn(params: {
   const captureJobStore = createMemoryCaptureJobStore();
   const captureJob = buildMemoryCaptureJob({
     jobId: captureJobId,
+    traceId: memoryTraceId,
     sourceKind: "ordinary_turn",
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
@@ -1316,6 +1358,7 @@ export async function captureModelMemoryAssistantTurn(params: {
         stage: event.stage,
       },
       ids: {
+        memoryTraceId: event.traceId ?? memoryTraceId,
         captureJobId: event.jobId,
         sourceId: event.safeRelatedIds?.sourceId,
         segmentIds: event.safeRelatedIds?.segmentIds,
@@ -1379,6 +1422,7 @@ export async function captureModelMemoryAssistantTurn(params: {
         runtimeRepository: runtime.runtimeRepository,
         memoryStore: runtime.memoryStore as never,
         collisionAdjudicator: runtime.collisionAdjudicator,
+        traceId: memoryTraceId,
         capture: {
           turn: captureInput.turn,
           modelId,
@@ -1396,6 +1440,7 @@ export async function captureModelMemoryAssistantTurn(params: {
         config: params.config,
         env: process.env,
         reason: "ordinary_turn_capture_written",
+        traceIds: [memoryTraceId],
         captureJobId,
         sessionId: params.sessionId,
         sessionKey: params.sessionKey,
@@ -1426,6 +1471,7 @@ export async function captureModelMemoryAssistantTurn(params: {
       await emitMemoryIngestionCloseoutIfConfigured({
         env: process.env,
         path: "ordinary_turn_capture",
+        traceId: memoryTraceId,
         sourceId: result.source.id,
         sourceHash: result.source.sourceFingerprint,
         jobId: captureJobId,
@@ -1464,7 +1510,19 @@ export async function captureModelMemoryToolResultProof(params: {
   result: unknown;
   isError?: boolean;
   observedAt?: Date;
+  traceId?: string;
 }): Promise<ModelMemoryToolResultProofCaptureResult> {
+  const memoryTraceId =
+    params.traceId ??
+    buildToolResultMemoryTraceId({
+      sessionId: params.sessionId,
+      sessionKey: params.sessionKey,
+      agentId: params.agentId,
+      runId: params.runId,
+      toolCallId: params.toolCallId,
+      hookName: params.hookName,
+      toolName: params.toolName,
+    });
   const emitToolCaptureActivity = (
     result: ModelMemoryToolResultProofCaptureResult,
   ): ModelMemoryToolResultProofCaptureResult => {
@@ -1482,14 +1540,17 @@ export async function captureModelMemoryToolResultProof(params: {
         tool: params.toolName,
         ...(result.captured ? {} : { reason: result.reason }),
       },
-      ids: result.captured
-        ? {
-            sourceId: result.sourceId,
-            segmentIds: result.segmentIds,
-            memoryIds: result.memoryIds,
-            eventIds: result.eventIds,
-          }
-        : undefined,
+      ids: {
+        memoryTraceId,
+        ...(result.captured
+          ? {
+              sourceId: result.sourceId,
+              segmentIds: result.segmentIds,
+              memoryIds: result.memoryIds,
+              eventIds: result.eventIds,
+            }
+          : {}),
+      },
       metrics: result.captured
         ? {
             segments: result.segmentIds.length,
@@ -1589,6 +1650,7 @@ export async function captureModelMemoryToolResultProof(params: {
     env: process.env,
     kind: "tool_result_capture",
     reason: "tool_result_capture_written",
+    traceIds: [memoryTraceId],
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
     agentId: params.agentId,
@@ -1624,6 +1686,9 @@ export async function captureModelMemoryToolResultProof(params: {
         extracted: built.liveMemoryBatch.durableMemories.length,
         valid: built.liveMemoryBatch.durableMemories.length,
       },
+      ids: {
+        memory_trace_ids: [memoryTraceId],
+      },
     }),
     createMemoryIngestionTelemetryEvent({
       path: "tool_result_capture",
@@ -1634,6 +1699,7 @@ export async function captureModelMemoryToolResultProof(params: {
         rejected: persistenceResult.deferredCandidates.length,
       },
       ids: {
+        memory_trace_ids: [memoryTraceId],
         memory_ids: memoryIds,
         event_ids: eventIds,
       },
@@ -1642,6 +1708,7 @@ export async function captureModelMemoryToolResultProof(params: {
   await emitMemoryIngestionCloseoutIfConfigured({
     env: process.env,
     path: "tool_result_capture",
+    traceId: memoryTraceId,
     runId: params.runId,
     sourceId: built.source.id,
     sourceHash: built.source.sourceFingerprint,

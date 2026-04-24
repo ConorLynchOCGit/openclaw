@@ -22,6 +22,13 @@ State: `pre_phase_2_execution_in_progress`
     isolation plus deep-path missing-edge deferral
   - tool-result capture, document ingest, and imports all have focused mixed
     valid/invalid proof
+- end-to-end safe traceability and DB gate surfaces are now landed:
+  - a shared safe `memory_trace_*` id now follows ordinary-turn and tool-result
+    work across capture job state, dirty-state events, retrieval request scope,
+    retrieval packs, closeout artifacts, and retrieval/injection activity
+  - a read-only operator DB-gates report now exposes SLO definitions,
+    `pg_stat_statements` query-family baselines, pool/lane snapshots, and
+    maintenance health for memory-critical tables
 - retrieval miss classification no longer stops at generic
   `candidates_found_but_excluded` / `stale_conflict_suppression` buckets; the
   runtime now emits explicit suppression classes for stale, superseded,
@@ -32,9 +39,8 @@ State: `pre_phase_2_execution_in_progress`
   work is bounded runtime validation rather than model-lane rollback
 - Phase 2 is still blocked until the ledger slices are closed; graph/capsule/
   planner work is not the active implementation lane
-- the remaining active blockers after the persistence-isolation slice are:
-  traceability/SLO/DB baselines, recovery/restore proof, and the final
-  Phase-2 entry validation pack
+- the remaining active blockers after the traceability slice are:
+  recovery/restore proof and the final Phase-2 entry validation pack
 
 - shared ingestion now has executable closeout/quarantine report helpers for
   active capture/ingest paths; reports are runtime-state/artifact outputs and

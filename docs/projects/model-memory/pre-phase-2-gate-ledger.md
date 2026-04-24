@@ -66,6 +66,8 @@ State: `landed 2026-04-24`
 
 ### Slice 4 - Traceability, SLOs, and DB baselines
 
+State: `landed 2026-04-24`
+
 - add one safe trace id across:
   - gateway turn
   - capture seam
@@ -79,6 +81,19 @@ State: `landed 2026-04-24`
 - define SLOs and red/yellow/green thresholds
 - add read-only `pg_stat_statements` baselines
 - add read-only autovacuum/bloat/ANALYZE freshness checks
+- canonical operator runbook:
+  - [Pre-Phase-2 Ops Gates](/projects/model-memory/pre-phase-2-ops-gates)
+- landed scope:
+  - ordinary-turn and tool-result work now use the shared safe
+    `memory_trace_*` contract across capture jobs, dirty-state events,
+    closeout artifacts, retrieval request scope, retrieval packs, and
+    retrieval/injection activity
+  - pre-Phase-2 SLO definitions now exist with explicit blocker/warning
+    classes and red/yellow/green thresholds
+  - `scripts/model-memory-phase2-db-gates.ts` now emits a read-only operator
+    report with DB lane/pool snapshots, `pg_stat_statements` query-family
+    baselines, and maintenance-health classification for memory-critical
+    tables
 
 ### Slice 5 - Recovery and restore proof
 

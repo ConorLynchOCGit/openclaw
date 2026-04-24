@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { sanitizeMemoryTraceId } from "../../extensions/model-memory/runtime-api.js";
 import { resolveStateDir } from "../config/paths.js";
 import type { MemoryIngestionFailureClass } from "../plugin-sdk/model-memory.js";
 
@@ -56,6 +57,7 @@ export type MemoryCaptureSafeMetrics = {
 export type MemoryCaptureJob = {
   schemaVersion: typeof CAPTURE_JOB_SCHEMA_VERSION;
   jobId: string;
+  traceId?: string;
   sourceKind: MemoryCaptureSourceKind;
   status: MemoryCaptureJobStatus;
   sessionId?: string;
@@ -86,6 +88,7 @@ export type MemoryCaptureJobEvent = {
   eventId: string;
   eventType: MemoryCaptureJobEventType;
   jobId: string;
+  traceId?: string;
   sourceKind: MemoryCaptureSourceKind;
   status: MemoryCaptureJobStatus;
   observedAt: string;
@@ -136,6 +139,7 @@ export type MemoryCaptureJobStore = {
 
 type MemoryCaptureJobUpdate = {
   status?: MemoryCaptureJobStatus;
+  traceId?: string;
   failureClass?: MemoryIngestionFailureClass;
   stage?: string;
   retryCount?: number;
@@ -149,12 +153,14 @@ type MemoryCaptureJobUpdate = {
 type CaptureJobExecutionResult =
   | {
       status: "written";
+      traceId?: string;
       safeRelatedIds?: MemoryCaptureSafeRelatedIds;
       metrics?: MemoryCaptureSafeMetrics;
     }
   | {
       status: "skipped";
       reason: string;
+      traceId?: string;
       safeRelatedIds?: MemoryCaptureSafeRelatedIds;
       metrics?: MemoryCaptureSafeMetrics;
     };
@@ -282,6 +288,7 @@ function normalizeJob(job: MemoryCaptureJob): MemoryCaptureJob {
   return {
     schemaVersion: CAPTURE_JOB_SCHEMA_VERSION,
     jobId,
+    traceId: sanitizeMemoryTraceId(job.traceId),
     sourceKind: job.sourceKind,
     status: job.status,
     sessionId: sanitizeSafeSegment(job.sessionId),
@@ -319,6 +326,7 @@ function buildEvent(input: {
     eventId: `capture_event_${randomUUID()}`,
     eventType: input.eventType,
     jobId: input.job.jobId,
+    traceId: sanitizeMemoryTraceId(input.update?.traceId) ?? input.job.traceId,
     sourceKind: input.job.sourceKind,
     status: input.status,
     observedAt: nowIso(),
@@ -382,6 +390,7 @@ function applyJobUpdate(
   return normalizeJob({
     ...current,
     status,
+    traceId: update.traceId ?? current.traceId,
     failureClass: update.failureClass,
     stage: update.stage,
     retryCount: update.retryCount ?? current.retryCount,
@@ -408,6 +417,7 @@ export function resolveDefaultMemoryCaptureJobStoreDir(
 export function buildMemoryCaptureJob(input: {
   jobId: string;
   sourceKind: MemoryCaptureSourceKind;
+  traceId?: string;
   sessionId?: string;
   sessionKey?: string;
   agentId?: string;
@@ -421,6 +431,7 @@ export function buildMemoryCaptureJob(input: {
   return normalizeJob({
     schemaVersion: CAPTURE_JOB_SCHEMA_VERSION,
     jobId: input.jobId,
+    traceId: input.traceId,
     sourceKind: input.sourceKind,
     status: "queued",
     sessionId: input.sessionId,
@@ -642,6 +653,7 @@ export async function runMemoryCaptureJobTask(
         if (result.status === "skipped") {
           transition = await store.markSkipped(input.job.jobId, {
             stage: result.reason,
+            traceId: result.traceId,
             retryCount: attempt,
             safeRelatedIds: result.safeRelatedIds,
             metrics,
@@ -650,6 +662,7 @@ export async function runMemoryCaptureJobTask(
           return transition.job;
         }
         transition = await store.markWritten(input.job.jobId, {
+          traceId: result.traceId,
           retryCount: attempt,
           safeRelatedIds: result.safeRelatedIds,
           metrics,

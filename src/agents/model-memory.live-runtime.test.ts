@@ -244,6 +244,7 @@ describe("buildCompletedAssistantTurnCaptureInput", () => {
         sourceKind: "ordinary_turn",
         status: "skipped",
         stage: "disabled",
+        traceId: expect.stringMatching(/^memory_trace_turn_[a-f0-9]{24}$/),
         rawContentPersisted: false,
         containsPromptText: false,
         containsTranscript: false,
@@ -347,6 +348,20 @@ describe("live retrieval context helpers", () => {
     });
     expect(JSON.stringify(envelope.scope)).not.toContain("USER.md");
     expect(JSON.stringify(envelope.scope)).not.toContain("MEMORY.md");
+  });
+
+  it("threads an explicit safe memory trace id into retrieval scope", () => {
+    const envelope = buildLiveRetrievalEnvelope({
+      sessionId: "session-001",
+      sessionKey: "main",
+      agentId: "main",
+      currentTurnText: "What do I prefer for validation reports?",
+      traceId: "memory_trace_turn_aaaaaaaaaaaaaaaaaaaaaaaa",
+    });
+
+    expect(envelope.scope).toMatchObject({
+      memoryTraceId: "memory_trace_turn_aaaaaaaaaaaaaaaaaaaaaaaa",
+    });
   });
 });
 

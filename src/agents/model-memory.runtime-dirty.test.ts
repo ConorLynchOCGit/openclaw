@@ -31,6 +31,7 @@ describe("model-memory runtime dirty state", () => {
     try {
       await store.markDirty({
         reason: "ordinary_turn_capture_written",
+        traceIds: ["memory_trace_turn_aaaaaaaaaaaaaaaaaaaaaaaa"],
         captureJobId: "capture_job_001",
         sessionId: "session-001",
         sessionKey: "agent:main:main",
@@ -47,6 +48,7 @@ describe("model-memory runtime dirty state", () => {
       expect(state).toMatchObject({
         status: "dirty",
         dirtyReason: "ordinary_turn_capture_written",
+        traceIds: ["memory_trace_turn_aaaaaaaaaaaaaaaaaaaaaaaa"],
         affectedMemoryIds: ["memory-1", "memory-2"],
         affectedSourceIds: ["source-1"],
         writeCountSinceLastRebuild: 1,
@@ -280,6 +282,30 @@ describe("model-memory runtime dirty state", () => {
         "runtime_rebuild_started",
         "runtime_rebuild_failed",
       ]);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("carries trace ids into rebuild lifecycle events even after the state is cleaned", async () => {
+    const { store, cleanup } = await makeStore();
+    try {
+      await store.markDirty({
+        reason: "ordinary_turn_capture_written",
+        traceIds: ["memory_trace_turn_bbbbbbbbbbbbbbbbbbbbbbbb"],
+        memoryIds: ["memory-1"],
+      });
+
+      await runModelMemoryRuntimeRebuildWorker({
+        store,
+        rebuild: async () => undefined,
+      });
+
+      const events = await store.listRecentEvents();
+      expect(events.at(-1)).toMatchObject({
+        eventType: "runtime_rebuild_completed",
+        traceIds: ["memory_trace_turn_bbbbbbbbbbbbbbbbbbbbbbbb"],
+      });
     } finally {
       await cleanup();
     }

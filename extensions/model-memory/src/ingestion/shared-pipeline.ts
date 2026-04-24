@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { sanitizeMemoryTraceId } from "../trace-id.ts";
 
 export const MEMORY_INGESTION_PATHS = [
   "document_ingest",
@@ -529,6 +530,7 @@ export type MemoryIngestionCloseoutReport = {
   schema_version: "memory_ingestion_closeout.v1";
   generated_at: string;
   path: MemoryIngestionPath;
+  trace_id?: string;
   run_id?: string;
   source_id?: string;
   source_hash?: string;
@@ -815,6 +817,7 @@ function assertMemoryIngestionReportRecordHasNoDarkData<T>(record: T): T {
 
 export function buildMemoryIngestionCloseoutReport(input: {
   path: MemoryIngestionPath;
+  traceId?: string;
   runId?: string;
   sourceId?: string;
   sourceHash?: string;
@@ -854,6 +857,7 @@ export function buildMemoryIngestionCloseoutReport(input: {
     schema_version: "memory_ingestion_closeout.v1",
     generated_at: (input.generatedAt ?? new Date()).toISOString(),
     path: input.path,
+    trace_id: sanitizeMemoryTraceId(input.traceId),
     run_id: input.runId,
     source_id: input.sourceId,
     source_hash: input.sourceHash,

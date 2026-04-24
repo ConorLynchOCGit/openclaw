@@ -48,6 +48,7 @@ export async function recoverDailyContinuityCandidatesLive(input: {
   recovery: DailyContinuityRecoveryInput;
   rebuildRuntime?: boolean;
   allowLegacyCapturedObjectWriteFallback?: boolean;
+  traceId?: string;
   closeoutRunId?: string;
   env?: NodeJS.ProcessEnv;
 }): Promise<LiveDailyContinuityRecoveryResult> {
@@ -130,6 +131,7 @@ export async function recoverDailyContinuityCandidatesLive(input: {
         extracted: result.capturedObjects.length,
         valid: result.capturedObjects.length,
       },
+      ids: input.traceId ? { memory_trace_ids: [input.traceId] } : undefined,
     }),
     createMemoryIngestionTelemetryEvent({
       path: "daily_recovery",
@@ -148,6 +150,7 @@ export async function recoverDailyContinuityCandidatesLive(input: {
           ).length,
       },
       ids: {
+        ...(input.traceId ? { memory_trace_ids: [input.traceId] } : {}),
         memory_ids: writeResults
           .map((entry) => entry.memoryId)
           .filter((entry): entry is string => Boolean(entry)),
@@ -157,6 +160,7 @@ export async function recoverDailyContinuityCandidatesLive(input: {
   const closeoutArtifact = await emitMemoryIngestionCloseoutIfConfigured({
     env: input.env,
     path: "daily_recovery",
+    traceId: input.traceId,
     runId: input.closeoutRunId,
     sourceId: source.id,
     sourceHash: source.sourceFingerprint,

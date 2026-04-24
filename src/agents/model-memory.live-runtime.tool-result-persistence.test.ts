@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import { MmV2NativeRepository } from "../../extensions/model-memory/src/db/mmv2-
 import { createPgMemTestDatabase } from "../../extensions/model-memory/src/db/pg-test.ts";
 import type { MemoryEvent } from "../../extensions/model-memory/src/mmv2/contracts.ts";
 import type { OpenClawConfig } from "../config/config.js";
+import { createModelMemoryRuntimeDirtyStore } from "./model-memory.runtime-dirty.js";
 
 const createModelMemoryDatabaseRuntimeMock = vi.hoisted(() => vi.fn());
 const buildToolResultProofLiveCaptureMock = vi.hoisted(() => vi.fn());
@@ -348,6 +349,21 @@ describe("captureModelMemoryToolResultProof persistence isolation", () => {
           }),
         }),
       ]);
+      const dirtyState = await createModelMemoryRuntimeDirtyStore({ env: process.env }).getState();
+      expect(dirtyState.traceIds).toEqual([
+        expect.stringMatching(/^memory_trace_tool_[a-f0-9]{24}$/),
+      ]);
+      const closeoutPath = path.join(
+        stateDir,
+        "model-memory",
+        "closeout-reports",
+        "tool_result_capture",
+        "run-001.closeout.json",
+      );
+      const closeout = JSON.parse(await readFile(closeoutPath, "utf8")) as {
+        trace_id?: string;
+      };
+      expect(closeout.trace_id).toMatch(/^memory_trace_tool_[a-f0-9]{24}$/);
     } finally {
       if (stateDir) {
         await rm(stateDir, { recursive: true, force: true });
