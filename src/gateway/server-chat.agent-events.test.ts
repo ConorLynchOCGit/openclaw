@@ -2,10 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerAgentRunContext, resetAgentRunContextForTest } from "../infra/agent-events.js";
 
 const persistGatewaySessionLifecycleEventMock = vi.fn();
+const emitTurnActivityFeedEventMock = vi.fn();
 
 vi.mock("./server-chat.persist-session-lifecycle.runtime.js", () => ({
   persistGatewaySessionLifecycleEvent: (...args: unknown[]) =>
     persistGatewaySessionLifecycleEventMock(...args),
+}));
+
+vi.mock("../auto-reply/reply/turn-activity-feed.js", () => ({
+  emitTurnActivityFeedEvent: (...args: unknown[]) => emitTurnActivityFeedEventMock(...args),
 }));
 
 vi.mock("../config/config.js", () => ({
@@ -44,6 +49,7 @@ describe("agent event handler", () => {
     });
     vi.mocked(loadGatewaySessionRow).mockReset().mockReturnValue(null);
     persistGatewaySessionLifecycleEventMock.mockReset().mockResolvedValue(undefined);
+    emitTurnActivityFeedEventMock.mockReset().mockResolvedValue({ emitted: true, messageId: "m1" });
     resetAgentRunContextForTest();
   });
 
@@ -182,6 +188,65 @@ describe("agent event handler", () => {
     expect(payload.state).toBe("final");
     return payload;
   }
+
+  it("persists model-start turn activity for session-scoped lifecycle starts", () => {
+    const harness = createHarness({
+      resolveSessionKeyForRun: () => "agent:main:main",
+    });
+
+    harness.handler({
+      runId: "run-model-start",
+      seq: 1,
+      stream: "lifecycle",
+      ts: Date.now(),
+      data: { phase: "start" },
+    });
+
+    expect(emitTurnActivityFeedEventMock).toHaveBeenCalledWith({
+      sessionKey: "agent:main:main",
+      runId: "run-model-start",
+      stableId: "lifecycle:1",
+      eventType: "model_started",
+    });
+  });
+
+  it("persists tool start and completion turn activity for session-scoped tool events", () => {
+    const harness = createHarness({
+      resolveSessionKeyForRun: () => "agent:main:main",
+    });
+
+    harness.handler({
+      runId: "run-tool",
+      seq: 1,
+      stream: "tool",
+      ts: Date.now(),
+      data: { phase: "start", name: "read", toolCallId: "tool-call-1" },
+    });
+    harness.handler({
+      runId: "run-tool",
+      seq: 2,
+      stream: "tool",
+      ts: Date.now(),
+      data: { phase: "result", name: "read", toolCallId: "tool-call-1" },
+    });
+
+    expect(emitTurnActivityFeedEventMock).toHaveBeenNthCalledWith(1, {
+      sessionKey: "agent:main:main",
+      runId: "run-tool",
+      stableId: "tool:start:1",
+      eventType: "tool_started",
+      safeLabels: { tool: "read" },
+      ids: { toolCallId: "tool-call-1" },
+    });
+    expect(emitTurnActivityFeedEventMock).toHaveBeenNthCalledWith(2, {
+      sessionKey: "agent:main:main",
+      runId: "run-tool",
+      stableId: "tool:result:2",
+      eventType: "tool_completed",
+      safeLabels: { tool: "read" },
+      ids: { toolCallId: "tool-call-1" },
+    });
+  });
 
   it("emits chat delta for assistant text-only events", () => {
     const { broadcast, nodeSendToSession, nowSpy } = emitRun1AssistantText(

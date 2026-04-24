@@ -78,6 +78,7 @@ import {
   setReplyRunProgressForSessionKey,
 } from "./reply-run-registry.js";
 import { resolveReplyRoutingDecision } from "./routing-policy.js";
+import { emitTurnActivityFeedEvent } from "./turn-activity-feed.js";
 import { resolveRunTypingPolicy } from "./typing-policy.js";
 
 let routeReplyRuntimePromise: Promise<typeof import("./route-reply.runtime.js")> | null = null;
@@ -486,6 +487,25 @@ export async function dispatchReplyFromConfig(
   });
   const suppressDelivery = sendPolicy === "deny";
   const suppressHookUserDelivery = suppressAcpChildUserDelivery || suppressDelivery;
+  const activitySessionKey = normalizeOptionalString(sessionStoreEntry.sessionKey ?? sessionKey);
+  const activityAgentId = activitySessionKey
+    ? resolveSessionAgentId({ sessionKey: activitySessionKey, config: cfg })
+    : undefined;
+  const inboundTurnStableId = normalizeOptionalString(
+    messageId ??
+      [ctx.From, typeof ctx.Timestamp === "number" ? String(ctx.Timestamp) : undefined, sessionKey]
+        .filter(Boolean)
+        .join(":"),
+  );
+  const emitTurnActivity = (
+    event: Omit<Parameters<typeof emitTurnActivityFeedEvent>[0], "sessionKey" | "agentId">,
+  ) => {
+    void emitTurnActivityFeedEvent({
+      ...event,
+      sessionKey: activitySessionKey,
+      agentId: activityAgentId,
+    }).catch(() => undefined);
+  };
 
   let pluginFallbackReason:
     | "plugin-bound-fallback-missing-plugin"
@@ -671,6 +691,16 @@ export async function dispatchReplyFromConfig(
       };
     };
 
+    emitTurnActivity({
+      eventType: "prompt_accepted",
+      stableId: inboundTurnStableId,
+      ids: messageId ? { messageId } : undefined,
+      safeLabels: {
+        channel,
+        delivery: suppressDelivery ? "suppressed" : "visible",
+      },
+    });
+
     // Run before_dispatch hook — let plugins inspect or handle before model dispatch.
     if (hookRunner?.hasHooks("before_dispatch")) {
       const beforeDispatchResult = await hookRunner.runBeforeDispatch(
@@ -693,6 +723,16 @@ export async function dispatchReplyFromConfig(
       );
       if (beforeDispatchResult?.handled) {
         const text = beforeDispatchResult.text;
+        emitTurnActivity({
+          eventType: "prompt_blocked",
+          stableId: inboundTurnStableId,
+          ids: messageId ? { messageId } : undefined,
+          safeLabels: {
+            hook: "before_dispatch",
+            reason: text ? "handled_with_text" : "handled_without_text",
+            delivery: suppressDelivery ? "suppressed" : "visible",
+          },
+        });
         let queuedFinal = false;
         let routedFinalCount = 0;
         if (text && !suppressDelivery) {
@@ -1098,7 +1138,19 @@ export async function dispatchReplyFromConfig(
           }
           await maybeSendWorkingStatus(label);
         },
-        onLifecycleEvent: async ({ phase, error, activeProvider, activeModel, reasonSummary }) => {
+        onLifecycleEvent: async (payload) => {
+          const { phase, error, activeProvider, activeModel, reasonSummary } = payload;
+          if (phase === "start") {
+            emitTurnActivity({
+              eventType: "model_started",
+              runId: params.replyOptions?.runId,
+              stableId: params.replyOptions?.runId ?? inboundTurnStableId,
+              safeLabels: {
+                provider: activeProvider,
+                model: activeModel,
+              },
+            });
+          }
           const label = summarizeLifecycleProgress({
             phase,
             error,
@@ -1106,10 +1158,37 @@ export async function dispatchReplyFromConfig(
             activeModel,
             reasonSummary,
           });
+          await params.replyOptions?.onLifecycleEvent?.(payload);
           if (!label) {
             return;
           }
           await maybeSendLiveProgressStatus(label);
+        },
+        onToolEvent: async ({ name, phase, status, toolCallId }) => {
+          if (phase === "start" || phase === "end") {
+            emitTurnActivity({
+              eventType: phase === "start" ? "tool_started" : "tool_completed",
+              runId: params.replyOptions?.runId,
+              stableId:
+                normalizeOptionalString(
+                  [params.replyOptions?.runId, toolCallId, name, phase].filter(Boolean).join(":"),
+                ) ??
+                params.replyOptions?.runId ??
+                inboundTurnStableId,
+              ids: toolCallId ? { toolCallId } : undefined,
+              safeLabels: {
+                tool: name,
+                phase,
+                status,
+              },
+            });
+          }
+          await params.replyOptions?.onToolEvent?.({
+            name,
+            phase,
+            status,
+            toolCallId,
+          });
         },
         onItemEvent: async ({ phase, status, title, name, summary, progressText }) => {
           const label = summarizeItemProgress({

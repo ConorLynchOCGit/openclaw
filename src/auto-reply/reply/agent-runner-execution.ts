@@ -1047,6 +1047,12 @@ export async function runAgentTurnWithFallback(params: {
                   if (evt.stream === "tool") {
                     const phase = readStringValue(evt.data.phase) ?? "";
                     const name = readStringValue(evt.data.name);
+                    await params.opts?.onToolEvent?.({
+                      name,
+                      phase,
+                      status: readStringValue(evt.data.status),
+                      toolCallId: readStringValue(evt.data.toolCallId),
+                    });
                     if (phase === "start" || phase === "update") {
                       await params.typingSignals.signalToolStart();
                       await params.opts?.onToolStart?.({ name, phase });

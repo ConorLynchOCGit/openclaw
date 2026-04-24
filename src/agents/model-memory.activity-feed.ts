@@ -11,7 +11,9 @@ type JsonRecord = Record<string, unknown>;
 export type ModelMemoryActivityFeedLevel = "summary" | "maximal";
 
 export type ModelMemoryActivityEventType =
+  | "retrieval_started"
   | "memory_retrieval_checked"
+  | "retrieval_unavailable"
   | "memory_pack_injected"
   | "memory_capture_skipped"
   | "memory_written"
@@ -350,7 +352,7 @@ export function buildModelMemoryActivityTranscriptMessage(
   const timestamp = Date.now();
   return {
     role: "assistant" as const,
-    content: [{ type: "text" as const, text: "Memory activity" }],
+    content: [{ type: "text" as const, text: buildModelMemoryActivityFeedText(event, settings) }],
     api: "openai-responses",
     provider: "openclaw",
     model: "memory-activity",

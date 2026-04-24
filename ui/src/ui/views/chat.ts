@@ -757,7 +757,7 @@ function formatActivityRecord(value: unknown): string[] {
   });
 }
 
-function parseStructuredMemoryActivityMessage(
+function parseStructuredActivityMessage(
   message: unknown,
 ): Extract<ChatItem, { kind: "activity" }> | null {
   if (!message || typeof message !== "object") {
@@ -765,11 +765,20 @@ function parseStructuredMemoryActivityMessage(
   }
   const raw = message as Record<string, unknown>;
   const marker = raw.__openclaw as Record<string, unknown> | undefined;
-  if (!marker || marker.kind !== "model_memory_activity") {
+  const markerKind = typeof marker?.kind === "string" ? marker.kind : "";
+  if (markerKind !== "model_memory_activity" && markerKind !== "turn_activity") {
+    return null;
+  }
+  if (!marker) {
     return null;
   }
   const normalized = normalizeMessage(message);
-  const eventType = typeof marker.eventType === "string" ? marker.eventType : "memory_activity";
+  const eventType =
+    typeof marker.eventType === "string"
+      ? marker.eventType
+      : markerKind === "turn_activity"
+        ? "turn_activity"
+        : "memory_activity";
   const label =
     typeof marker.label === "string" && marker.label.trim()
       ? marker.label.trim()
@@ -780,9 +789,9 @@ function parseStructuredMemoryActivityMessage(
   const detail = [...ids, ...metrics, ...labels].join(" | ");
   const status = typeof marker.status === "string" ? marker.status.toLowerCase() : "";
   const tone =
-    status === "failed"
+    status === "failed" || status === "blocked"
       ? "warn"
-      : status === "completed"
+      : status === "completed" || status === "accepted"
         ? "ok"
         : status === "skipped"
           ? "muted"
@@ -849,7 +858,7 @@ function parseLegacyMemoryActivityMessage(
 function parseMemoryActivityMessage(
   message: unknown,
 ): Extract<ChatItem, { kind: "activity" }> | null {
-  return parseStructuredMemoryActivityMessage(message) ?? parseLegacyMemoryActivityMessage(message);
+  return parseStructuredActivityMessage(message) ?? parseLegacyMemoryActivityMessage(message);
 }
 
 function renderMemoryActivityCard(item: Extract<ChatItem, { kind: "activity" }>) {

@@ -3,6 +3,7 @@ import { hasConfiguredModelFallbacks, resolveSessionAgentId } from "../../agents
 import { resolveContextTokensForModel } from "../../agents/context.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../../agents/defaults.js";
 import { resolveModelAuthMode } from "../../agents/model-auth.js";
+import { emitModelMemoryActivityFeedEvent } from "../../agents/model-memory.activity-feed.js";
 import { captureModelMemoryAssistantTurn } from "../../agents/model-memory.live-runtime.js";
 import { isCliProvider } from "../../agents/model-selection.js";
 import { queueEmbeddedPiMessage } from "../../agents/pi-embedded-runner/runs.js";
@@ -1294,6 +1295,23 @@ export async function runReplyAgent(params: {
           accountId: sessionCtx.AccountId,
         },
       }).catch((error) => {
+        void emitModelMemoryActivityFeedEvent({
+          kind: "ordinary_turn_capture",
+          status: "failed",
+          eventType: "capture_failed",
+          config: cfg,
+          sessionId: followupRun.run.sessionId,
+          sessionKey,
+          agentId: followupRun.run.agentId,
+          stableId: runId ?? followupRun.run.sessionId,
+          safeLabels: {
+            failureClass: "execution_exception",
+            stage: "capture_pipeline",
+            model: modelUsed,
+            provider: providerUsed,
+          },
+          ids: runId ? { runId } : undefined,
+        }).catch(() => undefined);
         log.warn(`model-memory live capture failed: ${String(error)}`);
       });
     }

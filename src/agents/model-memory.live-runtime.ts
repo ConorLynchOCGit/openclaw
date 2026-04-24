@@ -835,6 +835,19 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
         currentTurnText: params.currentTurnText,
       })
     ) {
+      void emitModelMemoryActivityFeedEvent({
+        kind: "retrieval",
+        status: "started",
+        eventType: "retrieval_started",
+        config: params.config,
+        sessionId: params.sessionId,
+        sessionKey: params.sessionKey,
+        agentId: params.agentId,
+        stableId: params.sessionId ?? params.sessionKey,
+        safeLabels: {
+          purpose: "live_context_injection",
+        },
+      }).catch(() => undefined);
       try {
         retrievalArtifact = await buildLiveRetrievalContextArtifact({
           runtime,
@@ -847,6 +860,20 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
         });
       } catch (error) {
         log.warn(`model-memory live retrieval context unavailable: ${String(error)}`);
+        void emitModelMemoryActivityFeedEvent({
+          kind: "retrieval",
+          status: "failed",
+          eventType: "retrieval_unavailable",
+          config: params.config,
+          sessionId: params.sessionId,
+          sessionKey: params.sessionKey,
+          agentId: params.agentId,
+          stableId: params.sessionId ?? params.sessionKey,
+          safeLabels: {
+            purpose: "live_context_injection",
+            reason: "retrieval_unavailable",
+          },
+        }).catch(() => undefined);
       }
     }
 

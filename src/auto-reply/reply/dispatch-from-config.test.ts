@@ -163,6 +163,12 @@ const threadInfoMocks = vi.hoisted(() => ({
     }
   >(),
 }));
+const turnActivityMocks = vi.hoisted(() => ({
+  emitTurnActivityFeedEvent: vi.fn(async (_params?: unknown) => ({
+    emitted: true as const,
+    messageId: "activity-1",
+  })),
+}));
 
 function parseGenericThreadSessionInfo(sessionKey: string | undefined) {
   const trimmed = sessionKey?.trim();
@@ -342,6 +348,10 @@ vi.mock("../../tts/tts.runtime.js", () => ({
 vi.mock("./reply-media-paths.runtime.js", () => ({
   createReplyMediaPathNormalizer: (params: unknown) =>
     replyMediaPathMocks.createReplyMediaPathNormalizer(params),
+}));
+vi.mock("./turn-activity-feed.js", () => ({
+  emitTurnActivityFeedEvent: (params: unknown) =>
+    turnActivityMocks.emitTurnActivityFeedEvent(params),
 }));
 vi.mock("../../tts/status-config.js", () => ({
   resolveStatusTtsSnapshot: () => ({
@@ -3262,6 +3272,7 @@ describe("before_dispatch hook", () => {
     threadInfoMocks.parseSessionThreadInfo.mockImplementation(parseGenericThreadSessionInfo);
     ttsMocks.state.synthesizeFinalAudio = false;
     ttsMocks.maybeApplyTtsToPayload.mockClear();
+    turnActivityMocks.emitTurnActivityFeedEvent.mockClear();
     setNoAbort();
     hookMocks.runner.runBeforeDispatch.mockClear();
     hookMocks.runner.runBeforeDispatch.mockResolvedValue(undefined);
@@ -3294,6 +3305,15 @@ describe("before_dispatch hook", () => {
     });
     expect(dispatcher.sendFinalReply).not.toHaveBeenCalled();
     expect(result.queuedFinal).toBe(false);
+    expect(turnActivityMocks.emitTurnActivityFeedEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "prompt_blocked",
+        safeLabels: expect.objectContaining({
+          hook: "before_dispatch",
+          reason: "handled_without_text",
+        }),
+      }),
+    );
   });
 
   it("uses canonical hook metadata and shared routed final delivery", async () => {
@@ -3379,6 +3399,61 @@ describe("before_dispatch hook", () => {
     });
     expect(hookMocks.runner.runBeforeDispatch).toHaveBeenCalled();
     expect(dispatcher.sendFinalReply).toHaveBeenCalledWith({ text: "model reply" });
+  });
+});
+
+describe("turn activity feed", () => {
+  beforeEach(() => {
+    turnActivityMocks.emitTurnActivityFeedEvent.mockClear();
+  });
+
+  it("emits accepted, model, and tool lifecycle activity for a normal tool-backed turn", async () => {
+    const dispatcher = createDispatcher();
+    const replyResolver = vi.fn(async (_ctx: MsgContext, opts?: GetReplyOptions) => {
+      await opts?.onLifecycleEvent?.({
+        phase: "start",
+        activeProvider: "openai-codex",
+        activeModel: "gpt-5.4",
+      });
+      await opts?.onToolEvent?.({
+        name: "memory_search",
+        phase: "start",
+        toolCallId: "tool_123",
+        status: "running",
+      });
+      await opts?.onToolEvent?.({
+        name: "memory_search",
+        phase: "end",
+        toolCallId: "tool_123",
+        status: "completed",
+      });
+      return { text: "ok" };
+    });
+
+    await dispatchReplyFromConfig({
+      ctx: buildTestCtx({
+        Body: "Find my validation preference",
+        BodyForAgent: "Find my validation preference",
+        BodyForCommands: "Find my validation preference",
+        From: "user1",
+        Surface: "telegram",
+        ChatType: "private",
+        SessionKey: "agent:main:main",
+        MessageSid: "msg-123",
+      }),
+      cfg: emptyConfig,
+      dispatcher,
+      replyResolver,
+      replyOptions: {
+        runId: "run-123",
+      },
+    });
+
+    expect(
+      turnActivityMocks.emitTurnActivityFeedEvent.mock.calls.map(
+        (call) => (call[0] as { eventType?: string } | undefined)?.eventType,
+      ),
+    ).toEqual(["prompt_accepted", "model_started", "tool_started", "tool_completed"]);
   });
 });
 

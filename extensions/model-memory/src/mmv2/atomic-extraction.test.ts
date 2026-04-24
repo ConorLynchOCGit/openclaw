@@ -163,6 +163,68 @@ describe("mmv2/atomic-extraction", () => {
     });
   });
 
+  it("normalizes repaired atomic candidates before enforcing final semantics", async () => {
+    const source = createMmV2TestSource("I prefer concise answers.");
+    const segment = source.segmented.segments[0];
+    const invalidCandidate = buildAtomicCandidate(
+      segment.segment_id,
+      '"I prefer concise answers."',
+      {
+        candidate_id: "candidate-001",
+        normalized_statement: "The user prefers concise answers",
+        source_grounding: "weakly_implied",
+        confidence: 0.9,
+      },
+    );
+    const duplicateCandidate = buildAtomicCandidate(
+      segment.segment_id,
+      '"I prefer concise answers."',
+      {
+        candidate_id: "candidate-002",
+        normalized_statement: "The user prefers concise answers",
+        source_grounding: "weakly_implied",
+        confidence: 0.9,
+      },
+    );
+    const interpreter = createScriptedMmV2Interpreter({
+      "mmv2-atomic-extraction-v1": () =>
+        captureOne({
+          schema_version: "atomic_extraction.v1",
+          event_id: source.rawEvent.event_id,
+          atomic_candidates: [invalidCandidate],
+        }),
+      "mmv2-atomic-evidence-repair-v1": () =>
+        captureOne({
+          schema_version: "atomic_extraction.v1",
+          event_id: source.rawEvent.event_id,
+          atomic_candidates: [invalidCandidate, duplicateCandidate],
+        }),
+      "mmv2-atomic-repair-v1": () =>
+        captureOne({
+          schema_version: "atomic_extraction.v1",
+          event_id: source.rawEvent.event_id,
+          atomic_candidates: [invalidCandidate, duplicateCandidate],
+        }),
+    });
+
+    const result = await extractAtomicCandidates({
+      rawEvent: source.rawEvent,
+      sourceKind: "document",
+      sourceId: source.sourceId,
+      sourceWindow: source.sourceWindow,
+      modelId: "model-001",
+      interpreter,
+      routedCandidates: [buildAtomicRoutedCandidate(segment)],
+    });
+
+    expect(result.atomic_candidates).toHaveLength(1);
+    expect(result.atomic_candidates[0]).toMatchObject({
+      evidence_quote: "I prefer concise answers.",
+      normalized_statement: "The user prefers concise answers.",
+      confidence: 0.65,
+    });
+  });
+
   it("rejects composite-owned routed spans before calling the atomic extractor", async () => {
     const source = createMmV2TestSource("1. Run the test suite.\n2. Ship the build.");
     const segment = source.segmented.segments.find(

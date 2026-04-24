@@ -69,6 +69,13 @@ export type GetReplyOptions = {
   onToolResult?: (payload: ReplyPayload) => Promise<void> | void;
   /** Called when a tool phase starts/updates, before summary payloads are emitted. */
   onToolStart?: (payload: { name?: string; phase?: string }) => Promise<void> | void;
+  /** Called when a tool lifecycle phase is observed. */
+  onToolEvent?: (payload: {
+    name?: string;
+    phase?: string;
+    status?: string;
+    toolCallId?: string;
+  }) => Promise<void> | void;
   /** Called when a concrete work item starts, updates, or completes. */
   onItemEvent?: (payload: {
     itemId?: string;

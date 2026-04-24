@@ -407,6 +407,44 @@ describe("chat view", () => {
     expect(container.textContent).not.toContain("[Memory Activity]");
   });
 
+  it("renders structured turn activity as tool-like metadata instead of assistant bubbles", () => {
+    const container = document.createElement("div");
+
+    render(
+      renderChat(
+        createProps({
+          messages: [
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "Turn activity: tool completed: memory_search" }],
+              timestamp: 1000,
+              __openclaw: {
+                kind: "turn_activity",
+                schemaVersion: 1,
+                eventType: "tool_completed",
+                label: "tool completed: memory_search",
+                status: "completed",
+                ids: {
+                  toolCallId: ["call_1"],
+                },
+                labels: {
+                  tool: "memory_search",
+                },
+              },
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    expect(container.querySelector(".chat-memory-activity--tool-like")).not.toBeNull();
+    expect(container.querySelector(".chat-group.assistant")).toBeNull();
+    expect(container.textContent).toContain("tool completed: memory_search");
+    expect(container.textContent).toContain("tool completed");
+    expect(container.textContent).toContain("toolCallId=call_1");
+  });
+
   it("shows a stable working card while a run is active", () => {
     const container = document.createElement("div");
 

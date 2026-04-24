@@ -676,6 +676,90 @@ function validateAtomic(
   return errors;
 }
 
+function normalizeEvidenceQuote(
+  routedCandidate: AtomicRoutedCandidate,
+  evidenceQuote: string,
+): string {
+  const candidates = [
+    evidenceQuote.trim(),
+    evidenceQuote.trim().replace(/^["'`“”]+|["'`“”]+$/gu, ""),
+  ];
+  for (const candidate of candidates) {
+    if (candidate && routedCandidate.text.includes(candidate)) {
+      return candidate;
+    }
+  }
+  return evidenceQuote;
+}
+
+function normalizePayloadForKind(candidate: AtomicCandidate): AtomicCandidate["payload"] {
+  switch (candidate.kind) {
+    case "claim":
+      return AtomicCandidateSchema.shape.payload.parse({
+        ...candidate.payload,
+        payload_type: "claim",
+      });
+    case "directive":
+      return AtomicCandidateSchema.shape.payload.parse({
+        ...candidate.payload,
+        payload_type: "directive",
+      });
+    case "source_ref":
+      return AtomicCandidateSchema.shape.payload.parse({
+        ...candidate.payload,
+        payload_type: "source_ref",
+      });
+    case "episode":
+      return AtomicCandidateSchema.shape.payload.parse({
+        ...candidate.payload,
+        payload_type: "episode",
+      });
+  }
+  return AtomicCandidateSchema.shape.payload.parse(candidate.payload);
+}
+
+function normalizeRepairedAtomicBatch(
+  batch: AtomicExtractionBatch,
+  routedCandidates: AtomicRoutedCandidate[],
+): AtomicExtractionBatch {
+  const routedById = new Map(
+    routedCandidates.map((candidate) => [candidate.segment_id, candidate]),
+  );
+  const seenSingleCandidateSegments = new Set<string>();
+  const atomicCandidates: AtomicCandidate[] = [];
+
+  for (const candidate of batch.atomic_candidates) {
+    const routedCandidate = routedById.get(candidate.source_segment_id);
+    if (
+      routedCandidate &&
+      !routedCandidate.allow_multiple_top_level_atomic &&
+      seenSingleCandidateSegments.has(candidate.source_segment_id)
+    ) {
+      continue;
+    }
+    if (routedCandidate && !routedCandidate.allow_multiple_top_level_atomic) {
+      seenSingleCandidateSegments.add(candidate.source_segment_id);
+    }
+    atomicCandidates.push({
+      ...candidate,
+      normalized_statement: ensureSentence(candidate.normalized_statement),
+      evidence_quote: routedCandidate
+        ? normalizeEvidenceQuote(routedCandidate, candidate.evidence_quote)
+        : candidate.evidence_quote,
+      confidence:
+        candidate.source_grounding === "weakly_implied" && candidate.confidence > 0.65
+          ? 0.65
+          : candidate.confidence,
+      payload: normalizePayloadForKind(candidate),
+    });
+  }
+
+  return {
+    ...batch,
+    atomic_candidates: atomicCandidates,
+  };
+}
+
 export async function repairAtomicExtraction(
   input: AtomicInput & {
     previousPayload: unknown;
@@ -750,7 +834,8 @@ export async function repairAtomicExtraction(
       JSON.stringify(extractBatch(result)),
     );
   }
-  const repairedErrors = validateAtomic(parsed.data, input.routedCandidates);
+  const normalizedRepair = normalizeRepairedAtomicBatch(parsed.data, input.routedCandidates);
+  const repairedErrors = validateAtomic(normalizedRepair, input.routedCandidates);
   if (repairedErrors.length > 0) {
     throw new JsonModelOutputError(
       "invalid MMV2 atomic extraction repair semantics",
@@ -758,7 +843,7 @@ export async function repairAtomicExtraction(
       JSON.stringify(extractBatch(result)),
     );
   }
-  return parsed.data;
+  return normalizedRepair;
 }
 
 export async function extractAtomicCandidates(input: AtomicInput): Promise<AtomicExtractionBatch> {

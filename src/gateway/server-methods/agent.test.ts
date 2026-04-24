@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   loadGatewaySessionRow: vi.fn(),
   updateSessionStore: vi.fn(),
   agentCommand: vi.fn(),
+  emitTurnActivityFeedEvent: vi.fn().mockResolvedValue({ emitted: true, messageId: "m1" }),
   registerAgentRunContext: vi.fn(),
   performGatewaySessionReset: vi.fn(),
   getLatestSubagentRunByChildSessionKey: vi.fn(),
@@ -62,6 +63,10 @@ vi.mock("../../config/config.js", async () => {
     loadConfig: () => mocks.loadConfigReturn,
   };
 });
+
+vi.mock("../../auto-reply/reply/turn-activity-feed.js", () => ({
+  emitTurnActivityFeedEvent: (...args: unknown[]) => mocks.emitTurnActivityFeedEvent(...args),
+}));
 
 vi.mock("../../agents/agent-scope.js", () => ({
   listAgentIds: () => ["main"],
@@ -310,12 +315,40 @@ async function invokeAgentIdentityGet(
 
 describe("gateway agent handler", () => {
   afterEach(() => {
+    mocks.emitTurnActivityFeedEvent
+      .mockReset()
+      .mockResolvedValue({ emitted: true, messageId: "m1" });
     if (ORIGINAL_STATE_DIR === undefined) {
       delete process.env.OPENCLAW_STATE_DIR;
     } else {
       process.env.OPENCLAW_STATE_DIR = ORIGINAL_STATE_DIR;
     }
     resetTaskRegistryForTests();
+  });
+
+  it("emits prompt-accepted turn activity for session-scoped agent runs", async () => {
+    mockMainSessionEntry({
+      sessionId: "sess-main",
+      updatedAt: Date.now(),
+    });
+    mocks.agentCommand.mockResolvedValue({
+      payloads: [{ text: "ok" }],
+      meta: { durationMs: 100 },
+    });
+
+    await invokeAgent({
+      message: "hello from gateway agent",
+      sessionKey: "agent:main:main",
+      idempotencyKey: "run-turn-accepted",
+    });
+
+    expect(mocks.emitTurnActivityFeedEvent).toHaveBeenCalledWith({
+      sessionKey: "agent:main:main",
+      agentId: "main",
+      runId: "run-turn-accepted",
+      stableId: "run-turn-accepted:accepted",
+      eventType: "prompt_accepted",
+    });
   });
 
   it("preserves ACP metadata from the current stored session entry", async () => {

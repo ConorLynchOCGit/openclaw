@@ -1,4 +1,5 @@
 import { DEFAULT_HEARTBEAT_ACK_MAX_CHARS, stripHeartbeatToken } from "../auto-reply/heartbeat.js";
+import { emitTurnActivityFeedEvent } from "../auto-reply/reply/turn-activity-feed.js";
 import { normalizeVerboseLevel } from "../auto-reply/thinking.js";
 import {
   SILENT_REPLY_TOKEN,
@@ -927,8 +928,47 @@ export function createAgentEventHandler({
       });
     }
     agentRunSeq.set(evt.runId, evt.seq);
+    if (sessionKey && lifecyclePhase === "start") {
+      void emitTurnActivityFeedEvent({
+        sessionKey,
+        runId: evt.runId,
+        stableId: `lifecycle:${evt.seq}`,
+        eventType: "model_started",
+      }).catch(() => undefined);
+    }
     if (isToolEvent) {
       const toolPhase = typeof evt.data?.phase === "string" ? evt.data.phase : "";
+      const toolName =
+        typeof evt.data?.name === "string" && evt.data.name.trim().length > 0
+          ? evt.data.name.trim()
+          : undefined;
+      const toolCallId =
+        typeof evt.data?.toolCallId === "string" && evt.data.toolCallId.trim().length > 0
+          ? evt.data.toolCallId.trim()
+          : undefined;
+      if (sessionKey && toolPhase === "start") {
+        void emitTurnActivityFeedEvent({
+          sessionKey,
+          runId: evt.runId,
+          stableId: `tool:start:${evt.seq}`,
+          eventType: "tool_started",
+          safeLabels: toolName ? { tool: toolName } : {},
+          ids: toolCallId ? { toolCallId } : {},
+        }).catch(() => undefined);
+      }
+      if (sessionKey && (toolPhase === "result" || toolPhase === "end" || toolPhase === "error")) {
+        void emitTurnActivityFeedEvent({
+          sessionKey,
+          runId: evt.runId,
+          stableId: `tool:${toolPhase}:${evt.seq}`,
+          eventType: "tool_completed",
+          safeLabels: {
+            ...(toolName ? { tool: toolName } : {}),
+            ...(toolPhase === "error" ? { status: "error" } : {}),
+          },
+          ids: toolCallId ? { toolCallId } : {},
+        }).catch(() => undefined);
+      }
       // Flush pending assistant text before tool-start events so clients can
       // render complete pre-tool text above tool cards (not truncated by delta throttle).
       if (toolPhase === "start" && isControlUiVisible && sessionKey && !isAborted) {

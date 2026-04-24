@@ -485,6 +485,71 @@ describe("runAgentTurnWithFallback", () => {
     });
   });
 
+  it("forwards tool lifecycle events to reply options", async () => {
+    const onToolEvent = vi.fn();
+    state.runEmbeddedPiAgentMock.mockImplementationOnce(async (params: EmbeddedAgentParams) => {
+      await params.onAgentEvent?.({
+        stream: "tool",
+        data: {
+          phase: "start",
+          name: "memory_search",
+          status: "running",
+          toolCallId: "tool-call-1",
+        },
+      });
+      await params.onAgentEvent?.({
+        stream: "tool",
+        data: {
+          phase: "end",
+          name: "memory_search",
+          status: "completed",
+          toolCallId: "tool-call-1",
+        },
+      });
+      return { payloads: [{ text: "final" }], meta: {} };
+    });
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    await runAgentTurnWithFallback({
+      commandBody: "hello",
+      followupRun: createFollowupRun(),
+      sessionCtx: {
+        Provider: "whatsapp",
+        MessageSid: "msg",
+      } as unknown as TemplateContext,
+      opts: {
+        onToolEvent,
+      } satisfies GetReplyOptions,
+      typingSignals: createMockTypingSignaler(),
+      blockReplyPipeline: null,
+      blockStreamingEnabled: false,
+      resolvedBlockStreamingBreak: "message_end",
+      applyReplyToMode: (payload) => payload,
+      shouldEmitToolResult: () => true,
+      shouldEmitToolOutput: () => false,
+      pendingToolTasks: new Set(),
+      resetSessionAfterCompactionFailure: async () => false,
+      resetSessionAfterRoleOrderingConflict: async () => false,
+      isHeartbeat: false,
+      sessionKey: "main",
+      getActiveSessionEntry: () => undefined,
+      resolvedVerboseLevel: "off",
+    });
+
+    expect(onToolEvent).toHaveBeenNthCalledWith(1, {
+      name: "memory_search",
+      phase: "start",
+      status: "running",
+      toolCallId: "tool-call-1",
+    });
+    expect(onToolEvent).toHaveBeenNthCalledWith(2, {
+      name: "memory_search",
+      phase: "end",
+      status: "completed",
+      toolCallId: "tool-call-1",
+    });
+  });
+
   it("trims chatty GPT ack-turn final prose", async () => {
     state.runWithModelFallbackMock.mockImplementationOnce(async (params: FallbackRunnerParams) => ({
       result: await params.run("openai", "gpt-5.4"),

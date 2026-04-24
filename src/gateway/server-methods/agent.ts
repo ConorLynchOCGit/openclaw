@@ -10,6 +10,7 @@ import {
   buildSessionStartupContextPrelude,
   shouldApplyStartupContext,
 } from "../../auto-reply/reply/startup-context.js";
+import { emitTurnActivityFeedEvent } from "../../auto-reply/reply/turn-activity-feed.js";
 import { agentCommandFromIngress } from "../../commands/agent.js";
 import { loadConfig } from "../../config/config.js";
 import {
@@ -804,6 +805,15 @@ export const agentHandlers: GatewayRequestHandlers = {
       },
     });
     respond(true, accepted, undefined, { runId });
+    if (resolvedSessionKey) {
+      void emitTurnActivityFeedEvent({
+        sessionKey: resolvedSessionKey,
+        agentId: resolveAgentIdFromSessionKey(resolvedSessionKey),
+        runId,
+        stableId: `${runId}:accepted`,
+        eventType: "prompt_accepted",
+      }).catch(() => undefined);
+    }
 
     if (resolvedSessionKey) {
       await reactivateCompletedSubagentSession({

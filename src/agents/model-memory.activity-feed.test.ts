@@ -68,7 +68,7 @@ describe("model-memory activity feed", () => {
       },
     });
 
-    expect(message.content[0]?.text).toBe("Memory activity");
+    expect(message.content[0]?.text).toContain("[Memory Activity] retrieval completed");
     expect(message.__openclaw.kind).toBe("model_memory_activity");
     expect(message.__openclaw.eventType).toBe("memory_retrieval_checked");
     expect(message.__openclaw.ids).toMatchObject({
@@ -77,7 +77,7 @@ describe("model-memory activity feed", () => {
     });
     expect(JSON.stringify(message)).not.toContain("raw prompt must not persist");
     expect(JSON.stringify(message)).not.toContain("private-token");
-    expect(JSON.stringify(message)).not.toContain("[Memory Activity]");
+    expect(message.content[0]?.text).toContain("[Memory Activity]");
   });
 
   it("builds capture job activity events with safe ids and failure classes only", () => {
@@ -110,6 +110,31 @@ describe("model-memory activity feed", () => {
       stage: "persistence_boundary",
     });
     expect(JSON.stringify(message)).not.toContain("raw prompt-like error text");
+  });
+
+  it("makes retrieval-unavailable and no-durable-candidate states explicit in visible content", () => {
+    const retrievalUnavailable = buildModelMemoryActivityTranscriptMessage({
+      kind: "retrieval",
+      status: "failed",
+      eventType: "retrieval_unavailable",
+      safeLabels: {
+        purpose: "live_context_injection",
+        reason: "retrieval_unavailable",
+      },
+    });
+    const noDurableCandidate = buildModelMemoryActivityTranscriptMessage({
+      kind: "ordinary_turn_capture",
+      status: "skipped",
+      eventType: "capture_skipped",
+      safeLabels: {
+        stage: "no_durable_candidate",
+      },
+    });
+
+    expect(retrievalUnavailable.content[0]?.text).toContain("retrieval failed");
+    expect(retrievalUnavailable.content[0]?.text).toContain("reason=retrieval_unavailable");
+    expect(noDurableCandidate.content[0]?.text).toContain("ordinary turn capture skipped");
+    expect(noDurableCandidate.content[0]?.text).toContain("stage=no_durable_candidate");
   });
 
   it("supports retry-scheduled capture job activity without raw retry payloads", () => {
