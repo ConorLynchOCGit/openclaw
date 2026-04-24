@@ -318,4 +318,22 @@ describe("memory capture jobs", () => {
       expect(JSON.stringify(replay)).not.toContain("Acknowledged");
     });
   });
+
+  it("quarantines corrupt sibling job files without hiding valid jobs", async () => {
+    await withTempCaptureStore(async ({ baseDir, store }) => {
+      const job = testJob("capture_job_valid");
+      await store.enqueue(job);
+      const corruptPath = path.join(baseDir, "jobs", "capture_job_corrupt.json");
+      await fs.mkdir(path.dirname(corruptPath), { recursive: true, mode: 0o700 });
+      await fs.writeFile(corruptPath, '{"jobId":"capture_job_corrupt"', "utf8");
+
+      const jobs = await store.listJobs();
+
+      expect(jobs.map((entry) => entry.jobId)).toEqual(["capture_job_valid"]);
+      const quarantineDir = path.join(baseDir, "quarantine", "jobs");
+      const quarantineEntries = await fs.readdir(quarantineDir);
+      expect(quarantineEntries).toHaveLength(1);
+      await expect(fs.stat(corruptPath)).rejects.toMatchObject({ code: "ENOENT" });
+    });
+  });
 });

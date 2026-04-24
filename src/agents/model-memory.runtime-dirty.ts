@@ -4,6 +4,7 @@ import path from "node:path";
 import { mergeMemoryTraceIds } from "../../extensions/model-memory/runtime-api.js";
 import { resolveStateDir } from "../config/paths.js";
 import type { MemoryIngestionFailureClass } from "../plugin-sdk/model-memory.js";
+import { readRecoveredJsonFile, readRecoveredJsonLines } from "./model-memory.recovery-files.js";
 
 const RUNTIME_DIRTY_SCHEMA_VERSION = 1;
 const DEFAULT_COALESCE_WRITES = 5;
@@ -259,7 +260,7 @@ function readBoolean(value: string | undefined, fallback: boolean) {
   return fallback;
 }
 
-function cleanState(): ModelMemoryRuntimeDirtyState {
+export function buildCleanModelMemoryRuntimeDirtyState(): ModelMemoryRuntimeDirtyState {
   return {
     schemaVersion: RUNTIME_DIRTY_SCHEMA_VERSION,
     dirtyId: "runtime_dirty_clean",
@@ -281,7 +282,7 @@ function cleanState(): ModelMemoryRuntimeDirtyState {
 }
 
 function normalizeState(state: Partial<ModelMemoryRuntimeDirtyState> | undefined) {
-  const fallback = cleanState();
+  const fallback = buildCleanModelMemoryRuntimeDirtyState();
   if (!state) {
     return fallback;
   }
@@ -385,15 +386,13 @@ async function persistStateAndEvent(params: {
 }
 
 async function readState(filePath: string) {
-  try {
-    const text = await fs.readFile(filePath, "utf8");
-    return normalizeState(JSON.parse(text) as ModelMemoryRuntimeDirtyState);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return cleanState();
-    }
-    throw error;
-  }
+  const result = await readRecoveredJsonFile<ModelMemoryRuntimeDirtyState>({
+    filePath,
+    fallback: buildCleanModelMemoryRuntimeDirtyState(),
+    parse: (value) => normalizeState(value as ModelMemoryRuntimeDirtyState),
+    quarantineDir: path.join(path.dirname(filePath), "quarantine", "state"),
+  });
+  return result.value;
 }
 
 export function resolveDefaultModelMemoryRuntimeDirtyStoreDir(
@@ -472,19 +471,12 @@ export function createModelMemoryRuntimeDirtyStore(
       return readState(stateFilePath(baseDir));
     },
     async listRecentEvents(limit = 50) {
-      try {
-        const text = await fs.readFile(eventsFilePath(baseDir), "utf8");
-        return text
-          .split("\n")
-          .filter(Boolean)
-          .slice(-Math.max(0, limit))
-          .map((line) => JSON.parse(line) as ModelMemoryRuntimeDirtyEvent);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          return [];
-        }
-        throw error;
-      }
+      const result = await readRecoveredJsonLines<ModelMemoryRuntimeDirtyEvent>({
+        filePath: eventsFilePath(baseDir),
+        parse: (value) => value as ModelMemoryRuntimeDirtyEvent,
+        quarantineDir: path.join(baseDir, "quarantine", "events"),
+      });
+      return result.entries.slice(-Math.max(0, limit));
     },
     markDirty(input) {
       return transition({
@@ -569,7 +561,7 @@ export function createModelMemoryRuntimeDirtyStore(
             };
           }
           return {
-            ...cleanState(),
+            ...buildCleanModelMemoryRuntimeDirtyState(),
             dirtyId: current.dirtyId,
             lastRebuildAt: nowIso(),
             lastRebuildDurationMs: input?.durationMs,
@@ -643,7 +635,7 @@ export function createModelMemoryRuntimeDirtyStore(
         eventType: "runtime_dirty_cleared",
         update(current) {
           return {
-            ...cleanState(),
+            ...buildCleanModelMemoryRuntimeDirtyState(),
             dirtyId: current.dirtyId,
             lastRebuildAt: current.lastRebuildAt,
             lastRebuildDurationMs: current.lastRebuildDurationMs,

@@ -97,6 +97,8 @@ State: `landed 2026-04-24`
 
 ### Slice 5 - Recovery and restore proof
 
+State: `landed 2026-04-24`
+
 - strengthen crash/restart recovery tests for runtime-state spools
 - prove backup/restore and reconcile for:
   - durable DB
@@ -104,6 +106,18 @@ State: `landed 2026-04-24`
   - dirty state
   - projection artifacts
   - provider scorecards
+- canonical operator runbook:
+  - [Pre-Phase-2 Recovery Gates](/projects/model-memory/pre-phase-2-recovery-gates)
+- landed scope:
+  - tolerant runtime-state readers now quarantine corrupt JSON/JSONL instead of
+    collapsing capture jobs, runtime-dirty state, or provider scorecards
+  - post-restore reconcile now classifies surfaces as `clean`,
+    `replay_required`, `rebuild_required`, `blocked_busy`, or
+    `quarantined_corrupt`
+  - `scripts/model-memory-phase2-recovery-gates.ts` now emits a read-safe
+    operator report for the memory-critical state inventory
+  - isolated proof now covers operational backup/restore roundtrip and durable
+    MMV2 DB restore via `pg-mem` snapshot/restore
 
 ### Slice 6 - Phase-2 entry validation pack
 

@@ -4,6 +4,7 @@ import path from "node:path";
 import { sanitizeMemoryTraceId } from "../../extensions/model-memory/runtime-api.js";
 import { resolveStateDir } from "../config/paths.js";
 import type { MemoryIngestionFailureClass } from "../plugin-sdk/model-memory.js";
+import { readRecoveredJsonFile } from "./model-memory.recovery-files.js";
 
 const CAPTURE_JOB_SCHEMA_VERSION = 1;
 const DEFAULT_MAX_RETRIES = 1;
@@ -361,15 +362,13 @@ async function appendJsonLine(filePath: string, value: unknown) {
 }
 
 async function readJob(filePath: string): Promise<MemoryCaptureJob | undefined> {
-  try {
-    const text = await fs.readFile(filePath, "utf8");
-    return normalizeJob(JSON.parse(text) as MemoryCaptureJob);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  }
+  const result = await readRecoveredJsonFile<MemoryCaptureJob | undefined>({
+    filePath,
+    fallback: undefined,
+    parse: (value) => normalizeJob(value as MemoryCaptureJob),
+    quarantineDir: path.join(path.dirname(filePath), "..", "quarantine", "jobs"),
+  });
+  return result.value;
 }
 
 async function persistJobAndEvent(params: {

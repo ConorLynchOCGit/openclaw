@@ -29,6 +29,16 @@ State: `pre_phase_2_execution_in_progress`
   - a read-only operator DB-gates report now exposes SLO definitions,
     `pg_stat_statements` query-family baselines, pool/lane snapshots, and
     maintenance health for memory-critical tables
+- recovery and restore gates are now landed:
+  - crash/restart tolerant reads now quarantine corrupt JSON / JSONL across
+    capture jobs, runtime-dirty state, and provider scorecards
+  - post-restore reconcile now classifies surfaces as `clean`,
+    `replay_required`, `rebuild_required`, `blocked_busy`, or
+    `quarantined_corrupt`
+  - `scripts/model-memory-phase2-recovery-gates.ts` now emits a read-safe
+    operator report over the memory-critical state inventory
+  - isolated proof now covers operational backup/restore roundtrip plus
+    durable MMV2 DB restore via `pg-mem` snapshot/restore
 - retrieval miss classification no longer stops at generic
   `candidates_found_but_excluded` / `stale_conflict_suppression` buckets; the
   runtime now emits explicit suppression classes for stale, superseded,
@@ -39,8 +49,8 @@ State: `pre_phase_2_execution_in_progress`
   work is bounded runtime validation rather than model-lane rollback
 - Phase 2 is still blocked until the ledger slices are closed; graph/capsule/
   planner work is not the active implementation lane
-- the remaining active blockers after the traceability slice are:
-  recovery/restore proof and the final Phase-2 entry validation pack
+- the remaining active blocker after the recovery slice is:
+  the final Phase-2 entry validation pack
 
 - shared ingestion now has executable closeout/quarantine report helpers for
   active capture/ingest paths; reports are runtime-state/artifact outputs and

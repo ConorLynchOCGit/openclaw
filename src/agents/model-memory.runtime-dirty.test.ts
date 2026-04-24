@@ -339,4 +339,37 @@ describe("model-memory runtime dirty state", () => {
 
     await expect(fs.stat(baseDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("quarantines corrupt runtime-dirty state and truncation without collapsing the store", async () => {
+    const { baseDir, store, cleanup } = await makeStore();
+    try {
+      await fs.writeFile(path.join(baseDir, "state.json"), '{"status":"dirty"', "utf8");
+      await fs.writeFile(
+        path.join(baseDir, "events.jsonl"),
+        `${JSON.stringify({
+          eventId: "runtime_dirty_event_1",
+          eventType: "runtime_dirty_marked",
+          dirtyId: "runtime_dirty_1",
+          status: "dirty",
+          observedAt: "2026-04-24T00:00:00.000Z",
+          rawContentPersisted: false,
+          containsPromptText: false,
+          containsTranscript: false,
+          containsRawToolLog: false,
+        })}\n{"eventId":"runtime_dirty_event_2"`,
+        "utf8",
+      );
+
+      const state = await store.getState();
+      const events = await store.listRecentEvents();
+
+      expect(state.status).toBe("clean");
+      expect(events).toHaveLength(1);
+      expect(events[0]?.eventId).toBe("runtime_dirty_event_1");
+      expect(await fs.readdir(path.join(baseDir, "quarantine", "state"))).toHaveLength(1);
+      expect(await fs.readdir(path.join(baseDir, "quarantine", "events"))).toHaveLength(1);
+    } finally {
+      await cleanup();
+    }
+  });
 });

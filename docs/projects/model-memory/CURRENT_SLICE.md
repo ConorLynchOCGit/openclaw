@@ -57,6 +57,17 @@ Already landed in the active source tree:
   `pg_stat_statements` query-family baselines, DB lane/pool snapshots, and
   read-only maintenance health for memory-critical tables through
   `scripts/model-memory-phase2-db-gates.ts`
+- crash/restart recovery is now hardened for the critical runtime-state
+  spools: capture jobs, runtime-dirty state, and provider scorecards now
+  tolerate corrupt JSON / truncated JSONL by quarantining bad artifacts
+  instead of collapsing the whole subsystem
+- post-restore reconcile now classifies memory-critical surfaces as `clean`,
+  `replay_required`, `rebuild_required`, `blocked_busy`, or
+  `quarantined_corrupt`, with a read-safe operator report at
+  `scripts/model-memory-phase2-recovery-gates.ts`
+- isolated proof now covers operational backup/restore roundtrip for
+  file-backed state plus durable MMV2 DB restore via `pg-mem`
+  snapshot/restore without contaminating live semantic truth
 
 ## Slice
 
@@ -232,10 +243,8 @@ of that proof:
 - skill-vetting reports default to the writable operator workspace reports
   tree instead of the read-only product import mirror
 
-The next remaining pre-Phase-2 blockers are now the operational slices after
-traceability/DB baselines:
+The next remaining pre-Phase-2 blocker is now:
 
-- Slice 5 recovery and restore proof
 - Slice 6 Phase-2 entry validation pack
 - host-operator skill install validation is more discoverable, supports
   validate-only, and gateway tool-failure logging redacts raw parameter values

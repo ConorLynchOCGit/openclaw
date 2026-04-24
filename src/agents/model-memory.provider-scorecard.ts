@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
 import type { MemoryIngestionFailureClass } from "../plugin-sdk/model-memory.js";
+import { readRecoveredJsonLines } from "./model-memory.recovery-files.js";
 
 const SCORECARD_SCHEMA_VERSION = 1;
 
@@ -74,6 +75,12 @@ function nowIso() {
 
 function scorecardBaseDir(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(resolveStateDir(env), "model-memory", "provider-scorecards");
+}
+
+export function resolveDefaultModelMemoryProviderScorecardStoreDir(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return scorecardBaseDir(env);
 }
 
 function eventsPath(baseDir: string) {
@@ -240,19 +247,12 @@ export function createModelMemoryProviderScorecardStore(
       });
     },
     async readEvents() {
-      try {
-        const text = await fs.readFile(eventsPath(baseDir), "utf8");
-        return text
-          .split(/\n/u)
-          .map((line) => line.trim())
-          .filter(Boolean)
-          .map((line) => normalizeEvent(JSON.parse(line) as ModelMemoryProviderScorecardEvent));
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          return [];
-        }
-        throw error;
-      }
+      const result = await readRecoveredJsonLines<ModelMemoryProviderScorecardEvent>({
+        filePath: eventsPath(baseDir),
+        parse: (value) => normalizeEvent(value as ModelMemoryProviderScorecardEvent),
+        quarantineDir: path.join(baseDir, "quarantine", "events"),
+      });
+      return result.entries;
     },
     async buildSummary() {
       return buildModelMemoryProviderScorecardSummary(await this.readEvents());
