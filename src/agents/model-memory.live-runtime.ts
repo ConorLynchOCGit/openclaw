@@ -13,6 +13,8 @@ import {
   captureOrdinaryTurnLive,
   classifyMemoryIngestionFailure,
   compileProjection,
+  createMemoryIngestionTelemetryEvent,
+  emitMemoryIngestionCloseoutIfConfigured,
   executeRetrieval,
   listRuntimeMemoryRecords,
   materializeProjectionArtifacts,
@@ -21,6 +23,7 @@ import {
   type JsonModelExecutionRequest,
   type JsonModelExecutionResponse,
   type JsonModelExecutor,
+  type LiveMemoryPersistenceResult,
   type RuntimeMemoryRecord,
   type SemanticInterpreter,
   type SemanticInterpreterInput,
@@ -902,6 +905,17 @@ function sha256Text(text: string): string {
 }
 
 export type ModelMemoryRuntimeDirtySnapshot = ModelMemoryRuntimeDirtyState;
+export type ModelMemoryRuntimeDirtyMarkResult = {
+  state: ModelMemoryRuntimeDirtySnapshot;
+  scheduled: boolean;
+  schedulerReason:
+    | "write_threshold"
+    | "age_threshold"
+    | "manual_admin_request"
+    | "disabled"
+    | "already_active"
+    | "deferred";
+};
 
 function mapRuntimeDirtyStatusToActivityStatus(
   status: ModelMemoryRuntimeDirtyStatus,
@@ -992,7 +1006,7 @@ export async function markModelMemoryRuntimeDirty(input: {
   projectionTargetIds?: string[];
   markedAt?: Date;
   rebuild?: (state: ModelMemoryRuntimeDirtyState) => Promise<void>;
-}): Promise<ModelMemoryRuntimeDirtySnapshot> {
+}): Promise<ModelMemoryRuntimeDirtyMarkResult> {
   const store = createModelMemoryRuntimeDirtyStore({ env: input.env });
   try {
     const result = await markModelMemoryRuntimeDirtyAndSchedule({
@@ -1038,7 +1052,11 @@ export async function markModelMemoryRuntimeDirty(input: {
         schedulerReason: result.schedulerReason,
       });
     }
-    return result.state;
+    return {
+      state: result.state,
+      scheduled: result.scheduled,
+      schedulerReason: result.schedulerReason,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const failureClass = classifyCaptureFailure(error);
@@ -1048,6 +1066,30 @@ export async function markModelMemoryRuntimeDirty(input: {
     });
     throw new Error(`${failureClass}: runtime_dirty marker failed`, { cause: error });
   }
+}
+
+function mapRuntimeDirtyResultToCloseoutState(result: ModelMemoryRuntimeDirtyMarkResult): {
+  status: "marked" | "deferred" | "failed" | "not_required";
+  reason?: string;
+} {
+  if (result.state.status === "failed") {
+    return {
+      status: "failed",
+      reason: [result.state.lastFailureClass, result.state.lastFailureStage]
+        .filter(Boolean)
+        .join(":"),
+    };
+  }
+  if (result.schedulerReason === "deferred" || result.schedulerReason === "disabled") {
+    return {
+      status: "deferred",
+      reason: result.schedulerReason,
+    };
+  }
+  return {
+    status: "marked",
+    reason: result.state.dirtyReason,
+  };
 }
 
 export function getModelMemoryRuntimeDirtySnapshot(
@@ -1323,8 +1365,9 @@ export async function captureModelMemoryAssistantTurn(params: {
       const memoryIds = result.writeResults.flatMap((entry) =>
         entry.memoryId ? [entry.memoryId] : [],
       );
-      await markModelMemoryRuntimeDirty({
+      const dirtyResult = await markModelMemoryRuntimeDirty({
         config: params.config,
+        env: process.env,
         reason: "ordinary_turn_capture_written",
         captureJobId,
         sessionId: params.sessionId,
@@ -1352,6 +1395,18 @@ export async function captureModelMemoryAssistantTurn(params: {
               ).withDbLane?.("rebuild") ?? runtime.runtimeRepository,
           });
         },
+      });
+      await emitMemoryIngestionCloseoutIfConfigured({
+        env: process.env,
+        path: "ordinary_turn_capture",
+        sourceId: result.source.id,
+        sourceHash: result.source.sourceFingerprint,
+        jobId: captureJobId,
+        telemetryEvents: result.ingestionTelemetry,
+        persistenceResult: result.persistenceResult,
+        dirtyState: mapRuntimeDirtyResultToCloseoutState(dirtyResult),
+        provider: "strict_capture_default",
+        model: modelId,
       });
       return {
         status: "written" as const,
@@ -1469,30 +1524,42 @@ export async function captureModelMemoryToolResultProof(params: {
     return emitToolCaptureActivity({ captured: false, reason: "write_unavailable" });
   }
 
+  let persistenceResult: LiveMemoryPersistenceResult;
   if (typeof canonicalRepository.withTransaction === "function") {
-    await canonicalRepository.withTransaction(async (transactionRepository) => {
-      if (
-        typeof transactionRepository.persistSource !== "function" ||
-        typeof transactionRepository.persistSourceWindows !== "function" ||
-        typeof transactionRepository.persistLiveMemoryBatch !== "function"
-      ) {
-        throw new Error(
-          "MMV2 tool-result proof capture transaction repository is missing write capabilities.",
-        );
-      }
-      await transactionRepository.persistSource(built.source);
-      await transactionRepository.persistSourceWindows(built.windows);
-      await transactionRepository.persistLiveMemoryBatch(built.liveMemoryBatch);
-    });
+    persistenceResult = (await canonicalRepository.withTransaction(
+      async (transactionRepository) => {
+        if (
+          typeof transactionRepository.persistSource !== "function" ||
+          typeof transactionRepository.persistSourceWindows !== "function" ||
+          typeof transactionRepository.persistLiveMemoryBatch !== "function"
+        ) {
+          throw new Error(
+            "MMV2 tool-result proof capture transaction repository is missing write capabilities.",
+          );
+        }
+        await transactionRepository.persistSource(built.source);
+        await transactionRepository.persistSourceWindows(built.windows);
+        return await transactionRepository.persistLiveMemoryBatch(built.liveMemoryBatch);
+      },
+    )) as LiveMemoryPersistenceResult;
   } else {
     await runtime.canonicalRepository.persistSource(built.source);
     await runtime.canonicalRepository.persistSourceWindows(built.windows);
-    await persistLiveMemoryBatch(built.liveMemoryBatch);
+    persistenceResult = (await persistLiveMemoryBatch(
+      built.liveMemoryBatch,
+    )) as LiveMemoryPersistenceResult;
   }
-  const memoryIds = built.liveMemoryBatch.durableMemories.map((memory) => memory.memory_id);
-  const eventIds = built.liveMemoryBatch.memoryEvents.map((event) => event.memory_event_id);
-  await markModelMemoryRuntimeDirty({
+  const memoryIds =
+    persistenceResult.durableMemoriesWritten.length > 0
+      ? persistenceResult.durableMemoriesWritten
+      : built.liveMemoryBatch.durableMemories.map((memory) => memory.memory_id);
+  const eventIds =
+    persistenceResult.memoryEventsWritten.length > 0
+      ? persistenceResult.memoryEventsWritten
+      : built.liveMemoryBatch.memoryEvents.map((event) => event.memory_event_id);
+  const dirtyResult = await markModelMemoryRuntimeDirty({
     config: params.config,
+    env: process.env,
     kind: "tool_result_capture",
     reason: "tool_result_capture_written",
     sessionId: params.sessionId,
@@ -1519,6 +1586,43 @@ export async function captureModelMemoryToolResultProof(params: {
           ).withDbLane?.("rebuild") ?? runtime.runtimeRepository,
       });
     },
+  });
+
+  const telemetryEvents = [
+    createMemoryIngestionTelemetryEvent({
+      path: "tool_result_capture",
+      stage: "semantic_contract_boundary",
+      status: "completed",
+      candidate_counts: {
+        extracted: built.liveMemoryBatch.durableMemories.length,
+        valid: built.liveMemoryBatch.durableMemories.length,
+      },
+    }),
+    createMemoryIngestionTelemetryEvent({
+      path: "tool_result_capture",
+      stage: "persistence_boundary",
+      status: "completed",
+      candidate_counts: {
+        admitted: persistenceResult.durableMemoriesWritten.length,
+        rejected: persistenceResult.deferredCandidates.length,
+      },
+      ids: {
+        memory_ids: memoryIds,
+        event_ids: eventIds,
+      },
+    }),
+  ];
+  await emitMemoryIngestionCloseoutIfConfigured({
+    env: process.env,
+    path: "tool_result_capture",
+    runId: params.runId,
+    sourceId: built.source.id,
+    sourceHash: built.source.sourceFingerprint,
+    telemetryEvents,
+    persistenceResult,
+    dirtyState: mapRuntimeDirtyResultToCloseoutState(dirtyResult),
+    provider: "strict_capture_default",
+    model: resolveLiveModelRef(params.config, process.env),
   });
 
   return emitToolCaptureActivity({

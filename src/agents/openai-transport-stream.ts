@@ -22,6 +22,7 @@ import type {
 import type { ProviderRuntimeModel } from "../plugins/provider-runtime-model.types.js";
 import { resolveProviderTransportTurnStateWithPlugin } from "../plugins/provider-runtime.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./copilot-dynamic-headers.js";
+import { normalizeOpenAICodexChatGptBaseUrl } from "./openai-codex-chatgpt-backend.js";
 import { detectOpenAICompletionsCompat } from "./openai-completions-compat.js";
 import { flattenCompletionMessagesToStringContent } from "./openai-completions-string-content.js";
 import {
@@ -643,7 +644,10 @@ function createOpenAIResponsesClient(
 ) {
   return new OpenAI({
     apiKey,
-    baseURL: model.baseUrl,
+    baseURL:
+      model.provider === "openai-codex"
+        ? (normalizeOpenAICodexChatGptBaseUrl(model.baseUrl) ?? model.baseUrl)
+        : model.baseUrl,
     dangerouslyAllowBrowser: true,
     defaultHeaders: buildOpenAIClientHeaders(model, context, optionHeaders, turnHeaders),
     fetch: buildGuardedModelFetch(model),

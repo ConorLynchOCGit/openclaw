@@ -26,22 +26,28 @@ Reasoning:
 - artifact-safe reports can be rotated/pruned without touching canonical MMV2
   memory rows
 
-## 2026-04-23 - Mini remains strict capture default while quota blocks live validation
+## 2026-04-23 - Mini remains strict capture default while the corrected Codex lane remains externally blocked
 
 Decision:
 
 - `openai-codex/gpt-5.4-mini` remains the strict MMV2 capture/ingest default
 - nano remains explicit low-risk/benchmark-only until strict-schema and
   evidence-quality parity is proven
-- current live validation evidence is classified as externally blocked when
-  provider calls fail with quota (`429`)
+- current live validation evidence must record the actual provider/auth lane
+  and be classified as externally blocked when the corrected native Codex
+  route fails at the provider boundary (`403`) or does not complete inside the
+  bounded live retry window
 
 Reasoning:
 
 - prior measured runs showed mini succeeds strict-schema capture while nano
   route quality remains unresolved for strict admission
-- a provider quota failure is not a source failure, not a model-quality result,
-  and not permission to fake benchmark success
+- the earlier `429` evidence came from the wrong OpenAI chat-completions pipe;
+  routing that traffic through the native Codex responses route is now fixed,
+  so further failures must be judged against the corrected lane rather than the
+  old wrong-pipe artifact
+- a provider-route or auth-lane failure is not a source failure, not a
+  model-quality result, and not permission to fake benchmark success
 
 ## 2026-04-23 - Warm skill-load state is session-snapshot truth
 

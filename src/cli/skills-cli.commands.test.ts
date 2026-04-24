@@ -78,10 +78,12 @@ const mocks = vi.hoisted(() => {
     resolveDefaultAgentIdMock: vi.fn(() => "main"),
     resolveAgentWorkspaceDirMock: vi.fn(() => "/tmp/workspace"),
     searchSkillsFromClawHubMock: vi.fn(),
+    fetchSkillDetailFromClawHubMock: vi.fn(),
     installSkillFromClawHubMock: vi.fn(),
     updateSkillsFromClawHubMock: vi.fn(),
     readTrackedClawHubSkillSlugsMock: vi.fn(),
     buildWorkspaceSkillStatusMock,
+    buildSkillsDoctorReportMock: vi.fn(),
     skillStatusReportFixture,
     defaultRuntime,
     runtimeLogs,
@@ -95,10 +97,12 @@ const {
   resolveDefaultAgentIdMock,
   resolveAgentWorkspaceDirMock,
   searchSkillsFromClawHubMock,
+  fetchSkillDetailFromClawHubMock,
   installSkillFromClawHubMock,
   updateSkillsFromClawHubMock,
   readTrackedClawHubSkillSlugsMock,
   buildWorkspaceSkillStatusMock,
+  buildSkillsDoctorReportMock,
   skillStatusReportFixture,
   defaultRuntime,
   runtimeLogs,
@@ -121,6 +125,8 @@ vi.mock("../agents/agent-scope.js", () => ({
 
 vi.mock("../agents/skills-clawhub.js", () => ({
   searchSkillsFromClawHub: (...args: unknown[]) => mocks.searchSkillsFromClawHubMock(...args),
+  fetchSkillDetailFromClawHub: (...args: unknown[]) =>
+    mocks.fetchSkillDetailFromClawHubMock(...args),
   installSkillFromClawHub: (...args: unknown[]) => mocks.installSkillFromClawHubMock(...args),
   updateSkillsFromClawHub: (...args: unknown[]) => mocks.updateSkillsFromClawHubMock(...args),
   readTrackedClawHubSkillSlugs: (...args: unknown[]) =>
@@ -130,6 +136,14 @@ vi.mock("../agents/skills-clawhub.js", () => ({
 vi.mock("../agents/skills-status.js", () => ({
   buildWorkspaceSkillStatus: (workspaceDir: string, options?: unknown) =>
     mocks.buildWorkspaceSkillStatusMock(workspaceDir, options),
+  resolveAgentLoadedSkillSnapshotStatus: vi.fn(() => ({
+    currentSnapshotVersion: 1,
+    unavailableReason: "test fixture",
+  })),
+}));
+
+vi.mock("../agents/skills-doctor.js", () => ({
+  buildSkillsDoctorReport: (...args: unknown[]) => mocks.buildSkillsDoctorReportMock(...args),
 }));
 
 describe("skills cli commands", () => {
@@ -150,22 +164,62 @@ describe("skills cli commands", () => {
     resolveDefaultAgentIdMock.mockReset();
     resolveAgentWorkspaceDirMock.mockReset();
     searchSkillsFromClawHubMock.mockReset();
+    fetchSkillDetailFromClawHubMock.mockReset();
     installSkillFromClawHubMock.mockReset();
     updateSkillsFromClawHubMock.mockReset();
     readTrackedClawHubSkillSlugsMock.mockReset();
     buildWorkspaceSkillStatusMock.mockReset();
+    buildSkillsDoctorReportMock.mockReset();
 
     loadConfigMock.mockReturnValue({});
     resolveDefaultAgentIdMock.mockReturnValue("main");
     resolveAgentWorkspaceDirMock.mockReturnValue("/tmp/workspace");
     searchSkillsFromClawHubMock.mockResolvedValue([]);
+    fetchSkillDetailFromClawHubMock.mockResolvedValue({
+      source: "clawhub",
+      catalogId: "clawhub:calendar",
+      slug: "calendar",
+      skill: {
+        slug: "calendar",
+        displayName: "Calendar",
+        summary: "CalDAV helpers",
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      latestVersion: {
+        version: "1.2.3",
+        createdAt: 3,
+      },
+    });
     installSkillFromClawHubMock.mockResolvedValue({
-      ok: false,
-      error: "install disabled in test",
+      ok: true,
+      source: "clawhub",
+      catalogId: "clawhub:calendar",
+      slug: "calendar",
+      version: "1.2.3",
+      installedSkillKey: "calendar",
+      targetDir: "/tmp/workspace/skills/calendar",
     });
     updateSkillsFromClawHubMock.mockResolvedValue([]);
     readTrackedClawHubSkillSlugsMock.mockResolvedValue([]);
     buildWorkspaceSkillStatusMock.mockReturnValue(skillStatusReportFixture);
+    buildSkillsDoctorReportMock.mockResolvedValue({
+      workspaceDir: "/tmp/workspace",
+      managedSkillsDir: "/tmp/workspace/.managed",
+      configuredSkillDirs: [{ kind: "workspace", path: "/tmp/workspace/skills" }],
+      discoveredSkillNames: ["calendar"],
+      loadedSkillNames: null,
+      loadedState: "not_available",
+      loadedStateReason: "test fixture",
+      hotReloadState: "not_available",
+      watchState: "not_available",
+      restartRequired: null,
+      restartRequiredReason: "test fixture",
+      trackedClawHubInstalls: [],
+      writableSurfaces: [{ kind: "workspace", path: "/tmp/workspace/skills", state: "writable" }],
+      collisions: [],
+      conformanceIssues: [],
+    });
     defaultRuntime.log.mockClear();
     defaultRuntime.error.mockClear();
     defaultRuntime.writeStdout.mockClear();
@@ -176,6 +230,8 @@ describe("skills cli commands", () => {
   it("searches ClawHub skills from the native CLI", async () => {
     searchSkillsFromClawHubMock.mockResolvedValue([
       {
+        source: "clawhub",
+        catalogId: "clawhub:calendar",
         slug: "calendar",
         displayName: "Calendar",
         summary: "CalDAV helpers",
@@ -189,17 +245,24 @@ describe("skills cli commands", () => {
       query: "calendar",
       limit: undefined,
     });
-    expect(runtimeLogs.some((line) => line.includes("calendar v1.2.3  Calendar"))).toBe(true);
-    expect(runtimeLogs.some((line) => line.includes("Remote search returns ClawHub slugs"))).toBe(
-      true,
-    );
+    expect(
+      runtimeLogs.some((line) =>
+        line.includes("calendar v1.2.3  Calendar  [catalogId=clawhub:calendar]"),
+      ),
+    ).toBe(true);
+    expect(
+      runtimeLogs.some((line) => line.includes("Remote search returns ClawHub catalog ids")),
+    ).toBe(true);
   });
 
   it("installs a skill from ClawHub into the active workspace", async () => {
     installSkillFromClawHubMock.mockResolvedValue({
       ok: true,
+      source: "clawhub",
+      catalogId: "clawhub:calendar",
       slug: "calendar",
       version: "1.2.3",
+      installedSkillKey: "calendar",
       targetDir: "/tmp/workspace/skills/calendar",
     });
 
@@ -208,15 +271,37 @@ describe("skills cli commands", () => {
     expect(installSkillFromClawHubMock).toHaveBeenCalledWith({
       workspaceDir: "/tmp/workspace",
       slug: "calendar",
+      catalogId: undefined,
       version: "1.2.3",
       force: false,
       logger: expect.any(Object),
     });
     expect(
       runtimeLogs.some((line) =>
-        line.includes("Installed calendar@1.2.3 -> /tmp/workspace/skills/calendar"),
+        line.includes(
+          "Installed calendar@1.2.3 [catalogId=clawhub:calendar] -> /tmp/workspace/skills/calendar",
+        ),
       ),
     ).toBe(true);
+  });
+
+  it("fetches remote info for a catalog id", async () => {
+    await runCommand(["skills", "info", "--source", "clawhub", "--catalog-id", "clawhub:calendar"]);
+
+    expect(fetchSkillDetailFromClawHubMock).toHaveBeenCalledWith({
+      slug: undefined,
+      catalogId: "clawhub:calendar",
+    });
+    expect(
+      runtimeLogs.some((line) => line.includes("source=clawhub catalogId=clawhub:calendar")),
+    ).toBe(true);
+  });
+
+  it("prints doctor output", async () => {
+    await runCommand(["skills", "doctor"]);
+
+    expect(buildSkillsDoctorReportMock).toHaveBeenCalled();
+    expect(runtimeStdout.some((line) => line.includes("Skills doctor:"))).toBe(true);
   });
 
   it("updates all tracked ClawHub skills", async () => {

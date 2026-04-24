@@ -23,7 +23,7 @@ function appendClawHubHint(output: string, json?: boolean): string {
   if (json) {
     return output;
   }
-  return `${output}\n\nTip: use \`openclaw skills search\`, \`openclaw skills install\`, and \`openclaw skills update\` for ClawHub-backed skills. Remote search slugs become local \`skills info\` entries after install.`;
+  return `${output}\n\nTip: use \`openclaw skills search\`, \`openclaw skills info --source clawhub --catalog-id <catalogId>\`, \`openclaw skills install --catalog-id <catalogId>\`, and \`openclaw skills update\` for ClawHub-backed skills. Installed/local skills still use \`openclaw skills info <name>\`.`;
 }
 
 function formatSkillStatus(skill: SkillStatusEntry): string {
@@ -177,9 +177,11 @@ export function formatSkillInfo(
     return appendClawHubHint(
       `Skill "${skillName}" not found in installed/local skills. Run \`${formatCliCommand(
         "openclaw skills list",
-      )}\` to see local skills, \`${formatCliCommand(
-        `openclaw skills install ${skillName}`,
-      )}\` to install a ClawHub search result, or use gateway \`skills.detail\` for remote detail when available.`,
+      )}\` to see local skills, or use \`${formatCliCommand(
+        "openclaw skills info --source clawhub --catalog-id <catalogId>",
+      )}\` and \`${formatCliCommand(
+        "openclaw skills install --catalog-id <catalogId>",
+      )}\` for remote ClawHub results.`,
       opts.json,
     );
   }

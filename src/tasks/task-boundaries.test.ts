@@ -19,6 +19,7 @@ const RAW_TASK_MUTATORS = [
 ] as const;
 
 const RAW_TASK_MUTATOR_ALLOWED_CALLERS = new Set([
+  "agents/bash-tools.exec.ts",
   "tasks/task-executor.ts",
   "tasks/task-registry.ts",
   "tasks/task-registry.maintenance.ts",

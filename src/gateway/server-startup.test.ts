@@ -1,5 +1,6 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+import { prewarmConfiguredPrimaryModel } from "./server-startup-primary-model-warmup.js";
 
 const ensureOpenClawModelsJsonMock = vi.fn<
   (config: unknown, agentDir: unknown) => Promise<{ agentDir: string; wrote: boolean }>
@@ -49,15 +50,7 @@ vi.mock("../agents/pi-embedded-runner/runtime.js", () => ({
   resolveEmbeddedAgentRuntime: () => resolveEmbeddedAgentRuntimeMock(),
 }));
 
-let prewarmConfiguredPrimaryModel: typeof import("./server-startup.js").__testing.prewarmConfiguredPrimaryModel;
-
 describe("gateway startup primary model warmup", () => {
-  beforeAll(async () => {
-    ({
-      __testing: { prewarmConfiguredPrimaryModel },
-    } = await import("./server-startup.js"));
-  });
-
   beforeEach(() => {
     ensureOpenClawModelsJsonMock.mockClear();
     resolveModelMock.mockClear();

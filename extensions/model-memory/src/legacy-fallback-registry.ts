@@ -3,6 +3,7 @@ export type LegacyFallbackSurfaceStatus =
   | "quarantined"
   | "admin_only"
   | "explicit_fallback_only"
+  | "mmv2_routed_compatibility"
   | "still_required";
 
 export type LegacyFallbackSurface = {
@@ -100,12 +101,12 @@ export const LEGACY_FALLBACK_SURFACES: readonly LegacyFallbackSurface[] = [
   },
   {
     surface: "memory_search / memory_get tools",
-    status: "explicit_fallback_only",
+    status: "mmv2_routed_compatibility",
     defaultLivePathAllowed: false,
     rollbackFlag: "MODEL_MEMORY_LEGACY_MEMORY_TOOLS_ENABLED",
     auditRequired: true,
     reason:
-      "tool-facing legacy reads remain compatibility-only until MMV2 retrieval/read commands replace the user-facing contract",
+      "default tool names now route to MMV2-native search/get aliases; the true legacy memory-core implementation is restored only when the explicit rollback flag is enabled",
   },
   {
     surface: "status/doctor/config legacy memory surfaces",

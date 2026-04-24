@@ -496,7 +496,7 @@ describe("control UI routing", () => {
 
     expect(app.settings.token).toBe("abc123");
     expect(JSON.parse(localStorage.getItem("openclaw.control.settings.v1") ?? "{}")).toMatchObject({
-      gatewayUrl: "wss://gateway.example/openclaw",
+      gatewayUrl: app.settings.gatewayUrl,
     });
     expect(JSON.parse(localStorage.getItem("openclaw.control.settings.v1") ?? "{}").token).toBe(
       undefined,

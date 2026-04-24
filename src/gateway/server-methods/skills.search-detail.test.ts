@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const searchSkillsFromClawHubMock = vi.fn();
-const fetchClawHubSkillDetailMock = vi.fn();
+const fetchSkillDetailFromClawHubMock = vi.fn();
 
 vi.mock("../../config/config.js", () => ({
   loadConfig: vi.fn(() => ({})),
@@ -18,13 +18,7 @@ vi.mock("../../agents/skills-clawhub.js", () => ({
   installSkillFromClawHub: vi.fn(),
   updateSkillsFromClawHub: vi.fn(),
   searchSkillsFromClawHub: (...args: unknown[]) => searchSkillsFromClawHubMock(...args),
-}));
-
-vi.mock("../../infra/clawhub.js", () => ({
-  fetchClawHubSkillDetail: (...args: unknown[]) => fetchClawHubSkillDetailMock(...args),
-  resolveClawHubBaseUrl: vi.fn(() => "https://clawhub.ai"),
-  searchClawHubSkills: vi.fn(),
-  downloadClawHubSkillArchive: vi.fn(),
+  fetchSkillDetailFromClawHub: (...args: unknown[]) => fetchSkillDetailFromClawHubMock(...args),
 }));
 
 vi.mock("../../agents/skills-install.js", () => ({
@@ -55,12 +49,14 @@ function callHandler(method: string, params: Record<string, unknown>) {
 describe("skills.search handler", () => {
   beforeEach(() => {
     searchSkillsFromClawHubMock.mockReset();
-    fetchClawHubSkillDetailMock.mockReset();
+    fetchSkillDetailFromClawHubMock.mockReset();
   });
 
   it("searches ClawHub with query and limit", async () => {
     searchSkillsFromClawHubMock.mockResolvedValue([
       {
+        source: "clawhub",
+        catalogId: "clawhub:github",
         score: 0.95,
         slug: "github",
         displayName: "GitHub",
@@ -84,6 +80,8 @@ describe("skills.search handler", () => {
     expect(response).toEqual({
       results: [
         {
+          source: "clawhub",
+          catalogId: "clawhub:github",
           score: 0.95,
           slug: "github",
           displayName: "GitHub",
@@ -143,7 +141,7 @@ describe("skills.search handler", () => {
 describe("skills.detail handler", () => {
   beforeEach(() => {
     searchSkillsFromClawHubMock.mockReset();
-    fetchClawHubSkillDetailMock.mockReset();
+    fetchSkillDetailFromClawHubMock.mockReset();
   });
 
   it("fetches detail for a valid slug", async () => {
@@ -164,20 +162,33 @@ describe("skills.detail handler", () => {
         displayName: "OpenClaw",
       },
     };
-    fetchClawHubSkillDetailMock.mockResolvedValue(detail);
+    fetchSkillDetailFromClawHubMock.mockResolvedValue({
+      ...detail,
+      source: "clawhub",
+      catalogId: "clawhub:github",
+      slug: "github",
+    });
 
     const { ok, response, error } = await callHandler("skills.detail", {
       slug: "github",
     });
 
-    expect(fetchClawHubSkillDetailMock).toHaveBeenCalledWith({ slug: "github" });
+    expect(fetchSkillDetailFromClawHubMock).toHaveBeenCalledWith({
+      slug: "github",
+      catalogId: undefined,
+    });
     expect(ok).toBe(true);
     expect(error).toBeUndefined();
-    expect(response).toEqual(detail);
+    expect(response).toEqual({
+      ...detail,
+      source: "clawhub",
+      catalogId: "clawhub:github",
+      slug: "github",
+    });
   });
 
   it("returns error when slug is not found", async () => {
-    fetchClawHubSkillDetailMock.mockRejectedValue(new Error("not found"));
+    fetchSkillDetailFromClawHubMock.mockRejectedValue(new Error("not found"));
 
     const { ok, error } = await callHandler("skills.detail", { slug: "nonexistent" });
 
@@ -189,8 +200,10 @@ describe("skills.detail handler", () => {
     const { ok, error } = await callHandler("skills.detail", {});
 
     expect(ok).toBe(false);
-    expect(error).toMatchObject({ code: "INVALID_REQUEST" });
-    expect(fetchClawHubSkillDetailMock).not.toHaveBeenCalled();
+    expect(error).toMatchObject({
+      message: expect.stringContaining('requires "slug" or "catalogId"'),
+    });
+    expect(fetchSkillDetailFromClawHubMock).not.toHaveBeenCalled();
   });
 
   it("rejects empty slug", async () => {
@@ -198,6 +211,6 @@ describe("skills.detail handler", () => {
 
     expect(ok).toBe(false);
     expect(error).toMatchObject({ code: "INVALID_REQUEST" });
-    expect(fetchClawHubSkillDetailMock).not.toHaveBeenCalled();
+    expect(fetchSkillDetailFromClawHubMock).not.toHaveBeenCalled();
   });
 });

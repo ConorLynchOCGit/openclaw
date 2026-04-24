@@ -14,7 +14,7 @@
 
 ## Skill Ownership Rule
 
-Repeatable research workflows should live in first-party skills or specs, not as vague habits spread across the pack.
+Repeatable research workflows should live in first-party skills, with repo-owned specs in this pack documenting how they are used.
 
 ## External Skill Posture
 

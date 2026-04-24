@@ -25,21 +25,9 @@ async function fileHash(filePath) {
   return sha256(await readFile(filePath, "utf8"));
 }
 
-function stripFence(text) {
-  return text
-    .trim()
-    .replace(/^```(?:json)?\s*/iu, "")
-    .replace(/\s*```$/iu, "");
-}
-
 function providerFromModelId(modelId) {
   const slash = modelId.indexOf("/");
   return slash === -1 ? "openrouter" : modelId.slice(0, slash);
-}
-
-function shouldUseCodexAppServer(modelId) {
-  const provider = providerFromModelId(modelId);
-  return provider === "openai-codex" || provider === "codex";
 }
 
 function readSpeedArgs(argv) {
@@ -63,9 +51,10 @@ function readSpeedArgs(argv) {
 
 function speedOptionsForModel(modelId, speedArgs) {
   return {
-    reasoningEffort: shouldUseCodexAppServer(modelId)
-      ? speedArgs.codexReasoningEffort
-      : speedArgs.apiReasoningEffort,
+    reasoningEffort:
+      providerFromModelId(modelId) === "openai-codex"
+        ? speedArgs.codexReasoningEffort
+        : speedArgs.apiReasoningEffort,
     ...(speedArgs.verbosity ? { verbosity: speedArgs.verbosity } : {}),
     ...(speedArgs.serviceTier ? { serviceTier: speedArgs.serviceTier } : {}),
   };
@@ -119,10 +108,6 @@ async function main() {
       path.join(root, "src/agents/model-memory.live-json-executor.ts"),
       import.meta.url,
     );
-  const { CodexAppServerJsonExecutor } = await tsImport(
-    path.join(root, "extensions/model-memory/src/mmv2/codex-app-server-json-executor.ts"),
-    import.meta.url,
-  );
   const baseConfig = loadConfig();
   const proofConfig = {
     ...baseConfig,
@@ -307,63 +292,21 @@ async function main() {
     observedAt: new Date(),
   });
 
-  const preflightExecutor = shouldUseCodexAppServer(modelId)
-    ? new CodexAppServerJsonExecutor({
-        cwd: root,
-        requestTimeoutMs: 120000,
-        reasoningEffort: speedArgs.codexReasoningEffort,
-        ...(speedArgs.serviceTier ? { serviceTier: speedArgs.serviceTier } : {}),
-      })
-    : new OpenAICompatibleLiveJsonExecutor({ config: proofConfig, requestTimeoutMs: 120000 });
+  const preflightExecutor = new OpenAICompatibleLiveJsonExecutor({
+    config: proofConfig,
+    requestTimeoutMs: 120000,
+  });
   const preflightResults = [];
   for (const request of buildModelMemoryStrictPreflightRequests(modelId).slice(0, 4)) {
-    if (shouldUseCodexAppServer(modelId)) {
-      const startedAt = Date.now();
-      try {
-        const response = await preflightExecutor.execute({
-          ...request,
-          systemPrompt:
-            "Preflight this OpenClaw MMV2 contract. Return only JSON matching the requested contract shape. Do not include raw prompts, transcripts, tool logs, secrets, or private phrases.",
-          userPrompt: `Contract ${request.contract.contractName}/${request.contract.contractVersion}; schema ${request.responseOptions?.transport?.name ?? "unknown"}. Return a minimal valid JSON object for this schema.`,
-          responseOptions: {
-            ...request.responseOptions,
-            ...speedOptionsForModel(modelId, speedArgs),
-          },
-        });
-        JSON.parse(stripFence(response.outputText));
-        preflightResults.push({
-          ok: true,
-          requestedModelId: modelId,
-          provider: providerFromModelId(modelId),
-          providerModel: modelId.split("/").slice(1).join("/"),
-          requestUrl: "codex-app-server",
-          contractName: request.contract.contractName,
-          contractVersion: request.contract.contractVersion,
-          schemaName: request.responseOptions?.transport?.name,
-          strictSchema: true,
-          resolvedModelId: response.resolvedModelId,
-          latencyMs: Date.now() - startedAt,
-        });
-      } catch (error) {
-        preflightResults.push({
-          ok: false,
-          requestedModelId: modelId,
-          provider: providerFromModelId(modelId),
-          providerModel: modelId.split("/").slice(1).join("/"),
-          requestUrl: "codex-app-server",
-          contractName: request.contract.contractName,
-          contractVersion: request.contract.contractVersion,
-          schemaName: request.responseOptions?.transport?.name,
-          strictSchema: true,
-          failureStage: "provider_parse",
-          failureClass: "provider_json_boundary",
-          errorMessage:
-            error instanceof Error ? error.message.slice(0, 240) : String(error).slice(0, 240),
-        });
-      }
-      continue;
-    }
-    preflightResults.push(await preflightExecutor.preflightContract(request));
+    preflightResults.push(
+      await preflightExecutor.preflightContract({
+        ...request,
+        responseOptions: {
+          ...request.responseOptions,
+          ...speedOptionsForModel(modelId, speedArgs),
+        },
+      }),
+    );
   }
 
   let cacheMetricProof = null;
@@ -485,13 +428,6 @@ async function main() {
     `${JSON.stringify(report, null, 2)}\n`,
   );
   console.log(JSON.stringify({ report: path.join(outputDir, "memmech-live-proof.json") }, null, 2));
-  if (shouldUseCodexAppServer(modelId)) {
-    const { clearSharedCodexAppServerClient } = await tsImport(
-      path.join(root, "extensions/codex/src/app-server/shared-client.ts"),
-      import.meta.url,
-    );
-    clearSharedCodexAppServerClient();
-  }
 }
 
 main().catch((error) => {

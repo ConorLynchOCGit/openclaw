@@ -246,6 +246,8 @@ import {
   SkillsDetailParamsSchema,
   type SkillsDetailResult,
   SkillsDetailResultSchema,
+  type SkillsDoctorParams,
+  SkillsDoctorParamsSchema,
   type SkillsInstallParams,
   SkillsInstallParamsSchema,
   type SkillsSearchParams,
@@ -436,6 +438,7 @@ export const validateChannelsLogoutParams = ajv.compile<ChannelsLogoutParams>(
 );
 export const validateModelsListParams = ajv.compile<ModelsListParams>(ModelsListParamsSchema);
 export const validateSkillsStatusParams = ajv.compile<SkillsStatusParams>(SkillsStatusParamsSchema);
+export const validateSkillsDoctorParams = ajv.compile<SkillsDoctorParams>(SkillsDoctorParamsSchema);
 export const validateToolsCatalogParams = ajv.compile<ToolsCatalogParams>(ToolsCatalogParamsSchema);
 export const validateToolsEffectiveParams = ajv.compile<ToolsEffectiveParams>(
   ToolsEffectiveParamsSchema,
@@ -639,6 +642,7 @@ export {
   CommandsListResultSchema,
   ModelsListParamsSchema,
   SkillsStatusParamsSchema,
+  SkillsDoctorParamsSchema,
   ToolsCatalogParamsSchema,
   ToolsEffectiveParamsSchema,
   SkillsInstallParamsSchema,
@@ -743,6 +747,7 @@ export type {
   CommandsListResult,
   CommandEntry,
   SkillsStatusParams,
+  SkillsDoctorParams,
   ToolsCatalogParams,
   ToolsCatalogResult,
   ToolsEffectiveParams,

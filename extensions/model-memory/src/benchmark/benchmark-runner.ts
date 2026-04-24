@@ -78,6 +78,10 @@ export type CacheAwareModelCallObservation = {
   modelId: string;
   provider?: string;
   resolvedModelId?: string;
+  authSource?: string;
+  authMode?: string;
+  authProfileId?: string;
+  authLane?: string;
   contractName: string;
   contractVersion: string;
   promptVersion: string;
@@ -167,6 +171,10 @@ export type BenchmarkRoutePreflightObservation = {
   provider: string;
   providerModel: string;
   resolvedModelId?: string;
+  authSource?: string;
+  authMode?: string;
+  authProfileId?: string;
+  authLane?: string;
   httpStatus?: number;
   strictSchemaSupported: boolean;
   jsonModeSupported?: boolean;

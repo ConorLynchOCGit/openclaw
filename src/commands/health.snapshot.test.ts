@@ -349,7 +349,12 @@ describe("getHealthSnapshot", () => {
   });
 
   it("hides proof and internal sessions from health recent-session summaries", async () => {
-    testConfig = { session: { store: "/tmp/x" } };
+    testConfig = {
+      session: { store: "/tmp/x" },
+      agents: {
+        list: [{ id: "main", default: true }, { id: "builder" }],
+      },
+    };
     testStore = {
       global: { updatedAt: Date.now() },
       unknown: { updatedAt: Date.now() },

@@ -16,6 +16,8 @@
 The remaining gaps are mostly runtime integration and validation work, not role
 definition.
 
+Installed skill surfaces now exist under `.agents/skills/` for the core web-research workflows.
+
 ## Current Gaps Closed By This Expansion
 
 - output interfaces were previously implicit
@@ -26,5 +28,5 @@ definition.
 ## Follow-Up
 
 - align runtime-facing compatibility files to the richer durable pack
-- convert the workflow specs into installable first-party skills if desired
 - add proof-oriented validation examples for hostile-page handling, comparison accuracy, and citation traceability
+- deepen installed skills beyond single-file SKILL.md surfaces if richer references or scripts become necessary

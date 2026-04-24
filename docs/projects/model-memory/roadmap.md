@@ -28,9 +28,12 @@ title: "Model Memory Roadmap"
   reports, candidate/edge quarantine report helpers, retrieval miss reason
   telemetry, projection hash-invalid exclusion, expanded legacy/fallback
   registry coverage, and persisted-session skill hot-load status reporting.
-- Mini remains the strict capture/ingest default. Live mini validation in the
-  current session is externally blocked by provider quota (`429`); this is a
-  provider/account readiness item, not a reason to fall back to nano for
+- Mini remains the strict capture/ingest default. The wrong-pipe routing bug
+  is fixed and the strict mini route now proves the native Codex responses
+  transport plus auth lane, but the corrected live route still is not clean:
+  native requests have returned provider-boundary `403` HTML and later bounded
+  retries have timed out before producing a clean strict response. This remains
+  provider/auth-lane readiness work, not a reason to fall back to nano for
   strict MMV2 admission.
 - Phase 0 is complete.
 - Phase 1 is complete.

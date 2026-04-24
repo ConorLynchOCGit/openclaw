@@ -2,6 +2,7 @@
   "dist/extensions/acpx/runtime-api.js",
   "dist/extensions/bluebubbles/runtime-api.js",
   "dist/extensions/browser/runtime-api.js",
+  "dist/extensions/codex/runtime-api.js",
   "dist/extensions/copilot-proxy/runtime-api.js",
   "dist/extensions/diffs/runtime-api.js",
   "dist/extensions/discord/runtime-api.js",

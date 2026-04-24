@@ -121,5 +121,12 @@ describe("semantic forest quarantine", () => {
           (surface) => typeof surface.rollbackFlag === "string" && surface.rollbackFlag.length > 0,
         ),
     ).toBe(true);
+    expect(
+      surfaces
+        .filter((surface) => surface.status === "mmv2_routed_compatibility")
+        .every(
+          (surface) => typeof surface.rollbackFlag === "string" && surface.rollbackFlag.length > 0,
+        ),
+    ).toBe(true);
   });
 });

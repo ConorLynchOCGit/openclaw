@@ -12,6 +12,7 @@ const archiveCleanupMock = vi.fn();
 const withExtractedArchiveRootMock = vi.fn();
 const installPackageDirMock = vi.fn();
 const fileExistsMock = vi.fn();
+const scanSkillInstallSourceMock = vi.fn();
 
 vi.mock("../infra/clawhub.js", () => ({
   fetchClawHubSkillDetail: fetchClawHubSkillDetailMock,
@@ -33,6 +34,10 @@ vi.mock("../infra/archive.js", () => ({
   fileExists: fileExistsMock,
 }));
 
+vi.mock("../plugins/install-security-scan.js", () => ({
+  scanSkillInstallSource: (...args: unknown[]) => scanSkillInstallSourceMock(...args),
+}));
+
 const { installSkillFromClawHub, searchSkillsFromClawHub, updateSkillsFromClawHub } =
   await import("./skills-clawhub.js");
 
@@ -47,6 +52,7 @@ describe("skills-clawhub", () => {
     withExtractedArchiveRootMock.mockReset();
     installPackageDirMock.mockReset();
     fileExistsMock.mockReset();
+    scanSkillInstallSourceMock.mockReset();
 
     resolveClawHubBaseUrlMock.mockReturnValue("https://clawhub.ai");
     fileExistsMock.mockImplementation(async (input: string) => input.endsWith("SKILL.md"));
@@ -73,10 +79,22 @@ describe("skills-clawhub", () => {
       expect(params.rootMarkers).toEqual(["SKILL.md"]);
       return await params.onExtracted("/tmp/extracted-skill");
     });
-    installPackageDirMock.mockResolvedValue({
-      ok: true,
-      targetDir: "/tmp/workspace/skills/agentreceipt",
-    });
+    scanSkillInstallSourceMock.mockResolvedValue(undefined);
+    installPackageDirMock.mockImplementation(
+      async (params: { sourceDir: string; targetDir: string }) => {
+        void params.sourceDir;
+        await fs.mkdir(params.targetDir, { recursive: true });
+        await fs.writeFile(
+          path.join(params.targetDir, "SKILL.md"),
+          "---\nname: agentreceipt\ndescription: Test skill\n---\n\n# agentreceipt\n",
+          "utf8",
+        );
+        return {
+          ok: true,
+          targetDir: params.targetDir,
+        };
+      },
+    );
   });
 
   it("installs ClawHub skills from flat-root archives", async () => {
@@ -97,10 +115,20 @@ describe("skills-clawhub", () => {
     );
     expect(result).toMatchObject({
       ok: true,
+      source: "clawhub",
+      catalogId: "clawhub:agentreceipt",
       slug: "agentreceipt",
       version: "1.0.0",
       targetDir: "/tmp/workspace/skills/agentreceipt",
+      installedSkillKey: "agentreceipt",
     });
+    expect(scanSkillInstallSourceMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin: "clawhub",
+        skillName: "agentreceipt",
+        installId: "clawhub-download",
+      }),
+    );
     expect(archiveCleanupMock).toHaveBeenCalledTimes(1);
   });
 
@@ -346,6 +374,8 @@ describe("skills-clawhub", () => {
 
     await expect(searchSkillsFromClawHub({ limit: 20 })).resolves.toEqual([
       {
+        source: "clawhub",
+        catalogId: "clawhub:calendar",
         score: 1,
         slug: "calendar",
         displayName: "Calendar",

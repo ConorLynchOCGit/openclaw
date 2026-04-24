@@ -33,12 +33,10 @@ describe("skill-vetting report init", () => {
     });
     const outputPath = stdout.trim();
 
-    expect(outputPath).toBe(
-      path.join(
-        workspace,
-        "docs/projects/skills-system/skill-vetting/reports/2026-04-23-safe-skill-review.md",
-      ),
+    expect(path.dirname(outputPath)).toBe(
+      path.join(workspace, "docs/projects/skills-system/skill-vetting/reports"),
     );
+    expect(path.basename(outputPath)).toMatch(/^\d{4}-\d{2}-\d{2}-safe-skill-review\.md$/);
     await expect(fs.readFile(outputPath, "utf8")).resolves.toContain("safe-skill");
     expect(outputPath).not.toContain("imports/product_live/content");
   });

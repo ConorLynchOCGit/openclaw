@@ -404,9 +404,13 @@ describe("scripts/test-projects full-suite sharding", () => {
   it("splits untargeted runs into fixed core shards and per-extension configs", () => {
     const previousParallel = process.env.OPENCLAW_TEST_PROJECTS_PARALLEL;
     const previousSerial = process.env.OPENCLAW_TEST_PROJECTS_SERIAL;
+    const previousSkipConfigs = process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS;
+    const previousIncludeSlow = process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
     delete process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS;
     delete process.env.OPENCLAW_TEST_SKIP_FULL_EXTENSIONS_SHARD;
     delete process.env.OPENCLAW_TEST_PROJECTS_PARALLEL;
+    delete process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS;
+    delete process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
     process.env.OPENCLAW_TEST_PROJECTS_SERIAL = "1";
     try {
       expect(buildFullSuiteVitestRunPlans([], process.cwd()).map((plan) => plan.config)).toEqual([
@@ -454,6 +458,16 @@ describe("scripts/test-projects full-suite sharding", () => {
       } else {
         process.env.OPENCLAW_TEST_PROJECTS_SERIAL = previousSerial;
       }
+      if (previousSkipConfigs === undefined) {
+        delete process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS;
+      } else {
+        process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS = previousSkipConfigs;
+      }
+      if (previousIncludeSlow === undefined) {
+        delete process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
+      } else {
+        process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS = previousIncludeSlow;
+      }
     }
   });
 
@@ -465,6 +479,8 @@ describe("scripts/test-projects full-suite sharding", () => {
     const previousActions = process.env.GITHUB_ACTIONS;
     const previousVitestMaxWorkers = process.env.OPENCLAW_VITEST_MAX_WORKERS;
     const previousTestWorkers = process.env.OPENCLAW_TEST_WORKERS;
+    const previousSkipConfigs = process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS;
+    const previousIncludeSlow = process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
     delete process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS;
     delete process.env.OPENCLAW_TEST_PROJECTS_PARALLEL;
     delete process.env.OPENCLAW_TEST_PROJECTS_SERIAL;
@@ -472,10 +488,13 @@ describe("scripts/test-projects full-suite sharding", () => {
     delete process.env.GITHUB_ACTIONS;
     delete process.env.OPENCLAW_VITEST_MAX_WORKERS;
     delete process.env.OPENCLAW_TEST_WORKERS;
+    delete process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS;
+    delete process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
     try {
       const configs = buildFullSuiteVitestRunPlans([], process.cwd()).map((plan) => plan.config);
 
       expect(configs).not.toContain("test/vitest/vitest.gateway-server.config.ts");
+      expect(configs).not.toContain("test/vitest/vitest.gateway-server-http.config.ts");
       expect(configs).toContain("test/vitest/vitest.commands-onboard.config.ts");
       expect(configs).toContain("test/vitest/vitest.extension-telegram.config.ts");
       expect(configs).not.toContain("test/vitest/vitest.full-agentic.config.ts");
@@ -516,6 +535,16 @@ describe("scripts/test-projects full-suite sharding", () => {
       } else {
         process.env.OPENCLAW_TEST_WORKERS = previousTestWorkers;
       }
+      if (previousSkipConfigs === undefined) {
+        delete process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS;
+      } else {
+        process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS = previousSkipConfigs;
+      }
+      if (previousIncludeSlow === undefined) {
+        delete process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
+      } else {
+        process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS = previousIncludeSlow;
+      }
     }
   });
 
@@ -553,8 +582,10 @@ describe("scripts/test-projects full-suite sharding", () => {
   it("can expand full-suite shards to project configs for perf experiments", () => {
     const previous = process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS;
     const previousIncludeSlow = process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
+    const previousSkipConfigs = process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS;
     process.env.OPENCLAW_TEST_PROJECTS_LEAF_SHARDS = "1";
     process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS = "1";
+    delete process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS;
     let plans: ReturnType<typeof buildFullSuiteVitestRunPlans>;
     try {
       plans = buildFullSuiteVitestRunPlans([], process.cwd());
@@ -568,6 +599,11 @@ describe("scripts/test-projects full-suite sharding", () => {
         delete process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS;
       } else {
         process.env.OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS = previousIncludeSlow;
+      }
+      if (previousSkipConfigs === undefined) {
+        delete process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS;
+      } else {
+        process.env.OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS = previousSkipConfigs;
       }
     }
 

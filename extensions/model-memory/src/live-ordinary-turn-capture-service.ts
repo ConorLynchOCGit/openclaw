@@ -4,7 +4,12 @@ import {
   createLegacyCapturedObjectWriteFallbackStore,
   type CapturedObjectWriteStore,
 } from "./db/captured-object-write-compatibility.ts";
+import type { LiveMemoryPersistenceResult } from "./db/mmv2-native-repository.ts";
 import { RuntimeContextRepository } from "./db/runtime-context-repository.ts";
+import {
+  emitMemoryIngestionCloseoutIfConfigured,
+  type MemoryIngestionCloseoutArtifact,
+} from "./ingestion/closeout-artifacts.ts";
 import {
   createMemoryIngestionTelemetryEvent,
   type MemoryIngestionTelemetryEvent,
@@ -29,12 +34,14 @@ type MmV2AwareCanonicalRepository = ModelMemoryCanonicalRepository & {
     sessionId?: string | null;
     limit?: number;
   }) => Promise<ExistingMemorySummary[]>;
-  persistLiveMemoryBatch?: (batch: LiveMemoryBatch) => Promise<unknown>;
+  persistLiveMemoryBatch?: (batch: LiveMemoryBatch) => Promise<LiveMemoryPersistenceResult>;
 };
 
 export type LiveOrdinaryTurnCaptureResult = OrdinaryTurnCaptureResult & {
   writeResults: LiveMemoryWriteResult[];
   ingestionTelemetry: MemoryIngestionTelemetryEvent[];
+  persistenceResult?: LiveMemoryPersistenceResult;
+  closeoutArtifact?: MemoryIngestionCloseoutArtifact;
   rebuild?: Awaited<ReturnType<typeof rebuildDerivedRuntimeState>>;
 };
 
@@ -46,6 +53,7 @@ export async function captureOrdinaryTurnLive(input: {
   capture: OrdinaryTurnCaptureInput;
   rebuildRuntime?: boolean;
   allowLegacyCapturedObjectWriteFallback?: boolean;
+  closeoutJobId?: string;
   env?: NodeJS.ProcessEnv;
 }): Promise<LiveOrdinaryTurnCaptureResult> {
   const canonicalRepository = input.canonicalRepository as MmV2AwareCanonicalRepository;
@@ -85,9 +93,11 @@ export async function captureOrdinaryTurnLive(input: {
   const mmv2Recording = canUseMmV2LivePath
     ? (result as unknown as { mmv2LiveRecording: LiveMemoryBatch }).mmv2LiveRecording
     : undefined;
+  const persistenceResult = canUseMmV2LivePath
+    ? await canonicalRepository.persistLiveMemoryBatch!(mmv2Recording!)
+    : undefined;
   const writeResults = canUseMmV2LivePath
-    ? (await canonicalRepository.persistLiveMemoryBatch!(mmv2Recording!),
-      summarizeLiveMemoryWriteResults(mmv2Recording!))
+    ? summarizeLiveMemoryWriteResults(mmv2Recording!)
     : await Promise.resolve(
         (input.memoryStore
           ? (assertLegacyCapturedObjectWriteFallbackEnabled({
@@ -151,9 +161,11 @@ export async function captureOrdinaryTurnLive(input: {
       stage: "persistence_boundary",
       status: "completed",
       candidate_counts: {
-        admitted: writeResults.filter(
-          (entry) => entry.decision === "write" || entry.decision === "supersede",
-        ).length,
+        admitted:
+          persistenceResult?.durableMemoriesWritten.length ??
+          writeResults.filter(
+            (entry) => entry.decision === "write" || entry.decision === "supersede",
+          ).length,
         rejected: writeResults.filter(
           (entry) => entry.decision === "reject" || entry.decision === "quarantine",
         ).length,
@@ -165,12 +177,24 @@ export async function captureOrdinaryTurnLive(input: {
       },
     }),
   ];
+  const closeoutArtifact = await emitMemoryIngestionCloseoutIfConfigured({
+    env: input.env,
+    path: "ordinary_turn_capture",
+    sourceId: source.id,
+    sourceHash: source.sourceFingerprint,
+    jobId: input.closeoutJobId,
+    telemetryEvents: ingestionTelemetry,
+    persistenceResult,
+    dirtyState: { status: "not_required", reason: "caller_managed" },
+  });
 
   return {
     ...result,
     source,
     writeResults,
     ingestionTelemetry,
+    persistenceResult,
+    closeoutArtifact,
     rebuild,
   };
 }

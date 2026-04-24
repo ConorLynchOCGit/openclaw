@@ -46,8 +46,11 @@ describe("skills gateway handlers (clawhub)", () => {
   it("installs a ClawHub skill through skills.install", async () => {
     installSkillFromClawHubMock.mockResolvedValue({
       ok: true,
+      source: "clawhub",
+      catalogId: "clawhub:calendar",
       slug: "calendar",
       version: "1.2.3",
+      installedSkillKey: "calendar",
       targetDir: "/tmp/workspace/skills/calendar",
     });
 
@@ -74,6 +77,7 @@ describe("skills gateway handlers (clawhub)", () => {
     expect(installSkillFromClawHubMock).toHaveBeenCalledWith({
       workspaceDir: "/tmp/workspace",
       slug: "calendar",
+      catalogId: undefined,
       version: "1.2.3",
       force: false,
     });
@@ -82,8 +86,11 @@ describe("skills gateway handlers (clawhub)", () => {
     expect(response).toMatchObject({
       ok: true,
       message: "Installed calendar@1.2.3",
+      source: "clawhub",
+      catalogId: "clawhub:calendar",
       slug: "calendar",
       version: "1.2.3",
+      installedSkillKey: "calendar",
     });
   });
 

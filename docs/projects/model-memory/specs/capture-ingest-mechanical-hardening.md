@@ -105,6 +105,14 @@ benchmark/eval output out of semantic memory:
   `openai-codex/gpt-5.4-mini`; nano is retained only behind explicit
   low-risk/benchmark overrides until strict-schema and evidence-quality parity
   is proven
+- strict mini route proof now records provider, requested model, resolved
+  model, native Codex responses transport, request URL, and auth lane; the
+  earlier wrong-pipe OpenAI chat-completions route is no longer valid evidence
+  for mini readiness
+- clean live mini validation is still blocked on the corrected native route:
+  prior proof returned provider-boundary `403` HTML and later bounded retries
+  timed out before returning a strict-schema response, so the remaining issue
+  is provider/auth-lane readiness rather than MMV2 schema wiring
 - large-document ingest strategy selection now defaults to `auto`: small docs
   use direct rigid capture, while docs above
   `MODEL_MEMORY_DOCUMENT_INGEST_LARGE_DOC_WORD_THRESHOLD` use

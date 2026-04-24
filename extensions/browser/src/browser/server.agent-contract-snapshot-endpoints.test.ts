@@ -79,8 +79,8 @@ describe("browser control server", () => {
     expect(pwMocks.snapshotRoleViaPlaywright).toHaveBeenCalledWith({
       cdpUrl: state.cdpBaseUrl,
       targetId: "abcd1234",
-      selector: "",
-      frameSelector: "",
+      selector: undefined,
+      frameSelector: undefined,
       refsMode: "aria",
       ssrfPolicy: {
         dangerouslyAllowPrivateNetwork: true,

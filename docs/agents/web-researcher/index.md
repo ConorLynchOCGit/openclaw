@@ -37,7 +37,3 @@ The Web Researcher is a bounded public-web specialist that:
 - normalizes comparisons before synthesis
 - preserves claim-linked citation traceability
 - routes monitoring signals by urgency and confidence
-
-## Notes
-
-The imported product-live mirror under `imports/product_live/...` is read-only from this workspace. This expanded pack is therefore implemented here under `docs/agents/web-researcher/` as the writable workspace-side source set.

@@ -53,12 +53,16 @@ describe("sandbox explain helpers", () => {
 
     const policy = resolveSandboxToolPolicyForAgent(cfg, "work");
     expect(policy.allow).toEqual([
+      "model_memory_search",
+      "model_memory_get",
       "memory_search",
       "memory_get",
       "read",
       "write",
       "edit",
       "apply_patch",
+      "resolve_openclaw_path",
+      "host_operator_repo",
       "image",
     ]);
   });

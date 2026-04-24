@@ -9,6 +9,7 @@ import { resolveMainSessionKey } from "../config/sessions.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { logWarn } from "../logger.js";
 import { isTestDefaultMemorySlotDisabled } from "../plugins/config-state.js";
+import { getPluginToolMeta } from "../plugins/tools.js";
 import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
@@ -196,23 +197,6 @@ export async function handleToolsInvokeHttpRequest(
     return true;
   }
 
-  if (process.env.VITEST && MEMORY_TOOL_NAMES.has(toolName)) {
-    const reasons = resolveMemoryToolDisableReasons(cfg);
-    if (reasons.length > 0) {
-      const suffix = reasons.length > 0 ? ` (${reasons.join(", ")})` : "";
-      sendJson(res, 400, {
-        ok: false,
-        error: {
-          type: "invalid_request",
-          message:
-            `legacy memory tools are disabled in tests${suffix}. ` +
-            "This runtime expects model-memory as the active memory authority; only legacy compatibility lanes should enable memory_search or memory_get.",
-        },
-      });
-      return true;
-    }
-  }
-
   const action = normalizeOptionalString(body.action);
 
   const argsRaw = body.args;
@@ -260,6 +244,26 @@ export async function handleToolsInvokeHttpRequest(
       error: { type: "not_found", message: `Tool not available: ${toolName}` },
     });
     return true;
+  }
+
+  if (process.env.VITEST && MEMORY_TOOL_NAMES.has(toolName)) {
+    const toolMeta = getPluginToolMeta(tool);
+    if (toolMeta?.pluginId === "memory-core") {
+      const reasons = resolveMemoryToolDisableReasons(cfg);
+      if (reasons.length > 0) {
+        const suffix = reasons.length > 0 ? ` (${reasons.join(", ")})` : "";
+        sendJson(res, 400, {
+          ok: false,
+          error: {
+            type: "invalid_request",
+            message:
+              `legacy memory tools are disabled in tests${suffix}. ` +
+              "This runtime expects model-memory as the active memory authority; only legacy compatibility lanes should enable memory_search or memory_get.",
+          },
+        });
+        return true;
+      }
+    }
   }
 
   try {

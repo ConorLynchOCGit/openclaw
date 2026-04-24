@@ -25,12 +25,16 @@ State: `pre_phase_2_memory_gates_live_proven`
 - projection digest preference remains read-time only and only uses fresh
   projection digests backed by active MMV2 source memory ids
 - legacy/fallback pruning status is explicit for the remaining coupled
-  blockers: plugin loader assumptions, `memory_search` / `memory_get`,
-  status/doctor/config surfaces, QA/runtime tests, SDK/docs exports, and
-  session-memory continuity contracts
-- strict capture/ingest default remains `openai-codex/gpt-5.4-mini`; live
-  mini validation is currently blocked by provider quota (`429` in gateway
-  logs), not by model-memory routing or schema wiring
+  blockers: plugin loader assumptions, status/doctor/config surfaces,
+  QA/runtime tests, SDK/docs exports, and session-memory continuity contracts;
+  `memory_search` / `memory_get` now resolve to MMV2-native compatibility
+  aliases by default, with true legacy memory-core behavior gated behind
+  `MODEL_MEMORY_LEGACY_MEMORY_TOOLS_ENABLED=true`
+- strict capture/ingest default remains `openai-codex/gpt-5.4-mini`; the
+  live route proof no longer uses the wrong OpenAI chat-completions pipe and
+  now records the native Codex responses route plus auth lane, but clean live
+  validation is still blocked on the corrected route by provider-boundary
+  failures (`403` HTML on the native path and later bounded retry timeouts)
 - `openclaw agents skills-status --agent <id> --json` can now report persisted
   warm-session loaded skill snapshots as current or stale when the session
   store contains one; otherwise it reports `not_available` with the concrete

@@ -19,12 +19,17 @@ This slice now includes the final pre-Phase-2 hardening follow-up:
   ids, backing active MMV2 memory ids, and `memory_existed_but_excluded`
   diagnostics while keeping ranking read-time only
 - legacy/fallback posture is narrower and more explicit:
-  plugin loader assumptions, `memory_search` / `memory_get`,
-  status/doctor/config surfaces, QA/runtime/SDK/docs exports, and
-  session-memory continuity are compatibility debt, not normal MMV2 truth
-- strict capture/ingest still defaults to `openai-codex/gpt-5.4-mini`; live
-  mini validation in this session is blocked by provider quota (`429`), so the
-  blocker is external and must not be papered over with synthetic success
+  plugin loader assumptions, status/doctor/config surfaces, QA/runtime/SDK/docs
+  exports, and session-memory continuity are compatibility debt, not normal
+  MMV2 truth; `memory_search` / `memory_get` now route to MMV2-native
+  compatibility aliases by default and only restore true legacy memory-core
+  behavior behind `MODEL_MEMORY_LEGACY_MEMORY_TOOLS_ENABLED=true`
+- strict capture/ingest still defaults to `openai-codex/gpt-5.4-mini`; the
+  wrong OpenAI chat-completions pipe has been eliminated and strict mini route
+  proof now records the native Codex responses transport plus auth lane, but
+  live validation on that corrected lane is still not cleanly proven because
+  the native route has returned provider-boundary `403` HTML and subsequent
+  bounded retries have timed out before a clean strict response
 - skill status now reports persisted warm-session skill snapshots when present,
   including current/stale hot-load state; true in-memory state still depends on
   the runner persisting an up-to-date session snapshot

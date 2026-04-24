@@ -1,16 +1,19 @@
 import type { Command } from "commander";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import {
+  fetchSkillDetailFromClawHub,
   installSkillFromClawHub,
   readTrackedClawHubSkillSlugs,
   searchSkillsFromClawHub,
   updateSkillsFromClawHub,
 } from "../agents/skills-clawhub.js";
+import { buildSkillsDoctorReport } from "../agents/skills-doctor.js";
 import { loadConfig } from "../config/config.js";
 import { defaultRuntime } from "../runtime.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
 import { formatDocsLink } from "../terminal/links.js";
 import { theme } from "../terminal/theme.js";
+import { shortenHomePath } from "../utils.js";
 import { formatSkillInfo, formatSkillsCheck, formatSkillsList } from "./skills-cli.format.js";
 
 export type {
@@ -44,6 +47,69 @@ async function runSkillsAction(render: (report: SkillStatusReport) => string): P
 function resolveActiveWorkspaceDir(): string {
   const config = loadConfig();
   return resolveAgentWorkspaceDir(config, resolveDefaultAgentId(config));
+}
+
+async function loadSkillsDoctorReport() {
+  const config = loadConfig();
+  const workspaceDir = resolveAgentWorkspaceDir(config, resolveDefaultAgentId(config));
+  const { resolveAgentLoadedSkillSnapshotStatus } = await import("../agents/skills-status.js");
+  const loadedSession = resolveAgentLoadedSkillSnapshotStatus({
+    config,
+    agentId: resolveDefaultAgentId(config),
+    workspaceDir,
+  });
+  return await buildSkillsDoctorReport({
+    workspaceDir,
+    config,
+    loadedSession,
+  });
+}
+
+function formatSkillsDoctorText(
+  report: Awaited<ReturnType<typeof buildSkillsDoctorReport>>,
+): string {
+  const lines: string[] = [];
+  lines.push(`Skills doctor: ${shortenHomePath(report.workspaceDir)}`);
+  lines.push(
+    `Loaded state: ${report.loadedState}${
+      report.loadedStateReason ? ` (${report.loadedStateReason})` : ""
+    }`,
+  );
+  lines.push(`Hot reload: ${report.hotReloadState}`);
+  lines.push(
+    `Restart required: ${
+      report.restartRequired === null ? "not_available" : report.restartRequired ? "yes" : "no"
+    }${report.restartRequiredReason ? ` (${report.restartRequiredReason})` : ""}`,
+  );
+  lines.push(`Watch state: ${report.watchState}`);
+  lines.push(
+    `Configured roots: ${report.configuredSkillDirs
+      .map((entry) => `${entry.kind}=${shortenHomePath(entry.path)}`)
+      .join(", ")}`,
+  );
+  lines.push(
+    `Tracked ClawHub installs: ${report.trackedClawHubInstalls.length > 0 ? report.trackedClawHubInstalls.map((entry) => `${entry.slug}@${entry.installedVersion ?? "unknown"}`).join(", ") : "none"}`,
+  );
+  lines.push(
+    `Writable surfaces: ${report.writableSurfaces
+      .map((entry) => `${entry.kind}=${entry.state}${entry.reason ? ` (${entry.reason})` : ""}`)
+      .join(", ")}`,
+  );
+  lines.push(
+    `Collisions: ${
+      report.collisions.length > 0
+        ? report.collisions.map((entry) => `${entry.skillName} -> ${entry.winner.kind}`).join(", ")
+        : "none"
+    }`,
+  );
+  lines.push(
+    `Conformance issues: ${
+      report.conformanceIssues.length > 0
+        ? report.conformanceIssues.map((issue) => issue.code).join(", ")
+        : "none"
+    }`,
+  );
+  return lines.join("\n");
 }
 
 /**
@@ -82,10 +148,12 @@ export function registerSkillsCli(program: Command) {
         for (const entry of results) {
           const version = entry.version ? ` v${entry.version}` : "";
           const summary = entry.summary ? `  ${entry.summary}` : "";
-          defaultRuntime.log(`${entry.slug}${version}  ${entry.displayName}${summary}`);
+          defaultRuntime.log(
+            `${entry.slug}${version}  ${entry.displayName}  [catalogId=${entry.catalogId}]${summary}`,
+          );
         }
         defaultRuntime.log(
-          'Remote search returns ClawHub slugs. Use `openclaw skills install <slug>` first, or `openclaw gateway call skills.detail --params \'{"slug":"<slug>"}\' --json` for remote detail when available; `openclaw skills info <name>` reports installed/local skills.',
+          "Remote search returns ClawHub catalog ids. Use `openclaw skills info --source clawhub --catalog-id <catalogId>` for remote detail, `openclaw skills install --catalog-id <catalogId>` to install, and `openclaw skills info <name>` for installed/local skills.",
         );
       } catch (err) {
         defaultRuntime.error(String(err));
@@ -96,32 +164,46 @@ export function registerSkillsCli(program: Command) {
   skills
     .command("install")
     .description("Install a skill from ClawHub into the active workspace")
-    .argument("<slug>", "ClawHub skill slug")
+    .argument("[slug]", "ClawHub skill slug")
+    .option("--catalog-id <catalogId>", "Install by remote ClawHub catalog id")
     .option("--version <version>", "Install a specific version")
     .option("--force", "Overwrite an existing workspace skill", false)
-    .action(async (slug: string, opts: { version?: string; force?: boolean }) => {
-      try {
-        const workspaceDir = resolveActiveWorkspaceDir();
-        const result = await installSkillFromClawHub({
-          workspaceDir,
-          slug,
-          version: opts.version,
-          force: Boolean(opts.force),
-          logger: {
-            info: (message) => defaultRuntime.log(message),
-          },
-        });
-        if (!result.ok) {
-          defaultRuntime.error(result.error);
+    .action(
+      async (
+        slug: string | undefined,
+        opts: { catalogId?: string; version?: string; force?: boolean },
+      ) => {
+        try {
+          if (!slug && !opts.catalogId) {
+            defaultRuntime.error("Provide a skill slug or --catalog-id.");
+            defaultRuntime.exit(1);
+            return;
+          }
+          const workspaceDir = resolveActiveWorkspaceDir();
+          const result = await installSkillFromClawHub({
+            workspaceDir,
+            slug,
+            catalogId: opts.catalogId,
+            version: opts.version,
+            force: Boolean(opts.force),
+            logger: {
+              info: (message) => defaultRuntime.log(message),
+            },
+          });
+          if (!result.ok) {
+            defaultRuntime.error(result.error);
+            defaultRuntime.exit(1);
+            return;
+          }
+          defaultRuntime.log(
+            `Installed ${result.slug}@${result.version} [catalogId=${result.catalogId}] -> ${result.targetDir}`,
+          );
+        } catch (err) {
+          defaultRuntime.error(String(err));
           defaultRuntime.exit(1);
-          return;
         }
-        defaultRuntime.log(`Installed ${result.slug}@${result.version} -> ${result.targetDir}`);
-      } catch (err) {
-        defaultRuntime.error(String(err));
-        defaultRuntime.exit(1);
-      }
-    });
+      },
+    );
 
   skills
     .command("update")
@@ -185,10 +267,63 @@ export function registerSkillsCli(program: Command) {
   skills
     .command("info")
     .description("Show detailed information about a skill")
-    .argument("<name>", "Skill name")
+    .argument("[name]", "Installed/local skill name")
+    .option("--source <source>", "Remote source, for example clawhub")
+    .option("--catalog-id <catalogId>", "Remote skill catalog id")
     .option("--json", "Output as JSON", false)
-    .action(async (name, opts) => {
+    .action(async (name, opts: { source?: string; catalogId?: string; json?: boolean }) => {
+      if (opts.source === "clawhub" || opts.catalogId) {
+        try {
+          const detail = await fetchSkillDetailFromClawHub({
+            slug: normalizeOptionalString(name),
+            catalogId: opts.catalogId,
+          });
+          if (opts.json) {
+            defaultRuntime.writeJson(detail);
+            return;
+          }
+          const latest = detail.latestVersion?.version ? ` v${detail.latestVersion.version}` : "";
+          defaultRuntime.log(
+            `${detail.slug}${latest}  ${detail.skill?.displayName ?? detail.slug}\nsource=${detail.source} catalogId=${detail.catalogId}`,
+          );
+          if (detail.skill?.summary) {
+            defaultRuntime.log(detail.skill.summary);
+          }
+          return;
+        } catch (err) {
+          defaultRuntime.error(String(err));
+          defaultRuntime.exit(1);
+          return;
+        }
+      }
+      if (!name) {
+        defaultRuntime.error(
+          "Provide a local skill name, or use --source clawhub with --catalog-id.",
+        );
+        defaultRuntime.exit(1);
+        return;
+      }
       await runSkillsAction((report) => formatSkillInfo(report, name, opts));
+    });
+
+  skills
+    .command("doctor")
+    .description(
+      "Diagnose discovery, installs, load-state, collisions, and writable skill surfaces",
+    )
+    .option("--json", "Output as JSON", false)
+    .action(async (opts: { json?: boolean }) => {
+      try {
+        const report = await loadSkillsDoctorReport();
+        if (opts.json) {
+          defaultRuntime.writeJson(report);
+          return;
+        }
+        defaultRuntime.writeStdout(`${formatSkillsDoctorText(report)}\n`);
+      } catch (err) {
+        defaultRuntime.error(String(err));
+        defaultRuntime.exit(1);
+      }
     });
 
   skills

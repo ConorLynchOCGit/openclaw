@@ -538,6 +538,7 @@ export type MemoryIngestionCloseoutReport = {
     candidates_extracted: number;
     candidates_valid: number;
     candidates_repaired: number;
+    candidates_deferred: number;
     candidates_quarantined: number;
     candidates_admitted: number;
     candidates_rejected: number;
@@ -731,6 +732,10 @@ export function buildCandidateQuarantineReportRecords(input: {
   model?: string;
   schema?: string;
   quarantinedCandidates?: CandidateQuarantineRecord[];
+  deferredCandidates?: Array<{
+    memoryId?: string;
+    reason: string;
+  }>;
   deferredEdges?: Array<{
     edgeId?: string;
     fromMemoryId?: string;
@@ -751,6 +756,17 @@ export function buildCandidateQuarantineReportRecords(input: {
     schema: input.schema,
     source_refs: redactSourceRefsForReport(candidate.sourceRefs),
   }));
+  const deferredCandidateRecords = (input.deferredCandidates ?? []).map((candidate) => ({
+    source_id: input.sourceId,
+    source_hash: input.sourceHash,
+    memory_id: candidate.memoryId,
+    failure_class: "db_persistence" as const,
+    failure_stage: "persistence_boundary" as const,
+    validation_reason: candidate.reason,
+    provider: input.provider,
+    model: input.model,
+    schema: input.schema,
+  }));
   const edgeRecords = (input.deferredEdges ?? []).map((edge) => ({
     source_id: input.sourceId,
     source_hash: input.sourceHash,
@@ -763,7 +779,7 @@ export function buildCandidateQuarantineReportRecords(input: {
     model: input.model,
     schema: input.schema,
   }));
-  return [...candidateRecords, ...edgeRecords].map((record) =>
+  return [...candidateRecords, ...deferredCandidateRecords, ...edgeRecords].map((record) =>
     assertMemoryIngestionReportRecordHasNoDarkData(record),
   );
 }
@@ -805,6 +821,10 @@ export function buildMemoryIngestionCloseoutReport(input: {
   jobId?: string;
   telemetryEvents?: MemoryIngestionTelemetryEvent[];
   quarantinedCandidates?: CandidateQuarantineRecord[];
+  deferredCandidates?: Array<{
+    memoryId?: string;
+    reason: string;
+  }>;
   deferredEdges?: Array<{
     edgeId?: string;
     fromMemoryId?: string;
@@ -827,6 +847,7 @@ export function buildMemoryIngestionCloseoutReport(input: {
     model: input.model,
     schema: input.schema,
     quarantinedCandidates: input.quarantinedCandidates,
+    deferredCandidates: input.deferredCandidates,
     deferredEdges: input.deferredEdges,
   });
   const report: MemoryIngestionCloseoutReport = {
@@ -842,6 +863,7 @@ export function buildMemoryIngestionCloseoutReport(input: {
       candidates_extracted: sumCandidateCount(telemetryEvents, "extracted"),
       candidates_valid: sumCandidateCount(telemetryEvents, "valid"),
       candidates_repaired: sumCandidateCount(telemetryEvents, "repaired"),
+      candidates_deferred: input.deferredCandidates?.length ?? 0,
       candidates_quarantined:
         sumCandidateCount(telemetryEvents, "quarantined") +
         (input.quarantinedCandidates?.length ?? 0),

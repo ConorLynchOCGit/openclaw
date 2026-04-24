@@ -269,8 +269,7 @@ describe("buildStatusReply subagent summary", () => {
 
     const reply = await buildStatusReplyForTest({});
 
-    expect(reply?.text).toContain("📌 Tasks: 2 active · 2 total");
-    expect(reply?.text).toMatch(/📌 Tasks: 2 active · 2 total · (subagent|cron) · /);
+    expect(reply?.text).toContain("Queued: cron · queued background task");
   });
 
   it("hides stale completed task rows from the session task line", async () => {
@@ -297,8 +296,7 @@ describe("buildStatusReply subagent summary", () => {
 
     const reply = await buildStatusReplyForTest({});
 
-    expect(reply?.text).toContain("📌 Tasks: 1 active · 1 total");
-    expect(reply?.text).toContain("live background task");
+    expect(reply?.text).toContain("Working: subagent · live background task · still working");
     expect(reply?.text).not.toContain("stale completed task");
     expect(reply?.text).not.toContain("done a while ago");
   });
@@ -319,7 +317,7 @@ describe("buildStatusReply subagent summary", () => {
 
     const reply = await buildStatusReplyForTest({});
 
-    expect(reply?.text).toContain("📌 Tasks: 1 recent failure");
+    expect(reply?.text).toContain("Failed: acp · failed background task · approval denied");
     expect(reply?.text).toContain("failed background task");
     expect(reply?.text).toContain("approval denied");
   });
@@ -346,7 +344,7 @@ describe("buildStatusReply subagent summary", () => {
 
     const reply = await buildStatusReplyForTest({});
 
-    expect(reply?.text).toContain("📌 Tasks: 1 recent failure");
+    expect(reply?.text).toContain("Failed: subagent · leaked context task");
     expect(reply?.text).toContain("leaked context task");
     expect(reply?.text).not.toContain("OpenClaw runtime context (internal):");
     expect(reply?.text).not.toContain("Internal task completion event");
@@ -403,7 +401,7 @@ describe("buildStatusReply subagent summary", () => {
 
     const reply = await buildStatusReplyForTest({});
 
-    expect(reply?.text).toContain("📌 Tasks: 1 recent failure");
+    expect(reply?.text).toContain("Failed: acp · failed background task · approval denied");
     expect(reply?.text).toContain("failed background task");
     expect(reply?.text).toContain("approval denied");
     expect(reply?.text).not.toContain("later successful task");

@@ -194,6 +194,13 @@ export const SkillsStatusParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const SkillsDoctorParamsSchema = Type.Object(
+  {
+    agentId: Type.Optional(NonEmptyString),
+  },
+  { additionalProperties: false },
+);
+
 export const SkillsBinsParamsSchema = Type.Object({}, { additionalProperties: false });
 
 export const SkillsBinsResultSchema = Type.Object(
@@ -216,7 +223,8 @@ export const SkillsInstallParamsSchema = Type.Union([
   Type.Object(
     {
       source: Type.Literal("clawhub"),
-      slug: NonEmptyString,
+      slug: Type.Optional(NonEmptyString),
+      catalogId: Type.Optional(NonEmptyString),
       version: Type.Optional(NonEmptyString),
       force: Type.Optional(Type.Boolean()),
       timeoutMs: Type.Optional(Type.Integer({ minimum: 1000 })),
@@ -258,6 +266,8 @@ export const SkillsSearchResultSchema = Type.Object(
     results: Type.Array(
       Type.Object(
         {
+          source: Type.Literal("clawhub"),
+          catalogId: NonEmptyString,
           score: Type.Number(),
           slug: NonEmptyString,
           displayName: NonEmptyString,
@@ -274,13 +284,18 @@ export const SkillsSearchResultSchema = Type.Object(
 
 export const SkillsDetailParamsSchema = Type.Object(
   {
-    slug: NonEmptyString,
+    source: Type.Optional(Type.Literal("clawhub")),
+    slug: Type.Optional(NonEmptyString),
+    catalogId: Type.Optional(NonEmptyString),
   },
   { additionalProperties: false },
 );
 
 export const SkillsDetailResultSchema = Type.Object(
   {
+    source: Type.Literal("clawhub"),
+    catalogId: NonEmptyString,
+    slug: NonEmptyString,
     skill: Type.Union([
       Type.Object(
         {

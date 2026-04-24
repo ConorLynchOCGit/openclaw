@@ -500,7 +500,17 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
     memory_get: {
       emoji: "📓",
       title: "Memory Get",
-      detailKeys: ["path", "from", "lines"],
+      detailKeys: ["id", "kind", "path", "from", "lines"],
+    },
+    model_memory_search: {
+      emoji: "🧠",
+      title: "Model Memory Search",
+      detailKeys: ["query", "projectId", "subjectId"],
+    },
+    model_memory_get: {
+      emoji: "📘",
+      title: "Model Memory Get",
+      detailKeys: ["id", "kind"],
     },
     web_search: {
       emoji: "🔎",

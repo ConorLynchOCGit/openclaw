@@ -110,6 +110,7 @@ export type CommandEntry = SchemaType<"CommandEntry">;
 export type CommandsListParams = SchemaType<"CommandsListParams">;
 export type CommandsListResult = SchemaType<"CommandsListResult">;
 export type SkillsStatusParams = SchemaType<"SkillsStatusParams">;
+export type SkillsDoctorParams = SchemaType<"SkillsDoctorParams">;
 export type ToolsCatalogParams = SchemaType<"ToolsCatalogParams">;
 export type ToolCatalogProfile = SchemaType<"ToolCatalogProfile">;
 export type ToolCatalogEntry = SchemaType<"ToolCatalogEntry">;

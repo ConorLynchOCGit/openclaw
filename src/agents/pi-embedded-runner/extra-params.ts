@@ -400,8 +400,8 @@ function applyPostPluginStreamWrappers(
     ctx.agent.streamFn = createGoogleThinkingPayloadWrapper(ctx.agent.streamFn, ctx.thinkingLevel);
 
     // Work around upstream pi-ai hardcoding `store: false` for Responses API.
-    // Force `store=true` for direct OpenAI Responses models and auto-enable
-    // server-side compaction for compatible Responses payloads.
+    // Direct OpenAI public Responses can opt back into `store=true`, while
+    // native Codex ChatGPT routes must keep `store=false`.
     ctx.agent.streamFn = createOpenAIResponsesContextManagementWrapper(
       ctx.agent.streamFn,
       ctx.effectiveExtraParams,

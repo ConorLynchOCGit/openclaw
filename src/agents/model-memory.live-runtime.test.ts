@@ -263,14 +263,14 @@ describe("model-memory runtime dirty state", () => {
     await resetModelMemoryRuntimeDirtyStateForTests({ env: process.env });
 
     const markedAt = new Date();
-    const snapshot = await markModelMemoryRuntimeDirty({
+    const marked = await markModelMemoryRuntimeDirty({
       reason: "ordinary_turn_capture_written",
       memoryIds: ["memory-2", "memory-1", "memory-1"],
       markedAt,
       env: process.env,
     });
 
-    expect(snapshot).toMatchObject({
+    expect(marked.state).toMatchObject({
       status: "dirty",
       dirtyReason: "ordinary_turn_capture_written",
       affectedMemoryIds: ["memory-1", "memory-2"],

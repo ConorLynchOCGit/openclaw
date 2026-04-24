@@ -14,6 +14,7 @@ export * from "./db/pool-lanes.ts";
 export * from "./db/runtime-context-repository.ts";
 export * from "./db/sql-client.ts";
 export * from "./document-ingestion.ts";
+export * from "./ingestion/closeout-artifacts.ts";
 export * from "./ingestion/shared-pipeline.ts";
 export * from "./ingestion/section-map-candidate-hints.ts";
 export * from "./imports/hash-gated-import.ts";

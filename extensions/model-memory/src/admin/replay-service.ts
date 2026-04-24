@@ -17,6 +17,7 @@ export type ReplayServiceDependencies = {
   canonicalRepository: ModelMemoryCanonicalRepository;
   runtimeRepository: RuntimeContextRepository;
   memoryStore?: CapturedObjectWriteStore;
+  env?: NodeJS.ProcessEnv;
 };
 
 export class ModelMemoryReplayService {
@@ -27,6 +28,7 @@ export class ModelMemoryReplayService {
       canonicalRepository: this.deps.canonicalRepository,
       runtimeRepository: this.deps.runtimeRepository,
       memoryStore: this.deps.memoryStore,
+      env: this.deps.env ?? (process.env.VITEST ? undefined : process.env),
       ingestion,
       rebuildRuntime: true,
     });
@@ -37,6 +39,7 @@ export class ModelMemoryReplayService {
       canonicalRepository: this.deps.canonicalRepository,
       runtimeRepository: this.deps.runtimeRepository,
       memoryStore: this.deps.memoryStore,
+      env: this.deps.env ?? (process.env.VITEST ? undefined : process.env),
       capture,
       rebuildRuntime: true,
     });

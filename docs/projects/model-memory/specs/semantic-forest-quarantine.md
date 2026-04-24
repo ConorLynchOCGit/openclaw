@@ -84,9 +84,10 @@ native recording remains the normal live write path.
 
 - plugin loader `memory-core` assumptions remain `still_required` compatibility
   debt while SDK/runtime tests and loader behavior are migrated
-- `memory_search` / `memory_get` are `explicit_fallback_only`; use requires
-  an explicit rollback/fallback flag and must not be described as canonical
-  MMV2 semantic truth
+- `memory_search` / `memory_get` are `mmv2_routed_compatibility`: default tool
+  names now resolve to MMV2-native search/get aliases, while the true legacy
+  memory-core implementation remains behind the explicit rollback/fallback flag
+  and must not be described as canonical MMV2 semantic truth
 - status/doctor/config surfaces remain `still_required` only so operators can
   detect and suppress stale legacy memory configuration during cutover
 - QA/runtime tests and SDK/docs exports remain `still_required` until
@@ -130,7 +131,8 @@ tests for retained compatibility surfaces:
   `still_required` because the plugin SDK and older admin/proof scripts still
   depend on them; they are not default MMV2 hot-path authority
 - every retained fallback surface is classified as non-default, rollback-only,
-  admin-only, quarantined, or still required with an explicit blocker
+  MMV2-routed compatibility, admin-only, quarantined, or still required with
+  an explicit blocker
 
 The 2026-04-23 live pre-Phase-2 pass keeps that classification as the
 completion posture for fallback compatibility:
@@ -147,6 +149,9 @@ completion posture for fallback compatibility:
 - `semantic-identity.ts`, `memory-object-store.ts`,
   `mmv2-memory-object-store.ts`, and `write-policy.ts` remain quarantined
   compatibility surfaces and are not normal MMV2 capture authority
+- `memory_search` / `memory_get` default to MMV2-routed compatibility aliases;
+  the legacy memory-core implementation is restored only when
+  `MODEL_MEMORY_LEGACY_MEMORY_TOOLS_ENABLED=true`
 - broad public compatibility exports are retained only where SDK/admin/proof
   consumers still require them; the guardrail is static hot-path import
   testing plus the registry classification, not treating those exports as

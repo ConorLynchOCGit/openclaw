@@ -278,47 +278,40 @@ function tinyStrictPreflightRequest(modelId) {
 }
 
 async function preflightCodexStrictRoute({ api, executor, modelId }) {
-  const startedAt = Date.now();
-  try {
-    const response = await executor.execute({
-      ...tinyStrictPreflightRequest(modelId),
-      systemPrompt: "Return exactly one JSON object matching the provided route preflight schema.",
-      userPrompt: '{"ok":true}',
-    });
-    parseJsonOutput(response.outputText);
+  const preflight = await executor.preflightContract(tinyStrictPreflightRequest(modelId));
+  if (preflight.ok) {
     return {
-      requestedModelId: modelId,
-      provider: providerFromModelId(modelId),
-      providerModel: modelId.slice(modelId.indexOf("/") + 1),
-      resolvedModelId: response.resolvedModelId,
+      requestedModelId: preflight.requestedModelId,
+      provider: preflight.provider,
+      providerModel: preflight.providerModel,
+      resolvedModelId: preflight.resolvedModelId,
+      authSource: preflight.authSource,
+      authMode: preflight.authMode,
+      authProfileId: preflight.authProfileId,
+      authLane: preflight.authLane,
+      httpStatus: preflight.httpStatus,
       strictSchemaSupported: true,
       jsonModeSupported: true,
       responseFormatSupported: true,
-      usageFieldsPresent: Boolean(response.usage),
-      latencyMs: Date.now() - startedAt,
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return {
-      requestedModelId: modelId,
-      provider: providerFromModelId(modelId),
-      providerModel: modelId.slice(modelId.indexOf("/") + 1),
-      strictSchemaSupported: false,
-      jsonModeSupported: false,
-      responseFormatSupported: false,
       usageFieldsPresent: false,
-      latencyMs: Date.now() - startedAt,
-      failureClass:
-        api.classifyBenchmarkRouteFailure({
-          failureClass: "provider_connection",
-          errorMessage,
-        }) ?? "unknown_route_failure",
-      errorMessage,
+      latencyMs: preflight.latencyMs ?? 0,
     };
   }
+  return {
+    ...routeFailureObservation({
+      api,
+      preflight,
+      latencyMs: preflight.latencyMs ?? 0,
+    }),
+    authSource: preflight.authSource,
+    authMode: preflight.authMode,
+    authProfileId: preflight.authProfileId,
+    authLane: preflight.authLane,
+    jsonModeSupported: false,
+  };
 }
 
-async function discoverNanoRoute({ api, httpExecutor, codexExecutor, explicitNanoModelId }) {
+async function discoverNanoRoute({ api, httpExecutor, explicitNanoModelId }) {
   const candidateModelIds = new Set();
   if (explicitNanoModelId) {
     candidateModelIds.add(explicitNanoModelId);
@@ -353,13 +346,6 @@ async function discoverNanoRoute({ api, httpExecutor, codexExecutor, explicitNan
       ? modelId.slice("openrouter/".length)
       : modelId;
     const modelMetadata = modelMetadataByOpenRouterId.get(openRouterModelId);
-    if (shouldUseCodexAppServer(modelId)) {
-      observations.push({
-        ...(await preflightCodexStrictRoute({ api, executor: codexExecutor, modelId })),
-        supportedParameters: modelMetadata?.supportedParameters,
-      });
-      continue;
-    }
     const jsonStartedAt = Date.now();
     const jsonMode = await httpExecutor.preflightModel(modelId).catch((error) => ({
       ok: false,
@@ -387,6 +373,10 @@ async function discoverNanoRoute({ api, httpExecutor, codexExecutor, explicitNan
           provider: strict.provider,
           providerModel: strict.providerModel,
           resolvedModelId: strict.resolvedModelId,
+          authSource: strict.authSource,
+          authMode: strict.authMode,
+          authProfileId: strict.authProfileId,
+          authLane: strict.authLane,
           httpStatus: strict.httpStatus,
           strictSchemaSupported: true,
           jsonModeSupported: jsonMode.ok === true,
@@ -401,6 +391,10 @@ async function discoverNanoRoute({ api, httpExecutor, codexExecutor, explicitNan
             preflight: strict,
             latencyMs: Date.now() - strictStartedAt,
           }),
+          authSource: strict.authSource,
+          authMode: strict.authMode,
+          authProfileId: strict.authProfileId,
+          authLane: strict.authLane,
           supportedParameters: modelMetadata?.supportedParameters,
         };
     if (jsonMode.ok === true) {
@@ -473,6 +467,10 @@ function observationFromFailure({ caseDef, runIndex, modelId, plan, error, start
     modelId,
     provider: trace?.provider,
     resolvedModelId: trace?.resolvedModelId,
+    authSource: trace?.authSource,
+    authMode: trace?.authMode,
+    authProfileId: trace?.authProfileId,
+    authLane: trace?.authLane,
     contractName: plan.contractName,
     contractVersion: plan.contractVersion,
     promptVersion: plan.promptVersion,
@@ -534,10 +532,6 @@ async function main() {
     path.join(root, "src/agents/model-memory.live-json-executor.ts"),
     import.meta.url,
   );
-  const { CodexAppServerJsonExecutor } = await tsImport(
-    path.join(root, "extensions/model-memory/src/mmv2/codex-app-server-json-executor.ts"),
-    import.meta.url,
-  );
 
   const miniModelId = args.miniModelId ?? api.DEFAULT_CACHE_AWARE_MINI_MODEL_ID;
   const requestedNanoModelId = args.nanoModelId ?? api.DEFAULT_CACHE_AWARE_NANO_MODEL_ID;
@@ -546,21 +540,14 @@ async function main() {
     requestTimeoutMs: args.requestTimeoutMs,
     onTrace: (trace) => traces.push(trace),
   });
-  const codexExecutor = new CodexAppServerJsonExecutor({
-    cwd: root,
-    requestTimeoutMs: args.requestTimeoutMs,
-    reasoningEffort: args.codexReasoningEffort,
-    ...(args.serviceTier ? { serviceTier: args.serviceTier } : {}),
-  });
   const miniPreflight = await preflightCodexStrictRoute({
     api,
-    executor: codexExecutor,
+    executor: httpExecutor,
     modelId: miniModelId,
   });
   const nanoDiscovery = await discoverNanoRoute({
     api,
     httpExecutor,
-    codexExecutor,
     explicitNanoModelId: args.nanoModelId,
   });
   const nanoModelId = nanoDiscovery.selectedNanoModelId ?? requestedNanoModelId;
@@ -587,6 +574,10 @@ async function main() {
       modelId: miniModelId,
       provider: miniPreflight.provider,
       resolvedModelId: miniPreflight.resolvedModelId,
+      authSource: miniPreflight.authSource,
+      authMode: miniPreflight.authMode,
+      authProfileId: miniPreflight.authProfileId,
+      authLane: miniPreflight.authLane,
       contractName: "benchmark_route_preflight",
       contractVersion: "v1",
       promptVersion: "live-route-preflight-v1",
@@ -615,6 +606,10 @@ async function main() {
       runIndex: 0,
       modelId: requestedNanoModelId,
       provider: providerFromModelId(requestedNanoModelId),
+      authSource: nanoDiscovery.report.preflightObservations[0]?.authSource,
+      authMode: nanoDiscovery.report.preflightObservations[0]?.authMode,
+      authProfileId: nanoDiscovery.report.preflightObservations[0]?.authProfileId,
+      authLane: nanoDiscovery.report.preflightObservations[0]?.authLane,
       contractName: "benchmark_route_preflight",
       contractVersion: "v1",
       promptVersion: "live-route-preflight-v1",
@@ -649,9 +644,8 @@ async function main() {
     });
     const startedAt = Date.now();
     try {
-      const executor = shouldUseCodexAppServer(item.modelId) ? codexExecutor : httpExecutor;
       const response = await withTimeout(
-        executor.execute({
+        httpExecutor.execute({
           contract: {
             contractName: item.caseDef.contractName,
             contractVersion: "v1",
@@ -673,9 +667,10 @@ async function main() {
             ...speedOptionsForModel(item.modelId, args),
           },
         }),
-        Math.min(args.requestTimeoutMs, shouldUseCodexAppServer(item.modelId) ? 60_000 : 60_000),
+        Math.min(args.requestTimeoutMs, 60_000),
         `${item.modelId}/${item.caseDef.caseId}`,
       );
+      const trace = traces.at(-1);
       const parsed = parseJsonOutput(response.outputText);
       const scored = scoreParsed(item.caseDef, parsed);
       observations.push({
@@ -685,6 +680,10 @@ async function main() {
         modelId: item.modelId,
         provider: providerFromModelId(item.modelId),
         resolvedModelId: response.resolvedModelId,
+        authSource: trace?.requestedModelId === item.modelId ? trace.authSource : undefined,
+        authMode: trace?.requestedModelId === item.modelId ? trace.authMode : undefined,
+        authProfileId: trace?.requestedModelId === item.modelId ? trace.authProfileId : undefined,
+        authLane: trace?.requestedModelId === item.modelId ? trace.authLane : undefined,
         contractName: plan.contractName,
         contractVersion: plan.contractVersion,
         promptVersion: plan.promptVersion,
@@ -760,6 +759,7 @@ async function main() {
           60_000,
           `${jsonLaneLabel}/${item.caseDef.caseId}`,
         );
+        const trace = traces.at(-1);
         const parsed = parseJsonOutput(response.outputText);
         const scored = scoreParsed(item.caseDef, parsed);
         observations.push({
@@ -769,6 +769,10 @@ async function main() {
           modelId: item.modelLabel,
           provider: providerFromModelId(item.modelId),
           resolvedModelId: response.resolvedModelId,
+          authSource: trace?.requestedModelId === item.modelId ? trace.authSource : undefined,
+          authMode: trace?.requestedModelId === item.modelId ? trace.authMode : undefined,
+          authProfileId: trace?.requestedModelId === item.modelId ? trace.authProfileId : undefined,
+          authLane: trace?.requestedModelId === item.modelId ? trace.authLane : undefined,
           contractName: plan.contractName,
           contractVersion: plan.contractVersion,
           promptVersion: plan.promptVersion,
@@ -862,6 +866,10 @@ async function main() {
         provider: trace.provider,
         providerModel: trace.providerModel,
         resolvedModelId: trace.resolvedModelId,
+        authSource: trace.authSource,
+        authMode: trace.authMode,
+        authProfileId: trace.authProfileId,
+        authLane: trace.authLane,
         httpStatus: trace.httpStatus,
         responseOk: trace.responseOk,
         failureClass: trace.failureClass,
@@ -902,25 +910,9 @@ async function main() {
       2,
     ),
   );
-  if ([miniModelId, nanoModelId].some((modelId) => shouldUseCodexAppServer(modelId))) {
-    const { clearSharedCodexAppServerClient } = await tsImport(
-      path.join(root, "extensions/codex/src/app-server/shared-client.ts"),
-      import.meta.url,
-    );
-    clearSharedCodexAppServerClient();
-  }
 }
 
-main().catch(async (error) => {
+main().catch((error) => {
   console.error(error instanceof Error ? error.stack || error.message : String(error));
-  try {
-    const { clearSharedCodexAppServerClient } = await tsImport(
-      path.join(repoRoot(), "extensions/codex/src/app-server/shared-client.ts"),
-      import.meta.url,
-    );
-    clearSharedCodexAppServerClient();
-  } catch {
-    // Best-effort cleanup only.
-  }
   process.exitCode = 1;
 });

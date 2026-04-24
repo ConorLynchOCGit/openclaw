@@ -1,23 +1,16 @@
 import { getAcpSessionManager } from "../acp/control-plane/manager.js";
 import { ACP_SESSION_IDENTITY_RENDERER_VERSION } from "../acp/runtime/session-identifiers.js";
-import { resolveOpenClawAgentDir } from "../agents/agent-paths.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
-import { selectAgentHarness } from "../agents/harness/selection.js";
 import { loadModelCatalog } from "../agents/model-catalog.js";
 import {
   getModelRefStatus,
-  isCliProvider,
   resolveConfiguredModelRef,
   resolveHooksGmailModel,
 } from "../agents/model-selection.js";
-import { ensureOpenClawModelsJson } from "../agents/models-config.js";
-import { resolveModel } from "../agents/pi-embedded-runner/model.js";
-import { resolveEmbeddedAgentRuntime } from "../agents/pi-embedded-runner/runtime.js";
 import { resolveAgentSessionDirs } from "../agents/session-dirs.js";
 import { cleanStaleLockFiles } from "../agents/session-write-lock.js";
 import { scheduleSubagentOrphanRecovery } from "../agents/subagent-registry.js";
 import type { CliDeps } from "../cli/deps.types.js";
-import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
 import { resolveStateDir } from "../config/paths.js";
 import type { GatewayTailscaleMode } from "../config/types.gateway.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -43,50 +36,11 @@ import {
 } from "./server-restart-sentinel.js";
 import { logGatewayStartup } from "./server-startup-log.js";
 import { startGatewayMemoryBackend } from "./server-startup-memory.js";
+import { prewarmConfiguredPrimaryModel } from "./server-startup-primary-model-warmup.js";
 import { STARTUP_UNAVAILABLE_GATEWAY_METHODS } from "./server-startup-unavailable-methods.js";
 import { startGatewayTailscaleExposure } from "./server-tailscale.js";
 
 const SESSION_LOCK_STALE_MS = 30 * 60 * 1000;
-
-async function prewarmConfiguredPrimaryModel(params: {
-  cfg: OpenClawConfig;
-  log: { warn: (msg: string) => void };
-}): Promise<void> {
-  const explicitPrimary = resolveAgentModelPrimaryValue(params.cfg.agents?.defaults?.model)?.trim();
-  if (!explicitPrimary) {
-    return;
-  }
-  const { provider, model } = resolveConfiguredModelRef({
-    cfg: params.cfg,
-    defaultProvider: DEFAULT_PROVIDER,
-    defaultModel: DEFAULT_MODEL,
-  });
-  if (isCliProvider(provider, params.cfg)) {
-    return;
-  }
-  const runtime = resolveEmbeddedAgentRuntime();
-  if (runtime !== "auto" && runtime !== "pi") {
-    return;
-  }
-  if (selectAgentHarness({ provider, modelId: model, config: params.cfg }).id !== "pi") {
-    return;
-  }
-  const agentDir = resolveOpenClawAgentDir();
-  try {
-    await ensureOpenClawModelsJson(params.cfg, agentDir);
-    const resolved = resolveModel(provider, model, agentDir, params.cfg, {
-      skipProviderRuntimeHooks: true,
-    });
-    if (!resolved.model) {
-      throw new Error(
-        resolved.error ??
-          `Unknown model: ${provider}/${model} (startup warmup only checks static model resolution)`,
-      );
-    }
-  } catch (err) {
-    params.log.warn(`startup model warmup failed for ${provider}/${model}: ${String(err)}`);
-  }
-}
 
 export async function startGatewaySidecars(params: {
   cfg: OpenClawConfig;

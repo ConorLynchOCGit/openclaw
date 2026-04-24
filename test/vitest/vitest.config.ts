@@ -19,7 +19,11 @@ function hasExplicitVitestConfigArg(argv = process.argv.slice(2)) {
 }
 
 export function assertRootVitestConfigUsage(argv = process.argv.slice(2), env = process.env) {
-  if (env.OPENCLAW_ALLOW_ROOT_VITEST_PROJECTS === "1" || hasExplicitVitestConfigArg(argv)) {
+  if (
+    env.OPENCLAW_ALLOW_ROOT_VITEST_PROJECTS === "1" ||
+    hasExplicitVitestConfigArg(argv) ||
+    Boolean(env.VITEST_WORKER_ID || env.VITEST_POOL_ID)
+  ) {
     return;
   }
   throw new Error(

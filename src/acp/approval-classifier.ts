@@ -9,7 +9,12 @@ import {
 } from "../shared/string-coerce.js";
 import { asRecord } from "./record-shared.js";
 
-const SAFE_SEARCH_TOOL_IDS = new Set(["search", "web_search", "memory_search"]);
+const SAFE_SEARCH_TOOL_IDS = new Set([
+  "search",
+  "web_search",
+  "memory_search",
+  "model_memory_search",
+]);
 const TRUSTED_SAFE_TOOL_ALIASES = new Set(["search"]);
 const EXEC_CAPABLE_TOOL_IDS = new Set([
   "exec",

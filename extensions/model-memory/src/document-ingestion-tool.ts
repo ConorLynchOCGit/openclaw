@@ -4,12 +4,6 @@ import type { AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool, OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import {
-  buildWorkspaceMemorySourceMetadata,
-  isDailyWorkspaceMemoryNote,
-  stripGeneratedWorkspaceMemoryZones,
-} from "../../../src/agents/workspace-memory-generated-zones.js";
-import { resolveRepoCanonicalReadPath } from "../../../src/infra/repo-canonical-paths.js";
-import {
   JsonFileDocumentIngestionRunRecordStore,
   ModelMemoryDocumentIngestionRunnerService,
   type DocumentIngestionRunRecordStore,
@@ -19,6 +13,12 @@ import {
 import { isLegacyCapturedObjectWriteFallbackEnabled } from "./db/captured-object-write-compatibility.ts";
 import type { JsonModelExecutor } from "./model-execution.ts";
 import { ExecutorBackedSemanticInterpreter } from "./real-semantic-interpreter.ts";
+import {
+  buildWorkspaceMemorySourceMetadata,
+  isDailyWorkspaceMemoryNote,
+  stripGeneratedWorkspaceMemoryZones,
+  resolveRepoCanonicalReadPath,
+} from "./workspace-source-utils.ts";
 
 const DEFAULT_MODEL_REF =
   process.env.MODEL_MEMORY_DOCUMENT_INGEST_MODEL_ID?.trim() ||

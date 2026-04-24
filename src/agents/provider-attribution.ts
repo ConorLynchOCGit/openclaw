@@ -123,8 +123,17 @@ const MODELSTUDIO_NATIVE_BASE_URLS = new Set([
   "https://dashscope.aliyuncs.com/compatible-mode/v1",
   "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
 ]);
-const OPENAI_RESPONSES_APIS = new Set(["openai-responses", "azure-openai-responses"]);
-const OPENAI_RESPONSES_PROVIDERS = new Set(["openai", "azure-openai", "azure-openai-responses"]);
+const OPENAI_RESPONSES_APIS = new Set([
+  "openai-responses",
+  "openai-codex-responses",
+  "azure-openai-responses",
+]);
+const OPENAI_RESPONSES_PROVIDERS = new Set([
+  "openai",
+  "openai-codex",
+  "azure-openai",
+  "azure-openai-responses",
+]);
 const MOONSHOT_COMPAT_PROVIDERS = new Set(["moonshot", "kimi"]);
 
 function formatOpenClawUserAgent(version: string): string {
@@ -606,7 +615,8 @@ export function resolveProviderRequestCapabilities(
       api !== undefined &&
       OPENAI_RESPONSES_APIS.has(api) &&
       OPENAI_RESPONSES_PROVIDERS.has(provider) &&
-      policy.usesKnownNativeOpenAIEndpoint,
+      policy.usesKnownNativeOpenAIEndpoint &&
+      provider !== "openai-codex",
     shouldStripResponsesPromptCache:
       api !== undefined && OPENAI_RESPONSES_APIS.has(api) && policy.usesExplicitProxyLikeEndpoint,
     // Native endpoint class is the real signal here. Users can point a generic

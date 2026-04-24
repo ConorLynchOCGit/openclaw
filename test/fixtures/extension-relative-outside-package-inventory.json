@@ -1,50 +1,10 @@
 [
   {
-    "file": "extensions/model-memory/src/document-ingestion-tool.ts",
+    "file": "extensions/model-memory/src/mmv2/codex-app-server-json-executor.ts",
     "line": 10,
     "kind": "import",
-    "specifier": "../../../src/agents/workspace-memory-generated-zones.js",
-    "resolvedPath": "src/agents/workspace-memory-generated-zones.js",
-    "reason": "imports core src path via relative path outside the extension package"
-  },
-  {
-    "file": "extensions/model-memory/src/document-ingestion-tool.ts",
-    "line": 11,
-    "kind": "import",
-    "specifier": "../../../src/infra/repo-canonical-paths.js",
-    "resolvedPath": "src/infra/repo-canonical-paths.js",
-    "reason": "imports core src path via relative path outside the extension package"
-  },
-  {
-    "file": "extensions/model-memory/src/mmv2/codex-app-server-json-executor.ts",
-    "line": 4,
-    "kind": "import",
-    "specifier": "../../../codex/src/app-server/config.ts",
-    "resolvedPath": "extensions/codex/src/app-server/config.ts",
+    "specifier": "../../../codex/runtime-api.ts",
+    "resolvedPath": "extensions/codex/runtime-api.ts",
     "reason": "imports another bundled plugin via relative path outside the extension package"
-  },
-  {
-    "file": "extensions/model-memory/src/mmv2/codex-app-server-json-executor.ts",
-    "line": 11,
-    "kind": "import",
-    "specifier": "../../../codex/src/app-server/protocol.ts",
-    "resolvedPath": "extensions/codex/src/app-server/protocol.ts",
-    "reason": "imports another bundled plugin via relative path outside the extension package"
-  },
-  {
-    "file": "extensions/model-memory/src/mmv2/codex-app-server-json-executor.ts",
-    "line": 12,
-    "kind": "import",
-    "specifier": "../../../codex/src/app-server/shared-client.ts",
-    "resolvedPath": "extensions/codex/src/app-server/shared-client.ts",
-    "reason": "imports another bundled plugin via relative path outside the extension package"
-  },
-  {
-    "file": "extensions/model-memory/src/read-tools.ts",
-    "line": 3,
-    "kind": "import",
-    "specifier": "../../../src/agents/tools/common.js",
-    "resolvedPath": "src/agents/tools/common.js",
-    "reason": "imports core src path via relative path outside the extension package"
   }
 ]

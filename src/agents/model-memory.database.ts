@@ -2,14 +2,14 @@ import {
   DisabledCapturedObjectWriteStore,
   isLegacyCapturedObjectWriteFallbackEnabled,
   type CapturedObjectWriteStore,
-} from "../../extensions/model-memory/src/db/captured-object-write-compatibility.ts";
-import { MmV2NativeRepository } from "../../extensions/model-memory/src/db/mmv2-native-repository.ts";
+} from "../../extensions/model-memory/legacy-admin-api.ts";
 import {
   createModelMemoryDbLaneController,
   type ModelMemoryDbLaneController,
-} from "../../extensions/model-memory/src/db/pool-lanes.ts";
-import { PgSqlClient } from "../../extensions/model-memory/src/db/sql-client.ts";
-import { resolveModelMemoryStorageEngine } from "../../extensions/model-memory/src/storage-engine.ts";
+  MmV2NativeRepository,
+  PgSqlClient,
+  resolveModelMemoryStorageEngine,
+} from "../../extensions/model-memory/runtime-api.ts";
 import { loadConfig, type OpenClawConfig } from "../config/config.js";
 import {
   DatabaseRetrievalStore,
@@ -224,7 +224,7 @@ export async function createModelMemoryDatabaseRuntime(
   if (storageEngine === "mmv2") {
     if (isLegacyCapturedObjectWriteFallbackEnabled({ env })) {
       const { MmV2DatabaseMemoryObjectStore } =
-        await import("../../extensions/model-memory/src/db/mmv2-memory-object-store.ts");
+        await import("../../extensions/model-memory/legacy-admin-api.ts");
       memoryStore = new MmV2DatabaseMemoryObjectStore(mmv2CanonicalRepository);
     } else {
       memoryStore = new DisabledCapturedObjectWriteStore(

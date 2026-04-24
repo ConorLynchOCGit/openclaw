@@ -592,6 +592,23 @@ describe("provider attribution", () => {
 
     expect(
       resolveProviderRequestCapabilities({
+        provider: "openai-codex",
+        api: "openai-codex-responses",
+        baseUrl: "https://chatgpt.com/backend-api/v1",
+        capability: "llm",
+        transport: "stream",
+      }),
+    ).toMatchObject({
+      endpointClass: "openai-codex",
+      allowsOpenAIServiceTier: true,
+      supportsOpenAIReasoningCompatPayload: true,
+      allowsResponsesStore: false,
+      supportsResponsesStoreField: true,
+      shouldStripResponsesPromptCache: false,
+    });
+
+    expect(
+      resolveProviderRequestCapabilities({
         provider: "anthropic",
         api: "anthropic-messages",
         capability: "llm",

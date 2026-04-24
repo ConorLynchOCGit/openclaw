@@ -64,7 +64,14 @@ agents:
     runtimeSourcePath: docs/agents/web-researcher/runtime
     runtimeSurfacePath: /home/node/.openclaw/agents/web-researcher/agent
     status: live_and_initialized
-    primarySkills: []
+    primarySkills:
+      - exact-page-read
+      - multi-source-comparison
+      - source-evaluation
+      - citation-capture
+      - competitive-brief
+      - watchlist-monitoring
+      - research-handoff-contract
     basePackComplete: true
   - id: writer
     displayName: Writer
@@ -73,7 +80,11 @@ agents:
     runtimeSourcePath: docs/agents/writer/runtime
     runtimeSurfacePath: /home/node/.openclaw/agents/writer/agent
     status: live_and_initialized
-    primarySkills: []
+    primarySkills:
+      - draft-from-source-pack
+      - rewrite-for-audience
+      - critique-and-revise
+      - research-handoff-contract
     basePackComplete: true
   - id: x-manager
     displayName: X Manager

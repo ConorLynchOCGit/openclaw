@@ -32,6 +32,28 @@ describe("openai responses payload policy", () => {
     });
   });
 
+  it("forces store=false for native OpenAI Codex responses payloads", () => {
+    const model = {
+      id: "gpt-5.4-mini",
+      name: "GPT-5.4 Mini",
+      api: "openai-codex-responses",
+      provider: "openai-codex",
+      baseUrl: "https://chatgpt.com/backend-api",
+      reasoning: true,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 200000,
+      maxTokens: 8192,
+    } satisfies Model<"openai-codex-responses">;
+
+    expect(
+      resolveOpenAIResponsesPayloadPolicy(model, { storeMode: "provider-policy" }),
+    ).toMatchObject({
+      explicitStore: false,
+      allowsServiceTier: true,
+    });
+  });
+
   it("strips store and prompt cache for proxy-like responses routes when requested", () => {
     const policy = resolveOpenAIResponsesPayloadPolicy(
       {

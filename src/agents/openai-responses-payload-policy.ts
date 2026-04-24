@@ -71,6 +71,17 @@ function shouldEnableOpenAIResponsesServerCompaction(
   return provider === "openai";
 }
 
+function shouldForceOpenAIResponsesStoreDisabled(params: {
+  model: OpenAIResponsesPayloadModel;
+  capabilities: ReturnType<typeof resolveProviderRequestPolicyConfig>["capabilities"];
+}): boolean {
+  return (
+    params.capabilities.supportsResponsesStoreField &&
+    params.capabilities.usesKnownNativeOpenAIRoute &&
+    readStringValue(params.model.provider) === "openai-codex"
+  );
+}
+
 function stripDisabledOpenAIReasoningPayload(payloadObj: Record<string, unknown>): void {
   const reasoning = payloadObj.reasoning;
   if (reasoning === "none") {
@@ -102,10 +113,11 @@ export function resolveOpenAIResponsesPayloadPolicy(
     transport: "stream",
   }).capabilities;
   const storeMode = options.storeMode ?? "provider-policy";
+  const forceStoreDisabled = shouldForceOpenAIResponsesStoreDisabled({ model, capabilities });
   const explicitStore =
     storeMode === "preserve"
       ? undefined
-      : storeMode === "disable"
+      : storeMode === "disable" || forceStoreDisabled
         ? capabilities.supportsResponsesStoreField
           ? false
           : undefined

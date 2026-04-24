@@ -128,9 +128,26 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "model_memory_search",
+    label: "model_memory_search",
+    description: "Search MMV2 model-memory runtime records and projection digests",
+    sectionId: "memory",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "model_memory_get",
+    label: "model_memory_get",
+    description: "Read a specific MMV2 memory or projection by id",
+    sectionId: "memory",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "memory_search",
     label: "memory_search",
-    description: "Semantic search",
+    description:
+      "MMV2-native memory search compatibility alias. Routes to model-memory by default when available; legacy memory-core remains explicit fallback only.",
     sectionId: "memory",
     profiles: ["coding"],
     includeInOpenClawGroup: true,
@@ -138,7 +155,8 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   {
     id: "memory_get",
     label: "memory_get",
-    description: "Read memory files",
+    description:
+      "MMV2-native memory read compatibility alias. Routes to model-memory by default when available; legacy memory-core remains explicit fallback only.",
     sectionId: "memory",
     profiles: ["coding"],
     includeInOpenClawGroup: true,

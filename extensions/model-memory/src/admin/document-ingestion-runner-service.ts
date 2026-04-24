@@ -761,6 +761,7 @@ export class ModelMemoryDocumentIngestionRunnerService {
           let nextRecord: DocumentIngestionRunnerSourceRecord;
           try {
             const processed = await this.processSource({
+              runId: input.runId,
               source,
               interpreter: input.interpreter,
               modelId: input.modelId,
@@ -909,6 +910,7 @@ export class ModelMemoryDocumentIngestionRunnerService {
   }
 
   private async processSource(input: {
+    runId: string;
     source: DocumentIngestionRunnerSource;
     interpreter: SemanticInterpreter;
     modelId: string;
@@ -939,6 +941,8 @@ export class ModelMemoryDocumentIngestionRunnerService {
       memoryStore: this.memoryStore,
       collisionAdjudicator: this.deps.collisionAdjudicator,
       rebuildRuntime: input.rebuildRuntime,
+      closeoutRunId: input.runId,
+      env: process.env,
       ingestion: {
         document: {
           ...input.source.document,

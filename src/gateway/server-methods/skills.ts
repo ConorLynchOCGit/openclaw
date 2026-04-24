@@ -5,10 +5,12 @@ import {
 } from "../../agents/agent-scope.js";
 import { canExecRequestNode } from "../../agents/exec-defaults.js";
 import {
+  fetchSkillDetailFromClawHub,
   installSkillFromClawHub,
   searchSkillsFromClawHub,
   updateSkillsFromClawHub,
 } from "../../agents/skills-clawhub.js";
+import { buildSkillsDoctorReport } from "../../agents/skills-doctor.js";
 import { installSkill } from "../../agents/skills-install.js";
 import {
   buildWorkspaceSkillStatus,
@@ -18,7 +20,6 @@ import { loadWorkspaceSkillEntries, type SkillEntry } from "../../agents/skills.
 import { listAgentWorkspaceDirs } from "../../agents/workspace-dirs.js";
 import { loadConfig, writeConfigFile } from "../../config/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { fetchClawHubSkillDetail } from "../../infra/clawhub.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
@@ -29,6 +30,7 @@ import {
   errorShape,
   formatValidationErrors,
   validateSkillsBinsParams,
+  validateSkillsDoctorParams,
   validateSkillsDetailParams,
   validateSkillsInstallParams,
   validateSkillsSearchParams,
@@ -115,6 +117,45 @@ export const skillsHandlers: GatewayRequestHandlers = {
     });
     respond(true, report, undefined);
   },
+  "skills.doctor": async ({ params, respond }) => {
+    if (!validateSkillsDoctorParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid skills.doctor params: ${formatValidationErrors(validateSkillsDoctorParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const cfg = loadConfig();
+    const agentIdRaw = normalizeOptionalString(params?.agentId) ?? "";
+    const agentId = agentIdRaw ? normalizeAgentId(agentIdRaw) : resolveDefaultAgentId(cfg);
+    if (agentIdRaw) {
+      const knownAgents = listAgentIds(cfg);
+      if (!knownAgents.includes(agentId)) {
+        respond(
+          false,
+          undefined,
+          errorShape(ErrorCodes.INVALID_REQUEST, `unknown agent id "${agentIdRaw}"`),
+        );
+        return;
+      }
+    }
+    const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+    const loadedSession = resolveAgentLoadedSkillSnapshotStatus({
+      config: cfg,
+      agentId,
+      workspaceDir,
+    });
+    const report = await buildSkillsDoctorReport({
+      workspaceDir,
+      config: cfg,
+      loadedSession,
+    });
+    respond(true, report, undefined);
+  },
   "skills.bins": ({ params, respond }) => {
     if (!validateSkillsBinsParams(params)) {
       respond(
@@ -172,9 +213,23 @@ export const skillsHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+    const detailParams = params as {
+      source?: "clawhub";
+      slug?: string;
+      catalogId?: string;
+    };
+    if (!detailParams.slug && !detailParams.catalogId) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, 'skills.detail requires "slug" or "catalogId"'),
+      );
+      return;
+    }
     try {
-      const detail = await fetchClawHubSkillDetail({
-        slug: (params as { slug: string }).slug,
+      const detail = await fetchSkillDetailFromClawHub({
+        slug: detailParams.slug,
+        catalogId: detailParams.catalogId,
       });
       respond(true, detail, undefined);
     } catch (err) {
@@ -198,13 +253,26 @@ export const skillsHandlers: GatewayRequestHandlers = {
     if (params && typeof params === "object" && "source" in params && params.source === "clawhub") {
       const p = params as {
         source: "clawhub";
-        slug: string;
+        slug?: string;
+        catalogId?: string;
         version?: string;
         force?: boolean;
       };
+      if (!p.slug && !p.catalogId) {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            'skills.install(clawhub) requires "slug" or "catalogId"',
+          ),
+        );
+        return;
+      }
       const result = await installSkillFromClawHub({
         workspaceDir: workspaceDirRaw,
         slug: p.slug,
+        catalogId: p.catalogId,
         version: p.version,
         force: Boolean(p.force),
       });
@@ -217,8 +285,11 @@ export const skillsHandlers: GatewayRequestHandlers = {
               stdout: "",
               stderr: "",
               code: 0,
+              source: result.source,
+              catalogId: result.catalogId,
               slug: result.slug,
               version: result.version,
+              installedSkillKey: result.installedSkillKey,
               targetDir: result.targetDir,
             }
           : result,

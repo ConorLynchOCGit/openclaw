@@ -113,6 +113,7 @@ export type {
   JsonModelExecutionRequest,
   JsonModelExecutionResponse,
   JsonModelExecutor,
+  LiveMemoryPersistenceResult,
   MemoryIngestionFailureClass,
   ModelMemoryStorageEngine,
   ModelMemoryLifecycleState,
@@ -233,12 +234,18 @@ export const captureOrdinaryTurnLive = bindFacadeFunction("captureOrdinaryTurnLi
 export const classifyMemoryIngestionFailure = bindFacadeFunction("classifyMemoryIngestionFailure");
 export const compileProjection = bindFacadeFunction("compileProjection");
 export const createModelMemoryPgPool = bindFacadeFunction("createModelMemoryPgPool");
+export const createMemoryIngestionTelemetryEvent = bindFacadeFunction(
+  "createMemoryIngestionTelemetryEvent",
+);
 export const deriveMemoryIdentity = bindLegacyFacadeFunction("deriveMemoryIdentity");
 export const describeClaimFieldComparison = bindLegacyFacadeFunction(
   "describeClaimFieldComparison",
 );
 export const describeDecisiveFieldAgreement = bindLegacyFacadeFunction(
   "describeDecisiveFieldAgreement",
+);
+export const emitMemoryIngestionCloseoutIfConfigured = bindFacadeFunction(
+  "emitMemoryIngestionCloseoutIfConfigured",
 );
 export const evaluateModelMemoryReadiness = bindFacadeFunction("evaluateModelMemoryReadiness");
 export const executeRetrieval = bindFacadeFunction("executeRetrieval");

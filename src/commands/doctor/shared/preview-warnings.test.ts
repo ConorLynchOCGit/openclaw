@@ -5,6 +5,32 @@ import type { PluginManifestRecord } from "../../../plugins/manifest-registry.js
 import * as manifestRegistry from "../../../plugins/manifest-registry.js";
 import { collectDoctorPreviewWarnings } from "./preview-warnings.js";
 
+const channelDoctorMocks = vi.hoisted(() => ({
+  collectChannelDoctorPreviewWarnings: vi.fn(
+    async ({ cfg }: { cfg: { channels?: Record<string, { allowFrom?: string[] }> } }) => {
+      const allowFrom = cfg.channels?.telegram?.allowFrom;
+      if (!Array.isArray(allowFrom) || allowFrom.length === 0) {
+        return [];
+      }
+      return [`- Telegram allowFrom contains ${allowFrom.length} entries (e.g. ${allowFrom[0]})`];
+    },
+  ),
+  collectChannelDoctorEmptyAllowlistExtraWarnings: vi.fn(() => [] as string[]),
+}));
+
+vi.mock("./channel-doctor.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./channel-doctor.js")>();
+  return {
+    ...actual,
+    collectChannelDoctorPreviewWarnings: (
+      ...args: Parameters<typeof channelDoctorMocks.collectChannelDoctorPreviewWarnings>
+    ) => channelDoctorMocks.collectChannelDoctorPreviewWarnings(...args),
+    collectChannelDoctorEmptyAllowlistExtraWarnings: (
+      ...args: Parameters<typeof channelDoctorMocks.collectChannelDoctorEmptyAllowlistExtraWarnings>
+    ) => channelDoctorMocks.collectChannelDoctorEmptyAllowlistExtraWarnings(...args),
+  };
+});
+
 function manifest(id: string): PluginManifestRecord {
   return {
     id,
@@ -29,6 +55,8 @@ function channelManifest(id: string, channelId: string): PluginManifestRecord {
 
 describe("doctor preview warnings", () => {
   beforeEach(() => {
+    channelDoctorMocks.collectChannelDoctorPreviewWarnings.mockClear();
+    channelDoctorMocks.collectChannelDoctorEmptyAllowlistExtraWarnings.mockClear();
     vi.spyOn(manifestRegistry, "loadPluginManifestRegistry").mockReturnValue({
       plugins: [manifest("discord")],
       diagnostics: [],

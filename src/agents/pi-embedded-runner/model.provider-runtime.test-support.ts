@@ -1,9 +1,12 @@
 import { lowercasePreservingWhitespace } from "../../shared/string-coerce.js";
+import {
+  isOpenAICodexChatGptBaseUrl,
+  normalizeOpenAICodexChatGptBaseUrl,
+  OPENAI_CODEX_CHATGPT_BASE_URL,
+} from "../openai-codex-chatgpt-backend.js";
 import type { OpenRouterModelCapabilities } from "./openrouter-model-capabilities.js";
 
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
-const OPENAI_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
-const OPENAI_CODEX_LEGACY_BASE_URL = "https://chatgpt.com/backend-api/v1";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 const XAI_BASE_URL = "https://api.x.ai/v1";
@@ -65,23 +68,25 @@ function cloneTemplate(
   } as ResolvedModelLike;
 }
 
-function isNativeOpenAICodexBaseUrl(baseUrl?: string): boolean {
-  return baseUrl === OPENAI_CODEX_BASE_URL || baseUrl === OPENAI_CODEX_LEGACY_BASE_URL;
-}
-
 function normalizeDynamicModel(params: { provider: string; model: ResolvedModelLike }) {
   if (params.provider !== "openai-codex") {
     return undefined;
   }
   const baseUrl = typeof params.model.baseUrl === "string" ? params.model.baseUrl : undefined;
   const useCodexTransport =
-    !baseUrl || baseUrl === OPENAI_BASE_URL || isNativeOpenAICodexBaseUrl(baseUrl);
+    !baseUrl || baseUrl === OPENAI_BASE_URL || isOpenAICodexChatGptBaseUrl(baseUrl);
+  const normalizedCodexBaseUrl = isOpenAICodexChatGptBaseUrl(baseUrl)
+    ? (normalizeOpenAICodexChatGptBaseUrl(baseUrl) ?? OPENAI_CODEX_CHATGPT_BASE_URL)
+    : OPENAI_CODEX_CHATGPT_BASE_URL;
   const nextApi =
-    useCodexTransport && (!params.model.api || params.model.api === "openai-responses")
+    useCodexTransport &&
+    (!params.model.api ||
+      params.model.api === "openai-responses" ||
+      params.model.api === "openai-completions")
       ? "openai-codex-responses"
       : params.model.api;
   const nextBaseUrl =
-    nextApi === "openai-codex-responses" && useCodexTransport ? OPENAI_CODEX_BASE_URL : baseUrl;
+    nextApi === "openai-codex-responses" && useCodexTransport ? normalizedCodexBaseUrl : baseUrl;
   if (nextApi !== params.model.api || nextBaseUrl !== baseUrl) {
     return { ...params.model, api: nextApi, baseUrl: nextBaseUrl };
   }
@@ -103,11 +108,13 @@ function normalizeTransport(params: {
   const isNativeOpenAICodexTransport =
     params.provider === "openai-codex" &&
     ((!params.context.api &&
-      (!params.context.baseUrl || isNativeOpenAICodexBaseUrl(params.context.baseUrl))) ||
-      (params.context.api === "openai-responses" &&
+      (!params.context.baseUrl || isOpenAICodexChatGptBaseUrl(params.context.baseUrl))) ||
+      ((params.context.api === "openai-codex-responses" ||
+        params.context.api === "openai-responses" ||
+        params.context.api === "openai-completions") &&
         (!params.context.baseUrl ||
           params.context.baseUrl === OPENAI_BASE_URL ||
-          isNativeOpenAICodexBaseUrl(params.context.baseUrl))));
+          isOpenAICodexChatGptBaseUrl(params.context.baseUrl))));
   if (
     params.context.api === "google-generative-ai" &&
     params.context.baseUrl === "https://generativelanguage.googleapis.com"
@@ -132,7 +139,7 @@ function normalizeTransport(params: {
   if (isNativeOpenAICodexTransport) {
     return {
       api: "openai-codex-responses",
-      baseUrl: OPENAI_CODEX_BASE_URL,
+      baseUrl: OPENAI_CODEX_CHATGPT_BASE_URL,
     };
   }
   return undefined;
@@ -217,7 +224,7 @@ function buildDynamicModel(
       const fallback = {
         provider: "openai-codex",
         api: "openai-codex-responses",
-        baseUrl: OPENAI_CODEX_BASE_URL,
+        baseUrl: OPENAI_CODEX_CHATGPT_BASE_URL,
         reasoning: true,
         input: ["text", "image"],
         cost: OPENROUTER_FALLBACK_COST,
@@ -231,7 +238,7 @@ function buildDynamicModel(
           {
             provider: "openai-codex",
             api: "openai-codex-responses",
-            baseUrl: OPENAI_CODEX_BASE_URL,
+            baseUrl: OPENAI_CODEX_CHATGPT_BASE_URL,
             cost: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 },
             contextWindow: 1_050_000,
             contextTokens: 272_000,
@@ -247,7 +254,7 @@ function buildDynamicModel(
           {
             provider: "openai-codex",
             api: "openai-codex-responses",
-            baseUrl: OPENAI_CODEX_BASE_URL,
+            baseUrl: OPENAI_CODEX_CHATGPT_BASE_URL,
             cost: { input: 30, output: 180, cacheRead: 0, cacheWrite: 0 },
             contextWindow: 1_050_000,
             contextTokens: 272_000,
@@ -263,7 +270,7 @@ function buildDynamicModel(
           {
             provider: "openai-codex",
             api: "openai-codex-responses",
-            baseUrl: OPENAI_CODEX_BASE_URL,
+            baseUrl: OPENAI_CODEX_CHATGPT_BASE_URL,
             cost: { input: 0.75, output: 4.5, cacheRead: 0.075, cacheWrite: 0 },
             contextWindow: 272_000,
             maxTokens: 128_000,
@@ -278,7 +285,7 @@ function buildDynamicModel(
           {
             provider: "openai-codex",
             api: "openai-codex-responses",
-            baseUrl: OPENAI_CODEX_BASE_URL,
+            baseUrl: OPENAI_CODEX_CHATGPT_BASE_URL,
             reasoning: true,
             input: ["text"],
             cost: OPENROUTER_FALLBACK_COST,

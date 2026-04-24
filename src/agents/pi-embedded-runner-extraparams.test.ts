@@ -1995,6 +1995,20 @@ describe("applyExtraParamsToAgent", () => {
     expect(payload.store).toBe(true);
   });
 
+  it("forces store=false for native OpenAI Codex responses payloads", () => {
+    const payload = runResponsesPayloadMutationCase({
+      applyProvider: "openai-codex",
+      applyModelId: "gpt-5.4-mini",
+      model: {
+        api: "openai-codex-responses",
+        provider: "openai-codex",
+        id: "gpt-5.4-mini",
+        baseUrl: "https://chatgpt.com/backend-api",
+      } as unknown as Model<"openai-codex-responses">,
+    });
+    expect(payload.store).toBe(false);
+  });
+
   it("keeps disabled OpenAI reasoning payloads on native Responses routes", () => {
     const payload = runResponsesPayloadMutationCase({
       applyProvider: "openai",

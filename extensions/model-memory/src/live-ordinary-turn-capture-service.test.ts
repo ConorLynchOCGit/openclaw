@@ -1,3 +1,6 @@
+import { mkdtemp, readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyModelMemoryMigrations } from "./db/migrations.ts";
 import { MmV2NativeRepository } from "./db/mmv2-native-repository.ts";
@@ -12,6 +15,131 @@ import {
   captureOne,
   createScriptedMmV2Interpreter,
 } from "./mmv2/test-helpers.ts";
+
+function readMmV2Payload<T>(input: { prompt: { promptPayload?: unknown; userPrompt: string } }): T {
+  return (input.prompt.promptPayload as T) ?? (JSON.parse(input.prompt.userPrompt) as T);
+}
+
+function createPreferenceTurnInterpreter(params: {
+  evidenceQuote: string;
+  canonicalText: string;
+  searchText: string;
+  object: string;
+}) {
+  return createScriptedMmV2Interpreter({
+    "mmv2-capture-routing-v1": (input) => {
+      const payload = readMmV2Payload<{
+        raw_event: { event_id: string };
+        segments: Array<{ segment_id: string; text: string }>;
+      }>(input);
+      const segment =
+        payload.segments.find((entry) => entry.text.includes(params.evidenceQuote)) ??
+        payload.segments[0];
+      return captureOne({
+        schema_version: "capture_routing.v1",
+        event_id: payload.raw_event.event_id,
+        routing_decisions: [
+          {
+            segment_id: segment.segment_id,
+            route: "atomic_candidate",
+            candidate_summary: "User preference",
+            memory_likelihood: 0.93,
+            durability_likelihood: 0.9,
+            composite_likelihood: 0.02,
+            reason_codes: ["durable_user_preference"],
+            evidence_quote: params.evidenceQuote,
+            confidence: 0.95,
+          },
+        ],
+      });
+    },
+    "mmv2-atomic-extraction-v1": (input) => {
+      const payload = readMmV2Payload<{
+        raw_event: { event_id: string };
+        routed_candidates: Array<{ segment_id: string; text: string }>;
+      }>(input);
+      const segment =
+        payload.routed_candidates.find((entry) => entry.text.includes(params.evidenceQuote)) ??
+        payload.routed_candidates[0];
+      return captureOne({
+        schema_version: "atomic_extraction.v1",
+        event_id: payload.raw_event.event_id,
+        atomic_candidates: [
+          buildAtomicCandidate(segment.segment_id, params.evidenceQuote, {
+            kind: "claim",
+            normalized_statement: params.canonicalText,
+            payload: {
+              payload_type: "claim",
+              claim_type: "preference_state",
+              subject: "response format",
+              predicate: "prefers",
+              object: params.object,
+              qualifiers: [],
+              temporal_status: "currently_true",
+            },
+          }),
+        ],
+      });
+    },
+    "mmv2-canonicalization-v1": (input) => {
+      const payload = readMmV2Payload<{
+        raw_event: {
+          event_id: string;
+          tenant_id: string;
+          user_id: string;
+        };
+        extracted_candidates: Array<{ candidate_id: string; source_segment_id: string }>;
+      }>(input);
+      const candidate = payload.extracted_candidates[0];
+      return captureOne({
+        schema_version: "canonical_candidates.v1",
+        event_id: payload.raw_event.event_id,
+        canonical_candidates: [
+          buildCanonicalCandidate(
+            payload.raw_event,
+            candidate.source_segment_id,
+            params.evidenceQuote,
+            {
+              candidate_id: candidate.candidate_id,
+              kind: "claim",
+              artifact_type: null,
+              canonical_text: params.canonicalText,
+              search_text: params.searchText,
+              payload: {
+                claim_type: "preference_state",
+                subject: "response format",
+                predicate: "prefers",
+                object: params.object,
+              },
+              scope: {
+                tenant_id: payload.raw_event.tenant_id,
+                user_id: payload.raw_event.user_id,
+                project_id: null,
+                workspace_id: null,
+                subject_type: "user",
+                subject_id: payload.raw_event.user_id,
+                applies_to: "global",
+              },
+            },
+          ),
+        ],
+      });
+    },
+    "mmv2-admission-v1": (input) => {
+      const payload = readMmV2Payload<{
+        raw_event: { event_id: string };
+        canonical_candidates: Array<{ candidate_id: string }>;
+      }>(input);
+      return captureOne({
+        schema_version: "admission_decision.v1",
+        event_id: payload.raw_event.event_id,
+        decisions: payload.canonical_candidates.map((candidate) =>
+          buildAdmissionDecision(candidate.candidate_id),
+        ),
+      });
+    },
+  });
+}
 
 function buildPreferenceMemory(overrides: Partial<DurableMemoryRecord> = {}): DurableMemoryRecord {
   return {
@@ -522,6 +650,62 @@ describe("live-ordinary-turn-capture-service", () => {
       expect(result.writeResults.some((entry) => entry.decision === "write")).toBe(true);
       expect(directive?.status).toBe("active");
       expect(events.some((event) => event.memory_id === directive?.memory_id)).toBe(true);
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("emits a redacted closeout artifact when runtime-state output is configured", async () => {
+    const database = await createPgMemTestDatabase();
+    const stateDir = await mkdtemp(path.join(os.tmpdir(), "model-memory-closeout-"));
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const canonicalRepository = new MmV2NativeRepository(database.sql);
+      const runtimeRepository = new RuntimeContextRepository(database.sql);
+
+      const result = await captureOrdinaryTurnLive({
+        canonicalRepository,
+        runtimeRepository,
+        closeoutJobId: "capture-job-closeout-001",
+        env: {
+          ...process.env,
+          OPENCLAW_STATE_DIR: stateDir,
+        },
+        capture: {
+          turn: {
+            currentTurnText:
+              "Standing preference: start with the result, then the evidence, then exact artifact paths.",
+            sessionId: "session-closeout",
+          },
+          modelId: "model-turn-001",
+          candidateModelId: "model-turn-001",
+          interpreter: createPreferenceTurnInterpreter({
+            evidenceQuote:
+              "Standing preference: start with the result, then the evidence, then exact artifact paths.",
+            canonicalText:
+              "The user prefers result first, then evidence, then exact artifact paths.",
+            searchText: "user prefers result first evidence exact artifact paths",
+            object: "result first, then evidence, then exact artifact paths",
+          }),
+        },
+      });
+
+      expect(result.closeoutArtifact?.path).toContain(
+        path.join("model-memory", "closeout-reports", "ordinary_turn_capture"),
+      );
+      const closeout = JSON.parse(await readFile(result.closeoutArtifact!.path, "utf8"));
+      expect(closeout).toMatchObject({
+        path: "ordinary_turn_capture",
+        job_id: "capture-job-closeout-001",
+        source_id: result.source.id,
+        source_hash: result.source.sourceFingerprint,
+        dirty_state: { status: "not_required", reason: "caller_managed" },
+      });
+      expect(closeout.counts.candidates_admitted).toBeGreaterThan(0);
+      expect(closeout.quarantined).toEqual([]);
+      expect(JSON.stringify(closeout)).not.toContain("Standing preference");
+      expect(JSON.stringify(closeout)).not.toContain("raw prompt");
+      expect(JSON.stringify(closeout)).not.toContain("full transcript");
     } finally {
       await database.close();
     }

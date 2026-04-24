@@ -187,7 +187,7 @@ describe("test-projects args", () => {
   it("routes runtime config targets to the runtime-config config", () => {
     expect(buildVitestRunPlans(["src/config/sessions.test.ts"])).toEqual([
       {
-        config: "test/vitest/vitest.runtime-config.config.ts",
+        config: "test/vitest/vitest.runtime-config-sessions.config.ts",
         forwardedArgs: [],
         includePatterns: ["src/config/sessions.test.ts"],
         watchMode: false,
@@ -363,7 +363,7 @@ describe("test-projects args", () => {
   it("routes agents targets to the agents config", () => {
     expect(buildVitestRunPlans(["src/agents/tools/image-tool.test.ts"])).toEqual([
       {
-        config: "test/vitest/vitest.agents.config.ts",
+        config: "test/vitest/vitest.agents-tools.config.ts",
         forwardedArgs: [],
         includePatterns: ["src/agents/tools/image-tool.test.ts"],
         watchMode: false,

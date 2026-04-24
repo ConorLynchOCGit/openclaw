@@ -397,7 +397,7 @@ export function buildWorkspaceSkillStatus(
     workspaceDir,
     managedSkillsDir,
     configuredSkillDirs,
-    discoveredSkillNames: skillStatuses.map((skill) => skill.name).toSorted(),
+    discoveredSkillNames: [...new Set(skillStatuses.map((skill) => skill.name))].toSorted(),
     ...loadedState,
     skills: skillStatuses,
   };

@@ -1,15 +1,13 @@
 import {
   resolveCodexAppServerRuntimeOptions,
   type CodexAppServerRuntimeOptions,
-} from "../../../codex/src/app-server/config.ts";
-import {
   type CodexServerNotification,
   type CodexThreadItem,
   type CodexThreadStartResponse,
   type CodexTurn,
   type CodexTurnStartResponse,
-} from "../../../codex/src/app-server/protocol.ts";
-import { getSharedCodexAppServerClient } from "../../../codex/src/app-server/shared-client.ts";
+  getSharedCodexAppServerClient,
+} from "../../../codex/runtime-api.ts";
 import type {
   JsonModelExecutionRequest,
   JsonModelExecutionResponse,

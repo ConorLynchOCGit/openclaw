@@ -15,6 +15,7 @@ const hookMocks = vi.hoisted(() => ({
       params: args.params,
     }),
   ),
+  pluginToolMetaByName: new Map<string, { pluginId: string; optional?: boolean }>(),
 }));
 
 let cfg: Record<string, unknown> = {};
@@ -59,7 +60,7 @@ vi.mock("../plugins/config-state.js", async (importOriginal) => {
 });
 
 vi.mock("../plugins/tools.js", () => ({
-  getPluginToolMeta: () => undefined,
+  getPluginToolMeta: (tool: { name: string }) => hookMocks.pluginToolMetaByName.get(tool.name),
 }));
 
 // Perf: the real tool factory instantiates many tools per request; for these HTTP
@@ -156,6 +157,28 @@ vi.mock("../agents/openclaw-tools.js", () => {
         }
         return { ok: true };
       },
+    },
+    {
+      name: "memory_search",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+      execute: async () => ({ ok: true, source: "memory_search" }),
+    },
+    {
+      name: "memory_get",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+      execute: async () => ({ ok: true, source: "memory_get" }),
     },
     {
       name: "diffs_compat_test",
@@ -258,6 +281,7 @@ beforeEach(() => {
       params: args.params,
     }),
   );
+  hookMocks.pluginToolMetaByName.clear();
   vi.mocked(authorizeHttpGatewayConnect).mockResolvedValue({ ok: true });
 });
 
@@ -436,6 +460,58 @@ describe("POST /tools/invoke", () => {
 
     expect(res.status).toBe(200);
     expect(lastCreateOpenClawToolsContext?.disablePluginTools).toBe(false);
+  });
+
+  it("blocks legacy memory_search test lanes only when the resolved tool is memory-core", async () => {
+    setMainAllowedTools({ allow: ["memory_search"] });
+    cfg = {
+      ...cfg,
+      plugins: {
+        enabled: false,
+      },
+    };
+    hookMocks.pluginToolMetaByName.set("memory_search", {
+      pluginId: "memory-core",
+      optional: true,
+    });
+
+    const res = await invokeToolAuthed({
+      tool: "memory_search",
+      args: { query: "deployment" },
+      sessionKey: "main",
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      ok: false,
+      error: {
+        type: "invalid_request",
+        message: expect.stringContaining("legacy memory tools are disabled in tests"),
+      },
+    });
+  });
+
+  it("allows model-memory-backed memory_search through the same HTTP surface", async () => {
+    setMainAllowedTools({ allow: ["memory_search"] });
+    cfg = {
+      ...cfg,
+      plugins: {
+        enabled: false,
+      },
+    };
+    hookMocks.pluginToolMetaByName.set("memory_search", {
+      pluginId: "model-memory",
+      optional: true,
+    });
+
+    const res = await invokeToolAuthed({
+      tool: "memory_search",
+      args: { query: "deployment" },
+      sessionKey: "main",
+    });
+
+    const body = await expectOkInvokeResponse(res);
+    expect(body.result).toMatchObject({ ok: true, source: "memory_search" });
   });
 
   it("blocks tool execution when before_tool_call rejects the invoke", async () => {
