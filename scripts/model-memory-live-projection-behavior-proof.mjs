@@ -261,7 +261,7 @@ async function main() {
               ...speedOptionsForModel(modelId, speedArgs),
             },
           }),
-          shouldUseCodexAppServer(modelId) ? 45_000 : 90_000,
+          shouldUseCodexAppServer(modelId) ? 120_000 : 90_000,
           `${modelId}/${projectionType}`,
         );
         proofs.push({

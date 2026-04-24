@@ -36,13 +36,25 @@ weekly maintenance guard depends on explicit control inputs.
   `src/agents/model-memory.live-runtime.ts` into responsibility-scoped sibling
   modules under `src/agents/model-memory/live-runtime/` while keeping the
   existing export surface stable
+- the third implementation packet has split
+  `extensions/model-memory/src/db/mmv2-native-repository.ts` into helper
+  modules for codecs, source persistence, durable record persistence, batch
+  persistence, transaction helpers, and legacy compatibility projection
+- the same packet has split
+  `extensions/model-memory/src/ingestion/shared-pipeline.ts` into helper
+  modules for failure policy, prompt planning, candidate validation,
+  no-dark-data checks, telemetry, closeout shaping, and pipeline orchestration
+- the repository extraction surfaced a real compatibility mismatch in the
+  runtime-facing legacy projection: projected identity and slot keys now align
+  with `deriveMemoryIdentity`, which restores slot-based supersession behavior
+  for MMV2-backed legacy write-policy flows
+- a fresh post-slice Phase-2 rerun stayed green at
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-cleanup-rerun-05/`
 
 ## Immediate next move
 
 - keep the debt register current
 - keep the QA matrix aligned with the real maintenance packet bar
-- rerun the Phase-2 entry validation pack against the extracted live-runtime
-  seam and stop immediately if the cleanup packet regresses the green posture
-- if the rerun stays green, move to `RC-003` and split
-  `extensions/model-memory/src/db/mmv2-native-repository.ts` plus
-  `extensions/model-memory/src/ingestion/shared-pipeline.ts`
+- move to `RC-005` and centralize repeated model-memory helper logic before
+  deciding whether `RC-004` proof/harness isolation is still above the
+  diminishing-returns bar

@@ -83,6 +83,17 @@ Current ranked first wave from that artifact:
 4. `RC-005` — Model-memory helper centralization
 5. `RC-004` — Proof/harness isolation
 
+Execution status after the first implementation wave:
+
+- `RC-001` landed: default MMV2 runtime/public seams are narrower and
+  legacy/admin imports stay explicit
+- `RC-002` landed: the live runtime is split under
+  `src/agents/model-memory/live-runtime/`
+- `RC-003` landed: the MMV2 repository and shared ingestion pipeline are split
+  into responsibility-scoped helper modules while the public roots remain
+  stable orchestration seams
+- next planned slice: `RC-005`
+
 ## First-Wave Backlog
 
 The current first-wave backlog is:

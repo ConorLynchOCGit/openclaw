@@ -64,32 +64,35 @@ parallel roadmap.
 
 - `id`: `MD-015`
 - `category`: `repo-hygiene`
-- `status`: `in_progress`
+- `status`: `closed`
 - `risk`: `medium`
 - `owner_or_surface`: `model-memory hot-path orchestration`
 - `description`: several Phase-2-critical files remain oversized orchestration
   seams, especially `model-memory.live-runtime.ts`,
   `mmv2-native-repository.ts`, and `shared-pipeline.ts`.
-- `next_action`: validate the extracted live-runtime seam with a fresh Phase-2
-  rerun, then execute `RC-003` so repository and shared-pipeline concerns are
-  split into smaller modules without behavior change.
-- `notes`: diagnosis backlog item `RC-002` has landed via
-  `src/agents/model-memory/live-runtime/*`; remaining hot-path extraction debt
-  is now concentrated in `RC-003`.
+- `next_action`: keep any follow-up extraction narrow and issue-shaped; the
+  next planned maintenance packet is helper centralization rather than another
+  large-file split.
+- `notes`: diagnosis backlog items `RC-002` and `RC-003` have landed via
+  `src/agents/model-memory/live-runtime/*`,
+  `extensions/model-memory/src/db/mmv2-native-repository/*`, and
+  `extensions/model-memory/src/ingestion/shared-pipeline/*`.
 
 ### MD-016
 
 - `id`: `MD-016`
 - `category`: `repo-hygiene`
-- `status`: `planned`
+- `status`: `in_progress`
 - `risk`: `medium`
 - `owner_or_surface`: `model-memory validation and helper duplication`
 - `description`: session-turn proof, entry-validation harness code, and several
   runtime helpers still duplicate parsing, shaping, and status-mapping logic
   that should be centralized before more Phase 2 features land on top.
-- `next_action`: execute the helper-centralization slice after the large-file
-  extraction packets are green.
-- `notes`: diagnosis backlog items `RC-004` and `RC-005`.
+- `next_action`: execute `RC-005` next, then re-rank `RC-004` proof/harness
+  isolation against diminishing returns after the shared helpers are in place.
+- `notes`: diagnosis backlog items `RC-005` then `RC-004`; the larger
+  orchestration splits are now complete, and the latest fresh safety rerun is
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-cleanup-rerun-05/`.
 
 ### MD-013
 
