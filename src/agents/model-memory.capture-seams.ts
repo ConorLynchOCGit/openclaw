@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { OpenClawConfig } from "../config/config.js";
+import {
+  isJsonRecord,
+  readBooleanLike,
+  readNestedRecord,
+  readTrimmedString,
+} from "./model-memory/value-readers.js";
 
 const GLOBAL_ENABLED_ENV = "MODEL_MEMORY_CAPTURE_SEAMS_ENABLED";
 const OUTPUT_DIR_ENV = "MODEL_MEMORY_CAPTURE_SEAM_OUTPUT_DIR";
@@ -142,45 +148,6 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function readBoolean(value: unknown): boolean | undefined {
-  if (typeof value === "boolean") {
-    return value;
-  }
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-  return undefined;
-}
-
-function readString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function readNestedRecord(
-  value: unknown,
-  pathParts: string[],
-): Record<string, unknown> | undefined {
-  let current: unknown = value;
-  for (const part of pathParts) {
-    if (!isRecord(current)) {
-      return undefined;
-    }
-    current = current[part];
-  }
-  return isRecord(current) ? current : undefined;
-}
-
 function readCaptureSeamConfig(config: unknown): Record<string, unknown> {
   return (
     readNestedRecord(config, ["modelMemory", "captureSeams"]) ??
@@ -212,16 +179,17 @@ export function resolveModelMemoryCaptureSeamSettings(input: {
 }): ModelMemoryCaptureSeamSettings {
   const env = input.env ?? process.env;
   const config = readCaptureSeamConfig(input.config);
-  const enabled = readBoolean(env[GLOBAL_ENABLED_ENV]) ?? readBoolean(config.enabled) ?? false;
+  const enabled =
+    readBooleanLike(env[GLOBAL_ENABLED_ENV]) ?? readBooleanLike(config.enabled) ?? false;
   const policy = getModelMemoryCaptureSeamPolicy(input.seamName);
   const seamEnabled =
-    readBoolean(env[SEAM_ENV[input.seamName]]) ??
-    readBoolean(readSeamSpecificConfig(config, input.seamName)) ??
+    readBooleanLike(env[SEAM_ENV[input.seamName]]) ??
+    readBooleanLike(readSeamSpecificConfig(config, input.seamName)) ??
     policy.status === "active";
   const outputDir =
     input.outputDir ??
-    readString(env[OUTPUT_DIR_ENV]) ??
-    readString(config.outputDir) ??
+    readTrimmedString(env[OUTPUT_DIR_ENV]) ??
+    readTrimmedString(config.outputDir) ??
     path.join(process.cwd(), ".openclaw-memory-ops", "capture-seam-runtime");
   return { enabled, seamEnabled, outputDir };
 }
@@ -278,7 +246,7 @@ function boundedHashInput(value: unknown): unknown {
   if (Array.isArray(value)) {
     return { type: "array", length: value.length };
   }
-  if (isRecord(value)) {
+  if (isJsonRecord(value)) {
     return {
       type: "object",
       keys: Object.keys(value).toSorted().slice(0, 40).map(sanitizeKeySegment),
@@ -296,7 +264,7 @@ function summarizeValue(
   if (state.keyPaths.length >= MAX_KEY_PATHS || depth > MAX_DEPTH) {
     return;
   }
-  if (!isRecord(value) && !Array.isArray(value)) {
+  if (!isJsonRecord(value) && !Array.isArray(value)) {
     state.keyPaths.push(prefix);
     if (Object.keys(state.hashes).length < MAX_HASHES) {
       state.hashes[prefix] = sha256(JSON.stringify(boundedHashInput(value)));

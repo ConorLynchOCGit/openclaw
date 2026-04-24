@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256JsonValue } from "../../hashing.ts";
 import type {
   MemoryModelCallTelemetry,
   MemoryPromptCacheHealthReport,
@@ -13,10 +13,7 @@ function average(values: number[]): number | undefined {
 }
 
 function stableHash(value: unknown): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  return createHash("sha256")
-    .update(text ?? "")
-    .digest("hex");
+  return sha256JsonValue(value);
 }
 
 function estimateTokens(text: string): number {

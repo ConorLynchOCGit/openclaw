@@ -48,13 +48,27 @@ weekly maintenance guard depends on explicit control inputs.
   runtime-facing legacy projection: projected identity and slot keys now align
   with `deriveMemoryIdentity`, which restores slot-based supersession behavior
   for MMV2-backed legacy write-policy flows
+- the fourth implementation packet has centralized the duplicated model-memory
+  helper families that were still spread across runtime gating, runtime-state
+  spools, MMV2 JSON parsing, MMV2 sentence normalization, and
+  ingestion/validation hashing
+- that helper packet introduced:
+  - `src/agents/model-memory/value-readers.ts`
+  - `src/agents/model-memory/runtime-state-helpers.ts`
+  - `extensions/model-memory/src/structured-json.ts`
+  - `extensions/model-memory/src/mmv2/text-normalization.ts`
+  - `extensions/model-memory/src/hashing.ts`
 - a fresh post-slice Phase-2 rerun stayed green at
-  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-cleanup-rerun-05/`
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-cleanup-rerun-06/`
+- after `RC-005`, the remaining `RC-004` proof/harness isolation work is no
+  longer treated as the next planned packet because it does not currently
+  clear the diminishing-returns bar for pre-Phase-2 cleanup
 
 ## Immediate next move
 
 - keep the debt register current
 - keep the QA matrix aligned with the real maintenance packet bar
-- move to `RC-005` and centralize repeated model-memory helper logic before
-  deciding whether `RC-004` proof/harness isolation is still above the
-  diminishing-returns bar
+- stop the pre-Phase-2 cleanup wave unless fresh proof/harness work makes
+  `RC-004` materially valuable again
+- if a later slice reopens `RC-004`, treat it as optional proof-surface
+  hygiene rather than a Phase-2-readiness blocker

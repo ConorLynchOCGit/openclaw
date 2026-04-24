@@ -1,6 +1,14 @@
 import type { OpenClawConfig } from "../../../config/config.js";
 import { resolveModelMemoryDatabaseResolution } from "../../model-memory.database.js";
 import {
+  isJsonRecord,
+  readBooleanLike,
+  readBooleanLiteral,
+  readNestedRecord,
+  readTrimmedString,
+  type JsonRecord,
+} from "../value-readers.js";
+import {
   DEFAULT_STRICT_MMV2_MODEL_REF,
   LIVE_MODEL_MEMORY_ENABLED_ENV,
   MODEL_MEMORY_PLUGIN_ID,
@@ -10,8 +18,6 @@ import {
   MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID_ENV,
   MODEL_MEMORY_TOOL_RESULT_PROOF_CAPTURE_ENABLED_ENV,
 } from "./constants.js";
-
-type JsonRecord = Record<string, unknown>;
 
 export type ModelMemoryLiveRuntimeStatus = {
   enabled: boolean;
@@ -31,35 +37,9 @@ export type ModelMemoryLiveRuntimeStatus = {
   databaseError?: string;
 };
 
-function isRecord(value: unknown): value is JsonRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function readTrimmedString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-}
-
-function readBoolean(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
-}
-
-function readNestedRecord(
-  value: unknown,
-  pathParts: string[],
-): Record<string, unknown> | undefined {
-  let current: unknown = value;
-  for (const part of pathParts) {
-    if (!isRecord(current)) {
-      return undefined;
-    }
-    current = current[part];
-  }
-  return isRecord(current) ? current : undefined;
-}
-
 function readModelMemoryPluginConfig(config?: OpenClawConfig): JsonRecord {
   const entry = config?.plugins?.entries?.[MODEL_MEMORY_PLUGIN_ID];
-  if (!entry || !isRecord(entry) || !isRecord(entry.config)) {
+  if (!entry || !isJsonRecord(entry) || !isJsonRecord(entry.config)) {
     return {};
   }
   return entry.config;
@@ -68,21 +48,11 @@ function readModelMemoryPluginConfig(config?: OpenClawConfig): JsonRecord {
 function readLiveConfig(config?: OpenClawConfig): JsonRecord {
   const pluginConfig = readModelMemoryPluginConfig(config);
   const live = pluginConfig.live;
-  return isRecord(live) ? live : {};
+  return isJsonRecord(live) ? live : {};
 }
 
 function resolveBooleanEnv(value: string | undefined): boolean | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-  return undefined;
+  return readBooleanLike(value);
 }
 
 function resolveLegacyMemorySlotDisabled(config?: OpenClawConfig): boolean {
@@ -106,11 +76,11 @@ export function resolveProjectionArtifactMaterializationEnabled(
     return envEnabled;
   }
   const liveConfig = readLiveConfig(config);
-  const projections = isRecord(liveConfig.projections) ? liveConfig.projections : {};
-  const materializeArtifacts = isRecord(projections.materializeArtifacts)
+  const projections = isJsonRecord(liveConfig.projections) ? liveConfig.projections : {};
+  const materializeArtifacts = isJsonRecord(projections.materializeArtifacts)
     ? projections.materializeArtifacts
     : {};
-  return readBoolean(materializeArtifacts.enabled) ?? true;
+  return readBooleanLiteral(materializeArtifacts.enabled) ?? true;
 }
 
 export function resolveToolResultProofCaptureEnabled(
@@ -125,10 +95,10 @@ export function resolveToolResultProofCaptureEnabled(
     readNestedRecord(readModelMemoryPluginConfig(config), ["captureSeams"]) ??
     readNestedRecord(config, ["modelMemory", "captureSeams"]) ??
     {};
-  const toolResultProof = isRecord(captureSeams.toolResultProofCapture)
+  const toolResultProof = isJsonRecord(captureSeams.toolResultProofCapture)
     ? captureSeams.toolResultProofCapture
     : {};
-  return readBoolean(toolResultProof.enabled) ?? true;
+  return readBooleanLiteral(toolResultProof.enabled) ?? true;
 }
 
 export function resolveModelMemoryLiveRuntimeStatus(
@@ -137,8 +107,8 @@ export function resolveModelMemoryLiveRuntimeStatus(
 ): ModelMemoryLiveRuntimeStatus {
   const envEnabled = resolveBooleanEnv(env[LIVE_MODEL_MEMORY_ENABLED_ENV]);
   const liveConfig = readLiveConfig(config);
-  const configEnabled = readBoolean(liveConfig.enabled);
-  const includeRetrievalPacks = readBoolean(liveConfig.includeRetrievalPacks) === true;
+  const configEnabled = readBooleanLiteral(liveConfig.enabled);
+  const includeRetrievalPacks = readBooleanLiteral(liveConfig.includeRetrievalPacks) === true;
 
   const enabled = envEnabled ?? configEnabled ?? false;
   const source =

@@ -5,6 +5,16 @@ import { mergeMemoryTraceIds } from "../../extensions/model-memory/runtime-api.j
 import { resolveStateDir } from "../config/paths.js";
 import type { MemoryIngestionFailureClass } from "../plugin-sdk/model-memory.js";
 import { readRecoveredJsonFile, readRecoveredJsonLines } from "./model-memory.recovery-files.js";
+import {
+  appendJsonLine,
+  mergeSanitizedIdLists,
+  nowIso,
+  readBooleanEnvFlag,
+  readPositiveIntegerFromEnvValue,
+  sanitizeIdList,
+  sanitizeSafeSegment,
+  writeJsonAtomic,
+} from "./model-memory/runtime-state-helpers.js";
 
 const RUNTIME_DIRTY_SCHEMA_VERSION = 1;
 const DEFAULT_COALESCE_WRITES = 5;
@@ -13,8 +23,6 @@ const DEFAULT_MAX_CONCURRENCY = 1;
 const DEFAULT_RETRY_DELAY_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 1;
 const DEFAULT_STALE_REBUILD_AFTER_MS = 15 * 60_000;
-const MAX_SAFE_STRING_LENGTH = 128;
-const MAX_SAFE_ID_LIST = 16;
 
 export type ModelMemoryRuntimeDirtyStatus =
   | "clean"
@@ -216,58 +224,12 @@ type RuntimeDirtyTimer = ReturnType<typeof setTimeout>;
 const activeRebuilds = new Set<string>();
 const scheduledRebuilds = new Map<string, RuntimeDirtyTimer>();
 
-function nowIso(date = new Date()): string {
-  return date.toISOString();
-}
-
 function stateFilePath(baseDir: string) {
   return path.join(baseDir, "state.json");
 }
 
 function eventsFilePath(baseDir: string) {
   return path.join(baseDir, "events.jsonl");
-}
-
-function sanitizeSafeSegment(value: string | undefined, maxLength = MAX_SAFE_STRING_LENGTH) {
-  const trimmed = value?.trim();
-  if (!trimmed || trimmed.length > maxLength) {
-    return undefined;
-  }
-  return /^[A-Za-z0-9_.:@/-]+$/u.test(trimmed) ? trimmed : undefined;
-}
-
-function sanitizeIdList(values: string[] | undefined) {
-  return values
-    ?.map((entry) => sanitizeSafeSegment(entry))
-    .filter((entry): entry is string => Boolean(entry))
-    .slice(0, MAX_SAFE_ID_LIST);
-}
-
-function mergeIdLists(left: string[] | undefined, right: string[] | undefined) {
-  return [...new Set([...(left ?? []), ...(right ?? [])])]
-    .map((entry) => sanitizeSafeSegment(entry))
-    .filter((entry): entry is string => Boolean(entry))
-    .toSorted()
-    .slice(0, MAX_SAFE_ID_LIST);
-}
-
-function readPositiveInteger(value: string | undefined, fallback: number, max: number) {
-  const parsed = value === undefined ? NaN : Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? Math.min(max, Math.max(1, parsed)) : fallback;
-}
-
-function readBoolean(value: string | undefined, fallback: boolean) {
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized) {
-    return fallback;
-  }
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-  return fallback;
 }
 
 export function buildCleanModelMemoryRuntimeDirtyState(): ModelMemoryRuntimeDirtyState {
@@ -374,18 +336,6 @@ function buildEvent(input: {
   };
 }
 
-async function writeJsonAtomic(filePath: string, value: unknown) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(tmpPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await fs.rename(tmpPath, filePath);
-}
-
-async function appendJsonLine(filePath: string, value: unknown) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  await fs.appendFile(filePath, `${JSON.stringify(value)}\n`, { mode: 0o600 });
-}
-
 async function persistStateAndEvent(params: {
   baseDir: string;
   state: ModelMemoryRuntimeDirtyState;
@@ -415,28 +365,28 @@ export function resolveModelMemoryRuntimeRebuildSchedulerSettings(
   env: NodeJS.ProcessEnv = process.env,
 ): ModelMemoryRuntimeRebuildSchedulerSettings {
   return {
-    enabled: readBoolean(env.MODEL_MEMORY_RUNTIME_REBUILD_ENABLED, true),
-    coalesceWrites: readPositiveInteger(
+    enabled: readBooleanEnvFlag(env.MODEL_MEMORY_RUNTIME_REBUILD_ENABLED, true),
+    coalesceWrites: readPositiveIntegerFromEnvValue(
       env.MODEL_MEMORY_RUNTIME_REBUILD_COALESCE_WRITES,
       DEFAULT_COALESCE_WRITES,
       1_000,
     ),
-    coalesceMs: readPositiveInteger(
+    coalesceMs: readPositiveIntegerFromEnvValue(
       env.MODEL_MEMORY_RUNTIME_REBUILD_COALESCE_MS,
       DEFAULT_COALESCE_MS,
       3_600_000,
     ),
-    maxConcurrency: readPositiveInteger(
+    maxConcurrency: readPositiveIntegerFromEnvValue(
       env.MODEL_MEMORY_RUNTIME_REBUILD_MAX_CONCURRENCY,
       DEFAULT_MAX_CONCURRENCY,
       8,
     ),
-    retryDelayMs: readPositiveInteger(
+    retryDelayMs: readPositiveIntegerFromEnvValue(
       env.MODEL_MEMORY_RUNTIME_REBUILD_RETRY_DELAY_MS,
       DEFAULT_RETRY_DELAY_MS,
       3_600_000,
     ),
-    maxRetries: readPositiveInteger(
+    maxRetries: readPositiveIntegerFromEnvValue(
       env.MODEL_MEMORY_RUNTIME_REBUILD_MAX_RETRIES,
       DEFAULT_MAX_RETRIES,
       10,
@@ -506,14 +456,17 @@ export function createModelMemoryRuntimeDirtyStore(
             status,
             dirtyReason: input.reason,
             traceIds: mergeMemoryTraceIds(current.traceIds, input.traceIds),
-            affectedMemoryIds: mergeIdLists(current.affectedMemoryIds, input.memoryIds),
-            affectedSourceIds: mergeIdLists(current.affectedSourceIds, input.sourceIds),
-            affectedEventIds: mergeIdLists(current.affectedEventIds, input.eventIds),
-            affectedEdgeIds: mergeIdLists(current.affectedEdgeIds, input.edgeIds),
-            affectedProjectionTargetIds: mergeIdLists(
-              current.affectedProjectionTargetIds,
-              input.projectionTargetIds,
-            ),
+            affectedMemoryIds:
+              mergeSanitizedIdLists(current.affectedMemoryIds, input.memoryIds) ?? [],
+            affectedSourceIds:
+              mergeSanitizedIdLists(current.affectedSourceIds, input.sourceIds) ?? [],
+            affectedEventIds: mergeSanitizedIdLists(current.affectedEventIds, input.eventIds) ?? [],
+            affectedEdgeIds: mergeSanitizedIdLists(current.affectedEdgeIds, input.edgeIds) ?? [],
+            affectedProjectionTargetIds:
+              mergeSanitizedIdLists(
+                current.affectedProjectionTargetIds,
+                input.projectionTargetIds,
+              ) ?? [],
             writeCountSinceLastRebuild: current.writeCountSinceLastRebuild + 1,
             markedAt: current.markedAt ?? timestamp,
             lastFailureClass: undefined,

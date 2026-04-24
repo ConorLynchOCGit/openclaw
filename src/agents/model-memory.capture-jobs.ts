@@ -5,13 +5,19 @@ import { sanitizeMemoryTraceId } from "../../extensions/model-memory/runtime-api
 import { resolveStateDir } from "../config/paths.js";
 import type { MemoryIngestionFailureClass } from "../plugin-sdk/model-memory.js";
 import { readRecoveredJsonFile } from "./model-memory.recovery-files.js";
+import {
+  appendJsonLine,
+  nowIso,
+  readPositiveIntegerFromEnvValue,
+  sanitizeIdList,
+  sanitizeSafeSegment,
+  writeJsonAtomic,
+} from "./model-memory/runtime-state-helpers.js";
 
 const CAPTURE_JOB_SCHEMA_VERSION = 1;
 const DEFAULT_MAX_RETRIES = 1;
 const DEFAULT_RETRY_DELAY_MS = 1_000;
 const DEFAULT_CONCURRENCY = 1;
-const MAX_SAFE_STRING_LENGTH = 128;
-const MAX_SAFE_ID_LIST = 16;
 
 export type MemoryCaptureJobStatus =
   | "queued"
@@ -189,28 +195,9 @@ function sha256Text(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
-function sanitizeSafeSegment(value: string | undefined, maxLength = MAX_SAFE_STRING_LENGTH) {
-  const trimmed = value?.trim();
-  if (!trimmed || trimmed.length > maxLength) {
-    return undefined;
-  }
-  return /^[A-Za-z0-9_.:@/-]+$/u.test(trimmed) ? trimmed : undefined;
-}
-
 function sanitizeHash(value: string | undefined) {
   const trimmed = value?.trim();
   return trimmed && /^[a-f0-9]{16,128}$/u.test(trimmed) ? trimmed : undefined;
-}
-
-function sanitizeIdList(values: string[] | undefined) {
-  return values
-    ?.map((entry) => sanitizeSafeSegment(entry))
-    .filter((entry): entry is string => Boolean(entry))
-    .slice(0, MAX_SAFE_ID_LIST);
 }
 
 function sanitizeRelatedIds(ids: MemoryCaptureSafeRelatedIds | undefined) {
@@ -261,11 +248,6 @@ function clampNonNegativeInteger(value: unknown, fallback: number, max: number) 
     return fallback;
   }
   return Math.min(max, Math.max(0, Math.trunc(value)));
-}
-
-function readPositiveInteger(value: string | undefined, fallback: number, max: number) {
-  const parsed = value === undefined ? NaN : Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? Math.min(max, Math.max(1, parsed)) : fallback;
 }
 
 function jobFilePath(baseDir: string, jobId: string) {
@@ -347,18 +329,6 @@ function buildEvent(input: {
     containsTranscript: false,
     containsRawToolLog: false,
   };
-}
-
-async function writeJsonAtomic(filePath: string, value: unknown) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(tmpPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await fs.rename(tmpPath, filePath);
-}
-
-async function appendJsonLine(filePath: string, value: unknown) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  await fs.appendFile(filePath, `${JSON.stringify(value)}\n`, { mode: 0o600 });
 }
 
 async function readJob(filePath: string): Promise<MemoryCaptureJob | undefined> {
@@ -618,17 +588,25 @@ export async function runMemoryCaptureJobTask(
   }
   const maxRetries =
     input.maxRetries ??
-    readPositiveInteger(env.MODEL_MEMORY_CAPTURE_JOB_MAX_RETRIES, DEFAULT_MAX_RETRIES, 5);
+    readPositiveIntegerFromEnvValue(
+      env.MODEL_MEMORY_CAPTURE_JOB_MAX_RETRIES,
+      DEFAULT_MAX_RETRIES,
+      5,
+    );
   const retryDelayMs =
     input.retryDelayMs ??
-    readPositiveInteger(
+    readPositiveIntegerFromEnvValue(
       env.MODEL_MEMORY_CAPTURE_JOB_RETRY_DELAY_MS,
       DEFAULT_RETRY_DELAY_MS,
       60_000,
     );
   const maxConcurrency =
     input.maxConcurrency ??
-    readPositiveInteger(env.MODEL_MEMORY_CAPTURE_JOB_CONCURRENCY, DEFAULT_CONCURRENCY, 16);
+    readPositiveIntegerFromEnvValue(
+      env.MODEL_MEMORY_CAPTURE_JOB_CONCURRENCY,
+      DEFAULT_CONCURRENCY,
+      16,
+    );
   const sleep =
     input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 

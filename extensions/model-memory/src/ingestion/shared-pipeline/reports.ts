@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { sha256JsonValue } from "../../hashing.ts";
 import { sanitizeMemoryTraceId } from "../../trace-id.ts";
 import { buildCandidateQuarantineReportRecords } from "./candidate-validation.ts";
 import type {
@@ -11,10 +11,7 @@ import type {
 } from "./types.ts";
 
 function stableHash(value: unknown): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  return createHash("sha256")
-    .update(text ?? "")
-    .digest("hex");
+  return sha256JsonValue(value);
 }
 
 function countFailuresByClass(

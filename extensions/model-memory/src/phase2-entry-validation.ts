@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256Text } from "./hashing.ts";
 import {
   buildMemoryIngestionCloseoutReport,
   createMemoryIngestionTelemetryEvent,
@@ -132,7 +132,7 @@ export type Phase2EntryDecisionReport = {
 };
 
 function hashText(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
+  return sha256Text(value);
 }
 
 function buildRuntimeMemory(

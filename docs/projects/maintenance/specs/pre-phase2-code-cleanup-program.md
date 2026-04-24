@@ -92,7 +92,13 @@ Execution status after the first implementation wave:
 - `RC-003` landed: the MMV2 repository and shared ingestion pipeline are split
   into responsibility-scoped helper modules while the public roots remain
   stable orchestration seams
-- next planned slice: `RC-005`
+- `RC-005` landed: repeated model-memory helper logic now routes through
+  explicit shared seams for value readers, runtime-state spools, structured
+  JSON parsing, MMV2 sentence normalization, and ingestion/validation hashing
+- current latest green safety rerun:
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-cleanup-rerun-06/`
+- `RC-004` proof/harness isolation is now re-ranked as optional / low
+  leverage rather than the planned next slice
 
 ## First-Wave Backlog
 
@@ -138,6 +144,9 @@ The current first-wave backlog is:
 - why now:
   these harnesses are valuable but should be easier to understand and safer to
   extend without cross-coupling to hot-path runtime code
+- current posture:
+  optional / low leverage after `RC-005`; reopen only if future proof-work
+  starts changing these files materially again
 
 ### RC-005 — Helper Centralization
 
@@ -148,6 +157,8 @@ The current first-wave backlog is:
 - why now:
   Phase 2 work will otherwise continue paying repeated editing cost across too
   many files
+- execution result:
+  landed
 
 ## Not-Now List
 

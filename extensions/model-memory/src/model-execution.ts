@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ModelContractMetadata } from "./prompt-contracts.ts";
+import { parseStructuredJsonCandidate } from "./structured-json.ts";
 
 export const JsonModelResponseTransportSchema = z.discriminatedUnion("type", [
   z
@@ -103,33 +104,6 @@ export interface JsonModelExecutor {
   execute(request: JsonModelExecutionRequest): Promise<JsonModelExecutionResponse>;
 }
 
-function stripOuterJsonCodeFence(text: string): string {
-  const trimmed = text.trim();
-  const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return match?.[1]?.trim() ?? trimmed;
-}
-
-function extractStructuredJsonCandidate(text: string): string {
-  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (fencedMatch?.[1]) {
-    return fencedMatch[1].trim();
-  }
-
-  const objectStart = text.indexOf("{");
-  const objectEnd = text.lastIndexOf("}");
-  if (objectStart !== -1 && objectEnd > objectStart) {
-    return text.slice(objectStart, objectEnd + 1).trim();
-  }
-
-  const arrayStart = text.indexOf("[");
-  const arrayEnd = text.lastIndexOf("]");
-  if (arrayStart !== -1 && arrayEnd > arrayStart) {
-    return text.slice(arrayStart, arrayEnd + 1).trim();
-  }
-
-  return text.trim();
-}
-
 export class JsonModelOutputError extends Error {
   constructor(
     message: string,
@@ -147,12 +121,9 @@ export function parseJsonModelOutput<T>(
   contract: ModelContractMetadata,
   schema: z.ZodType<T>,
 ): T {
-  const normalizedOutputText = extractStructuredJsonCandidate(
-    stripOuterJsonCodeFence(response.outputText),
-  );
   let parsed: unknown;
   try {
-    parsed = JSON.parse(normalizedOutputText);
+    parsed = parseStructuredJsonCandidate(response.outputText);
   } catch (error) {
     throw new JsonModelOutputError(
       `invalid JSON model output for ${contract.contractName}`,

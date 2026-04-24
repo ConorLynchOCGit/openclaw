@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
 import type { OpenClawConfig } from "../config/config.js";
 import { appendExactAssistantMessageToSessionTranscript } from "../config/sessions/transcript.js";
+import { isJsonRecord, readBooleanLike, type JsonRecord } from "./model-memory/value-readers.js";
 
 const ACTIVITY_FEED_ENABLED_ENV = "MODEL_MEMORY_ACTIVITY_FEED_ENABLED";
 const ACTIVITY_FEED_LEVEL_ENV = "MODEL_MEMORY_ACTIVITY_FEED_LEVEL";
 const ACTIVITY_FEED_MAX_IDS = 8;
-
-type JsonRecord = Record<string, unknown>;
 
 export type ModelMemoryActivityFeedLevel = "summary" | "maximal";
 
@@ -81,34 +80,13 @@ export type ModelMemoryActivityEvent = {
 
 type TranscriptAppender = typeof appendExactAssistantMessageToSessionTranscript;
 
-function isRecord(value: unknown): value is JsonRecord {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function readBoolean(value: unknown): boolean | undefined {
-  if (typeof value === "boolean") {
-    return value;
-  }
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-  return undefined;
-}
-
 function readActivityFeedConfig(config?: OpenClawConfig): JsonRecord {
   const pluginConfig = config?.plugins?.entries?.["model-memory"]?.config;
-  if (isRecord(pluginConfig) && isRecord(pluginConfig.activityFeed)) {
+  if (isJsonRecord(pluginConfig) && isJsonRecord(pluginConfig.activityFeed)) {
     return pluginConfig.activityFeed;
   }
   const modelMemory = (config as unknown as { modelMemory?: unknown })?.modelMemory;
-  if (isRecord(modelMemory) && isRecord(modelMemory.activityFeed)) {
+  if (isJsonRecord(modelMemory) && isJsonRecord(modelMemory.activityFeed)) {
     return modelMemory.activityFeed;
   }
   return {};
@@ -325,7 +303,7 @@ export function resolveModelMemoryActivityFeedSettings(input: {
   const env = input.env ?? process.env;
   const config = readActivityFeedConfig(input.config);
   const enabled =
-    readBoolean(env[ACTIVITY_FEED_ENABLED_ENV]) ?? readBoolean(config.enabled) ?? false;
+    readBooleanLike(env[ACTIVITY_FEED_ENABLED_ENV]) ?? readBooleanLike(config.enabled) ?? false;
   const level = readLevel(env[ACTIVITY_FEED_LEVEL_ENV]) ?? readLevel(config.level) ?? "maximal";
   return { enabled, level };
 }

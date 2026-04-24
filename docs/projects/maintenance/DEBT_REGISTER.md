@@ -82,17 +82,20 @@ parallel roadmap.
 
 - `id`: `MD-016`
 - `category`: `repo-hygiene`
-- `status`: `in_progress`
+- `status`: `closed`
 - `risk`: `medium`
 - `owner_or_surface`: `model-memory validation and helper duplication`
 - `description`: session-turn proof, entry-validation harness code, and several
   runtime helpers still duplicate parsing, shaping, and status-mapping logic
   that should be centralized before more Phase 2 features land on top.
-- `next_action`: execute `RC-005` next, then re-rank `RC-004` proof/harness
-  isolation against diminishing returns after the shared helpers are in place.
-- `notes`: diagnosis backlog items `RC-005` then `RC-004`; the larger
-  orchestration splits are now complete, and the latest fresh safety rerun is
-  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-cleanup-rerun-05/`.
+- `next_action`: reopen only if a future proof/harness change makes `RC-004`
+  worth isolating as its own hygiene packet.
+- `notes`: `RC-005` landed via shared helper modules for value readers,
+  runtime-state spools, structured JSON parsing, MMV2 sentence normalization,
+  and ingestion/validation hashing. The latest fresh safety rerun is
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-cleanup-rerun-06/`.
+  Remaining `RC-004` proof/harness isolation is now optional / low leverage,
+  not the planned next slice.
 
 ### MD-013
 

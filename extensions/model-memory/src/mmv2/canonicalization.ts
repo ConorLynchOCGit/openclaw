@@ -20,6 +20,7 @@ import {
   buildRepairPrompt,
   type MmV2PromptResponseMode,
 } from "./prompt-contracts.ts";
+import { ensureSentence, normalizeWhitespace } from "./text-normalization.ts";
 
 type CanonicalizationInput = {
   rawEvent: RawIngestEvent;
@@ -187,18 +188,6 @@ function normalizeCanonicalBatch(
       overlayCompositeStructure(candidate, compositeLookup),
     ),
   };
-}
-
-function normalizeWhitespace(text: string): string {
-  return text.replace(/\s+/gu, " ").trim();
-}
-
-function ensureSentence(text: string): string {
-  const normalized = normalizeWhitespace(text);
-  if (normalized.length === 0) {
-    return normalized;
-  }
-  return /[.!?]$/u.test(normalized) ? normalized : `${normalized}.`;
 }
 
 function sentenceCase(text: string): string {

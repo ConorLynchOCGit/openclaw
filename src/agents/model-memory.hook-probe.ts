@@ -1,4 +1,5 @@
 import type { OpenClawConfig } from "../config/config.js";
+import { isJsonRecord, readBooleanLike } from "./model-memory/value-readers.js";
 
 type HookProbeInput = {
   hookName: string;
@@ -8,42 +9,21 @@ type HookProbeInput = {
   config?: OpenClawConfig;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function readBoolean(value: unknown): boolean | undefined {
-  if (typeof value === "boolean") {
-    return value;
-  }
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["0", "false", "no", "off"].includes(normalized)) {
-    return false;
-  }
-  return undefined;
-}
-
 function readHookProbeConfig(config?: OpenClawConfig): Record<string, unknown> {
   const entryConfig = config?.plugins?.entries?.["model-memory"]?.config;
-  if (!isRecord(entryConfig)) {
+  if (!isJsonRecord(entryConfig)) {
     return {};
   }
   const hookProbe = entryConfig.hookProbe;
-  return isRecord(hookProbe) ? hookProbe : {};
+  return isJsonRecord(hookProbe) ? hookProbe : {};
 }
 
 export function shouldAttemptModelMemoryHookProbe(config?: OpenClawConfig): boolean {
-  const envEnabled = readBoolean(process.env.MODEL_MEMORY_HOOK_PROBE_ENABLED);
+  const envEnabled = readBooleanLike(process.env.MODEL_MEMORY_HOOK_PROBE_ENABLED);
   if (envEnabled !== undefined) {
     return envEnabled;
   }
-  return readBoolean(readHookProbeConfig(config).enabled) ?? false;
+  return readBooleanLike(readHookProbeConfig(config).enabled) ?? false;
 }
 
 export async function recordModelMemoryProductionHookProbe(input: HookProbeInput): Promise<void> {

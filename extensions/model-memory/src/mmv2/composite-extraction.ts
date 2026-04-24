@@ -1,6 +1,7 @@
 import { JsonModelOutputError } from "../model-execution.ts";
 import type { InterpreterSourceWindow, SemanticInterpreter } from "../semantic-interpreter.ts";
 import type { ModelMemorySourceKind } from "../storage-database-contract.ts";
+import { tryParseFencedJsonBlock } from "../structured-json.ts";
 import {
   CompositeCandidateSchema,
   CompositeRoutedCandidateSchema,
@@ -110,31 +111,6 @@ const PROMOTION_VALUES = new Set<CompositeCandidate["components"][number]["promo
   "both",
   "blocked",
 ]);
-
-type ParsedJsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | ParsedJsonValue[]
-  | { [key: string]: ParsedJsonValue };
-
-function parseFencedJson(text: string): ParsedJsonValue {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("```") || !trimmed.endsWith("```")) {
-    return null;
-  }
-  const lines = trimmed.split("\n");
-  if (lines.length < 2) {
-    return null;
-  }
-  const body = lines.slice(1, -1).join("\n").trim();
-  try {
-    return JSON.parse(body);
-  } catch {
-    return null;
-  }
-}
 
 function defaultCompositeScope() {
   return {
@@ -322,7 +298,7 @@ function tryDeterministicCompositeCandidate(
     };
   }
 
-  const parsed = parseFencedJson(routedCandidate.text);
+  const parsed = tryParseFencedJsonBlock(routedCandidate.text);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }

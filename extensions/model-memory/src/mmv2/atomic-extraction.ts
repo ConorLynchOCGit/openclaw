@@ -1,6 +1,7 @@
 import { JsonModelOutputError } from "../model-execution.ts";
 import type { InterpreterSourceWindow, SemanticInterpreter } from "../semantic-interpreter.ts";
 import type { ModelMemorySourceKind } from "../storage-database-contract.ts";
+import { tryParseFencedJsonBlock } from "../structured-json.ts";
 import {
   AtomicExtractionBatchSchema,
   AtomicCandidateSchema,
@@ -19,6 +20,7 @@ import {
   type MmV2PromptResponseMode,
 } from "./prompt-contracts.ts";
 import { isSchemaLikeText } from "./structural-artifact-intent.ts";
+import { ensureSentence } from "./text-normalization.ts";
 
 type AtomicInput = {
   rawEvent: RawIngestEvent;
@@ -30,14 +32,6 @@ type AtomicInput = {
   routedCandidates: AtomicRoutedCandidate[];
   responseMode?: MmV2PromptResponseMode;
 };
-
-type ParsedJsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | ParsedJsonValue[]
-  | { [key: string]: ParsedJsonValue };
 
 function emptyAtomicBatch(eventId: string): AtomicExtractionBatch {
   return {
@@ -76,23 +70,6 @@ function normalizeAtomicPayload(raw: unknown, eventId: string): unknown {
   return raw;
 }
 
-function parseFencedJson(text: string): ParsedJsonValue {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("```") || !trimmed.endsWith("```")) {
-    return null;
-  }
-  const lines = trimmed.split("\n");
-  if (lines.length < 2) {
-    return null;
-  }
-  const body = lines.slice(1, -1).join("\n").trim();
-  try {
-    return JSON.parse(body);
-  } catch {
-    return null;
-  }
-}
-
 function coerceConfidence(value: unknown, fallback = 0.86): number {
   if (typeof value === "number" && value >= 0 && value <= 1) {
     return value;
@@ -110,14 +87,6 @@ function coerceConfidence(value: unknown, fallback = 0.86): number {
     }
   }
   return fallback;
-}
-
-function ensureSentence(text: string): string {
-  const normalized = text.replace(/\s+/gu, " ").trim();
-  if (normalized.length === 0) {
-    return normalized;
-  }
-  return /[.!?]$/u.test(normalized) ? normalized : `${normalized}.`;
 }
 
 function defaultScope(subjectType: AtomicCandidate["scope"]["subject_type"] = "unknown") {
@@ -316,7 +285,7 @@ function buildDeterministicAtomicCandidate(
     return assistantBehaviorDirective;
   }
 
-  const parsed = parseFencedJson(routedCandidate.text);
+  const parsed = tryParseFencedJsonBlock(routedCandidate.text);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }
