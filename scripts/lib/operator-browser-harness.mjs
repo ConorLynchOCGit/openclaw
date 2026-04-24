@@ -219,10 +219,7 @@ export function findTranscriptTerminalEvidenceFromEvents(events, params = {}) {
   const assistant = messages
     .slice(userIndex + 1)
     .find(
-      (entry) =>
-        entry.role === "assistant" &&
-        entry.openclawKind !== "model_memory_activity" &&
-        entry.text.trim().length > 0,
+      (entry) => entry.role === "assistant" && !entry.openclawKind && entry.text.trim().length > 0,
     );
   if (!assistant) {
     return null;

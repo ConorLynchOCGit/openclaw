@@ -227,6 +227,44 @@ void test("findTranscriptTerminalEvidenceFromEvents skips model-memory activity 
   });
 });
 
+void test("findTranscriptTerminalEvidenceFromEvents skips turn-activity records", () => {
+  const evidence = findTranscriptTerminalEvidenceFromEvents(
+    [
+      {
+        type: "message",
+        id: "user-new",
+        timestamp: "2026-04-21T11:00:00.000Z",
+        message: { role: "user", content: [{ type: "text", text: "HOST proof" }] },
+      },
+      {
+        type: "message",
+        id: "turn-activity",
+        timestamp: "2026-04-21T11:00:01.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Turn activity: model started" }],
+          __openclaw: { kind: "turn_activity" },
+        },
+      },
+      {
+        type: "message",
+        id: "assistant-new",
+        timestamp: "2026-04-21T11:00:02.000Z",
+        message: { role: "assistant", content: [{ type: "text", text: "verified" }] },
+      },
+    ],
+    { prompt: "HOST proof", startedAtMs: Date.parse("2026-04-21T10:59:55.000Z") },
+  );
+  assert.deepEqual(evidence, {
+    source: "session-jsonl",
+    userMessageId: "user-new",
+    assistantMessageId: "assistant-new",
+    userTimestamp: "2026-04-21T11:00:00.000Z",
+    assistantTimestamp: "2026-04-21T11:00:02.000Z",
+    assistantText: "verified",
+  });
+});
+
 void test("listPendingRequests soft-fails to an empty list when the CLI lookup errors", () => {
   const originalExecPath = process.execPath;
   const originalConfigPath = process.env.OPENCLAW_CONFIG_PATH;
