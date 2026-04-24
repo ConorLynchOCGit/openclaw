@@ -188,6 +188,13 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+export function buildSyncMetadata(args) {
+  return {
+    repository: args.sourceRepo || "",
+    sha: args.sourceSha || "",
+  };
+}
+
 function prefixLocalePage(entry, localeDir) {
   if (typeof entry === "string") {
     return `${localeDir}/${entry}`;
@@ -310,11 +317,7 @@ function syncDocsTree(targetRoot) {
 }
 
 function writeSyncMetadata(targetRoot, args) {
-  const metadata = {
-    repository: args.sourceRepo || "",
-    sha: args.sourceSha || "",
-    syncedAt: new Date().toISOString(),
-  };
+  const metadata = buildSyncMetadata(args);
   writeJson(path.join(targetRoot, ".openclaw-sync", "source.json"), metadata);
 }
 

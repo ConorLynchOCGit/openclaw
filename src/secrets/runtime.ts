@@ -17,6 +17,7 @@ import {
   setRuntimeConfigSnapshot,
   type OpenClawConfig,
 } from "../config/config.js";
+import { readStateDirDotEnvVars } from "../config/state-dir-dotenv.js";
 import type { PluginOrigin } from "../plugins/plugin-origin.types.js";
 import { resolveUserPath } from "../utils.js";
 import { type SecretResolverWarning } from "./runtime-shared.js";
@@ -151,7 +152,11 @@ async function resolveLoadablePluginOrigins(params: {
 function mergeSecretsRuntimeEnv(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> | undefined,
 ): Record<string, string | undefined> {
-  const merged = { ...(env ?? process.env) } as Record<string, string | undefined>;
+  const baseEnv = { ...(env ?? process.env) } as Record<string, string | undefined>;
+  const merged = {
+    ...readStateDirDotEnvVars(baseEnv),
+    ...baseEnv,
+  } as Record<string, string | undefined>;
   for (const key of RUNTIME_PATH_ENV_KEYS) {
     if (merged[key] !== undefined) {
       continue;

@@ -1,3 +1,4 @@
+import { readStateDirDotEnvVars } from "../config/state-dir-dotenv.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveSecretInputRef } from "../config/types.secrets.js";
 import { callGateway } from "../gateway/call.js";
@@ -127,6 +128,15 @@ function dedupeDiagnostics(entries: readonly string[]): string[] {
     ordered.push(trimmed);
   }
   return ordered;
+}
+
+function buildCommandSecretEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string | undefined> {
+  return {
+    ...readStateDirDotEnvVars(env),
+    ...env,
+  };
 }
 
 function targetsRuntimeWebPath(path: string): boolean {
@@ -320,7 +330,7 @@ function classifyConfiguredTargetRefs(params: {
   }
   const context = createResolverContext({
     sourceConfig: params.config,
-    env: process.env,
+    env: buildCommandSecretEnv(),
   });
   commandSecretGatewayDeps.collectConfigAssignments({
     config: structuredClone(params.config),
@@ -422,9 +432,10 @@ async function resolveCommandSecretRefsLocally(params: {
 }): Promise<ResolveCommandSecretsResult> {
   const sourceConfig = params.config;
   const resolvedConfig = structuredClone(params.config);
+  const commandEnv = buildCommandSecretEnv();
   const context = createResolverContext({
     sourceConfig,
-    env: process.env,
+    env: commandEnv,
   });
   const localResolutionDiagnostics: string[] = [];
   const discoveredTargets = commandSecretGatewayDeps
@@ -497,7 +508,7 @@ async function resolveCommandSecretRefsLocally(params: {
       target,
       sourceConfig,
       resolvedConfig,
-      env: context.env,
+      env: commandEnv,
       cache: context.cache,
       activePaths,
       runtimeWebActivePaths,

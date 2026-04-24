@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { assertSyncTargetIsSafe } from "../../scripts/docs-sync-publish.mjs";
+import { assertSyncTargetIsSafe, buildSyncMetadata } from "../../scripts/docs-sync-publish.mjs";
 
 const tempDirs = [];
 
@@ -37,5 +37,18 @@ describe("scripts/docs-sync-publish", () => {
 
   it("accepts a separate clone outside the source repo", () => {
     expect(() => assertSyncTargetIsSafe(createTempGitDir("openclaw-docs-sync-"))).not.toThrow();
+  });
+
+  it("writes stable sync metadata without volatile timestamps", () => {
+    expect(
+      buildSyncMetadata({
+        target: "/tmp/publish-repo",
+        sourceRepo: "ConorLynchOCGit/openclaw",
+        sourceSha: "abc123",
+      }),
+    ).toEqual({
+      repository: "ConorLynchOCGit/openclaw",
+      sha: "abc123",
+    });
   });
 });

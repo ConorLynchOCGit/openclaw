@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+import { withTempHome, writeStateDirDotEnv } from "../config/test-helpers.js";
 import {
   buildTalkTestProviderConfig,
   readTalkTestProviderApiKey as readTalkProviderApiKey,
@@ -426,6 +427,61 @@ describe("resolveCommandSecretRefsViaGateway", () => {
         restoreDeps();
       }
     });
+  });
+
+  it("loads state-dir dotenv vars for local web-search SecretRef fallback", async () => {
+    const restoreDeps = commandSecretGatewayTesting.setDepsForTest({
+      collectConfigAssignments: ({ context }) => {
+        context.assignments.push({
+          path: "plugins.entries.brave.config.webSearch.apiKey",
+        } as never);
+      },
+      resolveManifestContractOwnerPluginId: (params) =>
+        params.contract === "webSearchProviders" && params.value === "brave" ? "brave" : undefined,
+    });
+    try {
+      await withTempHome(async () => {
+        await writeStateDirDotEnv("BRAVE_API_KEY=brave-key-from-state-dir\n", {
+          env: process.env,
+        });
+        callGateway.mockRejectedValueOnce(new Error("gateway closed"));
+        const result = await resolveCommandSecretRefsViaGateway({
+          config: {
+            tools: {
+              web: {
+                search: {
+                  provider: "brave",
+                },
+              },
+            },
+            plugins: {
+              entries: {
+                brave: {
+                  config: {
+                    webSearch: {
+                      apiKey: { source: "env", provider: "default", id: "BRAVE_API_KEY" },
+                    },
+                  },
+                },
+              },
+            },
+          } as unknown as OpenClawConfig,
+          commandName: "web_search",
+          targetIds: new Set(["plugins.entries.brave.config.webSearch.apiKey"]),
+        });
+
+        const braveConfig = result.resolvedConfig.plugins?.entries?.brave?.config as
+          | { webSearch?: { apiKey?: unknown } }
+          | undefined;
+        expect(braveConfig?.webSearch?.apiKey).toBe("brave-key-from-state-dir");
+        expect(result.targetStatesByPath["plugins.entries.brave.config.webSearch.apiKey"]).toBe(
+          "resolved_local",
+        );
+        expectGatewayUnavailableLocalFallbackDiagnostics(result);
+      });
+    } finally {
+      restoreDeps();
+    }
   });
 
   it("marks web SecretRefs inactive when the web surface is disabled during local fallback", async () => {

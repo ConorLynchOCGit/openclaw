@@ -12,6 +12,15 @@
 - Workflow hardening should fail fast on missing/invalid token and avoid
   token-bearing remote URLs.
 
+## 2026-04-24 - Docs sync publish retries from fresh clones with stable source metadata
+
+- The docs publish workflow should not rebase a locally generated sync commit
+  onto a moving `openclaw/docs` branch.
+- Retry attempts should start from a fresh publish-repo clone, rerun the sync,
+  then push directly.
+- `.openclaw-sync/source.json` should record only the source repository and
+  source sha so reruns do not create conflict-only timestamp churn.
+
 ## 2026-04-18 - workspace operator packs are not canonical repo projects
 
 - This folder remains workspace-owned.
