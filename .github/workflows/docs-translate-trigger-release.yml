@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   dispatch-translate:
+    if: ${{ github.repository == 'ConorLynchOCGit/openclaw-platform' }}
     runs-on: ubuntu-latest
     steps:
       - name: Determine docs sync auth mode

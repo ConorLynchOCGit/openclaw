@@ -1,7 +1,15 @@
 [
   {
+    "file": "src/agents/model-memory.capture-jobs.ts",
+    "line": 4,
+    "kind": "import",
+    "specifier": "../../extensions/model-memory/runtime-api.js",
+    "resolvedPath": "extensions/model-memory/runtime-api.js",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
     "file": "src/agents/model-memory.database.ts",
-    "line": 5,
+    "line": 1,
     "kind": "import",
     "specifier": "../../extensions/model-memory/legacy-admin-api.ts",
     "resolvedPath": "extensions/model-memory/legacy-admin-api.ts",
@@ -9,18 +17,18 @@
   },
   {
     "file": "src/agents/model-memory.database.ts",
-    "line": 12,
+    "line": 8,
     "kind": "import",
     "specifier": "../../extensions/model-memory/runtime-api.ts",
     "resolvedPath": "extensions/model-memory/runtime-api.ts",
     "reason": "imports bundled plugin file from src boundary"
   },
   {
-    "file": "src/agents/model-memory.database.ts",
-    "line": 227,
-    "kind": "dynamic-import",
-    "specifier": "../../extensions/model-memory/legacy-admin-api.ts",
-    "resolvedPath": "extensions/model-memory/legacy-admin-api.ts",
-    "reason": "dynamically imports bundled plugin file from src boundary"
+    "file": "src/agents/model-memory.runtime-dirty.ts",
+    "line": 4,
+    "kind": "import",
+    "specifier": "../../extensions/model-memory/runtime-api.js",
+    "resolvedPath": "extensions/model-memory/runtime-api.js",
+    "reason": "imports bundled plugin file from src boundary"
   }
 ]

@@ -7,14 +7,16 @@ title: "Git And Auth Workflow"
 
 Canonical VPS git flow:
 
-1. fetch from upstream `main`
-2. rebase private `main` on top of upstream
+1. fetch from the clean integration repo when you need upstream-core changes
+2. rebase or merge private `main` on top of `integration/main` as needed
 3. validate locally
-4. push only to the private deployment repo
+4. push only to the downstream product/deployment repo
 5. deploy only from the canonical repo/container/image path
 
 GitHub CLI posture:
 
 - `gh` should be installed locally on the VPS
 - CLI auth should use `gh auth login --hostname github.com --git-protocol ssh`
-- upstream push should remain disabled
+- `origin` should point at `ConorLynchOCGit/openclaw-platform`
+- `integration` should point at `ConorLynchOCGit/openclaw-integration`
+- legacy fork pushes should remain disabled

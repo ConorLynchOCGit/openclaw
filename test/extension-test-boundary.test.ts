@@ -33,6 +33,8 @@ const allowedNonExtensionTests = new Set<string>([
   "src/secrets/runtime-nextcloud-talk-file-precedence.test.ts",
   "src/secrets/runtime-telegram-token-inheritance.test.ts",
   "src/secrets/runtime-zalo-token-activity.test.ts",
+  "src/agents/model-memory.live-runtime.tool-result-persistence.test.ts",
+  "src/agents/model-memory.recovery.test.ts",
 ]);
 
 function walk(dir: string, entries: string[] = []): string[] {

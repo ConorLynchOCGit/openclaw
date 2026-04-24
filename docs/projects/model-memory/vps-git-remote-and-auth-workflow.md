@@ -9,25 +9,28 @@ title: "VPS Git Remote And Auth Workflow"
 
 Keep the VPS on one unambiguous git workflow:
 
-- fetch and rebase from upstream OpenClaw core
-- push only to the private deployment repo
-- keep upstream pushes disabled
+- fetch upstream-derived core through the clean integration repo
+- push only to the canonical downstream repo
+- keep legacy fork pushes disabled
 - keep CLI auth on SSH-compatible GitHub CLI settings
 
 ## Canonical remote posture
 
 The live repo should use:
 
-- `origin` = private deployment repo
-- `upstream` = OpenClaw core fetch source
+- `origin` = canonical downstream repo
+- `integration` = clean upstream integration repo
+- `fork-legacy` = disabled rollback/reference surface
 
 Expected remote shape:
 
 ```bash
-origin   git@github.com:ConorLynchOCGit/openclaw.git (fetch)
-origin   git@github.com:ConorLynchOCGit/openclaw.git (push)
-upstream https://github.com/openclaw/openclaw.git (fetch)
-upstream DISABLED (push)
+fork-legacy DISABLED (fetch)
+fork-legacy DISABLED (push)
+integration git@github.com:ConorLynchOCGit/openclaw-integration.git (fetch)
+integration DISABLED (push)
+origin      git@github.com:ConorLynchOCGit/openclaw-platform.git (fetch)
+origin      git@github.com:ConorLynchOCGit/openclaw-platform.git (push)
 ```
 
 Required git config:
@@ -39,43 +42,50 @@ git config remote.pushDefault origin
 
 ## Why this posture exists
 
-- OpenClaw core is the upstream sync source, not the deployment push target.
-- The deployment repo is the only repo that should receive VPS landing pushes.
-- Disabling upstream pushes prevents accidental attempts to push into
-  `openclaw/openclaw`.
+- upstream-derived OpenClaw core should arrive through the clean integration
+  surface, not through a downstream repo that is still trapped in the fork
+  network
+- the downstream repo is the only repo that should receive VPS landing pushes
+- keeping the legacy fork disabled prevents accidental pushes back into the old
+  mixed-identity repository
 
 ## Canonical maintainer flow
 
-1. Sync from upstream core:
+1. Sync from the clean integration surface:
 
 ```bash
-git fetch upstream
+git fetch integration
 ```
 
-2. Rebase the private `main` on top of upstream:
+2. Rebase the private `main` on top of the clean integration branch:
 
 ```bash
-git rebase upstream/main
+git rebase integration/main
 ```
 
 3. Run the required local validation.
 
-4. Push only to the private repo:
+4. Push only to the canonical downstream repo:
 
 ```bash
 git push origin main
 ```
 
-5. Deploy only from the private repo / canonical container / canonical image.
+5. Deploy only from the downstream repo / canonical container / canonical
+   image.
 
 ## Remote safety commands
 
 If the remotes ever drift, restore them with:
 
 ```bash
-git remote rename origin upstream
-git remote rename conor origin
-git remote set-url --push upstream DISABLED
+git remote rename origin fork-legacy
+git remote set-url fork-legacy DISABLED
+git remote set-url --push fork-legacy DISABLED
+git remote remove upstream
+git remote add origin git@github.com:ConorLynchOCGit/openclaw-platform.git
+git remote add integration git@github.com:ConorLynchOCGit/openclaw-integration.git
+git remote set-url --push integration DISABLED
 git branch --set-upstream-to=origin/main main
 git config remote.pushDefault origin
 ```

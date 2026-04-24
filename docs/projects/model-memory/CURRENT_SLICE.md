@@ -545,9 +545,11 @@ The next remaining pre-Phase-2 blocker is now:
 
 ## Current Work Queue
 
-1. Set or replace `OPENCLAW_DOCS_SYNC_TOKEN` for `ConorLynchOCGit/openclaw`
-   with either a GitHub App installation token or fine-grained PAT scoped to
-   `openclaw/docs` with Contents read/write; then rerun Docs Sync Publish Repo.
+1. Set or replace docs-sync credentials on
+   `ConorLynchOCGit/openclaw-platform` with either
+   `OPENCLAW_DOCS_SYNC_APP_ID` + `OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY` or, only
+   as a fallback, `OPENCLAW_DOCS_SYNC_TOKEN`, all scoped to `openclaw/docs`
+   with Contents read/write; then rerun Docs Sync Publish Repo.
 2. Keep `message:preprocessed` routing/telemetry-only until dedupe and
    no-raw-prompt guarantees are proven.
 3. Treat `ContextEngine.ingest` and `ContextEngine.ingestBatch` hook evidence

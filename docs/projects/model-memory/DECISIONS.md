@@ -530,8 +530,9 @@ Decision:
 - preferred credential is a GitHub App installation token scoped to
   `openclaw/docs` with Contents read/write
 - acceptable fallback is a fine-grained PAT stored as
-  `OPENCLAW_DOCS_SYNC_TOKEN` on `ConorLynchOCGit/openclaw`, scoped only to
-  `openclaw/docs`, Contents read/write, with explicit expiration/rotation
+  `OPENCLAW_DOCS_SYNC_TOKEN` on the canonical downstream repo
+  `ConorLynchOCGit/openclaw-platform`, scoped only to `openclaw/docs`,
+  Contents read/write, with explicit expiration/rotation
 
 Reasoning:
 

@@ -18,6 +18,7 @@ export function createExtensionMessagingVitestConfig(
       dir: "extensions",
       env,
       name: "extension-messaging",
+      pool: "forks",
       passWithNoTests: true,
       setupFiles: ["test/setup.extensions.ts"],
     },

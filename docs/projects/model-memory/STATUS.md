@@ -604,8 +604,9 @@ Remaining from the active pass:
 
 - Docs Sync Publish Repo workflow now fails fast on a missing/invalid
   `OPENCLAW_DOCS_SYNC_TOKEN` and no longer stores a token-bearing remote URL,
-  but the current fork has no secret and the logged-in account only has READ
-  permission on `openclaw/docs`; a GitHub App installation token or
+  but the canonical downstream repo currently has no secret and the logged-in
+  account only has READ permission on `openclaw/docs`; a GitHub App
+  installation token or
   fine-grained PAT with Contents read/write is still required before the
   workflow can publish
 - keep document ingest stopped until provider credits and provider response

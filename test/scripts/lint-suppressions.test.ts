@@ -83,6 +83,7 @@ describe("production lint suppressions", () => {
       "src/agents/agent-scope.ts|no-control-regex|1",
       "src/agents/pi-embedded-runner/run/images.ts|no-control-regex|1",
       "src/agents/skills-clawhub.ts|no-control-regex|1",
+      "src/agents/skills-vetting.ts|no-control-regex|1",
       "src/agents/subagent-attachments.ts|no-control-regex|1",
       "src/agents/subagent-spawn.ts|no-control-regex|1",
       "src/agents/tools/common.ts|typescript/no-explicit-any|1",

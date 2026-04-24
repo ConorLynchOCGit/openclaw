@@ -75,6 +75,11 @@ now live in the repo.
   `.openclaw-memory-ops/**`; the explicit resource resolver is the supported
   route for Memory Ops, generated-current aliases, and archived operator
   reports
+- the canonical downstream repo identity is now explicit:
+  `ConorLynchOCGit/openclaw-platform` owns the product/work tree,
+  `ConorLynchOCGit/openclaw-integration` is the clean upstream-sync surface,
+  and the legacy fork `ConorLynchOCGit/openclaw` is no longer the canonical
+  repo home
 
 ## Delivered in this slice
 

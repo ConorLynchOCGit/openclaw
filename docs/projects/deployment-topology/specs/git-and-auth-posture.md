@@ -5,7 +5,8 @@ title: "Git And Auth Posture"
 
 # Git And Auth Posture
 
-- use upstream only for fetch/rebase
-- use the private deployment repo as the default push target
-- keep upstream push disabled
+- use the clean integration repo only for fetch/rebase against upstream-derived
+  core
+- use the downstream product repo as the default push target
+- keep the legacy fork push-disabled
 - keep GitHub CLI on SSH-backed auth

@@ -1,4 +1,3 @@
-import { parseStructuredJsonCandidate } from "../../../../extensions/model-memory/src/structured-json.ts";
 import type { OpenClawConfig } from "../../../config/config.js";
 import type {
   JsonModelExecutionRequest,
@@ -8,6 +7,7 @@ import type {
   SemanticInterpreterInput,
 } from "../../../plugin-sdk/model-memory.js";
 import { OpenAICompatibleLiveJsonExecutor } from "../../model-memory.live-json-executor.js";
+import { parseStructuredJsonCandidate } from "./structured-json.ts";
 
 export function parseMmV2RawJsonOutput(outputText: string): unknown {
   return parseStructuredJsonCandidate(outputText);

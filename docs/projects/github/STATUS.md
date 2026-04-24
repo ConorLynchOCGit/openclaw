@@ -10,11 +10,17 @@
 
 - workflow: `.github/workflows/docs-sync-publish.yml`
 - target publish repo: `openclaw/docs`
-- latest fork run reviewed: `24901253876` on `ConorLynchOCGit/openclaw`
-- current failure class on the fork: missing docs-sync secrets at credential
-  resolution time
-- current repo secret status on `ConorLynchOCGit/openclaw`: no Actions secrets
-  are present
+- canonical downstream source repo is now `ConorLynchOCGit/openclaw-platform`
+- clean upstream integration repo is now `ConorLynchOCGit/openclaw-integration`
+- retained legacy fork is `ConorLynchOCGit/openclaw`, but it is no longer the
+  canonical work or workflow home
+- latest legacy-fork run reviewed: `24901253876` on `ConorLynchOCGit/openclaw`
+- current failure class on that legacy fork run: missing docs-sync secrets at
+  credential resolution time
+- current repo secret status on `ConorLynchOCGit/openclaw-platform`: no Actions
+  secrets are present
+- current repo secret status on `ConorLynchOCGit/openclaw-integration`: no
+  Actions secrets are present
 - upstream repo-side failure also inspected: `openclaw/openclaw` run
   `24901113806` authenticated successfully but failed by rebasing a stale clone
   into `.openclaw-sync/source.json` conflicts
@@ -29,10 +35,28 @@
   - verify push access with `git push --dry-run`
   - retry from a fresh publish clone instead of rebasing a stale local commit
   - keep `.openclaw-sync/source.json` stable with repository + sha only
+  - run publish/translate jobs only from
+    `ConorLynchOCGit/openclaw-platform`
 - remaining required external fix:
   - add `OPENCLAW_DOCS_SYNC_APP_ID` and
-    `OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY` to `ConorLynchOCGit/openclaw`
+    `OPENCLAW_DOCS_SYNC_APP_PRIVATE_KEY` to
+    `ConorLynchOCGit/openclaw-platform`
   - fallback only if needed: `OPENCLAW_DOCS_SYNC_TOKEN`
   - required installation scope: `openclaw/docs`
   - required permission: Contents read/write
   - do not print, log, or commit the credential
+
+## 2026-04-24 Repo Boundary Split
+
+- this repo checkout now treats `ConorLynchOCGit/openclaw-platform` as the
+  canonical downstream product/work repo
+- the clean upstream integration surface is
+  `ConorLynchOCGit/openclaw-integration`
+- the old public fork `ConorLynchOCGit/openclaw` remains in place only as a
+  temporary rollback/reference surface
+- a full all-refs upstream mirror into the integration repo was attempted and
+  rejected by GitHub with `pack exceeds maximum allowed size (2.00 GiB)`
+- the safe fallback is a clean `main`-only integration seed from
+  `openclaw/openclaw`, which is enough for normal upstream-sync and
+  upstreamable-patch work without keeping the downstream product trapped in the
+  fork network

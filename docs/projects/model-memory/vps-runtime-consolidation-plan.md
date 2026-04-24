@@ -139,9 +139,10 @@ multi-runtime migration.
 
 The canonical git posture for the VPS is now:
 
-- `origin` = private deployment repo
-- `upstream` = OpenClaw core fetch source
-- upstream push disabled
+- `origin` = canonical downstream repo (`ConorLynchOCGit/openclaw-platform`)
+- `integration` = clean upstream integration repo
+  (`ConorLynchOCGit/openclaw-integration`)
+- legacy fork push disabled
 - `main` tracking `origin/main`
 
 See [VPS Git Remote And Auth Workflow](/projects/model-memory/vps-git-remote-and-auth-workflow)

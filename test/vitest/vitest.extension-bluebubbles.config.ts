@@ -18,6 +18,7 @@ export function createExtensionBlueBubblesVitestConfig(
       dir: "extensions",
       env,
       name: "extension-bluebubbles",
+      pool: "forks",
       passWithNoTests: true,
       setupFiles: ["test/setup.extensions.ts"],
     },
