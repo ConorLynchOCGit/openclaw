@@ -24,20 +24,20 @@ title: "Model Memory Roadmap"
 
 ## Progress snapshot
 
+- The canonical blocker list before Phase 2 is now
+  [Pre-Phase-2 Gate Ledger](/projects/model-memory/pre-phase-2-gate-ledger).
 - Final pre-Phase-2 hardening now adds executable shared-ingestion closeout
   reports, candidate/edge quarantine report helpers, retrieval miss reason
   telemetry, projection hash-invalid exclusion, expanded legacy/fallback
   registry coverage, and persisted-session skill hot-load status reporting.
 - Mini remains the strict capture/ingest default. The wrong-pipe routing bug
-  is fixed and the strict mini route now proves the native Codex responses
-  transport plus auth lane, but the corrected live route still is not clean:
-  native requests have returned provider-boundary `403` HTML and later bounded
-  retries have timed out before producing a clean strict response. This remains
-  provider/auth-lane readiness work, not a reason to fall back to nano for
-  strict MMV2 admission.
+  is fixed, and the remaining work on the strict mini lane is bounded runtime
+  validation rather than auth/model rollback. Mini remains the required strict
+  MMV2 admission default.
 - Phase 0 is complete.
 - Phase 1 is complete.
-- Phase 2 is complete.
+- Phase 2 conceptual design is complete, but implementation remains blocked on
+  the pre-Phase-2 ledger.
 - Phase 3 is complete.
 - Phase 4 is complete.
 - Phase 5 is complete.
@@ -57,9 +57,10 @@ title: "Model Memory Roadmap"
   - `SOAKQUAR-2026-04-21` for the clean MMV2 retrieval-runtime soak
   - `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/`
     for projection materialization and production hook probe evidence
-- The active roadmap is now post-landing verification, curated MMV2 substrate
-  ingestion, retrieval/projection quality hardening, fallback
-  quarantine/removal, closed-loop ops, and Phase 2 derived features.
+- The active roadmap is now the pre-Phase-2 execution lane: docs baseline,
+  closeout parity, persistence isolation proof, retrieval diagnostics, MMV2
+  read cleanup, traceability, DB baselines, recovery/restore proof, and the
+  final Phase-2 entry validation pack.
 - The 2026-04-22 deep document ingest is paused at
   `checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json` for
   provider/funnel hardening; resume only after provider credit/preflight,

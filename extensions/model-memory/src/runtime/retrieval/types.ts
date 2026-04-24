@@ -141,11 +141,20 @@ export type RetrievalMissDiagnostic = {
 export type RetrievalEmptyReason =
   | "none"
   | "no_candidates_found"
-  | "candidates_found_but_excluded"
-  | "ranking_threshold_too_strict"
+  | "memory_existed_but_excluded"
+  | "ranking_below_cutoff"
+  | "scope_mismatch_only"
+  | "pack_budget_trimmed"
+  | "privacy_no_store_exclusion"
   | "provider_schema_failure"
   | "timeout_or_pool_pressure"
-  | "stale_conflict_suppression";
+  | "suppressed_stale"
+  | "suppressed_superseded"
+  | "suppressed_conflicted"
+  | "suppressed_inactive"
+  | "suppressed_hash_invalid"
+  | "suppressed_deleted"
+  | "suppressed_mixed_state";
 
 export type RetrievalRankingFeatureSummary = {
   fielded: number;

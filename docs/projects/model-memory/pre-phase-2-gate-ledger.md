@@ -1,0 +1,119 @@
+---
+summary: "Canonical pre-Phase-2 gate ledger for model-memory execution."
+title: "Pre-Phase-2 Gate Ledger"
+---
+
+# Pre-Phase-2 Gate Ledger
+
+This is the canonical blocking ledger for model-memory before Phase 2
+graph/capsule/planner work begins.
+
+Phase 2 stays blocked until every `must_do` slice below is green.
+
+## Current posture
+
+- MMV2-native SQL remains the live semantic truth.
+- Default user-facing memory reads are MMV2-native compatibility aliases.
+- The regular agent/session model default remains `openai-codex/gpt-5.4`.
+- Strict capture/ingest remains `openai-codex/gpt-5.4-mini`.
+- The earlier wrong-pipe auth/model regression is resolved.
+- Remaining mini work is bounded runtime validation, not model-lane rollback.
+
+## Must Do Before Phase 2
+
+### Slice 0 - Docs baseline and gate ledger
+
+- align `CURRENT_SLICE`, `STATUS`, and `roadmap` to the actual remaining gates
+- keep one canonical ledger for Phase-2 blockers, proof artifacts, and
+  acceptance criteria
+- remove stale wording that implies strict-mini auth/model is still unresolved
+
+### Slice 1 - Ingestion closeout parity
+
+- make closeout auto-emission mandatory on every active ingestion path
+- finish remaining parity on:
+  - bootstrap import
+  - memory-file import
+  - replay/inspection wrapper paths
+  - any wrapper that still bypasses the terminal closeout stage
+
+### Slice 2 - Per-candidate persistence isolation
+
+- ensure invalid candidates or edges do not roll back valid siblings
+- prove this for:
+  - ordinary-turn capture
+  - tool-result capture
+  - document ingest
+  - imports
+
+### Slice 3 - Retrieval miss diagnostics and MMV2-native read cleanup
+
+- lock down `memory_existed_but_excluded`
+- lock down `emptyRetrievalReason`
+- classify exclusions at minimum for:
+  - stale
+  - superseded
+  - conflicted
+  - inactive
+  - hash-invalid
+- keep default user-facing reads MMV2-native
+- keep legacy memory-core behavior compatibility-only
+
+### Slice 4 - Traceability, SLOs, and DB baselines
+
+- add one safe trace id across:
+  - gateway turn
+  - capture seam
+  - capture job
+  - model contract
+  - DB write
+  - dirty marker
+  - rebuild/projection
+  - retrieval pack
+  - final context injection
+- define SLOs and red/yellow/green thresholds
+- add read-only `pg_stat_statements` baselines
+- add read-only autovacuum/bloat/ANALYZE freshness checks
+
+### Slice 5 - Recovery and restore proof
+
+- strengthen crash/restart recovery tests for runtime-state spools
+- prove backup/restore and reconcile for:
+  - durable DB
+  - capture jobs
+  - dirty state
+  - projection artifacts
+  - provider scorecards
+
+### Slice 6 - Phase-2 entry validation pack
+
+- build the controlled Phase-2 entry load test
+- add retrieval quality evals independent of capture
+- add no-dark-data adversarial checks
+- produce one final go/no-go report
+
+## Deferred To Phase 2
+
+These are intentionally deferred unless a narrow subset is required to make a
+blocking pre-Phase-2 slice trustworthy:
+
+- prompt-cache optimization pass
+- full contract registry hardening
+- golden eval corpus
+- provider scorecard gating as a full route policy system
+- projection lifecycle hardening beyond the P0 proof bar
+- runtime pack budget governance
+- memory inspector UX/API
+- broader correction workflow hardening
+- formal retention-policy program
+- broad CI guardrail expansion
+
+## Phase-2 entry rule
+
+Do not begin graph, capsule, hierarchical retrieval, planner, synthesis, or
+cache-policy implementation until:
+
+1. every `must_do` slice above is green
+2. the proof artifacts are present and linked
+3. the docs match the landed truth
+4. remaining work is explicitly recorded as Phase-2 scope, not hidden debt

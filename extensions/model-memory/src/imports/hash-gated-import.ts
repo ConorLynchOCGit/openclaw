@@ -1,6 +1,16 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  emitMemoryIngestionCloseoutIfConfigured,
+  type MemoryIngestionCloseoutArtifact,
+} from "../ingestion/closeout-artifacts.ts";
+import {
+  classifyMemoryIngestionFailure,
+  createMemoryIngestionTelemetryEvent,
+  type MemoryIngestionPath,
+  type MemoryIngestionStage,
+} from "../ingestion/shared-pipeline.ts";
 
 export type HashGatedImportSourceType =
   | "agent_bootstrap"
@@ -55,11 +65,13 @@ export type HashGatedImportResult =
       reason: "unchanged_hash";
       record: HashGatedImportRecord;
       event: HashGatedImportEvent;
+      closeoutArtifact?: MemoryIngestionCloseoutArtifact;
     }
   | {
       status: "written";
       record: HashGatedImportRecord;
       event: HashGatedImportEvent;
+      closeoutArtifact?: MemoryIngestionCloseoutArtifact;
       importedIds?: {
         sourceId?: string;
         memoryIds?: string[];
@@ -70,6 +82,7 @@ export type HashGatedImportResult =
       status: "failed";
       record: HashGatedImportRecord;
       event: HashGatedImportEvent;
+      closeoutArtifact?: MemoryIngestionCloseoutArtifact;
     };
 
 export type HashGatedImportStore = {
@@ -86,6 +99,82 @@ export type HashGatedImportStore = {
   }): Promise<HashGatedImportResult>;
   readState(): Promise<HashGatedImportRecord[]>;
 };
+
+function resolveIngestionPath(
+  sourceType: HashGatedImportSourceType,
+): Extract<MemoryIngestionPath, "bootstrap_import" | "memory_file_import"> {
+  return sourceType === "agent_bootstrap" ? "bootstrap_import" : "memory_file_import";
+}
+
+function resolveFailureStage(error: unknown): MemoryIngestionStage {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  if (code === "ENOENT" || code === "EISDIR") {
+    return "source_intake";
+  }
+  if (code === "EACCES" || code === "EPERM") {
+    return "source_intake";
+  }
+  return "execution";
+}
+
+async function emitHashGatedImportCloseout(input: {
+  env: NodeJS.ProcessEnv | undefined;
+  source: HashGatedImportSource;
+  sourceHash: string;
+  importedAt: Date;
+  status: "written" | "skipped" | "failed";
+  importedIds?: {
+    sourceId?: string;
+    memoryIds?: string[];
+    eventIds?: string[];
+  };
+  failure?: {
+    message: string;
+    stage: MemoryIngestionStage;
+  };
+}): Promise<MemoryIngestionCloseoutArtifact | undefined> {
+  const admittedIds = input.importedIds?.memoryIds ?? [];
+  const eventIds = input.importedIds?.eventIds ?? [];
+  const failureClass =
+    input.failure?.message !== undefined
+      ? classifyMemoryIngestionFailure(input.failure.message)
+      : undefined;
+  return emitMemoryIngestionCloseoutIfConfigured({
+    env: input.env,
+    path: resolveIngestionPath(input.source.sourceType),
+    runId: `${input.source.sourceType}:${input.source.sourceId}:${input.importedAt.toISOString()}`,
+    sourceId: input.importedIds?.sourceId ?? input.source.sourceId,
+    sourceHash: input.sourceHash,
+    telemetryEvents: [
+      createMemoryIngestionTelemetryEvent({
+        path: resolveIngestionPath(input.source.sourceType),
+        stage:
+          input.failure?.stage ??
+          (input.status === "skipped" ? "source_fingerprint" : "persistence_boundary"),
+        status:
+          input.status === "written"
+            ? "completed"
+            : input.status === "skipped"
+              ? "skipped"
+              : "failed",
+        failure_class: failureClass,
+        candidate_counts:
+          input.status === "written"
+            ? {
+                valid: admittedIds.length,
+                admitted: admittedIds.length,
+              }
+            : undefined,
+        ids: {
+          source_ids: [input.importedIds?.sourceId ?? input.source.sourceId],
+          memory_ids: admittedIds,
+          event_ids: eventIds,
+        },
+      }),
+    ],
+    dirtyState: { status: "not_required", reason: "hash_gated_import" },
+  });
+}
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -217,39 +306,50 @@ export function createHashGatedImportStore(
     async evaluate({ source, content, importedAt, onChanged }) {
       assertSafeSourceId(source.sourceId);
       const importedTime = importedAt ?? new Date();
-      const sourceContent = content ?? (await readFile(source.absolutePath, "utf8"));
-      const sourceHash = sha256(sourceContent);
-      const records = await readStateFile(statePath);
-      const previous = records.find((record) => record.source_id === source.sourceId);
-      const nextRecord = buildRecord({
-        source,
-        sourceHash,
-        content: sourceContent,
-        importedAt: importedTime,
-        previous,
-      });
-
-      if (previous?.source_hash === sourceHash) {
-        const skipped = event({
-          eventType: "import_skipped",
+      let previous: HashGatedImportRecord | undefined;
+      let sourceContentForFailure = typeof content === "string" ? content : "";
+      try {
+        const sourceContent = content ?? (await readFile(source.absolutePath, "utf8"));
+        sourceContentForFailure = sourceContent;
+        const sourceHash = sha256(sourceContent);
+        const records = await readStateFile(statePath);
+        previous = records.find((record) => record.source_id === source.sourceId);
+        const nextRecord = buildRecord({
           source,
           sourceHash,
-          observedAt: importedTime,
+          content: sourceContent,
+          importedAt: importedTime,
+          previous,
         });
-        await appendJsonLine(eventsPath, skipped);
-        return {
-          status: "skipped",
-          reason: "unchanged_hash",
-          record: previous,
-          event: skipped,
-        };
-      }
 
-      await appendJsonLine(
-        eventsPath,
-        event({ eventType: "import_queued", source, sourceHash, observedAt: importedTime }),
-      );
-      try {
+        if (previous?.source_hash === sourceHash) {
+          const skipped = event({
+            eventType: "import_skipped",
+            source,
+            sourceHash,
+            observedAt: importedTime,
+          });
+          await appendJsonLine(eventsPath, skipped);
+          const closeoutArtifact = await emitHashGatedImportCloseout({
+            env: input.env ?? process.env,
+            source,
+            sourceHash,
+            importedAt: importedTime,
+            status: "skipped",
+          });
+          return {
+            status: "skipped",
+            reason: "unchanged_hash",
+            record: previous,
+            event: skipped,
+            closeoutArtifact,
+          };
+        }
+
+        await appendJsonLine(
+          eventsPath,
+          event({ eventType: "import_queued", source, sourceHash, observedAt: importedTime }),
+        );
         const importedIds = await onChanged?.({
           source,
           sourceHash,
@@ -267,26 +367,60 @@ export function createHashGatedImportStore(
           observedAt: importedTime,
         });
         await appendJsonLine(eventsPath, written);
+        const closeoutArtifact = await emitHashGatedImportCloseout({
+          env: input.env ?? process.env,
+          source,
+          sourceHash,
+          importedAt: importedTime,
+          status: "written",
+          importedIds: importedIds ?? undefined,
+        });
         return {
           status: "written",
           record: nextRecord,
           event: written,
+          closeoutArtifact,
           importedIds: importedIds ?? undefined,
         };
       } catch (error) {
+        const sourceHash =
+          typeof content === "string"
+            ? sha256(content)
+            : sha256(`${source.absolutePath}:${source.sourceId}`);
+        const nextRecord = buildRecord({
+          source,
+          sourceHash,
+          content: sourceContentForFailure,
+          importedAt: importedTime,
+          previous,
+        });
         const failed = event({
           eventType: "import_failed",
           source,
           sourceHash,
           observedAt: importedTime,
-          failureClass: "import_callback_failed",
-          failureStage: error instanceof Error ? error.name : "unknown",
+          failureClass: classifyMemoryIngestionFailure(
+            error instanceof Error ? error.message : String(error),
+          ),
+          failureStage: resolveFailureStage(error),
         });
         await appendJsonLine(eventsPath, failed);
+        const closeoutArtifact = await emitHashGatedImportCloseout({
+          env: input.env ?? process.env,
+          source,
+          sourceHash,
+          importedAt: importedTime,
+          status: "failed",
+          failure: {
+            message: error instanceof Error ? error.message : String(error),
+            stage: resolveFailureStage(error),
+          },
+        });
         return {
           status: "failed",
           record: nextRecord,
           event: failed,
+          closeoutArtifact,
         };
       }
     },

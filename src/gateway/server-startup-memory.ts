@@ -30,7 +30,7 @@ export async function startGatewayMemoryBackend(params: {
       !modelMemoryRuntime.legacyMemorySearchDisabled
     ) {
       params.log.warn(
-        'model-memory live runtime is enabled while legacy memory surfaces remain configured; keep plugins.slots.memory="none" and agents.defaults.memorySearch.enabled=false for cutover mode',
+        'model-memory live runtime is enabled while legacy compatibility memory surfaces remain configured; keep plugins.slots.memory="none" and agents.defaults.memorySearch.enabled=false for MMV2-native mode',
       );
     }
     return;

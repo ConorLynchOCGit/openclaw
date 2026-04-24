@@ -640,7 +640,7 @@ describe("memory retrieval runtime", () => {
 
     expect(run.metrics).toMatchObject({
       emptyRetrieval: true,
-      emptyRetrievalReason: "stale_conflict_suppression",
+      emptyRetrievalReason: "suppressed_mixed_state",
       staleFilteredCount: 1,
       conflictedFilteredCount: 1,
       rankingFeatures: {

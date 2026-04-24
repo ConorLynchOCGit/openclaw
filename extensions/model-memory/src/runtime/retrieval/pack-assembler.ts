@@ -334,17 +334,40 @@ function resolveEmptyRetrievalReason(input: {
     return "none";
   }
   if (input.exclusions.length > 0) {
-    const allSuppressed = input.exclusions.every(
-      (exclusion) =>
-        exclusion.reason === "stale" ||
-        exclusion.reason === "conflicted" ||
-        exclusion.reason === "inactive" ||
-        exclusion.reason === "hash_invalid",
+    const reasons = [...new Set(input.exclusions.map((exclusion) => exclusion.reason))];
+    if (reasons.length === 1) {
+      switch (reasons[0]) {
+        case "stale":
+          return "suppressed_stale";
+        case "superseded":
+          return "suppressed_superseded";
+        case "conflicted":
+          return "suppressed_conflicted";
+        case "inactive":
+          return "suppressed_inactive";
+        case "hash_invalid":
+          return "suppressed_hash_invalid";
+        case "deleted":
+          return "suppressed_deleted";
+        case "scope_mismatch":
+          return "scope_mismatch_only";
+        case "budget":
+          return "pack_budget_trimmed";
+        case "sensitive":
+          return "privacy_no_store_exclusion";
+        case "low_score":
+          return "ranking_below_cutoff";
+        default:
+          return "memory_existed_but_excluded";
+      }
+    }
+    const allSuppressed = reasons.every((reason) =>
+      ["stale", "superseded", "conflicted", "inactive", "hash_invalid", "deleted"].includes(reason),
     );
-    return allSuppressed ? "stale_conflict_suppression" : "candidates_found_but_excluded";
+    return allSuppressed ? "suppressed_mixed_state" : "memory_existed_but_excluded";
   }
   if (input.candidateCount > 0) {
-    return "ranking_threshold_too_strict";
+    return "ranking_below_cutoff";
   }
   return "no_candidates_found";
 }

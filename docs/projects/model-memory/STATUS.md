@@ -7,9 +7,24 @@ title: "Model Memory Status"
 
 ## Overall
 
-State: `pre_phase_2_memory_gates_live_proven`
+State: `pre_phase_2_execution_in_progress`
 
-2026-04-23 final hardening update:
+2026-04-24 pre-Phase-2 execution update:
+
+- the canonical blocker ledger is now
+  [Pre-Phase-2 Gate Ledger](/projects/model-memory/pre-phase-2-gate-ledger)
+- shared ingestion closeout parity now covers active live capture/document
+  paths, hash-gated import, and replay-wrapper inspection closeout
+- retrieval miss classification no longer stops at generic
+  `candidates_found_but_excluded` / `stale_conflict_suppression` buckets; the
+  runtime now emits explicit suppression classes for stale, superseded,
+  conflicted, inactive, hash-invalid, scope-only, budget-only, and
+  privacy-only misses
+- strict capture/ingest default remains `openai-codex/gpt-5.4-mini`; the
+  earlier wrong-pipe auth/model regression is fixed, and the remaining mini
+  work is bounded runtime validation rather than model-lane rollback
+- Phase 2 is still blocked until the ledger slices are closed; graph/capsule/
+  planner work is not the active implementation lane
 
 - shared ingestion now has executable closeout/quarantine report helpers for
   active capture/ingest paths; reports are runtime-state/artifact outputs and
@@ -30,11 +45,6 @@ State: `pre_phase_2_memory_gates_live_proven`
   `memory_search` / `memory_get` now resolve to MMV2-native compatibility
   aliases by default, with true legacy memory-core behavior gated behind
   `MODEL_MEMORY_LEGACY_MEMORY_TOOLS_ENABLED=true`
-- strict capture/ingest default remains `openai-codex/gpt-5.4-mini`; the
-  live route proof no longer uses the wrong OpenAI chat-completions pipe and
-  now records the native Codex responses route plus auth lane, but clean live
-  validation is still blocked on the corrected route by provider-boundary
-  failures (`403` HTML on the native path and later bounded retry timeouts)
 - `openclaw agents skills-status --agent <id> --json` can now report persisted
   warm-session loaded skill snapshots as current or stale when the session
   store contains one; otherwise it reports `not_available` with the concrete

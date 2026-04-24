@@ -178,10 +178,10 @@ describe("retrieval eval corpus", () => {
 
     expect(noCandidates.retrievalRun.metrics.emptyRetrievalReason).toBe("no_candidates_found");
     expect(excludedCandidates.retrievalRun.metrics.emptyRetrievalReason).toBe(
-      "candidates_found_but_excluded",
+      "scope_mismatch_only",
     );
     expect(suppressionOnly.retrievalRun.metrics.emptyRetrievalReason).toBe(
-      "stale_conflict_suppression",
+      "suppressed_mixed_state",
     );
   });
 
@@ -240,6 +240,41 @@ describe("retrieval eval corpus", () => {
         }),
       ]),
     );
+  });
+
+  it("classifies single-cause suppression reasons explicitly", () => {
+    const staleOnly = evaluateCase({
+      projectionVersions: [
+        {
+          id: "projection-stale-only",
+          targetId: "project-page",
+          projectionType: "project_page",
+          contentHash: "hash-stale",
+          canonicalArtifactPath: ".openclaw/model-memory/projections/project/page.md",
+          sourceObjectIds: ["memory-active"],
+          sourceSlotKeys: [],
+          sourceSetKeys: [],
+          tokenEstimate: 8,
+          builtAt: new Date(0),
+          freshness: { status: "stale", reason: "projection_outdated" },
+          staleMarkers: ["projection_outdated"],
+          conflictMarkers: [],
+        },
+      ],
+      memoryObjects: [memory({ id: "memory-active", canonicalClass: "user" })],
+      request: buildRequest({
+        canonicalClasses: ["project"],
+        goal: "project deployment summary",
+        subjectHints: ["deployment"],
+        contentHints: ["region"],
+      }),
+    });
+    const inactiveOnly = evaluateCase({
+      memoryObjects: [memory({ id: "memory-inactive-only", lifecycleState: "provisional" })],
+    });
+
+    expect(staleOnly.retrievalRun.metrics.emptyRetrievalReason).toBe("suppressed_stale");
+    expect(inactiveOnly.retrievalRun.metrics.emptyRetrievalReason).toBe("suppressed_inactive");
   });
 
   it("prefers fresh projection digests backed by active MMV2 ids and records selected backing ids", () => {

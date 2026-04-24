@@ -5,9 +5,14 @@ title: "Model Memory Current Slice"
 
 # Current Slice
 
-## 2026-04-23 Final Pre-Phase-2 Hardening Follow-Up
+## 2026-04-24 Pre-Phase-2 Execution Lane
 
-This slice now includes the final pre-Phase-2 hardening follow-up:
+This slice is now the execution lane for the remaining pre-Phase-2 gates.
+The canonical blocker ledger is:
+
+- [Pre-Phase-2 Gate Ledger](/projects/model-memory/pre-phase-2-gate-ledger)
+
+Already landed in the active source tree:
 
 - the shared ingestion funnel is no longer only a taxonomy; it now has
   artifact-safe closeout and candidate/edge quarantine report helpers that can
@@ -25,14 +30,20 @@ This slice now includes the final pre-Phase-2 hardening follow-up:
   compatibility aliases by default and only restore true legacy memory-core
   behavior behind `MODEL_MEMORY_LEGACY_MEMORY_TOOLS_ENABLED=true`
 - strict capture/ingest still defaults to `openai-codex/gpt-5.4-mini`; the
-  wrong OpenAI chat-completions pipe has been eliminated and strict mini route
-  proof now records the native Codex responses transport plus auth lane, but
-  live validation on that corrected lane is still not cleanly proven because
-  the native route has returned provider-boundary `403` HTML and subsequent
-  bounded retries have timed out before a clean strict response
+  earlier wrong-pipe auth/model regression is fixed, and the remaining work is
+  bounded runtime validation on the corrected mini lane rather than fallback to
+  another default model
 - skill status now reports persisted warm-session skill snapshots when present,
   including current/stale hot-load state; true in-memory state still depends on
   the runner persisting an up-to-date session snapshot
+- hash-gated import now emits the same closeout artifact family as the other
+  active ingestion paths, and replay wrappers now emit explicit
+  `capture_replay_inspection` closeout artifacts instead of relying only on the
+  underlying capture/document service path
+- retrieval miss classification now distinguishes explicit suppression classes
+  such as stale, superseded, conflicted, inactive, hash-invalid, scope-only,
+  budget-only, and privacy-only misses instead of collapsing them into generic
+  empty retrieval buckets
 
 ## Slice
 
@@ -43,10 +54,10 @@ This slice now includes the final pre-Phase-2 hardening follow-up:
 Use the accepted `SOAKQUAR-2026-04-21` clean soak, accepted runtime-boundary
 proof, committed runtime-hardening landing at `ee0c093c1a`, and the
 `SOAKLAND-2026-04-22` hardening proof as regression baselines. The active lane
-keeps document ingest paused, lands fallback quarantine/retrieval/projection
-hardening, and prepares the next overnight ingest continuation without
-reintroducing semantic forests, fuzzy write-path correction, root
-workspace-file write-back, or raw-data capture.
+is no longer "one more hardening follow-up"; it is the explicit pre-Phase-2
+execution sequence in the gate ledger. Document ingest remains paused while the
+remaining gates are closed without reintroducing semantic forests, fuzzy
+write-path correction, root workspace-file write-back, or raw-data capture.
 
 The accepted runtime-boundary proof rooted at
 `.artifacts/model-memory/runtime-boundary/2026-04-21-hook-projection-proof/`

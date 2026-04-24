@@ -435,10 +435,19 @@ describe("replay-service", () => {
       expect(result.closeoutArtifact?.path).toContain(
         path.join("model-memory", "closeout-reports", "ordinary_turn_capture"),
       );
+      expect(result.replayCloseoutArtifact?.path).toContain(
+        path.join("model-memory", "closeout-reports", "capture_replay_inspection"),
+      );
       const closeout = JSON.parse(await readFile(result.closeoutArtifact!.path, "utf8"));
       expect(closeout.path).toBe("ordinary_turn_capture");
       expect(closeout.source_id).toBe(result.source.id);
       expect(JSON.stringify(closeout)).not.toContain("Standing preference");
+      const replayCloseout = JSON.parse(
+        await readFile(result.replayCloseoutArtifact!.path, "utf8"),
+      );
+      expect(replayCloseout.path).toBe("capture_replay_inspection");
+      expect(replayCloseout.source_id).toBe(result.source.id);
+      expect(JSON.stringify(replayCloseout)).not.toContain("Standing preference");
     } finally {
       if (previousEngine === undefined) {
         delete process.env.MODEL_MEMORY_DOCUMENT_INGEST_ENGINE;

@@ -241,13 +241,13 @@ export async function noteMemorySearchHealth(
     }
     note(
       [
-        "model-memory live runtime is enabled, but legacy memory surfaces are still partially active.",
+        "model-memory live runtime is enabled, but legacy compatibility memory surfaces are still partially active.",
         modelMemoryRuntime.legacyMemorySlotDisabled
           ? null
           : `- Disable legacy slot: ${formatCliCommand("openclaw config set plugins.slots.memory none")}`,
         modelMemoryRuntime.legacyMemorySearchDisabled
           ? null
-          : `- Disable legacy memory search: ${formatCliCommand("openclaw config set agents.defaults.memorySearch.enabled false")}`,
+          : `- Disable legacy compatibility memory search: ${formatCliCommand("openclaw config set agents.defaults.memorySearch.enabled false")}`,
       ]
         .filter(Boolean)
         .join("\n"),

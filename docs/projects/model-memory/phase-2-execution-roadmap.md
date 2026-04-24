@@ -8,6 +8,9 @@ title: "Phase 2 Execution Roadmap"
 This roadmap turns the approved Phase 2 conceptual spec pack into an executable
 sequence.
 
+Phase 2 implementation is currently blocked on the remaining pre-Phase-2 gates
+listed in [Pre-Phase-2 Gate Ledger](/projects/model-memory/pre-phase-2-gate-ledger).
+
 It is intentionally ordered. The goal is not to implement every concept in
 parallel. The goal is to land the next memory/runtime architecture in slices
 that can be validated, rolled back, and reviewed without losing operational
