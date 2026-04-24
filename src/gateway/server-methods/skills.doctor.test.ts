@@ -76,12 +76,18 @@ describe("skills.doctor handler", () => {
       managedSkillsDir: "/tmp/writer/.managed",
       configuredSkillDirs: [],
       discoveredSkillNames: ["calendar"],
+      activatableSkillNames: ["calendar"],
+      modelVisibleSkillNames: ["calendar"],
       loadedSkillNames: ["calendar"],
       loadedState: "available",
       hotReloadState: "current",
-      watchState: "not_available",
+      watchState: "enabled",
+      watchStateReason: "current",
+      newSessionRequired: false,
+      newSessionRequiredReason: "current",
       restartRequired: false,
       restartRequiredReason: "current",
+      skills: [],
       trackedClawHubInstalls: [],
       writableSurfaces: [],
       collisions: [],
@@ -107,6 +113,7 @@ describe("skills.doctor handler", () => {
     expect(response).toMatchObject({
       workspaceDir: "/tmp/writer",
       loadedState: "available",
+      newSessionRequired: false,
       restartRequired: false,
     });
   });

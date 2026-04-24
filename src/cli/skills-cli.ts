@@ -76,12 +76,25 @@ function formatSkillsDoctorText(
     }`,
   );
   lines.push(`Hot reload: ${report.hotReloadState}`);
+  lines.push(`Activatable skills: ${report.activatableSkillNames.length}`);
+  lines.push(`Model-visible skills: ${report.modelVisibleSkillNames.length}`);
   lines.push(
     `Restart required: ${
       report.restartRequired === null ? "not_available" : report.restartRequired ? "yes" : "no"
     }${report.restartRequiredReason ? ` (${report.restartRequiredReason})` : ""}`,
   );
-  lines.push(`Watch state: ${report.watchState}`);
+  lines.push(
+    `New session required: ${
+      report.newSessionRequired === null
+        ? "not_available"
+        : report.newSessionRequired
+          ? "yes"
+          : "no"
+    }${report.newSessionRequiredReason ? ` (${report.newSessionRequiredReason})` : ""}`,
+  );
+  lines.push(
+    `Watch state: ${report.watchState}${report.watchStateReason ? ` (${report.watchStateReason})` : ""}`,
+  );
   lines.push(
     `Configured roots: ${report.configuredSkillDirs
       .map((entry) => `${entry.kind}=${shortenHomePath(entry.path)}`)

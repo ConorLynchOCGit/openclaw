@@ -57,6 +57,8 @@ describe("buildSkillsDoctorReport", () => {
     expect(report.writableSurfaces.some((entry) => entry.kind === "workspace")).toBe(true);
     expect(report.restartRequired).toBeNull();
     expect(report.restartRequiredReason).toContain("warm-session snapshot");
+    expect(report.newSessionRequired).toBeNull();
+    expect(report.watchState).toBe("enabled");
   });
 
   it("detects tracked ClawHub fingerprint drift", async () => {
@@ -130,6 +132,11 @@ describe("buildSkillsDoctorReport", () => {
         }),
       ]),
     );
+    const trackedSkill = report.skills.find((skill) => skill.name === "agentreceipt");
+    expect(trackedSkill?.blockedByTrustVetting).toBe(true);
+    expect(trackedSkill?.activatable).toBe(false);
+    expect(trackedSkill?.modelVisible).toBe(false);
+    expect(trackedSkill?.availabilityState).toBe("blocked_trust_vetting");
   });
 
   it("marks restart as not required when the warm-session snapshot is current", async () => {
@@ -155,6 +162,39 @@ describe("buildSkillsDoctorReport", () => {
     expect(report.loadedState).toBe("available");
     expect(report.hotReloadState).toBe("current");
     expect(report.restartRequired).toBe(false);
-    expect(report.restartRequiredReason).toContain("matches the current discovered skill set");
+    expect(report.newSessionRequired).toBe(false);
+    expect(report.watchState).toBe("enabled");
+    expect(report.newSessionRequiredReason).toContain("already includes all activatable skills");
+  });
+
+  it("marks a fresh session as required when an activatable skill is missing from a current snapshot", async () => {
+    const workspaceDir = await createWorkspace();
+    await writeSkill(path.join(workspaceDir, "skills"), "calendar", "Workspace skill");
+
+    const report = await buildSkillsDoctorReport({
+      workspaceDir,
+      config: {
+        skills: {
+          load: {
+            watch: false,
+          },
+        },
+      },
+      managedSkillsDir: path.join(workspaceDir, ".managed"),
+      loadedSession: {
+        currentSnapshotVersion: 0,
+        updatedAt: 123,
+        skillsSnapshot: {
+          prompt: "",
+          version: 0,
+          skills: [],
+        },
+      },
+    });
+
+    expect(report.watchState).toBe("disabled");
+    expect(report.newSessionRequired).toBe(true);
+    expect(report.newSessionRequiredReason).toContain("calendar");
+    expect(report.restartRequired).toBe(false);
   });
 });

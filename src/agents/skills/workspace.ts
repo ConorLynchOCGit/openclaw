@@ -13,7 +13,7 @@ import {
   resolveEffectiveAgentSkillsLimits,
 } from "./agent-filter.js";
 import { resolveBundledSkillsDir } from "./bundled-dir.js";
-import { shouldIncludeSkill } from "./config.js";
+import { isSkillVisibleInModelCatalog, shouldIncludeSkill } from "./config.js";
 import { normalizeSkillFilter } from "./filter.js";
 import { resolveOpenClawMetadata, resolveSkillInvocationPolicy } from "./frontmatter.js";
 import { loadSkillsFromDirSafe, readSkillFrontmatterSafe } from "./local-loader.js";
@@ -80,16 +80,6 @@ function compactHomePath(filePath: string, homes: readonly string[]): string {
 
 function compactPathForConsoleMessage(filePath: string): string {
   return compactHomePath(filePath, resolveCompactHomePrefixes());
-}
-
-function isSkillVisibleInAvailableSkillsPrompt(entry: SkillEntry): boolean {
-  if (entry.exposure) {
-    return entry.exposure.includeInAvailableSkillsPrompt !== false;
-  }
-  if (entry.invocation) {
-    return entry.invocation.disableModelInvocation !== true;
-  }
-  return entry.skill.disableModelInvocation !== true;
 }
 
 function filterSkillEntries(
@@ -754,7 +744,7 @@ function resolveWorkspaceSkillPromptState(
     effectiveSkillFilter,
     opts?.eligibility,
   );
-  const promptEntries = eligible.filter((entry) => isSkillVisibleInAvailableSkillsPrompt(entry));
+  const promptEntries = eligible.filter((entry) => isSkillVisibleInModelCatalog(entry));
   const remoteNote = opts?.eligibility?.remote?.note?.trim();
   const resolvedSkills = promptEntries.map((entry) => entry.skill);
   const promptPathSkills = resolvedSkills.map((skill) => ({

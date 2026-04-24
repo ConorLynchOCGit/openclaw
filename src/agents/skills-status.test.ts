@@ -35,6 +35,8 @@ describe("buildWorkspaceSkillStatus", () => {
     expect(report.loadedSessionKey).toBe("agent:main:main");
     expect(report.loadedSnapshotVersion).toBe(7);
     expect(report.currentSnapshotVersion).toBe(7);
+    expect(report.activatableSkillNames).toEqual([]);
+    expect(report.modelVisibleSkillNames).toEqual([]);
   });
 
   it("classifies stale persisted session skill snapshots", () => {
@@ -70,6 +72,40 @@ describe("buildWorkspaceSkillStatus", () => {
     expect(report.hotReloadState).toBe("not_available");
     expect(report.loadedSkillNames).toBeNull();
     expect(report.loadedStateReason).toContain("no persisted main-session entry");
+  });
+
+  it("classifies activatable skills that are missing from the current session snapshot as new-session-required", () => {
+    const entry: SkillEntry = {
+      skill: createFixtureSkill({
+        name: "calendar",
+        description: "test",
+        filePath: "/tmp/calendar/SKILL.md",
+        baseDir: "/tmp/calendar",
+        source: "openclaw-workspace",
+      }),
+      frontmatter: {},
+    };
+
+    const report = buildWorkspaceSkillStatus("/tmp/ws", {
+      entries: [entry],
+      loadedSession: {
+        sessionKey: "agent:main:main",
+        currentSnapshotVersion: 0,
+        skillsSnapshot: {
+          prompt: "skills prompt",
+          skills: [],
+          version: 0,
+        },
+      },
+    });
+
+    expect(report.activatableSkillNames).toEqual(["calendar"]);
+    expect(report.modelVisibleSkillNames).toEqual(["calendar"]);
+    const calendar = report.skills.find((skill) => skill.name === "calendar");
+    expect(calendar?.activatable).toBe(true);
+    expect(calendar?.loadedInCurrentSession).toBe(false);
+    expect(calendar?.newSessionRequired).toBe(true);
+    expect(calendar?.availabilityState).toBe("activatable");
   });
 
   it("does not surface install options for OS-scoped skills on unsupported platforms", () => {

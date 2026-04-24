@@ -161,6 +161,37 @@ describe("buildWorkspaceSkillStatus", () => {
     });
   });
 
+  it("keeps trust-blocked third-party skills out of the activatable and model-visible sets", async () => {
+    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-skill-trust-"));
+    tempDirs.push(skillDir);
+    const entry: SkillEntry = {
+      skill: createFixtureSkill({
+        name: "third-party",
+        description: "test",
+        filePath: path.join(skillDir, "SKILL.md"),
+        baseDir: skillDir,
+        source: "openclaw-workspace",
+      }),
+      frontmatter: {},
+    };
+
+    await fs.mkdir(path.join(skillDir, ".clawhub"), { recursive: true });
+    await fs.writeFile(
+      path.join(skillDir, ".clawhub", "origin.json"),
+      `${JSON.stringify({ version: 2, source: "clawhub" }, null, 2)}\n`,
+      "utf8",
+    );
+
+    const report = buildWorkspaceSkillStatus("/tmp/ws", { entries: [entry] });
+    const skill = report.skills.find((reportEntry) => reportEntry.name === "third-party");
+
+    expect(skill?.blockedByTrustVetting).toBe(true);
+    expect(skill?.activatable).toBe(false);
+    expect(skill?.modelVisible).toBe(false);
+    expect(report.activatableSkillNames).toEqual([]);
+    expect(report.modelVisibleSkillNames).toEqual([]);
+  });
+
   it("filters install options by OS", async () => {
     const entry = makeEntry({
       name: "install-skill",

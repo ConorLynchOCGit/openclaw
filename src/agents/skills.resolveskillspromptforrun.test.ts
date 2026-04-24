@@ -1,7 +1,16 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import { resolveSkillsPromptForRun } from "./skills.js";
 import { createCanonicalFixtureSkill } from "./skills.test-helpers.js";
 import type { SkillEntry } from "./skills/types.js";
+
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+});
 
 describe("resolveSkillsPromptForRun", () => {
   it("prefers snapshot prompt when available", () => {
@@ -129,6 +138,35 @@ describe("resolveSkillsPromptForRun", () => {
 
     expect(prompt).not.toContain("/app/skills/weather/SKILL.md");
     expect(prompt).toContain("/app/skills/docs-search/SKILL.md");
+  });
+
+  it("hides trust-blocked third-party skills from the model-facing catalog", async () => {
+    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-skill-prompt-trust-"));
+    tempDirs.push(skillDir);
+    await fs.mkdir(path.join(skillDir, ".clawhub"), { recursive: true });
+    await fs.writeFile(
+      path.join(skillDir, ".clawhub", "origin.json"),
+      `${JSON.stringify({ version: 2, source: "clawhub" }, null, 2)}\n`,
+      "utf8",
+    );
+
+    const blocked: SkillEntry = {
+      skill: createFixtureSkill({
+        name: "third-party",
+        description: "Third-party",
+        filePath: path.join(skillDir, "SKILL.md"),
+        baseDir: skillDir,
+        source: "openclaw-workspace",
+      }),
+      frontmatter: {},
+    };
+
+    const prompt = resolveSkillsPromptForRun({
+      entries: [blocked],
+      workspaceDir: "/tmp/openclaw",
+    });
+
+    expect(prompt).toBe("");
   });
 });
 

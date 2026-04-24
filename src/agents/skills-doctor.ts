@@ -9,7 +9,11 @@ import {
   readTrackedClawHubSkillInstalls,
   type TrackedClawHubSkillInstall,
 } from "./skills-clawhub.js";
-import { buildWorkspaceSkillStatus, type SkillLoadedSnapshotStatus } from "./skills-status.js";
+import {
+  buildWorkspaceSkillStatus,
+  type SkillLoadedSnapshotStatus,
+  type SkillStatusEntry,
+} from "./skills-status.js";
 import { resolveBundledSkillsContext } from "./skills/bundled-context.js";
 import { loadSkillsFromDirSafe } from "./skills/local-loader.js";
 import { resolvePluginSkillDirs } from "./skills/plugin-skills.js";
@@ -59,13 +63,19 @@ export type SkillsDoctorReport = {
   managedSkillsDir: string;
   configuredSkillDirs: Array<{ kind: string; path: string }>;
   discoveredSkillNames: string[];
+  activatableSkillNames: string[];
+  modelVisibleSkillNames: string[];
   loadedSkillNames: string[] | null;
   loadedState: "not_available" | "available";
   loadedStateReason?: string;
   hotReloadState: "current" | "stale" | "unknown" | "not_available";
-  watchState: "not_available";
+  watchState: "enabled" | "disabled";
+  watchStateReason?: string;
+  newSessionRequired: boolean | null;
+  newSessionRequiredReason?: string;
   restartRequired: boolean | null;
   restartRequiredReason?: string;
+  skills: SkillStatusEntry[];
   trackedClawHubInstalls: TrackedClawHubSkillInstall[];
   writableSurfaces: SkillsDoctorWritableSurface[];
   collisions: SkillsDoctorCollision[];
@@ -332,36 +342,97 @@ export async function buildSkillsDoctorReport(params: {
   ]);
   const collisions = buildCollisions(roots);
   const conformanceIssues = await buildConformanceIssues(trackedClawHubInstalls);
-  const loadedNameSet = new Set(status.loadedSkillNames ?? []);
+  const trustBlockedReasons = new Map<string, string[]>();
+  for (const issue of conformanceIssues) {
+    if (!issue.skillName) {
+      continue;
+    }
+    if (
+      issue.code === "tracked_origin_review_missing" ||
+      issue.code === "tracked_origin_integrity_missing" ||
+      issue.code === "tracked_origin_fingerprint_drift" ||
+      issue.code === "tracked_origin_missing"
+    ) {
+      const reasons = trustBlockedReasons.get(issue.skillName) ?? [];
+      reasons.push(issue.message);
+      trustBlockedReasons.set(issue.skillName, reasons);
+    }
+  }
+
+  const skills = status.skills.map((skill) => {
+    const trustReasons = trustBlockedReasons.get(skill.name);
+    if (!trustReasons || trustReasons.length === 0) {
+      return skill;
+    }
+    return {
+      ...skill,
+      blockedByTrustVetting: true,
+      activatable: false,
+      eligible: false,
+      modelVisible: false,
+      availabilityState: "blocked_trust_vetting" as const,
+      availabilityReason: trustReasons.join(" "),
+      newSessionRequired: false,
+    };
+  });
+
+  const activatableSkillNames = skills
+    .filter((skill) => skill.activatable)
+    .map((skill) => skill.name)
+    .toSorted();
+  const modelVisibleSkillNames = skills
+    .filter((skill) => skill.modelVisible)
+    .map((skill) => skill.name)
+    .toSorted();
   const missingLoadedSkills =
     status.loadedState === "available"
-      ? status.discoveredSkillNames.filter((name) => !loadedNameSet.has(name))
+      ? skills
+          .filter((skill) => skill.activatable && skill.loadedInCurrentSession === false)
+          .map((skill) => skill.name)
       : [];
-  const restartRequired =
+  const watchEnabled = params.config?.skills?.load?.watch !== false;
+  const watchState = watchEnabled ? "enabled" : "disabled";
+  const watchStateReason = watchEnabled
+    ? "watching SKILL.md changes and bumping the session skills snapshot version; current sessions refresh on the next run"
+    : "skills.load.watch is disabled, so new skills may require a fresh session before the runtime notices them";
+  const newSessionRequired =
     status.loadedState !== "available"
       ? null
-      : missingLoadedSkills.length > 0 || status.hotReloadState === "stale";
+      : missingLoadedSkills.length > 0 && status.hotReloadState === "current";
+  const newSessionRequiredReason =
+    status.loadedState !== "available"
+      ? "runtime cannot prove current-session skill load truth until a persisted warm-session snapshot exists"
+      : missingLoadedSkills.length === 0
+        ? status.hotReloadState === "stale"
+          ? "current session snapshot is stale but will refresh on the next run"
+          : "current session snapshot already includes all activatable skills"
+        : status.hotReloadState === "stale"
+          ? `not required: current session snapshot is stale and will refresh on the next run (${missingLoadedSkills.join(", ")})`
+          : `warm session has not loaded activatable skills: ${missingLoadedSkills.join(", ")}`;
+  const restartRequired = status.loadedState !== "available" ? null : false;
   const restartRequiredReason =
     status.loadedState !== "available"
-      ? "runtime does not expose authoritative restart-required skill state until a warm-session snapshot is available"
-      : missingLoadedSkills.length > 0
-        ? `warm session has not loaded discovered skills: ${missingLoadedSkills.join(", ")}`
-        : status.hotReloadState === "stale"
-          ? "persisted warm-session snapshot is stale; restart or a fresh session run is required before loaded-state claims are current"
-          : "persisted warm-session snapshot matches the current discovered skill set";
+      ? "runtime does not expose authoritative process-restart skill state until a warm-session snapshot is available"
+      : "skill availability is session-scoped; process restart is not the required refresh path";
 
   return {
     workspaceDir: status.workspaceDir,
     managedSkillsDir: status.managedSkillsDir,
     configuredSkillDirs: roots.map((root) => ({ kind: root.kind, path: root.path })),
     discoveredSkillNames: status.discoveredSkillNames,
+    activatableSkillNames,
+    modelVisibleSkillNames,
     loadedSkillNames: status.loadedSkillNames,
     loadedState: status.loadedState,
     loadedStateReason: status.loadedStateReason,
     hotReloadState: status.hotReloadState,
-    watchState: "not_available",
+    watchState,
+    watchStateReason,
+    newSessionRequired,
+    newSessionRequiredReason,
     restartRequired,
     restartRequiredReason,
+    skills,
     trackedClawHubInstalls,
     writableSurfaces,
     collisions,

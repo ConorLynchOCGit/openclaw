@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => {
     managedSkillsDir: "/tmp/workspace/skills",
     configuredSkillDirs: [{ kind: "workspace", path: "/tmp/workspace/skills" }],
     discoveredSkillNames: ["calendar"],
+    activatableSkillNames: ["calendar"],
+    modelVisibleSkillNames: ["calendar"],
     loadedSkillNames: null,
     loadedState: "not_available",
     loadedStateReason: "test fixture",
@@ -30,7 +32,15 @@ const mocks = vi.hoisted(() => {
         always: false,
         disabled: false,
         blockedByAllowlist: false,
+        blockedByPermissions: false,
+        blockedByTrustVetting: false,
+        activatable: true,
         eligible: true,
+        modelVisible: true,
+        loadedInCurrentSession: null,
+        newSessionRequired: null,
+        availabilityState: "activatable",
+        availabilityReason: "test fixture",
         primaryEnv: "CALENDAR_API_KEY",
         requirements: {
           bins: [],
@@ -208,13 +218,19 @@ describe("skills cli commands", () => {
       managedSkillsDir: "/tmp/workspace/.managed",
       configuredSkillDirs: [{ kind: "workspace", path: "/tmp/workspace/skills" }],
       discoveredSkillNames: ["calendar"],
+      activatableSkillNames: ["calendar"],
+      modelVisibleSkillNames: ["calendar"],
       loadedSkillNames: null,
       loadedState: "not_available",
       loadedStateReason: "test fixture",
       hotReloadState: "not_available",
-      watchState: "not_available",
+      watchState: "enabled",
+      watchStateReason: "test fixture",
+      newSessionRequired: null,
+      newSessionRequiredReason: "test fixture",
       restartRequired: null,
       restartRequiredReason: "test fixture",
+      skills: [],
       trackedClawHubInstalls: [],
       writableSurfaces: [{ kind: "workspace", path: "/tmp/workspace/skills", state: "writable" }],
       collisions: [],
@@ -302,6 +318,8 @@ describe("skills cli commands", () => {
 
     expect(buildSkillsDoctorReportMock).toHaveBeenCalled();
     expect(runtimeStdout.some((line) => line.includes("Skills doctor:"))).toBe(true);
+    expect(runtimeStdout.some((line) => line.includes("Activatable skills: 1"))).toBe(true);
+    expect(runtimeStdout.some((line) => line.includes("Watch state: enabled"))).toBe(true);
   });
 
   it("updates all tracked ClawHub skills", async () => {

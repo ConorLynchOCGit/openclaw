@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { SkillConfig } from "../../config/types.skills.js";
 import {
@@ -50,9 +52,78 @@ function normalizeAllowlist(input: unknown): string[] | undefined {
 }
 
 const BUNDLED_SOURCES = new Set(["openclaw-bundled"]);
+const CLAWHUB_ORIGIN_RELATIVE_PATHS = [".clawhub/origin.json", ".clawdhub/origin.json"] as const;
 
 function isBundledSkill(entry: SkillEntry): boolean {
   return BUNDLED_SOURCES.has(resolveSkillSource(entry.skill));
+}
+
+export type SkillTrustGate = {
+  blockedByTrustVetting: boolean;
+  trustReason?: string;
+};
+
+type ClawHubOriginPreview = Partial<{
+  source: string;
+  review: {
+    gate?: string;
+    reviewedAt?: number;
+    reviewedVersion?: string;
+  };
+  integrity: string;
+  fingerprint: string;
+}>;
+
+function readClawHubOriginPreview(baseDir: string): ClawHubOriginPreview | null {
+  for (const relativePath of CLAWHUB_ORIGIN_RELATIVE_PATHS) {
+    const candidate = path.join(baseDir, relativePath);
+    try {
+      return JSON.parse(fs.readFileSync(candidate, "utf8")) as ClawHubOriginPreview;
+    } catch {
+      // ignore missing or malformed origin metadata here; the caller decides
+      // whether the skill should be treated as local-trusted or trust-blocked.
+    }
+  }
+  return null;
+}
+
+export function resolveSkillTrustGate(entry: SkillEntry): SkillTrustGate {
+  const origin = readClawHubOriginPreview(entry.skill.baseDir);
+  if (!origin) {
+    return { blockedByTrustVetting: false };
+  }
+  if (origin.source !== "clawhub") {
+    return { blockedByTrustVetting: false };
+  }
+  if (!origin.review) {
+    return {
+      blockedByTrustVetting: true,
+      trustReason: "third-party skill is missing persisted review metadata",
+    };
+  }
+  if (!origin.integrity) {
+    return {
+      blockedByTrustVetting: true,
+      trustReason: "third-party skill is missing persisted integrity metadata",
+    };
+  }
+  if (!origin.fingerprint) {
+    return {
+      blockedByTrustVetting: true,
+      trustReason: "third-party skill is missing persisted fingerprint metadata",
+    };
+  }
+  return { blockedByTrustVetting: false };
+}
+
+export function isSkillVisibleInModelCatalog(entry: SkillEntry): boolean {
+  if (entry.exposure) {
+    return entry.exposure.includeInAvailableSkillsPrompt !== false;
+  }
+  if (entry.invocation) {
+    return entry.invocation.disableModelInvocation !== true;
+  }
+  return entry.skill.disableModelInvocation !== true;
 }
 
 export function resolveBundledAllowlist(config?: OpenClawConfig): string[] | undefined {
@@ -79,11 +150,15 @@ export function shouldIncludeSkill(params: {
   const skillKey = resolveSkillKey(entry.skill, entry);
   const skillConfig = resolveSkillConfig(config, skillKey);
   const allowBundled = normalizeAllowlist(config?.skills?.allowBundled);
+  const trustGate = resolveSkillTrustGate(entry);
 
   if (skillConfig?.enabled === false) {
     return false;
   }
   if (!isBundledSkillAllowed(entry, allowBundled)) {
+    return false;
+  }
+  if (trustGate.blockedByTrustVetting) {
     return false;
   }
   return evaluateRuntimeEligibility({

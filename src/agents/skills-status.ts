@@ -14,10 +14,12 @@ import {
   hasBinary,
   isBundledSkillAllowed,
   isConfigPathTruthy,
+  isSkillVisibleInModelCatalog,
   loadWorkspaceSkillEntries,
   resolveBundledAllowlist,
   resolveSkillConfig,
   resolveSkillsInstallPreferences,
+  resolveSkillTrustGate,
   type SkillEntry,
   type SkillEligibilityContext,
   type SkillInstallSpec,
@@ -36,6 +38,15 @@ export type SkillInstallOption = {
   bins: string[];
 };
 
+export type SkillAvailabilityState =
+  | "loaded"
+  | "activatable"
+  | "needs_setup"
+  | "blocked_disabled"
+  | "blocked_allowlist"
+  | "blocked_permissions"
+  | "blocked_trust_vetting";
+
 export type SkillStatusEntry = {
   name: string;
   description: string;
@@ -50,7 +61,15 @@ export type SkillStatusEntry = {
   always: boolean;
   disabled: boolean;
   blockedByAllowlist: boolean;
+  blockedByPermissions: boolean;
+  blockedByTrustVetting: boolean;
+  activatable: boolean;
   eligible: boolean;
+  modelVisible: boolean;
+  loadedInCurrentSession: boolean | null;
+  newSessionRequired: boolean | null;
+  availabilityState: SkillAvailabilityState;
+  availabilityReason?: string;
   requirements: Requirements;
   missing: Requirements;
   configChecks: SkillStatusConfigCheck[];
@@ -71,6 +90,8 @@ export type SkillStatusReport = {
   managedSkillsDir: string;
   configuredSkillDirs: Array<{ kind: string; path: string }>;
   discoveredSkillNames: string[];
+  activatableSkillNames: string[];
+  modelVisibleSkillNames: string[];
   loadedSkillNames: string[] | null;
   loadedState: "not_available" | "available";
   loadedStateReason?: string;
@@ -195,18 +216,128 @@ function normalizeInstallOptions(
   return [toOption(preferred.spec, preferred.index)];
 }
 
+type RawSkillStatusEntry = Omit<
+  SkillStatusEntry,
+  "loadedInCurrentSession" | "newSessionRequired" | "availabilityState" | "availabilityReason"
+>;
+
+function formatMissingRequirementSummary(missing: Requirements): string {
+  const parts: string[] = [];
+  if (missing.bins.length > 0) {
+    parts.push(`missing binaries: ${missing.bins.join(", ")}`);
+  }
+  if (missing.anyBins.length > 0) {
+    parts.push(`missing any-of binaries: ${missing.anyBins.join(", ")}`);
+  }
+  if (missing.env.length > 0) {
+    parts.push(`missing env: ${missing.env.join(", ")}`);
+  }
+  if (missing.config.length > 0) {
+    parts.push(`missing config: ${missing.config.join(", ")}`);
+  }
+  if (missing.os.length > 0) {
+    parts.push(`unsupported os: ${missing.os.join(", ")}`);
+  }
+  return parts.join("; ");
+}
+
+function finalizeSkillStatus(params: {
+  skill: RawSkillStatusEntry;
+  loadedSkillNames: readonly string[] | null;
+  loadedState: SkillStatusReport["loadedState"];
+  hotReloadState: SkillStatusReport["hotReloadState"];
+}): SkillStatusEntry {
+  const loadedInCurrentSession =
+    params.loadedState === "available"
+      ? (params.loadedSkillNames ?? []).includes(params.skill.name)
+      : null;
+
+  const newSessionRequired =
+    params.loadedState === "available"
+      ? !loadedInCurrentSession && params.skill.activatable && params.hotReloadState === "current"
+      : null;
+
+  if (params.skill.disabled) {
+    return {
+      ...params.skill,
+      loadedInCurrentSession,
+      newSessionRequired,
+      availabilityState: "blocked_disabled",
+      availabilityReason: "skill is disabled in config",
+    };
+  }
+
+  if (params.skill.blockedByAllowlist) {
+    return {
+      ...params.skill,
+      loadedInCurrentSession,
+      newSessionRequired,
+      availabilityState: "blocked_allowlist",
+      availabilityReason: "bundled skill is not allowed by the current allowlist",
+    };
+  }
+
+  if (params.skill.blockedByTrustVetting) {
+    return {
+      ...params.skill,
+      loadedInCurrentSession,
+      newSessionRequired,
+      availabilityState: "blocked_trust_vetting",
+      availabilityReason: params.skill.availabilityReason,
+    };
+  }
+
+  if (params.skill.blockedByPermissions) {
+    return {
+      ...params.skill,
+      loadedInCurrentSession,
+      newSessionRequired,
+      availabilityState: "blocked_permissions",
+      availabilityReason: params.skill.availabilityReason,
+    };
+  }
+
+  if (!params.skill.activatable) {
+    return {
+      ...params.skill,
+      loadedInCurrentSession,
+      newSessionRequired,
+      availabilityState: "needs_setup",
+      availabilityReason: params.skill.availabilityReason,
+    };
+  }
+
+  return {
+    ...params.skill,
+    loadedInCurrentSession,
+    newSessionRequired,
+    availabilityState: loadedInCurrentSession ? "loaded" : "activatable",
+    availabilityReason:
+      loadedInCurrentSession === true
+        ? "skill is loaded in the persisted warm-session snapshot"
+        : params.loadedState !== "available"
+          ? "skill is activatable on disk; current-session loaded state is unavailable until a warm-session snapshot exists"
+          : newSessionRequired
+            ? "skill is activatable on disk but missing from the current session snapshot; start a new session to load it"
+            : params.hotReloadState === "stale"
+              ? "skill is activatable on disk and the current session snapshot is stale; the next run will refresh it"
+              : "skill is activatable on disk",
+  };
+}
+
 function buildSkillStatus(
   entry: SkillEntry,
   config?: OpenClawConfig,
   prefs?: SkillsInstallPreferences,
   eligibility?: SkillEligibilityContext,
   bundledNames?: Set<string>,
-): SkillStatusEntry {
+): RawSkillStatusEntry {
   const skillKey = resolveSkillKey(entry);
   const skillConfig = resolveSkillConfig(config, skillKey);
   const disabled = skillConfig?.enabled === false;
   const allowBundled = resolveBundledAllowlist(config);
   const blockedByAllowlist = !isBundledSkillAllowed(entry, allowBundled);
+  const trustGate = resolveSkillTrustGate(entry);
   const always = entry.metadata?.always === true;
   const isEnvSatisfied = (envName: string) =>
     Boolean(
@@ -229,7 +360,14 @@ function buildSkillStatus(
       isEnvSatisfied,
       isConfigSatisfied,
     });
-  const eligible = !disabled && !blockedByAllowlist && requirementsSatisfied;
+  const blockedByPermissions = false;
+  const activatable =
+    !disabled &&
+    !blockedByAllowlist &&
+    !blockedByPermissions &&
+    !trustGate.blockedByTrustVetting &&
+    requirementsSatisfied;
+  const modelVisible = activatable && isSkillVisibleInModelCatalog(entry);
 
   return {
     name: entry.skill.name,
@@ -245,7 +383,21 @@ function buildSkillStatus(
     always,
     disabled,
     blockedByAllowlist,
-    eligible,
+    blockedByPermissions,
+    blockedByTrustVetting: trustGate.blockedByTrustVetting,
+    activatable,
+    eligible: activatable,
+    modelVisible,
+    loadedInCurrentSession: null,
+    newSessionRequired: null,
+    availabilityState: activatable ? "activatable" : "needs_setup",
+    availabilityReason:
+      trustGate.trustReason ??
+      (blockedByPermissions
+        ? "skill is blocked by permissions"
+        : activatable
+          ? "skill is activatable on disk"
+          : formatMissingRequirementSummary(missing) || "skill is not activatable yet"),
     requirements: required,
     missing,
     configChecks,
@@ -381,9 +533,6 @@ export function buildWorkspaceSkillStatus(
       bundledSkillsDir: bundledContext.dir,
     });
   const prefs = resolveSkillsInstallPreferences(opts?.config);
-  const skillStatuses = skillEntries.map((entry) =>
-    buildSkillStatus(entry, opts?.config, prefs, opts?.eligibility, bundledContext.names),
-  );
   const configuredSkillDirs: SkillStatusReport["configuredSkillDirs"] = [
     { kind: "workspace", path: path.join(workspaceDir, "skills") },
     { kind: "workspace_agents", path: path.join(workspaceDir, ".agents", "skills") },
@@ -393,11 +542,35 @@ export function buildWorkspaceSkillStatus(
     configuredSkillDirs.push({ kind: "bundled", path: bundledContext.dir });
   }
   const loadedState = buildLoadedState(opts?.loadedSession);
+  const skillStatuses = skillEntries
+    .map((entry) =>
+      buildSkillStatus(entry, opts?.config, prefs, opts?.eligibility, bundledContext.names),
+    )
+    .map((skill) =>
+      finalizeSkillStatus({
+        skill,
+        loadedSkillNames: loadedState.loadedSkillNames,
+        loadedState: loadedState.loadedState,
+        hotReloadState: loadedState.hotReloadState,
+      }),
+    );
+  const discoveredSkillNames = [...new Set(skillStatuses.map((skill) => skill.name))].toSorted();
+  const activatableSkillNames = skillStatuses
+    .filter((skill) => skill.activatable)
+    .map((skill) => skill.name)
+    .toSorted();
+  const modelVisibleSkillNames = skillStatuses
+    .filter((skill) => skill.modelVisible)
+    .map((skill) => skill.name)
+    .toSorted();
+
   return {
     workspaceDir,
     managedSkillsDir,
     configuredSkillDirs,
-    discoveredSkillNames: [...new Set(skillStatuses.map((skill) => skill.name))].toSorted(),
+    discoveredSkillNames,
+    activatableSkillNames,
+    modelVisibleSkillNames,
     ...loadedState,
     skills: skillStatuses,
   };
