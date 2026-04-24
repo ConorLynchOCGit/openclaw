@@ -78,6 +78,21 @@ Already landed in the active source tree:
   - `chat.history` now preserves compact tool-result truncation metadata, and
     UI tool cards explicitly say when full content is unavailable instead of
     implying that local expand can recover missing text
+- the final pre-Phase-2 entry validation pack has now been executed at:
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24/`
+  - retrieval-quality evals passed `11/11`
+  - no-dark-data adversarial checks passed `4/4`
+  - bounded live validation finished `yellow` with no new live blocker beyond
+    the already-known post-run recovery gate
+  - the final decision remains `red`, so Phase 2 is still blocked
+  - current blockers from the decision report are:
+    - `pg_stat_statements` unavailable (`not_installed`)
+    - recovery gate not safe because `runtime_dirty` remains
+      `rebuild_required`
+    - controlled load ordinary-turn seed failed with invalid strict structured
+      output on `openai-codex/gpt-5.4-mini`
+    - controlled load retrieval failed because rebuild lock pressure kept the
+      retrieval lane busy
 
 ## Slice
 

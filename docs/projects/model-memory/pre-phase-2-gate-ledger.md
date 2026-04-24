@@ -139,10 +139,32 @@ State: `landed 2026-04-24`
 
 ### Slice 7 - Phase-2 entry validation pack
 
-- build the controlled Phase-2 entry load test
-- add retrieval quality evals independent of capture
-- add no-dark-data adversarial checks
-- produce one final go/no-go report
+State: `executed 2026-04-24, verdict red`
+
+- artifact root:
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24/`
+- delivered proof surfaces:
+  - controlled Phase-2 entry load test
+  - retrieval quality evals independent of capture
+  - no-dark-data adversarial checks
+  - bounded live runtime validation
+  - final operator decision report
+- canonical operator runbook:
+  - [Pre-Phase-2 Entry Validation](/projects/model-memory/pre-phase-2-entry-validation)
+- current decision: `red`
+- current blockers:
+  - `pg_stat_statements` unavailable (`not_installed`)
+  - recovery gate still blocked because `runtime_dirty` is
+    `rebuild_required`
+  - controlled load ordinary-turn scratch seed failed with invalid strict
+    structured output on `openai-codex/gpt-5.4-mini`
+  - controlled load retrieval iterations all failed with
+    `model-memory runtime rebuild lock is busy`
+- current next lane:
+  clear `runtime_dirty` rebuild state, install/enable
+  `pg_stat_statements`, investigate/fix the controlled load ordinary-turn
+  strict-schema failure and rebuild-lock retrieval contention, then rerun
+  Slice 7
 
 ## Deferred To Phase 2
 
