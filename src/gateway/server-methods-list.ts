@@ -65,6 +65,7 @@ const BASE_METHODS = [
   "skills.search",
   "skills.detail",
   "skills.bins",
+  "skills.vet",
   "skills.install",
   "skills.update",
   "update.run",

@@ -28,6 +28,7 @@ import {
 import { resolveBundledSkillsContext } from "./skills/bundled-context.js";
 import { getSkillsSnapshotVersion, shouldRefreshSnapshotForVersion } from "./skills/refresh.js";
 import { resolveSkillSource } from "./skills/source.js";
+import { resolveSkillTrustTierFromOrigin, type SkillTrustTier } from "./skills-vetting.js";
 
 export type SkillStatusConfigCheck = RequirementConfigCheck;
 
@@ -63,6 +64,7 @@ export type SkillStatusEntry = {
   blockedByAllowlist: boolean;
   blockedByPermissions: boolean;
   blockedByTrustVetting: boolean;
+  trustTier: SkillTrustTier;
   activatable: boolean;
   eligible: boolean;
   modelVisible: boolean;
@@ -385,6 +387,10 @@ function buildSkillStatus(
     blockedByAllowlist,
     blockedByPermissions,
     blockedByTrustVetting: trustGate.blockedByTrustVetting,
+    trustTier: resolveSkillTrustTierFromOrigin({
+      source: skillSource,
+      baseDir: entry.skill.baseDir,
+    }),
     activatable,
     eligible: activatable,
     modelVisible,

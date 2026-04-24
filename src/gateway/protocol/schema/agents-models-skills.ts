@@ -261,6 +261,16 @@ export const SkillsSearchParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const SkillsVetParamsSchema = Type.Object(
+  {
+    source: Type.Optional(Type.Literal("clawhub")),
+    slug: Type.Optional(NonEmptyString),
+    catalogId: Type.Optional(NonEmptyString),
+    version: Type.Optional(NonEmptyString),
+  },
+  { additionalProperties: false },
+);
+
 export const SkillsSearchResultSchema = Type.Object(
   {
     results: Type.Array(
@@ -348,6 +358,27 @@ export const SkillsDetailResultSchema = Type.Object(
         Type.Null(),
       ]),
     ),
+  },
+  { additionalProperties: false },
+);
+
+export const SkillsVetResultSchema = Type.Object(
+  {
+    ok: Type.Boolean(),
+    source: Type.Literal("clawhub"),
+    catalogId: NonEmptyString,
+    slug: NonEmptyString,
+    version: NonEmptyString,
+    trustTier: Type.Union([
+      Type.Literal("bundled_trusted"),
+      Type.Literal("local_trusted"),
+      Type.Literal("third_party_staged"),
+      Type.Literal("quarantined_rejected"),
+    ]),
+    outcome: Type.Union([Type.Literal("install"), Type.Literal("reject")]),
+    reportPath: NonEmptyString,
+    quarantineDir: NonEmptyString,
+    skillDir: NonEmptyString,
   },
   { additionalProperties: false },
 );

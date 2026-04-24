@@ -22,6 +22,7 @@ export type ClaudeBundleCommandSpec = {
   description: string;
   promptTemplate: string;
   sourceFilePath: string;
+  requiresExplicitTask?: boolean;
 };
 
 function parseFrontmatterBool(value: string | undefined, fallback: boolean): boolean {
@@ -48,6 +49,28 @@ function stripFrontmatter(content: string): string {
     return normalized.trim();
   }
   return normalized.slice(endIndex + 4).trim();
+}
+
+function resolveBundleCommandRequiresExplicitTask(params: {
+  frontmatter: Record<string, string>;
+  promptTemplate: string;
+}): boolean {
+  if (parseFrontmatterBool(params.frontmatter["requires-explicit-task"], false)) {
+    return true;
+  }
+  if (parseFrontmatterBool(params.frontmatter["requires_explicit_task"], false)) {
+    return true;
+  }
+  if (normalizeOptionalLowercaseString(params.frontmatter.context) === "fork") {
+    return true;
+  }
+  if (normalizeOptionalString(params.frontmatter.agent)) {
+    return true;
+  }
+  if (normalizeOptionalString(params.frontmatter.arguments)) {
+    return true;
+  }
+  return params.promptTemplate.includes("$ARGUMENTS");
 }
 
 function readClaudeBundleManifest(rootDir: string): Record<string, unknown> {
@@ -160,6 +183,10 @@ function loadBundleCommandsFromRoot(params: {
       description,
       promptTemplate,
       sourceFilePath: filePath,
+      requiresExplicitTask: resolveBundleCommandRequiresExplicitTask({
+        frontmatter,
+        promptTemplate,
+      }),
     });
   }
   return entries;

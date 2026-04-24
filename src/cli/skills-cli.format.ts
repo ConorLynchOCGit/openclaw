@@ -23,7 +23,7 @@ function appendClawHubHint(output: string, json?: boolean): string {
   if (json) {
     return output;
   }
-  return `${output}\n\nTip: use \`openclaw skills search\`, \`openclaw skills info --source clawhub --catalog-id <catalogId>\`, \`openclaw skills install --catalog-id <catalogId>\`, and \`openclaw skills update\` for ClawHub-backed skills. Installed/local skills still use \`openclaw skills info <name>\`.`;
+  return `${output}\n\nTip: use \`openclaw skills search\`, \`openclaw skills info --source clawhub --catalog-id <catalogId>\`, \`openclaw skills vet --catalog-id <catalogId>\`, \`openclaw skills install --catalog-id <catalogId>\`, and \`openclaw skills update\` for ClawHub-backed skills. Installed/local skills still use \`openclaw skills info <name>\`.`;
 }
 
 function formatSkillStatus(skill: SkillStatusEntry): string {
@@ -108,6 +108,7 @@ export function formatSkillsList(report: SkillStatusReport, opts: SkillsListOpti
         eligible: s.eligible,
         disabled: s.disabled,
         blockedByAllowlist: s.blockedByAllowlist,
+        trustTier: s.trustTier,
         source: s.source,
         bundled: s.bundled,
         primaryEnv: s.primaryEnv,
@@ -211,6 +212,7 @@ export function formatSkillInfo(
 
   lines.push(theme.heading("Details:"));
   lines.push(`${theme.muted("  Source:")} ${sanitizeForLog(skill.source)}`);
+  lines.push(`${theme.muted("  Trust tier:")} ${skill.trustTier}`);
   lines.push(`${theme.muted("  Path:")} ${shortenHomePath(skill.filePath)}`);
   if (safeHomepage) {
     lines.push(`${theme.muted("  Homepage:")} ${safeHomepage}`);

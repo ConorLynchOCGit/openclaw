@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => {
         blockedByAllowlist: false,
         blockedByPermissions: false,
         blockedByTrustVetting: false,
+        trustTier: "local_trusted",
         activatable: true,
         eligible: true,
         modelVisible: true,
@@ -91,6 +92,7 @@ const mocks = vi.hoisted(() => {
     fetchSkillDetailFromClawHubMock: vi.fn(),
     installSkillFromClawHubMock: vi.fn(),
     updateSkillsFromClawHubMock: vi.fn(),
+    vetClawHubSkillMock: vi.fn(),
     readTrackedClawHubSkillSlugsMock: vi.fn(),
     buildWorkspaceSkillStatusMock,
     buildSkillsDoctorReportMock: vi.fn(),
@@ -110,6 +112,7 @@ const {
   fetchSkillDetailFromClawHubMock,
   installSkillFromClawHubMock,
   updateSkillsFromClawHubMock,
+  vetClawHubSkillMock,
   readTrackedClawHubSkillSlugsMock,
   buildWorkspaceSkillStatusMock,
   buildSkillsDoctorReportMock,
@@ -141,6 +144,10 @@ vi.mock("../agents/skills-clawhub.js", () => ({
   updateSkillsFromClawHub: (...args: unknown[]) => mocks.updateSkillsFromClawHubMock(...args),
   readTrackedClawHubSkillSlugs: (...args: unknown[]) =>
     mocks.readTrackedClawHubSkillSlugsMock(...args),
+}));
+
+vi.mock("../agents/skills-vetting.js", () => ({
+  vetClawHubSkill: (...args: unknown[]) => mocks.vetClawHubSkillMock(...args),
 }));
 
 vi.mock("../agents/skills-status.js", () => ({
@@ -177,6 +184,7 @@ describe("skills cli commands", () => {
     fetchSkillDetailFromClawHubMock.mockReset();
     installSkillFromClawHubMock.mockReset();
     updateSkillsFromClawHubMock.mockReset();
+    vetClawHubSkillMock.mockReset();
     readTrackedClawHubSkillSlugsMock.mockReset();
     buildWorkspaceSkillStatusMock.mockReset();
     buildSkillsDoctorReportMock.mockReset();
@@ -211,6 +219,19 @@ describe("skills cli commands", () => {
       targetDir: "/tmp/workspace/skills/calendar",
     });
     updateSkillsFromClawHubMock.mockResolvedValue([]);
+    vetClawHubSkillMock.mockResolvedValue({
+      ok: true,
+      source: "clawhub",
+      catalogId: "clawhub:calendar",
+      slug: "calendar",
+      version: "1.2.3",
+      trustTier: "third_party_staged",
+      outcome: "install",
+      reportPath:
+        "/tmp/workspace/docs/projects/skills-system/skill-vetting/reports/2026-04-24-calendar-review.md",
+      quarantineDir: "/tmp/workspace/.artifacts/skills/quarantine/calendar/1.2.3",
+      skillDir: "/tmp/workspace/.artifacts/skills/quarantine/calendar/1.2.3/skill",
+    });
     readTrackedClawHubSkillSlugsMock.mockResolvedValue([]);
     buildWorkspaceSkillStatusMock.mockReturnValue(skillStatusReportFixture);
     buildSkillsDoctorReportMock.mockResolvedValue({
@@ -297,6 +318,28 @@ describe("skills cli commands", () => {
         line.includes(
           "Installed calendar@1.2.3 [catalogId=clawhub:calendar] -> /tmp/workspace/skills/calendar",
         ),
+      ),
+    ).toBe(true);
+  });
+
+  it("vets a skill from ClawHub into workspace quarantine roots", async () => {
+    await runCommand(["skills", "vet", "calendar", "--version", "1.2.3"]);
+
+    expect(vetClawHubSkillMock).toHaveBeenCalledWith({
+      workspaceDir: "/tmp/workspace",
+      slug: "calendar",
+      catalogId: undefined,
+      version: "1.2.3",
+      logger: expect.any(Object),
+    });
+    expect(
+      runtimeLogs.some((line) =>
+        line.includes("Vetted calendar@1.2.3 -> outcome=install trust=third_party_staged"),
+      ),
+    ).toBe(true);
+    expect(
+      runtimeLogs.some((line) =>
+        line.includes("Quarantine: /tmp/workspace/.artifacts/skills/quarantine/calendar/1.2.3"),
       ),
     ).toBe(true);
   });

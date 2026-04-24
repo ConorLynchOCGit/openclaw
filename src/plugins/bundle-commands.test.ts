@@ -42,6 +42,7 @@ function expectEnabledClaudeBundleCommands(
     rawName: string;
     description: string;
     promptTemplate: string;
+    requiresExplicitTask?: boolean;
   }>,
 ) {
   expect(commands).toEqual(
@@ -106,10 +107,51 @@ describe("loadEnabledClaudeBundleCommands", () => {
             rawName: "workflows:review",
             description: "Run a structured review",
             promptTemplate: "Review the code. $ARGUMENTS",
+            requiresExplicitTask: true,
           },
         ]);
         expect(commands.some((entry) => entry.rawName === "disabled")).toBe(false);
       },
     );
+  });
+
+  it("marks forked bundle commands as requiring an explicit task payload", async () => {
+    await withBundleHomeEnv(tempHarness, "openclaw-bundle-commands-fork", async ({ homeDir, workspaceDir }) => {
+      await writeClaudeBundleCommandFixture({
+        homeDir,
+        pluginId: "fork-bundle",
+        commands: [
+          {
+            relativePath: "commands/investigate.md",
+            contents: [
+              "---",
+              "name: investigate",
+              "description: Run a focused subagent investigation",
+              "context: fork",
+              "---",
+              "Investigate:\n$ARGUMENTS",
+            ],
+          },
+        ],
+      });
+
+      const commands = loadEnabledClaudeBundleCommands({
+        workspaceDir,
+        cfg: {
+          plugins: {
+            entries: createEnabledPluginEntries(["fork-bundle"]),
+          },
+        },
+      });
+
+      expect(commands).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            rawName: "investigate",
+            requiresExplicitTask: true,
+          }),
+        ]),
+      );
+    });
   });
 });

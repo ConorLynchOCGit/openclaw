@@ -40,6 +40,7 @@ vi.mock("../plugins/install-security-scan.js", () => ({
 
 const { installSkillFromClawHub, searchSkillsFromClawHub, updateSkillsFromClawHub } =
   await import("./skills-clawhub.js");
+const { vetClawHubSkill } = await import("./skills-vetting.js");
 
 describe("skills-clawhub", () => {
   beforeEach(() => {
@@ -77,7 +78,13 @@ describe("skills-clawhub", () => {
     searchClawHubSkillsMock.mockResolvedValue([]);
     withExtractedArchiveRootMock.mockImplementation(async (params) => {
       expect(params.rootMarkers).toEqual(["SKILL.md"]);
-      return await params.onExtracted("/tmp/extracted-skill");
+      const extractedRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-clawhub-extract-"));
+      await fs.writeFile(
+        path.join(extractedRoot, "SKILL.md"),
+        "---\nname: agentreceipt\ndescription: Test skill\n---\n\n# agentreceipt\n",
+        "utf8",
+      );
+      return await params.onExtracted(extractedRoot);
     });
     scanSkillInstallSourceMock.mockResolvedValue(undefined);
     installPackageDirMock.mockImplementation(
@@ -97,39 +104,124 @@ describe("skills-clawhub", () => {
     );
   });
 
-  it("installs ClawHub skills from flat-root archives", async () => {
-    const result = await installSkillFromClawHub({
-      workspaceDir: "/tmp/workspace",
-      slug: "agentreceipt",
-    });
+  it("installs ClawHub skills only from a vetted staged workspace copy", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-workspace-"));
 
-    expect(downloadClawHubSkillArchiveMock).toHaveBeenCalledWith({
-      slug: "agentreceipt",
-      version: "1.0.0",
-      baseUrl: undefined,
+    try {
+      const result = await installSkillFromClawHub({
+        workspaceDir,
+        slug: "agentreceipt",
+      });
+
+      expect(downloadClawHubSkillArchiveMock).toHaveBeenCalledWith({
+        slug: "agentreceipt",
+        version: "1.0.0",
+        baseUrl: undefined,
+      });
+      expect(installPackageDirMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceDir: expect.stringContaining(
+            "/.artifacts/skills/quarantine/agentreceipt/1.0.0/skill",
+          ),
+        }),
+      );
+      expect(result).toMatchObject({
+        ok: true,
+        source: "clawhub",
+        catalogId: "clawhub:agentreceipt",
+        slug: "agentreceipt",
+        version: "1.0.0",
+        targetDir: path.join(workspaceDir, "skills", "agentreceipt"),
+        installedSkillKey: "agentreceipt",
+      });
+      expect(scanSkillInstallSourceMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          origin: "clawhub",
+          skillName: "agentreceipt",
+          installId: "clawhub-vet",
+        }),
+      );
+      const origin = JSON.parse(
+        await fs.readFile(
+          path.join(workspaceDir, "skills", "agentreceipt", ".clawhub", "origin.json"),
+          "utf8",
+        ),
+      ) as { trustTier?: string; review?: { gate?: string; reportPath?: string } };
+      expect(origin.trustTier).toBe("local_trusted");
+      expect(origin.review?.gate).toBe("vet_scan");
+      expect(origin.review?.reportPath).toContain(
+        "/docs/projects/skills-system/skill-vetting/reports/",
+      );
+      expect(archiveCleanupMock).toHaveBeenCalledTimes(1);
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("vets ClawHub skills into workspace quarantine and report roots", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-workspace-"));
+
+    try {
+      const result = await vetClawHubSkill({
+        workspaceDir,
+        slug: "agentreceipt",
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        slug: "agentreceipt",
+        version: "1.0.0",
+        trustTier: "third_party_staged",
+        outcome: "install",
+      });
+      if (!result.ok) {
+        throw new Error("expected successful vet result");
+      }
+      expect(result.reportPath).toContain(
+        "/docs/projects/skills-system/skill-vetting/reports/",
+      );
+      expect(result.quarantineDir).toContain(
+        "/.artifacts/skills/quarantine/agentreceipt/1.0.0",
+      );
+      const manifest = JSON.parse(
+        await fs.readFile(path.join(result.quarantineDir, "stage.json"), "utf8"),
+      ) as { outcome?: string; trustTier?: string };
+      expect(manifest.outcome).toBe("install");
+      expect(manifest.trustTier).toBe("third_party_staged");
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects staged skills when the vet scan blocks them", async () => {
+    scanSkillInstallSourceMock.mockResolvedValueOnce({
+      blocked: {
+        code: "security_scan_blocked",
+        reason: "shell execution not allowed",
+      },
     });
-    expect(installPackageDirMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sourceDir: "/tmp/extracted-skill",
-      }),
-    );
-    expect(result).toMatchObject({
-      ok: true,
-      source: "clawhub",
-      catalogId: "clawhub:agentreceipt",
-      slug: "agentreceipt",
-      version: "1.0.0",
-      targetDir: "/tmp/workspace/skills/agentreceipt",
-      installedSkillKey: "agentreceipt",
-    });
-    expect(scanSkillInstallSourceMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        origin: "clawhub",
-        skillName: "agentreceipt",
-        installId: "clawhub-download",
-      }),
-    );
-    expect(archiveCleanupMock).toHaveBeenCalledTimes(1);
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-workspace-"));
+
+    try {
+      const result = await vetClawHubSkill({
+        workspaceDir,
+        slug: "agentreceipt",
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        outcome: "reject",
+        trustTier: "quarantined_rejected",
+      });
+      if (!result.ok) {
+        throw new Error("expected successful vet result");
+      }
+      const report = await fs.readFile(result.reportPath, "utf8");
+      expect(report).toContain("Outcome: reject");
+      expect(report).toContain("shell execution not allowed");
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
   });
 
   describe("legacy tracked slugs remain updatable", () => {

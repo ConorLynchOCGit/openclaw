@@ -52,6 +52,11 @@ export type SkillCommandSpec = {
   name: string;
   skillName: string;
   description: string;
+  /**
+   * When true, the slash command must include an explicit task payload instead of
+   * relying on a bare invocation that would otherwise no-op or spin.
+   */
+  requiresExplicitTask?: boolean;
   /** Optional deterministic dispatch behavior for this command. */
   dispatch?: SkillCommandDispatchSpec;
   /** Native prompt template used by Claude-bundle command markdown files. */

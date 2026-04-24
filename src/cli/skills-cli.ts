@@ -8,6 +8,7 @@ import {
   updateSkillsFromClawHub,
 } from "../agents/skills-clawhub.js";
 import { buildSkillsDoctorReport } from "../agents/skills-doctor.js";
+import { vetClawHubSkill } from "../agents/skills-vetting.js";
 import { loadConfig } from "../config/config.js";
 import { defaultRuntime } from "../runtime.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
@@ -166,13 +167,62 @@ export function registerSkillsCli(program: Command) {
           );
         }
         defaultRuntime.log(
-          "Remote search returns ClawHub catalog ids. Use `openclaw skills info --source clawhub --catalog-id <catalogId>` for remote detail, `openclaw skills install --catalog-id <catalogId>` to install, and `openclaw skills info <name>` for installed/local skills.",
+          "Remote search returns ClawHub catalog ids. Use `openclaw skills info --source clawhub --catalog-id <catalogId>` for remote detail, `openclaw skills vet --catalog-id <catalogId>` to stage/review, `openclaw skills install --catalog-id <catalogId>` to install, and `openclaw skills info <name>` for installed/local skills.",
         );
       } catch (err) {
         defaultRuntime.error(String(err));
         defaultRuntime.exit(1);
       }
     });
+
+  skills
+    .command("vet")
+    .description("Fetch, quarantine, scan, and report on a ClawHub skill before activation")
+    .argument("[slug]", "ClawHub skill slug")
+    .option("--catalog-id <catalogId>", "Vet by remote ClawHub catalog id")
+    .option("--version <version>", "Vet a specific version")
+    .option("--json", "Output as JSON", false)
+    .action(
+      async (
+        slug: string | undefined,
+        opts: { catalogId?: string; version?: string; json?: boolean },
+      ) => {
+        try {
+          if (!slug && !opts.catalogId) {
+            defaultRuntime.error("Provide a skill slug or --catalog-id.");
+            defaultRuntime.exit(1);
+            return;
+          }
+          const workspaceDir = resolveActiveWorkspaceDir();
+          const result = await vetClawHubSkill({
+            workspaceDir,
+            slug,
+            catalogId: opts.catalogId,
+            version: opts.version,
+            logger: {
+              info: (message) => defaultRuntime.log(message),
+            },
+          });
+          if (!result.ok) {
+            defaultRuntime.error(result.error);
+            defaultRuntime.exit(1);
+            return;
+          }
+          if (opts.json) {
+            defaultRuntime.writeJson(result);
+            return;
+          }
+          defaultRuntime.log(
+            `Vetted ${result.slug}@${result.version} -> outcome=${result.outcome} trust=${result.trustTier}`,
+          );
+          defaultRuntime.log(`Report: ${result.reportPath}`);
+          defaultRuntime.log(`Quarantine: ${result.quarantineDir}`);
+        } catch (err) {
+          defaultRuntime.error(String(err));
+          defaultRuntime.exit(1);
+        }
+      },
+    );
 
   skills
     .command("install")

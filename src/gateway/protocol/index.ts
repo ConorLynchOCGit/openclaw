@@ -250,6 +250,10 @@ import {
   SkillsDoctorParamsSchema,
   type SkillsInstallParams,
   SkillsInstallParamsSchema,
+  type SkillsVetParams,
+  SkillsVetParamsSchema,
+  type SkillsVetResult,
+  SkillsVetResultSchema,
   type SkillsSearchParams,
   SkillsSearchParamsSchema,
   type SkillsSearchResult,
@@ -446,6 +450,7 @@ export const validateToolsEffectiveParams = ajv.compile<ToolsEffectiveParams>(
 export const validateSkillsBinsParams = ajv.compile<SkillsBinsParams>(SkillsBinsParamsSchema);
 export const validateSkillsInstallParams =
   ajv.compile<SkillsInstallParams>(SkillsInstallParamsSchema);
+export const validateSkillsVetParams = ajv.compile<SkillsVetParams>(SkillsVetParamsSchema);
 export const validateSkillsUpdateParams = ajv.compile<SkillsUpdateParams>(SkillsUpdateParamsSchema);
 export const validateSkillsSearchParams = ajv.compile<SkillsSearchParams>(SkillsSearchParamsSchema);
 export const validateSkillsDetailParams = ajv.compile<SkillsDetailParams>(SkillsDetailParamsSchema);
@@ -646,6 +651,8 @@ export {
   ToolsCatalogParamsSchema,
   ToolsEffectiveParamsSchema,
   SkillsInstallParamsSchema,
+  SkillsVetParamsSchema,
+  SkillsVetResultSchema,
   SkillsSearchParamsSchema,
   SkillsSearchResultSchema,
   SkillsDetailParamsSchema,
@@ -759,6 +766,8 @@ export type {
   SkillsDetailParams,
   SkillsDetailResult,
   SkillsInstallParams,
+  SkillsVetParams,
+  SkillsVetResult,
   SkillsUpdateParams,
   NodePairRejectParams,
   NodePairVerifyParams,

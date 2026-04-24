@@ -31,6 +31,10 @@ vi.mock("../../agents/skills-clawhub.js", () => ({
   fetchSkillDetailFromClawHub: vi.fn(),
 }));
 
+vi.mock("../../agents/skills-vetting.js", () => ({
+  vetClawHubSkill: vi.fn(),
+}));
+
 vi.mock("../../agents/skills-install.js", () => ({
   installSkill: vi.fn(),
 }));

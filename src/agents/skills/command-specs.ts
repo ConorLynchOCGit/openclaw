@@ -57,6 +57,24 @@ function resolveUniqueSkillCommandName(base: string, used: Set<string>): string 
   return `${base.slice(0, Math.max(1, SKILL_COMMAND_MAX_LENGTH - 2))}_x`;
 }
 
+function requiresExplicitTaskForWorkspaceSkill(entry: SkillEntry): boolean {
+  const frontmatter = entry.frontmatter ?? {};
+  const requiresExplicitTask =
+    normalizeOptionalLowercaseString(
+      frontmatter["requires-explicit-task"] ?? frontmatter["requires_explicit_task"] ?? "",
+    ) ?? "";
+  if (requiresExplicitTask === "true" || requiresExplicitTask === "yes" || requiresExplicitTask === "1") {
+    return true;
+  }
+  if (normalizeOptionalLowercaseString(frontmatter.context) === "fork") {
+    return true;
+  }
+  if (normalizeOptionalLowercaseString(frontmatter.agent)) {
+    return true;
+  }
+  return Boolean(frontmatter.arguments?.trim());
+}
+
 export function buildWorkspaceSkillCommandSpecs(
   workspaceDir: string,
   opts?: {
@@ -157,6 +175,7 @@ export function buildWorkspaceSkillCommandSpecs(
       name: unique,
       skillName: rawName,
       description,
+      requiresExplicitTask: requiresExplicitTaskForWorkspaceSkill(entry),
       ...(dispatch ? { dispatch } : {}),
     });
   }
@@ -191,6 +210,7 @@ export function buildWorkspaceSkillCommandSpecs(
       name: unique,
       skillName: entry.rawName,
       description,
+      requiresExplicitTask: entry.requiresExplicitTask,
       promptTemplate: entry.promptTemplate,
       sourceFilePath: entry.sourceFilePath,
     });

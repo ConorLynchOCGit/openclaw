@@ -589,6 +589,50 @@ describe("handleInlineActions", () => {
     );
   });
 
+  it("rejects task-driven skill commands when no explicit task content is provided", async () => {
+    const typing = createTypingController();
+    const ctx = buildTestCtx({
+      Body: "/office_hours",
+      CommandBody: "/office_hours",
+    });
+    const skillCommands: SkillCommandSpec[] = [
+      {
+        name: "office_hours",
+        skillName: "office-hours",
+        description: "Office hours",
+        requiresExplicitTask: true,
+        promptTemplate: "Act as an engineering advisor.\n\nFocus on:\n$ARGUMENTS",
+        sourceFilePath: "/tmp/plugin/commands/office-hours.md",
+      },
+    ];
+
+    const result = await handleInlineActions(
+      createHandleInlineActionsInput({
+        ctx,
+        typing,
+        cleanedBody: "/office_hours",
+        command: {
+          isAuthorizedSender: true,
+          rawBodyNormalized: "/office_hours",
+          commandBodyNormalized: "/office_hours",
+        },
+        overrides: {
+          allowTextCommands: true,
+          cfg: { commands: { text: true } },
+          skillCommands,
+        },
+      }),
+    );
+
+    expect(result).toEqual({
+      kind: "reply",
+      reply: {
+        text: expect.stringContaining("/office_hours requires an explicit task"),
+      },
+    });
+    expect(handleCommandsMock).not.toHaveBeenCalled();
+  });
+
   it("passes requesterAgentIdOverride into inline tool runtimes", async () => {
     const typing = createTypingController();
     const toolExecute = vi.fn(async () => ({ text: "spawned" }));

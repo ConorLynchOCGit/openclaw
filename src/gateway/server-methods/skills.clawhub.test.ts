@@ -6,6 +6,7 @@ const resolveAgentWorkspaceDirMock = vi.fn(() => "/tmp/workspace");
 const installSkillFromClawHubMock = vi.fn();
 const installSkillMock = vi.fn();
 const updateSkillsFromClawHubMock = vi.fn();
+const vetClawHubSkillMock = vi.fn();
 
 vi.mock("../../config/config.js", () => ({
   loadConfig: () => loadConfigMock(),
@@ -23,6 +24,10 @@ vi.mock("../../agents/skills-clawhub.js", () => ({
   updateSkillsFromClawHub: (...args: unknown[]) => updateSkillsFromClawHubMock(...args),
 }));
 
+vi.mock("../../agents/skills-vetting.js", () => ({
+  vetClawHubSkill: (...args: unknown[]) => vetClawHubSkillMock(...args),
+}));
+
 vi.mock("../../agents/skills-install.js", () => ({
   installSkill: (...args: unknown[]) => installSkillMock(...args),
 }));
@@ -37,6 +42,7 @@ describe("skills gateway handlers (clawhub)", () => {
     installSkillFromClawHubMock.mockReset();
     installSkillMock.mockReset();
     updateSkillsFromClawHubMock.mockReset();
+    vetClawHubSkillMock.mockReset();
 
     loadConfigMock.mockReturnValue({});
     resolveDefaultAgentIdMock.mockReturnValue("main");
@@ -91,6 +97,56 @@ describe("skills gateway handlers (clawhub)", () => {
       slug: "calendar",
       version: "1.2.3",
       installedSkillKey: "calendar",
+    });
+  });
+
+  it("vets a ClawHub skill through skills.vet", async () => {
+    vetClawHubSkillMock.mockResolvedValue({
+      ok: true,
+      source: "clawhub",
+      catalogId: "clawhub:calendar",
+      slug: "calendar",
+      version: "1.2.3",
+      trustTier: "third_party_staged",
+      outcome: "install",
+      reportPath: "/tmp/workspace/docs/projects/skills-system/skill-vetting/reports/report.md",
+      quarantineDir: "/tmp/workspace/.artifacts/skills/quarantine/calendar/1.2.3",
+      skillDir: "/tmp/workspace/.artifacts/skills/quarantine/calendar/1.2.3/skill",
+    });
+
+    let ok: boolean | null = null;
+    let response: unknown;
+    let error: unknown;
+    await skillsHandlers["skills.vet"]({
+      params: {
+        slug: "calendar",
+        version: "1.2.3",
+      },
+      req: {} as never,
+      client: null as never,
+      isWebchatConnect: () => false,
+      context: {} as never,
+      respond: (success, result, err) => {
+        ok = success;
+        response = result;
+        error = err;
+      },
+    });
+
+    expect(vetClawHubSkillMock).toHaveBeenCalledWith({
+      workspaceDir: "/tmp/workspace",
+      slug: "calendar",
+      catalogId: undefined,
+      version: "1.2.3",
+    });
+    expect(ok).toBe(true);
+    expect(error).toBeUndefined();
+    expect(response).toMatchObject({
+      ok: true,
+      catalogId: "clawhub:calendar",
+      slug: "calendar",
+      trustTier: "third_party_staged",
+      outcome: "install",
     });
   });
 

@@ -25,6 +25,7 @@ function createMockSkill(overrides: Partial<SkillStatusEntry> = {}): SkillStatus
     blockedByAllowlist: false,
     blockedByPermissions: false,
     blockedByTrustVetting: false,
+    trustTier: "local_trusted",
     activatable: true,
     eligible: true,
     modelVisible: true,

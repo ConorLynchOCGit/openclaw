@@ -17,6 +17,7 @@ import {
 import { resolveBundledSkillsContext } from "./skills/bundled-context.js";
 import { loadSkillsFromDirSafe } from "./skills/local-loader.js";
 import { resolvePluginSkillDirs } from "./skills/plugin-skills.js";
+import { resolveSkillOpsRoots } from "./skills-vetting.js";
 
 type SkillsDoctorRoot = {
   kind: string;
@@ -335,10 +336,13 @@ export async function buildSkillsDoctorReport(params: {
     managedSkillsDir,
   });
   const trackedClawHubInstalls = await readTrackedClawHubSkillInstalls(params.workspaceDir);
+  const skillOpsRoots = resolveSkillOpsRoots(params.workspaceDir);
   const writableSurfaces = await Promise.all([
     inspectWritableSurface("workspace", path.join(params.workspaceDir, "skills")),
     inspectWritableSurface("workspace_agents", path.join(params.workspaceDir, ".agents", "skills")),
     inspectWritableSurface("managed", managedSkillsDir),
+    inspectWritableSurface("skill_review_reports", skillOpsRoots.reportRoot),
+    inspectWritableSurface("skill_quarantine", skillOpsRoots.quarantineRoot),
   ]);
   const collisions = buildCollisions(roots);
   const conformanceIssues = await buildConformanceIssues(trackedClawHubInstalls);
@@ -367,6 +371,7 @@ export async function buildSkillsDoctorReport(params: {
     return {
       ...skill,
       blockedByTrustVetting: true,
+      trustTier: "quarantined_rejected" as const,
       activatable: false,
       eligible: false,
       modelVisible: false,

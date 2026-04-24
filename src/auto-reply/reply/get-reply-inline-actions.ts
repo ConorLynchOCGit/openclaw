@@ -76,6 +76,10 @@ function expandBundleCommandPromptTemplate(template: string, args?: string): str
   return `${rendered.trim()}\n\nUser input:\n${normalizedArgs}`;
 }
 
+function buildExplicitTaskRequiredMessage(command: SkillCommandSpec): string {
+  return `❌ /${command.name} requires an explicit task after the command name. Example: /${command.name} investigate the failing install path`;
+}
+
 function isMentionOnlyResidualText(text: string, wasMentioned: boolean | undefined): boolean {
   if (wasMentioned !== true) {
     return false;
@@ -227,6 +231,15 @@ export async function handleInlineActions(params: {
       );
       typing.cleanup();
       return { kind: "reply", reply: undefined };
+    }
+    if (skillInvocation.command.requiresExplicitTask && !normalizeOptionalString(skillInvocation.args)) {
+      typing.cleanup();
+      return {
+        kind: "reply",
+        reply: {
+          text: buildExplicitTaskRequiredMessage(skillInvocation.command),
+        },
+      };
     }
 
     const dispatch = skillInvocation.command.dispatch;

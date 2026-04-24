@@ -12,6 +12,7 @@ import {
 } from "../../agents/skills-clawhub.js";
 import { buildSkillsDoctorReport } from "../../agents/skills-doctor.js";
 import { installSkill } from "../../agents/skills-install.js";
+import { vetClawHubSkill } from "../../agents/skills-vetting.js";
 import {
   buildWorkspaceSkillStatus,
   resolveAgentLoadedSkillSnapshotStatus,
@@ -36,6 +37,7 @@ import {
   validateSkillsSearchParams,
   validateSkillsStatusParams,
   validateSkillsUpdateParams,
+  validateSkillsVetParams,
 } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -235,6 +237,46 @@ export const skillsHandlers: GatewayRequestHandlers = {
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatErrorMessage(err)));
     }
+  },
+  "skills.vet": async ({ params, respond }) => {
+    if (!validateSkillsVetParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid skills.vet params: ${formatValidationErrors(validateSkillsVetParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const p = params as {
+      source?: "clawhub";
+      slug?: string;
+      catalogId?: string;
+      version?: string;
+    };
+    if (!p.slug && !p.catalogId) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, 'skills.vet requires "slug" or "catalogId"'),
+      );
+      return;
+    }
+    const cfg = loadConfig();
+    const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));
+    const result = await vetClawHubSkill({
+      workspaceDir,
+      slug: p.slug,
+      catalogId: p.catalogId,
+      version: p.version,
+    });
+    respond(
+      result.ok,
+      result.ok ? result : undefined,
+      result.ok ? undefined : errorShape(ErrorCodes.UNAVAILABLE, result.error),
+    );
   },
   "skills.install": async ({ params, respond }) => {
     if (!validateSkillsInstallParams(params)) {
