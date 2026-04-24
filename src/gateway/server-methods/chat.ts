@@ -792,6 +792,56 @@ function sanitizeCost(raw: unknown): { total?: number } | undefined {
   return total !== undefined ? { total } : undefined;
 }
 
+function summarizeToolHistoryDetails(raw: unknown): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const details = raw as Record<string, unknown>;
+  const summarized: Record<string, unknown> = {};
+
+  if (typeof details.status === "string" && details.status.trim()) {
+    summarized.status = details.status;
+  }
+  if (typeof details.error === "string" && details.error.trim()) {
+    summarized.error = details.error;
+  }
+  if (
+    details.delivery &&
+    typeof details.delivery === "object" &&
+    details.delivery !== null &&
+    typeof (details.delivery as { status?: unknown }).status === "string"
+  ) {
+    const delivery = details.delivery as { status?: string; mode?: string };
+    summarized.delivery = {
+      status: delivery.status,
+      ...(typeof delivery.mode === "string" ? { mode: delivery.mode } : {}),
+    };
+  }
+
+  for (const key of [
+    "truncated",
+    "droppedMessages",
+    "contentTruncated",
+    "contentRedacted",
+  ] as const) {
+    if (typeof details[key] === "boolean") {
+      summarized[key] = details[key];
+    }
+  }
+  if (typeof details.bytes === "number" && Number.isFinite(details.bytes)) {
+    summarized.bytes = details.bytes;
+  }
+  if (
+    summarized.contentTruncated === true ||
+    summarized.truncated === true ||
+    summarized.droppedMessages === true
+  ) {
+    summarized.fullContentAvailable = false;
+  }
+
+  return Object.keys(summarized).length > 0 ? summarized : undefined;
+}
+
 function sanitizeChatHistoryMessage(
   message: unknown,
   maxChars: number = DEFAULT_CHAT_HISTORY_TEXT_MAX_CHARS,
@@ -813,6 +863,12 @@ function sanitizeChatHistoryMessage(
     typeof entry.tool_call_id === "string";
 
   if ("details" in entry) {
+    const toolMeta = preserveExactToolPayload
+      ? summarizeToolHistoryDetails(entry.details)
+      : undefined;
+    if (toolMeta) {
+      entry.__openclawToolMeta = toolMeta;
+    }
     delete entry.details;
     changed = true;
   }

@@ -3,7 +3,11 @@ import { Type } from "@sinclair/typebox";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { callGateway } from "../../gateway/call.js";
 import { formatErrorMessage } from "../../infra/errors.js";
-import { normalizeAgentId, resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
+import {
+  buildAgentMainSessionKey,
+  normalizeAgentId,
+  resolveAgentIdFromSessionKey,
+} from "../../routing/session-key.js";
 import { SESSION_LABEL_MAX_LENGTH } from "../../sessions/session-label.js";
 import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import {
@@ -42,6 +46,20 @@ const SessionsSendToolSchema = Type.Object({
 
 type GatewayCaller = typeof callGateway;
 const SESSIONS_SEND_REPLY_HISTORY_LIMIT = 50;
+
+function looksLikeSessionKeyCandidate(value: string | undefined): boolean {
+  const trimmed = normalizeOptionalString(value);
+  if (!trimmed) {
+    return false;
+  }
+  return (
+    trimmed === "main" ||
+    trimmed.startsWith("agent:") ||
+    trimmed.startsWith("cron:") ||
+    trimmed.startsWith("global") ||
+    trimmed.startsWith("unknown")
+  );
+}
 
 async function startAgentRun(params: {
   callGateway: GatewayCaller;
@@ -112,6 +130,12 @@ export function createSessionsSendTool(opts?: {
       }
 
       let sessionKey = sessionKeyParam;
+      if (!sessionKey && !labelParam && labelAgentIdParam) {
+        sessionKey = buildAgentMainSessionKey({
+          agentId: labelAgentIdParam,
+          mainKey,
+        });
+      }
       if (!sessionKey && labelParam) {
         const requesterAgentId = resolveAgentIdFromSessionKey(effectiveRequesterKey);
         const requestedAgentId = labelAgentIdParam
@@ -159,22 +183,28 @@ export function createSessionsSendTool(opts?: {
           resolvedKey = normalizeOptionalString(resolved?.key) ?? "";
         } catch (err) {
           const msg = formatErrorMessage(err);
-          if (restrictToSpawned) {
+          if (looksLikeSessionKeyCandidate(labelParam)) {
+            sessionKey = labelParam;
+            resolvedKey = labelParam;
+          } else if (restrictToSpawned) {
             return jsonResult({
               runId: crypto.randomUUID(),
               status: "forbidden",
               error: "Session not visible from this sandboxed agent session.",
             });
+          } else {
+            return jsonResult({
+              runId: crypto.randomUUID(),
+              status: "error",
+              error: msg || `No session found with label: ${labelParam}`,
+            });
           }
-          return jsonResult({
-            runId: crypto.randomUUID(),
-            status: "error",
-            error: msg || `No session found with label: ${labelParam}`,
-          });
         }
 
         if (!resolvedKey) {
-          if (restrictToSpawned) {
+          if (looksLikeSessionKeyCandidate(labelParam)) {
+            sessionKey = labelParam;
+          } else if (restrictToSpawned) {
             return jsonResult({
               runId: crypto.randomUUID(),
               status: "forbidden",
@@ -187,7 +217,9 @@ export function createSessionsSendTool(opts?: {
             error: `No session found with label: ${labelParam}`,
           });
         }
-        sessionKey = resolvedKey;
+        if (!sessionKey) {
+          sessionKey = resolvedKey;
+        }
       }
 
       if (!sessionKey) {

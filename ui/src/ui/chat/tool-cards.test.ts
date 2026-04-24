@@ -150,6 +150,81 @@ describe("tool-cards", () => {
     expect(sidebar).toContain("No output");
   });
 
+  it("extracts compact truncation metadata from tool history messages", () => {
+    const [card] = extractToolCards(
+      {
+        role: "toolResult",
+        toolName: "sessions_history",
+        __openclawToolMeta: {
+          status: "ok",
+          truncated: true,
+          contentTruncated: true,
+          contentRedacted: false,
+          fullContentAvailable: false,
+        },
+        content: [{ type: "text", text: "partial report" }],
+      },
+      "msg:meta",
+    );
+
+    expect(card?.outputMeta).toMatchObject({
+      status: "ok",
+      sourceTruncated: true,
+      historyTruncated: true,
+      redacted: false,
+      fullContentAvailable: false,
+    });
+  });
+
+  it("shows truthful full-content-unavailable notices for truncated tool output", () => {
+    const container = document.createElement("div");
+    render(
+      renderToolCard(
+        {
+          id: "msg:meta:card",
+          name: "sessions_history",
+          outputText: "partial report",
+          outputMeta: {
+            status: "ok",
+            sourceTruncated: true,
+            historyTruncated: true,
+            fullContentAvailable: false,
+          },
+        },
+        { expanded: true, onToggleExpanded: vi.fn() },
+      ),
+      container,
+    );
+
+    expect(container.textContent).toContain("Full content unavailable.");
+    expect(container.textContent).toContain(
+      "Tool output was truncated at source before it was written to session history.",
+    );
+    expect(container.textContent).toContain(
+      "Session history stored only a truncated copy of this tool output.",
+    );
+  });
+
+  it("includes truncation notices in sidebar content when full content is unavailable", () => {
+    const sidebar = buildToolCardSidebarContent({
+      id: "msg:meta:sidebar",
+      name: "sessions_history",
+      outputText: "partial report",
+      outputMeta: {
+        status: "ok",
+        sourceTruncated: true,
+        historyTruncated: true,
+        fullContentAvailable: false,
+      },
+    });
+
+    expect(sidebar).toContain("**Full content unavailable.**");
+    expect(sidebar).toContain(
+      "Tool output was truncated at source before it was written to session history.",
+    );
+    expect(sidebar).toContain("Session history stored only a truncated copy of this tool output.");
+  });
+
   it("extracts canvas handle payloads into canvas previews", () => {
     const [card] = extractToolCards(
       {

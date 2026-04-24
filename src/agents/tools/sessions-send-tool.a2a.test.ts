@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CallGatewayOptions } from "../../gateway/call.js";
 import { setActivePluginRegistry } from "../../plugins/runtime.js";
 import { createSessionConversationTestRegistry } from "../../test-utils/session-conversation-registry.js";
+import { waitForAgentRun } from "../run-wait.js";
+import { runAgentStep } from "./agent-step.js";
 import { runSessionsSendA2AFlow, __testing } from "./sessions-send-tool.a2a.js";
 
 vi.mock("../run-wait.js", () => ({
@@ -19,6 +21,10 @@ describe("runSessionsSendA2AFlow announce delivery", () => {
   beforeEach(() => {
     setActivePluginRegistry(createSessionConversationTestRegistry());
     gatewayCalls = [];
+    vi.mocked(runAgentStep).mockReset();
+    vi.mocked(runAgentStep).mockResolvedValue("Test announce reply");
+    vi.mocked(waitForAgentRun).mockReset();
+    vi.mocked(waitForAgentRun).mockResolvedValue({ status: "ok" });
     __testing.setDepsForTest({
       callGateway: async <T = Record<string, unknown>>(opts: CallGatewayOptions) => {
         gatewayCalls.push(opts);
@@ -29,11 +35,12 @@ describe("runSessionsSendA2AFlow announce delivery", () => {
 
   afterEach(() => {
     __testing.setDepsForTest();
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   it("passes threadId through to gateway send for Telegram forum topics", async () => {
     await runSessionsSendA2AFlow({
+      requesterSessionKey: "agent:main:main",
       targetSessionKey: "agent:main:telegram:group:-100123:topic:554",
       displayKey: "agent:main:telegram:group:-100123:topic:554",
       message: "Test message",
@@ -43,6 +50,8 @@ describe("runSessionsSendA2AFlow announce delivery", () => {
     });
 
     const sendCall = gatewayCalls.find((call) => call.method === "send");
+    const injectCall = gatewayCalls.find((call) => call.method === "chat.inject");
+    expect(injectCall).toBeDefined();
     expect(sendCall).toBeDefined();
     const sendParams = sendCall?.params as Record<string, unknown>;
     expect(sendParams.to).toBe("-100123");
@@ -52,6 +61,7 @@ describe("runSessionsSendA2AFlow announce delivery", () => {
 
   it("omits threadId for non-topic sessions", async () => {
     await runSessionsSendA2AFlow({
+      requesterSessionKey: "agent:main:main",
       targetSessionKey: "agent:main:discord:group:dev",
       displayKey: "agent:main:discord:group:dev",
       message: "Test message",
@@ -65,5 +75,58 @@ describe("runSessionsSendA2AFlow announce delivery", () => {
     const sendParams = sendCall?.params as Record<string, unknown>;
     expect(sendParams.channel).toBe("discord");
     expect(sendParams.threadId).toBeUndefined();
+  });
+
+  it("injects a raw fallback into the requester session when announce generation fails", async () => {
+    vi.mocked(runAgentStep).mockResolvedValueOnce(undefined as never);
+
+    await runSessionsSendA2AFlow({
+      requesterSessionKey: "agent:main:main",
+      targetSessionKey: "agent:main:discord:group:dev",
+      displayKey: "agent:main:discord:group:dev",
+      message: "Test message",
+      announceTimeoutMs: 10_000,
+      maxPingPongTurns: 0,
+      roundOneReply: "Long delegated report body",
+    });
+
+    const injectCall = gatewayCalls.find((call) => call.method === "chat.inject");
+    expect(injectCall).toBeDefined();
+    expect(injectCall?.params).toMatchObject({
+      sessionKey: "agent:main:main",
+      label: "Delegated result",
+    });
+    expect((injectCall?.params as { message?: string }).message).toContain(
+      "announce_generation_failed",
+    );
+    expect((injectCall?.params as { message?: string }).message).toContain(
+      "Long delegated report body",
+    );
+  });
+
+  it("injects an explicit failure when the delegated run fails before a reply exists", async () => {
+    vi.mocked(waitForAgentRun).mockResolvedValueOnce({
+      status: "error",
+      error: "child exploded",
+    });
+
+    await runSessionsSendA2AFlow({
+      requesterSessionKey: "agent:main:main",
+      targetSessionKey: "agent:web-researcher:main",
+      displayKey: "agent:web-researcher:main",
+      message: "Test message",
+      announceTimeoutMs: 10_000,
+      maxPingPongTurns: 0,
+      waitRunId: "run-child",
+    });
+
+    const injectCall = gatewayCalls.find((call) => call.method === "chat.inject");
+    expect(injectCall).toBeDefined();
+    expect(injectCall?.params).toMatchObject({
+      sessionKey: "agent:main:main",
+      label: "Delegated agent failed",
+    });
+    expect((injectCall?.params as { message?: string }).message).toContain("child_run_failed");
+    expect((injectCall?.params as { message?: string }).message).toContain("child exploded");
   });
 });

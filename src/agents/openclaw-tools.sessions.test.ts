@@ -847,6 +847,97 @@ describe("sessions tools", () => {
     });
   });
 
+  it("sessions_send treats canonical agent session keys passed as label as session targets", async () => {
+    const targetKey = "agent:web-researcher:main";
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as {
+        method?: string;
+        params?: Record<string, unknown>;
+      };
+      if (request.method === "sessions.resolve") {
+        throw new Error("No session found with label");
+      }
+      if (request.method === "agent") {
+        return { runId: "run-1", acceptedAt: 123 };
+      }
+      if (request.method === "agent.wait") {
+        return { status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        return { messages: [] };
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "agent:main:main",
+      agentChannel: "webchat",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call7b", {
+      label: targetKey,
+      message: "ping",
+      timeoutSeconds: 0,
+    });
+    expect((result.details as { status?: string }).status).toBe("accepted");
+    const agentCall = callGatewayMock.mock.calls.find(
+      (call) => (call[0] as { method?: string }).method === "agent",
+    );
+    expect(agentCall?.[0]).toMatchObject({
+      method: "agent",
+      params: { sessionKey: targetKey },
+    });
+  });
+
+  it("sessions_send resolves agentId-only sends to the canonical main session", async () => {
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as {
+        method?: string;
+        params?: Record<string, unknown>;
+      };
+      if (request.method === "agent") {
+        return { runId: "run-1", acceptedAt: 123 };
+      }
+      if (request.method === "agent.wait") {
+        return { status: "ok" };
+      }
+      if (request.method === "chat.history") {
+        return { messages: [] };
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: "agent:main:main",
+      agentChannel: "webchat",
+    }).find((candidate) => candidate.name === "sessions_send");
+    expect(tool).toBeDefined();
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call7c", {
+      agentId: "web-researcher",
+      message: "ping",
+      timeoutSeconds: 0,
+    });
+    expect((result.details as { status?: string; sessionKey?: string }).status).toBe("accepted");
+    expect((result.details as { status?: string; sessionKey?: string }).sessionKey).toBe(
+      "agent:web-researcher:main",
+    );
+    const agentCall = callGatewayMock.mock.calls.find(
+      (call) => (call[0] as { method?: string }).method === "agent",
+    );
+    expect(agentCall?.[0]).toMatchObject({
+      method: "agent",
+      params: { sessionKey: "agent:web-researcher:main" },
+    });
+  });
+
   it("sessions_send runs ping-pong then announces", async () => {
     const calls: Array<{ method?: string; params?: unknown }> = [];
     let agentCallCount = 0;
@@ -957,6 +1048,12 @@ describe("sessions tools", () => {
         ),
     );
     expect(replySteps).toHaveLength(2);
+    const injectCall = calls.find((call) => call.method === "chat.inject");
+    expect(injectCall?.params).toMatchObject({
+      sessionKey: requesterKey,
+      label: "Delegated result",
+      message: "announce now",
+    });
     expect(sendParams).toMatchObject({
       to: "group:target",
       channel: "discord",

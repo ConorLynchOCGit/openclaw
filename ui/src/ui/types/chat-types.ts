@@ -108,6 +108,14 @@ export type ToolCard = {
   args?: unknown;
   inputText?: string;
   outputText?: string;
+  outputMeta?: {
+    status?: string;
+    error?: string;
+    sourceTruncated?: boolean;
+    historyTruncated?: boolean;
+    redacted?: boolean;
+    fullContentAvailable?: boolean;
+  };
   preview?: {
     kind: "canvas";
     surface: "assistant_message";

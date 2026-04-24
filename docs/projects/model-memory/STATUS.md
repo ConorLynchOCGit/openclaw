@@ -39,6 +39,17 @@ State: `pre_phase_2_execution_in_progress`
     operator report over the memory-critical state inventory
   - isolated proof now covers operational backup/restore roundtrip plus
     durable MMV2 DB restore via `pg-mem` snapshot/restore
+- delegated-result propagation and post expansion/truncation integrity are now
+  landed as an inserted pre-Phase-2 blocker:
+  - `sessions_send` now falls back to canonical session keys passed through
+    `label` and resolves agent-id-only sends to canonical main-lane targets
+  - delegated child completion now auto-surfaces into the requester/main
+    session transcript through `chat.inject`, with explicit classified failure
+    states when child execution, announce generation, or result availability
+    fails
+  - `chat.history` now preserves compact tool-result truncation metadata for
+    UI consumption, and tool-card expand/sidebar surfaces now say when full
+    content is unavailable instead of implying the stored preview is complete
 - retrieval miss classification no longer stops at generic
   `candidates_found_but_excluded` / `stale_conflict_suppression` buckets; the
   runtime now emits explicit suppression classes for stale, superseded,
@@ -49,7 +60,7 @@ State: `pre_phase_2_execution_in_progress`
   work is bounded runtime validation rather than model-lane rollback
 - Phase 2 is still blocked until the ledger slices are closed; graph/capsule/
   planner work is not the active implementation lane
-- the remaining active blocker after the recovery slice is:
+- the remaining active blocker after the delegation/truncation slice is:
   the final Phase-2 entry validation pack
 
 - shared ingestion now has executable closeout/quarantine report helpers for

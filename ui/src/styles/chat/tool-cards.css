@@ -162,6 +162,21 @@
   margin-top: 6px;
 }
 
+.chat-tool-card__notice {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning, #d97706) 35%, var(--border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--warning, #d97706) 10%, transparent);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.chat-tool-card__notice strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
 /* Collapsed preview - fixed height with truncation */
 .chat-tools-inline {
   display: grid;

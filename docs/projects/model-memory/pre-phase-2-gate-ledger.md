@@ -119,7 +119,25 @@ State: `landed 2026-04-24`
   - isolated proof now covers operational backup/restore roundtrip and durable
     MMV2 DB restore via `pg-mem` snapshot/restore
 
-### Slice 6 - Phase-2 entry validation pack
+### Slice 6 - Delegated-result propagation and post expansion integrity
+
+State: `landed 2026-04-24`
+
+- inserted after live operator evidence showed delegation/reporting trust was
+  still not good enough for the final validation pack
+- delegated-agent completion now has an explicit parent-session contract:
+  - auto-surface the delegated result into the requester/main transcript, or
+  - emit an explicit classified failure instead of silence
+- `sessions_send` now accepts canonical session keys passed through `label`
+  and resolves agent-id-only sends to canonical main-lane targets
+- `chat.history` now preserves compact truncation metadata for tool-result
+  messages
+- UI tool-card expand/sidebar surfaces now distinguish:
+  - truncated at source
+  - truncated in history/transport
+  - full content unavailable
+
+### Slice 7 - Phase-2 entry validation pack
 
 - build the controlled Phase-2 entry load test
 - add retrieval quality evals independent of capture

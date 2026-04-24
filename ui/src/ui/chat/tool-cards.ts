@@ -51,6 +51,52 @@ function extractToolText(item: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+const SOURCE_TRUNCATION_PATTERN = /…\(truncated\)…/i;
+const HISTORY_TRUNCATION_PATTERN = /\.\.\.\(truncated\)\.\.\.|more characters truncated/i;
+
+function inferToolOutputMetaFromText(text: string | undefined): ToolCard["outputMeta"] | undefined {
+  if (!text) {
+    return undefined;
+  }
+  const sourceTruncated = SOURCE_TRUNCATION_PATTERN.test(text);
+  const historyTruncated = HISTORY_TRUNCATION_PATTERN.test(text);
+  if (!sourceTruncated && !historyTruncated) {
+    return undefined;
+  }
+  return {
+    sourceTruncated,
+    historyTruncated,
+    fullContentAvailable: false,
+  };
+}
+
+function extractToolOutputMeta(
+  message: Record<string, unknown>,
+): ToolCard["outputMeta"] | undefined {
+  const raw =
+    message.__openclawToolMeta && typeof message.__openclawToolMeta === "object"
+      ? (message.__openclawToolMeta as Record<string, unknown>)
+      : undefined;
+  if (!raw) {
+    return undefined;
+  }
+  const sourceTruncated = raw.contentTruncated === true;
+  const historyTruncated = raw.truncated === true || raw.droppedMessages === true;
+  const redacted = raw.contentRedacted === true;
+  const fullContentAvailable =
+    typeof raw.fullContentAvailable === "boolean"
+      ? raw.fullContentAvailable
+      : !(sourceTruncated || historyTruncated);
+  return {
+    ...(typeof raw.status === "string" ? { status: raw.status } : {}),
+    ...(typeof raw.error === "string" ? { error: raw.error } : {}),
+    sourceTruncated,
+    historyTruncated,
+    redacted,
+    fullContentAvailable,
+  };
+}
+
 export function extractToolPreview(
   outputText: string | undefined,
   toolName: string | undefined,
@@ -169,12 +215,15 @@ export function extractToolCards(message: unknown, prefix = "tool"): ToolCard[] 
       if (existing) {
         existing.outputText = text;
         existing.preview = preview;
+        existing.outputMeta =
+          extractToolOutputMeta(m) ?? inferToolOutputMetaFromText(text) ?? existing.outputMeta;
         continue;
       }
       cards.push({
         id: cardId,
         name,
         outputText: text,
+        outputMeta: extractToolOutputMeta(m) ?? inferToolOutputMetaFromText(text),
         preview,
       });
     }
@@ -198,6 +247,7 @@ export function extractToolCards(message: unknown, prefix = "tool"): ToolCard[] 
       id: resolveToolCardId({}, m, 0, prefix),
       name,
       outputText: text,
+      outputMeta: extractToolOutputMeta(m) ?? inferToolOutputMetaFromText(text),
       preview: extractToolPreview(text, name),
     });
   }
@@ -212,6 +262,32 @@ export function buildToolCardSidebarContent(card: ToolCard): string {
 
   if (detail) {
     sections.push(`**Summary:** ${detail}`);
+  }
+
+  if (card.outputMeta) {
+    const lines: string[] = [];
+    if (card.outputMeta.fullContentAvailable === false) {
+      lines.push("**Full content unavailable.**");
+    }
+    if (card.outputMeta.status === "error") {
+      lines.push(
+        card.outputMeta.error?.trim()
+          ? `Tool returned an error: ${card.outputMeta.error.trim()}`
+          : "Tool returned an error.",
+      );
+    }
+    if (card.outputMeta.sourceTruncated) {
+      lines.push("Tool output was truncated at source before it was written to session history.");
+    }
+    if (card.outputMeta.historyTruncated) {
+      lines.push("Session history stored only a truncated copy of this tool output.");
+    }
+    if (card.outputMeta.redacted) {
+      lines.push("Sensitive content was redacted from session history.");
+    }
+    if (lines.length > 0) {
+      sections.push(lines.join("\n"));
+    }
   }
 
   if (card.inputText?.trim()) {
@@ -346,6 +422,41 @@ export function renderRawOutputToggle(text: string) {
           expanded: true,
         })}
       </div>
+    </div>
+  `;
+}
+
+function renderToolOutputNotice(card: ToolCard) {
+  const meta = card.outputMeta;
+  if (!meta) {
+    return nothing;
+  }
+  const lines: string[] = [];
+  if (meta.status === "error") {
+    lines.push(
+      meta.error?.trim()
+        ? `Tool returned an error: ${meta.error.trim()}`
+        : "Tool returned an error.",
+    );
+  }
+  if (meta.sourceTruncated) {
+    lines.push("Tool output was truncated at source before it was written to session history.");
+  }
+  if (meta.historyTruncated) {
+    lines.push("Session history stored only a truncated copy of this tool output.");
+  }
+  if (meta.redacted) {
+    lines.push("Sensitive content was redacted from session history.");
+  }
+  if (lines.length === 0) {
+    return nothing;
+  }
+  return html`
+    <div class="chat-tool-card__notice" role="note">
+      ${meta.fullContentAvailable === false
+        ? html`<strong>Full content unavailable.</strong>`
+        : nothing}
+      ${lines.map((line) => html`<div>${line}</div>`)}
     </div>
   `;
 }
@@ -490,6 +601,7 @@ export function renderExpandedToolCardContent(
           : nothing}
       </div>
       ${detail ? html`<div class="chat-tool-card__detail">${detail}</div>` : nothing}
+      ${renderToolOutputNotice(card)}
       ${hasInput
         ? renderToolDataBlock({
             label: "Tool input",

@@ -422,6 +422,50 @@ describe("gateway server chat", () => {
     });
   });
 
+  test("chat.history preserves compact truncation metadata for tool results", async () => {
+    await withGatewayChatHarness(async ({ ws, createSessionDir }) => {
+      await connectOk(ws);
+
+      const sessionDir = await createSessionDir();
+      await writeMainSessionStore();
+
+      await writeMainSessionTranscript(sessionDir, [
+        JSON.stringify({
+          message: {
+            role: "toolResult",
+            toolName: "sessions_history",
+            content: [{ type: "text", text: '{\\n  "status": "ok"\\n}' }],
+            details: {
+              status: "ok",
+              truncated: true,
+              contentTruncated: true,
+              droppedMessages: false,
+              contentRedacted: false,
+              bytes: 13293,
+            },
+            timestamp: Date.now(),
+          },
+        }),
+      ]);
+
+      const messages = await fetchHistoryMessages(ws);
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).not.toHaveProperty("details");
+      expect(messages[0]).toMatchObject({
+        role: "toolResult",
+        __openclawToolMeta: {
+          status: "ok",
+          truncated: true,
+          contentTruncated: true,
+          droppedMessages: false,
+          contentRedacted: false,
+          bytes: 13293,
+          fullContentAvailable: false,
+        },
+      });
+    });
+  });
+
   test("chat.history strips inline directives from displayed message text", async () => {
     await withGatewayChatHarness(async ({ ws, createSessionDir }) => {
       await connectOk(ws);

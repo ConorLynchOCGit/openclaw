@@ -68,6 +68,16 @@ Already landed in the active source tree:
 - isolated proof now covers operational backup/restore roundtrip for
   file-backed state plus durable MMV2 DB restore via `pg-mem`
   snapshot/restore without contaminating live semantic truth
+- delegated-agent result propagation and long-post expansion are now hardened
+  enough for the final pre-Phase-2 validation pack:
+  - `sessions_send` now accepts canonical session keys passed through `label`
+    and also resolves agent-id-only sends to the canonical main lane
+  - completed delegated runs now surface a durable requester-session message
+    through `chat.inject` or an explicit classified failure instead of
+    silently disappearing
+  - `chat.history` now preserves compact tool-result truncation metadata, and
+    UI tool cards explicitly say when full content is unavailable instead of
+    implying that local expand can recover missing text
 
 ## Slice
 
