@@ -245,3 +245,23 @@ export function summarizeLiveMemoryWriteResults(batch: ShadowMemoryBatch): LiveM
     };
   });
 }
+
+export function summarizePersistedLiveMemoryWriteResults(
+  batch: ShadowMemoryBatch,
+  persistenceResult: {
+    durableMemoriesWritten: string[];
+    memoryEventsWritten: string[];
+    memoryEdgesWritten: string[];
+  },
+): LiveMemoryWriteResult[] {
+  const writtenMemoryIds = new Set(persistenceResult.durableMemoriesWritten);
+  const writtenEventIds = new Set(persistenceResult.memoryEventsWritten);
+  const writtenEdgeIds = new Set(persistenceResult.memoryEdgesWritten);
+  return summarizeLiveMemoryWriteResults({
+    durableMemories: batch.durableMemories.filter((memory) =>
+      writtenMemoryIds.has(memory.memory_id),
+    ),
+    memoryEvents: batch.memoryEvents.filter((event) => writtenEventIds.has(event.memory_event_id)),
+    memoryEdges: batch.memoryEdges.filter((edge) => writtenEdgeIds.has(edge.edge_id)),
+  });
+}

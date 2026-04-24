@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DurableMemoryRecord } from "../mmv2/contracts.ts";
+import type { DurableMemoryRecord, MemoryEvent } from "../mmv2/contracts.ts";
 import { applyModelMemoryMigrations } from "./migrations.ts";
 import { MmV2NativeRepository } from "./mmv2-native-repository.ts";
 import { createPgMemTestDatabase } from "./pg-test.ts";
@@ -74,6 +74,60 @@ function buildMinimalDurableMemory(memoryId: string): DurableMemoryRecord {
     access_count: 0,
     tags: ["claim"],
   };
+}
+
+class FailingMmV2NativeRepository extends MmV2NativeRepository {
+  constructor(
+    sql: ConstructorParameters<typeof MmV2NativeRepository>[0],
+    private readonly failingCandidateIds: ReadonlySet<string> = new Set(),
+    private readonly failingSupersededTargetIds: ReadonlySet<string> = new Set(),
+  ) {
+    super(sql);
+  }
+
+  override withTransaction<T>(
+    work: (repository: FailingMmV2NativeRepository) => Promise<T>,
+  ): Promise<T> {
+    return this.sql.withTransaction((tx) =>
+      work(
+        new FailingMmV2NativeRepository(
+          tx,
+          this.failingCandidateIds,
+          this.failingSupersededTargetIds,
+        ),
+      ),
+    );
+  }
+
+  override async insertMemoryEvent(record: MemoryEvent): Promise<MemoryEvent> {
+    if (record.candidate_id && this.failingCandidateIds.has(record.candidate_id)) {
+      throw new Error(`forced event failure for ${record.candidate_id}`);
+    }
+    return await super.insertMemoryEvent(record);
+  }
+
+  override async insertMemoryEvents(records: MemoryEvent[]): Promise<MemoryEvent[]> {
+    if (
+      records.some(
+        (record) => record.candidate_id && this.failingCandidateIds.has(record.candidate_id),
+      )
+    ) {
+      throw new Error("forced batched event failure");
+    }
+    return await super.insertMemoryEvents(records);
+  }
+
+  override async markDurableMemoryStatus(input: {
+    memoryId: string;
+    status: DurableMemoryRecord["status"];
+    updatedAt: string;
+    supersededByMemoryId?: string | null;
+  }): Promise<DurableMemoryRecord | undefined> {
+    if (this.failingSupersededTargetIds.has(input.memoryId)) {
+      throw new Error(`forced superseded status failure for ${input.memoryId}`);
+    }
+    return await super.markDurableMemoryStatus(input);
+  }
 }
 
 describe("MmV2NativeRepository", () => {
@@ -446,6 +500,189 @@ describe("MmV2NativeRepository", () => {
         memoryEvents: 1,
         memoryEdges: 0,
       });
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("rolls back only the failing candidate when one event write fails", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const repository = new FailingMmV2NativeRepository(database.sql, new Set(["candidate-bad"]));
+
+      const result = await repository.persistLiveMemoryBatch({
+        durableMemories: [
+          {
+            ...buildMinimalDurableMemory("memory-good"),
+            lineage: {
+              ...buildMinimalDurableMemory("memory-good").lineage,
+              candidate_ids: ["candidate-good"],
+            },
+          },
+          {
+            ...buildMinimalDurableMemory("memory-bad"),
+            lineage: {
+              ...buildMinimalDurableMemory("memory-bad").lineage,
+              candidate_ids: ["candidate-bad"],
+            },
+          },
+        ],
+        memoryEdges: [
+          {
+            edge_id: "edge-missing-endpoint",
+            schema_version: "memory_edge.v1",
+            from_memory_id: "memory-good",
+            to_memory_id: "missing-memory",
+            edge_type: "conflicts_with",
+            created_at: "2026-04-21T00:00:00.000Z",
+            metadata: { reason: "mixed-batch-proof" },
+          },
+        ],
+        memoryEvents: [
+          {
+            memory_event_id: "event-good",
+            schema_version: "memory_event.v1",
+            event_type: "memory_inserted",
+            occurred_at: "2026-04-21T00:00:00.000Z",
+            actor: "system",
+            source_ingest_event_id: "source-event-001",
+            candidate_id: "candidate-good",
+            memory_id: "memory-good",
+            target_memory_ids: [],
+            payload: { decision: "write" },
+          },
+          {
+            memory_event_id: "event-bad",
+            schema_version: "memory_event.v1",
+            event_type: "memory_inserted",
+            occurred_at: "2026-04-21T00:00:00.000Z",
+            actor: "system",
+            source_ingest_event_id: "source-event-001",
+            candidate_id: "candidate-bad",
+            memory_id: "memory-bad",
+            target_memory_ids: [],
+            payload: { decision: "write" },
+          },
+        ],
+      });
+
+      expect(await repository.getDurableMemory("memory-good")).toBeDefined();
+      expect(await repository.getDurableMemory("memory-bad")).toBeUndefined();
+      expect(await repository.listMemoryEvents()).toEqual([
+        expect.objectContaining({
+          memory_event_id: "event-good",
+          memory_id: "memory-good",
+          payload: expect.objectContaining({
+            deferred_memory_edges: [
+              expect.objectContaining({
+                edge_id: "edge-missing-endpoint",
+                to_memory_id: "missing-memory",
+              }),
+            ],
+          }),
+        }),
+      ]);
+      expect(result.durableMemoriesWritten).toEqual(["memory-good"]);
+      expect(result.memoryEventsWritten).toEqual(["event-good"]);
+      expect(result.deferredCandidates).toEqual([
+        expect.objectContaining({
+          memory_id: "memory-bad",
+          reason: "forced event failure for candidate-bad",
+        }),
+      ]);
+      expect(result.deferredEdges).toEqual([
+        expect.objectContaining({
+          edge_id: "edge-missing-endpoint",
+          from_memory_id: "memory-good",
+          to_memory_id: "missing-memory",
+        }),
+      ]);
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("defers only the failing supersession edge when a status update fails", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const repository = new FailingMmV2NativeRepository(
+        database.sql,
+        new Set(),
+        new Set(["memory-target-fail"]),
+      );
+
+      await repository.upsertDurableMemory({
+        ...buildMinimalDurableMemory("memory-target-fail"),
+        status: "active",
+      });
+      await repository.upsertDurableMemory({
+        ...buildMinimalDurableMemory("memory-target-ok"),
+        status: "active",
+      });
+
+      const result = await repository.persistLiveMemoryBatch({
+        durableMemories: [
+          {
+            ...buildMinimalDurableMemory("memory-superseder"),
+            lineage: {
+              ...buildMinimalDurableMemory("memory-superseder").lineage,
+              candidate_ids: ["candidate-superseder"],
+            },
+          },
+        ],
+        memoryEdges: [
+          {
+            edge_id: "edge-fail-status",
+            schema_version: "memory_edge.v1",
+            from_memory_id: "memory-superseder",
+            to_memory_id: "memory-target-fail",
+            edge_type: "supersedes",
+            created_at: "2026-04-21T00:00:00.000Z",
+            metadata: { reason: "forced-status-failure" },
+          },
+          {
+            edge_id: "edge-ok-status",
+            schema_version: "memory_edge.v1",
+            from_memory_id: "memory-superseder",
+            to_memory_id: "memory-target-ok",
+            edge_type: "supersedes",
+            created_at: "2026-04-21T00:00:00.000Z",
+            metadata: { reason: "valid" },
+          },
+        ],
+        memoryEvents: [
+          {
+            memory_event_id: "event-superseder",
+            schema_version: "memory_event.v1",
+            event_type: "memory_inserted",
+            occurred_at: "2026-04-21T00:00:00.000Z",
+            actor: "system",
+            source_ingest_event_id: "source-event-001",
+            candidate_id: "candidate-superseder",
+            memory_id: "memory-superseder",
+            target_memory_ids: ["memory-target-fail", "memory-target-ok"],
+            payload: { decision: "write" },
+          },
+        ],
+      });
+
+      expect(await repository.getDurableMemory("memory-superseder")).toBeDefined();
+      expect(await repository.listMemoryEdges()).toEqual([
+        expect.objectContaining({
+          edge_id: "edge-ok-status",
+          to_memory_id: "memory-target-ok",
+        }),
+      ]);
+      expect((await repository.getDurableMemory("memory-target-ok"))?.status).toBe("superseded");
+      expect((await repository.getDurableMemory("memory-target-fail"))?.status).toBe("active");
+      expect(result.deferredEdges).toEqual([
+        expect.objectContaining({
+          edge_id: "edge-fail-status",
+          to_memory_id: "memory-target-fail",
+        }),
+      ]);
     } finally {
       await database.close();
     }

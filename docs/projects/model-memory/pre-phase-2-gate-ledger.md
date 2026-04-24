@@ -39,12 +39,17 @@ Phase 2 stays blocked until every `must_do` slice below is green.
 
 ### Slice 2 - Per-candidate persistence isolation
 
-- ensure invalid candidates or edges do not roll back valid siblings
-- prove this for:
+State: `landed 2026-04-24`
+
+- invalid candidates or edges no longer roll back valid siblings in the MMV2
+  native persistence path
+- proof now exists for:
   - ordinary-turn capture
   - tool-result capture
   - document ingest
   - imports
+- repository-level tests also prove candidate-unit rollback and deferred-edge
+  handling directly at the native persistence boundary
 
 ### Slice 3 - Retrieval miss diagnostics and MMV2-native read cleanup
 

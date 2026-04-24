@@ -44,6 +44,11 @@ Already landed in the active source tree:
   such as stale, superseded, conflicted, inactive, hash-invalid, scope-only,
   budget-only, and privacy-only misses instead of collapsing them into generic
   empty retrieval buckets
+- per-candidate persistence isolation is now proven across the required
+  families: repository core, ordinary-turn entrypoint, tool-result capture,
+  document ingest, and imports all preserve valid siblings, defer invalid
+  candidates safely, and defer invalid edges without burning the rest of the
+  batch
 
 ## Slice
 
@@ -218,6 +223,13 @@ of that proof:
   is not yet declared broadly default-safe
 - skill-vetting reports default to the writable operator workspace reports
   tree instead of the read-only product import mirror
+
+The next remaining pre-Phase-2 blockers are now the operational slices after
+persistence isolation:
+
+- Slice 4 traceability, SLOs, and DB baselines
+- Slice 5 recovery and restore proof
+- Slice 6 Phase-2 entry validation pack
 - host-operator skill install validation is more discoverable, supports
   validate-only, and gateway tool-failure logging redacts raw parameter values
   and skill content

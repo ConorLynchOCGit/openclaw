@@ -858,17 +858,38 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
     }
   }
 
+  private async supportsSavepointsInCurrentTransaction(): Promise<boolean> {
+    try {
+      await this.sql.query("SAVEPOINT openclaw_mmv2_savepoint_probe");
+      await this.sql.query("RELEASE SAVEPOINT openclaw_mmv2_savepoint_probe");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async deleteMemoryEdgeById(edgeId: string): Promise<void> {
+    await this.sql.query(`DELETE FROM model_memory.memory_edges WHERE edge_id = $1`, [edgeId]);
+  }
+
   async persistLiveMemoryBatch(batch: ShadowMemoryBatch): Promise<LiveMemoryPersistenceResult> {
     const startedAt = Date.now();
     let operationCount = 0;
-    const eventMemoryIds = new Set(
-      batch.memoryEvents
-        .map((event) => event.memory_id)
-        .filter((memoryId): memoryId is string => Boolean(memoryId)),
-    );
+    const memoryEventsByMemoryId = new Map<string, MemoryEvent[]>();
+    const standaloneMemoryEvents: MemoryEvent[] = [];
+    for (const event of batch.memoryEvents) {
+      if (event.memory_id) {
+        const existing = memoryEventsByMemoryId.get(event.memory_id) ?? [];
+        existing.push(event);
+        memoryEventsByMemoryId.set(event.memory_id, existing);
+      } else {
+        standaloneMemoryEvents.push(event);
+      }
+    }
+    const durableMemoryIds = new Set(batch.durableMemories.map((memory) => memory.memory_id));
     const deferredCandidates: DeferredLiveMemoryCandidate[] = [];
     const durableMemories = batch.durableMemories.filter((memory) => {
-      if (eventMemoryIds.has(memory.memory_id)) {
+      if ((memoryEventsByMemoryId.get(memory.memory_id)?.length ?? 0) > 0) {
         return true;
       }
       deferredCandidates.push({
@@ -879,149 +900,263 @@ export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
       });
       return false;
     });
+    for (const memoryId of memoryEventsByMemoryId.keys()) {
+      if (durableMemoryIds.has(memoryId)) {
+        continue;
+      }
+      deferredCandidates.push({
+        memory_id: memoryId,
+        reason: "memory event references missing durable memory candidate",
+        failure_class: "db_persistence",
+        failure_stage: "persistence_boundary",
+      });
+    }
     const deferredCandidateIds = new Set(
       deferredCandidates.map((candidate) => candidate.memory_id),
     );
-    const memoryEvents = batch.memoryEvents.filter(
-      (event) => !event.memory_id || !deferredCandidateIds.has(event.memory_id),
+    const memoryEventsByMemoryIdToPersist = new Map(
+      [...memoryEventsByMemoryId.entries()].filter(
+        ([memoryId]) => !deferredCandidateIds.has(memoryId),
+      ),
     );
     const writtenMemoryIds: string[] = [];
     const writtenEventIds: string[] = [];
     const writtenEdgeIds: string[] = [];
     const deferredEdgesReport: DeferredLiveMemoryEdge[] = [];
-
-    await this.withTransaction(async (repository) => {
-      const persistedMemories = await repository.batchWithPerRecordFallback({
-        savepointPrefix: "durable_memory",
-        records: durableMemories,
-        getId: (record) => record.memory_id,
-        batch: async (records) => {
-          operationCount += 1;
-          return repository.upsertDurableMemories(records);
-        },
-        single: async (record) => {
-          operationCount += 1;
-          return repository.upsertDurableMemory(record);
-        },
-        defer: (record, error) => {
-          deferredCandidates.push({
-            memory_id: record.memory_id,
-            reason: error instanceof Error ? error.message : String(error),
-            failure_class: "db_persistence",
-            failure_stage: "persistence_boundary",
-          });
-        },
-      });
-      writtenMemoryIds.push(...persistedMemories.map((memory) => memory.memory_id));
-
-      const knownMemoryIds = new Set(writtenMemoryIds);
-      const endpointIds = batch.memoryEdges.flatMap((edge) => [
-        edge.from_memory_id,
-        edge.to_memory_id,
-      ]);
+    const endpointIds = batch.memoryEdges.flatMap((edge) => [
+      edge.from_memory_id,
+      edge.to_memory_id,
+    ]);
+    const loadExistingMemoryIds = async (
+      repository: MmV2NativeRepository,
+    ): Promise<Set<string>> => {
       operationCount += 1;
-      for (const memoryId of await repository.listExistingDurableMemoryIds(
-        endpointIds.filter((endpointId) => !knownMemoryIds.has(endpointId)),
-      )) {
-        knownMemoryIds.add(memoryId);
-      }
-
-      const { validEdges, deferredEdges } = partitionMemoryEdgesByKnownEndpoints({
-        edges: batch.memoryEdges,
-        knownMemoryIds,
-      });
-
-      deferredEdgesReport.push(
-        ...deferredEdges.map((entry) => ({
-          edge_id: entry.edge.edge_id,
-          edge_type: entry.edge.edge_type,
-          from_memory_id: entry.edge.from_memory_id,
-          to_memory_id: entry.edge.to_memory_id,
-          reason: entry.reason,
-        })),
+      return new Set(
+        await repository.listExistingDurableMemoryIds(
+          endpointIds.filter((endpointId) => !durableMemoryIds.has(endpointId)),
+        ),
       );
-
-      const persistedEdges = await repository.batchWithPerRecordFallback({
-        savepointPrefix: "memory_edge",
-        records: validEdges,
-        getId: (record) => record.edge_id,
-        batch: async (records) => {
-          operationCount += 1;
-          return repository.upsertMemoryEdges(records);
-        },
-        single: async (record) => {
-          operationCount += 1;
-          return repository.upsertMemoryEdge(record);
-        },
-        defer: (record, error) => {
-          deferredEdgesReport.push({
-            edge_id: record.edge_id,
-            edge_type: record.edge_type,
-            from_memory_id: record.from_memory_id,
-            to_memory_id: record.to_memory_id,
-            reason: error instanceof Error ? error.message : String(error),
-          });
-        },
-      });
-      writtenEdgeIds.push(...persistedEdges.map((edge) => edge.edge_id));
-
-      for (const edge of persistedEdges.filter((edge) => edge.edge_type === "supersedes")) {
+    };
+    const persistCandidateUnit = async (input: {
+      repository: MmV2NativeRepository;
+      existingMemoryIds: ReadonlySet<string>;
+      memoryIndex: number;
+      memory: DurableMemoryRecord;
+      savepointsSupported: boolean;
+    }): Promise<void> => {
+      const { repository, existingMemoryIds, memoryIndex, memory, savepointsSupported } = input;
+      const candidateEvents = memoryEventsByMemoryIdToPersist.get(memory.memory_id) ?? [];
+      const candidateEdges = batch.memoryEdges.filter(
+        (edge) => edge.from_memory_id === memory.memory_id,
+      );
+      const candidateDeferredEdges: DeferredLiveMemoryEdge[] = [];
+      const executeCandidate = async () => {
         operationCount += 1;
-        await repository.markDurableMemoryStatus({
-          memoryId: edge.to_memory_id,
-          status: "superseded",
-          updatedAt: edge.created_at,
-          supersededByMemoryId: edge.from_memory_id,
-        });
-      }
+        await repository.upsertDurableMemory(memory);
 
-      const eventsWithDeferredReports = memoryEvents.map((event) => {
-        const deferredEdgesForMemory = deferredEdgesReport.filter(
-          (entry) => entry.from_memory_id === event.memory_id,
+        const knownMemoryIds = new Set([
+          ...existingMemoryIds,
+          ...writtenMemoryIds,
+          memory.memory_id,
+        ]);
+        const { validEdges, deferredEdges } = partitionMemoryEdgesByKnownEndpoints({
+          edges: candidateEdges,
+          knownMemoryIds,
+        });
+        candidateDeferredEdges.push(
+          ...deferredEdges.map((entry) => ({
+            edge_id: entry.edge.edge_id,
+            edge_type: entry.edge.edge_type,
+            from_memory_id: entry.edge.from_memory_id,
+            to_memory_id: entry.edge.to_memory_id,
+            reason: entry.reason,
+          })),
         );
-        const deferredCandidatesForMemory = deferredCandidates.filter(
-          (entry) => entry.memory_id === event.memory_id,
-        );
-        return deferredEdgesForMemory.length > 0 || deferredCandidatesForMemory.length > 0
-          ? {
-              ...event,
-              payload: {
-                ...event.payload,
-                ...(deferredEdgesForMemory.length > 0
-                  ? { deferred_memory_edges: deferredEdgesForMemory }
-                  : {}),
-                ...(deferredCandidatesForMemory.length > 0
-                  ? { deferred_memory_candidates: deferredCandidatesForMemory }
-                  : {}),
-              },
+
+        const persistedEdges: MemoryEdge[] = [];
+        for (const [edgeIndex, edge] of validEdges.entries()) {
+          if (savepointsSupported) {
+            try {
+              await repository.withSavepoint(
+                `memory_candidate_${memoryIndex}_edge_${edgeIndex}`,
+                async () => {
+                  operationCount += 1;
+                  const persistedEdge = await repository.upsertMemoryEdge(edge);
+                  if (persistedEdge.edge_type === "supersedes") {
+                    operationCount += 1;
+                    const updated = await repository.markDurableMemoryStatus({
+                      memoryId: persistedEdge.to_memory_id,
+                      status: "superseded",
+                      updatedAt: persistedEdge.created_at,
+                      supersededByMemoryId: persistedEdge.from_memory_id,
+                    });
+                    if (!updated) {
+                      throw new Error(
+                        `superseded target memory not found: ${persistedEdge.to_memory_id}`,
+                      );
+                    }
+                  }
+                  persistedEdges.push(persistedEdge);
+                },
+              );
+            } catch (error) {
+              candidateDeferredEdges.push({
+                edge_id: edge.edge_id,
+                edge_type: edge.edge_type,
+                from_memory_id: edge.from_memory_id,
+                to_memory_id: edge.to_memory_id,
+                reason: error instanceof Error ? error.message : String(error),
+              });
             }
-          : event;
-      });
-      const persistedEvents = await repository.batchWithPerRecordFallback({
-        savepointPrefix: "memory_event",
-        records: eventsWithDeferredReports,
-        getId: (record) => record.memory_event_id,
-        batch: async (records) => {
-          operationCount += 1;
-          return repository.insertMemoryEvents(records);
-        },
-        single: async (record) => {
-          operationCount += 1;
-          return repository.insertMemoryEvent(record);
-        },
-        defer: (record, error) => {
-          if (record.memory_id) {
+            continue;
+          }
+
+          try {
+            operationCount += 1;
+            const persistedEdge = await repository.upsertMemoryEdge(edge);
+            try {
+              if (persistedEdge.edge_type === "supersedes") {
+                operationCount += 1;
+                const updated = await repository.markDurableMemoryStatus({
+                  memoryId: persistedEdge.to_memory_id,
+                  status: "superseded",
+                  updatedAt: persistedEdge.created_at,
+                  supersededByMemoryId: persistedEdge.from_memory_id,
+                });
+                if (!updated) {
+                  throw new Error(
+                    `superseded target memory not found: ${persistedEdge.to_memory_id}`,
+                  );
+                }
+              }
+              persistedEdges.push(persistedEdge);
+            } catch (error) {
+              operationCount += 1;
+              await repository.deleteMemoryEdgeById(edge.edge_id);
+              candidateDeferredEdges.push({
+                edge_id: edge.edge_id,
+                edge_type: edge.edge_type,
+                from_memory_id: edge.from_memory_id,
+                to_memory_id: edge.to_memory_id,
+                reason: error instanceof Error ? error.message : String(error),
+              });
+            }
+          } catch (error) {
+            candidateDeferredEdges.push({
+              edge_id: edge.edge_id,
+              edge_type: edge.edge_type,
+              from_memory_id: edge.from_memory_id,
+              to_memory_id: edge.to_memory_id,
+              reason: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+
+        const eventsWithDeferredReports = candidateEvents.map((event) =>
+          candidateDeferredEdges.length > 0
+            ? {
+                ...event,
+                payload: {
+                  ...event.payload,
+                  deferred_memory_edges: candidateDeferredEdges,
+                },
+              }
+            : event,
+        );
+        const persistedEvents =
+          eventsWithDeferredReports.length === 1
+            ? [await repository.insertMemoryEvent(eventsWithDeferredReports[0])]
+            : eventsWithDeferredReports.length > 1
+              ? await repository.insertMemoryEvents(eventsWithDeferredReports)
+              : [];
+
+        writtenMemoryIds.push(memory.memory_id);
+        writtenEdgeIds.push(...persistedEdges.map((edge) => edge.edge_id));
+        writtenEventIds.push(...persistedEvents.map((event) => event.memory_event_id));
+      };
+
+      if (savepointsSupported) {
+        await repository.withSavepoint(`memory_candidate_${memoryIndex}`, executeCandidate);
+      } else {
+        await executeCandidate();
+      }
+      deferredEdgesReport.push(...candidateDeferredEdges);
+    };
+
+    const savepointsSupported = await this.withTransaction((repository) =>
+      repository.supportsSavepointsInCurrentTransaction(),
+    );
+    if (savepointsSupported) {
+      await this.withTransaction(async (repository) => {
+        const existingMemoryIds = await loadExistingMemoryIds(repository);
+        for (const [memoryIndex, memory] of durableMemories.entries()) {
+          try {
+            await persistCandidateUnit({
+              repository,
+              existingMemoryIds,
+              memoryIndex,
+              memory,
+              savepointsSupported: true,
+            });
+          } catch (error) {
             deferredCandidates.push({
-              memory_id: record.memory_id,
+              memory_id: memory.memory_id,
               reason: error instanceof Error ? error.message : String(error),
               failure_class: "db_persistence",
               failure_stage: "persistence_boundary",
             });
           }
-        },
+        }
+        const persistedStandaloneEvents = await repository.batchWithPerRecordFallback({
+          savepointPrefix: "memory_event",
+          records: standaloneMemoryEvents,
+          getId: (record) => record.memory_event_id,
+          batch: async (records) => {
+            operationCount += 1;
+            return repository.insertMemoryEvents(records);
+          },
+          single: async (record) => {
+            operationCount += 1;
+            return repository.insertMemoryEvent(record);
+          },
+          defer: () => undefined,
+        });
+        writtenEventIds.push(...persistedStandaloneEvents.map((event) => event.memory_event_id));
       });
-      writtenEventIds.push(...persistedEvents.map((event) => event.memory_event_id));
-    });
+    } else {
+      const existingMemoryIds = await loadExistingMemoryIds(this);
+      for (const [memoryIndex, memory] of durableMemories.entries()) {
+        try {
+          await this.withTransaction(async (repository) => {
+            await persistCandidateUnit({
+              repository,
+              existingMemoryIds,
+              memoryIndex,
+              memory,
+              savepointsSupported: false,
+            });
+          });
+        } catch (error) {
+          deferredCandidates.push({
+            memory_id: memory.memory_id,
+            reason: error instanceof Error ? error.message : String(error),
+            failure_class: "db_persistence",
+            failure_stage: "persistence_boundary",
+          });
+        }
+      }
+      for (const standaloneEvent of standaloneMemoryEvents) {
+        try {
+          await this.withTransaction(async (repository) => {
+            operationCount += 1;
+            const persistedEvent = await repository.insertMemoryEvent(standaloneEvent);
+            writtenEventIds.push(persistedEvent.memory_event_id);
+          });
+        } catch {
+          // Standalone reject/quarantine events remain best-effort in the pg-mem fallback path.
+        }
+      }
+    }
 
     return {
       durableMemoriesWritten: writtenMemoryIds,

@@ -21,7 +21,7 @@ import {
 import type { ExistingMemorySummary } from "./mmv2/contracts.ts";
 import { recoverDailyContinuityV2ForLiveStorage } from "./mmv2/live-document-ingestion.ts";
 import type { LiveMemoryBatch, LiveMemoryWriteResult } from "./mmv2/recording.ts";
-import { summarizeLiveMemoryWriteResults } from "./mmv2/recording.ts";
+import { summarizePersistedLiveMemoryWriteResults } from "./mmv2/recording.ts";
 import { rebuildDerivedRuntimeState } from "./runtime-rebuild-orchestrator.ts";
 import type { SemanticCollisionAdjudicator } from "./semantic-collision-adjudication.ts";
 
@@ -72,7 +72,7 @@ export async function recoverDailyContinuityCandidatesLive(input: {
     ? await canonicalRepository.persistLiveMemoryBatch!(mmv2Recording!)
     : undefined;
   const writeResults = canUseMmV2LivePath
-    ? summarizeLiveMemoryWriteResults(mmv2Recording!)
+    ? summarizePersistedLiveMemoryWriteResults(mmv2Recording!, persistenceResult!)
     : await Promise.resolve(
         (input.memoryStore
           ? (assertLegacyCapturedObjectWriteFallbackEnabled({
@@ -141,9 +141,11 @@ export async function recoverDailyContinuityCandidatesLive(input: {
           writeResults.filter(
             (entry) => entry.decision === "write" || entry.decision === "supersede",
           ).length,
-        rejected: writeResults.filter(
-          (entry) => entry.decision === "reject" || entry.decision === "quarantine",
-        ).length,
+        rejected:
+          (persistenceResult?.deferredCandidates.length ?? 0) +
+          writeResults.filter(
+            (entry) => entry.decision === "reject" || entry.decision === "quarantine",
+          ).length,
       },
       ids: {
         memory_ids: writeResults

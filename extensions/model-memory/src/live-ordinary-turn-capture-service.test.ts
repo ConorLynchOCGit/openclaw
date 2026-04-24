@@ -7,7 +7,7 @@ import { MmV2NativeRepository } from "./db/mmv2-native-repository.ts";
 import { createPgMemTestDatabase } from "./db/pg-test.ts";
 import { RuntimeContextRepository } from "./db/runtime-context-repository.ts";
 import { captureOrdinaryTurnLive } from "./live-ordinary-turn-capture-service.ts";
-import type { DurableMemoryRecord } from "./mmv2/contracts.ts";
+import type { DurableMemoryRecord, MemoryEvent } from "./mmv2/contracts.ts";
 import {
   buildAdmissionDecision,
   buildAtomicCandidate,
@@ -215,6 +215,273 @@ function buildPreferenceMemory(overrides: Partial<DurableMemoryRecord> = {}): Du
     access_count: 0,
     tags: overrides.tags ?? ["claim"],
   };
+}
+
+class FailingOrdinaryTurnRepository extends MmV2NativeRepository {
+  constructor(
+    sql: ConstructorParameters<typeof MmV2NativeRepository>[0],
+    private readonly failingCandidateIds: ReadonlySet<string>,
+  ) {
+    super(sql);
+  }
+
+  override withTransaction<T>(
+    work: (repository: FailingOrdinaryTurnRepository) => Promise<T>,
+  ): Promise<T> {
+    return this.sql.withTransaction((tx) =>
+      work(new FailingOrdinaryTurnRepository(tx, this.failingCandidateIds)),
+    );
+  }
+
+  override async insertMemoryEvent(record: MemoryEvent): Promise<MemoryEvent> {
+    if (record.candidate_id && this.failingCandidateIds.has(record.candidate_id)) {
+      throw new Error(`forced event failure for ${record.candidate_id}`);
+    }
+    return await super.insertMemoryEvent(record);
+  }
+
+  override async insertMemoryEvents(records: MemoryEvent[]): Promise<MemoryEvent[]> {
+    if (
+      records.some(
+        (record) => record.candidate_id && this.failingCandidateIds.has(record.candidate_id),
+      )
+    ) {
+      throw new Error("forced batched event failure");
+    }
+    return await super.insertMemoryEvents(records);
+  }
+}
+
+function createMixedPersistenceIsolationInterpreter() {
+  const buildAtomicExtractionResult = (input: {
+    prompt: { promptPayload?: unknown; userPrompt: string };
+  }) => {
+    const payload = readMmV2Payload<{
+      original_payload?: {
+        raw_event?: { event_id: string };
+        raw_event_metadata?: { event_id: string };
+        routed_candidates: Array<{ segment_id: string; text: string }>;
+      };
+      raw_event?: { event_id: string };
+      raw_event_metadata?: { event_id: string };
+      routed_candidates: Array<{ segment_id: string; text: string }>;
+    }>(input);
+    const repairPayload = payload.original_payload ?? payload;
+    const routedCandidates = repairPayload.routed_candidates ?? [];
+    const firstCandidate = routedCandidates[0];
+    const secondCandidate = routedCandidates[1] ?? routedCandidates[0];
+    return captureOne({
+      schema_version: "atomic_extraction.v1",
+      event_id:
+        repairPayload.raw_event?.event_id ??
+        repairPayload.raw_event_metadata?.event_id ??
+        "event-001",
+      atomic_candidates: [
+        buildAtomicCandidate(
+          firstCandidate.segment_id,
+          "Standing preference: start with the outcome first.",
+          {
+            candidate_id: "candidate-valid",
+            kind: "claim",
+            normalized_statement: "The user prefers outcome-first status updates.",
+            payload: {
+              payload_type: "claim",
+              claim_type: "preference_state",
+              subject: "status update ordering",
+              predicate: "prefers",
+              object: "outcome first",
+              qualifiers: [],
+              temporal_status: "currently_true",
+            },
+          },
+        ),
+        buildAtomicCandidate(
+          secondCandidate.segment_id,
+          "Standing preference: use concise headings for status updates.",
+          {
+            candidate_id: "candidate-bad",
+            kind: "claim",
+            normalized_statement: "The user prefers concise headings for status updates.",
+            payload: {
+              payload_type: "claim",
+              claim_type: "preference_state",
+              subject: "status update headings",
+              predicate: "prefers",
+              object: "concise headings",
+              qualifiers: [],
+              temporal_status: "currently_true",
+            },
+          },
+        ),
+      ],
+    });
+  };
+  return createScriptedMmV2Interpreter({
+    "mmv2-capture-routing-v1": (input) => {
+      const payload = readMmV2Payload<{
+        raw_event: { event_id: string };
+        segments: Array<{ segment_id: string; text: string }>;
+      }>(input);
+      const firstSegment =
+        payload.segments.find((segment) => segment.text.includes("outcome first")) ??
+        payload.segments[0];
+      const secondSegment =
+        payload.segments.find((segment) => segment.text.includes("concise headings")) ??
+        payload.segments[1] ??
+        firstSegment;
+      return captureOne({
+        schema_version: "capture_routing.v1",
+        event_id: payload.raw_event.event_id,
+        routing_decisions: [
+          {
+            segment_id: firstSegment.segment_id,
+            route: "atomic_candidate",
+            candidate_summary: "Primary response preference",
+            memory_likelihood: 0.93,
+            durability_likelihood: 0.9,
+            composite_likelihood: 0.02,
+            reason_codes: ["durable_user_preference"],
+            evidence_quote: "Standing preference: start with the outcome first.",
+            confidence: 0.95,
+            allow_multiple_top_level_atomic: true,
+          },
+          {
+            segment_id: secondSegment.segment_id,
+            route: "atomic_candidate",
+            candidate_summary: "Secondary response preference",
+            memory_likelihood: 0.9,
+            durability_likelihood: 0.88,
+            composite_likelihood: 0.02,
+            reason_codes: ["durable_user_preference"],
+            evidence_quote: "Standing preference: use concise headings for status updates.",
+            confidence: 0.93,
+            allow_multiple_top_level_atomic: true,
+          },
+        ],
+      });
+    },
+    "mmv2-atomic-extraction-v1": buildAtomicExtractionResult,
+    "mmv2-atomic-repair-v1": buildAtomicExtractionResult,
+    "mmv2-atomic-evidence-repair-v1": buildAtomicExtractionResult,
+    "mmv2-canonicalization-v1": (input) => {
+      const payload = readMmV2Payload<{
+        raw_event: {
+          event_id: string;
+          tenant_id: string;
+          user_id: string;
+        };
+        extracted_candidates: Array<{ candidate_id: string; source_segment_id: string }>;
+      }>(input);
+      const firstCandidate = payload.extracted_candidates[0];
+      const secondCandidate = payload.extracted_candidates[1];
+      return captureOne({
+        schema_version: "canonical_candidates.v1",
+        event_id: payload.raw_event.event_id,
+        canonical_candidates: [
+          buildCanonicalCandidate(
+            payload.raw_event,
+            firstCandidate.source_segment_id,
+            "Standing preference: start with the outcome first.",
+            {
+              candidate_id: "candidate-valid",
+              kind: "claim",
+              artifact_type: null,
+              canonical_text: "The user prefers outcome-first status updates.",
+              search_text: "user prefers outcome first status updates",
+              payload: {
+                claim_type: "preference_state",
+                subject: "status update ordering",
+                predicate: "prefers",
+                object: "outcome first",
+              },
+              scope: {
+                tenant_id: payload.raw_event.tenant_id,
+                user_id: payload.raw_event.user_id,
+                project_id: null,
+                workspace_id: null,
+                subject_type: "user",
+                subject_id: payload.raw_event.user_id,
+                applies_to: "global",
+              },
+            },
+          ),
+          buildCanonicalCandidate(
+            payload.raw_event,
+            secondCandidate.source_segment_id,
+            "Standing preference: use concise headings for status updates.",
+            {
+              candidate_id: "candidate-bad",
+              kind: "claim",
+              artifact_type: null,
+              canonical_text: "The user prefers concise headings for status updates.",
+              search_text: "user prefers concise headings for status updates",
+              payload: {
+                claim_type: "preference_state",
+                subject: "status update headings",
+                predicate: "prefers",
+                object: "concise headings",
+              },
+              scope: {
+                tenant_id: payload.raw_event.tenant_id,
+                user_id: payload.raw_event.user_id,
+                project_id: null,
+                workspace_id: null,
+                subject_type: "user",
+                subject_id: payload.raw_event.user_id,
+                applies_to: "global",
+              },
+            },
+          ),
+        ],
+      });
+    },
+    "mmv2-admission-v1": (input) => {
+      const payload = readMmV2Payload<{
+        raw_event: { event_id: string };
+        canonical_candidates: Array<{ candidate_id: string }>;
+      }>(input);
+      return captureOne({
+        schema_version: "admission_decision.v1",
+        event_id: payload.raw_event.event_id,
+        decisions: payload.canonical_candidates.map((candidate) =>
+          buildAdmissionDecision(candidate.candidate_id),
+        ),
+      });
+    },
+    "mmv2-reconciliation-v1": (input) => {
+      const payload = readMmV2Payload<{
+        event_id: string;
+        candidate: { candidate_id: string };
+      }>(input);
+      return captureOne(
+        payload.candidate.candidate_id === "candidate-valid"
+          ? {
+              schema_version: "reconciliation_decision.v1",
+              event_id: payload.event_id,
+              candidate_id: payload.candidate.candidate_id,
+              decision: "record_as_conflict",
+              target_memory_ids: ["missing-conflict-target"],
+              merged_canonical_text: null,
+              conflict_type: "scope_narrowing",
+              supersedes_memory_ids: [],
+              rationale: "Deliberately exercise deferred-edge handling for one valid candidate.",
+              confidence: 0.77,
+            }
+          : {
+              schema_version: "reconciliation_decision.v1",
+              event_id: payload.event_id,
+              candidate_id: payload.candidate.candidate_id,
+              decision: "insert_new",
+              target_memory_ids: [],
+              merged_canonical_text: null,
+              conflict_type: "none",
+              supersedes_memory_ids: [],
+              rationale: "Deliberately exercise per-candidate rollback for one failing event.",
+              confidence: 0.78,
+            },
+      );
+    },
+  });
 }
 
 describe("live-ordinary-turn-capture-service", () => {
@@ -556,7 +823,6 @@ describe("live-ordinary-turn-capture-service", () => {
           interpreter: createScriptedMmV2Interpreter({}),
         },
       });
-
       const durable = await canonicalRepository.listDurableMemories();
       const events = await canonicalRepository.listMemoryEvents();
       const projectFact = durable.find(
@@ -758,6 +1024,75 @@ describe("live-ordinary-turn-capture-service", () => {
             edge.to_memory_id === "existing-preference-memory",
         ),
       ).toBe(true);
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("persists an ordinary-turn candidate and defers a missing conflict edge", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const canonicalRepository = new FailingOrdinaryTurnRepository(
+        database.sql,
+        new Set(["candidate-bad"]),
+      );
+      const runtimeRepository = new RuntimeContextRepository(database.sql);
+      await canonicalRepository.upsertDurableMemory(buildPreferenceMemory());
+
+      const result = await captureOrdinaryTurnLive({
+        canonicalRepository,
+        runtimeRepository,
+        capture: {
+          turn: {
+            currentTurnText:
+              "Standing preference: start with the outcome first. Standing preference: use concise headings for status updates.",
+            sessionId: "session-persistence-isolation",
+          },
+          modelId: "model-turn-001",
+          candidateModelId: "model-turn-001",
+          interpreter: createMixedPersistenceIsolationInterpreter(),
+        },
+      });
+
+      const durable = await canonicalRepository.listDurableMemories();
+      const events = await canonicalRepository.listMemoryEvents();
+      const persistedDurable = durable.filter((memory) =>
+        result.persistenceResult?.durableMemoriesWritten.includes(memory.memory_id),
+      );
+
+      expect(persistedDurable).toHaveLength(1);
+      expect(persistedDurable[0]?.canonical_text).toBe(
+        "Status update ordering prefers outcome first.",
+      );
+      expect(events).toHaveLength(1);
+      expect(events[0]?.payload).toMatchObject({
+        deferred_memory_edges: [
+          expect.objectContaining({
+            edge_id: expect.any(String),
+            to_memory_id: "missing-conflict-target",
+          }),
+        ],
+      });
+      expect(result.writeResults).toHaveLength(1);
+      expect(result.writeResults[0]?.memoryId).toBe(persistedDurable[0]?.memory_id);
+      expect(result.persistenceResult?.durableMemoriesWritten).toEqual([
+        persistedDurable[0].memory_id,
+      ]);
+      expect(result.persistenceResult?.memoryEventsWritten).toEqual([events[0].memory_event_id]);
+      expect(result.persistenceResult?.deferredCandidates).toEqual([]);
+      expect(result.persistenceResult?.deferredEdges).toEqual([
+        expect.objectContaining({
+          to_memory_id: "missing-conflict-target",
+        }),
+      ]);
+      expect(result.ingestionTelemetry[1]?.candidate_counts).toMatchObject({
+        admitted: 1,
+        rejected: 0,
+      });
+      expect(result.ingestionTelemetry[1]?.ids?.memory_ids).toEqual([
+        persistedDurable[0].memory_id,
+      ]);
     } finally {
       await database.close();
     }

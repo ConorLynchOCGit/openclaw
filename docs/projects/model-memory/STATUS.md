@@ -15,6 +15,13 @@ State: `pre_phase_2_execution_in_progress`
   [Pre-Phase-2 Gate Ledger](/projects/model-memory/pre-phase-2-gate-ledger)
 - shared ingestion closeout parity now covers active live capture/document
   paths, hash-gated import, and replay-wrapper inspection closeout
+- per-candidate persistence isolation is now landed:
+  - repository-level durable memory / event / edge writes keep valid siblings
+    when one candidate or one edge fails
+  - ordinary-turn entrypoint proof now covers service-seam mixed-batch
+    isolation plus deep-path missing-edge deferral
+  - tool-result capture, document ingest, and imports all have focused mixed
+    valid/invalid proof
 - retrieval miss classification no longer stops at generic
   `candidates_found_but_excluded` / `stale_conflict_suppression` buckets; the
   runtime now emits explicit suppression classes for stale, superseded,
@@ -25,6 +32,9 @@ State: `pre_phase_2_execution_in_progress`
   work is bounded runtime validation rather than model-lane rollback
 - Phase 2 is still blocked until the ledger slices are closed; graph/capsule/
   planner work is not the active implementation lane
+- the remaining active blockers after the persistence-isolation slice are:
+  traceability/SLO/DB baselines, recovery/restore proof, and the final
+  Phase-2 entry validation pack
 
 - shared ingestion now has executable closeout/quarantine report helpers for
   active capture/ingest paths; reports are runtime-state/artifact outputs and

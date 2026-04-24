@@ -8,6 +8,7 @@ import { MmV2NativeRepository } from "./db/mmv2-native-repository.ts";
 import { createPgMemTestDatabase } from "./db/pg-test.ts";
 import { RuntimeContextRepository } from "./db/runtime-context-repository.ts";
 import { ingestDocumentLive } from "./live-document-ingestion-service.ts";
+import type { DurableMemoryRecord, MemoryEvent } from "./mmv2/contracts.ts";
 import {
   buildAdmissionDecision,
   buildAtomicCandidate,
@@ -18,6 +19,78 @@ import {
 
 function readMmV2Payload<T>(input: { prompt: { promptPayload?: unknown; userPrompt: string } }): T {
   return (input.prompt.promptPayload as T) ?? (JSON.parse(input.prompt.userPrompt) as T);
+}
+
+function buildProjectFactMemory(overrides: Partial<DurableMemoryRecord> = {}): DurableMemoryRecord {
+  return {
+    memory_id: overrides.memory_id ?? "existing-project-memory",
+    schema_version: "durable_memory.v1",
+    status: "active",
+    unit_type: "atomic",
+    kind: "claim",
+    artifact_type: null,
+    canonical_text: overrides.canonical_text ?? "Deployment region was previously region-legacy.",
+    search_text: overrides.search_text ?? "deployment region previously region legacy",
+    scope: {
+      tenant_id: "openclaw",
+      user_id: "unknown-user",
+      project_id: "project-001",
+      workspace_id: null,
+      subject_type: "project",
+      subject_id: "project-001",
+      applies_to: "current_project",
+    },
+    payload: overrides.payload ?? {
+      payload_type: "claim",
+      claim_type: "project_fact",
+      subject: "deployment region",
+      predicate: "was",
+      object: "region-legacy",
+      qualifiers: [],
+      temporal_status: "historical",
+    },
+    validity: overrides.validity ?? {
+      valid_at: null,
+      invalid_at: null,
+      ttl_seconds: null,
+      temporal_status: "historical",
+    },
+    confidence: overrides.confidence ?? 0.86,
+    quality: overrides.quality ?? {
+      atomicity: 0.95,
+      specificity: 0.8,
+      durability: 0.72,
+      actionability: 0.55,
+      grounding: 1,
+    },
+    source_refs: overrides.source_refs ?? [
+      {
+        source_ingest_event_id: "existing-project-source-event",
+        source_type: "document",
+        source_id: "existing-project-source",
+        speaker: "system",
+        created_at: "2026-04-21T00:00:00.000Z",
+        segment_id: "existing-project-segment",
+        start_char: 0,
+        end_char: 0,
+        evidence_quote: "Deployment region was previously region-legacy.",
+      },
+    ],
+    lineage: overrides.lineage ?? {
+      candidate_ids: ["existing-project-candidate"],
+      derived_from_memory_ids: [],
+      supersedes_memory_ids: [],
+      superseded_by_memory_id: null,
+      conflicts_with_memory_ids: [],
+      parent_memory_id: null,
+      child_memory_ids: [],
+    },
+    created_at: overrides.created_at ?? "2026-04-21T00:00:00.000Z",
+    updated_at: overrides.updated_at ?? "2026-04-21T00:00:00.000Z",
+    last_accessed_at: overrides.last_accessed_at ?? null,
+    access_count: overrides.access_count ?? 0,
+    tags: overrides.tags ?? ["claim"],
+  };
 }
 
 function createProjectFactDocumentInterpreter(params: {
@@ -147,6 +220,286 @@ function createProjectFactDocumentInterpreter(params: {
           buildAdmissionDecision(candidate.candidate_id),
         ),
       });
+    },
+  });
+}
+
+class FailingDocumentIngestionRepository extends MmV2NativeRepository {
+  constructor(
+    sql: ConstructorParameters<typeof MmV2NativeRepository>[0],
+    private readonly failingCandidateIds: ReadonlySet<string>,
+  ) {
+    super(sql);
+  }
+
+  override withTransaction<T>(
+    work: (repository: FailingDocumentIngestionRepository) => Promise<T>,
+  ): Promise<T> {
+    return this.sql.withTransaction((tx) =>
+      work(new FailingDocumentIngestionRepository(tx, this.failingCandidateIds)),
+    );
+  }
+
+  override async insertMemoryEvent(record: MemoryEvent): Promise<MemoryEvent> {
+    if (record.candidate_id && this.failingCandidateIds.has(record.candidate_id)) {
+      throw new Error(`forced event failure for ${record.candidate_id}`);
+    }
+    return await super.insertMemoryEvent(record);
+  }
+
+  override async insertMemoryEvents(records: MemoryEvent[]): Promise<MemoryEvent[]> {
+    if (
+      records.some(
+        (record) => record.candidate_id && this.failingCandidateIds.has(record.candidate_id),
+      )
+    ) {
+      throw new Error("forced batched event failure");
+    }
+    return await super.insertMemoryEvents(records);
+  }
+}
+
+function createMixedDocumentPersistenceIsolationInterpreter() {
+  const buildAtomicExtractionResult = (input: {
+    prompt: {
+      promptPayload?: unknown;
+      userPrompt: string;
+      contract?: { contractVersion?: string };
+    };
+  }) => {
+    const payload = readMmV2Payload<{
+      original_payload?: {
+        raw_event?: { event_id: string };
+        raw_event_metadata?: { event_id: string };
+        routed_candidates: Array<{ segment_id: string; text: string }>;
+      };
+      raw_event?: { event_id: string };
+      raw_event_metadata?: { event_id: string };
+      routed_candidates: Array<{ segment_id: string; text: string }>;
+    }>(input);
+    const repairPayload = payload.original_payload ?? payload;
+    const routedCandidates = repairPayload.routed_candidates ?? [];
+    const firstCandidate = routedCandidates[0];
+    const secondCandidate = routedCandidates[1] ?? routedCandidates[0];
+    return captureOne({
+      schema_version: "atomic_extraction.v1",
+      event_id:
+        repairPayload.raw_event?.event_id ??
+        repairPayload.raw_event_metadata?.event_id ??
+        "event-001",
+      atomic_candidates: [
+        buildAtomicCandidate(firstCandidate.segment_id, "Deployment region is region-001.", {
+          candidate_id: "candidate-valid",
+          kind: "claim",
+          normalized_statement: "Deployment region is region-001.",
+          scope: {
+            subject_type: "project",
+            subject_id: "project-001",
+            project_id: "project-001",
+            workspace_id: null,
+            applies_to: "current_project",
+          },
+          payload: {
+            payload_type: "claim",
+            claim_type: "project_fact",
+            subject: "deployment region",
+            predicate: "is",
+            object: "region-001",
+            qualifiers: [],
+            temporal_status: "currently_true",
+          },
+        }),
+        buildAtomicCandidate(secondCandidate.segment_id, "Staging branch is branch-green.", {
+          candidate_id: "candidate-bad",
+          kind: "claim",
+          normalized_statement: "Staging branch is branch-green.",
+          scope: {
+            subject_type: "project",
+            subject_id: "project-001",
+            project_id: "project-001",
+            workspace_id: null,
+            applies_to: "current_project",
+          },
+          payload: {
+            payload_type: "claim",
+            claim_type: "project_fact",
+            subject: "staging branch",
+            predicate: "is",
+            object: "branch-green",
+            qualifiers: [],
+            temporal_status: "currently_true",
+          },
+        }),
+      ],
+    });
+  };
+  return createScriptedMmV2Interpreter({
+    "mmv2-capture-routing-v1": (input) => {
+      const payload = readMmV2Payload<{
+        raw_event: { event_id: string };
+        segments: Array<{ segment_id: string; text: string }>;
+      }>(input);
+      const firstSegment =
+        payload.segments.find((segment) =>
+          segment.text.includes("Deployment region is region-001"),
+        ) ?? payload.segments[0];
+      const secondSegment =
+        payload.segments.find((segment) =>
+          segment.text.includes("Staging branch is branch-green"),
+        ) ??
+        payload.segments[1] ??
+        firstSegment;
+      return captureOne({
+        schema_version: "capture_routing.v1",
+        event_id: payload.raw_event.event_id,
+        routing_decisions: [
+          {
+            segment_id: firstSegment.segment_id,
+            route: "atomic_candidate",
+            candidate_summary: "Project deployment fact",
+            memory_likelihood: 0.92,
+            durability_likelihood: 0.9,
+            composite_likelihood: 0.05,
+            reason_codes: ["durable_project_fact"],
+            evidence_quote: "Deployment region is region-001.",
+            confidence: 0.95,
+            allow_multiple_top_level_atomic: true,
+          },
+          {
+            segment_id: secondSegment.segment_id,
+            route: "atomic_candidate",
+            candidate_summary: "Project branch fact",
+            memory_likelihood: 0.91,
+            durability_likelihood: 0.89,
+            composite_likelihood: 0.05,
+            reason_codes: ["durable_project_fact"],
+            evidence_quote: "Staging branch is branch-green.",
+            confidence: 0.94,
+            allow_multiple_top_level_atomic: true,
+          },
+        ],
+      });
+    },
+    "mmv2-atomic-extraction-v1": buildAtomicExtractionResult,
+    "mmv2-atomic-repair-v1": buildAtomicExtractionResult,
+    "mmv2-atomic-evidence-repair-v1": buildAtomicExtractionResult,
+    "mmv2-canonicalization-v1": (input) => {
+      const payload = readMmV2Payload<{
+        raw_event: {
+          event_id: string;
+          tenant_id: string;
+          user_id: string;
+        };
+        extracted_candidates: Array<{ candidate_id: string; source_segment_id: string }>;
+      }>(input);
+      const firstCandidate = payload.extracted_candidates[0];
+      const secondCandidate = payload.extracted_candidates[1];
+      return captureOne({
+        schema_version: "canonical_candidates.v1",
+        event_id: payload.raw_event.event_id,
+        canonical_candidates: [
+          buildCanonicalCandidate(
+            payload.raw_event,
+            firstCandidate.source_segment_id,
+            "Deployment region is region-001.",
+            {
+              candidate_id: "candidate-valid",
+              kind: "claim",
+              artifact_type: null,
+              canonical_text: "Deployment region is region-001.",
+              search_text: "deployment region region-001",
+              payload: {
+                claim_type: "project_fact",
+                subject: "deployment region",
+                predicate: "is",
+                object: "region-001",
+              },
+              scope: {
+                tenant_id: payload.raw_event.tenant_id,
+                user_id: payload.raw_event.user_id,
+                project_id: "project-001",
+                workspace_id: null,
+                subject_type: "project",
+                subject_id: "project-001",
+                applies_to: "current_project",
+              },
+            },
+          ),
+          buildCanonicalCandidate(
+            payload.raw_event,
+            secondCandidate.source_segment_id,
+            "Staging branch is branch-green.",
+            {
+              candidate_id: "candidate-bad",
+              kind: "claim",
+              artifact_type: null,
+              canonical_text: "Staging branch is branch-green.",
+              search_text: "staging branch branch-green",
+              payload: {
+                claim_type: "project_fact",
+                subject: "staging branch",
+                predicate: "is",
+                object: "branch-green",
+              },
+              scope: {
+                tenant_id: payload.raw_event.tenant_id,
+                user_id: payload.raw_event.user_id,
+                project_id: "project-001",
+                workspace_id: null,
+                subject_type: "project",
+                subject_id: "project-001",
+                applies_to: "current_project",
+              },
+            },
+          ),
+        ],
+      });
+    },
+    "mmv2-admission-v1": (input) => {
+      const payload = readMmV2Payload<{
+        raw_event: { event_id: string };
+        canonical_candidates: Array<{ candidate_id: string }>;
+      }>(input);
+      return captureOne({
+        schema_version: "admission_decision.v1",
+        event_id: payload.raw_event.event_id,
+        decisions: payload.canonical_candidates.map((candidate) =>
+          buildAdmissionDecision(candidate.candidate_id),
+        ),
+      });
+    },
+    "mmv2-reconciliation-v1": (input) => {
+      const payload = readMmV2Payload<{
+        event_id: string;
+        candidate: { candidate_id: string };
+      }>(input);
+      return captureOne(
+        payload.candidate.candidate_id === "candidate-valid"
+          ? {
+              schema_version: "reconciliation_decision.v1",
+              event_id: payload.event_id,
+              candidate_id: payload.candidate.candidate_id,
+              decision: "record_as_conflict",
+              target_memory_ids: ["missing-conflict-target"],
+              merged_canonical_text: null,
+              conflict_type: "scope_narrowing",
+              supersedes_memory_ids: [],
+              rationale: "Deliberately exercise deferred-edge handling for one valid candidate.",
+              confidence: 0.77,
+            }
+          : {
+              schema_version: "reconciliation_decision.v1",
+              event_id: payload.event_id,
+              candidate_id: payload.candidate.candidate_id,
+              decision: "insert_new",
+              target_memory_ids: [],
+              merged_canonical_text: null,
+              conflict_type: "none",
+              supersedes_memory_ids: [],
+              rationale: "Deliberately exercise per-candidate rollback for one failing event.",
+              confidence: 0.78,
+            },
+      );
     },
   });
 }
@@ -513,6 +866,74 @@ describe("live-document-ingestion-service", () => {
       expect(closeout.counts.candidates_admitted).toBeGreaterThan(0);
       expect(JSON.stringify(closeout)).not.toContain("Deployment region is region-001.");
       expect(JSON.stringify(closeout)).not.toContain("raw tool log");
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("keeps one document candidate live when a sibling event fails and an edge is deferred", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const canonicalRepository = new FailingDocumentIngestionRepository(
+        database.sql,
+        new Set(["candidate-bad"]),
+      );
+      const runtimeRepository = new RuntimeContextRepository(database.sql);
+      await canonicalRepository.upsertDurableMemory(buildProjectFactMemory());
+
+      const result = await ingestDocumentLive({
+        canonicalRepository,
+        runtimeRepository,
+        ingestion: {
+          document: {
+            externalSourceId: "doc-persistence-isolation",
+            text: "# Project\nDeployment region is region-001. Staging branch is branch-green.",
+            projectId: "project-001",
+          },
+          modelId: "model-doc-001",
+          interpreter: createMixedDocumentPersistenceIsolationInterpreter(),
+        },
+      });
+
+      const durable = await canonicalRepository.listDurableMemories();
+      const events = await canonicalRepository.listMemoryEvents();
+      const persistedDurable = durable.filter((memory) =>
+        result.persistenceResult?.durableMemoriesWritten.includes(memory.memory_id),
+      );
+
+      expect(persistedDurable).toHaveLength(1);
+      expect(persistedDurable[0]?.canonical_text).toBe("Deployment region is region-001.");
+      expect(events).toHaveLength(1);
+      expect(events[0]?.payload).toMatchObject({
+        deferred_memory_edges: [
+          expect.objectContaining({
+            to_memory_id: "missing-conflict-target",
+          }),
+        ],
+      });
+      expect(result.writeResults).toHaveLength(1);
+      expect(result.writeResults[0]?.memoryId).toBe(persistedDurable[0]?.memory_id);
+      expect(result.persistenceResult?.durableMemoriesWritten).toEqual([
+        persistedDurable[0].memory_id,
+      ]);
+      expect(result.persistenceResult?.memoryEventsWritten).toEqual([events[0].memory_event_id]);
+      expect(result.persistenceResult?.deferredCandidates).toHaveLength(1);
+      expect(result.persistenceResult?.deferredCandidates[0]?.reason).toContain(
+        "forced event failure for candidate-bad",
+      );
+      expect(result.persistenceResult?.deferredEdges).toEqual([
+        expect.objectContaining({
+          to_memory_id: "missing-conflict-target",
+        }),
+      ]);
+      expect(result.ingestionTelemetry[1]?.candidate_counts).toMatchObject({
+        admitted: 1,
+        rejected: 1,
+      });
+      expect(result.ingestionTelemetry[1]?.ids?.memory_ids).toEqual([
+        persistedDurable[0].memory_id,
+      ]);
     } finally {
       await database.close();
     }
