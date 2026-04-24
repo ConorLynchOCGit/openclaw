@@ -32,12 +32,17 @@ weekly maintenance guard depends on explicit control inputs.
   boundary by moving legacy/admin plugin-sdk exports into
   `src/plugin-sdk/model-memory-legacy.ts` and keeping `runtime-api.ts`
   runtime-only
+- the second implementation packet has split
+  `src/agents/model-memory.live-runtime.ts` into responsibility-scoped sibling
+  modules under `src/agents/model-memory/live-runtime/` while keeping the
+  existing export surface stable
 
 ## Immediate next move
 
 - keep the debt register current
 - keep the QA matrix aligned with the real maintenance packet bar
-- close any remaining high-leverage legacy boundary stragglers only if they are
-  still on the default live path
-- otherwise move to `RC-002` and split `src/agents/model-memory.live-runtime.ts`
-  in a behavior-preserving extraction packet
+- rerun the Phase-2 entry validation pack against the extracted live-runtime
+  seam and stop immediately if the cleanup packet regresses the green posture
+- if the rerun stays green, move to `RC-003` and split
+  `extensions/model-memory/src/db/mmv2-native-repository.ts` plus
+  `extensions/model-memory/src/ingestion/shared-pipeline.ts`

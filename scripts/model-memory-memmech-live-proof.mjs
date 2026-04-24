@@ -427,6 +427,7 @@ async function main() {
     path.join(outputDir, "memmech-live-proof.json"),
     `${JSON.stringify(report, null, 2)}\n`,
   );
+  await liveRuntime.closeLiveRuntimeCacheForTests?.();
   console.log(JSON.stringify({ report: path.join(outputDir, "memmech-live-proof.json") }, null, 2));
 }
 

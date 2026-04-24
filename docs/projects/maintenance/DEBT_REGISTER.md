@@ -47,15 +47,15 @@ parallel roadmap.
 
 - `id`: `MD-014`
 - `category`: `repo-hygiene`
-- `status`: `in_progress`
+- `status`: `closed`
 - `risk`: `high`
 - `owner_or_surface`: `model-memory runtime/public boundary`
 - `description`: the default MMV2 runtime/public path still crosses explicit
   legacy admin/proof seams and rollback toggles that should be isolated more
   aggressively before Phase 2 feature growth resumes.
-- `next_action`: keep the remaining package-root compatibility exports explicit
-  and then rerank whether any more boundary retirement is worth doing before
-  moving to the top-ranked orchestration split.
+- `next_action`: keep any surviving compatibility exports explicit and out of
+  the default runtime facade; revisit only if a later slice proves more
+  retirement is worth the compatibility churn.
 - `notes`: diagnosis backlog item `RC-001`; default plugin-sdk runtime facade
   no longer loads `legacy-admin-api`, and `extensions/model-memory/src/runtime-api.ts`
   no longer exports the legacy fallback registry.
@@ -64,16 +64,18 @@ parallel roadmap.
 
 - `id`: `MD-015`
 - `category`: `repo-hygiene`
-- `status`: `planned`
+- `status`: `in_progress`
 - `risk`: `medium`
 - `owner_or_surface`: `model-memory hot-path orchestration`
 - `description`: several Phase-2-critical files remain oversized orchestration
   seams, especially `model-memory.live-runtime.ts`,
   `mmv2-native-repository.ts`, and `shared-pipeline.ts`.
-- `next_action`: execute the first extraction slice after boundary narrowing so
-  capture, retrieval, dirty-state, persistence, and ingestion concerns are
+- `next_action`: validate the extracted live-runtime seam with a fresh Phase-2
+  rerun, then execute `RC-003` so repository and shared-pipeline concerns are
   split into smaller modules without behavior change.
-- `notes`: diagnosis backlog items `RC-002` and `RC-003`.
+- `notes`: diagnosis backlog item `RC-002` has landed via
+  `src/agents/model-memory/live-runtime/*`; remaining hot-path extraction debt
+  is now concentrated in `RC-003`.
 
 ### MD-016
 

@@ -7,14 +7,16 @@ title: "Maintenance Current Slice"
 
 ## Active slice
 
-`pre-phase2-model-memory-boundary-narrowing`
+`pre-phase2-live-runtime-orchestration-split`
 
 ## Goals
 
-1. keep the cleanup/refactor program canonically owned by maintenance docs plus
-   the generated diagnosis artifacts under
-   `.artifacts/refactor-prephase2/2026-04-24/diagnosis/`
-2. narrow the default MMV2 runtime/plugin-sdk boundary so legacy admin/proof
-   seams are explicit instead of piggybacking on the normal runtime facade
-3. leave the next cleanup slice ready to target the highest-ranked hot-path
-   orchestration extraction work
+1. split `src/agents/model-memory.live-runtime.ts` into smaller internal
+   modules so the root file becomes a clear orchestration seam instead of a
+   single hot-path monolith
+2. preserve current behavior across capture, retrieval, dirty-state, rebuild,
+   and tool-result proof paths while keeping the public export surface stable
+3. rerun the Phase-2 entry validation pack after the extraction so the cleanup
+   lane proves it did not reopen a pre-Phase-2 gate
+4. leave the next cleanup slice ready to target `RC-003` repository and shared
+   ingestion pipeline extraction if the runtime split remains green
