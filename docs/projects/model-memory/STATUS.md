@@ -7,7 +7,7 @@ title: "Model Memory Status"
 
 ## Overall
 
-State: `pre_phase_2_execution_in_progress`
+State: `phase2_authorized`
 
 2026-04-24 pre-Phase-2 execution update:
 
@@ -50,29 +50,34 @@ State: `pre_phase_2_execution_in_progress`
   - `chat.history` now preserves compact tool-result truncation metadata for
     UI consumption, and tool-card expand/sidebar surfaces now say when full
     content is unavailable instead of implying the stored preview is complete
-- the final pre-Phase-2 entry validation pack has now executed at:
-  `.artifacts/model-memory/phase2-entry-validation/2026-04-24/`
-  - baseline DB gates: maintenance health green, but
-    `pg_stat_statements` is still unavailable (`not_installed`)
-  - baseline recovery gates: still not Phase-2-entry-safe because
-    `runtime_dirty` remains `rebuild_required`
-  - controlled load test: `red`
-    - ordinary-turn scratch seed failed on invalid strict structured output
-      from `openai-codex/gpt-5.4-mini`
-    - retrieval iterations all failed with `model-memory runtime rebuild lock
-is busy`
-    - tool-result capture, rebuild iterations, and gateway health all passed
-  - retrieval-quality eval matrix: passed `11/11`
-  - no-dark-data adversarial pack: passed `4/4`
-  - bounded live validation: `yellow`; memmech live proof, capture-seams live
-    proof, and projection live behavior proof all completed, but post-run
-    recovery posture still stayed blocked
-  - final decision: `red`
-  - Phase 2 is not authorized to begin yet
-  - next blocker lane:
-    clear `runtime_dirty` rebuild state, install/enable
-    `pg_stat_statements`, investigate the strict structured-output failure on
-    the controlled ordinary-turn seed, then rerun the Phase-2 entry pack
+- the final pre-Phase-2 entry validation pack is now green on the latest
+  rerun:
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-rerun-03/`
+  - blocker-clearance work before the green rerun:
+    - reconciled the orphaned live `runtime_dirty` rebuild state and proved
+      recovery gates `clean`
+    - enabled live `pg_stat_statements`
+    - fixed MMV2 session-turn proof contract routing so the strict-mini
+      ordinary-turn seed uses the MMV2 interpreter path
+    - hardened MMV2 atomic extraction so irreparable repair output safely
+      skips the broken model-routed atomic batch instead of crashing the
+      ordinary-turn capture
+    - fixed rebuild-lane self-deadlock by rebinding canonical reads onto the
+      transaction-bound rebuild client
+    - fixed the controlled load retrieval harness so retrieval no longer
+      invokes rebuild inline and no longer references stale `rebuild.*`
+      variables
+    - widened the projection live-behavior proof timeout so the full live
+      validation pack can complete honestly
+  - final latest-proof status:
+    - baseline DB gates: `green`
+    - baseline recovery gates: `green`
+    - controlled load test: `green`
+    - retrieval-quality eval matrix: `11/11`
+    - no-dark-data adversarial pack: `4/4`
+    - bounded live validation: `green`
+    - final decision: `green`
+    - Phase 2 is authorized to begin
 - retrieval miss classification no longer stops at generic
   `candidates_found_but_excluded` / `stale_conflict_suppression` buckets; the
   runtime now emits explicit suppression classes for stale, superseded,
@@ -81,10 +86,10 @@ is busy`
 - strict capture/ingest default remains `openai-codex/gpt-5.4-mini`; the
   earlier wrong-pipe auth/model regression is fixed, and the remaining mini
   work is bounded runtime validation rather than model-lane rollback
-- Phase 2 is still blocked until the ledger slices are closed; graph/capsule/
-  planner work is not the active implementation lane
-- the final Phase-2 entry validation pack is now executed but still red; the
-  remaining active blocker is the rerun lane required by that decision
+- the pre-Phase-2 blocker ledger is now fully green; graph/capsule/planner
+  work becomes the active implementation lane
+- the latest authoritative entry-pack result is the green rerun at
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-rerun-03/`
 
 - shared ingestion now has executable closeout/quarantine report helpers for
   active capture/ingest paths; reports are runtime-state/artifact outputs and

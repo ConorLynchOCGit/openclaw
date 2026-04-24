@@ -8,7 +8,9 @@ title: "Pre-Phase-2 Gate Ledger"
 This is the canonical blocking ledger for model-memory before Phase 2
 graph/capsule/planner work begins.
 
-Phase 2 stays blocked until every `must_do` slice below is green.
+Phase 2 was blocked until every `must_do` slice below was green.
+As of the latest entry-pack rerun on `2026-04-24`, every `must_do` slice below
+is green and Phase 2 is authorized.
 
 ## Current posture
 
@@ -139,10 +141,16 @@ State: `landed 2026-04-24`
 
 ### Slice 7 - Phase-2 entry validation pack
 
-State: `executed 2026-04-24, verdict red`
+State: `landed green 2026-04-24`
 
-- artifact root:
-  `.artifacts/model-memory/phase2-entry-validation/2026-04-24/`
+- historical roots:
+  - initial red pack:
+    `.artifacts/model-memory/phase2-entry-validation/2026-04-24/`
+  - intermediate reruns:
+    `.artifacts/model-memory/phase2-entry-validation/2026-04-24-rerun-01/`
+    `.artifacts/model-memory/phase2-entry-validation/2026-04-24-rerun-02/`
+- latest authoritative green root:
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-rerun-03/`
 - delivered proof surfaces:
   - controlled Phase-2 entry load test
   - retrieval quality evals independent of capture
@@ -151,20 +159,29 @@ State: `executed 2026-04-24, verdict red`
   - final operator decision report
 - canonical operator runbook:
   - [Pre-Phase-2 Entry Validation](/projects/model-memory/pre-phase-2-entry-validation)
-- current decision: `red`
-- current blockers:
-  - `pg_stat_statements` unavailable (`not_installed`)
-  - recovery gate still blocked because `runtime_dirty` is
-    `rebuild_required`
-  - controlled load ordinary-turn scratch seed failed with invalid strict
-    structured output on `openai-codex/gpt-5.4-mini`
-  - controlled load retrieval iterations all failed with
-    `model-memory runtime rebuild lock is busy`
-- current next lane:
-  clear `runtime_dirty` rebuild state, install/enable
-  `pg_stat_statements`, investigate/fix the controlled load ordinary-turn
-  strict-schema failure and rebuild-lock retrieval contention, then rerun
-  Slice 7
+- blocker-clearance work that made the slice green:
+  - reconciled orphaned live `runtime_dirty` state and proved recovery gates
+    `clean`
+  - enabled live `pg_stat_statements`
+  - fixed MMV2 session-turn proof contract routing for the strict-mini
+    ordinary-turn seed
+  - hardened MMV2 atomic extraction to skip irreparable model-routed atomic
+    repair output safely
+  - fixed rebuild-lane self-deadlock during runtime rebuild
+  - fixed the controlled-load retrieval harness
+  - widened the projection live-behavior proof timeout so the full live pack
+    could complete honestly
+- latest decision: `green`
+- latest supporting evidence:
+  - baseline DB gates: `green`
+  - baseline recovery gates: `green`
+  - controlled load test: `green`
+  - retrieval evals: `11/11`
+  - no-dark-data adversarial pack: `4/4`
+  - bounded live validation: `green`
+- result:
+  - no remaining pre-Phase-2 blocker slice remains
+  - Phase 2 is authorized to begin
 
 ## Deferred To Phase 2
 
@@ -184,10 +201,15 @@ blocking pre-Phase-2 slice trustworthy:
 
 ## Phase-2 entry rule
 
-Do not begin graph, capsule, hierarchical retrieval, planner, synthesis, or
-cache-policy implementation until:
+Graph, capsule, hierarchical retrieval, planner, synthesis, and cache-policy
+implementation were blocked until:
 
 1. every `must_do` slice above is green
 2. the proof artifacts are present and linked
 3. the docs match the landed truth
 4. remaining work is explicitly recorded as Phase-2 scope, not hidden debt
+
+Current state:
+
+- satisfied on `2026-04-24` by the green entry-pack rerun at
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-rerun-03/`

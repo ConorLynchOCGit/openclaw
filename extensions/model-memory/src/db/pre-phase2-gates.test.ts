@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { QueryResult, QueryResultRow } from "pg";
+import { describe, expect, it } from "vitest";
 import {
   MODEL_MEMORY_PRE_PHASE2_SLO_DEFINITIONS,
   collectModelMemoryPgStatStatementsBaseline,
@@ -23,15 +23,15 @@ function makeSqlClient(params: {
   pgStatError?: Error;
 }): SqlClient {
   return {
-    async query(text: string) {
+    async query<Row extends QueryResultRow = QueryResultRow>(text: string) {
       if (text.includes("FROM pg_stat_statements")) {
         if (params.pgStatError) {
           throw params.pgStatError;
         }
-        return buildQueryResult(params.pgStatRows ?? []);
+        return buildQueryResult((params.pgStatRows ?? []) as Row[]);
       }
       if (text.includes("FROM pg_class AS cls")) {
-        return buildQueryResult(params.maintenanceRows ?? []);
+        return buildQueryResult((params.maintenanceRows ?? []) as Row[]);
       }
       throw new Error(`unexpected query in test: ${text}`);
     },

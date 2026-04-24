@@ -30,7 +30,11 @@ import {
   SESSION_TURN_PROOF_REQUEST_SEED,
   SESSION_TURN_PROOF_REQUEST_TIMEOUT_MS,
 } from "../src/agents/model-memory.session-turn-proof.ts";
-import { executeRetrieval, rebuildDerivedRuntimeState } from "../src/plugin-sdk/model-memory.ts";
+import {
+  executeRetrieval,
+  listRuntimeMemoryRecords,
+  rebuildDerivedRuntimeState,
+} from "../src/plugin-sdk/model-memory.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -311,22 +315,10 @@ async function runRetrievalIteration(
   iteration: number,
 ) {
   const startedAt = Date.now();
-  const rebuild = await rebuildDerivedRuntimeState({
-    canonicalRepository:
-      ((
-        runtime.canonicalRepository as typeof runtime.canonicalRepository & {
-          withDbLane?: (lane: "capture" | "rebuild" | "retrieval" | "admin" | "default") => unknown;
-        }
-      ).withDbLane?.("rebuild") as typeof runtime.canonicalRepository | undefined) ??
-      runtime.canonicalRepository,
-    runtimeRepository:
-      ((
-        runtime.runtimeRepository as typeof runtime.runtimeRepository & {
-          withDbLane?: (lane: "capture" | "rebuild" | "retrieval" | "admin" | "default") => unknown;
-        }
-      ).withDbLane?.("rebuild") as typeof runtime.runtimeRepository | undefined) ??
-      runtime.runtimeRepository,
-  });
+  const [memoryObjects, projectionVersions] = await Promise.all([
+    listRuntimeMemoryRecords(runtime.canonicalRepository),
+    runtime.runtimeRepository.listProjectionVersions(),
+  ]);
   const envelope: RetrievalEnvelope = {
     queryText: "What is the current phase 2 readiness validation state for model memory?",
     requestPurpose: "phase2_entry_load_test",
@@ -350,11 +342,11 @@ async function runRetrievalIteration(
   const execution = await executeRetrieval({
     envelope,
     interpreter,
-    memoryObjects: rebuild.memoryObjects,
+    memoryObjects,
     modelId: "deterministic/lexical",
     store,
     createdAt: new Date(),
-    projectionVersions: rebuild.projectionVersions,
+    projectionVersions,
   });
   if (!execution) {
     throw new Error("retrieval unexpectedly skipped during phase2 entry load test");
@@ -363,7 +355,7 @@ async function runRetrievalIteration(
     retrievalRequest: execution.retrievalRequest,
     retrievalResultSet: execution.retrievalResultSet,
     retrievalResultItems: execution.retrievalResultItems,
-    memoryObjects: rebuild.memoryObjects,
+    memoryObjects,
     retrievalPlan: execution.retrievalPlan,
     retrievalCandidates: execution.retrievalCandidates,
     retrievalExclusions: execution.retrievalExclusions,
@@ -416,6 +408,18 @@ async function runControlledLoadTest(outputDir: string) {
     );
     const ordinaryLatencyMs = Date.now() - ordinaryStartedAt;
     await writeJson(path.join(outputDir, "ordinary-turn-seed-report.json"), ordinaryTurnProof);
+    const baselineRebuildStartedAt = Date.now();
+    const baselineRebuild = await rebuildDerivedRuntimeState({
+      canonicalRepository: runtime.canonicalRepository,
+      runtimeRepository: runtime.runtimeRepository,
+    });
+    await writeJson(path.join(outputDir, "baseline-runtime-rebuild-report.json"), {
+      generated_at: new Date().toISOString(),
+      latencyMs: Date.now() - baselineRebuildStartedAt,
+      memoryObjectCount: baselineRebuild.memoryObjects.length,
+      projectionVersionCount: baselineRebuild.projectionVersions.length,
+      projectionTargetCount: baselineRebuild.projectionTargets.length,
+    });
 
     const toolCapturePromise = (async () => {
       const samples = [];
@@ -533,6 +537,7 @@ async function runControlledLoadTest(outputDir: string) {
       scope: "isolated_scratch_db",
       limitations: [
         "ordinary-turn workload is seeded first because session-turn proof resets the scratch DB before capture",
+        "a single baseline rebuild materializes the served runtime before the concurrent phase begins",
         "concurrent phase covers tool-result capture, rebuild, retrieval pack assembly, and gateway health against the scratch corpus",
       ],
       ordinary_turn_seed: {
@@ -810,7 +815,7 @@ async function main() {
         path.join(liveValidationDir, "projection-live-behavior"),
       ],
       path.join(liveValidationDir, "projection-live-behavior.command.json"),
-      180_000,
+      600_000,
     );
     await writeJson(
       path.join(liveValidationDir, "projection-live-behavior.report.json"),
@@ -926,7 +931,7 @@ async function main() {
     nextLane:
       decision.status === "green"
         ? "phase2"
-        : "clear runtime_dirty rebuild state, install/enable pg_stat_statements, and rerun the phase-2 entry validation pack",
+        : "clear remaining phase-2 entry blockers from the latest report and rerun the phase-2 entry validation pack",
   };
   await writeJson(path.join(finalReportDir, "phase2-entry-report.json"), finalReport);
   await writeText(

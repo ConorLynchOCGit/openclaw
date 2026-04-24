@@ -7,7 +7,8 @@ title: "Model Memory Current Slice"
 
 ## 2026-04-24 Pre-Phase-2 Execution Lane
 
-This slice is now the execution lane for the remaining pre-Phase-2 gates.
+This slice records the completed pre-Phase-2 execution lane and the
+authoritative entry decision that closed it.
 The canonical blocker ledger is:
 
 - [Pre-Phase-2 Gate Ledger](/projects/model-memory/pre-phase-2-gate-ledger)
@@ -78,34 +79,47 @@ Already landed in the active source tree:
   - `chat.history` now preserves compact tool-result truncation metadata, and
     UI tool cards explicitly say when full content is unavailable instead of
     implying that local expand can recover missing text
-- the final pre-Phase-2 entry validation pack has now been executed at:
-  `.artifacts/model-memory/phase2-entry-validation/2026-04-24/`
-  - retrieval-quality evals passed `11/11`
-  - no-dark-data adversarial checks passed `4/4`
-  - bounded live validation finished `yellow` with no new live blocker beyond
-    the already-known post-run recovery gate
-  - the final decision remains `red`, so Phase 2 is still blocked
-  - current blockers from the decision report are:
-    - `pg_stat_statements` unavailable (`not_installed`)
-    - recovery gate not safe because `runtime_dirty` remains
-      `rebuild_required`
-    - controlled load ordinary-turn seed failed with invalid strict structured
-      output on `openai-codex/gpt-5.4-mini`
-    - controlled load retrieval failed because rebuild lock pressure kept the
-      retrieval lane busy
+- the blocker-clearance rerun lane is now landed:
+  - live `runtime_dirty` orphaned rebuild state now reconciles safely through
+    `scripts/model-memory-runtime-dirty-reconcile.ts`, and the live recovery
+    gate now reports `clean`
+  - live PostgreSQL now has `pg_stat_statements` enabled, and the DB gate
+    report now exposes real query-family baselines instead of `not_installed`
+  - the controlled ordinary-turn seed no longer fails on the old strict-mini
+    contract mismatch:
+    - session-turn proof now routes MMV2 contracts through the MMV2 raw-JSON
+      interpreter path
+    - MMV2 atomic extraction now skips model-routed atomic candidates safely if
+      repair output remains semantically invalid instead of crashing the whole
+      ordinary-turn capture
+  - the controlled load retrieval lane no longer deadlocks under rebuild
+    pressure:
+    - runtime rebuild now reuses the transaction-bound SQL client for canonical
+      reads, avoiding self-deadlock on the single rebuild lane
+    - the load harness now tests retrieval against the served runtime instead
+      of forcing a rebuild inside each retrieval iteration
+  - the final pre-Phase-2 entry validation pack rerun is now green at:
+    `.artifacts/model-memory/phase2-entry-validation/2026-04-24-rerun-03/`
+    - controlled load test: `green`
+    - retrieval-quality evals: `11/11`
+    - no-dark-data adversarial checks: `4/4`
+    - bounded live validation: `green`
+    - final decision: `green`
+    - Phase 2 is now authorized to begin
 
 ## Slice
 
-`pre-phase-2-memory-gates`
+`phase-2-entry-authorized`
 
 ## Goal
 
 Use the accepted `SOAKQUAR-2026-04-21` clean soak, accepted runtime-boundary
-proof, committed runtime-hardening landing at `ee0c093c1a`, and the
-`SOAKLAND-2026-04-22` hardening proof as regression baselines. The active lane
-is no longer "one more hardening follow-up"; it is the explicit pre-Phase-2
-execution sequence in the gate ledger. Document ingest remains paused while the
-remaining gates are closed without reintroducing semantic forests, fuzzy
+proof, committed runtime-hardening landing at `ee0c093c1a`, the
+`SOAKLAND-2026-04-22` hardening proof, and the green final entry pack at
+`.artifacts/model-memory/phase2-entry-validation/2026-04-24-rerun-03/` as the
+current regression baselines. The explicit pre-Phase-2 gate sequence is now
+complete. The active lane moves to Phase 2 implementation while preserving the
+landed MMV2-native guardrails and without reintroducing semantic forests, fuzzy
 write-path correction, root workspace-file write-back, or raw-data capture.
 
 The accepted runtime-boundary proof rooted at

@@ -225,6 +225,50 @@ describe("mmv2/atomic-extraction", () => {
     });
   });
 
+  it("skips model-routed atomic candidates when repair semantics remain invalid", async () => {
+    const source = createMmV2TestSource("I prefer concise answers.");
+    const segment = source.segmented.segments[0];
+    const invalidCandidate = buildAtomicCandidate(segment.segment_id, "not a substring", {
+      candidate_id: "candidate-001",
+    });
+    const interpreter = createScriptedMmV2Interpreter({
+      "mmv2-atomic-extraction-v1": () =>
+        captureOne({
+          schema_version: "atomic_extraction.v1",
+          event_id: source.rawEvent.event_id,
+          atomic_candidates: [invalidCandidate],
+        }),
+      "mmv2-atomic-evidence-repair-v1": () =>
+        captureOne({
+          schema_version: "atomic_extraction.v1",
+          event_id: source.rawEvent.event_id,
+          atomic_candidates: [invalidCandidate],
+        }),
+      "mmv2-atomic-repair-v1": () =>
+        captureOne({
+          schema_version: "atomic_extraction.v1",
+          event_id: source.rawEvent.event_id,
+          atomic_candidates: [invalidCandidate],
+        }),
+    });
+
+    const result = await extractAtomicCandidates({
+      rawEvent: source.rawEvent,
+      sourceKind: "document",
+      sourceId: source.sourceId,
+      sourceWindow: source.sourceWindow,
+      modelId: "model-001",
+      interpreter,
+      routedCandidates: [buildAtomicRoutedCandidate(segment)],
+    });
+
+    expect(result).toEqual({
+      schema_version: "atomic_extraction.v1",
+      event_id: source.rawEvent.event_id,
+      atomic_candidates: [],
+    });
+  });
+
   it("rejects composite-owned routed spans before calling the atomic extractor", async () => {
     const source = createMmV2TestSource("1. Run the test suite.\n2. Ship the build.");
     const segment = source.segmented.segments.find(

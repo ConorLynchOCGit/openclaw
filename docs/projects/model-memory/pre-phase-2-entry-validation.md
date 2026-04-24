@@ -14,10 +14,10 @@ Can Phase 2 start now, or is it still blocked?
 
 ## Artifact Root
 
-Current execution artifact root:
+Latest authoritative artifact root:
 
 ```text
-.artifacts/model-memory/phase2-entry-validation/2026-04-24/
+.artifacts/model-memory/phase2-entry-validation/2026-04-24-rerun-03/
 ```
 
 Subdirectories:
@@ -70,49 +70,48 @@ DB.
 Final report:
 
 ```text
-.artifacts/model-memory/phase2-entry-validation/2026-04-24/final-report/phase2-entry-report.json
+.artifacts/model-memory/phase2-entry-validation/2026-04-24-rerun-03/final-report/phase2-entry-report.json
 ```
 
-Decision: `red`
+Decision: `green`
 
-Phase 2 authorization: `false`
+Phase 2 authorization: `true`
 
-Current blockers:
+Latest proof summary:
 
-- `pg_stat_statements_unavailable`
-  - evidence: `not_installed`
-- `recovery_gate_not_safe`
-  - evidence:
-    `overall_reconcile_class=rebuild_required; blocking_surfaces=runtime_dirty`
-- `load_ordinary_turn_failed`
-  - evidence: controlled scratch ordinary-turn seed failed on invalid strict
-    structured output from `openai-codex/gpt-5.4-mini`
-- `load_retrieval_failed`
-  - evidence: retrieval iterations failed with
-    `model-memory runtime rebuild lock is busy`
+- baseline DB gates: `green`
+- baseline recovery gates: `green`
+- controlled load test: `green`
+- retrieval eval matrix: passed `11/11`
+- no-dark-data adversarial pack: passed `4/4`
+- bounded live validation: `green`
+- final operator decision: `green`
 
-Supporting green surfaces:
+Blockers cleared in the rerun lane:
 
-- retrieval eval matrix passed `11/11`
-- no-dark-data adversarial pack passed `4/4`
-- bounded live validation finished `yellow`, not `red`
-  - memmech live proof passed
-  - capture-seams live proof passed
-  - projection live behavior proof passed
-  - post-run recovery posture still remained blocked
+- reconciled orphaned live `runtime_dirty` rebuild state and proved recovery
+  gates `clean`
+- enabled live `pg_stat_statements`
+- fixed MMV2 session-turn proof routing so the strict-mini ordinary-turn seed
+  uses the MMV2 interpreter path
+- hardened MMV2 atomic extraction so irreparable repair output safely skips
+  the bad model-routed atomic batch instead of crashing the ordinary-turn path
+- fixed rebuild-lane self-deadlock during runtime rebuild
+- fixed the controlled-load retrieval harness
+- widened the projection live-behavior proof timeout so the full pack can
+  finish honestly
+
+Historical audit roots:
+
+- initial red pack:
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24/`
+- intermediate reruns:
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-rerun-01/`
+  `.artifacts/model-memory/phase2-entry-validation/2026-04-24-rerun-02/`
 
 ## Current Next Lane
 
-Before rerunning the entry pack:
-
-1. clear `runtime_dirty` rebuild state so recovery is Phase-2-entry-safe
-2. install or enable `pg_stat_statements`
-3. investigate and fix the strict structured-output failure on the controlled
-   ordinary-turn seed
-4. investigate and fix retrieval failure under rebuild-lock pressure in the
-   controlled load path
-5. rerun this entry-validation pack and replace the artifact root with the new
-   decision
+Phase 2 implementation may begin. The pre-Phase-2 blocker pack is complete.
 
 ## Entry Decision Rule
 

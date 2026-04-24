@@ -32,7 +32,10 @@ export async function rebuildDerivedRuntimeState(input: {
   materializeProjectionArtifacts?: boolean;
 }): Promise<RuntimeRebuildResult> {
   return input.runtimeRepository.withRuntimeRebuildLock(async (runtimeRepository) => {
-    const memoryObjects = await listRuntimeMemoryRecords(input.canonicalRepository);
+    const lockedCanonicalRepository = input.canonicalRepository.withSqlClient(
+      runtimeRepository.getSqlClient(),
+    );
+    const memoryObjects = await listRuntimeMemoryRecords(lockedCanonicalRepository);
     const activeMemorySlots = materializeActiveMemorySlots(memoryObjects);
     const activeMemorySets = materializeActiveMemorySets(memoryObjects);
 

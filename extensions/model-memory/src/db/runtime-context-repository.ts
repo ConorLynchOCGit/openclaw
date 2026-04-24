@@ -219,6 +219,10 @@ function decodeContextRunSegment(row: QueryResultRow): ContextRunSegmentRecord {
 export class RuntimeContextRepository {
   constructor(private readonly sql: SqlClient) {}
 
+  getSqlClient(): SqlClient {
+    return this.sql;
+  }
+
   withDbLane(lane: ModelMemoryDbLane): RuntimeContextRepository {
     return new RuntimeContextRepository(withSqlClientLane(this.sql, lane));
   }

@@ -35,6 +35,7 @@ import {
   readString,
   readStringArray,
 } from "./row-codecs.ts";
+import type { SqlClient } from "./sql-client.ts";
 import { withSqlClientLane } from "./sql-client.ts";
 
 export type ListExistingMemorySummariesForCaptureInput = {
@@ -233,6 +234,10 @@ function toLegacyObject(record: ModelMemoryObjectRecord): ModelMemoryObject {
 }
 
 export class MmV2NativeRepository extends ModelMemoryCanonicalRepository {
+  override withSqlClient(sql: SqlClient): MmV2NativeRepository {
+    return new MmV2NativeRepository(sql);
+  }
+
   withDbLane(lane: ModelMemoryDbLane): MmV2NativeRepository {
     return new MmV2NativeRepository(withSqlClientLane(this.sql, lane));
   }

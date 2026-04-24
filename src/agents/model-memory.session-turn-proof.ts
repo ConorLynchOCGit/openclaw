@@ -25,6 +25,7 @@ import {
 import type { ModelMemoryDatabaseRuntime } from "./model-memory.database.ts";
 import { resetModelMemoryEvidenceDatabase } from "./model-memory.large-document-evidence.ts";
 import { OpenAICompatibleLiveJsonExecutor } from "./model-memory.live-json-executor.ts";
+import { parseMmV2RawJsonOutput } from "./model-memory.live-runtime.ts";
 
 export const SESSION_TURN_PROOF_MODEL_REF = "openrouter/openai/gpt-5.4-nano";
 export const SESSION_TURN_PROOF_REQUEST_TIMEOUT_MS = 180_000;
@@ -324,20 +325,55 @@ export type SessionTurnProofReport = {
   };
 };
 
-function mapContractVersion(contractVersion: string): TraceStage {
+export function mapSessionTurnProofContractVersion(contractVersion: string): TraceStage {
   if (contractVersion === "v1") {
     return "ordinary_turn_extraction";
   }
-  if (contractVersion === "v2-candidate") {
+  if (
+    contractVersion === "v2-candidate" ||
+    contractVersion === "mmv2-capture-routing-v1" ||
+    contractVersion === "mmv2-composite-extraction-v1" ||
+    contractVersion === "mmv2-atomic-extraction-v1" ||
+    contractVersion === "mmv2-admission-v1" ||
+    contractVersion === "mmv2-reconciliation-v1"
+  ) {
     return "pass_1_candidate";
   }
-  if (contractVersion === "v2-candidate-repair") {
+  if (
+    contractVersion === "v2-candidate-repair" ||
+    contractVersion === "mmv2-capture-routing-repair-v1" ||
+    contractVersion === "mmv2-composite-repair-v1" ||
+    contractVersion === "mmv2-composite-evidence-repair-v1" ||
+    contractVersion === "mmv2-atomic-repair-v1" ||
+    contractVersion === "mmv2-atomic-evidence-repair-v1" ||
+    contractVersion === "mmv2-admission-repair-v1" ||
+    contractVersion === "mmv2-reconciliation-repair-v1" ||
+    contractVersion === "mmv2-evidence-repair-v1" ||
+    contractVersion === "mmv2-repair-v1"
+  ) {
     return "pass_1_repair";
   }
-  if (contractVersion === "v2-canonicalization-repair") {
+  if (
+    contractVersion === "v2-canonicalization-repair" ||
+    contractVersion === "mmv2-canonicalization-repair-v1"
+  ) {
     return "pass_2_repair";
   }
   return "pass_2_canonicalization";
+}
+
+export function shouldUseMmV2SessionTurnProofInterpreter(
+  runtime: ModelMemoryDatabaseRuntime,
+): boolean {
+  const canonicalRepository = runtime.canonicalRepository as unknown as {
+    listExistingMemorySummaries?: unknown;
+    persistLiveMemoryBatch?: unknown;
+  };
+  return (
+    runtime.storageEngine === "mmv2" &&
+    typeof canonicalRepository.listExistingMemorySummaries === "function" &&
+    typeof canonicalRepository.persistLiveMemoryBatch === "function"
+  );
 }
 
 function summarizeTraceStages(traces: PromptTraceEvent[]): string {
@@ -491,7 +527,9 @@ export async function executeSessionTurnProof(input: {
           type: "executor_success",
           sourceWindowId: activeContext?.sourceWindowId ?? "unknown",
           windowIndex: activeContext?.windowIndex ?? -1,
-          stage: activeContext?.stage ?? mapContractVersion(request.contract.contractVersion),
+          stage:
+            activeContext?.stage ??
+            mapSessionTurnProofContractVersion(request.contract.contractVersion),
           contractVersion: request.contract.contractVersion,
           requestedModelId: request.contract.modelId,
           resolvedModelId: response.resolvedModelId,
@@ -503,7 +541,9 @@ export async function executeSessionTurnProof(input: {
           type: "executor_error",
           sourceWindowId: activeContext?.sourceWindowId ?? "unknown",
           windowIndex: activeContext?.windowIndex ?? -1,
-          stage: activeContext?.stage ?? mapContractVersion(request.contract.contractVersion),
+          stage:
+            activeContext?.stage ??
+            mapSessionTurnProofContractVersion(request.contract.contractVersion),
           contractVersion: request.contract.contractVersion,
           requestedModelId: request.contract.modelId,
           error: stringifyError(error),
@@ -517,7 +557,7 @@ export async function executeSessionTurnProof(input: {
     constructor(private readonly base: SemanticInterpreter) {}
 
     async interpret(inputValue: SemanticInterpreterInput): Promise<SemanticInterpreterResult> {
-      const stage = mapContractVersion(inputValue.prompt.contract.contractVersion);
+      const stage = mapSessionTurnProofContractVersion(inputValue.prompt.contract.contractVersion);
       activeContext = {
         promptId: currentPromptId ?? "unknown",
         sourceWindowId: inputValue.sourceWindow.id,
@@ -654,7 +694,26 @@ export async function executeSessionTurnProof(input: {
       fetchImpl: tracingFetch,
     }),
   );
-  const interpreter = new TracingInterpreter(new ExecutorBackedSemanticInterpreter(executor));
+  const baseInterpreter: SemanticInterpreter = shouldUseMmV2SessionTurnProofInterpreter(
+    input.runtime,
+  )
+    ? {
+        async interpret(inputValue) {
+          const response = await executor.execute({
+            contract: inputValue.prompt.contract,
+            systemPrompt: inputValue.prompt.systemPrompt,
+            userPrompt: inputValue.prompt.userPrompt,
+            responseFormat: inputValue.prompt.responseFormat,
+            responseOptions: inputValue.prompt.responseOptions,
+          });
+          return {
+            action: "capture" as const,
+            objects: [parseMmV2RawJsonOutput(response.outputText)],
+          };
+        },
+      }
+    : new ExecutorBackedSemanticInterpreter(executor);
+  const interpreter = new TracingInterpreter(baseInterpreter);
   const collisionAdjudicator = new TracingCollisionAdjudicator(
     new ExecutorBackedSemanticCollisionAdjudicator(executor),
   );

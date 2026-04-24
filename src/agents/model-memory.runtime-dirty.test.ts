@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createModelMemoryRuntimeDirtyStore,
   markModelMemoryRuntimeDirtyAndSchedule,
+  reconcileModelMemoryRuntimeDirtyState,
   resetModelMemoryRuntimeDirtyStoreForTests,
   resolveModelMemoryRuntimeRebuildSchedulerSettings,
   runModelMemoryRuntimeRebuildWorker,
@@ -282,6 +283,41 @@ describe("model-memory runtime dirty state", () => {
         "runtime_rebuild_started",
         "runtime_rebuild_failed",
       ]);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("reconciles orphaned rebuilding state and lets admin replay return it to dirty", async () => {
+    const { store, cleanup } = await makeStore();
+    try {
+      await store.markDirty({
+        reason: "tool_result_capture_written",
+        traceIds: ["memory_trace_tool_cccccccccccccccccccccccc"],
+        memoryIds: ["memory-1"],
+      });
+      await store.markRebuildStarted();
+
+      const reconciled = await reconcileModelMemoryRuntimeDirtyState({
+        store,
+        now: new Date(Date.now() + 60_000),
+        staleAfterMs: 1_000,
+      });
+      expect(reconciled.recoveredOrphanedRebuild).toBe(true);
+      expect(reconciled.state).toMatchObject({
+        status: "failed",
+        lastFailureClass: "runtime_rebuild_orphaned",
+        lastFailureStage: "runtime_rebuild_orphaned_state",
+      });
+
+      const requested = await store.requestRebuild({ sessionId: "session-001" });
+      expect(requested.state.status).toBe("dirty");
+
+      const completed = await runModelMemoryRuntimeRebuildWorker({
+        store,
+        rebuild: async () => undefined,
+      });
+      expect(completed.status).toBe("clean");
     } finally {
       await cleanup();
     }

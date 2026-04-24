@@ -134,6 +134,14 @@ function decodeSupersessionLink(row: QueryResultRow): ModelMemorySupersessionLin
 export class ModelMemoryCanonicalRepository {
   constructor(protected readonly sql: SqlClient) {}
 
+  getSqlClient(): SqlClient {
+    return this.sql;
+  }
+
+  withSqlClient(sql: SqlClient): ModelMemoryCanonicalRepository {
+    return new ModelMemoryCanonicalRepository(sql);
+  }
+
   withTransaction<T>(work: (repository: ModelMemoryCanonicalRepository) => Promise<T>): Promise<T> {
     return this.sql.withTransaction((tx) => work(new ModelMemoryCanonicalRepository(tx)));
   }

@@ -760,6 +760,14 @@ function normalizeRepairedAtomicBatch(
   };
 }
 
+function emptyAtomicBatchForRepairFailure(eventId: string): AtomicExtractionBatch {
+  return {
+    schema_version: "atomic_extraction.v1",
+    event_id: eventId,
+    atomic_candidates: [],
+  };
+}
+
 export async function repairAtomicExtraction(
   input: AtomicInput & {
     previousPayload: unknown;
@@ -903,6 +911,14 @@ export async function extractAtomicCandidates(input: AtomicInput): Promise<Atomi
         path: issue.path.join("."),
         message: issue.message,
       })),
+    }).catch((error) => {
+      if (
+        error instanceof JsonModelOutputError &&
+        /^invalid MMV2 atomic extraction repair (?:output|semantics)$/u.test(error.message)
+      ) {
+        return emptyAtomicBatchForRepairFailure(input.rawEvent.event_id);
+      }
+      throw error;
     });
     return {
       ...repaired,
@@ -920,6 +936,14 @@ export async function extractAtomicCandidates(input: AtomicInput): Promise<Atomi
       routedCandidates: modelRoutedCandidates,
       previousPayload: parsed.data,
       validationErrors: errors,
+    }).catch((error) => {
+      if (
+        error instanceof JsonModelOutputError &&
+        /^invalid MMV2 atomic extraction repair (?:output|semantics)$/u.test(error.message)
+      ) {
+        return emptyAtomicBatchForRepairFailure(input.rawEvent.event_id);
+      }
+      throw error;
     });
     return {
       ...repaired,

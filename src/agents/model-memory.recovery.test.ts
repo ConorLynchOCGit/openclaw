@@ -180,6 +180,7 @@ describe("model-memory recovery", () => {
 
       const scorecardStore = createModelMemoryProviderScorecardStore({ env });
       await scorecardStore.record({
+        schemaVersion: 1,
         observedAt: "2026-04-24T00:00:00.000Z",
         status: "success",
         requestedModelId: "openai-codex/gpt-5.4-mini",

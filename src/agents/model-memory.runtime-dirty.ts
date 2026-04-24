@@ -12,6 +12,7 @@ const DEFAULT_COALESCE_MS = 30_000;
 const DEFAULT_MAX_CONCURRENCY = 1;
 const DEFAULT_RETRY_DELAY_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 1;
+const DEFAULT_STALE_REBUILD_AFTER_MS = 15 * 60_000;
 const MAX_SAFE_STRING_LENGTH = 128;
 const MAX_SAFE_ID_LIST = 16;
 
@@ -47,6 +48,7 @@ export type ModelMemoryRuntimeRebuildFailureClass =
   | MemoryIngestionFailureClass
   | "runtime_rebuild_lock_busy"
   | "runtime_rebuild_disabled"
+  | "runtime_rebuild_orphaned"
   | "other";
 
 export type ModelMemoryRuntimeRebuildSchedulerReason =
@@ -197,6 +199,14 @@ export type ModelMemoryRuntimeDirtyScheduleResult = {
   events: ModelMemoryRuntimeDirtyEvent[];
   scheduled: boolean;
   schedulerReason: ModelMemoryRuntimeRebuildSchedulerReason;
+};
+
+export type ModelMemoryRuntimeDirtyReconcileResult = {
+  before: ModelMemoryRuntimeDirtyState;
+  state: ModelMemoryRuntimeDirtyState;
+  events: ModelMemoryRuntimeDirtyEvent[];
+  recoveredOrphanedRebuild: boolean;
+  staleAfterMs: number;
 };
 
 type RuntimeRebuildTask = (state: ModelMemoryRuntimeDirtyState) => Promise<void>;
@@ -621,7 +631,8 @@ export function createModelMemoryRuntimeDirtyStore(
         update(current) {
           return {
             ...current,
-            status: current.status === "clean" ? "dirty" : current.status,
+            status:
+              current.status === "clean" || current.status === "failed" ? "dirty" : current.status,
             dirtyId: current.status === "clean" ? `runtime_dirty_${randomUUID()}` : current.dirtyId,
             dirtyReason: "manual_admin_request",
             markedAt: current.markedAt ?? nowIso(),
@@ -686,6 +697,87 @@ function isRuntimeRebuildLockBusy(error: unknown) {
     (error.name === "RuntimeRebuildLockBusyError" ||
       error.message.toLowerCase().includes("runtime rebuild lock is busy"))
   );
+}
+
+function resolveRuntimeRebuildStaleAfterMs(env: NodeJS.ProcessEnv) {
+  const value = Number.parseInt(env.MODEL_MEMORY_RUNTIME_REBUILD_STALE_AFTER_MS ?? "", 10);
+  if (!Number.isFinite(value) || value <= 0) {
+    return DEFAULT_STALE_REBUILD_AFTER_MS;
+  }
+  return value;
+}
+
+function readRuntimeRebuildStartedAt(state: ModelMemoryRuntimeDirtyState) {
+  const candidate = state.rebuildStartedAt ?? state.scheduledAt ?? state.markedAt;
+  if (!candidate) {
+    return undefined;
+  }
+  const parsed = Date.parse(candidate);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function isOrphanedRebuildingState(input: {
+  state: ModelMemoryRuntimeDirtyState;
+  now: Date;
+  staleAfterMs: number;
+  baseDir: string;
+}) {
+  if (input.state.status !== "rebuilding") {
+    return false;
+  }
+  if (activeRebuilds.has(input.baseDir)) {
+    return false;
+  }
+  const startedAt = readRuntimeRebuildStartedAt(input.state);
+  if (startedAt === undefined) {
+    return true;
+  }
+  return input.now.getTime() - startedAt >= input.staleAfterMs;
+}
+
+export async function reconcileModelMemoryRuntimeDirtyState(input: {
+  store?: ModelMemoryRuntimeDirtyStore;
+  env?: NodeJS.ProcessEnv;
+  now?: Date;
+  staleAfterMs?: number;
+  onEvent?: RuntimeDirtyEventObserver;
+}): Promise<ModelMemoryRuntimeDirtyReconcileResult> {
+  const env = input.env ?? process.env;
+  const store = input.store ?? createModelMemoryRuntimeDirtyStore({ env });
+  const now = input.now ?? new Date();
+  const staleAfterMs = input.staleAfterMs ?? resolveRuntimeRebuildStaleAfterMs(env);
+  const before = await store.getState();
+  const events: ModelMemoryRuntimeDirtyEvent[] = [];
+  let state = before;
+  let recoveredOrphanedRebuild = false;
+
+  if (
+    isOrphanedRebuildingState({
+      state: before,
+      now,
+      staleAfterMs,
+      baseDir: store.baseDir,
+    })
+  ) {
+    const failed = await store.markRebuildFailed({
+      traceIds: before.traceIds,
+      failureClass: "runtime_rebuild_orphaned",
+      failureStage: "runtime_rebuild_orphaned_state",
+      sessionId: before.dirtyId,
+    });
+    await notifyEvent(failed.event, input.onEvent);
+    events.push(failed.event);
+    state = failed.state;
+    recoveredOrphanedRebuild = true;
+  }
+
+  return {
+    before,
+    state,
+    events,
+    recoveredOrphanedRebuild,
+    staleAfterMs,
+  };
 }
 
 export async function runModelMemoryRuntimeRebuildWorker(input: {
