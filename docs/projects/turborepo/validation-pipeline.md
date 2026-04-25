@@ -16,15 +16,23 @@ work through Turbo-managed task graphs.
 - `pnpm test` runs the root full-suite Turbo shard graph when no file or
   changed-file target is supplied.
 - `pnpm test:file <paths...>` remains the narrow file-targeted Vitest lane.
+- `pnpm validate:push:fast` is the inner-loop push gate. It runs the
+  classified changed/domain tests plus lightweight static validation
+  (`git diff --check`, JSON parsing for changed JSON, and `oxlint` for changed
+  JavaScript/TypeScript files).
 - `pnpm validate:push` is the normal local pre-push gate for narrow branch
-  work. It runs changed-file tests, `pnpm check`, and `pnpm build`. When the
-  changed files are validation-pipeline roots such as `package.json`,
-  `turbo.json`, `scripts/test-projects.mjs`, or validation docs, it runs the
-  focused validation/domain lanes instead of expanding those root edits into
-  the exhaustive changed-shard graph.
+  work. It runs classified changed/domain tests, `pnpm check`, and
+  `pnpm build`.
+- `pnpm validate:push:full` is the strongest local pre-push gate short of
+  exhaustive `pnpm test`. It uses the same safe classification as
+  `validate:push`, then runs `pnpm check` and `pnpm build`.
 - Domain lanes provide focused coverage for active Model Memory work:
   `pnpm test:model-memory`, `pnpm test:gateway-memory`, and
   `pnpm test:retrieval`.
+- `pnpm test:model-memory:push` is a de-duplicated Model Memory push lane that
+  unions Model Memory extension, gateway/session memory, retrieval/context,
+  proof, capsule, graph, agent/tool integration, and bootstrap projection
+  coverage without chaining overlapping broad configs repeatedly.
 - `pnpm turbo run test:root:extensions:all --filter=openclaw --concurrency=4`
   runs extension tests as per-extension Turbo tasks. The compatibility command
   `pnpm test:root:extensions` still exists, but the full root test graph uses
@@ -35,9 +43,13 @@ work through Turbo-managed task graphs.
 ## Fast Lane
 
 - Use `pnpm test:file <changed test files>` for focused test feedback.
+- Use `pnpm validate:push:fast` during inner-loop work when you need the
+  quickest safe local signal.
 - Use `pnpm validate:push` before pushing normal narrow implementation slices.
-  For validation-pipeline slices this intentionally avoids the root-config
+  It classifies changed files by domain and intentionally avoids the root-config
   changed-file fallback that can expand into the exhaustive shard graph.
+- Use `pnpm validate:push:full` when a local branch is ready for handoff and
+  you want the strongest non-exhaustive local push gate.
 - Use `pnpm exec oxlint <changed files>` for touched JavaScript/TypeScript
   files when a full lint is not needed.
 - Use `git diff --check` before staging.
@@ -48,17 +60,45 @@ work through Turbo-managed task graphs.
 
 ## Domain Lanes
 
-- `pnpm test:model-memory` covers the Model Memory extension, Model Memory
-  agent integration tests, the model-memory tool surface, gateway memory
+- `pnpm test:model-memory` is Turbo-backed by
+  `test:domain:model-memory` and covers the Model Memory extension, Model
+  Memory agent integration tests, the model-memory tool surface, gateway memory
   startup/session tests, and the bootstrap projection Node test.
-- `pnpm test:gateway-memory` covers gateway/session memory capture, session
-  send behavior, live-runtime memory seams, ordinary-turn persistence, shadow
-  adapters, and live document ingestion service tests.
-- `pnpm test:retrieval` covers Model Memory retrieval, request interpretation,
-  runtime retrieval/context modules, runtime graph/read-model tests,
-  project-state capsule tests, derived artifacts, and proof harness tests.
+- `pnpm test:gateway-memory` is Turbo-backed by
+  `test:domain:gateway-memory` and covers gateway/session memory capture,
+  session send behavior, live-runtime memory seams, ordinary-turn persistence,
+  shadow adapters, and live document ingestion service tests.
+- `pnpm test:retrieval` is Turbo-backed by `test:domain:retrieval` and covers
+  Model Memory retrieval, request interpretation, runtime retrieval/context
+  modules, runtime graph/read-model tests, project-state capsule tests, derived
+  artifacts, and proof harness tests.
+- `pnpm test:model-memory:push` is Turbo-backed by
+  `test:domain:model-memory:push` and is the preferred Phase 2 local push lane
+  for Model Memory slices because it runs the union once instead of invoking
+  overlapping gateway, agents, extensions, retrieval, and proof configs through
+  multiple command paths.
 - These lanes are additive developer lanes. They do not remove any tests from
   `pnpm test`.
+
+## Push Classification
+
+- Model Memory changes run `pnpm test:model-memory:push`.
+- Gateway memory/session changes run `pnpm test:gateway-memory`; retrieval is
+  added only when retrieval/context/proof/capsule/graph paths changed and the
+  de-duplicated Model Memory push lane is not already selected.
+- Retrieval, capsule, graph, context, derived-artifact, and proof changes run
+  `pnpm test:retrieval` unless they are already covered by
+  `test:model-memory:push`.
+- Validation-pipeline changes such as `package.json`, `turbo.json`,
+  `scripts/test-projects.mjs`, `scripts/test-domain-lane.mjs`,
+  `scripts/validate-push.mjs`, `test/vitest/**`, and Turborepo docs run the
+  de-duplicated Model Memory push lane instead of raw `test:changed`.
+- Unknown root/config changes fall back to `test:model-memory:push` plus the
+  static/build gate for normal/full modes. This is intentionally broader than a
+  smoke test but avoids accidental expansion into known slow environmental
+  shards.
+- Ordinary non-root source and test changes can still use `pnpm test:changed`
+  when classification finds no higher-signal domain lane.
 
 ## Full Lane
 
@@ -69,6 +109,10 @@ work through Turbo-managed task graphs.
   pre-push gate for every narrow slice.
 - Repeating a Turbo-backed gate should show cache hits for unchanged cacheable
   tasks. Remote caching is not required by this repo-local workflow.
+- The Model Memory domain lanes are first-class Turbo tasks with explicit
+  inputs and no declared outputs. They are cacheable because they are local
+  deterministic test commands and do not touch browser, tailnet, Docker, live
+  network, or mutable external-service state.
 - Extension tests are split into cacheable project tasks under
   `test:root:extensions:*`; this prevents one large extension shard from
   invalidating all extension work and makes failed-project reruns narrow.
@@ -87,10 +131,19 @@ work through Turbo-managed task graphs.
 - Live-network, Docker-daemon, tailnet, browser, and runtime-proof tasks must
   stay outside the default cached validation graph unless they gain explicit
   deterministic inputs and declared outputs.
+- Domain lane cache keys include their runner scripts, Vitest configs, and
+  owned Model Memory/gateway/retrieval source and test paths. Changing unrelated
+  areas should allow Turbo to replay those domain lanes across adjacent slices.
 
 ## Root Shard Findings
 
 - The old monolithic extension shard is split into per-extension Turbo tasks.
+- `vitest.extension-bluebubbles.config.ts` previously hung when a root
+  validation edit expanded through the raw changed-file shard graph. Local push
+  gates now quarantine that path by classifying validation/root/config changes
+  into explicit domain lanes instead of invoking broad changed-root expansion.
+  The bluebubbles shard remains in exhaustive `pnpm test`; coverage was not
+  removed.
 - Remaining large root aggregates are `core-runtime` and `agentic`. They are
   already composed from multiple Vitest project configs, but the Turbo graph
   still treats each aggregate as a single cache unit.

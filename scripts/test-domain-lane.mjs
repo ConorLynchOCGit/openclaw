@@ -2,6 +2,18 @@
 
 import { runNodeStep } from "./root-gate-runtime.mjs";
 
+const MODEL_MEMORY_NODE_TESTS = [
+  ["--import", "tsx", "--test", "scripts/model-memory-bootstrap-projection.test.ts"],
+];
+
+const MODEL_MEMORY_PUSH_TARGETS = [
+  "extensions/model-memory",
+  "src/agents/model-memory*.test.ts",
+  "src/plugins/model-memory-tool-surface.test.ts",
+  "src/gateway/*memory*.test.ts",
+  "src/gateway/server.sessions-send.test.ts",
+];
+
 const DOMAIN_LANES = {
   "gateway-memory": {
     description: "Gateway/session memory capture and live-runtime seams",
@@ -19,14 +31,14 @@ const DOMAIN_LANES = {
   },
   "model-memory": {
     description: "Model Memory extension plus agent/tool integration coverage",
-    nodeTests: [["--import", "tsx", "--test", "scripts/model-memory-bootstrap-projection.test.ts"]],
-    testProjectTargets: [
-      "extensions/model-memory",
-      "src/agents/model-memory*.test.ts",
-      "src/plugins/model-memory-tool-surface.test.ts",
-      "src/gateway/*memory*.test.ts",
-      "src/gateway/server.sessions-send.test.ts",
-    ],
+    nodeTests: MODEL_MEMORY_NODE_TESTS,
+    testProjectTargets: MODEL_MEMORY_PUSH_TARGETS,
+  },
+  "model-memory-push": {
+    description:
+      "De-duplicated Model Memory push coverage across extension, gateway/session memory, retrieval, proof, graph, and capsule tests",
+    nodeTests: MODEL_MEMORY_NODE_TESTS,
+    testProjectTargets: MODEL_MEMORY_PUSH_TARGETS,
   },
   retrieval: {
     description: "Model Memory retrieval, context, proof, capsule, and graph lanes",

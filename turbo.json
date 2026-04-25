@@ -184,6 +184,102 @@
       "cache": true,
       "outputs": []
     },
+    "test:domain:gateway-memory": {
+      "cache": true,
+      "outputs": [],
+      "inputs": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "tsconfig*.json",
+        "scripts/root-gate-runtime.mjs",
+        "scripts/test-domain-lane.mjs",
+        "scripts/test-projects.mjs",
+        "scripts/test-projects.test-support.mjs",
+        "extensions/model-memory/**",
+        "src/agents/model-memory*.test.ts",
+        "src/agents/model-memory/**",
+        "src/agents/tools/chat-history-text.ts",
+        "src/gateway/**",
+        "src/gateway/*memory*.test.ts",
+        "src/gateway/server.sessions-send.test.ts",
+        "test/vitest/**"
+      ]
+    },
+    "test:domain:model-memory": {
+      "cache": true,
+      "outputs": [],
+      "inputs": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "tsconfig*.json",
+        "scripts/root-gate-runtime.mjs",
+        "scripts/test-domain-lane.mjs",
+        "scripts/test-projects.mjs",
+        "scripts/test-projects.test-support.mjs",
+        "scripts/model-memory-bootstrap-projection.test.ts",
+        "extensions/model-memory/**",
+        "src/agents/model-memory*.test.ts",
+        "src/agents/model-memory/**",
+        "src/agents/tools/chat-history-text.ts",
+        "src/plugins/model-memory-tool-surface.test.ts",
+        "src/plugins/runtime/**",
+        "src/plugin-sdk/model-memory.ts",
+        "src/gateway/**",
+        "src/gateway/*memory*.test.ts",
+        "src/gateway/server.sessions-send.test.ts",
+        "test/vitest/**"
+      ]
+    },
+    "test:domain:model-memory:push": {
+      "cache": true,
+      "outputs": [],
+      "inputs": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "tsconfig*.json",
+        "scripts/root-gate-runtime.mjs",
+        "scripts/test-domain-lane.mjs",
+        "scripts/test-projects.mjs",
+        "scripts/test-projects.test-support.mjs",
+        "scripts/model-memory-bootstrap-projection.test.ts",
+        "extensions/model-memory/**",
+        "src/agents/model-memory*.test.ts",
+        "src/agents/model-memory/**",
+        "src/agents/tools/chat-history-text.ts",
+        "src/plugins/model-memory-tool-surface.test.ts",
+        "src/plugins/runtime/**",
+        "src/plugin-sdk/model-memory.ts",
+        "src/gateway/**",
+        "src/gateway/*memory*.test.ts",
+        "src/gateway/server.sessions-send.test.ts",
+        "test/vitest/**"
+      ]
+    },
+    "test:domain:retrieval": {
+      "cache": true,
+      "outputs": [],
+      "inputs": [
+        "package.json",
+        "pnpm-lock.yaml",
+        "tsconfig*.json",
+        "scripts/root-gate-runtime.mjs",
+        "scripts/test-domain-lane.mjs",
+        "scripts/test-projects.mjs",
+        "scripts/test-projects.test-support.mjs",
+        "extensions/model-memory/**",
+        "extensions/model-memory/src/retrieval*.test.ts",
+        "extensions/model-memory/src/real-retrieval-request-interpreter.test.ts",
+        "extensions/model-memory/src/retrieval-request-interpreter.test.ts",
+        "extensions/model-memory/src/runtime/retrieval/**",
+        "extensions/model-memory/src/runtime/context/**",
+        "extensions/model-memory/src/runtime-read-models.test.ts",
+        "extensions/model-memory/src/runtime-graph.test.ts",
+        "extensions/model-memory/src/project-state-capsule.test.ts",
+        "extensions/model-memory/src/derived-artifact.test.ts",
+        "extensions/model-memory/src/proof/**",
+        "test/vitest/**"
+      ]
+    },
     "test:root:agentic": {
       "cache": true,
       "outputs": []
