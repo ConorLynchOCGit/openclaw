@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildProjectionBootstrapContextFiles } from "../src/agents/model-memory.live-runtime.ts";
 
-void test("projection bootstrap context injects the latest memory-md artifact by canonical artifact path", () => {
+void test("projection bootstrap context injects current bootstrap artifacts by canonical artifact path", () => {
   const contextFiles = buildProjectionBootstrapContextFiles({
     projectionVersions: [
       {
@@ -49,6 +49,10 @@ void test("projection bootstrap context injects the latest memory-md artifact by
     {
       path: ".openclaw/model-memory/projections/memory-md-hash-new.md",
       content: "# MEMORY.md\n\n## Standing Context\n- stable rule",
+    },
+    {
+      path: ".openclaw/model-memory/projections/user-md-hash-user.md",
+      content: "# USER.md\n\n- preference",
     },
   ]);
 });

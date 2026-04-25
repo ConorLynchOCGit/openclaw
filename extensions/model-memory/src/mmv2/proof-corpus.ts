@@ -1791,9 +1791,9 @@ export const MMV2_DOCUMENT_PROOF_CASES: MmV2DocumentProofCase[] = [
         {
           candidateId: "candidate-formatting-directive-001",
           kind: "directive",
+          normalizedStatement: "Use numbered steps when giving instructions.",
           payloadSubset: {
-            action: "use numbered steps",
-            trigger: "instructional_response",
+            strength: "soft_default",
           },
         },
       ]),

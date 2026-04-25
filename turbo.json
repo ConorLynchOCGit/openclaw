@@ -18,7 +18,7 @@
     "build:root:all": {
       "cache": false,
       "outputs": [],
-      "dependsOn": ["build:root:postbuild"]
+      "dependsOn": ["build:root:write-cli-compat"]
     },
     "build:root:build-stamp": {
       "cache": false,

@@ -13,7 +13,12 @@ describe("model-memory plugin registration", () => {
       registerTool,
     });
 
-    expect(registerTool).toHaveBeenCalledOnce();
+    expect(registerTool).toHaveBeenCalledTimes(3);
+    expect(registerTool.mock.calls.map((call) => call[1].names[0])).toEqual([
+      "model_memory_document_ingest",
+      "model_memory_search",
+      "model_memory_get",
+    ]);
     expect(registerTool.mock.calls[0]?.[1]).toMatchObject({
       names: [
         "model_memory_document_ingest",

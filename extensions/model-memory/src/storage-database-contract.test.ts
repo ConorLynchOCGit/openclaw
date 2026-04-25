@@ -7,6 +7,7 @@ describe("storage-database-contract", () => {
       "sources",
       "sourceWindows",
       "memoryObjects",
+      "memorySupportItems",
       "writeEvents",
       "supersessionLinks",
     ]);
