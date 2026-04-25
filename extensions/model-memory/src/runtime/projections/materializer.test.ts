@@ -170,6 +170,46 @@ describe("projection artifact materializer", () => {
     ).rejects.toThrow("inactive source memory ids");
   });
 
+  it("rejects unsafe projection artifact paths through the shared derived-artifact guard", async () => {
+    const active = memory({ id: "memory-active", slotKey: "slot-active" });
+    const compiled = compileProjection({
+      targetId: "memory-md",
+      memoryObjects: [active],
+      slots: [
+        {
+          slotKey: "slot-active",
+          canonicalClass: "project",
+          kind: "fact",
+          scopeKey: "project-001",
+          subjectKey: "projection materialization",
+          currentObjectId: "memory-active",
+          currentIdentityKey: "memory-active",
+          updatedAt: new Date(0),
+        },
+      ],
+      sets: [],
+      builtAt: new Date(0),
+    });
+
+    await expect(
+      materializeProjectionArtifacts({
+        workspaceRoot: tempDir,
+        entries: [
+          {
+            targetId: compiled.target.targetId,
+            renderedText: compiled.renderedText,
+            version: {
+              ...compiled.version,
+              canonicalArtifactPath: "../MEMORY.md",
+            },
+            digest: compiled.digest,
+          },
+        ],
+        activeMemoryIds: buildActiveProjectionSourceIdSet([active]),
+      }),
+    ).rejects.toThrow("unsafe derived artifact path");
+  });
+
   it("materializes the full rich projection catalog without root write-back", async () => {
     const activeProject = memory({
       id: "memory-project",

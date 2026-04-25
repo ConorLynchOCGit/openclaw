@@ -1,7 +1,19 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { buildDeterministicUuid } from "./deterministic-uuid.ts";
-import { sha256JsonValue } from "./hashing.ts";
+import {
+  aggregateDerivedSourceMetadata,
+  buildDerivedArtifactId,
+  buildDerivedConflictMarkers,
+  buildDerivedFreshness,
+  cloneJsonLike,
+  dedupeDerivedSourceRefs,
+  deriveLifecycleExclusion,
+  getDerivedArtifactRolePolicy,
+  hashDerivedArtifactValue,
+  uniqueSortedDefined,
+  uniqueSortedStrings,
+  writeBoundedDerivedJsonArtifact,
+  type DerivedArtifactRole,
+  type JsonLike,
+} from "./derived-artifact.ts";
 import type {
   RuntimeGraphBuildResult,
   RuntimeGraphEdge,
@@ -12,6 +24,12 @@ import type {
 import type { SourceAuthorityTier, SourceProfileId } from "./source-authority.ts";
 
 export const PROJECT_STATE_CAPSULE_SCHEMA_VERSION = "project_state_capsule.v1" as const;
+export const PROJECT_STATE_CAPSULE_DERIVED_ROLES: DerivedArtifactRole[] = [
+  ...getDerivedArtifactRolePolicy({
+    family: "capsule",
+    artifactType: "project_state",
+  }).roles,
+];
 
 export type ProjectStateCapsuleType = "project_state";
 
@@ -125,7 +143,11 @@ const SECTION_TITLES: Record<ProjectStateCapsuleSectionType, string> = {
 };
 
 function stableId(namespace: string, value: unknown): string {
-  return buildDeterministicUuid(namespace, JSON.stringify(value));
+  return buildDerivedArtifactId({
+    family: "capsule",
+    artifactType: namespace,
+    seed: value,
+  });
 }
 
 function readString(value: unknown): string | undefined {
@@ -137,26 +159,11 @@ function readProjectId(scope: Record<string, unknown>): string | undefined {
 }
 
 function projectScopeKey(projectId: string): string {
-  return sha256JsonValue({ capsuleType: "project_state", projectId });
-}
-
-function uniqueSorted<T extends string>(values: Array<T | undefined>): T[] {
-  return [...new Set(values.filter((value): value is T => Boolean(value)))].toSorted();
+  return hashDerivedArtifactValue({ capsuleType: "project_state", projectId });
 }
 
 function dedupeSourceRefs(sourceRefs: RuntimeGraphSourceRef[]): RuntimeGraphSourceRef[] {
-  const byKey = new Map<string, RuntimeGraphSourceRef>();
-  for (const sourceRef of sourceRefs) {
-    const key = sha256JsonValue(sourceRef);
-    if (!byKey.has(key)) {
-      byKey.set(key, { ...sourceRef });
-    }
-  }
-  return [...byKey.values()].toSorted((left, right) =>
-    `${left.sourceId}:${left.segmentId ?? ""}`.localeCompare(
-      `${right.sourceId}:${right.segmentId ?? ""}`,
-    ),
-  );
+  return dedupeDerivedSourceRefs(sourceRefs);
 }
 
 function sourceRefsForMemories(memories: RuntimeGraphMemoryInput[]): RuntimeGraphSourceRef[] {
@@ -183,12 +190,14 @@ function authorityLabel(
   return "unknown";
 }
 
-function isStale(memory: RuntimeGraphMemoryInput, now: Date): boolean {
-  if (memory.status === "stale") {
-    return true;
-  }
-  const invalidAt = memory.validity.invalid_at;
-  return typeof invalidAt === "string" && Date.parse(invalidAt) <= now.getTime();
+function capsuleFreshness(input: {
+  staleMarkers?: string[];
+  reasonWhenStale?: string;
+}): ProjectStateCapsuleFreshness {
+  const freshness = buildDerivedFreshness(input);
+  return freshness.reason
+    ? { status: freshness.status, reason: freshness.reason }
+    : { status: freshness.status };
 }
 
 function readPayloadType(memory: RuntimeGraphMemoryInput): string | undefined {
@@ -293,7 +302,7 @@ function buildItem(input: {
   };
   return {
     ...itemWithoutHash,
-    derivationHash: sha256JsonValue(itemWithoutHash),
+    derivationHash: hashDerivedArtifactValue(itemWithoutHash),
   };
 }
 
@@ -302,34 +311,35 @@ function buildSection(
   sectionType: ProjectStateCapsuleSectionType,
   items: ProjectStateCapsuleItem[],
 ): ProjectStateCapsuleSection {
-  const sourceMemoryIds = uniqueSorted(items.flatMap((item) => item.sourceMemoryIds));
-  const sourceRefs = sourceRefsForItems(items);
+  const sourceMetadata = aggregateDerivedSourceMetadata(items);
   const sectionWithoutHash = {
     sectionId: stableId("project-state-capsule-section", { projectId, sectionType }),
     sectionType,
     title: SECTION_TITLES[sectionType],
     items,
-    sourceMemoryIds,
-    sourceRefs,
-    authorityTiers: uniqueSorted(items.map((item) => item.authorityTier)),
-    sourceProfileIds: uniqueSorted(items.map((item) => item.sourceProfileId)),
-    graphNodeIds: uniqueSorted(items.flatMap((item) => item.graphNodeIds)),
-    graphEdgeIds: uniqueSorted(items.flatMap((item) => item.graphEdgeIds)),
-    freshness: {
-      status: items.some((item) => item.freshness.status === "stale") ? "stale" : "fresh",
-    } satisfies ProjectStateCapsuleFreshness,
-    conflictMarkers: uniqueSorted(items.flatMap((item) => item.conflictMarkers)),
+    sourceMemoryIds: sourceMetadata.sourceMemoryIds,
+    sourceRefs: sourceRefsForItems(items),
+    authorityTiers: sourceMetadata.authorityTiers,
+    sourceProfileIds: sourceMetadata.sourceProfileIds,
+    graphNodeIds: uniqueSortedStrings(items.flatMap((item) => item.graphNodeIds)),
+    graphEdgeIds: uniqueSortedStrings(items.flatMap((item) => item.graphEdgeIds)),
+    freshness: capsuleFreshness({
+      staleMarkers: items
+        .filter((item) => item.freshness.status === "stale")
+        .map((item) => item.itemId),
+    }),
+    conflictMarkers: buildDerivedConflictMarkers(items.flatMap((item) => item.conflictMarkers)),
   };
   return {
     ...sectionWithoutHash,
-    derivationHash: sha256JsonValue(sectionWithoutHash),
+    derivationHash: hashDerivedArtifactValue(sectionWithoutHash),
   };
 }
 
 function capsuleContentHash(
   capsule: Omit<ProjectStateCapsule, "contentHash" | "compiledAt">,
 ): string {
-  return sha256JsonValue(capsule);
+  return hashDerivedArtifactValue(capsule);
 }
 
 export function compileProjectStateCapsule(input: {
@@ -352,22 +362,24 @@ export function compileProjectStateCapsule(input: {
       excludedMemoryIds.push({ memoryId: memory.memoryId, reason: "project_scope_mismatch" });
       continue;
     }
-    if (memory.sourceAuthorityTier === "inspection_only") {
-      excludedMemoryIds.push({ memoryId: memory.memoryId, reason: "inspection_only" });
-      continue;
-    }
-    if (isStale(memory, now)) {
-      excludedMemoryIds.push({ memoryId: memory.memoryId, reason: "stale" });
-      staleMarkers.push(memory.memoryId);
-      continue;
-    }
+    const exclusionReason = deriveLifecycleExclusion({
+      status: memory.status,
+      invalidAt: memory.validity.invalid_at,
+      authorityTier: memory.sourceAuthorityTier,
+      now,
+    });
     if (
-      memory.status === "inactive" ||
-      memory.status === "superseded" ||
-      memory.status === "deleted" ||
-      memory.status === "quarantined"
+      exclusionReason === "inspection_only" ||
+      exclusionReason === "stale" ||
+      exclusionReason === "inactive" ||
+      exclusionReason === "superseded" ||
+      exclusionReason === "deleted" ||
+      exclusionReason === "quarantined"
     ) {
-      excludedMemoryIds.push({ memoryId: memory.memoryId, reason: memory.status });
+      excludedMemoryIds.push({ memoryId: memory.memoryId, reason: exclusionReason });
+      if (exclusionReason === "stale") {
+        staleMarkers.push(memory.memoryId);
+      }
       continue;
     }
 
@@ -384,28 +396,28 @@ export function compileProjectStateCapsule(input: {
   const sections = SECTION_ORDER.map((sectionType) =>
     buildSection(input.projectId, sectionType, itemsBySection.get(sectionType) ?? []),
   );
-  const sourceMemoryIds = uniqueSorted(sections.flatMap((section) => section.sourceMemoryIds));
+  const sourceMemoryIds = uniqueSortedStrings(
+    sections.flatMap((section) => section.sourceMemoryIds),
+  );
   const sourceRefs = sourceRefsForMemories(
     input.memories.filter((memory) => sourceMemoryIds.includes(memory.memoryId)),
   );
-  const conflictMarkers = uniqueSorted([
+  const conflictMarkers = buildDerivedConflictMarkers([
     ...sections.flatMap((section) => section.conflictMarkers),
     ...staleMarkers.map((memoryId) => `stale:${memoryId}`),
   ]);
+  const sourceMetadata = aggregateDerivedSourceMetadata(sections);
   const digest = {
     sourceMemoryIds,
     sourceRefs,
-    authorityTiers: uniqueSorted(sections.flatMap((section) => section.authorityTiers)),
-    sourceProfileIds: uniqueSorted(sections.flatMap((section) => section.sourceProfileIds)),
-    graphNodeIds: uniqueSorted(sections.flatMap((section) => section.graphNodeIds)),
-    graphEdgeIds: uniqueSorted(sections.flatMap((section) => section.graphEdgeIds)),
-    freshness:
-      staleMarkers.length > 0
-        ? ({
-            status: "stale",
-            reason: "one or more project-scoped source memories were stale",
-          } satisfies ProjectStateCapsuleFreshness)
-        : ({ status: "fresh" } satisfies ProjectStateCapsuleFreshness),
+    authorityTiers: uniqueSortedDefined(sourceMetadata.authorityTiers),
+    sourceProfileIds: uniqueSortedDefined(sourceMetadata.sourceProfileIds),
+    graphNodeIds: uniqueSortedStrings(sections.flatMap((section) => section.graphNodeIds)),
+    graphEdgeIds: uniqueSortedStrings(sections.flatMap((section) => section.graphEdgeIds)),
+    freshness: capsuleFreshness({
+      staleMarkers,
+      reasonWhenStale: "one or more project-scoped source memories were stale",
+    }),
     conflictMarkers,
     graphInputHash: input.graph?.inputHash,
     graphOutputHash: input.graph?.outputHash,
@@ -429,53 +441,8 @@ export function compileProjectStateCapsule(input: {
   };
 }
 
-function cloneSourceRef(sourceRef: RuntimeGraphSourceRef): RuntimeGraphSourceRef {
-  return { ...sourceRef };
-}
-
-function cloneCapsuleItem(item: ProjectStateCapsuleItem): ProjectStateCapsuleItem {
-  return {
-    ...item,
-    sourceMemoryIds: [...item.sourceMemoryIds],
-    sourceRefs: item.sourceRefs.map(cloneSourceRef),
-    graphNodeIds: [...item.graphNodeIds],
-    graphEdgeIds: [...item.graphEdgeIds],
-    freshness: { ...item.freshness },
-    conflictMarkers: [...item.conflictMarkers],
-  };
-}
-
-function cloneCapsuleSection(section: ProjectStateCapsuleSection): ProjectStateCapsuleSection {
-  return {
-    ...section,
-    items: section.items.map(cloneCapsuleItem),
-    sourceMemoryIds: [...section.sourceMemoryIds],
-    sourceRefs: section.sourceRefs.map(cloneSourceRef),
-    authorityTiers: [...section.authorityTiers],
-    sourceProfileIds: [...section.sourceProfileIds],
-    graphNodeIds: [...section.graphNodeIds],
-    graphEdgeIds: [...section.graphEdgeIds],
-    freshness: { ...section.freshness },
-    conflictMarkers: [...section.conflictMarkers],
-  };
-}
-
 function cloneCapsule(capsule: ProjectStateCapsule): ProjectStateCapsule {
-  return {
-    ...capsule,
-    sections: capsule.sections.map(cloneCapsuleSection),
-    digest: {
-      ...capsule.digest,
-      sourceMemoryIds: [...capsule.digest.sourceMemoryIds],
-      sourceRefs: capsule.digest.sourceRefs.map(cloneSourceRef),
-      authorityTiers: [...capsule.digest.authorityTiers],
-      sourceProfileIds: [...capsule.digest.sourceProfileIds],
-      graphNodeIds: [...capsule.digest.graphNodeIds],
-      graphEdgeIds: [...capsule.digest.graphEdgeIds],
-      freshness: { ...capsule.digest.freshness },
-      conflictMarkers: [...capsule.digest.conflictMarkers],
-    },
-  };
+  return cloneJsonLike(capsule as unknown as JsonLike) as unknown as ProjectStateCapsule;
 }
 
 export function createProjectStateCapsuleReader(capsules: ProjectStateCapsule[]) {
@@ -496,22 +463,17 @@ export function createProjectStateCapsuleReader(capsules: ProjectStateCapsule[])
   };
 }
 
-function sanitizeReportFileId(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]+/gu, "-").replace(/^-+|-+$/gu, "") || "project-state";
-}
-
 export async function writeProjectStateCapsuleArtifact(input: {
   capsule: ProjectStateCapsule;
   artifactDir: string;
   artifactId?: string;
 }): Promise<{ path: string; contentHash: string }> {
-  await fs.mkdir(input.artifactDir, { recursive: true });
-  const artifactId = sanitizeReportFileId(input.artifactId ?? input.capsule.projectId);
-  const artifactPath = path.join(input.artifactDir, `${artifactId}.project-state-capsule.json`);
-  const serialized = `${JSON.stringify(input.capsule, null, 2)}\n`;
-  await fs.writeFile(artifactPath, serialized, "utf8");
-  return {
-    path: artifactPath,
-    contentHash: sha256JsonValue(serialized),
-  };
+  const written = await writeBoundedDerivedJsonArtifact({
+    artifactDir: input.artifactDir,
+    artifactId: input.artifactId ?? input.capsule.projectId,
+    suffix: "project-state-capsule",
+    value: input.capsule,
+    fallbackFileId: "project-state",
+  });
+  return { path: written.path, contentHash: written.contentHash };
 }

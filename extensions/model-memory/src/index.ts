@@ -2,6 +2,7 @@ export * from "./benchmark/benchmark-runner.ts";
 export * from "./calibration-report.ts";
 export * from "./context-engine.ts";
 export * from "./daily-continuity-recovery.ts";
+export * from "./derived-artifact.ts";
 export * from "./deterministic-uuid.ts";
 export * from "./imports/hash-gated-import.ts";
 export * from "./legacy-fallback-registry.ts";

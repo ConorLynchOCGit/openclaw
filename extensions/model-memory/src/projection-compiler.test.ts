@@ -224,7 +224,10 @@ describe("projection compiler", () => {
     ).toEqual(["memory-decision", "memory-proc", "memory-project"]);
     expect(
       pages.find((page) => page.digest.projectionType === "project_page")?.renderedText,
-    ).toContain("## Active Project State");
+    ).toContain("## Operator Project Read Model");
+    expect(
+      pages.find((page) => page.digest.projectionType === "project_page")?.renderedText,
+    ).toContain("generation_context_authority: thin_renderer_only");
     expect(
       pages.find((page) => page.digest.projectionType === "procedure_page")?.renderedText,
     ).toContain("## Operational Runbooks And Checklists");

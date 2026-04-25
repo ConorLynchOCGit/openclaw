@@ -1,5 +1,10 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  deriveLifecycleExclusion,
+  normalizeDerivedArtifactRelativePath,
+  uniqueSortedStrings,
+} from "../../derived-artifact.ts";
 import type { ProjectionDigestArtifact } from "../../projection-compiler.ts";
 import type {
   RuntimeMemoryRecord,
@@ -47,12 +52,10 @@ export type ProjectionMaterializerInput = {
 
 function isActiveProjectionSource(memory: RuntimeMemoryRecord): boolean {
   return (
-    memory.lifecycleState !== "superseded" &&
-    memory.lifecycleState !== "expired" &&
-    memory.lifecycleState !== "provisional" &&
-    memory.lifecycleState !== "conflict_hold" &&
-    !memory.supersededAt &&
-    !memory.expiredAt
+    !deriveLifecycleExclusion({
+      lifecycleState: memory.lifecycleState,
+      invalidAt: memory.expiredAt?.toISOString(),
+    }) && !memory.supersededAt
   );
 }
 
@@ -63,15 +66,11 @@ export function buildActiveProjectionSourceIdSet(
 }
 
 function normalizeRelativeArtifactPath(relativePath: string): string {
-  const normalized = relativePath.replaceAll("\\", "/").replace(/^\/+/u, "");
-  if (
-    normalized.includes("..") ||
-    !normalized.startsWith(".openclaw/model-memory/projections/") ||
-    !normalized.endsWith(".md")
-  ) {
-    throw new Error(`unsafe projection artifact path: ${relativePath}`);
-  }
-  return normalized;
+  return normalizeDerivedArtifactRelativePath({
+    relativePath,
+    allowedPrefixes: [".openclaw/model-memory/projections/"],
+    allowedExtensions: [".md"],
+  });
 }
 
 function activeValidationStatus(sourceMemoryIds: string[]): "valid" | "empty" {
@@ -82,9 +81,7 @@ function assertActiveSourceMemoryIds(params: {
   entry: ProjectionMaterializerEntry;
   activeMemoryIds: Set<string>;
 }): string[] {
-  const sourceMemoryIds = [...params.entry.version.sourceObjectIds].toSorted((left, right) =>
-    left.localeCompare(right),
-  );
+  const sourceMemoryIds = uniqueSortedStrings([...params.entry.version.sourceObjectIds]);
   const inactive = sourceMemoryIds.filter((id) => !params.activeMemoryIds.has(id));
   if (inactive.length > 0) {
     throw new Error(

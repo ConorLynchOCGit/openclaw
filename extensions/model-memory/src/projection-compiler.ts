@@ -1,3 +1,12 @@
+import {
+  buildDerivedConflictMarkers,
+  buildDerivedFreshness,
+  buildDerivedStaleMarkers,
+  deriveLifecycleExclusion,
+  getDerivedArtifactRolePolicy,
+  hashDerivedArtifactValue,
+  uniqueSortedStrings,
+} from "./derived-artifact.ts";
 import { summarizeModelMemoryPayload } from "./payload-summary.ts";
 import type {
   ActiveMemorySetRecord,
@@ -8,10 +17,7 @@ import type {
   WorkspaceProjectionTargetRecord,
   WorkspaceProjectionVersionRecord,
 } from "./runtime-read-models.ts";
-import {
-  hashRuntimeValue,
-  projectLegacyRecordToRuntimeMemoryRecord,
-} from "./runtime-read-models.ts";
+import { projectLegacyRecordToRuntimeMemoryRecord } from "./runtime-read-models.ts";
 import { upsertGeneratedZone } from "./runtime/projections/file-writer.ts";
 import {
   PROJECTION_REGISTRY,
@@ -154,67 +160,63 @@ function collectStringFields(value: unknown, keys: string[]): string[] {
 }
 
 function collectSourceEventIds(memoryObjects: RuntimeMemoryRecord[]): string[] {
-  return [
-    ...new Set(
-      memoryObjects.flatMap((object) =>
-        (object.provenance ?? []).flatMap((span) =>
-          collectStringFields(span, [
-            "eventId",
-            "memoryEventId",
-            "sourceEventId",
-            "source_event_id",
-            "sourceIngestEventId",
-            "source_ingest_event_id",
-          ]),
-        ),
+  return uniqueSortedStrings(
+    memoryObjects.flatMap((object) =>
+      (object.provenance ?? []).flatMap((span) =>
+        collectStringFields(span, [
+          "eventId",
+          "memoryEventId",
+          "sourceEventId",
+          "source_event_id",
+          "sourceIngestEventId",
+          "source_ingest_event_id",
+        ]),
       ),
     ),
-  ].toSorted((left, right) => left.localeCompare(right));
+  );
 }
 
 function collectSourceEdgeIds(memoryObjects: RuntimeMemoryRecord[]): string[] {
-  return [
-    ...new Set(
-      memoryObjects.flatMap((object) =>
-        (object.provenance ?? []).flatMap((span) =>
-          collectStringFields(span, ["edgeId", "memoryEdgeId", "sourceEdgeId", "edge_id"]),
-        ),
+  return uniqueSortedStrings(
+    memoryObjects.flatMap((object) =>
+      (object.provenance ?? []).flatMap((span) =>
+        collectStringFields(span, ["edgeId", "memoryEdgeId", "sourceEdgeId", "edge_id"]),
       ),
     ),
-  ].toSorted((left, right) => left.localeCompare(right));
+  );
 }
 
 function isActiveProjectionSource(object: RuntimeMemoryRecord): boolean {
   return (
-    object.lifecycleState !== "superseded" &&
-    object.lifecycleState !== "expired" &&
-    object.lifecycleState !== "provisional" &&
-    object.lifecycleState !== "conflict_hold" &&
-    !object.supersededAt &&
-    !object.expiredAt
+    !deriveLifecycleExclusion({
+      lifecycleState: object.lifecycleState,
+      invalidAt: object.expiredAt?.toISOString(),
+    }) && !object.supersededAt
   );
 }
 
 function buildStaleMarkers(memoryObjects: RuntimeMemoryRecord[]): string[] {
-  const markers = new Set<string>();
+  const markers: string[] = [];
   if (memoryObjects.length === 0) {
-    markers.add("no_source_memory_ids");
+    markers.push("no_source_memory_ids");
   }
   if (
     memoryObjects.some((object) => object.lifecycleState === "superseded" || object.supersededAt)
   ) {
-    markers.add("superseded_source_memory");
+    markers.push("superseded_source_memory");
   }
   if (memoryObjects.some((object) => object.lifecycleState === "expired" || object.expiredAt)) {
-    markers.add("deleted_source_memory");
+    markers.push("deleted_source_memory");
   }
-  return [...markers].toSorted((left, right) => left.localeCompare(right));
+  return buildDerivedStaleMarkers(markers);
 }
 
 function buildConflictMarkers(memoryObjects: RuntimeMemoryRecord[]): string[] {
-  return memoryObjects.some((object) => object.lifecycleState === "conflict_hold")
-    ? ["conflicted_source_memory"]
-    : [];
+  return buildDerivedConflictMarkers(
+    memoryObjects.some((object) => object.lifecycleState === "conflict_hold")
+      ? ["conflicted_source_memory"]
+      : [],
+  );
 }
 
 function summarizeProjectionSources(
@@ -372,6 +374,10 @@ function renderRichProjectionBody(input: {
   activeSourceObjects: RuntimeMemoryRecord[];
 }): string {
   const { registryEntry, activeSourceObjects } = input;
+  const rolePolicy = getDerivedArtifactRolePolicy({
+    family: "projection",
+    artifactType: registryEntry.projectionType,
+  });
   const decisions = activeSourceObjects.filter((object) => searchText(object).includes("decision"));
   const blockers = activeSourceObjects.filter((object) =>
     /\b(blocker|blocked|blocking|failed|failure|timeout|pending|stale)\b/u.test(searchText(object)),
@@ -387,17 +393,16 @@ function renderRichProjectionBody(input: {
   switch (registryEntry.projectionType) {
     case "project_page":
       return [
-        "## Active Project State",
+        "## Operator Project Read Model",
+        "",
+        "This projection is an operator/report read model. Rich project-state generation/context compilation belongs to the project_state capsule.",
         "",
         renderMemoryBullets(activeSourceObjects, { max: 10, includeSource: true }),
         "",
-        "## Blockers",
+        "## Derived Artifact Role",
         "",
-        renderMemoryBullets(blockers, { max: 8, includeSource: true }),
-        "",
-        "## Recent Decisions",
-        "",
-        renderMemoryBullets(decisions, { max: 8, includeSource: true }),
+        `- generation_context_authority: ${rolePolicy.generationContextAuthority}`,
+        `- roles: ${rolePolicy.roles.join(", ")}`,
       ].join("\n");
     case "procedure_page":
       return [
@@ -551,12 +556,10 @@ function buildProjectionDigestArtifact(input: {
   const activeSourceObjects = input.sourceObjects.filter(isActiveProjectionSource);
   const staleMarkers = buildStaleMarkers(input.sourceObjects);
   const conflictMarkers = buildConflictMarkers(input.sourceObjects);
-  const sourceMemoryIds = activeSourceObjects
-    .map((object) => object.id)
-    .toSorted((left, right) => left.localeCompare(right));
+  const sourceMemoryIds = uniqueSortedStrings(activeSourceObjects.map((object) => object.id));
   const sourceEventIds = collectSourceEventIds(activeSourceObjects);
   const sourceEdgeIds = collectSourceEdgeIds(activeSourceObjects);
-  const contentHash = hashRuntimeValue(
+  const contentHash = hashDerivedArtifactValue(
     JSON.stringify(
       {
         projectionType: input.projectionType,
@@ -591,7 +594,7 @@ function buildProjectionDigestArtifact(input: {
     contentHash,
     compiledAt: input.builtAt.toISOString(),
     freshness: {
-      status: staleMarkers.length > 0 ? "stale" : "fresh",
+      ...buildDerivedFreshness({ staleMarkers }),
       reason: staleMarkers.length > 0 ? staleMarkers.join(",") : null,
     },
     staleMarkers,
@@ -632,10 +635,10 @@ export function compileProjection(input: ProjectionCompilerInput): ProjectionCom
   const filteredSlots = filterSlotsForTarget(input.slots, memoryObjects, target);
   const filteredSets = filterSetsForTarget(input.sets, memoryObjects, target);
   const renderedText = renderTarget(target, memoryObjects, filteredSlots, filteredSets);
-  const sourceObjectIds = [
+  const sourceObjectIds = uniqueSortedStrings([
     ...filteredSlots.map((slot) => slot.currentObjectId),
     ...filteredSets.map((entry) => entry.memoryObjectId),
-  ];
+  ]);
   const sourceObjects = sourceObjectIds
     .map((id) => memoryObjects.find((object) => object.id === id))
     .filter((object): object is RuntimeMemoryRecord => !!object);
@@ -798,7 +801,7 @@ export function compileProjectionCatalogDigests(input: {
         entry.projectionType,
       )}`,
       sourceObjects,
-      artifactPath: `${entry.artifactPathPrefix}/digest-${hashRuntimeValue(entry.projectionType).slice(0, 12)}.json`,
+      artifactPath: `${entry.artifactPathPrefix}/digest-${hashDerivedArtifactValue(entry.projectionType).slice(0, 12)}.json`,
       builtAt,
     });
   });

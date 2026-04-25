@@ -1,3 +1,4 @@
+import type { DerivedArtifactRole } from "../../derived-artifact.ts";
 import type { MemoryProjectionType } from "../../runtime-read-models.ts";
 
 export type ProjectionArtifactKind = "markdown_page" | "json_digest" | "jsonl_index" | "dashboard";
@@ -33,6 +34,8 @@ export type ProjectionRegistryEntry = {
   conflictRule: string;
   retrievalRole: ProjectionRetrievalRole;
   runtimeUseCase: string;
+  derivedArtifactRoles?: DerivedArtifactRole[];
+  generationContextAuthority?: "none" | "thin_renderer_only";
   selectionHints: string[];
   sourceRequirements: {
     requireActiveMemoryIds: boolean;
@@ -82,7 +85,10 @@ export const PROJECTION_REGISTRY: readonly ProjectionRegistryEntry[] = [
     conflictRule:
       "project conflicts are summarized in conflict markers and omitted from compiled truth",
     retrievalRole: "project_state",
-    runtimeUseCase: "gives concise active project state, blockers, and recent decisions",
+    runtimeUseCase:
+      "provides operator/report project-state read-model visibility; rich generation/context compilation belongs to project_state capsules",
+    derivedArtifactRoles: ["read_model", "operator_report", "workspace_bootstrap"],
+    generationContextAuthority: "thin_renderer_only",
     selectionHints: ["project", "blocker", "decision", "current state"],
     sourceRequirements: {
       requireActiveMemoryIds: true,

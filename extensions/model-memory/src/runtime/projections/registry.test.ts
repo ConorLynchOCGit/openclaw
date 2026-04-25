@@ -35,7 +35,8 @@ describe("projection registry", () => {
       expect.objectContaining({
         projectionType: "project_page",
         retrievalRole: "project_state",
-        runtimeUseCase: "gives concise active project state, blockers, and recent decisions",
+        derivedArtifactRoles: ["read_model", "operator_report", "workspace_bootstrap"],
+        generationContextAuthority: "thin_renderer_only",
       }),
     );
   });
