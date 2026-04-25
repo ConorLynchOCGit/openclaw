@@ -4,3 +4,4 @@ export * from "./candidate-recall.ts";
 export * from "./pack-assembler.ts";
 export * from "./project-state-capsules.ts";
 export * from "./hierarchical-retrieval.ts";
+export * from "./phase2-production-gates.ts";
