@@ -2528,3 +2528,26 @@ Reasoning:
 - preserving no-dark-data, source authority, freshness, conflict, and
   inspection-only checks at config resolution prevents invalid rollout settings
   from reaching retrieval/context assembly
+
+## 2026-04-25 - controlled Phase 2 config requires live UI proof before default promotion
+
+Decision:
+
+- controlled Phase 2 retrieval configuration must be proven through a
+  Tailscale-safe UI/operator proof before any default live promotion
+- the proof may enable controlled config only in an explicit bounded eval path
+- the proof must validate rollout config resolution, production gate decisions,
+  read-only graph reads, `project_state` capsule retrieval, gated capsule
+  context, default-off behavior, and no-dark-data status
+- planner/proactivity remains deferred until controlled retrieval/context
+  behavior has a separate green promotion decision
+
+Reasoning:
+
+- unit and proof harness coverage is necessary but not enough to prove the live
+  operator path
+- default promotion should be based on an operator-visible proof artifact, not
+  on a code-level capability switch
+- keeping the controlled config proof separate from default promotion preserves
+  rollback clarity and prevents graph/capsule context from silently becoming
+  production behavior

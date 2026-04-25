@@ -280,6 +280,8 @@ Validation gate:
 - production rollout config resolves to disabled or shadow-only by default, and
   controlled production modes are rejected unless Slice 8, Slice 9, and UI
   proof prerequisites pass
+- controlled production configuration is validated through a Tailscale-safe
+  UI/operator proof before any default promotion is considered
 - no planner/proactive surfacing starts until the comprehensive eval/no-dark-data
   proof is green
 
