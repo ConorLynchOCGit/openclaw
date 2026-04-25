@@ -241,6 +241,8 @@ Validation gate:
 Goal:
 
 - make graph and capsule outputs useful to the active context engine
+- prove the retrieval/capture surfaces together before planner or proactive
+  behavior depends on them
 
 Includes:
 
@@ -248,12 +250,31 @@ Includes:
 - capsule-aware retrieval packaging
 - context engine selection changes
 - projection updates needed to expose capsule or graph signal
+- a retrieval integration/proof harness that can invoke object retrieval,
+  projection digests, capsule shadow, gated capsule context, and hierarchical
+  shadow in one structured trace without promoting defaults
+- a comprehensive Phase 2 integration eval and no-dark-data proof slice before
+  planner surfacing, covering structured capture/retrieval prompts and
+  non-user-prompt ingestion sources:
+  - curated docs, repo docs, and manual notes
+  - tool-result capture
+  - researcher report artifacts
+  - cited assistant answers
+  - daily continuity
+  - raw prompt, transcript, and tool-log rejection or `inspection_only`
+  - secret and private phrase hard reject
 
 Validation gate:
 
 - retrieval traces show graph/capsule-aware evidence when appropriate
 - context traces show improved grounding without unstable prompt churn
 - repeated retrievals stay cache-stable
+- the integration proof harness emits one structured runtime trace spanning
+  object, projection, capsule, and hierarchical lanes
+- comprehensive eval proves source profile id, authority tier, provenance,
+  lifecycle exclusion, and no-dark-data behavior across capture and retrieval
+- no planner/proactive surfacing starts until the comprehensive eval/no-dark-data
+  proof is green
 
 ### Wave 4: planner surfacing
 
@@ -342,6 +363,8 @@ Hard dependencies:
 - Wave 1 before Wave 2
 - Wave 2 before Wave 3
 - Wave 3 before Wave 4
+- Wave 3 integration/proof harness before the comprehensive Phase 2 eval slice
+- comprehensive Phase 2 eval/no-dark-data proof before Wave 4 planner surfacing
 - Wave 4 before Wave 5
 - Wave 3 before Wave 6
 - Waves 1 through 6 before Wave 7 enforcement

@@ -5,6 +5,32 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-25 - Comprehensive Phase 2 eval gates planner and proactive behavior
+
+Decision:
+
+- insert a retrieval integration/proof harness slice after the hierarchical
+  retrieval substrate and before the comprehensive eval slice
+- the integration harness should exercise object retrieval, projection digests,
+  capsule shadow, gated capsule context, and hierarchical shadow in one
+  structured runtime trace without promoting default behavior
+- insert a comprehensive Phase 2 integration eval and no-dark-data proof slice
+  before planner/proactivity
+- the comprehensive eval must include structured capture/retrieval prompts and
+  non-user-prompt ingestion sources: curated docs, repo docs, manual notes,
+  tool-result capture, researcher report artifacts, cited assistant answers,
+  daily continuity, raw prompt/transcript/tool-log rejection or
+  `inspection_only`, and secret/private phrase hard reject
+
+Reasoning:
+
+- testing isolated substrates again is lower value until a single proof path can
+  invoke the built retrieval, projection, capsule, context, and hierarchical
+  surfaces together
+- planner and proactive behavior should not depend on Phase 2 memory outputs
+  until authority propagation, provenance, lifecycle exclusion, and no-dark-data
+  behavior are proven across capture and retrieval
+
 ## 2026-04-25 - Projections and capsules share derived-artifact mechanics but keep separate roles
 
 Decision:

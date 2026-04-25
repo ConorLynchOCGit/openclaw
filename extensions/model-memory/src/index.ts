@@ -51,6 +51,7 @@ export * from "./runtime/context/retrieval-packs.ts";
 export * from "./runtime/context/trim-policy.ts";
 export * from "./runtime/packs.ts";
 export * from "./runtime/retrieval/index.ts";
+export * from "./runtime/retrieval/phase2-integration-proof.ts";
 export * from "./runtime/projections/file-writer.ts";
 export * from "./runtime/projections/materializer.ts";
 export * from "./runtime/projections/render-agents-md.ts";
