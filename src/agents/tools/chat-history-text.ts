@@ -12,6 +12,21 @@ export function stripToolMessages(messages: unknown[]): unknown[] {
   });
 }
 
+function isOperationalAssistantMessage(message: unknown): boolean {
+  if (!message || typeof message !== "object") {
+    return false;
+  }
+  if ((message as { role?: unknown }).role !== "assistant") {
+    return false;
+  }
+  const openclaw = (message as { __openclaw?: unknown }).__openclaw;
+  if (!openclaw || typeof openclaw !== "object") {
+    return false;
+  }
+  const kind = (openclaw as { kind?: unknown }).kind;
+  return kind === "turn_activity" || kind === "model_memory_activity";
+}
+
 /**
  * Sanitize text content to strip tool call markers and thinking tags.
  * This ensures user-facing text doesn't leak internal tool representations.
@@ -43,6 +58,9 @@ export function extractAssistantText(message: unknown): string | undefined {
     return undefined;
   }
   if ((message as { role?: unknown }).role !== "assistant") {
+    return undefined;
+  }
+  if (isOperationalAssistantMessage(message)) {
     return undefined;
   }
   const joined =

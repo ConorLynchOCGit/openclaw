@@ -33,6 +33,7 @@ keep the final landing bar coherent.
 6. [Spec Index](/projects/turborepo/specs)
 7. [Root Gate Decomposition Audit](/projects/turborepo/root-gate-decomposition-audit)
 8. [Vitest Optimization Audit 2026-04](/projects/turborepo/vitest-optimization-audit-2026-04)
+9. [Validation Pipeline](/projects/turborepo/validation-pipeline)
 
 ## Scope
 

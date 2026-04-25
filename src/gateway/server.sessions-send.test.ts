@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, type Mock } from "vitest";
-import { resolveSessionTranscriptPath } from "../config/sessions.js";
+import { appendExactAssistantMessageToSessionTranscript } from "../config/sessions/transcript.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import { captureEnv } from "../test-utils/env.js";
 import {
@@ -44,14 +44,13 @@ async function emitLifecycleAssistantReply(params: {
   resolveText: (extraSystemPrompt?: string) => string;
 }) {
   const commandParams = params.opts as {
+    sessionKey?: string;
     sessionId?: string;
     runId?: string;
     extraSystemPrompt?: string;
   };
-  const sessionId = commandParams.sessionId ?? params.defaultSessionId;
-  const runId = commandParams.runId ?? sessionId;
-  const sessionFile = resolveSessionTranscriptPath(sessionId);
-  await fs.mkdir(path.dirname(sessionFile), { recursive: true });
+  const sessionKey = commandParams.sessionKey ?? params.defaultSessionId;
+  const runId = commandParams.runId ?? commandParams.sessionId ?? sessionKey;
 
   const startedAt = Date.now();
   emitAgentEvent({
@@ -62,11 +61,35 @@ async function emitLifecycleAssistantReply(params: {
 
   const text = params.resolveText(commandParams.extraSystemPrompt);
   const message = {
-    role: "assistant",
-    content: [{ type: "text", text }],
-    ...(params.includeTimestamp ? { timestamp: Date.now() } : {}),
+    role: "assistant" as const,
+    content: [{ type: "text" as const, text }],
+    api: "openai-responses" as const,
+    provider: "openclaw",
+    model: "test-agent",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0,
+      },
+    },
+    stopReason: "stop" as const,
+    timestamp: Date.now(),
   };
-  await fs.appendFile(sessionFile, `${JSON.stringify({ message })}\n`, "utf8");
+  const appended = await appendExactAssistantMessageToSessionTranscript({
+    sessionKey,
+    message,
+  });
+  if (!appended.ok) {
+    throw new Error(`failed to append assistant reply: ${appended.reason}`);
+  }
 
   emitAgentEvent({
     runId,

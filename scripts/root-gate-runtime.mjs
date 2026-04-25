@@ -8,18 +8,40 @@ function resolveExitCode(result) {
   return 1;
 }
 
+function formatDurationMs(durationMs) {
+  if (durationMs < 1000) {
+    return `${durationMs}ms`;
+  }
+  return `${(durationMs / 1000).toFixed(1)}s`;
+}
+
+function formatStepLabel(kind, args) {
+  return `${kind} ${args.join(" ")}`;
+}
+
+function logStepFinished(label, startedAt) {
+  const durationMs = Date.now() - startedAt;
+  console.error(`[root-gate] ${label} completed in ${formatDurationMs(durationMs)}`);
+}
+
 export function runNodeStep(args, options = {}) {
+  const label = formatStepLabel("node", args);
+  const startedAt = Date.now();
   const result = spawnSync(process.execPath, args, {
     stdio: "inherit",
     env: options.env ?? process.env,
   });
   const exitCode = resolveExitCode(result);
   if (exitCode !== 0) {
+    console.error(`[root-gate] ${label} failed after ${formatDurationMs(Date.now() - startedAt)}`);
     process.exit(exitCode);
   }
+  logStepFinished(label, startedAt);
 }
 
 export function runPnpmStep(pnpmArgs, options = {}) {
+  const label = formatStepLabel("pnpm", pnpmArgs);
+  const startedAt = Date.now();
   const runner = resolvePnpmRunner({
     pnpmArgs,
     nodeExecPath: process.execPath,
@@ -35,6 +57,8 @@ export function runPnpmStep(pnpmArgs, options = {}) {
   });
   const exitCode = resolveExitCode(result);
   if (exitCode !== 0) {
+    console.error(`[root-gate] ${label} failed after ${formatDurationMs(Date.now() - startedAt)}`);
     process.exit(exitCode);
   }
+  logStepFinished(label, startedAt);
 }

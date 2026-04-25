@@ -35,7 +35,7 @@ vi.mock("./webhook-handler.js", () => ({
   createWebhookHandler: vi.fn(() => vi.fn()),
 }));
 
-const freshChannelModulePath = "./channel.js?channel-test";
+const freshChannelModulePath = "./channel.ts?channel-test";
 const { createSynologyChatPlugin } = await import(freshChannelModulePath);
 const { synologyChatPlugin } = await import("./channel.js");
 const getSynologyChatSetupStatus = createPluginSetupWizardStatus(synologyChatPlugin);

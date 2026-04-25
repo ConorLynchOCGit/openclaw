@@ -1,5 +1,14 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": [
+    "OPENCLAW_TEST_INCLUDE_SLOW_CONFIGS",
+    "OPENCLAW_TEST_MAX_OLD_SPACE_SIZE_MB",
+    "OPENCLAW_TEST_PROJECTS_SKIP_CONFIGS",
+    "OPENCLAW_TEST_WORKERS",
+    "OPENCLAW_VITEST_MAX_OLD_SPACE_SIZE_MB",
+    "OPENCLAW_VITEST_MAX_WORKERS",
+    "OPENCLAW_VITEST_NO_OUTPUT_TIMEOUT_MS"
+  ],
   "globalDependencies": ["package.json", "pnpm-lock.yaml", "turbo.json"],
   "tasks": {
     "build": {
@@ -96,6 +105,14 @@
       "cache": true,
       "outputs": []
     },
+    "check:base-config-schema": {
+      "cache": true,
+      "outputs": []
+    },
+    "check:bundled-channel-config-metadata": {
+      "cache": true,
+      "outputs": []
+    },
     "tool-display:check": {
       "cache": true,
       "outputs": []
@@ -114,11 +131,18 @@
     },
     "tsgo": {
       "cache": true,
+      "dependsOn": ["check:root:prepare-extension-package-boundary-artifacts"],
       "outputs": []
     },
     "check:root:prepare-extension-package-boundary-artifacts": {
       "cache": true,
-      "outputs": []
+      "outputs": [
+        "dist/plugin-sdk/.boundary-entry-shims.stamp",
+        "dist/plugin-sdk/.tsbuildinfo",
+        "dist/plugin-sdk/src/plugin-sdk/*.d.ts",
+        "packages/plugin-sdk/dist/.tsbuildinfo",
+        "packages/plugin-sdk/dist/src/plugin-sdk/*.d.ts"
+      ]
     },
     "lint": {
       "cache": true,
@@ -142,6 +166,8 @@
       "dependsOn": [
         "check:no-conflict-markers",
         "check:topology",
+        "check:base-config-schema",
+        "check:bundled-channel-config-metadata",
         "tool-display:check",
         "check:host-env-policy:swift",
         "check:import-cycles",
@@ -210,6 +236,112 @@
       "cache": true,
       "outputs": []
     },
+    "test:root:extensions:acpx": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:all": {
+      "cache": false,
+      "outputs": [],
+      "dependsOn": [
+        "test:root:extensions:acpx",
+        "test:root:extensions:bluebubbles",
+        "test:root:extensions:channels",
+        "test:root:extensions:diffs",
+        "test:root:extensions:feishu",
+        "test:root:extensions:irc",
+        "test:root:extensions:mattermost",
+        "test:root:extensions:matrix",
+        "test:root:extensions:memory",
+        "test:root:extensions:messaging",
+        "test:root:extensions:msteams",
+        "test:root:extensions:providers",
+        "test:root:extensions:telegram",
+        "test:root:extensions:voice-call",
+        "test:root:extensions:whatsapp",
+        "test:root:extensions:zalo",
+        "test:root:extensions:browser",
+        "test:root:extensions:qa",
+        "test:root:extensions:media",
+        "test:root:extensions:misc"
+      ]
+    },
+    "test:root:extensions:bluebubbles": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:browser": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:channels": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:diffs": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:feishu": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:irc": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:mattermost": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:matrix": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:media": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:memory": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:messaging": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:misc": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:msteams": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:providers": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:qa": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:telegram": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:voice-call": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:whatsapp": {
+      "cache": true,
+      "outputs": []
+    },
+    "test:root:extensions:zalo": {
+      "cache": true,
+      "outputs": []
+    },
     "test:root:all": {
       "cache": false,
       "outputs": [],
@@ -226,7 +358,7 @@
         "test:root:core-runtime",
         "test:root:agentic",
         "test:root:auto-reply",
-        "test:root:extensions"
+        "test:root:extensions:all"
       ]
     }
   }

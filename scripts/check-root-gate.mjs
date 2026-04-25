@@ -9,6 +9,5 @@ if (isFast) {
   process.exit(0);
 }
 
-runPnpmStep(["check:preflight"]);
 runPnpmStep(["check:global"]);
 runPnpmStep(["turbo:check"]);
