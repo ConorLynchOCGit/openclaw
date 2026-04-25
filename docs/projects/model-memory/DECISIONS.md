@@ -2551,3 +2551,28 @@ Reasoning:
 - keeping the controlled config proof separate from default promotion preserves
   rollback clarity and prevents graph/capsule context from silently becoming
   production behavior
+
+## 2026-04-25 - controlled production go-live requires scoped approval artifact
+
+Decision:
+
+- Phase 2 controlled production go-live requires an explicit validation report
+  that reviews Slice 8, Slice 9, UI runtime coverage, and Slice 13 controlled
+  config proof artifacts
+- the first go-live approval may be scoped to live/operator sessions and
+  projects, with capability-level approvals instead of broad default promotion
+- graph reads, `project_state` capsule retrieval, and gated capsule context may
+  be approved for the bounded scope when proof artifacts and live regression are
+  clean
+- hierarchical retrieval remains shadow-only until a separate controlled
+  promotion proof approves it
+- broad default promotion remains a separate decision after scoped production
+  behavior has been observed
+
+Reasoning:
+
+- Slice 13 proved the controlled config path, but go-live needs a durable
+  control-plane decision that binds proof artifacts to a rollout scope
+- capability-level approval keeps rollback and partial approval explicit
+- separating scoped production from broad default promotion prevents accidental
+  context injection outside the intended operator/eval surface

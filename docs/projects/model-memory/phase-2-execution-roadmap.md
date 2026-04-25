@@ -282,6 +282,10 @@ Validation gate:
   proof prerequisites pass
 - controlled production configuration is validated through a Tailscale-safe
   UI/operator proof before any default promotion is considered
+- controlled production go-live requires a scoped validation report that
+  selects approved proof artifacts, records capability-level rollout decisions,
+  runs a production-like UI/operator regression, and states whether the result
+  is `approved_for_scope`, `partial_approval`, or `blocked`
 - no planner/proactive surfacing starts until the comprehensive eval/no-dark-data
   proof is green
 
