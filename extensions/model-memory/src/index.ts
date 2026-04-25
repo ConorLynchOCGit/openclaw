@@ -38,6 +38,7 @@ export * from "./retrieval-store.ts";
 export * from "./retrieval.ts";
 export * from "./runtime-read-models.ts";
 export * from "./runtime-rebuild-orchestrator.ts";
+export * from "./runtime-graph.ts";
 export * from "./runtime/active-memory-sets.ts";
 export * from "./runtime/active-memory-slots.ts";
 export * from "./runtime/context-artifacts.ts";
