@@ -10,6 +10,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { evaluateEntryRequirementsForCurrentPlatform } from "../shared/entry-status.js";
 import type { RequirementConfigCheck, Requirements } from "../shared/requirements.js";
 import { CONFIG_DIR } from "../utils.js";
+import { resolveSkillTrustTierFromOrigin, type SkillTrustTier } from "./skills-vetting.js";
 import {
   hasBinary,
   isBundledSkillAllowed,
@@ -28,7 +29,6 @@ import {
 import { resolveBundledSkillsContext } from "./skills/bundled-context.js";
 import { getSkillsSnapshotVersion, shouldRefreshSnapshotForVersion } from "./skills/refresh.js";
 import { resolveSkillSource } from "./skills/source.js";
-import { resolveSkillTrustTierFromOrigin, type SkillTrustTier } from "./skills-vetting.js";
 
 export type SkillStatusConfigCheck = RequirementConfigCheck;
 
@@ -218,10 +218,7 @@ function normalizeInstallOptions(
   return [toOption(preferred.spec, preferred.index)];
 }
 
-type RawSkillStatusEntry = Omit<
-  SkillStatusEntry,
-  "loadedInCurrentSession" | "newSessionRequired" | "availabilityState" | "availabilityReason"
->;
+type RawSkillStatusEntry = Omit<SkillStatusEntry, "loadedInCurrentSession" | "newSessionRequired">;
 
 function formatMissingRequirementSummary(missing: Requirements): string {
   const parts: string[] = [];
@@ -394,8 +391,6 @@ function buildSkillStatus(
     activatable,
     eligible: activatable,
     modelVisible,
-    loadedInCurrentSession: null,
-    newSessionRequired: null,
     availabilityState: activatable ? "activatable" : "needs_setup",
     availabilityReason:
       trustGate.trustReason ??

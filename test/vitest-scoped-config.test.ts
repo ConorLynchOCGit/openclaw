@@ -386,6 +386,13 @@ describe("scoped vitest configs", () => {
     expect(defaultExtensionMessagingConfig.test?.include).toEqual(
       expect.arrayContaining(["googlechat/**/*.test.ts"]),
     );
+    expect(defaultExtensionMessagingConfig.test?.include).not.toEqual(
+      expect.arrayContaining([
+        "bluebubbles/**/*.test.ts",
+        "mattermost/**/*.test.ts",
+        "voice-call/**/*.test.ts",
+      ]),
+    );
   });
 
   it("normalizes matrix extension include patterns relative to the scoped dir", () => {

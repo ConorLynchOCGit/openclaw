@@ -722,7 +722,7 @@ export function getDiscordModelPickerModelPage(params: {
     DISCORD_MODEL_PICKER_MODEL_PAGE_SIZE,
     DISCORD_MODEL_PICKER_MODEL_PAGE_SIZE,
   );
-  const models = [...modelSet].toSorted();
+  const models = [...modelSet].toSorted((left, right) => left.localeCompare(right));
   const page = paginateItems({
     items: models,
     page: normalizePage(params.page),

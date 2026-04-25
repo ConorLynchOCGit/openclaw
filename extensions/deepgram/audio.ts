@@ -57,7 +57,9 @@ export async function transcribeDeepgramAudio(
       if (value === undefined) {
         continue;
       }
-      url.searchParams.set(key, String(value));
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        url.searchParams.set(key, String(value));
+      }
     }
   }
 

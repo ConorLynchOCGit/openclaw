@@ -377,7 +377,7 @@ async function resolveInstallVersion(params: {
   baseUrl?: string;
   allowLegacyTrackedSlug?: boolean;
 }): Promise<{ detail: ClawHubSkillDetail; version: string; identity: ClawHubSkillCatalogRef }> {
-  const identity =
+  const identity: ClawHubSkillCatalogRef =
     params.allowLegacyTrackedSlug && params.slug
       ? {
           source: CLAWHUB_SOURCE,

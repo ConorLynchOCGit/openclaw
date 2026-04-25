@@ -125,7 +125,7 @@ function resolveClawHubCatalogRef(
       ? normalizeTrackedSlug(rawSlug)
       : validateRequestedSlug(rawSlug);
     return {
-      source: CLAWHUB_SOURCE as const,
+      source: CLAWHUB_SOURCE,
       catalogId: formatClawHubCatalogId(slug),
       slug,
     };
@@ -135,7 +135,7 @@ function resolveClawHubCatalogRef(
       ? normalizeTrackedSlug(params.slug)
       : validateRequestedSlug(params.slug);
     return {
-      source: CLAWHUB_SOURCE as const,
+      source: CLAWHUB_SOURCE,
       catalogId: formatClawHubCatalogId(slug),
       slug,
     };
@@ -341,9 +341,7 @@ export function resolveSkillTrustTierFromOrigin(params: {
   }
   const originPath = path.join(params.baseDir, ".clawhub", "origin.json");
   try {
-    const parsed = JSON.parse(
-      readFileSync(originPath, "utf8"),
-    ) as Partial<{
+    const parsed = JSON.parse(readFileSync(originPath, "utf8")) as Partial<{
       source: string;
       review: { gate?: string };
       integrity: string;
@@ -404,10 +402,13 @@ export async function vetClawHubSkill(params: {
 }): Promise<VetClawHubSkillResult> {
   try {
     await ensureWritableSkillOpsRoots(params.workspaceDir);
-    const identity = resolveClawHubCatalogRef({
-      slug: params.slug,
-      catalogId: params.catalogId,
-    }, { allowLegacyTrackedSlug: params.allowLegacyTrackedSlug });
+    const identity = resolveClawHubCatalogRef(
+      {
+        slug: params.slug,
+        catalogId: params.catalogId,
+      },
+      { allowLegacyTrackedSlug: params.allowLegacyTrackedSlug },
+    );
     const detail = await fetchClawHubSkillDetail({
       slug: identity.slug,
       baseUrl: params.baseUrl,
@@ -520,21 +521,23 @@ export async function resolveClawHubSkillStageForInstall(params: {
   baseUrl?: string;
   logger?: Logger;
   allowLegacyTrackedSlug?: boolean;
-}):
-  Promise<
-    | {
-        ok: true;
-        slug: string;
-        version: string;
-        manifest: ClawHubSkillStageManifest;
-      }
-    | { ok: false; error: string }
-  > {
+}): Promise<
+  | {
+      ok: true;
+      slug: string;
+      version: string;
+      manifest: ClawHubSkillStageManifest;
+    }
+  | { ok: false; error: string }
+> {
   try {
-    const identity = resolveClawHubCatalogRef({
-      slug: params.slug,
-      catalogId: params.catalogId,
-    }, { allowLegacyTrackedSlug: params.allowLegacyTrackedSlug });
+    const identity = resolveClawHubCatalogRef(
+      {
+        slug: params.slug,
+        catalogId: params.catalogId,
+      },
+      { allowLegacyTrackedSlug: params.allowLegacyTrackedSlug },
+    );
     const detail = await fetchClawHubSkillDetail({
       slug: identity.slug,
       baseUrl: params.baseUrl,

@@ -478,7 +478,7 @@ function listDiscordModelPickerProviderModels(
   if (!modelSet) {
     return [];
   }
-  return [...modelSet].toSorted();
+  return [...modelSet].toSorted((left, right) => left.localeCompare(right));
 }
 
 function resolveDiscordModelPickerModelIndex(params: {

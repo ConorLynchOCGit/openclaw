@@ -145,7 +145,9 @@ function buildButton(params: {
 }
 
 function getProviderModels(data: ModelsProviderData, provider: string): string[] {
-  return [...(data.byProvider.get(normalizeProviderId(provider)) ?? new Set<string>())].toSorted();
+  return [...(data.byProvider.get(normalizeProviderId(provider)) ?? new Set<string>())].toSorted(
+    (left, right) => left.localeCompare(right),
+  );
 }
 
 function formatCurrentModelLine(currentModel?: string): string {

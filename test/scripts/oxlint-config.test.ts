@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 
 type OxlintConfig = {
   ignorePatterns?: string[];
+  overrides?: Array<{
+    files?: string[];
+    rules?: Record<string, string>;
+  }>;
 };
 
 type OxlintTsconfig = {
@@ -57,5 +61,21 @@ describe("oxlint config", () => {
     expect(ignorePatterns).toContain("**/build/**");
     expect(ignorePatterns).toContain("**/coverage/**");
     expect(ignorePatterns).toContain("**/.cache/**");
+  });
+
+  it("limits the extension type-aware false-positive override to the bundled extensions tree", () => {
+    const config = readJson<OxlintConfig>(".oxlintrc.json");
+    const extensionOverride = (config.overrides ?? []).find((override) =>
+      (override.files ?? []).includes("extensions/**/*.ts"),
+    );
+
+    expect(extensionOverride).toBeDefined();
+    expect(extensionOverride?.files).toEqual(
+      expect.arrayContaining(["extensions/**/*.ts", "extensions/**/*.tsx"]),
+    );
+    expect(extensionOverride?.rules).toMatchObject({
+      "typescript/no-redundant-type-constituents": "off",
+      "typescript/no-unnecessary-type-assertion": "off",
+    });
   });
 });
