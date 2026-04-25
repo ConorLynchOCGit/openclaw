@@ -11,6 +11,7 @@ import {
   type SegmentedIngestEvent,
   type SegmentedIngestSegment,
 } from "./contracts.ts";
+import { parseExplicitMemoryCommand } from "./explicit-memory-command.ts";
 import {
   buildCaptureRoutingPrompt,
   buildPromptRawEventMetadata,
@@ -351,6 +352,10 @@ function isAssistantBehaviorInstructionSegment(segment: SegmentedIngestSegment):
   );
 }
 
+function isExplicitMemoryCommandSegment(segment: SegmentedIngestSegment): boolean {
+  return isSimpleProseShape(segment) && parseExplicitMemoryCommand(segment.text) !== null;
+}
+
 function isAbstractExplanatoryListItem(line: string): boolean {
   const item = stripListMarker(line);
   return /^(?:how|why|what|whether|when)\b/i.test(item) && !/[.!?]$/.test(item);
@@ -643,6 +648,20 @@ function classifyDeterministically(segment: SegmentedIngestSegment): CaptureRout
       compositeLikelihood: 0,
       reasonCodes: ["explicit_no_store", "privacy_opt_out", "ambiguous"],
       confidence: 0.98,
+      evidenceQuote: segment.text,
+    });
+  }
+
+  if (isExplicitMemoryCommandSegment(segment)) {
+    return buildDeterministicDecision({
+      segment,
+      route: "atomic_candidate",
+      candidateSummary: "Explicit user memory command.",
+      memoryLikelihood: 0.9,
+      durabilityLikelihood: 0.82,
+      compositeLikelihood: 0.04,
+      reasonCodes: ["durable_project_fact", "explicit_user_preference"],
+      confidence: 0.9,
       evidenceQuote: segment.text,
     });
   }

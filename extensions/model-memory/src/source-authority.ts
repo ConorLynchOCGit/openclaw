@@ -247,6 +247,15 @@ export type SoftSourceCandidate = {
   capturesAssistantProseAsAuthority?: boolean;
 };
 
+export type LiveTurnSourceAuthorityClassification = {
+  sourceProfileId: SourceProfileId;
+  authorityTier: SourceAuthorityTier;
+  metadata: SourceAuthorityMetadata;
+  sourceRefs: SoftSourceRef[];
+  decision: SoftSourceAdmissionDecision["decision"];
+  reasonCodes: string[];
+};
+
 export type SoftSourceAdmissionDecision =
   | {
       decision: "auto_admit";
@@ -357,6 +366,137 @@ export function attachSourceAuthorityMetadata(
     ...sourceMetadata,
     sourceAuthority: buildSourceAuthorityMetadata(sourceProfileId),
   };
+}
+
+function normalizeLiveTurnText(text: string): string {
+  return text.replace(/\s+/gu, " ").trim();
+}
+
+function sourceRefContentHash(value: string): string {
+  return sha256Text(normalizeLiveTurnText(value).toLowerCase());
+}
+
+function detectCitationRefs(text: string): SoftSourceRef[] {
+  const normalized = normalizeLiveTurnText(text);
+  const citationMatch = normalized.match(
+    /\b(?:citation|citations|source ref|source refs|source|sources)\s*:\s*([\s\S]+)$/iu,
+  );
+  const citationText = citationMatch?.[1]?.trim();
+  if (!citationText) {
+    return [];
+  }
+  const urls = [...citationText.matchAll(/https?:\/\/[^\s,;)]+/giu)].map((match) => match[0]);
+  const refs = urls.length > 0 ? urls : [citationText];
+  return refs.map((ref, index) => ({
+    sourceId: `live-soft-source-${sourceRefContentHash(ref).slice(0, 16)}-${index}`,
+    url: /^https?:\/\//iu.test(ref) ? ref : undefined,
+    contentHash: sourceRefContentHash(ref),
+  }));
+}
+
+function classifySoftSourceProfile(text: string): SourceProfileId | undefined {
+  const normalized = normalizeLiveTurnText(text).toLowerCase();
+  if (/\bresearcher\s+report(?:\s+artifact)?\b/u.test(normalized)) {
+    return "researcher_report_artifact";
+  }
+  if (/\bcited\s+assistant\s+answer\b/u.test(normalized)) {
+    return "cited_assistant_answer";
+  }
+  if (/\bcited\s+soft(?:\s+evidence|\s+source)?\b/u.test(normalized)) {
+    return "researcher_report_artifact";
+  }
+  return undefined;
+}
+
+function hasExplicitUserMemorySignal(text: string): boolean {
+  const normalized = normalizeLiveTurnText(text).toLowerCase();
+  return (
+    /\bplease\s+remember\b/u.test(normalized) ||
+    /\bremember\s+this\b/u.test(normalized) ||
+    /\bremember\s+that\b/u.test(normalized) ||
+    /\bstore\s+this\b/u.test(normalized) ||
+    /\bdurable\s+(?:workspace\s+)?(?:project\s+)?fact\b/u.test(normalized) ||
+    /\bdurable\s+correction\b/u.test(normalized) ||
+    /\bstanding\s+(?:instruction|preference|directive)\b/u.test(normalized)
+  );
+}
+
+function classifyInspectionOrRejectProfile(text: string): SourceProfileId | undefined {
+  const normalized = normalizeLiveTurnText(text).toLowerCase();
+  if (/\b(?:secret|private phrase|credential|api key|password)\b/u.test(normalized)) {
+    return "secret_or_private_phrase";
+  }
+  if (/\braw\s+tool\s+log\b/u.test(normalized)) {
+    return "raw_tool_log";
+  }
+  if (/\bfull\s+transcript|raw\s+transcript\b/u.test(normalized)) {
+    return "raw_transcript";
+  }
+  if (/\braw\s+prompt\b/u.test(normalized)) {
+    return "raw_prompt";
+  }
+  return undefined;
+}
+
+export function classifyLiveTurnSourceAuthority(
+  text: string,
+): LiveTurnSourceAuthorityClassification | null {
+  const inspectionProfileId = classifyInspectionOrRejectProfile(text);
+  if (inspectionProfileId) {
+    const metadata = buildSourceAuthorityMetadata(inspectionProfileId);
+    const decision =
+      metadata.riskPolicy === "hard_reject"
+        ? evaluateSoftSourceAdmission({
+            candidateId: `live-turn-${sourceRefContentHash(text).slice(0, 16)}`,
+            kind: "fact",
+            sourceProfileId: inspectionProfileId,
+            sourceRefs: [],
+            riskFlags: ["private_phrase"],
+          }).decision
+        : "inspection_only";
+    return {
+      sourceProfileId: inspectionProfileId,
+      authorityTier: metadata.authorityTier,
+      metadata,
+      sourceRefs: [],
+      decision,
+      reasonCodes: [decision === "reject" ? "hard_reject" : "inspection_only"],
+    };
+  }
+
+  const softProfileId = classifySoftSourceProfile(text);
+  if (softProfileId) {
+    const sourceRefs = detectCitationRefs(text);
+    const admission = evaluateSoftSourceAdmission({
+      candidateId: `live-turn-${sourceRefContentHash(text).slice(0, 16)}`,
+      kind: "fact",
+      sourceProfileId: softProfileId,
+      sourceRefs,
+      capturesAssistantProseAsAuthority: softProfileId === "cited_assistant_answer",
+    });
+    return {
+      sourceProfileId: softProfileId,
+      authorityTier: admission.authorityTier,
+      metadata: buildSourceAuthorityMetadata(softProfileId),
+      sourceRefs,
+      decision: admission.decision,
+      reasonCodes: admission.reasonCodes,
+    };
+  }
+
+  if (hasExplicitUserMemorySignal(text)) {
+    const metadata = buildSourceAuthorityMetadata("explicit_user_turn");
+    return {
+      sourceProfileId: "explicit_user_turn",
+      authorityTier: metadata.authorityTier,
+      metadata,
+      sourceRefs: [],
+      decision: "auto_admit",
+      reasonCodes: ["explicit_user_turn"],
+    };
+  }
+
+  return null;
 }
 
 function hasHardRejectFlag(riskFlags: SoftSourceRiskFlag[]): boolean {

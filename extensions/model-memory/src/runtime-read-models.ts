@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { buildDeterministicUuid } from "./deterministic-uuid.ts";
 import type { DurableMemoryRecord, MemoryEdge, MemoryEvent } from "./mmv2/contracts.ts";
 import type { ModelMemoryObject, MemoryScope, Provenance } from "./semantic-schema.ts";
+import {
+  SourceAuthorityMetadataSchema,
+  type SourceAuthorityTier,
+  type SourceProfileId,
+} from "./source-authority.ts";
 import type {
   ModelMemoryActivationBasis,
   ModelMemoryLifecycleState,
@@ -247,6 +252,8 @@ export type RuntimeMemoryRecord = {
   activatedAt?: Date;
   expiredAt?: Date;
   supersededAt?: Date;
+  sourceAuthorityTier?: SourceAuthorityTier;
+  sourceProfileId?: SourceProfileId;
 };
 
 export type RuntimeCompatibleMemoryRecord = RuntimeMemoryRecord | ModelMemoryObjectRecord;
@@ -623,12 +630,47 @@ function buildRuntimeObject(record: DurableMemoryRecord): RuntimeProjectedMemory
   };
 }
 
+function readRuntimeSourceAuthority(record: DurableMemoryRecord): {
+  sourceAuthorityTier?: SourceAuthorityTier;
+  sourceProfileId?: SourceProfileId;
+} {
+  const parsed = SourceAuthorityMetadataSchema.safeParse(
+    (record.payload as { sourceAuthority?: unknown }).sourceAuthority,
+  );
+  if (parsed.success) {
+    return {
+      sourceAuthorityTier: parsed.data.authorityTier,
+      sourceProfileId: parsed.data.sourceProfileId,
+    };
+  }
+  const payload = record.payload as { authorityTier?: unknown; sourceProfileId?: unknown };
+  if (typeof payload.authorityTier === "string" && typeof payload.sourceProfileId === "string") {
+    const fallback = SourceAuthorityMetadataSchema.safeParse({
+      sourceProfileId: payload.sourceProfileId,
+      authorityTier: payload.authorityTier,
+      allowedMemoryKinds: [],
+      rawContentRetentionMode: "hash_only",
+      riskPolicy: "normal",
+      retrievalPackEligibility: [],
+      authorityPromotionRule: "no_promotion",
+    });
+    if (fallback.success) {
+      return {
+        sourceAuthorityTier: fallback.data.authorityTier,
+        sourceProfileId: fallback.data.sourceProfileId,
+      };
+    }
+  }
+  return {};
+}
+
 export function buildRuntimeMemoryRecordFromDurable(
   record: DurableMemoryRecord,
 ): RuntimeMemoryRecord {
   const object = buildRuntimeObject(record);
   const identity = deriveRuntimeMemoryIdentity(object);
   const primarySourceRef = record.source_refs[0];
+  const sourceAuthority = readRuntimeSourceAuthority(record);
   return {
     id: record.memory_id,
     sourceWindowId: primarySourceRef?.segment_id ?? primarySourceRef?.source_id ?? undefined,
@@ -660,6 +702,8 @@ export function buildRuntimeMemoryRecordFromDurable(
     activatedAt: record.status === "active" ? new Date(record.updated_at) : undefined,
     expiredAt: record.status === "deleted" ? new Date(record.updated_at) : undefined,
     supersededAt: record.status === "superseded" ? new Date(record.updated_at) : undefined,
+    sourceAuthorityTier: sourceAuthority.sourceAuthorityTier,
+    sourceProfileId: sourceAuthority.sourceProfileId,
   };
 }
 
@@ -702,6 +746,8 @@ export function projectLegacyRecordToRuntimeMemoryRecord(
     activatedAt: record.activatedAt,
     expiredAt: record.expiredAt,
     supersededAt: record.supersededAt,
+    sourceAuthorityTier: "sourceAuthorityTier" in record ? record.sourceAuthorityTier : undefined,
+    sourceProfileId: "sourceProfileId" in record ? record.sourceProfileId : undefined,
   };
 }
 

@@ -138,8 +138,14 @@ describe("model-memory read tools", () => {
     const payload = result.details as {
       ok: boolean;
       results: Array<{ id: string; canonicalClass: string; kind: string }>;
-      projections: Array<{ projectionId: string }>;
-      metrics: { selectedProjectionIds?: string[]; emptyRetrievalReason?: string };
+      topResult?: { id: string };
+      projections: Array<{ projectionId: string; sourceMemoryIdCount: number }>;
+      metrics: {
+        selectedProjectionIds?: string[];
+        emptyRetrievalReason?: string;
+        selectedSourceMemoryIdCount?: number;
+        missDiagnosticCount?: number;
+      };
     };
 
     expect(payload.ok).toBe(true);
@@ -148,9 +154,16 @@ describe("model-memory read tools", () => {
       canonicalClass: "project",
       kind: "fact",
     });
-    expect(payload.projections[0]).toMatchObject({ projectionId: "projection-project" });
+    expect(payload.topResult).toMatchObject({ id: "memory-deployment" });
+    expect(payload.projections[0]).toMatchObject({
+      projectionId: "projection-project",
+      sourceMemoryIdCount: 1,
+    });
     expect(payload.metrics.selectedProjectionIds).toEqual(["projection-project"]);
+    expect(payload.metrics.selectedSourceMemoryIdCount).toBe(1);
     expect(payload.metrics.emptyRetrievalReason).toBe("none");
+    expect(JSON.stringify(payload)).not.toContain("missDiagnostics");
+    expect(JSON.stringify(payload)).not.toContain("selectedSourceMemoryIds");
     expect(poolEnd).toHaveBeenCalledOnce();
   });
 
@@ -219,7 +232,7 @@ describe("model-memory read tools", () => {
     expect(payload.lineage?.relatedEvents).toEqual([
       {
         id: "event-001",
-        eventType: "memory_created",
+        eventType: "memory_inserted",
         occurredAt: "2026-04-23T00:00:01.000Z",
         candidateId: "candidate-001",
         memoryId: "memory-deployment",
@@ -229,7 +242,7 @@ describe("model-memory read tools", () => {
     expect(payload.lineage?.relatedEdges).toEqual([
       {
         id: "edge-001",
-        edgeType: "related_to",
+        edgeType: "references",
         fromMemoryId: "memory-deployment",
         toMemoryId: "memory-parent",
         createdAt: "2026-04-23T00:00:02.000Z",

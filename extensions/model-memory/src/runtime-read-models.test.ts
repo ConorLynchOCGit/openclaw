@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DurableMemoryRecord, MemoryEdge, MemoryEvent } from "./mmv2/contracts.ts";
 import { getCurrentMemoryObjects, listRuntimeMemoryRecords } from "./runtime-read-models.ts";
+import { buildSourceAuthorityMetadata } from "./source-authority.ts";
 import type { ModelMemoryObjectRecord } from "./storage-database-contract.ts";
 
 function buildMemoryObjectRecord(
@@ -155,5 +156,23 @@ describe("runtime-read-models", () => {
         expect.objectContaining({ memoryEdgeId: "edge-001" }),
       ]),
     );
+  });
+
+  it("projects source authority metadata from durable payloads into runtime records", async () => {
+    const records = await listRuntimeMemoryRecords({
+      listDurableMemories: async () => [
+        buildDurableMemoryRecord({
+          payload: {
+            claim_type: "project_fact",
+            sourceAuthority: buildSourceAuthorityMetadata("researcher_report_artifact"),
+          },
+        }),
+      ],
+    });
+
+    expect(records[0]).toMatchObject({
+      sourceAuthorityTier: "cited_soft",
+      sourceProfileId: "researcher_report_artifact",
+    });
   });
 });

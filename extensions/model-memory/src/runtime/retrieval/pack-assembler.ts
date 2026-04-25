@@ -66,7 +66,7 @@ function itemFromMemory(object: RuntimeMemoryRecord): MemoryPackItem {
     ),
     scopeLabel: scopeLabel(object),
     confidence: object.confidence,
-    authority: object.activationBasis ?? object.contractName,
+    authority: object.sourceAuthorityTier ?? object.activationBasis ?? object.contractName,
     sourceLabel: provenanceLabel(object),
     evidenceIds: object.provenance
       ?.map((span) => {

@@ -11,6 +11,10 @@ import {
   adaptOrdinaryTurnSource,
   type OrdinaryTurnSourceInput,
 } from "../source-adapters/ordinary-turn-source-adapter.ts";
+import {
+  SourceAuthorityMetadataSchema,
+  type SourceAuthorityMetadata,
+} from "../source-authority.ts";
 import type {
   ModelMemorySourceKind,
   ModelMemorySourceRecord,
@@ -64,6 +68,13 @@ const GENERIC_FACT_SUBJECTS = new Set([
   "repository",
   "repo",
 ]);
+
+function readSourceAuthorityMetadata(
+  source: ModelMemorySourceRecord,
+): SourceAuthorityMetadata | undefined {
+  const parsed = SourceAuthorityMetadataSchema.safeParse(source.sourceMetadata.sourceAuthority);
+  return parsed.success ? parsed.data : undefined;
+}
 
 const TRIVIAL_FACT_PREDICATES = new Set([
   "is",
@@ -560,6 +571,7 @@ export async function ingestDocumentV2ForLiveStorage(
     canonicalBatch: run.canonicalization,
     admissionBatch: run.admission,
     reconciliationDecisions: run.reconciliation,
+    sourceAuthority: readSourceAuthorityMetadata(run.source),
   });
 
   return {
@@ -605,6 +617,7 @@ export async function captureOrdinaryTurnV2ForLiveStorage(input: {
     canonicalBatch: run.canonicalization,
     admissionBatch: run.admission,
     reconciliationDecisions: run.reconciliation,
+    sourceAuthority: readSourceAuthorityMetadata(run.source),
   });
 
   return {
@@ -657,6 +670,7 @@ export async function recoverDailyContinuityV2ForLiveStorage(input: {
     canonicalBatch: run.canonicalization,
     admissionBatch: run.admission,
     reconciliationDecisions: run.reconciliation,
+    sourceAuthority: readSourceAuthorityMetadata(run.source),
   });
 
   return {

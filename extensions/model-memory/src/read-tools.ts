@@ -33,29 +33,8 @@ const SearchSchema = Type.Object(
     query: Type.String({ minLength: 1 }),
     maxResults: Type.Optional(Type.Number({ minimum: 1, maximum: 20 })),
     requestPurpose: Type.Optional(Type.String({ minLength: 1 })),
-    canonicalClasses: Type.Optional(
-      Type.Array(
-        Type.Union([
-          Type.Literal("user"),
-          Type.Literal("feedback"),
-          Type.Literal("project"),
-          Type.Literal("reference"),
-        ]),
-        { minItems: 1, maxItems: 8 },
-      ),
-    ),
-    kinds: Type.Optional(
-      Type.Array(
-        Type.Union([
-          Type.Literal("preference"),
-          Type.Literal("fact"),
-          Type.Literal("rule"),
-          Type.Literal("procedure"),
-          Type.Literal("reference"),
-        ]),
-        { minItems: 1, maxItems: 8 },
-      ),
-    ),
+    canonicalClasses: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 8 })),
+    kinds: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 8 })),
     projectId: Type.Optional(Type.String({ minLength: 1 })),
     workspaceId: Type.Optional(Type.String({ minLength: 1 })),
     subjectType: Type.Optional(Type.String({ minLength: 1 })),
@@ -95,6 +74,9 @@ type GetParams = {
   includeLineage?: unknown;
 };
 
+const VALID_CANONICAL_CLASSES = new Set(["user", "feedback", "project", "reference"]);
+const VALID_MEMORY_KINDS = new Set(["preference", "fact", "rule", "procedure", "reference"]);
+
 type DurableAwareRepository = ModelMemoryRuntime["canonicalRepository"] & {
   getDurableMemory?: (memoryId: string) => Promise<DurableMemoryRecord | undefined>;
   listMemoryEvents?: () => Promise<MemoryEvent[]>;
@@ -126,6 +108,16 @@ function readStringArray(value: unknown): string[] | undefined {
   return normalized.length > 0 ? normalized : undefined;
 }
 
+function readAllowedStringArray<T extends string>(
+  value: unknown,
+  allowed: ReadonlySet<string>,
+): T[] | undefined {
+  const normalized = readStringArray(value)
+    ?.map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => allowed.has(entry)) as T[] | undefined;
+  return normalized && normalized.length > 0 ? [...new Set(normalized)] : undefined;
+}
+
 function boundText(value: string | undefined, maxLength = 240): string | undefined {
   if (!value) {
     return undefined;
@@ -154,6 +146,36 @@ function summarizeRuntimeRecord(record: RuntimeMemoryRecord) {
     scoreSurface: boundText(record.normalizedSearchText, 180),
     reasonCodes: record.rationaleCodes,
     sourceWindowId: record.sourceWindowId,
+    sourceProfileId: record.sourceProfileId,
+    authorityTier: record.sourceAuthorityTier,
+  };
+}
+
+function summarizeRetrievalMetrics(metrics: Record<string, unknown>) {
+  return {
+    emptyRetrieval: metrics.emptyRetrieval,
+    emptyRetrievalReason: metrics.emptyRetrievalReason,
+    candidateCount: metrics.candidateCount,
+    selectedCount: metrics.selectedCount,
+    injectedCount: metrics.injectedCount,
+    staleFilteredCount: metrics.staleFilteredCount,
+    supersededFilteredCount: metrics.supersededFilteredCount,
+    deletedFilteredCount: metrics.deletedFilteredCount,
+    conflictedFilteredCount: metrics.conflictedFilteredCount,
+    inactiveFilteredCount: metrics.inactiveFilteredCount,
+    hashInvalidProjectionFilteredCount: metrics.hashInvalidProjectionFilteredCount,
+    exclusionReasons: metrics.exclusionReasons,
+    selectedProjectionIds: Array.isArray(metrics.selectedProjectionIds)
+      ? metrics.selectedProjectionIds.slice(0, 8)
+      : undefined,
+    selectedSourceMemoryIdCount: Array.isArray(metrics.selectedSourceMemoryIds)
+      ? metrics.selectedSourceMemoryIds.length
+      : undefined,
+    excludedIdCount: Array.isArray(metrics.excludedIds) ? metrics.excludedIds.length : undefined,
+    missDiagnosticCount: Array.isArray(metrics.missDiagnostics)
+      ? metrics.missDiagnostics.length
+      : undefined,
+    rankingFeatures: metrics.rankingFeatures,
   };
 }
 
@@ -178,10 +200,13 @@ function buildStaticRequest(params: SearchParams): InterpretedRetrievalRequest {
     maxResults: readPositiveInteger(params.maxResults, 5),
   };
   const baseline = buildLexicalBaselineRetrievalRequest(envelope);
-  const canonicalClasses = readStringArray(params.canonicalClasses) as
-    | InterpretedRetrievalRequest["canonicalClasses"]
+  const canonicalClasses = readAllowedStringArray(
+    params.canonicalClasses,
+    VALID_CANONICAL_CLASSES,
+  ) as InterpretedRetrievalRequest["canonicalClasses"] | undefined;
+  const kinds = readAllowedStringArray(params.kinds, VALID_MEMORY_KINDS) as
+    | InterpretedRetrievalRequest["kinds"]
     | undefined;
-  const kinds = readStringArray(params.kinds) as InterpretedRetrievalRequest["kinds"] | undefined;
   return {
     ...baseline,
     canonicalClasses: canonicalClasses ?? baseline.canonicalClasses,
@@ -329,10 +354,13 @@ export function createModelMemorySearchTool(
                 : undefined;
             })
             .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+          const topResult = results[0];
 
           return jsonToolResult({
             ok: true,
             authority: "mmv2_runtime",
+            answerGuidance:
+              "Use results[0] as the strongest answer-facing memory evidence unless the user explicitly asks for broader comparison.",
             requested: {
               query,
               maxResults: envelope.maxResults,
@@ -341,6 +369,7 @@ export function createModelMemorySearchTool(
               canonicalClasses: request.canonicalClasses,
               kinds: request.kinds ?? [],
             },
+            topResult,
             results,
             projections: execution.selectedProjectionDigests.map((digest) => ({
               projectionId: digest.projectionId,
@@ -348,11 +377,13 @@ export function createModelMemorySearchTool(
               title: digest.title,
               summary: digest.summary,
               freshness: digest.freshness ?? { status: digest.stale ? "stale" : "fresh" },
-              sourceMemoryIds: digest.sourceMemoryIds,
-              sourceEventIds: digest.sourceEventIds,
+              sourceMemoryIdCount: digest.sourceMemoryIds.length,
+              sourceMemoryIds: digest.sourceMemoryIds.slice(0, 8),
+              sourceEventIdCount: digest.sourceEventIds.length,
+              sourceEventIds: digest.sourceEventIds.slice(0, 8),
               digestPath: digest.digestPath,
             })),
-            metrics,
+            metrics: summarizeRetrievalMetrics(metrics),
           });
         });
       } catch (error) {

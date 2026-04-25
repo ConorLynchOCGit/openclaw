@@ -157,9 +157,13 @@ function matchesRequestType(
 }
 
 function requestHints(request: InterpretedRetrievalRequest): string[] {
-  return [...(request.subjectHints ?? []), ...(request.contentHints ?? [])]
-    .map((hint) => normalizeRetrievalText(hint))
-    .filter((hint) => hint.length > 0);
+  return [
+    ...new Set(
+      [...(request.subjectHints ?? []), ...(request.contentHints ?? [])]
+        .map((hint) => normalizeRetrievalText(hint))
+        .filter((hint) => hint.length > 0),
+    ),
+  ];
 }
 
 function tokenSurface(value: string): string {
@@ -230,6 +234,53 @@ function recentMemoryScore(createdAt: Date): number {
   return 0;
 }
 
+function hasCurrentRecencyIntent(request: InterpretedRetrievalRequest): boolean {
+  const surface = requestSurface(request);
+  return /\b(?:latest|current|newest|recent|most recent|last|just|fresh|newly captured)\b/u.test(
+    surface,
+  );
+}
+
+function recencyIntentScore(createdAt: Date): number {
+  const ageMs = Date.now() - createdAt.getTime();
+  if (!Number.isFinite(ageMs) || ageMs < 0) {
+    return 0;
+  }
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+  if (ageMs <= 30 * minuteMs) {
+    return 260;
+  }
+  if (ageMs <= 2 * hourMs) {
+    return 220;
+  }
+  if (ageMs <= dayMs) {
+    return 130;
+  }
+  if (ageMs <= 7 * dayMs) {
+    return 40;
+  }
+  return 0;
+}
+
+function authorityTierScore(authorityTier: RuntimeMemoryRecord["sourceAuthorityTier"]): number {
+  switch (authorityTier) {
+    case "user_authoritative":
+      return 60;
+    case "curated_authoritative":
+      return 42;
+    case "tool_grounded":
+      return 22;
+    case "cited_soft":
+      return 10;
+    case "inspection_only":
+    case undefined:
+      return 0;
+  }
+  return 0;
+}
+
 export function scoreRuntimeMemoryCandidate(
   object: RuntimeMemoryRecord,
   request: InterpretedRetrievalRequest,
@@ -296,6 +347,12 @@ export function scoreRuntimeMemoryCandidate(
     reasonCodes.add("source_lineage_match");
   }
 
+  const authorityScore = authorityTierScore(object.sourceAuthorityTier);
+  if (authorityScore > 0) {
+    score += authorityScore;
+    reasonCodes.add(`authority_tier:${object.sourceAuthorityTier}`);
+  }
+
   if (isToolResultProofRequest(request) && isToolResultProofMemory(object)) {
     score += 90;
     reasonCodes.add("tool_result_proof_match");
@@ -314,6 +371,22 @@ export function scoreRuntimeMemoryCandidate(
   if (freshness > 0) {
     score += freshness;
     reasonCodes.add("recent_memory");
+  }
+
+  const matchedRequestEvidence =
+    scopeMatch === "exact" ||
+    scopeMatch === "partial" ||
+    subjectMatches.length > 0 ||
+    contentMatches.length > 0 ||
+    sourceEvidenceMatches.length > 0 ||
+    reasonCodes.has("tool_result_proof_match");
+  const currentIntentFreshness =
+    hasCurrentRecencyIntent(request) && matchedRequestEvidence
+      ? recencyIntentScore(object.createdAt)
+      : 0;
+  if (currentIntentFreshness > 0) {
+    score += currentIntentFreshness;
+    reasonCodes.add("recency_intent_boost");
   }
 
   if (score === 0 && request.canonicalClasses.length === 0 && !request.kinds?.length) {
@@ -606,16 +679,24 @@ export function recallCanonicalCandidates(input: {
           ? "lexical"
           : "fielded",
       status,
+      authority: object.sourceAuthorityTier,
     };
 
-    if (exclusionReason) {
+    const effectiveExclusionReason =
+      object.sourceAuthorityTier === "inspection_only" ? "sensitive" : exclusionReason;
+
+    if (effectiveExclusionReason) {
       exclusions.push({
         id: object.id,
         idType: "memory",
-        reason: exclusionReason,
+        reason: effectiveExclusionReason,
         sourceLane: candidate.source,
         status,
         scopeMatch: scored.scopeMatch,
+        detail:
+          object.sourceAuthorityTier === "inspection_only"
+            ? "inspection_only_source_excluded_from_normal_retrieval"
+            : undefined,
       });
       if (status === "conflicted" && scored.scopeMatch !== "mismatch") {
         conflictCandidates.push({
@@ -635,6 +716,11 @@ export function recallCanonicalCandidates(input: {
     .toSorted((left, right) => {
       if (right.score !== left.score) {
         return right.score - left.score;
+      }
+      const leftCreatedAt = left.memory?.createdAt.getTime() ?? 0;
+      const rightCreatedAt = right.memory?.createdAt.getTime() ?? 0;
+      if (rightCreatedAt !== leftCreatedAt) {
+        return rightCreatedAt - leftCreatedAt;
       }
       return (left.memoryId ?? left.candidateId).localeCompare(right.memoryId ?? right.candidateId);
     })

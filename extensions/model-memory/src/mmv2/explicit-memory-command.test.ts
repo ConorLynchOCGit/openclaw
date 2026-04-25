@@ -15,6 +15,36 @@ describe("mmv2/explicit-memory-command", () => {
     });
   });
 
+  it("parses general remember-this commands as explicit project facts", () => {
+    const command = parseExplicitMemoryCommand(
+      "For project model-memory, please remember this exact value: PHASE2-UI-GENERIC-VALUE-001",
+    );
+
+    expect(command).toMatchObject({
+      commandType: "project_fact",
+      statement: "PHASE2-UI-GENERIC-VALUE-001",
+    });
+  });
+
+  it("parses cited researcher-report facts only when a source ref is present", () => {
+    const command = parseExplicitMemoryCommand(
+      "Researcher report artifact. Cited fact: model-memory live proof uses cited soft evidence. Source ref: https://example.invalid/report. Treat this as cited soft evidence, not hard truth.",
+    );
+
+    expect(command).toMatchObject({
+      commandType: "project_fact",
+      sourceProfileId: "researcher_report_artifact",
+      statement: "model-memory live proof uses cited soft evidence.",
+      citationRefs: ["https://example.invalid/report"],
+      evidenceQuote: "model-memory live proof uses cited soft evidence.",
+    });
+    expect(
+      parseExplicitMemoryCommand(
+        "Researcher report artifact. Cited fact: model-memory live proof lacks source refs.",
+      ),
+    ).toBeNull();
+  });
+
   it("parses structural correction target refs and does not infer topics", () => {
     const command = parseExplicitMemoryCommand(
       "SOAKQUAR-2026-04-21-CORRECTION: Durable correction targeting memory_id=memory-pref-001: replace the earlier preference with this standing preference: concise outcome first, then exact evidence.",

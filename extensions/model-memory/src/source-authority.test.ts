@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   attachSourceAuthorityMetadata,
   buildSourceAuthorityMetadata,
+  classifyLiveTurnSourceAuthority,
   decideAuthorityPromotion,
   evaluateSoftSourceAdmission,
   getSourceProfile,
@@ -36,6 +37,47 @@ describe("source-authority", () => {
     ).toMatchObject({
       ok: false,
       errors: expect.arrayContaining(["authorityTier does not match sourceProfileId default"]),
+    });
+  });
+
+  it("classifies explicit live user turns as user-authoritative source metadata", () => {
+    const classified = classifyLiveTurnSourceAuthority(
+      "Please remember that the project proof marker is VALUE-001.",
+    );
+
+    expect(classified).toMatchObject({
+      sourceProfileId: "explicit_user_turn",
+      authorityTier: "user_authoritative",
+      decision: "auto_admit",
+      metadata: {
+        sourceProfileId: "explicit_user_turn",
+        authorityTier: "user_authoritative",
+      },
+    });
+  });
+
+  it("classifies cited researcher-report live turns as cited-soft only with source refs", () => {
+    const admitted = classifyLiveTurnSourceAuthority(
+      "Researcher report artifact. Cited fact: the proof marker is VALUE-002. Source ref: https://example.invalid/proof",
+    );
+    const rejected = classifyLiveTurnSourceAuthority(
+      "Researcher report artifact. Cited fact: the proof marker lacks a citation.",
+    );
+
+    expect(admitted).toMatchObject({
+      sourceProfileId: "researcher_report_artifact",
+      authorityTier: "cited_soft",
+      decision: "auto_admit",
+      reasonCodes: ["lower_authority_auto_admit"],
+    });
+    expect(admitted?.sourceRefs[0]).toMatchObject({
+      url: "https://example.invalid/proof",
+    });
+    expect(rejected).toMatchObject({
+      sourceProfileId: "researcher_report_artifact",
+      authorityTier: "cited_soft",
+      decision: "reject",
+      reasonCodes: ["citation_required"],
     });
   });
 

@@ -141,6 +141,10 @@ export const captureOrdinaryTurnLive = bindFacadeFunction(
   loadFacadeModule,
   "captureOrdinaryTurnLive",
 );
+export const classifyLiveTurnSourceAuthority = bindFacadeFunction(
+  loadFacadeModule,
+  "classifyLiveTurnSourceAuthority",
+);
 export const classifyMemoryIngestionFailure = bindFacadeFunction(
   loadFacadeModule,
   "classifyMemoryIngestionFailure",

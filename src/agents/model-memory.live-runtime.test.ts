@@ -153,6 +153,51 @@ describe("buildCompletedAssistantTurnCaptureInput", () => {
     expect(capture?.turn.sourceMetadata).not.toHaveProperty("assistantText");
   });
 
+  it("attaches explicit user-turn authority metadata for live durable memory commands", () => {
+    const capture = buildCompletedAssistantTurnCaptureInput({
+      userText: "Please remember that the model-memory UI proof marker is VALUE-003.",
+      assistantText: "Noted.",
+    });
+
+    expect(capture?.turn.sourceMetadata).toMatchObject({
+      sourceAuthority: {
+        sourceProfileId: "explicit_user_turn",
+        authorityTier: "user_authoritative",
+      },
+      sourceAuthorityDecision: "auto_admit",
+    });
+  });
+
+  it("attaches cited-soft metadata for live researcher report evidence with source refs", () => {
+    const capture = buildCompletedAssistantTurnCaptureInput({
+      userText:
+        "Researcher report artifact. Cited fact: the model-memory UI proof soft marker is VALUE-004. Source ref: https://example.invalid/proof",
+      assistantText: "Noted as lower-authority cited evidence.",
+    });
+
+    expect(capture?.turn.sourceMetadata).toMatchObject({
+      sourceAuthority: {
+        sourceProfileId: "researcher_report_artifact",
+        authorityTier: "cited_soft",
+      },
+      sourceAuthorityDecision: "auto_admit",
+      sourceAuthorityReasonCodes: ["lower_authority_auto_admit"],
+    });
+    expect(capture?.turn.sourceMetadata.softSourceRefs).toEqual([
+      expect.objectContaining({ url: "https://example.invalid/proof" }),
+    ]);
+  });
+
+  it("rejects cited-soft live capture without citations before durable source persistence", () => {
+    expect(
+      buildCompletedAssistantTurnCaptureInput({
+        userText:
+          "Researcher report artifact. Cited fact: the model-memory UI proof soft marker has no citation.",
+        assistantText: "Noted.",
+      }),
+    ).toBeNull();
+  });
+
   it("skips incomplete turns", () => {
     expect(
       buildCompletedAssistantTurnCaptureInput({

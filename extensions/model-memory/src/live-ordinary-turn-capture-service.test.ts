@@ -15,6 +15,7 @@ import {
   captureOne,
   createScriptedMmV2Interpreter,
 } from "./mmv2/test-helpers.ts";
+import { buildSourceAuthorityMetadata } from "./source-authority.ts";
 
 function readMmV2Payload<T>(input: { prompt: { promptPayload?: unknown; userPrompt: string } }): T {
   return (input.prompt.promptPayload as T) ?? (JSON.parse(input.prompt.userPrompt) as T);
@@ -836,6 +837,53 @@ describe("live-ordinary-turn-capture-service", () => {
         "Durable workspace project fact",
       );
       expect(events.some((event) => event.memory_id === projectFact?.memory_id)).toBe(true);
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("persists live source authority metadata on durable MMV2 memories", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const canonicalRepository = new MmV2NativeRepository(database.sql);
+      const runtimeRepository = new RuntimeContextRepository(database.sql);
+
+      const result = await captureOrdinaryTurnLive({
+        canonicalRepository,
+        runtimeRepository,
+        capture: {
+          turn: {
+            currentTurnText:
+              "Researcher report artifact. Cited fact: the UI proof soft source marker is VALUE-005. Source ref: https://example.invalid/proof",
+            sessionId: "session-soft-source",
+            sourceMetadata: {
+              sourceAuthority: buildSourceAuthorityMetadata("researcher_report_artifact"),
+            },
+          },
+          modelId: "model-turn-001",
+          candidateModelId: "model-turn-001",
+          interpreter: createScriptedMmV2Interpreter({}),
+        },
+      });
+      const durable = await canonicalRepository.listDurableMemories();
+      const softMemory = durable.find((memory) => memory.canonical_text.includes("VALUE-005"));
+
+      expect(result.writeResults.some((entry) => entry.decision === "write")).toBe(true);
+      expect(softMemory?.payload).toMatchObject({
+        sourceProfileId: "researcher_report_artifact",
+        authorityTier: "cited_soft",
+        sourceAuthority: {
+          sourceProfileId: "researcher_report_artifact",
+          authorityTier: "cited_soft",
+        },
+      });
+      expect(softMemory?.tags).toEqual(
+        expect.arrayContaining([
+          "source_profile:researcher_report_artifact",
+          "authority:cited_soft",
+        ]),
+      );
     } finally {
       await database.close();
     }

@@ -3,6 +3,7 @@ import type { OpenClawConfig } from "../../../config/config.js";
 import {
   buildOrdinaryTurnMemoryTraceId,
   captureOrdinaryTurnLive,
+  classifyLiveTurnSourceAuthority,
   emitMemoryIngestionCloseoutIfConfigured,
   rebuildDerivedRuntimeState,
 } from "../../../plugin-sdk/model-memory.js";
@@ -15,7 +16,11 @@ import {
   type MemoryCaptureJobEvent,
   type MemoryCaptureJobStatus,
 } from "../../model-memory.capture-jobs.js";
-import { resolveCandidateModelRef, resolveLiveModelRef, resolveModelMemoryLiveRuntimeStatus } from "./config.js";
+import {
+  resolveCandidateModelRef,
+  resolveLiveModelRef,
+  resolveModelMemoryLiveRuntimeStatus,
+} from "./config.js";
 import {
   buildPoolPressureError,
   classifyCaptureFailure,
@@ -138,6 +143,13 @@ export function buildCompletedAssistantTurnCaptureInput(params: {
   ) {
     return null;
   }
+  const sourceAuthority = classifyLiveTurnSourceAuthority(userText);
+  if (
+    sourceAuthority &&
+    (sourceAuthority.decision === "reject" || sourceAuthority.decision === "inspection_only")
+  ) {
+    return null;
+  }
 
   return {
     turn: {
@@ -148,6 +160,14 @@ export function buildCompletedAssistantTurnCaptureInput(params: {
         liveRuntime: true,
         assistantResponseSha256: sha256Text(assistantText),
         assistantResponseLength: assistantText.length,
+        ...(sourceAuthority
+          ? {
+              sourceAuthority: sourceAuthority.metadata,
+              sourceAuthorityDecision: sourceAuthority.decision,
+              sourceAuthorityReasonCodes: sourceAuthority.reasonCodes,
+              softSourceRefs: sourceAuthority.sourceRefs,
+            }
+          : {}),
         ...params.sourceMetadata,
       },
       currentTurnText: userText,

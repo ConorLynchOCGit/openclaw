@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { buildDeterministicUuid } from "../deterministic-uuid.ts";
+import type { SourceAuthorityMetadata } from "../source-authority.ts";
 import type {
   ModelMemoryObjectRecord,
   ModelMemorySupportItemRecord,
@@ -58,6 +59,7 @@ export function recordShadowMemoryBatch(input: {
   canonicalBatch: CanonicalCandidateBatch;
   admissionBatch: AdmissionDecisionBatch;
   reconciliationDecisions: ReconciliationDecision[];
+  sourceAuthority?: SourceAuthorityMetadata;
 }): ShadowMemoryBatch {
   const memoryEvents: MemoryEvent[] = [];
   const durableMemories: DurableMemoryRecord[] = [];
@@ -111,7 +113,14 @@ export function recordShadowMemoryBatch(input: {
       canonical_text: candidate.canonical_text,
       search_text: candidate.search_text,
       scope: candidate.scope,
-      payload: sanitizeRecordedPayload(candidate),
+      payload: input.sourceAuthority
+        ? {
+            ...sanitizeRecordedPayload(candidate),
+            sourceAuthority: input.sourceAuthority,
+            sourceProfileId: input.sourceAuthority.sourceProfileId,
+            authorityTier: input.sourceAuthority.authorityTier,
+          }
+        : sanitizeRecordedPayload(candidate),
       validity: candidate.validity,
       confidence: candidate.confidence,
       quality: candidate.quality,
@@ -142,7 +151,15 @@ export function recordShadowMemoryBatch(input: {
       updated_at: nowIso(),
       last_accessed_at: null,
       access_count: 0,
-      tags: [candidate.kind ?? candidate.artifact_type ?? "shadow"],
+      tags: [
+        candidate.kind ?? candidate.artifact_type ?? "shadow",
+        ...(input.sourceAuthority
+          ? [
+              `source_profile:${input.sourceAuthority.sourceProfileId}`,
+              `authority:${input.sourceAuthority.authorityTier}`,
+            ]
+          : []),
+      ],
     };
     durableMemories.push(record);
 

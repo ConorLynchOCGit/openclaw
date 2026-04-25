@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../../agents/defaults.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { onAgentEvent } from "../../infra/agent-events.js";
 import { requestHeartbeatNow } from "../../infra/heartbeat-wake.js";
 import * as execModule from "../../process/exec.js";
@@ -10,6 +11,7 @@ import {
   createPluginRuntime,
   setGatewaySubagentRuntime,
 } from "./index.js";
+import { resolveDatabaseResolution } from "./runtime-model-memory.runtime.js";
 
 function createCommandResult() {
   return {
@@ -258,6 +260,20 @@ describe("plugin runtime command execution", () => {
     const runtime = createPluginRuntime();
     // Wrappers should NOT be the same reference as the raw functions
     expect(runtime.modelAuth.getApiKeyForModel).not.toBe(rawGetApiKey);
+  });
+
+  it("late-binds modelMemory database helpers in source runtime", async () => {
+    await expect(
+      resolveDatabaseResolution({
+        config: { plugins: { entries: {} } } as unknown as OpenClawConfig,
+        env: {
+          MODEL_MEMORY_DATABASE_URL: "postgres://user:pass@127.0.0.1:5432/postgres",
+        },
+      }),
+    ).resolves.toMatchObject({
+      databaseName: "model_memory",
+      source: "env:MODEL_MEMORY_DATABASE_URL",
+    });
   });
 
   it("keeps subagent unavailable by default even after gateway initialization", async () => {

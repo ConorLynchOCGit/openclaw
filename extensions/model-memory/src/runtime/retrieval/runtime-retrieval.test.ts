@@ -46,6 +46,8 @@ function memory(
     supersededAt: overrides.supersededAt,
     sourceWindowId: overrides.sourceWindowId,
     slotKey: overrides.slotKey,
+    sourceAuthorityTier: overrides.sourceAuthorityTier,
+    sourceProfileId: overrides.sourceProfileId,
   };
 }
 
@@ -119,6 +121,108 @@ describe("memory retrieval runtime", () => {
     expect(recalled.selectedMemoryCandidates[0]?.memoryId).toBe("memory-project");
     expect(recalled.selectedMemoryCandidates[0]?.scopeMatch).toBe("exact");
     expect(recalled.selectedMemoryCandidates[1]?.scopeMatch).toBe("broad");
+  });
+
+  it("uses recency as deterministic tie-breaker for equal exact lexical candidates", () => {
+    const recalled = recallCanonicalCandidates({
+      request: {
+        ...request,
+        scopeConstraints: {},
+        subjectHints: ["ui", "proof", "marker"],
+        contentHints: ["ui", "proof", "marker"],
+      },
+      memoryObjects: [
+        memory({
+          id: "memory-old-marker",
+          normalizedSubject: "ui proof marker",
+          normalizedSearchText: "ui proof marker OLD-VALUE",
+          sourceEvidenceSearchText: "ui proof marker OLD-VALUE",
+          createdAt: new Date("2026-04-23T00:00:00.000Z"),
+        }),
+        memory({
+          id: "memory-new-marker",
+          normalizedSubject: "ui proof marker",
+          normalizedSearchText: "ui proof marker NEW-VALUE",
+          sourceEvidenceSearchText: "ui proof marker NEW-VALUE",
+          createdAt: new Date("2026-04-25T00:00:00.000Z"),
+        }),
+      ],
+    });
+
+    expect(recalled.selectedMemoryCandidates.map((candidate) => candidate.memoryId)).toEqual([
+      "memory-new-marker",
+      "memory-old-marker",
+    ]);
+  });
+
+  it("prioritizes current user-authoritative evidence over older similar memories", () => {
+    const now = Date.now();
+    const recalled = recallCanonicalCandidates({
+      request: {
+        goal: "latest UI proof exact value for project model-memory current marker",
+        canonicalClasses: [],
+        kinds: undefined,
+        scopeConstraints: {},
+        subjectHints: ["ui", "proof", "marker", "project", "model-memory"],
+        contentHints: ["latest", "current", "exact", "value", "ui", "proof"],
+        desiredResultCount: 10,
+        requestConfidence: "strong",
+      },
+      memoryObjects: [
+        memory({
+          id: "memory-old-lexical-marker",
+          normalizedSubject: "ui proof marker project model-memory",
+          normalizedTitle: "model-memory ui proof marker",
+          normalizedSearchText:
+            "ui proof marker project model-memory old exact value OLD-GENERIC-VALUE",
+          sourceEvidenceSearchText:
+            "ui proof marker project model-memory old exact value OLD-GENERIC-VALUE",
+          createdAt: new Date(now - 48 * 60 * 60 * 1000),
+        }),
+        memory({
+          id: "memory-new-authoritative-marker",
+          normalizedSubject: "current project",
+          normalizedTitle: "current project durable fact",
+          normalizedSearchText:
+            "current project has durable fact NEW-GENERIC-VALUE for model-memory ui proof",
+          sourceEvidenceSearchText:
+            "please remember this exact value for project model-memory NEW-GENERIC-VALUE",
+          createdAt: new Date(now - 5 * 60 * 1000),
+          sourceAuthorityTier: "user_authoritative",
+          sourceProfileId: "explicit_user_turn",
+        }),
+      ],
+    });
+
+    expect(recalled.selectedMemoryCandidates[0]).toMatchObject({
+      memoryId: "memory-new-authoritative-marker",
+      authority: "user_authoritative",
+    });
+    expect(recalled.selectedMemoryCandidates[0]?.reasonCodes).toEqual(
+      expect.arrayContaining(["recency_intent_boost", "authority_tier:user_authoritative"]),
+    );
+  });
+
+  it("excludes inspection-only authority records from normal retrieval", () => {
+    const recalled = recallCanonicalCandidates({
+      request,
+      memoryObjects: [
+        memory({
+          id: "memory-inspection",
+          sourceAuthorityTier: "inspection_only",
+          sourceProfileId: "raw_prompt",
+        }),
+      ],
+    });
+
+    expect(recalled.selectedMemoryCandidates).toEqual([]);
+    expect(recalled.exclusions).toEqual([
+      expect.objectContaining({
+        id: "memory-inspection",
+        reason: "sensitive",
+        detail: "inspection_only_source_excluded_from_normal_retrieval",
+      }),
+    ]);
   });
 
   it("selects projection digests only when backed by active source memory ids", () => {

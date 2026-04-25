@@ -1,7 +1,11 @@
 import { buildDeterministicUuid } from "./deterministic-uuid.ts";
 import { sha256JsonValue } from "./hashing.ts";
 import type { DurableMemoryRecord, ExistingMemorySummary, MemoryEvent } from "./mmv2/contracts.ts";
-import type { SourceAuthorityTier, SourceProfileId } from "./source-authority.ts";
+import {
+  SourceAuthorityMetadataSchema,
+  type SourceAuthorityTier,
+  type SourceProfileId,
+} from "./source-authority.ts";
 
 export const RUNTIME_GRAPH_SCHEMA_VERSION = "runtime_graph.v1" as const;
 
@@ -712,6 +716,15 @@ export function normalizeDurableMemoryForRuntimeGraph(
     sourceEdgeIds?: string[];
   },
 ): RuntimeGraphMemoryInput {
+  const payloadAuthority = SourceAuthorityMetadataSchema.safeParse(
+    (memory.payload as { sourceAuthority?: unknown }).sourceAuthority,
+  );
+  const authorityTier =
+    authority?.authorityTier ??
+    (payloadAuthority.success ? payloadAuthority.data.authorityTier : undefined);
+  const sourceProfileId =
+    authority?.sourceProfileId ??
+    (payloadAuthority.success ? payloadAuthority.data.sourceProfileId : undefined);
   return {
     memoryId: memory.memory_id,
     status: memory.status,
@@ -737,8 +750,8 @@ export function normalizeDurableMemoryForRuntimeGraph(
       parentMemoryId: memory.lineage.parent_memory_id,
       childMemoryIds: memory.lineage.child_memory_ids,
     },
-    sourceAuthorityTier: authority?.authorityTier,
-    sourceProfileId: authority?.sourceProfileId,
+    sourceAuthorityTier: authorityTier,
+    sourceProfileId,
     sourceEventIds: authority?.sourceEventIds,
     sourceEdgeIds: authority?.sourceEdgeIds,
     createdAt: memory.created_at,

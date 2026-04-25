@@ -60,6 +60,7 @@ export * from "./semantic-schema.ts";
 export * from "./semantic-interpreter.ts";
 export * from "./semantic-validator.ts";
 export * from "./shadow-mode.ts";
+export * from "./source-authority.ts";
 export * from "./source-adapters/document-source-adapter.ts";
 export * from "./source-adapters/ordinary-turn-source-adapter.ts";
 export * from "./storage-database-contract.ts";
