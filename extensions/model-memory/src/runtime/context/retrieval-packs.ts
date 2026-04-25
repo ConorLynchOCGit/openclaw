@@ -28,6 +28,10 @@ import {
   deriveRuntimeMemoryStatus,
   renderMemoryPacks,
 } from "../retrieval/index.ts";
+import {
+  buildProjectStateCapsuleContext,
+  type ProjectStateCapsuleContextMode,
+} from "./project-state-capsule-context.ts";
 
 function summarizeProvenance(object: RuntimeMemoryRecord): string {
   const firstSpan = object.provenance?.[0];
@@ -95,6 +99,10 @@ export function buildRetrievalPackArtifact(input: {
   selectedProjectionDigests?: ProjectionDigest[];
   projectionVersions?: WorkspaceProjectionVersionRecord[];
   capsuleRetrievalShadow?: ProjectStateCapsuleRetrievalShadowResult;
+  capsuleContextMode?: ProjectStateCapsuleContextMode;
+  includeConflictAwareCapsuleContext?: boolean;
+  includeInspectionCapsuleContext?: boolean;
+  projectPageProjectionAvailable?: boolean;
 }) {
   const objectById = new Map(
     input.memoryObjects
@@ -170,11 +178,24 @@ export function buildRetrievalPackArtifact(input: {
     memoryPacks,
   });
 
-  const renderedText = renderMemoryPacks({
+  const baseRenderedText = renderMemoryPacks({
     request: input.retrievalRequest,
     queryTextHash,
     memoryPacks,
   });
+  const projectStateCapsuleContext =
+    input.capsuleRetrievalShadow || input.capsuleContextMode
+      ? buildProjectStateCapsuleContext({
+          capsuleRetrievalShadow: input.capsuleRetrievalShadow,
+          mode: input.capsuleContextMode ?? "disabled",
+          includeConflictAware: input.includeConflictAwareCapsuleContext,
+          includeInspection: input.includeInspectionCapsuleContext,
+          projectPageProjectionAvailable: input.projectPageProjectionAvailable,
+        })
+      : undefined;
+  const renderedText = projectStateCapsuleContext?.renderedText
+    ? `${baseRenderedText}\n${projectStateCapsuleContext.renderedText}`
+    : baseRenderedText;
   const memoryTraceId = readMemoryTraceIdFromScope(input.retrievalRequest.scope);
 
   return buildContextArtifact({
@@ -193,6 +214,7 @@ export function buildRetrievalPackArtifact(input: {
       ...(input.capsuleRetrievalShadow
         ? { capsuleRetrievalShadow: input.capsuleRetrievalShadow }
         : {}),
+      ...(projectStateCapsuleContext ? { projectStateCapsuleContext } : {}),
       recallProof: {
         eligible: results.length > 0 || projectionDigests.length > 0,
         acceptedSources: ["mmv2_runtime_memory", "mmv2_projection_digest"],

@@ -75,6 +75,7 @@ describe("retrieval packs", () => {
     expect(artifact.structuredPayload?.schemaVersion).toBe("memory_retrieval_runtime.v1");
     expect(artifact.structuredPayload?.memoryTraceId).toBe("memory_trace_turn_tracepack001");
     expect(artifact.structuredPayload?.capsuleRetrievalShadow).toBeUndefined();
+    expect(artifact.structuredPayload?.projectStateCapsuleContext).toBeUndefined();
     expect(artifact.structuredPayload?.retrievalRun).toEqual(
       expect.objectContaining({
         rawQueryPersisted: false,
@@ -380,6 +381,152 @@ describe("retrieval packs", () => {
         }),
       }),
     );
+    expect(artifact.structuredPayload?.projectStateCapsuleContext).toEqual(
+      expect.objectContaining({
+        telemetry: expect.objectContaining({
+          mode: "disabled",
+          injected: false,
+          defaultContextInjectionChanged: false,
+        }),
+      }),
+    );
+  });
+
+  it("injects project-state capsule context only under the explicit gate", () => {
+    const capsuleRetrievalShadow = {
+      candidates: [],
+      exclusions: [],
+      packs: [
+        {
+          schemaVersion: "project_state_capsule_shadow_pack.v1" as const,
+          packId: "capsule-pack-explicit",
+          shadow: true as const,
+          injected: false as const,
+          packType: "project_state_pack" as const,
+          capsuleId: "capsule-explicit",
+          capsuleType: "project_state" as const,
+          projectId: "project-001",
+          contentHash: "hash-capsule-explicit",
+          sourceMemoryIds: ["memory-project"],
+          sourceRefs: [{ sourceId: "source-project", segmentId: "segment-project" }],
+          authorityTiers: ["tool_grounded" as const],
+          sourceProfileIds: ["tool_result_capture" as const],
+          freshness: { status: "fresh" as const },
+          staleMarkers: [],
+          conflictMarkers: [],
+          graphNodeIds: [],
+          graphEdgeIds: [],
+          sections: [
+            {
+              sectionId: "section-current",
+              sectionType: "current_state" as const,
+              title: "Current State",
+              itemCount: 1,
+              sourceMemoryIds: ["memory-project"],
+              authorityTiers: ["tool_grounded" as const],
+              sourceProfileIds: ["tool_result_capture" as const],
+              items: [
+                {
+                  itemId: "item-current",
+                  sectionType: "current_state" as const,
+                  text: "Project capsule context may be injected only by explicit gate.",
+                  sourceMemoryIds: ["memory-project"],
+                  authorityTier: "tool_grounded" as const,
+                  sourceProfileId: "tool_result_capture" as const,
+                },
+              ],
+            },
+          ],
+          estimatedTokens: 10,
+        },
+      ],
+      telemetry: {
+        schemaVersion: "project_state_capsule_shadow_telemetry.v1" as const,
+        mode: "shadow_report_only" as const,
+        wouldSelectCapsuleIds: ["capsule-explicit"],
+        excludedCapsuleIds: [],
+        exclusionReasons: {
+          shadow_disabled: 0,
+          scope_mismatch: 0,
+          stale: 0,
+          conflicted: 0,
+          inspection_only: 0,
+          no_source_memory_ids: 0,
+          not_generation_context_authority: 0,
+        },
+        capsuleSourceMemoryIds: ["memory-project"],
+        capsuleContentHashes: ["hash-capsule-explicit"],
+        projectPageBypassed: true,
+        projectPageBypassReason: "project_state_capsule_available" as const,
+        defaultContextInjectionChanged: false as const,
+      },
+    };
+
+    const artifact = buildRetrievalPackArtifact({
+      retrievalRequest: {
+        id: "retrieval-request-capsule-explicit",
+        sessionId: "session-capsule-explicit",
+        queryText: "sha256:capsule-explicit-query",
+        requestPurpose: "context_injection",
+        scope: { projectId: "project-001", retrievalRuntimeQueryHash: "capsule-explicit-query" },
+        desiredResultCount: 1,
+        contractName: "retrieval_request_interpretation",
+        contractVersion: "v1",
+        modelId: "retrieval-model-001",
+        createdAt: new Date(0),
+      },
+      retrievalResultSet: {
+        id: "retrieval-set-capsule-explicit",
+        retrievalRequestId: "retrieval-request-capsule-explicit",
+        contentHash: "hash-capsule-explicit-set",
+        resultCount: 0,
+        createdAt: new Date(0),
+      },
+      retrievalResultItems: [],
+      memoryObjects: [],
+      buildPolicyVersion: "v1",
+      capsuleRetrievalShadow,
+      capsuleContextMode: "explicit_injection",
+      projectPageProjectionAvailable: true,
+    });
+
+    expect(artifact.renderedText).toContain("<project-state-capsule-context");
+    expect(artifact.renderedText).toContain("Project capsule context may be injected");
+    expect(artifact.renderedText).toContain("label:lower_authority");
+    expect(artifact.structuredPayload?.projectStateCapsuleContext).toEqual(
+      expect.objectContaining({
+        blocks: [
+          expect.objectContaining({
+            capsuleId: "capsule-explicit",
+            packId: "capsule-pack-explicit",
+            sourceMemoryIds: ["memory-project"],
+            authorityTiers: ["tool_grounded"],
+            sourceProfileIds: ["tool_result_capture"],
+          }),
+        ],
+        telemetry: expect.objectContaining({
+          mode: "explicit_injection",
+          injected: true,
+          defaultContextInjectionChanged: false,
+          projectPageBypassed: true,
+        }),
+      }),
+    );
+
+    const assembled = assembleContext({
+      projectionVersions: [],
+      projectionTexts: {},
+      artifacts: [artifact],
+      recentTurns: [],
+      toolResults: [],
+      currentTurn: "What is the project state?",
+      maxTokens: 200,
+      includeRetrievalPacks: true,
+      retrievalPackScopeKeys: ["session-capsule-explicit"],
+    });
+
+    expect(assembled.semiStableSegments[0]?.text).toContain("<project-state-capsule-context");
+    expect(assembled.semiStableSegments[0]?.text).toContain("tool_grounded");
   });
 
   it("keeps only the latest retrieval pack for the active scope", () => {

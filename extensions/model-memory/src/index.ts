@@ -46,6 +46,7 @@ export * from "./runtime/active-memory-slots.ts";
 export * from "./runtime/context-artifacts.ts";
 export * from "./runtime/context/assemble.ts";
 export * from "./runtime/context/bootstrap.ts";
+export * from "./runtime/context/project-state-capsule-context.ts";
 export * from "./runtime/context/retrieval-packs.ts";
 export * from "./runtime/context/trim-policy.ts";
 export * from "./runtime/packs.ts";
