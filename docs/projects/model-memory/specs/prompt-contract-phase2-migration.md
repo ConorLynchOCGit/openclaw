@@ -25,13 +25,25 @@ Capture the prompt-contract changes implied by the Phase 2 move to:
 - runtime diagnostics should prefer ids, hashes, statuses, and reason codes
   over raw prompt or transcript text
 
-Open decisions before implementation:
+## Remaining Implementation Details
 
-- whether `kind` becomes primary in model outputs or only in downstream graph
-  derivation first
 - prompt-injection risk thresholds for document ingest vs ordinary turns
-- how much evidence quoting is allowed in derived prompt artifacts without
-  becoming raw-data capture
+- final prompt/schema rollout order for `kind`-primary extraction vs downstream
+  derivation
+- final config and kill-switch names
+
+2026-04-25 Phase 2 decision lock:
+
+- `kind` is the primary semantic axis for Phase 2 design; `canonicalClass` is
+  secondary or derived
+- prompt contracts must carry source authority tier and source profile id where
+  lower-authority or soft-source material can enter admission, retrieval,
+  graph, capsule, planner, skill, or tool synthesis flows
+- derived prompt artifacts may use bounded evidence snippets only when source
+  policy permits it; raw prompts, full transcripts, raw tool logs, secrets, and
+  private phrases remain hard rejects
+- external imperative text is evidence or a redacted security finding, never an
+  instruction
 
 ## Required audits
 

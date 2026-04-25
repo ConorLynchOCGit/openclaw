@@ -154,6 +154,22 @@ All sub-query retrieval passes must still read:
 - the same object-native projections
 - the same provenance-bearing payloads
 
+### Authority-aware expansion
+
+Hierarchical retrieval may expand into lower-authority soft-source lanes only
+when the parent retrieval purpose supports research, references, project state,
+or conflict inspection.
+
+Sub-query planning and result merging must preserve:
+
+- `authorityTier`
+- `sourceProfileId`
+- source refs
+- exclusion reasons
+
+Lower-authority candidates may improve coverage. They must not override
+user-authoritative or curated-authoritative rules and directives.
+
 ### Context assembly remains budget-first
 
 Hierarchical retrieval is only worthwhile if the merged result stays bounded.
@@ -234,6 +250,8 @@ Each merged result should carry:
 - `retrievalReasonCodes`
 - `rankBand`
 - `mergedPriority`
+- `authorityTier`
+- `sourceProfileId`
 
 The merge layer may:
 
@@ -246,6 +264,7 @@ The merge layer must not:
 - rewrite object meaning
 - invent synthetic objects
 - replace provenance with query-local labels
+- silently promote lower-authority sources
 
 ## Interaction with context assembly
 

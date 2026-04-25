@@ -15,6 +15,20 @@ Convert raw sources into a unified normalized envelope without adding semantic i
 - ordinary-turn user capture
 - finalized daily continuity recovery from `memory/YYYY-MM-DD.md`
 
+## Phase 2 soft sources
+
+Phase 2 adds explicit soft-source envelopes:
+
+- researcher report artifact
+- cited assistant answer
+- tool-grounded summary
+- curated corpus manifest
+
+These adapters normalize source envelopes, source profile metadata, and
+provenance. They do not decide semantic truth, authority promotion, or
+retrieval rank. Those policies are defined in
+[Soft-Source Ingestion And Authority](/projects/model-memory/specs/soft-source-ingestion-and-authority).
+
 ## Document adapter
 
 Input:
@@ -85,6 +99,76 @@ The daily continuity adapter must not:
 - promote candidate output directly into active memory merely because the daily
   file is well formed
 
+## Researcher report adapter
+
+Input:
+
+- structured Markdown researcher report
+- source inventory and citations
+- optional agent/session ids
+- optional project metadata
+
+Responsibilities:
+
+- preserve report frontmatter
+- preserve claim sections and citation refs
+- preserve source inventory locators
+- attach `sourceProfileId` and `authorityTier = cited_soft`
+- expose facts, references, and procedures for downstream extraction
+
+The researcher report adapter must not ingest raw researcher transcripts or
+promote report claims above `cited_soft` authority.
+
+## Cited assistant answer adapter
+
+Input:
+
+- final assistant answer from a search-heavy or tool-heavy turn
+- cited source refs, tool artifacts, URLs, file paths, or source segments
+- trace id or session id when available
+
+Responsibilities:
+
+- preserve the answer as a bounded source artifact only when citations exist
+- extract candidate evidence from cited sources and tool artifacts
+- attach `sourceProfileId` and `authorityTier = cited_soft`
+
+The assistant answer adapter must not treat assistant prose as independent
+authority. Uncited assistant claims are not admissible.
+
+## Tool-grounded summary adapter
+
+Input:
+
+- bounded tool-result summary
+- tool/action ids
+- artifact paths, URLs, command status, or non-sensitive error classes
+
+Responsibilities:
+
+- attach `authorityTier = tool_grounded`
+- preserve only bounded proof metadata
+- expose tool-grounded facts, references, and procedures
+
+The tool-grounded summary adapter must not persist raw tool logs.
+
+## Curated corpus manifest adapter
+
+Input:
+
+- explicit source manifest
+- selected files, URLs, reports, or documents
+- source profile defaults
+
+Responsibilities:
+
+- normalize source entries
+- preserve source profile metadata
+- create stable source fingerprints
+- feed explicit sources into the document or researcher-report adapter
+
+Open crawling is out of scope for Phase 2 v1.
+
 ## Windowing policy
 
 Windowing is structural, not semantic.
@@ -108,6 +192,8 @@ Source adapters must expose a stable normalized source fingerprint built from:
 - normalized text
 - structural metadata
 - scope envelope
+- source profile id
+- authority tier
 
 Daily continuity recovery sources must additionally expose enough source
 metadata for downstream write policy to distinguish:

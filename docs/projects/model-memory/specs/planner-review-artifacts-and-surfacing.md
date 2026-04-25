@@ -28,6 +28,9 @@ Each candidate should include:
 - `createdAt`
 - `lastSurfacedAt`
 - `status`
+- `expiresAt`
+- `pinned`
+- `recurrenceCount`
 
 ## Surfacing lanes
 
@@ -97,3 +100,13 @@ Stale candidates should expire when:
 - the graph, capsule, projection, or cache state no longer reproduces the issue
 - the recommendation has been rejected
 - the configured TTL passes with no renewed evidence
+
+Default lifecycle:
+
+- unresolved candidates remain active for `30` days
+- archived candidates remain available for `90` days
+- recurrence renews the active window
+- explicit pinning prevents expiry until the candidate is unpinned or resolved
+
+Phase 2 v1 stores review items as bounded artifacts plus a lightweight runtime
+index. A dedicated review inbox UI is deferred.

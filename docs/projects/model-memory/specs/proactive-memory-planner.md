@@ -26,10 +26,8 @@ Any meaningful candidate must surface inside ordinary OpenClaw operator flow.
 - stale projection, capsule, graph, and retrieval-cache repairs are derived
   maintenance only
 
-Open decisions before implementation:
+Remaining implementation details:
 
-- exact UI shape for heartbeat surfacing
-- exact retention durations for each candidate class after first implementation
 - final kill switches and config names for planner automatic derived work
 
 2026-04-22 Phase 2 decision lock:
@@ -46,6 +44,8 @@ Open decisions before implementation:
   maintenance; review is reserved for durable semantic truth changes,
   privileged actions, skill/tool promotion, policy changes, and high-risk
   privacy/security cases
+- maintenance mechanics are owned by
+  [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
 
 ## Objective
 
@@ -238,6 +238,7 @@ Suggested candidate classes:
 - `workflow_candidate`
 - `policy_candidate`
 - `source_authority_review`
+- `soft_source_consolidation`
 
 These are planner artifacts, not canonical memories.
 
@@ -340,6 +341,7 @@ This spec does not authorize:
 5. enable reversible auto-refresh actions
 6. add candidate classes one by one
 7. only later consider stronger automation after proof and operator feedback
+8. use the maintenance loop for event, heartbeat, and daily cadence
 
 ## Related specs
 

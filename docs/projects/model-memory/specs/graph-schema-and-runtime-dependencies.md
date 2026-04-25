@@ -34,6 +34,8 @@ Suggested fields:
 - `source_object_id`
 - `source_artifact_id`
 - `trust_tier`
+- `authority_tier`
+- `source_profile_id`
 - `visibility`
 - `sensitivity`
 - `created_at`
@@ -52,6 +54,7 @@ Suggested fields:
 - `ttl_expires_at`
 - `promotion_state`
 - `provenance_ref`
+- `source_profile_id`
 - `source_memory_ids`
 - `source_event_ids`
 - `source_edge_ids`
@@ -73,6 +76,10 @@ Probationary inferred edges are read-time-only and must carry TTL/provenance
 data. They may decay automatically or promote only through repeated retrieval
 usefulness with active source support. They must not mutate MMV2 truth,
 admission, reconciliation, correction, or supersession.
+
+`source_profile_id` and memory-source authority tiers should be copied from the
+MMV2 source profile metadata when available. They are retrieval and capsule
+inputs, not graph-owned truth.
 
 ### `graph_build_runs`
 

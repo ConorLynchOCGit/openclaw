@@ -25,11 +25,11 @@ capsule work.
 - root `USER.md` and `MEMORY.md` remain human-owned inputs, not generated
   projection targets
 
-Open decisions before implementation:
+Remaining implementation details:
 
 - freshness TTLs for project/page/procedure/source/entity projection families
 - cache invalidation fan-out from memory events and edges
-- exact operator reporting shape for stale or excluded projection digests
+- final config and kill-switch names
 
 2026-04-22 Phase 2 decision lock:
 
@@ -43,6 +43,19 @@ Open decisions before implementation:
   expire stale recommendations
 - policy reports should surface high-value capsule, skill, tool, and workflow
   opportunities through heartbeat and daily review
+
+2026-04-25 Phase 2 decision lock:
+
+- cache/projection policy consumes source authority tiers and source profile ids
+  from [Soft-Source Ingestion And Authority](/projects/model-memory/specs/soft-source-ingestion-and-authority)
+- maintenance cadence and candidate lifecycle are owned by
+  [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
+- `inspection_only` material is excluded from ordinary warmups, stable packs,
+  projection digests, and capsule compiles unless explicitly requested for
+  inspection or conflict review
+- lower-authority soft-source material may appear in research/reference,
+  project-state, and conflict artifacts only with visible provenance and
+  authority labels
 
 ## Objective
 
@@ -108,6 +121,9 @@ The policy layer should consume:
 - graph neighborhood access patterns
 - document-ingest and planner signals
 - operator review cadence and artifact usage
+- source authority tier
+- source profile id
+- admission/retrieval risk tier
 
 ## Policy outputs
 
@@ -120,6 +136,7 @@ Suggested policy outputs:
 - segment trim priority suggestions
 - cache invalidation scopes
 - operator-visible cost hot spots
+- authority-aware exclusion counts and reasons
 - packet budget tuning candidates
 - packet section-cap tuning candidates
 - packet family escalation candidates for stronger compile modes
@@ -200,6 +217,11 @@ because it is available on disk. Stale artifacts can be exposed for inspection,
 debugging, or conflict review, but normal injection should prefer active MMV2
 memory ids and fresh derived digests.
 
+Projection and capsule policy must also respect source authority. A fresh digest
+backed only by lower-authority soft sources is still lower authority; freshness
+does not promote trust. `inspection_only` sources should not contribute to
+normal projection or capsule output.
+
 ## Cost and latency posture
 
 If tradeoffs are needed, the policy layer should make them inspectable rather
@@ -224,6 +246,18 @@ First-pass uses:
 - operator reporting
 - future policy hooks
 - limited pack-selection hints
+
+Phase 2 locked exclusions:
+
+- raw prompts
+- full transcripts
+- raw tool logs
+- secrets
+- private phrases
+- hostile external imperatives as instructions
+
+These inputs may produce only redacted operational findings, safe ids, hashes,
+or bounded source refs where policy permits them.
 
 Second-pass uses may include:
 

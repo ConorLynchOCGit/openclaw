@@ -135,6 +135,10 @@ Reason:
 
 `subject_state` should follow only after `project_state` proves useful.
 
+Phase 2 v1 does not implement broad `subject_state`, `workflow_state`,
+`tool_or_skill_state`, or `external_entity_state` capsules until the
+`project_state` capsule is proven stable.
+
 ## What a capsule is
 
 A capsule should answer:
@@ -187,6 +191,8 @@ Each capsule may expose sections such as:
 - related tools and skills
 - related projects and workflows
 - open contradictions or uncertainty
+- soft-source evidence
+- authority and provenance notes
 - recent changes
 - provenance summary
 
@@ -206,6 +212,11 @@ Initial authority ordering should be:
 
 The capsule builder must not allow a lower-authority source to silently
 override a higher-authority source.
+
+Soft-source and conflicted material must appear only in labeled evidence,
+conflict, or uncertainty sections. Capsule compilation must not blend
+`cited_soft` claims into high-authority current-state prose without explicit
+promotion.
 
 If tension exists, the capsule should surface it as:
 
@@ -289,6 +300,10 @@ Suggested default:
 - broad status, planning, or topic prompts -> capsule retrieval or hybrid
 - long multi-objective prompts -> hierarchical retrieval with capsule-aware
   packing
+
+Ordinary context assembly may use capsules for broad planning or project-status
+prompts only after retrieval trace and evaluation proof. Atomic retrieval
+remains the default for narrow facts.
 
 ## Hierarchical retrieval interaction
 

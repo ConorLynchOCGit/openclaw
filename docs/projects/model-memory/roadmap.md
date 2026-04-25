@@ -36,8 +36,9 @@ title: "Model Memory Roadmap"
   MMV2 admission default.
 - Phase 0 is complete.
 - Phase 1 is complete.
-- Phase 2 conceptual design is complete, but implementation remains blocked on
-  the pre-Phase-2 ledger.
+- Phase 2 entry gates are green, implementation is authorized, and the
+  2026-04-25 feature-bucket/spec decision lock is the current planning
+  authority before implementation slicing.
 - Phase 3 is complete.
 - Phase 4 is complete.
 - Phase 5 is complete.
@@ -95,6 +96,12 @@ title: "Model Memory Roadmap"
   state, no-store/privacy/temp prompts create no active rows, dirty-state and
   pool telemetry are visible, strict-schema preflight runs actual contracts,
   and root `USER.md` / `MEMORY.md` hashes stay unchanged.
+- The 2026-04-25 Phase 2 planning pass locked the high-level bucket set and
+  added/updated specs for:
+  - [Soft-Source Ingestion And Authority](/projects/model-memory/specs/soft-source-ingestion-and-authority)
+  - [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
+  - authority-aware retrieval, graph, capsule, planner, skill/tool, cache, and
+    privacy behavior
 
 ## Current top priorities
 
@@ -136,12 +143,19 @@ title: "Model Memory Roadmap"
     as the standard entry point for future ingest resume/monitor/pause work
 13. proceed to Phase 2 derived features:
 
+- soft-source authority and source profiles
+- corpus system
+- Memory Maintenance Loop
+- hybrid retrieval
 - graph runtime
-- project/subject capsules
-- hierarchical retrieval
+- graph knowledge
+- project-state capsules
 - proactive planner
+- skills/tools
 - skill/tool synthesis
 - cache/projection policy
+- operator UX/observability
+- privacy and prompt-injection hardening
 
 Operational hardening note, 2026-04-23:
 
@@ -211,25 +225,30 @@ the current live authority where it conflicts with MMV2-native durable truth.
 
 - [Capture And Ingest Mechanical Hardening](/projects/model-memory/specs/capture-ingest-mechanical-hardening)
 
-14. Phase 2 graph runtime:
+14. Phase 2 soft-source authority and maintenance substrate:
+
+- [Soft-Source Ingestion And Authority](/projects/model-memory/specs/soft-source-ingestion-and-authority)
+- [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
+
+15. Phase 2 graph runtime:
 
 - [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
 
-14. First project-state capsule:
+16. First project-state capsule:
     - [Subject Capsules And Dense Ingestion](/projects/model-memory/specs/subject-capsules-and-dense-ingestion)
-15. Hierarchical retrieval:
+17. Hierarchical retrieval:
 
 - [Post-Cutover Hierarchical Retrieval](/projects/model-memory/specs/post-cutover-hierarchical-retrieval)
 
-16. Proactive planner:
+18. Proactive planner:
 
 - [Proactive Memory Planner](/projects/model-memory/specs/proactive-memory-planner)
 
-17. Skill/tool synthesis:
+19. Skill/tool synthesis:
 
 - [Skill And Tool Synthesis](/projects/model-memory/specs/skill-and-tool-synthesis)
 
-18. Cache/projection policy:
+20. Cache/projection policy:
 
 - [Cache And Projection Policy](/projects/model-memory/specs/cache-and-projection-policy)
 

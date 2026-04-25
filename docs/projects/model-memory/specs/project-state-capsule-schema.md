@@ -84,6 +84,16 @@ File names should be content-hash-addressed and should not overwrite root
 - provisional areas
 - open questions
 
+### Soft-source evidence
+
+- cited researcher report claims
+- cited assistant-answer claims
+- tool-grounded facts
+- lower-authority external references
+
+Soft-source evidence must remain labeled and must not be merged into standing
+rules or hard directives without authority promotion.
+
 ### Recent changes
 
 - recent material changes derived from canonical objects and artifact churn
@@ -107,6 +117,8 @@ Every capsule digest should include:
 - `stale_markers`
 - `conflict_markers`
 - `artifact_paths`
+- `authority_tiers`
+- `source_profile_ids`
 
 Retrieval may use the capsule only when all required source memory ids are
 active MMV2 ids or the request is explicitly inspection-oriented.
@@ -116,6 +128,8 @@ active MMV2 ids or the request is explicitly inspection-oriented.
 Each section should preserve:
 
 - authority band
+- authority tier
+- source profile id where available
 - trust notes
 - unresolved markers where needed
 

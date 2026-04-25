@@ -131,6 +131,18 @@ for:
 It should not remain a co-equal authority for graph topology if it keeps causing
 semantic slippage.
 
+### Source authority is carried through
+
+Graph nodes and edges should preserve source authority metadata from the MMV2
+source profile layer:
+
+- `authorityTier`
+- `sourceProfileId`
+- provenance refs
+
+This metadata affects graph retrieval expansion and capsule compilation. It
+does not turn graph state into semantic truth.
+
 ## Graph scope
 
 The graph is intentionally open to both internal and external entities.
@@ -228,6 +240,10 @@ Suggested first tiers:
 - `probationary_inferred`
 - `promoted_inferred`
 - `blocked_or_decayed`
+
+These graph edge authority tiers are separate from memory source authority
+tiers such as `user_authoritative`, `curated_authoritative`, `tool_grounded`,
+and `cited_soft`.
 
 `authoritative_structural` edges come from explicit MMV2 edges, structural
 supersession, exact source refs, exact ids, explicit user text, scope, status,
@@ -415,6 +431,10 @@ Suggested placement:
 
 - `runtime_context`
 - or a sibling schema such as `runtime_graph`
+
+Phase 2 v1 chooses a derived `runtime_graph` schema posture for graph nodes,
+edges, build runs, and invalidation state. MMV2 durable memories/events/edges
+remain the only semantic truth.
 
 The graph should be rebuildable from:
 

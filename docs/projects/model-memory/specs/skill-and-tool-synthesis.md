@@ -28,12 +28,15 @@ The synthesis direction is approved with these boundaries:
   URLs, command status, docs/runbooks found, and non-sensitive error classes;
   raw logs and transcripts are forbidden inputs
 
-Open decisions before implementation:
+2026-04-25 Phase 2 decision lock:
 
-- minimum evidence threshold for creating a skill/tool candidate
-- required replay/eval gates before surfacing a candidate
-- approval path for promoting an internal candidate into repo-local and Codex
-  global skills
+- create a candidate after three similar successful traces, or after one
+  explicit operator ask plus one successful manual run
+- approved internal candidates promote to repo-local/workspace-local skills or
+  specs first
+- global Codex skill promotion requires a second explicit approval
+- Phase 2 self-improvement drafts artifacts and proposals only; active behavior
+  changes require review
 
 2026-04-22 Phase 2 decision lock:
 
@@ -86,6 +89,8 @@ Candidate synthesis may draw from:
 - frequently reused tool call sequences
 - recurring workaround patterns
 - successful third-party skill usage
+- source-authority-aware memory evidence, including `tool_grounded` and
+  `cited_soft` references when appropriate
 
 ## Candidate types
 
@@ -210,6 +215,8 @@ Required checks before promotion:
 - contract verification
 - scope and permission review
 - privacy and egress review
+- source authority review
+- explicit operator approval
 - if third-party:
   - `skill-vetter`
   - local bounded evaluation
@@ -222,8 +229,11 @@ Required checks before promotion:
 First promotion target:
 
 - repo-owned draft artifact
+- repo-local or workspace-local skill after approval
 
 This keeps the first promotion auditable and reviewable.
+
+Global Codex skills require a second approval after repo-local proof.
 
 ### Third-party candidate
 

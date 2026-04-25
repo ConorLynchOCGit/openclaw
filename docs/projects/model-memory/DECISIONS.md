@@ -5,6 +5,90 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-25 - Phase 2 bucket set is locked
+
+Decision:
+
+- Phase 2 includes soft-source authority, corpus system, Memory Maintenance
+  Loop, hybrid retrieval, graph knowledge, project-state capsules, proactivity
+  and planner surfacing, skills/tools, gated self-improvement, operator
+  UX/observability, and privacy/prompt-injection hardening
+- broad capsule families, ungated global self-improvement, aggressive privacy
+  enforcement, and automatic third-party installation remain out of the first
+  Phase 2 implementation pass
+
+Reasoning:
+
+- the locked set covers the high-leverage behavior needed after MMV2 storage
+  cutover while keeping the first derived-feature pass inspectable, reversible,
+  and no-dark-data compliant
+
+## 2026-04-25 - Soft-source authority admits useful non-user knowledge without promoting it to user truth
+
+Decision:
+
+- source authority tiers are `user_authoritative`, `curated_authoritative`,
+  `tool_grounded`, `cited_soft`, and `inspection_only`
+- explicit user turns and curated corpus inputs may admit durable facts,
+  references, procedures, rules, and preferences according to their source
+  profile
+- researcher reports, cited assistant answers, daily continuity, and
+  tool-grounded summaries may create usable lower-authority memories only with
+  provenance and source profile metadata
+- raw transcripts, raw prompts, raw tool logs, secrets, and private phrases are
+  rejected or kept inspection-only according to safety policy
+- authority promotion requires explicit user approval or replacement by a
+  higher-authority source; corroboration may raise confidence but not authority
+
+Reasoning:
+
+- useful facts often arrive through agents, tools, and cited summaries, but
+  treating them as equivalent to explicit user memory would collapse trust and
+  make conflict handling unsafe
+
+## 2026-04-25 - Memory Maintenance Loop owns derived maintenance cadence
+
+Decision:
+
+- the user-facing product term is Memory Maintenance Loop, not dreaming
+- cadence is event-driven plus heartbeat plus daily review
+- maintenance may consolidate derived and soft-source artifacts, surface
+  candidates, report stale/conflict/cache issues, and propose planner or
+  self-improvement actions
+- maintenance must not mutate canonical MMV2 durable truth without an explicit
+  approved write path
+- maintenance candidates stay active for 30 days, archived for 90 days, and may
+  be pinned
+
+Reasoning:
+
+- the system needs background consolidation and hygiene, but framing it as
+  maintenance keeps behavior inspectable and separates derived work from
+  semantic authority
+
+## 2026-04-25 - Phase 2 retrieval, graph, capsules, planner, and self-improvement stay authority-aware and gated
+
+Decision:
+
+- deterministic retrieval runs before bounded hybrid expansion
+- lower-authority soft sources are limited to research/reference,
+  project-state, and conflict packs unless explicitly approved
+- graph knowledge is derived `runtime_graph` state; inferred probationary edges
+  are read-time only until promoted through an approved source path
+- Phase 2 capsules start with `project_state` only, including labeled soft and
+  conflict sections
+- planner/proactivity surfaces maintenance and opportunity candidates through
+  contextual one-liners, heartbeat, and artifacts
+- skills/tools require three similar successful traces or one explicit ask plus
+  one successful manual run; repo-local/workspace-local proposals come first,
+  and global Codex skill promotion requires a second approval
+
+Reasoning:
+
+- Phase 2 should increase retrieval quality and useful proactivity without
+  silently changing behavior, installing automation, or elevating lower-trust
+  evidence into operational directives
+
 ## 2026-04-23 - Closeout reports and retrieval miss telemetry are operational artifacts, not truth
 
 Decision:

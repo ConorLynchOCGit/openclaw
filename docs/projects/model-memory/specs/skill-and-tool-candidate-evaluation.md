@@ -21,6 +21,7 @@ heartbeat and locally relevant turns. Promotion remains approval-gated.
 - representative replay
 - contract validation
 - safety and permission review
+- source authority review
 - operator approval
 
 ### Workflow candidates
@@ -30,6 +31,11 @@ heartbeat and locally relevant turns. Promotion remains approval-gated.
 - no raw prompt, transcript, or tool-log dependency
 - rollback or disable posture for any automation proposal
 - operator approval before standing automation
+
+Phase 2 creates workflow, skill, or tool candidates after either:
+
+- three similar successful traces
+- one explicit operator ask plus one successful manual run
 
 ### Third-party candidates
 
@@ -68,6 +74,9 @@ The candidate should not proceed through that path.
 
 Under the current skills posture, approved install should be treated as live
 availability rather than staged quarantine.
+
+Internal candidates promote repo-local or workspace-local first. Global Codex
+skill promotion requires a second explicit approval.
 
 Workflow automation approval should be treated the same way: if approved and
 enabled, it is real behavior. Therefore the review artifact must clearly state

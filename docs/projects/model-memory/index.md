@@ -41,12 +41,13 @@ Current status:
   runtime records by default
 - the canonical Phase-2 blocker list is now
   [Pre-Phase-2 Gate Ledger](/projects/model-memory/pre-phase-2-gate-ledger)
+- Phase 2 is authorized, and the 2026-04-25 feature-bucket/spec decision lock
+  is the current planning authority before implementation slicing
 - legacy five-kind canonical storage is retired from active truth
 - legacy-shaped write/read compatibility remains soak-window fallback only
 - old v1 and pre-MMV2 cutover docs are historical design provenance, not
   current live authority
-- next work is closing the remaining pre-Phase-2 gates before graph/capsule/
-  planner execution begins
+- next work is implementation slicing for the locked Phase 2 buckets
 
 ## Project docs
 
@@ -78,51 +79,53 @@ Current status:
 26. [Deep Document Ingest Runbook](/projects/model-memory/deep-document-ingest-runbook)
 27. [Deep Ingest Verification Plan](/projects/model-memory/deep-ingest-verification-plan)
 28. [Deep Memory Soak Human Tests](/projects/model-memory/deep-memory-soak-human-tests)
-29. [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
-30. [Subject Capsules And Dense Ingestion](/projects/model-memory/specs/subject-capsules-and-dense-ingestion)
-31. [Proactive Memory Planner](/projects/model-memory/specs/proactive-memory-planner)
-32. [Skill And Tool Synthesis](/projects/model-memory/specs/skill-and-tool-synthesis)
-33. [Cache And Projection Policy](/projects/model-memory/specs/cache-and-projection-policy)
-34. [Kind Primary Schema Migration](/projects/model-memory/specs/kind-primary-schema-migration)
-35. [Graph Schema And Runtime Dependencies](/projects/model-memory/specs/graph-schema-and-runtime-dependencies)
-36. [Project State Capsule Schema](/projects/model-memory/specs/project-state-capsule-schema)
-37. [Planner Review Artifacts And Surfacing](/projects/model-memory/specs/planner-review-artifacts-and-surfacing)
-38. [Skill And Tool Candidate Evaluation](/projects/model-memory/specs/skill-and-tool-candidate-evaluation)
-39. [Prompt Contract Phase 2 Migration](/projects/model-memory/specs/prompt-contract-phase2-migration)
-40. [Second-Pass Privacy And Prompt-Injection Hardening](/projects/model-memory/specs/second-pass-privacy-prompt-injection-hardening)
-41. [Phase 2 Execution Roadmap](/projects/model-memory/phase-2-execution-roadmap)
-42. [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
-43. [Model Driven Packet Assembly Evaluation](/projects/model-memory/specs/model-driven-packet-assembly-evaluation)
-44. [Packet Compiler And Budgeting](/projects/model-memory/specs/packet-compiler-and-budgeting)
-45. [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
-46. [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
-47. [Memory Retrieval Runtime](/projects/model-memory/specs/memory-retrieval-runtime)
-48. [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)
-49. [Model Memory Evidence](/projects/model-memory/evidence)
-50. [Memory Residue Audit](/projects/model-memory/memory-residue-audit)
-51. [Legacy Memory Retirement Execution](/projects/model-memory/legacy-memory-retirement-execution)
-52. [Continuity Preservation And Retirement](/projects/model-memory/continuity-preservation-and-retirement)
-53. [USER.md And Projected Context Contract](/projects/model-memory/user-md-and-projected-context-contract)
-54. [Legacy Continuity Export And Ingest](/projects/model-memory/legacy-continuity-export-and-ingest)
-55. [Legacy Retirement Proof](/projects/model-memory/final-legacy-retirement-proof)
-56. [Document Ingest Pipeline Walkthrough](/projects/model-memory/document-ingest-pipeline-walkthrough)
-57. [Representative Corpus Rule Vs Fact Benchmark](/projects/model-memory/representative-corpus-rule-vs-fact-benchmark)
-58. [Rule Vs Fact Benchmark Scorecard](/projects/model-memory/rule-vs-fact-benchmark-scorecard)
-59. [Rule Vs Fact Variant Design](/projects/model-memory/rule-vs-fact-variant-design)
-60. [Rule Vs Fact Benchmark Findings](/projects/model-memory/rule-vs-fact-benchmark-findings)
-61. [Rule Vs Fact Next Change Recommendation](/projects/model-memory/rule-vs-fact-next-change-recommendation)
-62. [Memory Build Status And Next Steps](/projects/model-memory/memory-build-status-and-next-steps)
-63. [Daily Memory Grounding Repair](/projects/model-memory/daily-memory-grounding-repair)
-64. [Daily Continuity Health](/projects/model-memory/daily-continuity-health)
-65. [Memory Bootstrap Ownership Split Baseline 2026-04](/projects/model-memory/memory-bootstrap-ownership-split-baseline-2026-04)
-66. [Memory Bootstrap Ownership Contract](/projects/model-memory/memory-bootstrap-ownership-contract)
-67. [MEMORY.md Bootstrap Review 2026-04](/projects/model-memory/memory-md-bootstrap-review-2026-04)
-68. [Memory Bootstrap Semantics Restoration Baseline 2026-04](/projects/model-memory/memory-bootstrap-semantics-restoration-baseline-2026-04)
-69. [Memory Bootstrap Semantics Contract](/projects/model-memory/memory-bootstrap-semantics-contract)
-70. [MMV2 Ingestion Specs](/projects/model-memory/specs/mmv2)
-71. [MMV2 First Execution Sprint Checklist](/projects/model-memory/mmv2-first-execution-sprint-checklist)
-72. [MMV2 Corpus Evaluation Baseline 2026-04](/projects/model-memory/mmv2-corpus-evaluation-baseline-2026-04)
-73. [MMV2 Real Model Eval Baseline 2026-04](/projects/model-memory/mmv2-real-model-eval-baseline-2026-04)
+29. [Soft-Source Ingestion And Authority](/projects/model-memory/specs/soft-source-ingestion-and-authority)
+30. [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
+31. [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
+32. [Subject Capsules And Dense Ingestion](/projects/model-memory/specs/subject-capsules-and-dense-ingestion)
+33. [Proactive Memory Planner](/projects/model-memory/specs/proactive-memory-planner)
+34. [Skill And Tool Synthesis](/projects/model-memory/specs/skill-and-tool-synthesis)
+35. [Cache And Projection Policy](/projects/model-memory/specs/cache-and-projection-policy)
+36. [Kind Primary Schema Migration](/projects/model-memory/specs/kind-primary-schema-migration)
+37. [Graph Schema And Runtime Dependencies](/projects/model-memory/specs/graph-schema-and-runtime-dependencies)
+38. [Project State Capsule Schema](/projects/model-memory/specs/project-state-capsule-schema)
+39. [Planner Review Artifacts And Surfacing](/projects/model-memory/specs/planner-review-artifacts-and-surfacing)
+40. [Skill And Tool Candidate Evaluation](/projects/model-memory/specs/skill-and-tool-candidate-evaluation)
+41. [Prompt Contract Phase 2 Migration](/projects/model-memory/specs/prompt-contract-phase2-migration)
+42. [Second-Pass Privacy And Prompt-Injection Hardening](/projects/model-memory/specs/second-pass-privacy-prompt-injection-hardening)
+43. [Phase 2 Execution Roadmap](/projects/model-memory/phase-2-execution-roadmap)
+44. [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
+45. [Model Driven Packet Assembly Evaluation](/projects/model-memory/specs/model-driven-packet-assembly-evaluation)
+46. [Packet Compiler And Budgeting](/projects/model-memory/specs/packet-compiler-and-budgeting)
+47. [Memory Capture Seams](/projects/model-memory/specs/memory-capture-seams)
+48. [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
+49. [Memory Retrieval Runtime](/projects/model-memory/specs/memory-retrieval-runtime)
+50. [Packet And Kind Balance Proof Pack](/projects/model-memory/packet-and-kind-balance-proof-pack)
+51. [Model Memory Evidence](/projects/model-memory/evidence)
+52. [Memory Residue Audit](/projects/model-memory/memory-residue-audit)
+53. [Legacy Memory Retirement Execution](/projects/model-memory/legacy-memory-retirement-execution)
+54. [Continuity Preservation And Retirement](/projects/model-memory/continuity-preservation-and-retirement)
+55. [USER.md And Projected Context Contract](/projects/model-memory/user-md-and-projected-context-contract)
+56. [Legacy Continuity Export And Ingest](/projects/model-memory/legacy-continuity-export-and-ingest)
+57. [Legacy Retirement Proof](/projects/model-memory/final-legacy-retirement-proof)
+58. [Document Ingest Pipeline Walkthrough](/projects/model-memory/document-ingest-pipeline-walkthrough)
+59. [Representative Corpus Rule Vs Fact Benchmark](/projects/model-memory/representative-corpus-rule-vs-fact-benchmark)
+60. [Rule Vs Fact Benchmark Scorecard](/projects/model-memory/rule-vs-fact-benchmark-scorecard)
+61. [Rule Vs Fact Variant Design](/projects/model-memory/rule-vs-fact-variant-design)
+62. [Rule Vs Fact Benchmark Findings](/projects/model-memory/rule-vs-fact-benchmark-findings)
+63. [Rule Vs Fact Next Change Recommendation](/projects/model-memory/rule-vs-fact-next-change-recommendation)
+64. [Memory Build Status And Next Steps](/projects/model-memory/memory-build-status-and-next-steps)
+65. [Daily Memory Grounding Repair](/projects/model-memory/daily-memory-grounding-repair)
+66. [Daily Continuity Health](/projects/model-memory/daily-continuity-health)
+67. [Memory Bootstrap Ownership Split Baseline 2026-04](/projects/model-memory/memory-bootstrap-ownership-split-baseline-2026-04)
+68. [Memory Bootstrap Ownership Contract](/projects/model-memory/memory-bootstrap-ownership-contract)
+69. [MEMORY.md Bootstrap Review 2026-04](/projects/model-memory/memory-md-bootstrap-review-2026-04)
+70. [Memory Bootstrap Semantics Restoration Baseline 2026-04](/projects/model-memory/memory-bootstrap-semantics-restoration-baseline-2026-04)
+71. [Memory Bootstrap Semantics Contract](/projects/model-memory/memory-bootstrap-semantics-contract)
+72. [MMV2 Ingestion Specs](/projects/model-memory/specs/mmv2)
+73. [MMV2 First Execution Sprint Checklist](/projects/model-memory/mmv2-first-execution-sprint-checklist)
+74. [MMV2 Corpus Evaluation Baseline 2026-04](/projects/model-memory/mmv2-corpus-evaluation-baseline-2026-04)
+75. [MMV2 Real Model Eval Baseline 2026-04](/projects/model-memory/mmv2-real-model-eval-baseline-2026-04)
 
 ## Scope
 
@@ -166,6 +169,9 @@ Current operational scope:
   - implement closed-loop memory ops instrumentation
 - the reviewed implementation order now exists in:
   - [Phase 2 Execution Roadmap](/projects/model-memory/phase-2-execution-roadmap)
+- the current Phase 2 decision-lock specs now include:
+  - [Soft-Source Ingestion And Authority](/projects/model-memory/specs/soft-source-ingestion-and-authority)
+  - [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
 - the original Main-run interruption record now exists in:
   - [Deep Ingest Interruption Root Cause](/projects/model-memory/deep-ingest-interruption-root-cause)
 - the current packet and kind-balance proof obligations now live in:

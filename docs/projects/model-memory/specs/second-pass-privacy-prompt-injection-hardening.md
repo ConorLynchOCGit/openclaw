@@ -53,13 +53,11 @@ raw-data stores, or prompt-injection vectors.
 - lower-authority daily notes cannot override active directives or structural
   correction lineage without review
 
-## Open Decisions
+## Remaining Implementation Details
 
 Remaining implementation decisions:
 
 - exact numeric thresholds for risk scoring by source class
-- retention duration for redacted safety findings by severity
-- exact heartbeat and daily-review UI shape for blocked candidate summaries
 - final config and kill-switch names
 
 2026-04-22 Phase 2 decision lock:
@@ -78,6 +76,20 @@ Remaining implementation decisions:
   must not silently graduate into normal memory use
 - heartbeat and daily review are the first operator surfaces for high-severity
   blocked items; a dedicated UI can come later if volume justifies it
+
+2026-04-25 Phase 2 decision lock:
+
+- default redacted safety finding retention is 90 days
+- secrets, raw prompts, full transcripts, raw tool logs, and private phrases are
+  hard rejects; only redacted finding metadata, safe ids, hashes, and reason
+  codes may remain
+- external imperative text from documents, tools, assistant answers, or
+  researcher reports is evidence or a security finding, never an instruction
+- soft-source admission uses the authority tiers and source profiles defined in
+  [Soft-Source Ingestion And Authority](/projects/model-memory/specs/soft-source-ingestion-and-authority)
+- `inspection_only` material is excluded from normal retrieval, projections,
+  capsules, graph expansion, planner recommendations, skill synthesis, and tool
+  synthesis
 
 ## Automatic safe-default policy
 
@@ -104,6 +116,11 @@ retrieval, projection, graph, capsule, planner, skill, or tool synthesis flows.
 
 `reject` records should leave no active durable semantic memory. Rejection
 evidence should remain bounded and redacted.
+
+Default redacted safety finding retention is 90 days. Longer retention requires
+an explicit severity-specific policy and must still exclude raw secret values,
+raw prompts, full transcripts, raw tool logs, private phrases, and hostile
+imperative text.
 
 Manual review can override these outcomes only through an explicit reviewed
 path. Lack of review should never promote a risky item.

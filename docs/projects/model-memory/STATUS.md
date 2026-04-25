@@ -9,6 +9,22 @@ title: "Model Memory Status"
 
 State: `phase2_authorized`
 
+2026-04-25 Phase 2 spec decision update:
+
+- Phase 2 feature buckets are locked before implementation slicing:
+  soft-source authority, corpus system, Memory Maintenance Loop, hybrid
+  retrieval, graph knowledge, project-state capsules, proactivity/planner,
+  skills/tools, gated self-improvement, operator UX/observability, and
+  privacy/prompt-injection hardening
+- [Soft-Source Ingestion And Authority](/projects/model-memory/specs/soft-source-ingestion-and-authority)
+  and
+  [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
+  are now part of the Phase 2 spec pack
+- the updated Phase 2 specs are the pre-implementation authority for source
+  authority tiers, maintenance cadence, soft-source retrieval boundaries,
+  project-state capsule scope, planner surfacing, skill/tool promotion gates,
+  operator artifacts, and no-dark-data privacy constraints
+
 2026-04-24 pre-Phase-2 execution update:
 
 - the canonical blocker ledger is now

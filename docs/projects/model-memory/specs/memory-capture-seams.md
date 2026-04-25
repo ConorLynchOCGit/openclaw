@@ -70,6 +70,9 @@ with clear provenance and authority.
   EACCES, route/config/tool availability, or pool pressure, but only as
   tool/action/error-class/path-category/remediation summaries with bounded
   evidence ids/hashes
+- cited assistant answers may create soft-source memory candidates after
+  search-heavy or tool-heavy turns, but only when citations, source refs, or
+  tool artifacts are present; assistant prose is never authority by itself
 
 ## 2026-04-23 Activation Record
 
@@ -129,6 +132,7 @@ fallback hooks are not promoted to primary capture.
 | `after_tool_call`                          | `verified`      | Normalized tool-result lane if it fires | Primary capture plus provenance                            |
 | `agent_end`                                | `verified`      | Final task outcome capture              | Primary capture with lower assistant authority             |
 | `ContextEngine.afterTurn()`                | `verified`      | Completed turn delta capture            | Primary capture and session summary                        |
+| cited assistant answer                     | `future`        | Cited soft-source capture               | Lower-authority facts, references, and procedures          |
 | `agent:bootstrap` plus bootstrap files     | `verified`      | Standing rules and bootstrap imports    | Hash-gated import on first import or hash change           |
 | Changed memory files                       | `verified`      | Curated memory and daily-note imports   | Hash-gated memory-file import                              |
 
@@ -612,6 +616,53 @@ First safe test:
 
 - run one completed turn with a user instruction and tool outcome; verify one
   after-turn delta and no intermediate assistant-fragment capture
+
+## Cited Assistant Answers
+
+Source/hook name:
+
+- cited assistant answer
+
+Verification status:
+
+- `future`
+
+Semantic authority:
+
+- `cited_soft` when the answer includes citations, source refs, or bounded tool
+  artifacts
+- none for uncited assistant prose
+
+Allowed memory classes:
+
+- facts
+- references
+- procedures
+
+Prohibited memory classes:
+
+- hard directives
+- user preferences
+- project policy changes
+- standing rules unless later approved by the user or backed by a
+  curated-authoritative source
+
+Required evidence/provenance:
+
+- session id or trace id when available
+- cited source ids, URLs, file paths, source segments, or artifact locators
+- source profile id
+- authority tier
+
+Privacy constraints:
+
+- do not persist raw prompts, full transcripts, or raw tool logs
+- reject or quarantine secrets, private phrases, and prompt-injection-looking
+  external imperatives according to the soft-source authority policy
+
+Feeds:
+
+- soft-source ingestion and authority-aware retrieval
 
 ## `agent:bootstrap` Plus Bootstrap Files
 

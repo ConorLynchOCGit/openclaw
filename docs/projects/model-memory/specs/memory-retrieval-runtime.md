@@ -166,6 +166,21 @@ memory path. They should be ingested by content hash as lower-authority
 `daily_continuity` sources and should not override active directives,
 preference slots, or canonical decisions without admission.
 
+Phase 2 retrieval is authority-aware. Retrieval candidates and packs should
+carry `authorityTier` and `sourceProfileId` when available.
+
+Authority tiers are defined in
+[Soft-Source Ingestion And Authority](/projects/model-memory/specs/soft-source-ingestion-and-authority):
+
+- `user_authoritative`
+- `curated_authoritative`
+- `tool_grounded`
+- `cited_soft`
+- `inspection_only`
+
+Authority affects both admission and retrieval. Confidence and authority remain
+separate.
+
 ## Runtime primitives
 
 The first implementation should introduce typed runtime contracts without a DB
@@ -472,6 +487,8 @@ Rules:
 - hard directives outrank every other memory type
 - superseded/conflicted directives are never silently injected
 - soft preferences are scoped and can be omitted under tight budgets
+- `cited_soft` and `inspection_only` memories must not appear as hard operating
+  directives
 
 ### User profile pack
 
@@ -491,6 +508,10 @@ owners, environment facts, recent relevant episodes, and source refs.
 Project projections are useful here. Prefer a compiled project digest plus a
 small number of supporting memory ids over injecting many atomic records.
 
+Project-state packs may include `tool_grounded` and `cited_soft` facts,
+references, and procedures when authority labels are preserved and the content
+is not promoted into standing directives.
+
 ### Procedure pack
 
 Used when activation triggers match.
@@ -507,6 +528,9 @@ Used when grounding, docs, code, tickets, reports, or prior artifacts matter.
 
 Prefer locators over prose. The pack should tell the model where to look rather
 than copy unbounded source content.
+
+This is the default pack family for lower-authority cited research and
+researcher-report material.
 
 ### Episode continuity pack
 
@@ -529,6 +553,9 @@ Only injected when relevant.
 
 Contains unresolved conflicts, stale/superseded warnings, competing memories,
 and the recommended interpretation when scope resolves the apparent conflict.
+
+Soft-source conflicts should surface here rather than silently resolving
+higher-authority memories.
 
 ## Retrieval corpora
 
@@ -578,6 +605,8 @@ Index families:
 - projection digest: compact machine-readable digests before full page fetch
 - usage/quality: retrieval count, injection count, correction after injection,
   last accessed, duplicate/conflict count, staleness
+- authority/source profile: authority tier, source profile id, and source class
+  filters
 
 Hard filters:
 
@@ -633,6 +662,8 @@ Kind priority depends on task:
 - Q&A: source_ref, claim, projection, episode, directive
 - personal style: hard directive, preference claim, soft directive, episode
 - entity lookup: projection, claim, source_ref, episode, directive
+- research/reference: source_ref, cited_soft claim, tool_grounded fact,
+  projection, capsule
 
 ## Pack assembly
 
@@ -683,6 +714,11 @@ Injection targets:
   source refs, and recent episodes
 - tool hints for file paths, source refs, procedure ids, guardrails, and likely
   files
+
+When a `cited_soft` or conflicting source materially affects an answer, the
+ordinary response should expose enough citation or authority language for the
+operator to understand the source class. Full authority details stay in trace
+artifacts.
 
 Keep a fallback prompt-build integration only for session types where
 `assemble` is proven not to fire. The fallback must be telemetry-labeled and

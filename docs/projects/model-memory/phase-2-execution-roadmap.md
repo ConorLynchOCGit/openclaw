@@ -8,8 +8,9 @@ title: "Phase 2 Execution Roadmap"
 This roadmap turns the approved Phase 2 conceptual spec pack into an executable
 sequence.
 
-Phase 2 implementation is currently blocked on the remaining pre-Phase-2 gates
-listed in [Pre-Phase-2 Gate Ledger](/projects/model-memory/pre-phase-2-gate-ledger).
+Phase 2 implementation is authorized as of the green 2026-04-24 entry
+validation pack. The historical pre-Phase-2 gate record remains in
+[Pre-Phase-2 Gate Ledger](/projects/model-memory/pre-phase-2-gate-ledger).
 
 It is intentionally ordered. The goal is not to implement every concept in
 parallel. The goal is to land the next memory/runtime architecture in slices
@@ -34,8 +35,15 @@ Phase 2 currently assumes:
 - privacy and prompt-injection metadata are specified in Phase 2 now, but
   stronger enforcement lands in a second pass after the base graph and capsule
   system is proven
+- soft-source ingestion is allowed only with explicit provenance, source
+  profile id, source authority tier, and safety classification
+- the Memory Maintenance Loop owns event, heartbeat, and daily cadence for
+  derived consolidation, stale artifact handling, candidate surfacing, and
+  maintenance reports
+- user-visible Phase 2 behavior should ship shadow-first and become default
+  only after benchmark, eval, no-dark-data, and trace artifacts are green
 
-Before the larger graph/capsule waves proceed, the project now treats the
+Before the larger graph/capsule waves proceed, the project treated the
 Memory Retrieval Runtime, MMV2 capture coverage, closed-loop operational
 safety, and provider/evaluation stability as the immediate readiness substrate.
 
@@ -45,8 +53,9 @@ first.
 
 ## Pre-Phase-2 Continuation
 
-This continuation must finish before graph/capsule/planner implementation
-becomes the active engineering lane.
+This continuation is retained as the historical readiness checklist that had to
+finish before graph/capsule/planner implementation became the active
+engineering lane.
 
 1. Memory Retrieval Runtime:
    - implement the replacement architecture in
@@ -135,6 +144,40 @@ Validation gate:
 - deep ingest completes or advances cleanly
 - checkpoint contract is truthful under failure and resume
 - no known runtime rebuild race remains
+
+### Wave 0A: soft-source authority and maintenance substrate
+
+Goal:
+
+- lock source authority, soft-source ingestion, maintenance cadence, and review
+  artifact contracts before graph/capsule behavior depends on them
+
+Includes:
+
+- soft-source ingestion and authority
+- Memory Maintenance Loop
+- authority tier and source profile metadata propagation
+- maintenance candidate lifecycle: 30 days active, 90 days archived, with
+  pinning allowed
+- redacted safety finding retention: 90 days by default
+- hard rejects for secrets, raw prompts, full transcripts, raw tool logs, and
+  private phrases
+- no-op or shadow-mode report generation before any derived write/surfacing
+  behavior changes live answers
+
+Validation gate:
+
+- all soft-source candidates carry authority tier, source profile id,
+  provenance, and safety classification
+- lower-authority source material is visible only in research/reference,
+  project-state, or conflict artifacts unless explicitly approved
+- `inspection_only` material is excluded from ordinary retrieval, projections,
+  capsules, graph expansion, planner recommendations, skill synthesis, and tool
+  synthesis
+- no raw prompts, full transcripts, raw tool logs, secrets, or private phrases
+  are persisted in candidate, report, or telemetry output
+- maintenance reports provide actionable deltas without mutating MMV2 durable
+  truth
 
 ### Wave 1: graph substrate
 
@@ -277,6 +320,8 @@ Validation gate:
 Hard dependencies:
 
 - Wave 0 before everything else
+- Wave 0A before graph/capsule/planner/self-improvement behavior uses
+  soft-source or maintenance output
 - Wave 1 before Wave 2
 - Wave 2 before Wave 3
 - Wave 3 before Wave 4
@@ -297,6 +342,10 @@ For each implementation wave:
 - land schema changes before planner/projection behaviors that depend on them
 - keep feature flags or equivalent rollback seams when user-facing behavior can
   change materially
+- run new user-visible behavior in shadow mode first unless the wave is purely
+  internal instrumentation
+- promote defaults only after benchmark, eval, no-dark-data, and trace artifacts
+  are green
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
