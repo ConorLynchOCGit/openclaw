@@ -105,6 +105,7 @@ export function buildRetrievalPackArtifact(input: {
   includeInspectionCapsuleContext?: boolean;
   projectPageProjectionAvailable?: boolean;
   hierarchicalRetrievalShadow?: HierarchicalRetrievalShadowResult;
+  phase2ControlledRetrieval?: Record<string, unknown>;
 }) {
   const objectById = new Map(
     input.memoryObjects
@@ -219,6 +220,9 @@ export function buildRetrievalPackArtifact(input: {
       ...(projectStateCapsuleContext ? { projectStateCapsuleContext } : {}),
       ...(input.hierarchicalRetrievalShadow
         ? { hierarchicalRetrievalShadow: input.hierarchicalRetrievalShadow }
+        : {}),
+      ...(input.phase2ControlledRetrieval
+        ? { phase2ControlledRetrieval: input.phase2ControlledRetrieval }
         : {}),
       recallProof: {
         eligible: results.length > 0 || projectionDigests.length > 0,
