@@ -529,6 +529,105 @@ describe("retrieval packs", () => {
     expect(assembled.semiStableSegments[0]?.text).toContain("tool_grounded");
   });
 
+  it("records hierarchical retrieval shadow payload without rendering it into context", () => {
+    const artifact = buildRetrievalPackArtifact({
+      retrievalRequest: {
+        id: "retrieval-request-hierarchical-shadow",
+        sessionId: "session-hierarchical-shadow",
+        queryText: "sha256:hierarchical-query",
+        requestPurpose: "context_injection",
+        scope: { projectId: "project-001", retrievalRuntimeQueryHash: "hierarchical-query" },
+        desiredResultCount: 1,
+        contractName: "retrieval_request_interpretation",
+        contractVersion: "v1",
+        modelId: "retrieval-model-001",
+        createdAt: new Date(0),
+      },
+      retrievalResultSet: {
+        id: "retrieval-set-hierarchical-shadow",
+        retrievalRequestId: "retrieval-request-hierarchical-shadow",
+        contentHash: "hash-hierarchical-shadow",
+        resultCount: 0,
+        createdAt: new Date(0),
+      },
+      retrievalResultItems: [],
+      memoryObjects: [],
+      buildPolicyVersion: "v1",
+      hierarchicalRetrievalShadow: {
+        mode: "shadow_report_only",
+        plan: {
+          schemaVersion: "hierarchical_retrieval_plan.v1",
+          planId: "hierarchical-plan-1",
+          mode: "shadow_report_only",
+          parent: {
+            parentPlanId: "parent-plan-1",
+            parentGoal: "bounded project work",
+            parentQueryHash: "parent-query",
+            parentRedactedLabel: "sha256:parent-query",
+          },
+          decompositionMode: "bounded_multi_pass",
+          maxSubqueries: 3,
+          maxMergedResults: 3,
+          maxEstimatedTokens: 300,
+          subqueries: [
+            {
+              subqueryId: "sq-1",
+              goal: "status",
+              queryHash: "query-status",
+              redactedLabel: "sha256:query-status",
+              purpose: "project_state",
+              desiredResultCount: 1,
+              priority: 1,
+            },
+          ],
+        },
+        subqueryResults: [],
+        mergedCandidates: [],
+        exclusions: [],
+        telemetry: {
+          schemaVersion: "hierarchical_retrieval_telemetry.v1",
+          mode: "shadow_report_only",
+          defaultRetrievalChanged: false,
+          parentPlanId: "parent-plan-1",
+          planId: "hierarchical-plan-1",
+          subqueryIds: ["sq-1"],
+          subqueryCount: 1,
+          selectedMergedCandidateIds: [],
+          duplicateCandidateIds: [],
+          duplicateMergeReasons: [],
+          excludedIds: [],
+          exclusionReasons: {
+            hierarchical_disabled: 0,
+            subquery_limit: 0,
+            budget_overflow: 0,
+            invalid_subquery: 0,
+            stale: 0,
+            conflicted: 0,
+            inspection_only: 0,
+          },
+          authorityTiers: [],
+          sourceProfileIds: [],
+          lanesUsed: [],
+          graphLaneUsed: false,
+          projectionLaneUsed: false,
+          capsuleLaneUsed: false,
+          estimatedTokens: 0,
+        },
+      },
+    });
+
+    expect(artifact.renderedText).not.toContain("hierarchical-plan-1");
+    expect(artifact.structuredPayload?.hierarchicalRetrievalShadow).toEqual(
+      expect.objectContaining({
+        telemetry: expect.objectContaining({
+          mode: "shadow_report_only",
+          defaultRetrievalChanged: false,
+          subqueryIds: ["sq-1"],
+        }),
+      }),
+    );
+  });
+
   it("keeps only the latest retrieval pack for the active scope", () => {
     const assembled = assembleContext({
       projectionVersions: [],

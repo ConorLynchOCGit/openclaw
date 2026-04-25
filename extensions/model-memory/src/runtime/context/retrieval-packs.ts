@@ -13,6 +13,7 @@ import {
 } from "../../runtime-read-models.ts";
 import { readMemoryTraceIdFromScope } from "../../trace-id.ts";
 import { buildContextArtifact } from "../context-artifacts.ts";
+import type { HierarchicalRetrievalShadowResult } from "../retrieval/hierarchical-retrieval.ts";
 import type {
   ProjectStateCapsuleRetrievalShadowResult,
   ProjectionDigest,
@@ -103,6 +104,7 @@ export function buildRetrievalPackArtifact(input: {
   includeConflictAwareCapsuleContext?: boolean;
   includeInspectionCapsuleContext?: boolean;
   projectPageProjectionAvailable?: boolean;
+  hierarchicalRetrievalShadow?: HierarchicalRetrievalShadowResult;
 }) {
   const objectById = new Map(
     input.memoryObjects
@@ -215,6 +217,9 @@ export function buildRetrievalPackArtifact(input: {
         ? { capsuleRetrievalShadow: input.capsuleRetrievalShadow }
         : {}),
       ...(projectStateCapsuleContext ? { projectStateCapsuleContext } : {}),
+      ...(input.hierarchicalRetrievalShadow
+        ? { hierarchicalRetrievalShadow: input.hierarchicalRetrievalShadow }
+        : {}),
       recallProof: {
         eligible: results.length > 0 || projectionDigests.length > 0,
         acceptedSources: ["mmv2_runtime_memory", "mmv2_projection_digest"],
