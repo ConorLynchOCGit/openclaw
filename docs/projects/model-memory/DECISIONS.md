@@ -2576,3 +2576,29 @@ Reasoning:
 - capability-level approval keeps rollback and partial approval explicit
 - separating scoped production from broad default promotion prevents accidental
   context injection outside the intended operator/eval surface
+
+## 2026-04-25 - scoped Phase 2 production rollout consumes approved go-live artifact
+
+Decision:
+
+- scoped Phase 2 production rollout must be enabled by a typed rollout profile
+  derived from an approved go-live validation artifact
+- the approved profile binds report id, rollout scope id, rollout config id,
+  selected proof hashes, allowed sessions/projects/operators, capability modes,
+  and rollback target modes
+- live/runtime calls outside the approved scope continue to resolve to disabled
+  or shadow-only behavior
+- inside the approved scope, graph reads, `project_state` capsule retrieval, and
+  gated capsule context may flow through controlled retrieval packs when the
+  profile and production gates allow them
+- hierarchical retrieval remains shadow-only, and broad default promotion
+  remains a separate decision after scoped production observation is clean
+
+Reasoning:
+
+- the approved go-live artifact is the control-plane decision; the scoped
+  rollout profile is the live-runtime mechanism that consumes it
+- exact typed scope matching prevents accidental expansion from operator/eval
+  proof into broad default behavior
+- binding proof hashes and rollback modes into the profile keeps provenance and
+  rollback auditable before any future default-promotion decision

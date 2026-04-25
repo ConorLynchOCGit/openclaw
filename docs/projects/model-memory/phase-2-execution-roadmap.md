@@ -286,6 +286,10 @@ Validation gate:
   selects approved proof artifacts, records capability-level rollout decisions,
   runs a production-like UI/operator regression, and states whether the result
   is `approved_for_scope`, `partial_approval`, or `blocked`
+- scoped production rollout requires a typed profile that consumes the approved
+  go-live artifact, matches only approved sessions/projects/operators, proves
+  outside-scope default-off behavior, observes inside-scope graph/capsule/context
+  behavior, and keeps hierarchical retrieval shadow-only
 - no planner/proactive surfacing starts until the comprehensive eval/no-dark-data
   proof is green
 
