@@ -32,6 +32,7 @@ export * from "./real-retrieval-request-interpreter.ts";
 export * from "./real-semantic-interpreter.ts";
 export * from "./readiness-gates.ts";
 export * from "./proof/proof-corpus.ts";
+export * from "./proof/phase2-eval-proof.ts";
 export * from "./proof/proof-runner.ts";
 export * from "./project-state-capsule.ts";
 export * from "./projection-compiler.ts";
