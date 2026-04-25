@@ -13,6 +13,12 @@ These layers exist to support retrieval, prompt assembly, bootstrap projection, 
 
 They are not semantic truth.
 
+Shared derived-artifact mechanics are specified in
+[Derived Artifact Core](/projects/model-memory/specs/derived-artifact-core).
+Runtime read models and projections should use those mechanics where practical
+rather than maintaining projection-only copies of provenance, freshness,
+lifecycle, authority, artifact-writing, and read-only access behavior.
+
 ## Core rule
 
 Canonical memory objects are the only semantic source of truth.
@@ -217,6 +223,9 @@ projection pages for the full v1 projection catalog:
 - `agent_digest`
 - `projection_digest`
 
+Projection pages are workspace/bootstrap/read-model artifacts. They are not
+generation capsules.
+
 Each materialized page is a compiled view, not truth. It must include:
 
 - projection id
@@ -251,7 +260,9 @@ They must never be written back into root `USER.md` or `MEMORY.md`.
 
 Runtime use:
 
-- `project_page` supplies active project state, blockers, and recent decisions
+- `project_page` supplies operator/report project-state read-model visibility
+  and may later render a thin view over a fresh `project_state` capsule or
+  capsule digest
 - `procedure_page` supplies operational runbooks/checklists
 - `decision_log` supplies prior decisions plus stale/conflict markers
 - `source_page` points retrieval to canonical docs/source evidence
@@ -260,6 +271,13 @@ Runtime use:
   "what changed?" queries
 - `agent_digest` and `projection_digest` provide compact machine-facing
   retrieval context
+
+`project_page` must not remain a second independent rich project-state
+compiler. When a fresh `project_state` capsule exists for the same project,
+broad project-status, planning, and multi-objective prompts should prefer the
+capsule path. `project_page` remains useful for operator/report projection,
+bootstrap-compatible pages, and projection-backed recall when selected through
+normal retrieval rules and backed by active MMV2 source ids.
 
 Selection/injection:
 

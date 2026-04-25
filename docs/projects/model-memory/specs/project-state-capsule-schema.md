@@ -10,6 +10,10 @@ title: "Project State Capsule Schema"
 Define the first capsule schema in enough detail that `project_state` can be
 implemented and evaluated without inventing the artifact structure mid-flight.
 
+`project_state` is the rich project-state generation/context artifact. It is
+not a workspace projection and must not be duplicated by an independent
+`project_page` projection compiler.
+
 ## Capsule identity
 
 Each `project_state` capsule should identify:
@@ -123,6 +127,10 @@ Every capsule digest should include:
 Retrieval may use the capsule only when all required source memory ids are
 active MMV2 ids or the request is explicitly inspection-oriented.
 
+These fields should use the shared contracts from
+[Derived Artifact Core](/projects/model-memory/specs/derived-artifact-core)
+where practical.
+
 ## Authority fields
 
 Each section should preserve:
@@ -132,6 +140,26 @@ Each section should preserve:
 - source profile id where available
 - trust notes
 - unresolved markers where needed
+
+## Projection overlap policy
+
+`project_page` projection overlaps with `project_state` only at the product
+surface level. The allowed relationship is:
+
+- `project_state` owns structured current-state, decisions, constraints,
+  procedures, references, soft-source evidence, conflicts, and open-question
+  compilation
+- `project_page` may render an operator/report view or bootstrap-compatible
+  page
+- `project_page` may later become a thin markdown/read-model renderer over a
+  fresh `project_state` capsule or capsule digest
+- `project_page` must not independently classify or rederive project-state
+  sections once capsule output is available
+- retrieval/context assembly should prefer `project_state` for broad
+  project-status, planning, and multi-objective prompts
+
+This preserves projection usefulness without maintaining two competing
+project-state compilers.
 
 ## Evaluation bar
 

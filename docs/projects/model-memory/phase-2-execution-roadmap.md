@@ -24,6 +24,13 @@ Phase 2 currently assumes:
 - `kind` becomes the primary semantic axis
 - `canonicalClass` becomes secondary or derived
 - the first capsule flavor is `project_state`
+- projections and capsules stay separate product families:
+  - projections are workspace/bootstrap/read-model artifacts
+  - capsules are generation/context artifacts
+  - shared derived-artifact mechanics should live in one common core
+- `project_page` projection must not remain a second independent
+  project-state compiler; it is demoted to operator/report projection or later
+  becomes a thin renderer over a fresh `project_state` capsule
 - planner surfacing uses:
   - `must_surface`
   - `context_surface`
@@ -204,19 +211,29 @@ Goal:
 
 - compile denser, operator-verifiable memory artifacts from the graph and
   canonical memory objects
+- establish the shared derived-artifact core before projection/capsule overlap
+  grows
 
 Includes:
 
+- derived artifact core
 - subject capsules and dense ingestion
 - first `project_state` capsule schema
 - provenance and authority rules for capsule compilation
 - capsule storage/runtime exposure
+- projection/capsule role separation
+- `project_page` demotion or thin-renderer path so `project_state` owns rich
+  project-state generation/context compilation
 
 Validation gate:
 
 - at least one `project_state` capsule compiles deterministically from the live
   corpus
 - capsule provenance is inspectable
+- projection and capsule artifacts use shared provenance, freshness,
+  lifecycle, authority, and safe materialization helpers where practical
+- `project_page` does not independently duplicate project-state section
+  derivation when a `project_state` capsule is available
 - capsule output improves retrieval/context grounding for project-state prompts
 
 ### Wave 3: retrieval and context integration

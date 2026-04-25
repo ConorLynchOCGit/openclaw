@@ -5,6 +5,30 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-25 - Projections and capsules share derived-artifact mechanics but keep separate roles
+
+Decision:
+
+- projections remain workspace/bootstrap/read-model artifacts
+- capsules are the generation/context artifact family
+- Phase 2 should add a shared derived-artifact core for provenance,
+  deterministic ids/hashes, source refs, authority metadata, freshness,
+  lifecycle exclusion, conflict markers, artifact writing, and read-only stores
+- `project_state` capsule owns rich project-state generation/context
+  compilation
+- `project_page` projection must not remain a second independent project-state
+  compiler; it is either an operator/report projection or a thin renderer over
+  a fresh `project_state` capsule or capsule digest
+
+Reasoning:
+
+- projection and capsule code currently need many of the same safety mechanics,
+  but they serve different product roles
+- consolidating shared mechanics avoids divergent freshness, provenance,
+  lifecycle, and no-dark-data behavior
+- making `project_state` the rich project-state compiler prevents two parallel
+  implementations from drifting or disagreeing
+
 ## 2026-04-25 - Phase 2 bucket set is locked
 
 Decision:

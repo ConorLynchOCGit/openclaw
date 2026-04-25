@@ -42,6 +42,18 @@ The first capsule flavor is now chosen:
 - active project capsules receive eager refresh priority; broad subject
   capsules start on-demand until usage data justifies precompilation
 
+2026-04-25 projection/capsule separation decision:
+
+- projections remain workspace/bootstrap/read-model artifacts
+- capsules are the generation/context artifact family
+- shared provenance, freshness, lifecycle, authority, artifact-writing, and
+  read-only store mechanics should move into a shared derived-artifact core
+- `project_state` capsule owns rich project-state compilation for broad
+  project-status, planning, and multi-objective prompts
+- `project_page` projection must not remain a separate project-state compiler;
+  it is either an operator/report projection or a thin renderer over a fresh
+  `project_state` capsule or capsule digest
+
 ## Objective
 
 Add one derived artifact layer for dense subject understanding without replacing
@@ -64,6 +76,10 @@ Canonical memory objects remain the primary store.
 The graph runtime remains the structural substrate.
 
 Capsules are consumable views built on top of both.
+
+Shared artifact mechanics should come from
+[Derived Artifact Core](/projects/model-memory/specs/derived-artifact-core)
+rather than being reimplemented independently for capsules and projections.
 
 ## Artifact root
 
@@ -163,6 +179,11 @@ Capsules should support both:
 
 The first-pass design should treat both as first-class rather than optimizing
 only for one.
+
+Generation/context use belongs to capsules. Projection pages may support
+operator inspection, bootstrap surfaces, and projection-backed recall, but they
+should not independently compile rich project-state context once a
+`project_state` capsule exists for that project.
 
 ## Capsule contents
 
@@ -305,6 +326,12 @@ Ordinary context assembly may use capsules for broad planning or project-status
 prompts only after retrieval trace and evaluation proof. Atomic retrieval
 remains the default for narrow facts.
 
+When both a fresh `project_state` capsule and a `project_page` projection exist
+for the same project, broad project-status and planning prompts should prefer
+the capsule path. The projection remains eligible for operator/report use and
+normal projection-backed recall only when selected through retrieval and backed
+by active MMV2 ids.
+
 ## Hierarchical retrieval interaction
 
 Capsules are a major input to post-cutover hierarchical retrieval.
@@ -379,12 +406,16 @@ is explicitly inspection-oriented or conflict-aware.
 
 1. derive graph support for project targets
 2. define project-state capsule schema
-3. build and inspect one `project_state` capsule per active project
-4. route broad project prompts through project-state retrieval
-5. only after that, expand into generic `subject_state`
+3. consolidate shared derived-artifact mechanics for projections and capsules
+4. demote `project_page` to operator/report projection or make it a thin
+   renderer over `project_state`
+5. build and inspect one `project_state` capsule per active project
+6. route broad project prompts through project-state retrieval
+7. only after that, expand into generic `subject_state`
 
 ## Related specs
 
 - [Project State Capsule Schema](/projects/model-memory/specs/project-state-capsule-schema)
+- [Derived Artifact Core](/projects/model-memory/specs/derived-artifact-core)
 - [Graph Derived Runtime Model](/projects/model-memory/specs/graph-derived-runtime-model)
 - [Kind Primary Schema Migration](/projects/model-memory/specs/kind-primary-schema-migration)

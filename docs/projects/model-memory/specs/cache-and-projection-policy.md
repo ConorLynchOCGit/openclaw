@@ -57,6 +57,18 @@ Remaining implementation details:
   project-state, and conflict artifacts only with visible provenance and
   authority labels
 
+2026-04-25 projection/capsule separation decision:
+
+- cache/projection policy consumes the shared contracts from
+  [Derived Artifact Core](/projects/model-memory/specs/derived-artifact-core)
+- policy may prioritize, refresh, suppress, or report derived artifacts, but it
+  must not let projections and capsules become competing compilers for the same
+  generation/context role
+- `project_state` capsules are the primary broad project-state
+  generation/context artifact
+- `project_page` projections are operator/report or thin-rendered read-model
+  artifacts when a fresh `project_state` capsule exists for the same project
+
 ## Objective
 
 Turn the existing usage and cache ledger into a bounded policy layer that

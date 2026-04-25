@@ -100,6 +100,7 @@ title: "Model Memory Roadmap"
   added/updated specs for:
   - [Soft-Source Ingestion And Authority](/projects/model-memory/specs/soft-source-ingestion-and-authority)
   - [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
+  - [Derived Artifact Core](/projects/model-memory/specs/derived-artifact-core)
   - authority-aware retrieval, graph, capsule, planner, skill/tool, cache, and
     privacy behavior
 
@@ -150,6 +151,8 @@ title: "Model Memory Roadmap"
 - graph runtime
 - graph knowledge
 - project-state capsules
+- shared derived-artifact core for projections, capsules, graph reports, and
+  context artifacts
 - proactive planner
 - skills/tools
 - skill/tool synthesis
@@ -236,19 +239,23 @@ the current live authority where it conflicts with MMV2-native durable truth.
 
 16. First project-state capsule:
     - [Subject Capsules And Dense Ingestion](/projects/model-memory/specs/subject-capsules-and-dense-ingestion)
-17. Hierarchical retrieval:
+17. Shared derived-artifact core and projection/capsule separation:
+
+- [Derived Artifact Core](/projects/model-memory/specs/derived-artifact-core)
+
+18. Hierarchical retrieval:
 
 - [Post-Cutover Hierarchical Retrieval](/projects/model-memory/specs/post-cutover-hierarchical-retrieval)
 
-18. Proactive planner:
+19. Proactive planner:
 
 - [Proactive Memory Planner](/projects/model-memory/specs/proactive-memory-planner)
 
-19. Skill/tool synthesis:
+20. Skill/tool synthesis:
 
 - [Skill And Tool Synthesis](/projects/model-memory/specs/skill-and-tool-synthesis)
 
-20. Cache/projection policy:
+21. Cache/projection policy:
 
 - [Cache And Projection Policy](/projects/model-memory/specs/cache-and-projection-policy)
 
