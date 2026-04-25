@@ -74,6 +74,7 @@ describe("retrieval packs", () => {
     expect(artifact.renderedText).not.toContain("Find deployment information");
     expect(artifact.structuredPayload?.schemaVersion).toBe("memory_retrieval_runtime.v1");
     expect(artifact.structuredPayload?.memoryTraceId).toBe("memory_trace_turn_tracepack001");
+    expect(artifact.structuredPayload?.capsuleRetrievalShadow).toBeUndefined();
     expect(artifact.structuredPayload?.retrievalRun).toEqual(
       expect.objectContaining({
         rawQueryPersisted: false,
@@ -293,6 +294,91 @@ describe("retrieval packs", () => {
     expect(assembled.semiStableSegments[0]?.text).toContain("active project state");
     expect(assembled.semiStableSegments[0]?.text).toContain(
       ".openclaw/model-memory/projections/projects/page.md",
+    );
+  });
+
+  it("records capsule retrieval shadow telemetry only when explicitly provided", () => {
+    const artifact = buildRetrievalPackArtifact({
+      retrievalRequest: {
+        id: "retrieval-request-capsule-shadow",
+        sessionId: "session-capsule-shadow",
+        queryText: "sha256:capsule-query",
+        requestPurpose: "context_injection",
+        scope: { projectId: "project-001", retrievalRuntimeQueryHash: "capsule-query" },
+        desiredResultCount: 1,
+        contractName: "retrieval_request_interpretation",
+        contractVersion: "v1",
+        modelId: "retrieval-model-001",
+        createdAt: new Date(0),
+      },
+      retrievalResultSet: {
+        id: "retrieval-set-capsule-shadow",
+        retrievalRequestId: "retrieval-request-capsule-shadow",
+        contentHash: "hash-capsule-shadow",
+        resultCount: 0,
+        createdAt: new Date(0),
+      },
+      retrievalResultItems: [],
+      memoryObjects: [],
+      buildPolicyVersion: "v1",
+      capsuleRetrievalShadow: {
+        candidates: [],
+        exclusions: [],
+        packs: [
+          {
+            schemaVersion: "project_state_capsule_shadow_pack.v1",
+            packId: "capsule-pack-1",
+            shadow: true,
+            injected: false,
+            packType: "project_state_pack",
+            capsuleId: "capsule-1",
+            capsuleType: "project_state",
+            projectId: "project-001",
+            contentHash: "hash-capsule",
+            sourceMemoryIds: ["memory-project"],
+            sourceRefs: [{ sourceId: "source-project" }],
+            authorityTiers: ["curated_authoritative"],
+            sourceProfileIds: ["curated_corpus"],
+            freshness: { status: "fresh" },
+            staleMarkers: [],
+            conflictMarkers: [],
+            graphNodeIds: [],
+            graphEdgeIds: [],
+            sections: [],
+            estimatedTokens: 0,
+          },
+        ],
+        telemetry: {
+          schemaVersion: "project_state_capsule_shadow_telemetry.v1",
+          mode: "shadow_report_only",
+          wouldSelectCapsuleIds: ["capsule-1"],
+          excludedCapsuleIds: [],
+          exclusionReasons: {
+            shadow_disabled: 0,
+            scope_mismatch: 0,
+            stale: 0,
+            conflicted: 0,
+            inspection_only: 0,
+            no_source_memory_ids: 0,
+            not_generation_context_authority: 0,
+          },
+          capsuleSourceMemoryIds: ["memory-project"],
+          capsuleContentHashes: ["hash-capsule"],
+          projectPageBypassed: true,
+          projectPageBypassReason: "project_state_capsule_available",
+          defaultContextInjectionChanged: false,
+        },
+      },
+    });
+
+    expect(artifact.renderedText).not.toContain("capsule-1");
+    expect(artifact.structuredPayload?.capsuleRetrievalShadow).toEqual(
+      expect.objectContaining({
+        telemetry: expect.objectContaining({
+          wouldSelectCapsuleIds: ["capsule-1"],
+          defaultContextInjectionChanged: false,
+        }),
+      }),
     );
   });
 

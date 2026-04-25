@@ -14,6 +14,7 @@ import {
 import { readMemoryTraceIdFromScope } from "../../trace-id.ts";
 import { buildContextArtifact } from "../context-artifacts.ts";
 import type {
+  ProjectStateCapsuleRetrievalShadowResult,
   ProjectionDigest,
   RetrievalCandidate,
   RetrievalExclusion,
@@ -93,6 +94,7 @@ export function buildRetrievalPackArtifact(input: {
   retrievalExclusions?: RetrievalExclusion[];
   selectedProjectionDigests?: ProjectionDigest[];
   projectionVersions?: WorkspaceProjectionVersionRecord[];
+  capsuleRetrievalShadow?: ProjectStateCapsuleRetrievalShadowResult;
 }) {
   const objectById = new Map(
     input.memoryObjects
@@ -188,6 +190,9 @@ export function buildRetrievalPackArtifact(input: {
       retrievalPlan,
       retrievalRun,
       memoryPacks,
+      ...(input.capsuleRetrievalShadow
+        ? { capsuleRetrievalShadow: input.capsuleRetrievalShadow }
+        : {}),
       recallProof: {
         eligible: results.length > 0 || projectionDigests.length > 0,
         acceptedSources: ["mmv2_runtime_memory", "mmv2_projection_digest"],
