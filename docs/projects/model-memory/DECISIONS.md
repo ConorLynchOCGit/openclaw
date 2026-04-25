@@ -2504,3 +2504,27 @@ Reasoning:
 
 - counters show total cost
 - segment hashes show which layer changed, which helps explain cache misses and token growth without making observability a full prompt-text archive
+
+## 2026-04-25 - Phase 2 production rollout requires typed config seam
+
+Decision:
+
+- Phase 2 graph reads, `project_state` capsule retrieval, capsule context,
+  hierarchical retrieval, maintenance surfacing, soft-source runtime ingestion,
+  and non-user-prompt ingestion must be controlled by a typed rollout config
+  before any production enablement
+- the rollout config resolves capability modes into the production gate policy
+  and controlled retrieval-pack options
+- default runtime behavior remains disabled or shadow-only
+- controlled production requires passing Slice 8 retrieval integration proof,
+  Slice 9 comprehensive eval/no-dark-data proof, and UI runtime proof coverage
+
+Reasoning:
+
+- proof artifacts show that a capability can behave safely, but they are not a
+  live rollout control plane
+- a typed config seam keeps eval/operator enablement, controlled production,
+  and default promotion separate
+- preserving no-dark-data, source authority, freshness, conflict, and
+  inspection-only checks at config resolution prevents invalid rollout settings
+  from reaching retrieval/context assembly

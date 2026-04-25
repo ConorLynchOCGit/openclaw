@@ -263,6 +263,10 @@ Includes:
   - daily continuity
   - raw prompt, transcript, and tool-log rejection or `inspection_only`
   - secret and private phrase hard reject
+- a production rollout config seam after proof coverage is green, allowing
+  graph reads, `project_state` capsule retrieval, capsule context, and later
+  hierarchical retrieval to be enabled only through typed capability modes,
+  proof prerequisites, no-dark-data status, and explicit operator/eval flags
 
 Validation gate:
 
@@ -273,6 +277,9 @@ Validation gate:
   object, projection, capsule, and hierarchical lanes
 - comprehensive eval proves source profile id, authority tier, provenance,
   lifecycle exclusion, and no-dark-data behavior across capture and retrieval
+- production rollout config resolves to disabled or shadow-only by default, and
+  controlled production modes are rejected unless Slice 8, Slice 9, and UI
+  proof prerequisites pass
 - no planner/proactive surfacing starts until the comprehensive eval/no-dark-data
   proof is green
 
@@ -386,6 +393,9 @@ For each implementation wave:
   internal instrumentation
 - promote defaults only after benchmark, eval, no-dark-data, and trace artifacts
   are green
+- production-capable Phase 2 retrieval/context behavior must pass through the
+  typed rollout config seam; proof-green status alone is not permission to
+  change defaults
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

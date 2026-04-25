@@ -106,6 +106,7 @@ export function buildRetrievalPackArtifact(input: {
   projectPageProjectionAvailable?: boolean;
   hierarchicalRetrievalShadow?: HierarchicalRetrievalShadowResult;
   phase2ControlledRetrieval?: Record<string, unknown>;
+  phase2Rollout?: Record<string, unknown>;
 }) {
   const objectById = new Map(
     input.memoryObjects
@@ -224,6 +225,7 @@ export function buildRetrievalPackArtifact(input: {
       ...(input.phase2ControlledRetrieval
         ? { phase2ControlledRetrieval: input.phase2ControlledRetrieval }
         : {}),
+      ...(input.phase2Rollout ? { phase2Rollout: input.phase2Rollout } : {}),
       recallProof: {
         eligible: results.length > 0 || projectionDigests.length > 0,
         acceptedSources: ["mmv2_runtime_memory", "mmv2_projection_digest"],
