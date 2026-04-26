@@ -3013,3 +3013,32 @@ Reasoning:
 - the message payload is intentionally narrow and contains only safe ids,
   source refs, source profile ids, authority tiers, hashes, and bounded display
   text
+
+## 2026-04-26 - live proactive message delivery uses the gateway inject seam
+
+Decision:
+
+- the first live proactive message delivery seam uses the existing
+  `chat.inject` gateway path for the single approved message class
+  `operator_approved_suggestion_available`
+- delivery is allowed only inside explicit operator/eval scope after an
+  approved controlled suggestion, staged approval, explicit send approval,
+  provenance, no-dark-data pass, and inactive rollback
+- the delivered text is fixed bounded prose: "An approved operator suggestion
+  is available."; detailed evidence remains in bounded reports as ids, source
+  refs, source profile ids, authority tiers, and content/proof hashes
+- blocked message classes, outside-scope requests, missing approvals, rollback,
+  missing provenance, and no-dark-data failures do not reach the live delivery
+  adapter
+- `MODEL_MEMORY_PHASE2_LIVE_PROACTIVE_DELIVERY_DISABLED` rolls the live seam
+  back to proof-delivery/artifact-only behavior
+- broad/default proactive messaging, autonomous sending, and action execution
+  during delivery remain disabled
+
+Reasoning:
+
+- `chat.inject` is already a narrow operator-visible transcript/broadcast seam,
+  so it can prove live delivery without inventing broad notification
+  infrastructure
+- fixing delivered prose and keeping all evidence in reports prevents raw or
+  private content from becoming a proactive user-facing message

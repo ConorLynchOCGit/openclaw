@@ -464,6 +464,11 @@ For each implementation wave:
   `operator_approved_suggestion_available` message class as a bounded
   proof-delivery artifact only; broad/default proactive messaging remains off
   until a later promotion slice proves an actual safe notification seam
+- live proactive message delivery may use the existing `chat.inject` gateway
+  seam for `operator_approved_suggestion_available` only after controlled
+  suggestion, staged approval, explicit send approval, provenance, no-dark-data,
+  and rollback checks pass; broad/default proactive messaging and autonomous
+  sending remain off
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

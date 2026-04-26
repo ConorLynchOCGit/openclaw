@@ -374,6 +374,10 @@ export async function installOperatorPromptProbe(page) {
       historyOps: [],
       sessionOps: [],
     };
+    Object.defineProperty(probe, "sockets", {
+      value: [],
+      enumerable: false,
+    });
     window.__OPENCLAW_OPERATOR_PROMPT_PROBE__ = probe;
 
     const originalReplaceState = history.replaceState.bind(history);
@@ -398,6 +402,7 @@ export async function installOperatorPromptProbe(page) {
     class ProbeWebSocket extends OriginalWebSocket {
       constructor(...args) {
         super(...args);
+        probe.sockets.push(this);
         this.addEventListener("message", (event) => {
           let parsed = null;
           if (typeof event.data === "string") {
