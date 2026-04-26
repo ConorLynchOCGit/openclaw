@@ -3416,3 +3416,28 @@ Reasoning:
 - the feature only becomes useful day-to-day when the real workspace scope is
   default-active; exact typed scope keeps that promotion reversible and prevents
   accidental broad rollout
+
+## 2026-04-26 - autonomous send readiness remains manual-override only
+
+Decision:
+
+- low-risk proactive messages may be classified as future auto-send readiness
+  candidates only as report-only simulations
+- the manual override controls are fixed to `always_require_approval`,
+  `auto_approve_never`, and
+  `future_scoped_auto_send_allowed_for_review_only`
+- personal default scope and autonomous-send boundary proof are required before
+  readiness candidates are emitted
+- urgency manipulation, repeated suggestions, stale evidence, missing
+  provenance, missing source profile, no-dark-data failure, external
+  instruction text, rollback, and unknown/blocked classes block auto-send
+  readiness
+- `MODEL_MEMORY_PHASE2_AUTONOMOUS_SEND_READINESS_DISABLED` disables readiness
+  candidates while preserving the manual send workflow
+- autonomous sending and delivery-triggered action execution remain disabled
+
+Reasoning:
+
+- automatic proactive messages should not be promoted from theoretical
+  boundaries alone; the product now needs evidence about what would have sent
+  while keeping the actual delivery path explicitly manual

@@ -537,6 +537,11 @@ For each implementation wave:
   degraded observability, missing provenance, no-dark-data failure, or missing
   send approval block activation, and rollback returns to operator-only/manual
   proof mode
+- autonomous-send readiness after personal default scope is simulation-only:
+  low-risk candidates may show what would have sent, but manual override remains
+  mandatory, auto-approve remains disabled, future scoped auto-send remains
+  review-only, abuse/stale/repeat/provenance/no-dark-data checks block
+  candidates, and rollback disables readiness candidates
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
