@@ -1237,6 +1237,71 @@ function renderProductProactivityQueue(props: ChatProps): TemplateResult | typeo
   `;
 }
 
+function renderProductProactivityNotifications(props: ChatProps): TemplateResult | typeof nothing {
+  const items = (props.productProactivityQueue ?? []).filter(
+    (item) => item.status === "sent" || item.status === "approved_not_sent",
+  );
+  if (items.length === 0) {
+    return nothing;
+  }
+  return html`
+    <section class="proactivity-notification-stack" aria-label="Approved proactive messages">
+      ${items.map(
+        (item) => html`
+          <article class="proactivity-notification" data-queue-item-id=${item.queueItemId}>
+            <div class="proactivity-notification__body">
+              <div class="proactivity-notification__eyebrow">Approved Model Memory suggestion</div>
+              <div class="proactivity-notification__text">${item.boundedDisplayText}</div>
+              <details class="proactivity-notification__details">
+                <summary>Why this appeared</summary>
+                <div class="operator-row">
+                  <span>Sources</span>
+                  <span>${item.sourceRefs.slice(0, 4).join(", ") || "missing"}</span>
+                </div>
+                <div class="operator-row">
+                  <span>Profiles</span>
+                  <span>${item.sourceProfileIds.slice(0, 4).join(", ") || "missing"}</span>
+                </div>
+                <div class="operator-row">
+                  <span>Authority</span>
+                  <span>${item.authorityTiers.slice(0, 4).join(", ") || "missing"}</span>
+                </div>
+                <div class="operator-row">
+                  <span>Hashes</span>
+                  <span
+                    >${item.contentHashes.slice(0, 2).join(", ") ||
+                    item.proofHashes.slice(0, 2).join(", ")}</span
+                  >
+                </div>
+                <div class="operator-row">
+                  <span>Safety</span>
+                  <span>${item.noDarkDataStatus}; raw/private content excluded</span>
+                </div>
+              </details>
+            </div>
+            <div class="proactivity-notification__actions">
+              <button
+                class="btn btn--sm btn--ghost"
+                type="button"
+                @click=${() => props.onProductProactivityDismiss?.(item.queueItemId)}
+              >
+                Dismiss
+              </button>
+              <button
+                class="btn btn--sm btn--ghost"
+                type="button"
+                @click=${() => props.onProductProactivitySnooze?.(item.queueItemId)}
+              >
+                Snooze
+              </button>
+            </div>
+          </article>
+        `,
+      )}
+    </section>
+  `;
+}
+
 function buildRunStatusItem(props: ChatProps): Extract<ChatItem, { kind: "run-status" }> | null {
   const runActive = props.stream !== null || props.sending || props.canAbort === true;
   if (!runActive) {
@@ -1970,7 +2035,7 @@ export function renderChat(props: ChatProps) {
           diagnosticBundle,
           requestUpdate,
         })}
-        ${renderProductProactivityQueue(props)}
+        ${renderProductProactivityNotifications(props)} ${renderProductProactivityQueue(props)}
         ${props.loading
           ? html`
               <div class="chat-loading-skeleton" aria-label="Loading chat">

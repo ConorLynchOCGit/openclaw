@@ -526,6 +526,11 @@ For each implementation wave:
   and runtime graph/retrieval observations; stale/repeat suppression is
   deterministic, external/project text remains evidence not instruction, and
   rollback returns the queue to approved-report-only surfacing
+- approved proactive messages must render in product notification UX after
+  explicit approval/send approval, with provenance/why-this-appeared details and
+  dismiss/snooze controls; pending items must not notify, `chat.inject` remains
+  available, rollback disables notification surfacing, and autonomous sending
+  remains disabled
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

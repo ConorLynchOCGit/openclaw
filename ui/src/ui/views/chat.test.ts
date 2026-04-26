@@ -670,6 +670,72 @@ describe("chat view", () => {
     expect(onDismiss).toHaveBeenCalledWith("queue-item-1");
   });
 
+  it("renders approved proactive messages as notification UX only after send approval", () => {
+    const baseItem = {
+      queueItemId: "queue-item-1",
+      candidateId: "candidate-1",
+      messageClass: "operator_approved_follow_up_available" as const,
+      boundedDisplayText: "A recent Model Memory task has a follow-up ready for review.",
+      eligibleScope: {
+        environment: "live" as const,
+        userId: "conor",
+        recipientId: "conor",
+        projectId: "openclaw",
+        sessionKey: "main",
+        operatorId: "operator-conor",
+        allowedMessageClasses: ["operator_approved_follow_up_available"],
+        proofPrerequisiteIds: ["proof-1"],
+        proofPrerequisiteHashes: ["hash-1"],
+      },
+      sourceRefs: ["docs/projects/model-memory/phase-2-execution-roadmap.md"],
+      sourceProfileIds: ["curated_repo_doc"],
+      authorityTiers: ["curated_authoritative"],
+      contentHashes: ["content-hash-1"],
+      proofHashes: ["proof-hash-1"],
+      noDarkDataStatus: "pass" as const,
+      staleLabels: [],
+      conflictLabels: [],
+      blockedReasonCodes: [],
+      generatedAt: "2026-04-26T18:00:00.000Z",
+      updatedAt: "2026-04-26T18:00:00.000Z",
+    };
+    const beforeApproval = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          productProactivityQueue: [{ ...baseItem, status: "pending_review" as const }],
+        }),
+      ),
+      beforeApproval,
+    );
+    expect(beforeApproval.querySelector(".proactivity-notification")).toBeNull();
+
+    const afterApproval = document.createElement("div");
+    const onDismiss = vi.fn();
+    const onSnooze = vi.fn();
+    render(
+      renderChat(
+        createProps({
+          productProactivityQueue: [{ ...baseItem, status: "sent" as const }],
+          onProductProactivityDismiss: onDismiss,
+          onProductProactivitySnooze: onSnooze,
+        }),
+      ),
+      afterApproval,
+    );
+
+    expect(afterApproval.querySelector(".proactivity-notification")).not.toBeNull();
+    expect(afterApproval.textContent).toContain("Approved Model Memory suggestion");
+    expect(afterApproval.textContent).toContain("Why this appeared");
+    expect(afterApproval.textContent).toContain("raw/private content excluded");
+    expect(afterApproval.textContent).not.toContain("raw-prompt-marker");
+    const buttons = Array.from(afterApproval.querySelectorAll("button"));
+    buttons.find((button) => button.textContent?.includes("Dismiss"))?.click();
+    buttons.find((button) => button.textContent?.includes("Snooze"))?.click();
+    expect(onDismiss).toHaveBeenCalledWith("queue-item-1");
+    expect(onSnooze).toHaveBeenCalledWith("queue-item-1");
+  });
+
   it("dismisses BTW side results from the dismiss button", () => {
     const container = document.createElement("div");
     const onDismissSideResult = vi.fn();

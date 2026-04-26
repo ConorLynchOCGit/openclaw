@@ -3369,3 +3369,26 @@ Reasoning:
 - deterministic signal evidence keeps the system observable and suppressible
   without treating project docs, reports, or graph/capsule outputs as semantic
   truth by themselves
+
+## 2026-04-26 - approved proactive messages need product notification UX
+
+Decision:
+
+- approved/send-approved proactive messages are surfaced as bounded chat-banner
+  notifications in the normal product UX, not only as injected transcript lines
+- notifications render only after explicit approval/send approval and include
+  why-this-appeared provenance: source refs, source profile ids, authority
+  tiers, content/proof hashes, stale/conflict labels, and no-dark-data status
+- pending, blocked, dismissed, snoozed, and rollback-disabled items do not
+  render as deliverable notifications
+- dismiss and snooze remain explicit user controls, while `chat.inject`
+  transcript delivery stays available as delivery evidence
+- `MODEL_MEMORY_PHASE2_PROACTIVITY_NOTIFICATION_UX_DISABLED` rolls the
+  notification surface back to transcript/product-queue behavior
+- autonomous sending and delivery-triggered action execution remain disabled
+
+Reasoning:
+
+- proactive UX is not useful if successful delivery is visible only as a
+  transcript side effect; a small notification surface gives the user context,
+  controls, and provenance without broadening authority or exposing raw content
