@@ -542,6 +542,11 @@ For each implementation wave:
   mandatory, auto-approve remains disabled, future scoped auto-send remains
   review-only, abuse/stale/repeat/provenance/no-dark-data checks block
   candidates, and rollback disables readiness candidates
+- auto-send simulation observability must be green before controlled auto-send:
+  reports compare would-have-sent candidates with actual manual decisions,
+  track usefulness/noise signals, and block or degrade on urgency, stale/repeat,
+  provenance, source-profile, no-dark-data, leakage, and external-instruction
+  regressions while automatic delivery remains off
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

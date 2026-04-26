@@ -3441,3 +3441,25 @@ Reasoning:
 - automatic proactive messages should not be promoted from theoretical
   boundaries alone; the product now needs evidence about what would have sent
   while keeping the actual delivery path explicitly manual
+
+## 2026-04-26 - auto-send simulations must be observable before controlled send
+
+Decision:
+
+- Slice 44 "what would have sent" candidates are exposed through a bounded
+  simulation observability report before any controlled auto-send expansion
+- reports compare `would_have_auto_sent` with the actual manual user/operator
+  decision and track generated, approved, dismissed, snoozed, blocked,
+  repeated, and stale usefulness signals
+- urgency manipulation, stale/repeated suggestions, missing provenance, missing
+  source profiles, no-dark-data failures, leakage, and external instruction
+  text degrade or block simulation health with deterministic reason codes
+- `MODEL_MEMORY_PHASE2_AUTOSEND_SIMULATION_OBSERVABILITY_DISABLED` disables
+  simulation observability without enabling any automatic delivery
+- automatic sending and delivery-triggered action execution remain disabled
+
+Reasoning:
+
+- controlled auto-send should be based on measurable product behavior rather
+  than speculation; comparing simulations with manual decisions shows whether
+  auto-send would be useful or noisy without sending automatically
