@@ -56,6 +56,7 @@ export * from "./runtime/context/trim-policy.ts";
 export * from "./runtime/packs.ts";
 export * from "./runtime/phase2-ingestion-default-promotion.ts";
 export * from "./runtime/phase2-operator-ingestion-rollout.ts";
+export * from "./runtime/phase2-planner-readiness.ts";
 export * from "./runtime/retrieval/index.ts";
 export * from "./runtime/retrieval/phase2-integration-proof.ts";
 export * from "./runtime/projections/file-writer.ts";

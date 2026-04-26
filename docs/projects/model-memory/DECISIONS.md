@@ -2755,3 +2755,34 @@ Reasoning:
   on both the source-authority proof and live production observability
 - keeping source types capability-scoped avoids turning broad ingestion into an
   implicit semantic authority path
+
+## 2026-04-26 - planner readiness is broad evidence, report-only, and non-proactive
+
+Decision:
+
+- planner/proactivity readiness may consume bounded, provenance-bearing evidence
+  from durable MMV2 memories, project docs, curated docs/manual notes,
+  source-adapter outputs, tool-grounded artifacts, researcher/cited-soft
+  artifacts, daily continuity artifacts, runtime graph summaries,
+  `project_state` capsules, retrieval packs, hierarchical plans, maintenance
+  reports, production observability reports, and rollout proof reports
+- graph summaries, capsules, retrieval packs, hierarchical reports, project
+  docs, and rollout reports are planner evidence/control-plane/read-model
+  inputs, not semantic truth or external instructions
+- planner-readiness output is operator-visible/report-only; proactive surfacing
+  and planner action execution remain disabled
+- planner candidates must preserve source refs, source profile ids, authority
+  tiers, content/proof hashes, freshness/conflict markers, and no-dark-data
+  status
+- inspection-only, stale, conflicted, missing-provenance, budget-unsafe, or
+  no-dark-data-failing inputs are blocked or labeled with deterministic reason
+  codes
+
+Reasoning:
+
+- a useful future planner cannot be restricted to durable DB memory alone; it
+  needs the same approved project/docs/artifact evidence operators already use
+  to validate memory behavior
+- keeping readiness report-only prevents a premature proactivity launch while
+  still proving the evidence model, provenance propagation, and no-dark-data
+  gates required for a later planner slice

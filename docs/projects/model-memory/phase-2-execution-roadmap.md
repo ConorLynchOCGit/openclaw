@@ -426,6 +426,10 @@ For each implementation wave:
   bounded no-dark-data reports; default ingestion promotion requires a separate
   source-profile-limited decision bound to operator ingestion proof and
   production observability proof
+- planner/proactivity readiness must support approved project/docs/artifact
+  evidence in addition to durable MMV2 memory, but readiness artifacts remain
+  report-only until a later planner/proactivity promotion slice proves safe
+  surfacing and action boundaries
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
