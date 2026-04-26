@@ -474,6 +474,11 @@ For each implementation wave:
   Slice 28 and Slice 29 proofs pass; each send still requires explicit send
   approval, and rollback returns the workflow to controlled operator/eval-only
   visibility
+- controlled user-facing proactivity may expand to
+  `operator_approved_follow_up_available` only in explicit operator/eval scope;
+  the original suggestion-available class remains the only operator-default
+  visible message class, while broad/default proactive messaging and autonomous
+  sending remain off
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

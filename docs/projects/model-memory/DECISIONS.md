@@ -3067,3 +3067,27 @@ Reasoning:
   adds utility without authorizing automatic sends
 - keeping the message class fixed and the send approval explicit preserves the
   user-facing proactivity boundary for later controlled expansion
+
+## 2026-04-26 - controlled proactive messages support a second low-risk class
+
+Decision:
+
+- controlled user-facing proactivity now permits
+  `operator_approved_follow_up_available` in explicit operator/eval scope
+- `operator_approved_suggestion_available` remains the only message class in the
+  Slice 30 default-visible operator send workflow
+- both approved message classes require approved evidence, staged approval,
+  explicit send approval, provenance, no-dark-data pass, and inactive rollback
+- blocked/unknown message classes, external-instruction messages,
+  raw/private/secret content, and autonomous action requests remain blocked
+- `MODEL_MEMORY_PHASE2_CONTROLLED_USER_FACING_PROACTIVITY_EXPANSION_DISABLED`
+  disables the expanded controlled message class and returns to the single
+  operator-default message class
+- broad/default proactive messaging and autonomous sending remain disabled
+
+Reasoning:
+
+- adding one second bounded class proves the message delivery model can expand
+  without weakening the approval, provenance, no-dark-data, and rollback chain
+- keeping the second class controlled-only prevents silent default promotion
+  while preserving operator/eval utility
