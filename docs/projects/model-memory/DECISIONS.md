@@ -3257,3 +3257,31 @@ Reasoning:
   provenance, leakage, and stale/repeat controls all remain green
 - keeping Slice 37 report-only prevents readiness work from silently becoming a
   default-promotion change
+
+## 2026-04-26 - low-risk proactive messages may be default-eligible for approved users
+
+Decision:
+
+- when Slice 37 readiness is green, the two approved low-risk proactive
+  message classes may become `default_eligible_user_facing_delivery` for
+  eligible users:
+  `operator_approved_suggestion_available` and
+  `operator_approved_follow_up_available`
+- default-eligible does not mean automatic sending; every delivery still
+  requires explicit send approval, provenance, no-dark-data pass, healthy
+  observability, and eligible user scope
+- non-eligible users, blocked/unknown classes, degraded observability, missing
+  readiness, missing send approval, missing provenance, no-dark-data failure,
+  autonomous-send enablement, action execution during delivery, and rollback do
+  not deliver
+- `MODEL_MEMORY_PHASE2_USER_FACING_PROACTIVITY_DEFAULT_DISABLED` returns
+  delivery to controlled multi-user scope
+- autonomous sending and delivery-triggered action execution remain disabled
+
+Reasoning:
+
+- the default-promotion decision can green-light the maximum safe user-facing
+  message workflow only after the readiness gate aggregates successful
+  operator-default, observability, scoped, expanded, and cohort proof
+- keeping explicit send approval mandatory prevents default-eligible delivery
+  from becoming broad autonomous proactivity

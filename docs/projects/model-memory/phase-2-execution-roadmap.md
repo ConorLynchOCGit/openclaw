@@ -507,6 +507,10 @@ For each implementation wave:
   approval coverage, blocked-class and outside-scope blocking, rollback proof,
   provenance, no-dark-data pass, no leakage alerts, and stale/repeat
   suppression before a separate default-promotion slice may decide anything
+- user-facing proactive delivery may become default-eligible for approved users
+  only after Slice 37 readiness is green; the two approved low-risk classes
+  remain explicit-send-approval gated, and autonomous sending plus
+  delivery-triggered action execution remain disabled
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
