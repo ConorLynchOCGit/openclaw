@@ -2679,3 +2679,30 @@ Reasoning:
   behavior
 - binding the decision to approved proof hashes prevents accidental promotion
   from unreviewed artifacts or partial evidence
+
+## 2026-04-26 - operator ingestion and maintenance surfacing are operator-only
+
+Decision:
+
+- `maintenance_candidate_surfacing` may be live as operator-visible/report-only
+  behavior with bounded candidate ids, source refs, authority tiers, source
+  profile ids, lifecycle states, and no-dark-data status
+- `soft_source_runtime_ingestion` and `non_user_prompt_ingestion` may be live
+  only on approved operator paths that preserve source profile, authority tier,
+  provenance/source refs, and lower-authority labeling
+- tool-grounded, daily-continuity, and researcher/cited-soft sources may be
+  admitted only through the typed source-authority profile rules
+- assistant prose alone is not authority; raw prompts, full transcripts, raw
+  tool logs, secrets, and private phrases remain rejected or inspection-only and
+  excluded from normal retrieval
+- `MODEL_MEMORY_PHASE2_OPERATOR_INGESTION_DISABLED` is the rollback switch for
+  the operator ingestion rollout path
+- broad default ingestion remains gated pending additional live regression
+
+Reasoning:
+
+- the remaining Phase 2 capture/maintenance surfaces are useful only if
+  operators can inspect the admission/rejection and lifecycle decisions that
+  drive them
+- keeping this rollout operator-only preserves provenance and no-dark-data
+  guarantees while avoiding broad ingestion defaults before a separate proof
