@@ -2939,3 +2939,26 @@ Reasoning:
 - keeping execution proof-only and rollbackable provides evidence for future
   controlled action expansion while preserving the non-user-facing proactivity
   posture
+
+## 2026-04-26 - controlled action execution supports operator review notes
+
+Decision:
+
+- controlled action execution may also execute `create_operator_review_note`
+  in explicit operator/eval scope
+- operator review notes are bounded control-plane artifacts only; they do not
+  send user-facing messages, call external tools, mutate DB state, or write
+  unsafe files
+- execution still requires an approved staged proposal, explicit execution
+  approval, provenance, no-dark-data pass, and inactive rollback
+- unsafe action kinds remain blocked with deterministic reason codes
+- `MODEL_MEMORY_PHASE2_CONTROLLED_ACTION_EXPANSION_DISABLED` rolls expanded
+  action execution back to the proof-artifact-only execution posture
+- proactive user-facing messages and broad autonomous execution remain disabled
+
+Reasoning:
+
+- adding one additional harmless operator-visible action proves the action
+  boundary can support useful operator workflow without becoming automation
+- keeping the action artifact-only, approval-gated, and rollbackable preserves
+  the safety properties proven in the initial controlled execution slice

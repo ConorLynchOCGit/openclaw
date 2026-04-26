@@ -452,6 +452,10 @@ For each implementation wave:
   scope after staged approval and explicit execution approval; unsafe action
   kinds, user-facing proactive messages, and broad autonomous execution remain
   blocked
+- controlled action expansion may also run `create_operator_review_note` inside
+  explicit operator/eval scope after staged approval and explicit execution
+  approval; it remains artifact-only, operator-visible, rollbackable, and
+  non-user-facing
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
