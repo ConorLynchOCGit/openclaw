@@ -3177,3 +3177,32 @@ Reasoning:
 - requiring a green observability report before scoped delivery prevents
   expanding delivery when approval, leakage, stale/repeat, provenance, or
   rollback regressions are visible
+
+## 2026-04-26 - clean scoped proactivity telemetry can approve explicit scope expansion
+
+Decision:
+
+- the narrow Slice 34 real-user proactive delivery scope may expand only after
+  Slice 34 scoped delivery proof and Slice 33 proactive delivery observability
+  both validate cleanly
+- expansion remains `expanded_controlled_user_scope`, not broad/default
+  proactive messaging
+- expansion is blocked by degraded or blocked observability, outside-scope
+  delivery evidence, missing approval or send approval, blocked-class delivery,
+  leakage alerts, external-instruction regressions, repeated/stale suggestion
+  regressions, missing provenance, rollback bypass, or wildcard/global scope
+- the approved message classes remain limited to
+  `operator_approved_suggestion_available` and
+  `operator_approved_follow_up_available`
+- explicit send approval, provenance, no-dark-data pass, and rollback controls
+  remain mandatory; autonomous sending and action execution during delivery
+  remain disabled
+- `MODEL_MEMORY_PHASE2_PROACTIVITY_SCOPE_EXPANSION_DISABLED` rolls expansion
+  back to the single controlled real-user scope
+
+Reasoning:
+
+- the safest next step after first real-user delivery is a telemetry-gated
+  expansion decision, not immediate default promotion
+- expansion must be blocked by any regression that could imply leakage,
+  missing authorization, stale/repeated delivery, or rollback bypass

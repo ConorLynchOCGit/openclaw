@@ -494,6 +494,10 @@ For each implementation wave:
   operator-default proof and healthy proactive delivery observability pass; both
   approved low-risk classes remain send-approval required, and broad/default
   proactive messaging remains off
+- scoped real-user proactive delivery may expand only when Slice 34 delivery
+  proof and Slice 33 observability are clean; degraded observability,
+  authorization gaps, leakage, rollback bypass, stale/repeat regressions, or
+  wildcard/global scopes block expansion
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
