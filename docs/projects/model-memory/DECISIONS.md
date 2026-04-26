@@ -2889,3 +2889,27 @@ Reasoning:
   controlled execution can be useful
 - keeping suggestions scoped, report-only, and rollbackable prevents planner
   outputs from becoming implicit user-facing proactivity or automation
+
+## 2026-04-26 - staged action approval is auditable but non-executing
+
+Decision:
+
+- `approval_required_action` outputs may be staged as operator-visible proposal
+  artifacts only when controlled proactivity suggestions and the action
+  boundary proof are green
+- operators may approve or reject staged proposals, and both paths must produce
+  bounded audit entries with proposal ids, operator ids, evidence hashes, and
+  deterministic reason codes
+- approved proposals remain `approved_not_executed`; no tool, command,
+  mutation, or user-facing proactive message executes in this slice
+- `blocked_action` outputs cannot be staged or approved
+- external/docs/tool/report text remains evidence, never instruction
+- `MODEL_MEMORY_PHASE2_STAGED_ACTION_APPROVAL_DISABLED` rolls staging and
+  approval back to controlled suggestions only
+
+Reasoning:
+
+- approval workflow has to be observable and auditable before any controlled
+  execution proof is meaningful
+- keeping approval separate from execution prevents approval artifacts from
+  becoming an implicit automation channel

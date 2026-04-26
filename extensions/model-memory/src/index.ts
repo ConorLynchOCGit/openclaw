@@ -58,6 +58,7 @@ export * from "./runtime/phase2-planner-controlled-scope.ts";
 export * from "./runtime/phase2-planner-default-promotion.ts";
 export * from "./runtime/phase2-proactivity-action-boundary.ts";
 export * from "./runtime/phase2-controlled-proactivity-suggestions.ts";
+export * from "./runtime/phase2-staged-action-approval-workflow.ts";
 export * from "./runtime/phase2-ingestion-default-promotion.ts";
 export * from "./runtime/phase2-operator-ingestion-rollout.ts";
 export * from "./runtime/phase2-planner-readiness.ts";

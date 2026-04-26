@@ -444,6 +444,9 @@ For each implementation wave:
   operator/eval scope; they remain operator-visible report artifacts with no
   user-facing proactive messages, hidden chat injection, or action execution
   until approval workflow and controlled execution slices prove the next gates
+- staged action approval may review, approve, reject, and audit
+  `approval_required_action` proposals, but approved proposals remain
+  non-executing until a separate controlled execution proof is green
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
