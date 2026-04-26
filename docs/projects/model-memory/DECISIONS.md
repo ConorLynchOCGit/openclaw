@@ -2706,3 +2706,27 @@ Reasoning:
   drive them
 - keeping this rollout operator-only preserves provenance and no-dark-data
   guarantees while avoiding broad ingestion defaults before a separate proof
+
+## 2026-04-26 - promoted retrieval requires production observability and rollback proof
+
+Decision:
+
+- default-promoted Phase 2 retrieval behavior must have operator-visible health
+  reports before it is treated as operable production behavior
+- production health reports must summarize graph reads, `project_state` capsule
+  retrieval, `project_state` capsule context, hierarchical retrieval, fallback
+  decisions, rollback decisions, latency/budget stats, selected/excluded ids,
+  source profile ids, authority tiers, proof hashes, and no-dark-data status
+- stale/conflict leakage, inspection-only leakage, missing provenance, budget
+  overflow, stale-marker regressions, and missing rollback telemetry are
+  explicit health alerts
+- rollback proof must show graph/capsule/context/hierarchical retrieval can
+  return to disabled or shadow-only modes and ordinary retrieval falls back to
+  object-native single-pass behavior
+
+Reasoning:
+
+- live/default promotion is not enough; operators need bounded evidence that
+  the promoted behavior remains safe over time and can be reversed quickly
+- modeling rollback as a proof artifact keeps operational reversibility subject
+  to the same no-dark-data and provenance rules as promotion

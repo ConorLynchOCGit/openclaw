@@ -11,3 +11,4 @@ export * from "./phase2-scoped-production-rollout.ts";
 export * from "./phase2-default-promotion.ts";
 export * from "./phase2-hierarchical-controlled-promotion.ts";
 export * from "./phase2-hierarchical-default-promotion.ts";
+export * from "./phase2-production-observability.ts";

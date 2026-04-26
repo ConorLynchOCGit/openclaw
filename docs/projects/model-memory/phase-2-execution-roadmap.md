@@ -418,6 +418,9 @@ For each implementation wave:
 - hierarchical retrieval default promotion requires its own ordinary-path
   proof artifact, bounded fan-out telemetry, and rollback validation even after
   controlled operator/eval proof passes
+- promoted graph/capsule/context/hierarchical retrieval must also have
+  production observability reports and rollback proof before later ingestion or
+  planner work depends on it as live-operable behavior
 - maintenance surfacing and non-user-prompt/soft-source ingestion may go live
   only as operator-visible paths with typed authority/provenance metadata and
   bounded no-dark-data reports; broad default ingestion remains a later proof
