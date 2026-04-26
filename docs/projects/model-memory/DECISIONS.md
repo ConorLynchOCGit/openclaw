@@ -3118,3 +3118,32 @@ Reasoning:
   chain through the live delivery seam
 - promoting only operator-visible workflow access maximizes safe functionality
   without authorizing automatic sends or broad/default proactive messaging
+
+## 2026-04-26 - proactive delivery has operator-visible observability and abuse regression checks
+
+Decision:
+
+- proactive delivery now emits bounded operator-visible health reports for the
+  two approved low-risk message classes:
+  `operator_approved_suggestion_available` and
+  `operator_approved_follow_up_available`
+- health reports track delivery counts, send approvals, delivery ids, source
+  refs, source profile ids, authority tiers, content/proof hashes,
+  no-dark-data status, rollback state, latency, budget status, and blocked
+  reason codes
+- regression checks cover outside-scope delivery, missing approval, missing
+  explicit send approval, blocked/unknown classes, raw/private leakage,
+  external text treated as instruction, repeated/stale suggestions, missing
+  provenance, and rollback bypass
+- `MODEL_MEMORY_PHASE2_PROACTIVE_DELIVERY_OBSERVABILITY_ROLLBACK` proves all
+  proactive delivery can be disabled for both approved classes
+- autonomous sending, broad/default user-facing proactivity, and action
+  execution during delivery remain disabled
+
+Reasoning:
+
+- default-visible operator workflows need continuous observability before any
+  broader real-user rollout can be considered
+- abuse/regression checks make approval, scope, provenance, and no-dark-data
+  failures visible as deterministic reason codes instead of relying on manual
+  inspection

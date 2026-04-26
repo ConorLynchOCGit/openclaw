@@ -484,6 +484,11 @@ For each implementation wave:
   and `operator_approved_follow_up_available` after Slice 30 and Slice 31
   proofs pass; each send still requires explicit send approval, and rollback
   returns the workflow to the single-message operator-default workflow
+- proactive delivery must remain covered by operator-visible health reports and
+  abuse regression checks before real-user scope expansion; health reports must
+  include send approvals, delivery ids, source refs, source profiles, authority
+  tiers, content/proof hashes, no-dark-data status, rollback state, latency,
+  budget status, and deterministic blocked reason codes
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
