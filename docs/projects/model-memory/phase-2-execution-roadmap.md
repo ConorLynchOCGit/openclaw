@@ -430,6 +430,9 @@ For each implementation wave:
   evidence in addition to durable MMV2 memory, but readiness artifacts remain
   report-only until a later planner/proactivity promotion slice proves safe
   surfacing and action boundaries
+- controlled planner candidate plans may be generated only for explicit
+  operator/eval scope and must stay report-only with rollback proof before any
+  default operator-visible promotion decision
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

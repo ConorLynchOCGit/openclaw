@@ -2786,3 +2786,31 @@ Reasoning:
 - keeping readiness report-only prevents a premature proactivity launch while
   still proving the evidence model, provenance propagation, and no-dark-data
   gates required for a later planner slice
+
+## 2026-04-26 - controlled planner candidate plans require explicit operator/eval scope
+
+Decision:
+
+- planner readiness may advance to controlled operator/eval use only when the
+  request matches an explicit approved scope
+- inside approved scope, the planner may generate bounded candidate plans from
+  durable memory plus approved project/docs/artifact evidence, but every plan
+  remains report-only and non-actionable
+- outside approved scope, planner candidate-plan generation remains disabled
+  and readiness stays report-only
+- candidate plans must preserve evidence bindings, source refs, source profile
+  ids, authority tiers, content/proof hashes, no-dark-data status, and explicit
+  evidence-not-instruction handling
+- `MODEL_MEMORY_PHASE2_PLANNER_CONTROLLED_DISABLED` rolls controlled planner
+  candidate-plan generation back to readiness/report-only behavior
+- no proactive user-facing message, user interruption, hidden chat injection, or
+  planner action execution is permitted by this controlled scope
+
+Reasoning:
+
+- operator utility requires a requestable planner surface before any default
+  promotion decision, but scope matching and rollback are required to avoid
+  accidentally creating proactive behavior
+- using the Slice 19 readiness report as the evidence source keeps the
+  controlled planner path broad enough for project/docs/artifact evidence while
+  preserving authority and no-dark-data gates
