@@ -3311,3 +3311,31 @@ Reasoning:
   candidates before any delivery policy can change
 - explicit blocks for urgency and external imperatives prevent project docs,
   tools, or reports from escalating evidence into instructions
+
+## 2026-04-26 - proactive suggestions must surface in normal product UX
+
+Decision:
+
+- default-eligible proactive messages now have a real product surfacing path:
+  a pending proactive suggestions queue in the normal chat/operator UX
+- queue items are built from approved user-facing proactivity default evidence
+  and expose bounded display text, eligible scope, source refs, source profile
+  ids, authority tiers, content/proof hashes, no-dark-data status, stale/
+  conflict labels, and deterministic blocked reason codes
+- explicit `Approve & Send` remains mandatory and uses the existing
+  `chat.inject` gateway seam; dismiss and snooze are visible product controls
+- the live scope is typed `product_operator_visible_queue` for the real
+  live user/project/session/operator scope, not proof fixture scope
+- `MODEL_MEMORY_PHASE2_PRODUCT_PROACTIVITY_SURFACING_DISABLED` rolls the
+  product queue and send control back to proof/operator-only surfacing
+- autonomous sending, broad uncontrolled proactivity, and delivery-triggered
+  action execution remain disabled
+
+Reasoning:
+
+- prior slices proved the approval/send pipeline but did not make it useful in
+  day-to-day UX because messages were visible only through proof/operator
+  scripts
+- surfacing a bounded queue in the normal product path lets the user encounter,
+  inspect, approve, dismiss, or snooze proactive suggestions without weakening
+  provenance, no-dark-data, or manual-send gates

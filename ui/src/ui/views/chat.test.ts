@@ -609,6 +609,67 @@ describe("chat view", () => {
     expect(diagnostic).not.toContain("RAW PROMPT SHOULD NOT ENTER DIAGNOSTIC BUNDLE");
   });
 
+  it("renders pending product proactivity queue with explicit approve and provenance details", () => {
+    const container = document.createElement("div");
+    const onApprove = vi.fn();
+    const onDismiss = vi.fn();
+    render(
+      renderChat(
+        createProps({
+          productProactivityQueue: [
+            {
+              queueItemId: "queue-item-1",
+              candidateId: "candidate-1",
+              messageClass: "operator_approved_suggestion_available",
+              boundedDisplayText: "An approved operator suggestion is available.",
+              status: "pending_review",
+              eligibleScope: {
+                environment: "live",
+                userId: "conor",
+                recipientId: "conor",
+                projectId: "openclaw",
+                sessionKey: "main",
+                operatorId: "operator-conor",
+                allowedMessageClasses: ["operator_approved_suggestion_available"],
+                proofPrerequisiteIds: ["proof-1"],
+                proofPrerequisiteHashes: ["hash-1"],
+              },
+              sourceRefs: ["source-ref-1"],
+              sourceProfileIds: ["curated_repo_doc"],
+              authorityTiers: ["curated_authoritative"],
+              contentHashes: ["content-hash-1"],
+              proofHashes: ["proof-hash-1"],
+              noDarkDataStatus: "pass",
+              staleLabels: [],
+              conflictLabels: [],
+              blockedReasonCodes: [],
+              generatedAt: "2026-04-26T16:00:00.000Z",
+              updatedAt: "2026-04-26T16:00:00.000Z",
+            },
+          ],
+          onProductProactivityApproveSend: onApprove,
+          onProductProactivityDismiss: onDismiss,
+        }),
+      ),
+      container,
+    );
+
+    expect(container.querySelector(".product-proactivity-panel")).not.toBeNull();
+    expect(container.textContent).toContain("Pending proactive suggestions");
+    expect(container.textContent).toContain("An approved operator suggestion is available.");
+    expect(container.textContent).toContain("Why this appeared");
+    const approve = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Approve & Send"),
+    );
+    approve?.click();
+    expect(onApprove).toHaveBeenCalledWith("queue-item-1");
+    const dismiss = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Dismiss"),
+    );
+    dismiss?.click();
+    expect(onDismiss).toHaveBeenCalledWith("queue-item-1");
+  });
+
   it("dismisses BTW side results from the dismiss button", () => {
     const container = document.createElement("div");
     const onDismissSideResult = vi.fn();

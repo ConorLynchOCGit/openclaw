@@ -27,6 +27,60 @@ export type ChannelUiMetaEntry = {
   systemImage?: string;
 };
 
+export type ProductProactivityQueueItemStatus =
+  | "pending_review"
+  | "approved_not_sent"
+  | "sent"
+  | "dismissed"
+  | "snoozed"
+  | "blocked"
+  | "rollback_disabled";
+
+export type ProductProactivityQueueItem = {
+  queueItemId: string;
+  candidateId: string;
+  messageClass: "operator_approved_suggestion_available" | "operator_approved_follow_up_available";
+  boundedDisplayText: string;
+  status: ProductProactivityQueueItemStatus;
+  eligibleScope: {
+    environment: "live";
+    userId: string;
+    recipientId: string;
+    projectId: string;
+    sessionKey: string;
+    operatorId: string;
+    allowedMessageClasses: string[];
+    proofPrerequisiteIds: string[];
+    proofPrerequisiteHashes: string[];
+  };
+  sourceRefs: string[];
+  sourceProfileIds: string[];
+  authorityTiers: string[];
+  contentHashes: string[];
+  proofHashes: string[];
+  noDarkDataStatus: "pass" | "fail";
+  staleLabels: string[];
+  conflictLabels: string[];
+  blockedReasonCodes: string[];
+  generatedAt: string;
+  updatedAt: string;
+};
+
+export type ProductProactivityQueueResult = {
+  ok: boolean;
+  reportId: string;
+  decision: string;
+  queue: {
+    queueId: string;
+    surface: string;
+    items: ProductProactivityQueueItem[];
+    generatedAt: string;
+  };
+  rollbackPlan?: {
+    killSwitchEnvVar?: string;
+  };
+};
+
 export const CRON_CHANNEL_LAST = "last";
 
 export type ChannelAccountSnapshot = {

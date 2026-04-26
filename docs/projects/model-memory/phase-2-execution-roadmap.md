@@ -515,6 +515,11 @@ For each implementation wave:
   classifications may be recorded, but automatic messages remain disabled,
   manual send remains required, urgency/external-instruction abuse is blocked,
   and rollback disables candidate generation
+- product proactive surfacing must use normal OpenClaw UX, not proof scripts
+  alone: approved suggestions enter a typed pending queue visible in chat/
+  operator surfaces, expose why-they-appeared provenance, and can call
+  `chat.inject` only after explicit `Approve & Send`; rollback returns this to
+  proof/operator-only mode and autonomous sending remains disabled
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

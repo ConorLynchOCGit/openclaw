@@ -40,7 +40,11 @@ import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
 import type { SidebarContent } from "../sidebar-content.ts";
 import { detectTextDirection } from "../text-direction.ts";
-import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
+import type {
+  GatewaySessionRow,
+  ProductProactivityQueueItem,
+  SessionsListResult,
+} from "../types.ts";
 import type { ChatItem, MessageGroup, ToolCard } from "../types/chat-types.ts";
 import type { ChatAttachment, ChatQueueItem } from "../ui-types.ts";
 import { agentLogoUrl, resolveAgentAvatarUrl } from "./agents-utils.ts";
@@ -70,6 +74,9 @@ export type ChatProps = {
   assistantAvatarUrl?: string | null;
   draft: string;
   queue: ChatQueueItem[];
+  productProactivityLoading?: boolean;
+  productProactivityError?: string | null;
+  productProactivityQueue?: ProductProactivityQueueItem[];
   connected: boolean;
   canSend: boolean;
   disabledReason: string | null;
@@ -100,6 +107,9 @@ export type ChatProps = {
   onSend: () => void;
   onAbort?: () => void;
   onQueueRemove: (id: string) => void;
+  onProductProactivityApproveSend?: (id: string) => void;
+  onProductProactivityDismiss?: (id: string) => void;
+  onProductProactivitySnooze?: (id: string) => void;
   onDismissSideResult?: () => void;
   onNewSession: () => void;
   onClearHistory?: () => void;
@@ -1112,6 +1122,121 @@ function renderOperatorExperiencePanel(params: {
   `;
 }
 
+function formatProactivityClass(messageClass: ProductProactivityQueueItem["messageClass"]): string {
+  return messageClass === "operator_approved_follow_up_available"
+    ? "Follow-up available"
+    : "Suggestion available";
+}
+
+function renderProductProactivityQueue(props: ChatProps): TemplateResult | typeof nothing {
+  const items = props.productProactivityQueue ?? [];
+  if (!props.productProactivityLoading && !props.productProactivityError && items.length === 0) {
+    return nothing;
+  }
+  return html`
+    <section class="product-proactivity-panel" aria-label="Pending proactive suggestions">
+      <div class="product-proactivity-panel__header">
+        <div>
+          <div class="product-proactivity-panel__eyebrow">Model Memory</div>
+          <h3>Pending proactive suggestions</h3>
+        </div>
+        <span class="product-proactivity-panel__count"
+          >${items.length} item${items.length === 1 ? "" : "s"}</span
+        >
+      </div>
+      ${props.productProactivityLoading
+        ? html`<div class="product-proactivity-panel__empty">Loading proactive queue...</div>`
+        : nothing}
+      ${props.productProactivityError
+        ? html`<div class="callout danger">${props.productProactivityError}</div>`
+        : nothing}
+      ${items.length
+        ? html`
+            <div class="product-proactivity-panel__list">
+              ${items.map((item) => {
+                const canSend = item.status === "pending_review";
+                return html`
+                  <article
+                    class="product-proactivity-item product-proactivity-item--${item.status}"
+                  >
+                    <div class="product-proactivity-item__main">
+                      <div class="product-proactivity-item__meta">
+                        <span>${formatProactivityClass(item.messageClass)}</span>
+                        <span>${item.status.replace(/_/g, " ")}</span>
+                        <span
+                          >${item.noDarkDataStatus === "pass"
+                            ? "no-dark-data pass"
+                            : "blocked"}</span
+                        >
+                      </div>
+                      <div class="product-proactivity-item__text">${item.boundedDisplayText}</div>
+                      <details class="product-proactivity-item__details">
+                        <summary>Why this appeared</summary>
+                        <div class="operator-row">
+                          <span>Sources</span>
+                          <span>${item.sourceRefs.slice(0, 4).join(", ") || "missing"}</span>
+                        </div>
+                        <div class="operator-row">
+                          <span>Profiles</span>
+                          <span>${item.sourceProfileIds.slice(0, 4).join(", ") || "missing"}</span>
+                        </div>
+                        <div class="operator-row">
+                          <span>Authority</span>
+                          <span>${item.authorityTiers.slice(0, 4).join(", ") || "missing"}</span>
+                        </div>
+                        <div class="operator-row">
+                          <span>Hashes</span>
+                          <span
+                            >${item.contentHashes.slice(0, 2).join(", ") ||
+                            item.proofHashes.slice(0, 2).join(", ")}</span
+                          >
+                        </div>
+                        ${item.blockedReasonCodes.length
+                          ? html`<div class="operator-row">
+                              <span>Blocked</span>
+                              <span>${item.blockedReasonCodes.join(", ")}</span>
+                            </div>`
+                          : nothing}
+                      </details>
+                    </div>
+                    <div class="product-proactivity-item__actions">
+                      <button
+                        class="btn btn--sm"
+                        type="button"
+                        ?disabled=${!canSend}
+                        @click=${() => props.onProductProactivityApproveSend?.(item.queueItemId)}
+                      >
+                        Approve & Send
+                      </button>
+                      <button
+                        class="btn btn--sm btn--ghost"
+                        type="button"
+                        ?disabled=${item.status === "sent"}
+                        @click=${() => props.onProductProactivityDismiss?.(item.queueItemId)}
+                      >
+                        Dismiss
+                      </button>
+                      <button
+                        class="btn btn--sm btn--ghost"
+                        type="button"
+                        ?disabled=${item.status === "sent"}
+                        @click=${() => props.onProductProactivitySnooze?.(item.queueItemId)}
+                      >
+                        Snooze
+                      </button>
+                    </div>
+                  </article>
+                `;
+              })}
+            </div>
+          `
+        : !props.productProactivityLoading
+          ? html`<div class="product-proactivity-panel__empty">No pending suggestions.</div>`
+          : nothing}
+    </section>
+  `;
+}
+
 function buildRunStatusItem(props: ChatProps): Extract<ChatItem, { kind: "run-status" }> | null {
   const runActive = props.stream !== null || props.sending || props.canAbort === true;
   if (!runActive) {
@@ -1845,6 +1970,7 @@ export function renderChat(props: ChatProps) {
           diagnosticBundle,
           requestUpdate,
         })}
+        ${renderProductProactivityQueue(props)}
         ${props.loading
           ? html`
               <div class="chat-loading-skeleton" aria-label="Loading chat">

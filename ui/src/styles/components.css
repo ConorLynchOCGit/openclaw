@@ -2797,6 +2797,120 @@ td.data-table-key-col {
   font-size: 11px;
 }
 
+.product-proactivity-panel {
+  align-self: stretch;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%),
+    var(--card);
+  color: var(--chat-text);
+}
+
+.product-proactivity-panel__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.product-proactivity-panel__eyebrow,
+.product-proactivity-item__meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.product-proactivity-panel h3 {
+  margin: 2px 0 0;
+  font-size: 15px;
+  color: var(--text-strong);
+}
+
+.product-proactivity-panel__count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.product-proactivity-panel__list {
+  display: grid;
+  gap: 10px;
+}
+
+.product-proactivity-panel__empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.product-proactivity-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--card) 86%, var(--secondary) 14%);
+}
+
+.product-proactivity-item__main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.product-proactivity-item__meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.product-proactivity-item__text {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-strong);
+}
+
+.product-proactivity-item__details {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.product-proactivity-item__details summary {
+  cursor: pointer;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.product-proactivity-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: start;
+  justify-content: end;
+}
+
+.product-proactivity-item--sent {
+  border-color: color-mix(in srgb, var(--ok) 50%, var(--border));
+}
+
+@media (max-width: 760px) {
+  .product-proactivity-item {
+    grid-template-columns: 1fr;
+  }
+
+  .product-proactivity-item__actions {
+    justify-content: start;
+  }
+}
+
 .operator-mode-badge {
   display: inline-flex;
   align-items: center;

@@ -41,6 +41,7 @@ import type {
   SkillStatusReport,
   StatusSummary,
   ToolsCatalogResult,
+  ProductProactivityQueueItem,
 } from "./types.ts";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
@@ -91,6 +92,9 @@ export type AppViewState = {
   chatModelCatalog: ModelCatalogEntry[];
   chatQueue: ChatQueueItem[];
   chatManualRefreshInFlight: boolean;
+  productProactivityLoading: boolean;
+  productProactivityError: string | null;
+  productProactivityQueue: ProductProactivityQueueItem[];
   nodesLoading: boolean;
   nodes: Array<Record<string, unknown>>;
   chatNewMessagesBelow: boolean;
@@ -419,6 +423,10 @@ export type AppViewState = {
     setChatMessage: (next: string) => void;
     handleSendChat: (messageOverride?: string, opts?: { restoreDraft?: boolean }) => Promise<void>;
     handleAbortChat: () => Promise<void>;
+    loadProductProactivityQueue: () => Promise<void>;
+    handleProductProactivityApproveSend: (queueItemId: string) => Promise<void>;
+    handleProductProactivityDismiss: (queueItemId: string) => void;
+    handleProductProactivitySnooze: (queueItemId: string) => void;
     removeQueuedMessage: (id: string) => void;
     handleChatScroll: (event: Event) => void;
     resetToolStream: () => void;

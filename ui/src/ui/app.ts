@@ -61,6 +61,7 @@ import {
   refreshVisibleToolsEffectiveForCurrentSession as refreshVisibleToolsEffectiveForCurrentSessionInternal,
 } from "./controllers/agents.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
+import { loadChatHistory, type ChatState } from "./controllers/chat.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type {
   DreamingStatus,
@@ -103,6 +104,8 @@ import type {
   NostrProfile,
   ToolsCatalogResult,
   ToolsEffectiveResult,
+  ProductProactivityQueueItem,
+  ProductProactivityQueueResult,
 } from "./types.ts";
 import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types.ts";
 import { generateUUID } from "./uuid.ts";
@@ -188,6 +191,9 @@ export class OpenClawApp extends LitElement {
   @state() chatQueue: ChatQueueItem[] = [];
   @state() chatAttachments: ChatAttachment[] = [];
   @state() chatManualRefreshInFlight = false;
+  @state() productProactivityLoading = false;
+  @state() productProactivityError: string | null = null;
+  @state() productProactivityQueue: ProductProactivityQueueItem[] = [];
   @state() navDrawerOpen = false;
 
   onSlashAction?: (action: string) => void;
@@ -565,6 +571,13 @@ export class OpenClawApp extends LitElement {
 
   protected updated(changed: Map<PropertyKey, unknown>) {
     handleUpdated(this as unknown as Parameters<typeof handleUpdated>[0], changed);
+    if (
+      this.connected &&
+      (changed.has("connected") || changed.has("sessionKey")) &&
+      this.tab === "chat"
+    ) {
+      void this.loadProductProactivityQueue();
+    }
     if (!changed.has("sessionKey") || this.agentsPanel !== "tools") {
       return;
     }
@@ -689,6 +702,68 @@ export class OpenClawApp extends LitElement {
       this as unknown as Parameters<typeof handleSendChatInternal>[0],
       messageOverride,
       opts,
+    );
+  }
+
+  async loadProductProactivityQueue() {
+    if (!this.client || !this.connected || this.productProactivityLoading) {
+      return;
+    }
+    this.productProactivityLoading = true;
+    this.productProactivityError = null;
+    try {
+      const res = await this.client.request<ProductProactivityQueueResult>(
+        "modelMemory.proactivity.queue",
+        {
+          sessionKey: this.sessionKey,
+          projectId: "openclaw",
+        },
+      );
+      this.productProactivityQueue = Array.isArray(res.queue?.items) ? res.queue.items : [];
+    } catch (err) {
+      this.productProactivityError = String(err);
+      this.productProactivityQueue = [];
+    } finally {
+      this.productProactivityLoading = false;
+    }
+  }
+
+  async handleProductProactivityApproveSend(queueItemId: string) {
+    const item = this.productProactivityQueue.find((entry) => entry.queueItemId === queueItemId);
+    if (!item || !this.client || item.status !== "pending_review") {
+      return;
+    }
+    try {
+      await this.client.request("chat.inject", {
+        sessionKey: this.sessionKey,
+        message: item.boundedDisplayText,
+        label: "Model Memory",
+      });
+      this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
+        entry.queueItemId === queueItemId
+          ? { ...entry, status: "sent", updatedAt: new Date().toISOString() }
+          : entry,
+      );
+      await loadChatHistory(this as unknown as ChatState);
+      this.scrollToBottom({ smooth: true });
+    } catch (err) {
+      this.productProactivityError = `Proactive send failed: ${String(err)}`;
+    }
+  }
+
+  handleProductProactivityDismiss(queueItemId: string) {
+    this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
+      entry.queueItemId === queueItemId
+        ? { ...entry, status: "dismissed", updatedAt: new Date().toISOString() }
+        : entry,
+    );
+  }
+
+  handleProductProactivitySnooze(queueItemId: string) {
+    this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
+      entry.queueItemId === queueItemId
+        ? { ...entry, status: "snoozed", updatedAt: new Date().toISOString() }
+        : entry,
     );
   }
 

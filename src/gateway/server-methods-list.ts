@@ -51,6 +51,7 @@ const BASE_METHODS = [
   "commands.list",
   "models.list",
   "models.authStatus",
+  "modelMemory.proactivity.queue",
   "tools.catalog",
   "tools.effective",
   "agents.list",

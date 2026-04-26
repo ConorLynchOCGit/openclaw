@@ -1862,6 +1862,9 @@ export function renderApp(state: AppViewState) {
               streamStartedAt: state.chatStreamStartedAt,
               draft: state.chatMessage,
               queue: state.chatQueue,
+              productProactivityLoading: state.productProactivityLoading,
+              productProactivityError: state.productProactivityError,
+              productProactivityQueue: state.productProactivityQueue,
               connected: state.connected,
               canSend: state.connected,
               disabledReason: chatDisabledReason,
@@ -1872,7 +1875,11 @@ export function renderApp(state: AppViewState) {
               onRefresh: () => {
                 state.chatSideResult = null;
                 state.resetToolStream();
-                return Promise.all([loadChatHistory(state), refreshChatAvatar(state)]);
+                return Promise.all([
+                  loadChatHistory(state),
+                  refreshChatAvatar(state),
+                  state.loadProductProactivityQueue(),
+                ]);
               },
               onToggleFocusMode: () => {
                 if (state.onboarding) {
@@ -1893,6 +1900,10 @@ export function renderApp(state: AppViewState) {
               canAbort: Boolean(state.chatRunId),
               onAbort: () => void state.handleAbortChat(),
               onQueueRemove: (id) => state.removeQueuedMessage(id),
+              onProductProactivityApproveSend: (id) =>
+                state.handleProductProactivityApproveSend(id),
+              onProductProactivityDismiss: (id) => state.handleProductProactivityDismiss(id),
+              onProductProactivitySnooze: (id) => state.handleProductProactivitySnooze(id),
               onDismissSideResult: () => {
                 state.chatSideResult = null;
               },
