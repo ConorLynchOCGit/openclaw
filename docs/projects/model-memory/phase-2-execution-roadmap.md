@@ -479,6 +479,11 @@ For each implementation wave:
   the original suggestion-available class remains the only operator-default
   visible message class, while broad/default proactive messaging and autonomous
   sending remain off
+- the expanded proactive message approval/send workflow may be default-visible
+  to ordinary operator surfaces for `operator_approved_suggestion_available`
+  and `operator_approved_follow_up_available` after Slice 30 and Slice 31
+  proofs pass; each send still requires explicit send approval, and rollback
+  returns the workflow to the single-message operator-default workflow
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

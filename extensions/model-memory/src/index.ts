@@ -66,6 +66,7 @@ export * from "./runtime/phase2-controlled-user-facing-proactivity.ts";
 export * from "./runtime/phase2-live-proactive-message-delivery.ts";
 export * from "./runtime/phase2-proactive-message-operator-default.ts";
 export * from "./runtime/phase2-controlled-user-facing-proactivity-expansion.ts";
+export * from "./runtime/phase2-proactive-message-expanded-operator-default.ts";
 export * from "./runtime/phase2-ingestion-default-promotion.ts";
 export * from "./runtime/phase2-operator-ingestion-rollout.ts";
 export * from "./runtime/phase2-planner-readiness.ts";

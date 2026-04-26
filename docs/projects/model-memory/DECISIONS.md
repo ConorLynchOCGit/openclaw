@@ -3091,3 +3091,30 @@ Reasoning:
   without weakening the approval, provenance, no-dark-data, and rollback chain
 - keeping the second class controlled-only prevents silent default promotion
   while preserving operator/eval utility
+
+## 2026-04-26 - expanded proactive message send workflow may be default-visible to operators
+
+Decision:
+
+- ordinary operator surfaces may expose the proactive message
+  review/approval/send workflow for both low-risk message classes by default:
+  `operator_approved_suggestion_available` and
+  `operator_approved_follow_up_available`
+- default-visible means operators can see and use the workflow; every message
+  still requires an approved suggestion, staged approval, explicit send
+  approval, provenance, no-dark-data pass, and inactive rollback
+- autonomous sending, broad/default user-facing proactivity, and action
+  execution during delivery remain disabled
+- blocked/unknown message classes, external-instruction messages,
+  raw/private/secret content, and autonomous action requests remain blocked
+- `MODEL_MEMORY_PHASE2_PROACTIVE_MESSAGE_EXPANDED_OPERATOR_DEFAULT_DISABLED`
+  rolls the expanded workflow back to the single-message operator-default
+  workflow
+
+Reasoning:
+
+- the Slice 30 operator-default proof and Slice 31 controlled expansion proof
+  together prove both approved classes can pass the approval/send/provenance
+  chain through the live delivery seam
+- promoting only operator-visible workflow access maximizes safe functionality
+  without authorizing automatic sends or broad/default proactive messaging
