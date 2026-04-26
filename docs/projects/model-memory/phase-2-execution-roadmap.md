@@ -502,6 +502,11 @@ For each implementation wave:
   of selected users/recipients/sessions/projects/operators after scope
   expansion is approved; each recipient still requires explicit send approval,
   and non-cohort recipients receive no proactive messages
+- proactive default-promotion readiness is report-only and requires aggregated
+  passing evidence from Slices 32-36, healthy observability, complete send
+  approval coverage, blocked-class and outside-scope blocking, rollback proof,
+  provenance, no-dark-data pass, no leakage alerts, and stale/repeat
+  suppression before a separate default-promotion slice may decide anything
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

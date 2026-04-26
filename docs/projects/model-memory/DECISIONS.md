@@ -3232,3 +3232,28 @@ Reasoning:
   expansion while send approvals and exact recipient scoping remain mandatory
 - per-recipient approvals prevent a cohort rollout from becoming implicit
   automatic or broadcast proactivity
+
+## 2026-04-26 - proactive user-facing default promotion requires a readiness gate
+
+Decision:
+
+- user-facing proactive delivery is ready for a later default-promotion
+  decision only when Slices 32-36 all pass and their proof ids/hashes are
+  present in a bounded readiness report
+- readiness requires healthy proactive delivery observability, scoped delivery
+  proof, scope-expansion approval, controlled multi-user cohort proof, complete
+  send approval coverage, blocked-class blocking, outside-scope blocking,
+  rollback proof, provenance, no-dark-data pass, no leakage alerts, and
+  stale/repeat suppression
+- Slice 37 does not apply default promotion; it emits go/no-go evidence only
+- autonomous sending and action execution during proactive delivery remain
+  disabled
+- rollback returns readiness use to the controlled multi-user scope state
+
+Reasoning:
+
+- default user-facing proactivity should not be considered from a single proof
+  artifact; it needs aggregated evidence that approval, scope, rollback,
+  provenance, leakage, and stale/repeat controls all remain green
+- keeping Slice 37 report-only prevents readiness work from silently becoming a
+  default-promotion change
