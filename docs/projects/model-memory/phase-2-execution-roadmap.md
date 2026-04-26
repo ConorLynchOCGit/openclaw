@@ -456,6 +456,10 @@ For each implementation wave:
   explicit operator/eval scope after staged approval and explicit execution
   approval; it remains artifact-only, operator-visible, rollbackable, and
   non-user-facing
+- the approved harmless action execution workflow may be default-visible to
+  ordinary operator surfaces after proof-bound promotion; execution remains
+  staged-approval and explicit-execution-approval gated, and rollback returns it
+  to controlled operator/eval-only visibility
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

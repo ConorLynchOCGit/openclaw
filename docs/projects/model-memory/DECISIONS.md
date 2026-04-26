@@ -2962,3 +2962,26 @@ Reasoning:
   boundary can support useful operator workflow without becoming automation
 - keeping the action artifact-only, approval-gated, and rollbackable preserves
   the safety properties proven in the initial controlled execution slice
+
+## 2026-04-26 - approved action execution workflow may be default-visible to operators
+
+Decision:
+
+- ordinary operator surfaces may expose the controlled action execution workflow
+  by default after Slice 25 and Slice 26 proof reports pass
+- default-visible means operators can see and use the workflow; every execution
+  still requires staged approval and explicit execution approval
+- allowed executable action kinds remain `write_bounded_proof_artifact` and
+  `create_operator_review_note`
+- unsafe external command, network, DB mutation, user message, and unsafe file
+  mutation actions remain blocked
+- `MODEL_MEMORY_PHASE2_ACTION_EXECUTION_OPERATOR_DEFAULT_DISABLED` rolls the
+  workflow back to controlled operator/eval-only visibility
+- user-facing proactive messages and autonomous action execution remain disabled
+
+Reasoning:
+
+- making the approval-gated workflow visible by default gives operators live
+  utility without changing the execution boundary
+- the default-visible decision is proof-bound to the two harmless action classes
+  and keeps all action execution explicit, audited, and rollbackable
