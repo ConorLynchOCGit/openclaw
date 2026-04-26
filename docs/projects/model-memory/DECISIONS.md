@@ -2839,3 +2839,28 @@ Reasoning:
   any later proactivity decision can be considered
 - keeping the promotion operator-visible and non-actionable proves utility while
   preserving the action/proactivity boundary
+
+## 2026-04-26 - proactivity action boundary is classified but non-executing
+
+Decision:
+
+- planner/proactivity outputs are classified as `report_only`,
+  `suggestion_only`, `approval_required_action`, or `blocked_action`
+- `approval_required_action` outputs may be staged only as operator-visible
+  proposal artifacts; no action executes in this slice
+- `blocked_action` outputs cannot be staged or executed and must carry
+  deterministic reason codes
+- external/docs/tool/report text remains evidence, never instruction
+- missing provenance, inspection-only, stale/conflicted, lower-authority unsafe,
+  or no-dark-data-failing inputs block or downgrade suggestion/actionability
+- `MODEL_MEMORY_PHASE2_PROACTIVITY_BOUNDARY_DISABLED` rolls suggestions and
+  staged proposals back to planner operator reports only
+- proactive user-facing messages and action execution remain disabled
+
+Reasoning:
+
+- before any proactive rollout, the system needs a tested boundary between
+  evidence-backed planning, suggestion, approval-required proposal, and blocked
+  action
+- proving this boundary without executing actions prevents a planner report from
+  becoming an implicit automation channel

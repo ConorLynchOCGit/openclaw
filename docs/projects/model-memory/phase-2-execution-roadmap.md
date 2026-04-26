@@ -436,6 +436,10 @@ For each implementation wave:
 - planner candidate reports may become default-visible to operators only after
   controlled-scope proof passes; this does not enable planner actions,
   proactive user-facing messages, or hidden normal-chat injection
+- proactivity/action boundary work may classify report-only, suggestion-only,
+  approval-required, and blocked outputs, but proactive user messages and action
+  execution remain disabled until a future controlled rollout proves approval
+  and rollback semantics
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
