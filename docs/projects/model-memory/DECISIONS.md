@@ -2602,3 +2602,29 @@ Reasoning:
   proof into broad default behavior
 - binding proof hashes and rollback modes into the profile keeps provenance and
   rollback auditable before any future default-promotion decision
+
+## 2026-04-25 - proof-bound Phase 2 retrieval defaults
+
+Decision:
+
+- `runtime_graph_reads`, `project_state_capsule_retrieval`, and
+  `project_state_capsule_context` may be promoted to default production only by
+  a typed default-promotion decision bound to the approved go-live and scoped
+  rollout observation artifacts
+- promoted graph reads remain read-only retrieval support and are not semantic
+  truth
+- promoted `project_state` capsule retrieval and context must preserve source
+  memory ids, source refs, source profile ids, authority tiers, content hashes,
+  freshness/conflict markers, and proof hashes
+- `MODEL_MEMORY_PHASE2_DEFAULT_PROMOTION_DISABLED` is the rollback kill switch
+  for the promoted retrieval defaults
+- hierarchical retrieval remains shadow-only and moves next to a separate
+  controlled promotion proof substrate; planner/proactivity remains deferred
+
+Reasoning:
+
+- the scoped rollout proof established that the selected capabilities work
+  inside an approved scope; default promotion needs a distinct proof-bound
+  decision with rollback and ordinary-path observation
+- keeping the hierarchical retrieval work as a next-build readiness substrate
+  prevents fan-out from becoming default behavior before its own proof gate

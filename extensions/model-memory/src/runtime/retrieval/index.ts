@@ -8,3 +8,4 @@ export * from "./phase2-production-gates.ts";
 export * from "./phase2-controlled-retrieval-packs.ts";
 export * from "./phase2-rollout-config.ts";
 export * from "./phase2-scoped-production-rollout.ts";
+export * from "./phase2-default-promotion.ts";
