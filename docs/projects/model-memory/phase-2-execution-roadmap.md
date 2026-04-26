@@ -565,6 +565,14 @@ For each implementation wave:
   follow-up messages and non-personal scopes remain manual-only, and
   `MODEL_MEMORY_PHASE2_PERSONAL_AUTOSEND_TRIAL_DISABLED` returns the personal
   workspace to manual-send mode
+- proactivity feedback is an explicit control-plane quality loop: UI feedback
+  controls may record bounded metadata and reason codes for useful/not useful/
+  repetitive/wrong-context/unsafe-private outcomes, feed deterministic
+  suppression/ranking/reporting, and block unsafe/private future surfacing, but
+  feedback must not write semantic truth, create memory corrections, persist raw
+  free-form text, trigger delivery, or execute actions; rollback via
+  `MODEL_MEMORY_PHASE2_PROACTIVITY_FEEDBACK_LOOP_DISABLED` preserves the product
+  queue without feedback learning
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

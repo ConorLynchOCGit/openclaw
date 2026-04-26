@@ -3532,3 +3532,29 @@ Reasoning:
 - a personal trial is useful only if the user can explicitly opt in, see and
   disable the behavior, and rely on the same kill-switch/abuse observability
   proven before the trial decision
+
+## 2026-04-26 - proactivity feedback is control-plane quality signal only
+
+Decision:
+
+- Slice 49 adds explicit feedback controls for proactive suggestions: `useful`,
+  `not_useful`, `too_repetitive`, `wrong_context`, and `unsafe_private`
+- feedback records store only bounded metadata: feedback id, candidate id, queue
+  item id, message class, selected reason code, source refs, source profile ids,
+  authority tiers, content/proof hashes, and timestamp
+- free-form/raw feedback text is rejected and is not persisted; raw prompts,
+  transcripts, tool logs, secrets, and private phrases remain hard rejects
+- feedback may affect suppression, ranking, and quality reporting only:
+  `useful` is a quality signal, `not_useful`/`wrong_context` downrank future
+  candidates, `too_repetitive` creates deterministic suppression, and
+  `unsafe_private` blocks future surfacing pending review
+- feedback must not create semantic truth, write memory corrections, self-promote
+  authority, trigger delivery, or execute actions
+- `MODEL_MEMORY_PHASE2_PROACTIVITY_FEEDBACK_LOOP_DISABLED` disables feedback
+  submission while preserving the product proactivity queue
+
+Reasoning:
+
+- proactive memory needs explicit user quality signals to become useful, but
+  those signals are control-plane feedback about ranking/suppression, not new
+  source-of-truth memory
