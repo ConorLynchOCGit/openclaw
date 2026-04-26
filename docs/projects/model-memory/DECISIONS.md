@@ -3392,3 +3392,27 @@ Reasoning:
 - proactive UX is not useful if successful delivery is visible only as a
   transcript side effect; a small notification surface gives the user context,
   controls, and provenance without broadening authority or exposing raw content
+
+## 2026-04-26 - personal workspace can be the default proactivity scope
+
+Decision:
+
+- the real personal workspace may use a typed `personal_default_scope` for
+  proactive suggestions, bounded by exact user/recipient, project, session, and
+  operator ids
+- the personal default scope requires Slice 40 product surfacing, Slice 41 real
+  memory candidates, and Slice 42 notification UX proof before enabling
+- both approved low-risk message classes remain allowed, and every delivery
+  still requires explicit approve/send
+- wildcard/global scopes, missing provenance, degraded observability,
+  no-dark-data failures, and missing send approval block personal default
+  activation
+- `MODEL_MEMORY_PHASE2_PERSONAL_DEFAULT_PROACTIVITY_DISABLED` rolls behavior
+  back to operator-only/manual proof mode while preserving manual queue review
+- autonomous sending and delivery-triggered action execution remain disabled
+
+Reasoning:
+
+- the feature only becomes useful day-to-day when the real workspace scope is
+  default-active; exact typed scope keeps that promotion reversible and prevents
+  accidental broad rollout

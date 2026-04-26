@@ -531,6 +531,12 @@ For each implementation wave:
   dismiss/snooze controls; pending items must not notify, `chat.inject` remains
   available, rollback disables notification surfacing, and autonomous sending
   remains disabled
+- personal default proactivity scope may be enabled only for an exact typed
+  live user/recipient/project/session/operator set after product surfacing, real
+  candidate generation, and notification UX proofs are green; wildcard scopes,
+  degraded observability, missing provenance, no-dark-data failure, or missing
+  send approval block activation, and rollback returns to operator-only/manual
+  proof mode
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
