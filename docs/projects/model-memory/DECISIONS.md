@@ -3582,3 +3582,25 @@ Reasoning:
 - a personal auto-send trial is only acceptable if the user can see the current
   mode, understand the narrow allowed class, and immediately return to manual
   control from ordinary OpenClaw UX
+
+## 2026-04-26 - personal auto-send trial continuation requires quality evidence
+
+Decision:
+
+- Slice 51 adds a bounded auto-send trial quality review before any continuation
+  decision
+- the review aggregates Slice 45 would-have-sent/manual-decision telemetry and
+  Slice 49 feedback telemetry, then applies deterministic thresholds for false
+  positives, repeated/stale candidates, wrong-context/not-useful feedback, and
+  unsafe/private flags
+- any leakage/private flag, missing provenance/source profile, no-dark-data
+  failure, delivery-triggered action execution, or broad autonomous sending
+  blocks quality continuation
+- degraded quality evidence may support narrowing or pausing in Slice 52, but a
+  blocked quality state must not continue personal auto-send unchanged
+
+Reasoning:
+
+- personal auto-send must be reviewed as a measured trial, not an indefinite
+  experiment, and feedback evidence remains bounded control-plane metadata, not
+  semantic truth or memory correction input

@@ -580,6 +580,12 @@ For each implementation wave:
   `operator_approved_follow_up_available` manual-only, and provide a visible
   Disable / Return to Manual control that preserves manual send and action-free
   delivery behavior
+- personal auto-send trial quality must be reviewed before continuation:
+  Slice 51 aggregates Slice 45 simulation telemetry and Slice 49 feedback
+  metadata, reports would-have-sent versus manual decisions, tracks false
+  positives, repeats, stale candidates, unsafe/private flags, and wrong-context
+  feedback, and blocks continuation on leakage, missing provenance/source
+  profile, no-dark-data failure, action execution, or broad autonomous sending
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
