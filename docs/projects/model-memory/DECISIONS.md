@@ -3604,3 +3604,29 @@ Reasoning:
 - personal auto-send must be reviewed as a measured trial, not an indefinite
   experiment, and feedback evidence remains bounded control-plane metadata, not
   semantic truth or memory correction input
+
+## 2026-04-26 - personal auto-send continuation is an explicit capability decision
+
+Decision:
+
+- Slice 52 consumes the Slice 50 product UX proof and Slice 51 quality review
+  before deciding whether the personal auto-send trial may continue
+- continuation outcomes are explicit: `continue_personal_autosend_trial`,
+  `narrow_personal_autosend_trial`, `pause_personal_autosend_trial`, or
+  `rollback_to_manual_only`
+- green quality may continue the trial, degraded quality may narrow or pause,
+  and blocked quality, leakage/private flags, unhealthy kill-switch state,
+  missing provenance/source profile, no-dark-data failure, action execution, or
+  broad autonomous sending force rollback to manual-only
+- the allowed auto-send class remains exactly
+  `operator_approved_suggestion_available`; `operator_approved_follow_up_available`
+  remains manual-only
+- rollback uses `MODEL_MEMORY_PHASE2_PERSONAL_AUTOSEND_TRIAL_DISABLED` or the
+  global `MODEL_MEMORY_PHASE2_AUTOSEND_DISABLED` kill switch and preserves the
+  manual send workflow
+
+Reasoning:
+
+- a personal auto-send trial must be actively reviewed against quality and
+  safety evidence; it should continue only when measured behavior is clean, and
+  the safe default for blocked evidence is manual-only

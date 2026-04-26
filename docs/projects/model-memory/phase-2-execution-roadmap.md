@@ -586,6 +586,13 @@ For each implementation wave:
   positives, repeats, stale candidates, unsafe/private flags, and wrong-context
   feedback, and blocks continuation on leakage, missing provenance/source
   profile, no-dark-data failure, action execution, or broad autonomous sending
+- personal auto-send continuation is a separate capability decision: Slice 52
+  may continue only on green quality, narrow or pause on degraded quality, and
+  must rollback to manual-only on blocked quality, leakage/private flags,
+  unhealthy kill-switch state, no-dark-data/provenance/source-profile failures,
+  action execution, or broad autonomous sending; the allowed auto-send class
+  remains `operator_approved_suggestion_available`, follow-up remains manual-only,
+  and rollback preserves manual send
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
