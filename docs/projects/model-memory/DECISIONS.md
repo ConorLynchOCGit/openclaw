@@ -3630,3 +3630,29 @@ Reasoning:
 - a personal auto-send trial must be actively reviewed against quality and
   safety evidence; it should continue only when measured behavior is clean, and
   the safe default for blocked evidence is manual-only
+
+## 2026-04-26 - follow-up auto-send remains preflight-only
+
+Decision:
+
+- Slice 53 evaluates `operator_approved_follow_up_available` only as a
+  manual-only or future report-only auto-send candidate; it does not enable
+  follow-up auto-send
+- future candidacy requires freshness, non-repeat evidence, positive feedback,
+  no wrong-context signal, provenance, source profile metadata, no-dark-data
+  pass, inactive rollback, and no urgency or external-instruction escalation
+- repeated nudges, stale follow-ups, wrong-context feedback, missing provenance,
+  missing source profile, no-dark-data failure, urgency manipulation, external
+  instruction text, rollback, semantic truth writes, or any attempted follow-up
+  auto-send block the preflight
+- feedback remains a quality signal only and must not create semantic truth or
+  memory corrections
+- `operator_approved_suggestion_available` remains the only class that may
+  auto-send in controlled/personal trial scope; follow-up remains manual-send
+  only
+
+Reasoning:
+
+- follow-up nudges are higher interruption risk than suggestion-available
+  messages, so they need separate evidence and abuse regression before any
+  future auto-send decision

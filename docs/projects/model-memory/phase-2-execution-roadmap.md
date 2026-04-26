@@ -593,6 +593,12 @@ For each implementation wave:
   action execution, or broad autonomous sending; the allowed auto-send class
   remains `operator_approved_suggestion_available`, follow-up remains manual-only,
   and rollback preserves manual send
+- follow-up auto-send is preflight/report-only in Slice 53:
+  `operator_approved_follow_up_available` remains manual-send only, while future
+  candidacy is blocked by stale/repeated nudges, wrong-context feedback, missing
+  provenance/source profile, no-dark-data failure, urgency manipulation,
+  external instruction escalation, rollback, semantic-truth writes, or any
+  attempted follow-up auto-send
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
