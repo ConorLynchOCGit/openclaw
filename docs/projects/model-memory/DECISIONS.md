@@ -3206,3 +3206,29 @@ Reasoning:
   expansion decision, not immediate default promotion
 - expansion must be blocked by any regression that could imply leakage,
   missing authorization, stale/repeated delivery, or rollback bypass
+
+## 2026-04-26 - controlled proactive delivery may roll out to an explicit multi-user cohort
+
+Decision:
+
+- proactive user-facing delivery may run for a bounded
+  `controlled_multi_user_scope` cohort after the scope-expansion decision is
+  approved and proactive delivery observability remains healthy
+- cohort membership requires exact typed recipient, user, session, project, and
+  operator matches; wildcard/global cohort scope is rejected
+- each recipient requires its own explicit send approval before either approved
+  low-risk message class can deliver
+- non-cohort recipients, missing per-recipient send approval, degraded
+  observability, missing provenance, no-dark-data failure, blocked message
+  classes, and rollback do not deliver
+- `MODEL_MEMORY_PHASE2_CONTROLLED_MULTI_USER_PROACTIVITY_DISABLED` disables
+  cohort delivery and returns to the expansion-decision state
+- broad/default proactive messaging, autonomous sending, and action execution
+  during delivery remain disabled
+
+Reasoning:
+
+- moving from one real-user scope to a small cohort is the maximum safe live
+  expansion while send approvals and exact recipient scoping remain mandatory
+- per-recipient approvals prevent a cohort rollout from becoming implicit
+  automatic or broadcast proactivity

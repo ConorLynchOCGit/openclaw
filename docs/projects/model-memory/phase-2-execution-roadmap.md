@@ -498,6 +498,10 @@ For each implementation wave:
   proof and Slice 33 observability are clean; degraded observability,
   authorization gaps, leakage, rollback bypass, stale/repeat regressions, or
   wildcard/global scopes block expansion
+- controlled multi-user proactive delivery may run only for an explicit cohort
+  of selected users/recipients/sessions/projects/operators after scope
+  expansion is approved; each recipient still requires explicit send approval,
+  and non-cohort recipients receive no proactive messages
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
