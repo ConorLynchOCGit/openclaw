@@ -520,6 +520,12 @@ For each implementation wave:
   operator surfaces, expose why-they-appeared provenance, and can call
   `chat.inject` only after explicit `Approve & Send`; rollback returns this to
   proof/operator-only mode and autonomous sending remains disabled
+- real-memory proactive candidate generation must feed the product queue from
+  bounded, provenance-bearing signals for recent tasks, unresolved follow-ups,
+  stale decisions, maintenance candidates, docs changes, project-state capsules,
+  and runtime graph/retrieval observations; stale/repeat suppression is
+  deterministic, external/project text remains evidence not instruction, and
+  rollback returns the queue to approved-report-only surfacing
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

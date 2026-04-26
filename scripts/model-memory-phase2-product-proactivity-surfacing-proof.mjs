@@ -79,6 +79,10 @@ async function main() {
     if (queueVisible < 1) {
       throw new Error("normal product UI did not show pending proactive suggestions");
     }
+    const expectedText = await harness.page
+      .locator(".product-proactivity-item__text")
+      .first()
+      .innerText({ timeout: 30_000 });
     await harness.page
       .getByRole("button", { name: /Approve & Send/i })
       .first()
@@ -96,13 +100,13 @@ async function main() {
       { timeout: 30_000 },
     );
     await harness.page.waitForFunction(
-      () => document.body.innerText.includes("An approved operator suggestion is available."),
-      undefined,
+      (text) => document.body.innerText.includes(text),
+      expectedText,
       { timeout: 30_000 },
     );
     const state = await harness.snapshotChat();
     const text = state.transcriptTailText ?? "";
-    if (!text.includes("An approved operator suggestion is available.")) {
+    if (!text.includes(expectedText)) {
       throw new Error("approved product proactive message was not visible in real chat/session");
     }
     const probe = await harness.page.evaluate(() => window.__OPENCLAW_OPERATOR_PROMPT_PROBE__);
@@ -162,7 +166,7 @@ async function main() {
         queueItemCount: report.telemetry.queueItemCount,
         uiEvidence,
         rollbackDecision: rollback.decision,
-        observedTextSha256: sha256("An approved operator suggestion is available."),
+        observedTextSha256: sha256(report.queue.items[0]?.boundedDisplayText ?? ""),
         jsonPath: artifact.jsonPath,
         markdownPath: artifact.markdownPath,
         contentHash: artifact.contentHash,

@@ -9,6 +9,10 @@ import {
 import { sha256JsonValue } from "../hashing.ts";
 import type { SourceAuthorityTier, SourceProfileId } from "../source-authority.ts";
 import {
+  buildPhase2RealMemoryProactivityCandidateReport,
+  type Phase2RealMemoryCandidateReport,
+} from "./phase2-real-memory-proactivity-candidates.ts";
+import {
   buildPhase2UserFacingProactivityDefaultPromotionReport,
   type Phase2UserFacingProactivityDefaultMessageClass,
   type Phase2UserFacingProactivityDefaultPromotionReport,
@@ -159,6 +163,7 @@ export type Phase2ProductProactivitySurfacingReport = {
   decision: "product_queue_enabled" | "blocked" | "rollback_disabled";
   config: Phase2ProductProactivitySurfaceConfig;
   defaultPromotionReport: Phase2UserFacingProactivityDefaultPromotionReport;
+  realCandidateReport?: Phase2RealMemoryCandidateReport;
   queue: Phase2ProductProactivityQueue;
   checks: Phase2ProductProactivityCheck[];
   approvalDecisions: Phase2ProductProactivityApprovalDecision[];
@@ -180,6 +185,7 @@ export type Phase2ProductProactivitySurfacingReport = {
 export type Phase2ProductProactivitySurfacingInput = {
   now?: Date;
   defaultPromotionReport?: Phase2UserFacingProactivityDefaultPromotionReport | null;
+  realCandidateReport?: Phase2RealMemoryCandidateReport | null;
   eligibilityScope?: Partial<Phase2ProductProactivityEligibilityScope>;
   messageClass?: Phase2UserFacingProactivityDefaultMessageClass | "external_instruction_message";
   env?: Record<string, string | undefined>;
@@ -519,6 +525,20 @@ async function loadDefaultPromotionReport(input: {
   }
 }
 
+async function loadRealCandidateReport(input: {
+  now?: Date;
+  realCandidateReport?: Phase2RealMemoryCandidateReport | null;
+  env?: Record<string, string | undefined>;
+}): Promise<Phase2RealMemoryCandidateReport | undefined> {
+  if (input.realCandidateReport === null) {
+    return undefined;
+  }
+  if (input.realCandidateReport) {
+    return input.realCandidateReport;
+  }
+  return buildPhase2RealMemoryProactivityCandidateReport({ now: input.now, env: input.env });
+}
+
 export async function buildPhase2ProductProactivitySurfacingReport(
   input: Phase2ProductProactivitySurfacingInput = {},
 ): Promise<Phase2ProductProactivitySurfacingReport> {
@@ -531,7 +551,14 @@ export async function buildPhase2ProductProactivitySurfacingReport(
   if (!defaultPromotionReport) {
     throw new Error("default promotion report is required for product proactivity surfacing");
   }
-  const messageClass = input.messageClass ?? "operator_approved_suggestion_available";
+  const realCandidateReport = await loadRealCandidateReport({
+    now: input.now,
+    realCandidateReport: input.realCandidateReport,
+    env: input.env,
+  });
+  const realCandidate = realCandidateReport?.candidates.find((candidate) => !candidate.suppressed);
+  const messageClass =
+    input.messageClass ?? realCandidate?.messageClass ?? "operator_approved_suggestion_available";
   const classOk = allowedMessageClass(messageClass);
   const effectiveMessageClass = classOk ? messageClass : "operator_approved_suggestion_available";
   const rollback = readRollback(input.env);
@@ -598,25 +625,41 @@ export async function buildPhase2ProductProactivitySurfacingReport(
       family: "context_artifact",
       artifactType: "phase2_product_proactivity_candidate",
       targetId: queueItemId,
-      seed: defaultPromotionReport.reportId,
+      seed: realCandidate?.candidateId ?? defaultPromotionReport.reportId,
     }),
     messageClass: effectiveMessageClass,
-    boundedDisplayText: displayTextForMessageClass(effectiveMessageClass),
+    boundedDisplayText:
+      realCandidate?.boundedDisplayText ?? displayTextForMessageClass(effectiveMessageClass),
     status: itemStatus,
     eligibleScope: scope,
-    sourceRefs: uniqueSortedStrings(defaultPromotionReport.telemetry.sourceRefs),
-    sourceProfileIds: uniqueSortedStrings(
-      defaultPromotionReport.telemetry.sourceProfileIds,
-    ) as SourceProfileId[],
-    authorityTiers: uniqueSortedStrings(
-      defaultPromotionReport.telemetry.authorityTiers,
-    ) as SourceAuthorityTier[],
-    contentHashes: uniqueSortedStrings(defaultPromotionReport.telemetry.contentHashes),
-    proofHashes: uniqueSortedStrings(defaultPromotionReport.telemetry.proofHashes),
+    sourceRefs: uniqueSortedStrings([
+      ...defaultPromotionReport.telemetry.sourceRefs,
+      ...(realCandidate?.sourceRefs ?? []),
+    ]),
+    sourceProfileIds: uniqueSortedStrings([
+      ...defaultPromotionReport.telemetry.sourceProfileIds,
+      ...(realCandidate?.sourceProfileIds ?? []),
+    ]) as SourceProfileId[],
+    authorityTiers: uniqueSortedStrings([
+      ...defaultPromotionReport.telemetry.authorityTiers,
+      ...(realCandidate?.authorityTiers ?? []),
+    ]) as SourceAuthorityTier[],
+    contentHashes: uniqueSortedStrings([
+      ...defaultPromotionReport.telemetry.contentHashes,
+      ...(realCandidate?.contentHashes ?? []),
+    ]),
+    proofHashes: uniqueSortedStrings([
+      ...defaultPromotionReport.telemetry.proofHashes,
+      ...(realCandidate?.proofHashes ?? []),
+      ...(realCandidateReport ? [reportHash(realCandidateReport as JsonLike)].filter(Boolean) : []),
+    ]),
     noDarkDataStatus: noDarkDataOk ? "pass" : "fail",
-    staleLabels: [],
-    conflictLabels: [],
-    blockedReasonCodes: reasonCodes,
+    staleLabels: realCandidate?.staleLabels ?? [],
+    conflictLabels: realCandidate?.conflictLabels ?? [],
+    blockedReasonCodes: uniqueSortedStrings([
+      ...reasonCodes,
+      ...(realCandidate?.blockedReasonCodes ?? []),
+    ]),
     generatedAt,
     updatedAt: generatedAt,
   };
@@ -713,6 +756,7 @@ export async function buildPhase2ProductProactivitySurfacingReport(
     decision,
     config,
     defaultPromotionReport,
+    realCandidateReport,
     queue,
     checks,
     approvalDecisions,

@@ -24,9 +24,10 @@ describe("phase2 product proactivity surfacing", () => {
     expect(report.queue.items).toHaveLength(1);
     expect(report.queue.items[0]).toMatchObject({
       status: "pending_review",
-      boundedDisplayText: "An approved operator suggestion is available.",
+      boundedDisplayText: "A recent Model Memory task has a follow-up ready for review.",
       noDarkDataStatus: "pass",
     });
+    expect(report.realCandidateReport?.decision).toBe("real_candidates_generated");
     expect(report.queue.items[0].sourceRefs.length).toBeGreaterThan(0);
     expect(report.queue.items[0].sourceProfileIds.length).toBeGreaterThan(0);
     expect(report.queue.items[0].authorityTiers.length).toBeGreaterThan(0);

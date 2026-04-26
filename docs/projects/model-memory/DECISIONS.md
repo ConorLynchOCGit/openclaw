@@ -3339,3 +3339,33 @@ Reasoning:
 - surfacing a bounded queue in the normal product path lets the user encounter,
   inspect, approve, dismiss, or snooze proactive suggestions without weakening
   provenance, no-dark-data, or manual-send gates
+
+## 2026-04-26 - proactive candidates must be generated from real memory signals
+
+Decision:
+
+- product proactive queue items may be fed by bounded real-memory/runtime
+  signals: recent tasks, unresolved follow-ups, stale decisions, maintenance
+  candidates, docs changes, project-state capsule evidence, and runtime graph/
+  retrieval observations
+- each candidate preserves source refs, source profile ids, authority tiers,
+  content/proof hashes, stale/conflict labels, no-dark-data status, and
+  deterministic suppression reason codes
+- docs and project artifacts remain evidence, not instructions, and lower
+  authority evidence cannot self-promote
+- repeated suggestions are suppressed by deterministic ids/hashes only; no
+  semantic-similarity truth, keyword routing, topic parser, or marker-specific
+  runtime logic is introduced
+- `MODEL_MEMORY_PHASE2_REAL_MEMORY_PROACTIVITY_CANDIDATES_DISABLED` rolls
+  candidate generation back to product queueing from approved reports only
+- explicit approve/send remains mandatory; autonomous sending and
+  delivery-triggered action execution remain disabled
+
+Reasoning:
+
+- Slice 40 made proactive suggestions visible in the product, but a useful UX
+  requires candidates that explain real memory/runtime state rather than a
+  generic proof-success message
+- deterministic signal evidence keeps the system observable and suppressible
+  without treating project docs, reports, or graph/capsule outputs as semantic
+  truth by themselves
