@@ -2814,3 +2814,28 @@ Reasoning:
 - using the Slice 19 readiness report as the evidence source keeps the
   controlled planner path broad enough for project/docs/artifact evidence while
   preserving authority and no-dark-data gates
+
+## 2026-04-26 - planner candidate reports may be default-visible to operators only
+
+Decision:
+
+- planner candidate reports may be promoted to ordinary/default operator-visible
+  reports after the controlled planner proof is green
+- this promotion is not user-facing proactivity: no proactive user message, user
+  interruption, hidden normal-chat injection, or planner action execution is
+  allowed
+- default-visible planner reports must preserve evidence bindings, source refs,
+  source profile ids, authority tiers, content/proof hashes, no-dark-data
+  status, and evidence-not-instruction handling
+- project docs, graph summaries, capsules, retrieval packs, hierarchical plans,
+  and rollout/proof reports remain evidence/read-model inputs, not semantic
+  truth or external instructions
+- `MODEL_MEMORY_PHASE2_PLANNER_DEFAULT_REPORTS_DISABLED` rolls default-visible
+  planner reports back to controlled/readiness report-only behavior
+
+Reasoning:
+
+- operators need planner candidate reports in ordinary operational flows before
+  any later proactivity decision can be considered
+- keeping the promotion operator-visible and non-actionable proves utility while
+  preserving the action/proactivity boundary

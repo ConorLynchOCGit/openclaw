@@ -433,6 +433,9 @@ For each implementation wave:
 - controlled planner candidate plans may be generated only for explicit
   operator/eval scope and must stay report-only with rollback proof before any
   default operator-visible promotion decision
+- planner candidate reports may become default-visible to operators only after
+  controlled-scope proof passes; this does not enable planner actions,
+  proactive user-facing messages, or hidden normal-chat injection
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
