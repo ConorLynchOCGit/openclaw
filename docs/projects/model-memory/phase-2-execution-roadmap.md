@@ -511,6 +511,10 @@ For each implementation wave:
   only after Slice 37 readiness is green; the two approved low-risk classes
   remain explicit-send-approval gated, and autonomous sending plus
   delivery-triggered action execution remain disabled
+- autonomous-send readiness is a report-only boundary preflight: candidate
+  classifications may be recorded, but automatic messages remain disabled,
+  manual send remains required, urgency/external-instruction abuse is blocked,
+  and rollback disables candidate generation
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

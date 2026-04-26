@@ -3285,3 +3285,29 @@ Reasoning:
   operator-default, observability, scoped, expanded, and cohort proof
 - keeping explicit send approval mandatory prevents default-eligible delivery
   from becoming broad autonomous proactivity
+
+## 2026-04-26 - autonomous send remains report-only behind a boundary preflight
+
+Decision:
+
+- autonomous-send evaluation is limited to report-only boundary candidates with
+  classifications `manual_send_required`,
+  `approval_required_auto_send_candidate`, and `blocked_autonomous_send`
+- the two approved low-risk proactive message classes may be evaluated as
+  auto-send candidates, but no automatic message is emitted and manual send
+  remains required
+- urgency manipulation, external imperative text, unknown/blocked message
+  classes, missing provenance, missing source profiles, inspection-only
+  material, stale/conflicted evidence, no-dark-data failure, and rollback block
+  autonomous-send candidacy
+- `MODEL_MEMORY_PHASE2_AUTONOMOUS_SEND_BOUNDARY_DISABLED` disables auto-send
+  candidate generation and returns behavior to manual-send-required reports
+- action execution during proactive delivery remains disabled
+
+Reasoning:
+
+- after user-facing delivery becomes default-eligible, the next safety boundary
+  is proving that any future automatic-send work is observable as report-only
+  candidates before any delivery policy can change
+- explicit blocks for urgency and external imperatives prevent project docs,
+  tools, or reports from escalating evidence into instructions

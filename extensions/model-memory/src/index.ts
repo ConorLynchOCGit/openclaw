@@ -73,6 +73,7 @@ export * from "./runtime/phase2-proactivity-scope-expansion-decision.ts";
 export * from "./runtime/phase2-controlled-multi-user-proactivity-rollout.ts";
 export * from "./runtime/phase2-proactivity-default-readiness.ts";
 export * from "./runtime/phase2-user-facing-proactivity-default-promotion.ts";
+export * from "./runtime/phase2-autonomous-send-boundary-preflight.ts";
 export * from "./runtime/phase2-ingestion-default-promotion.ts";
 export * from "./runtime/phase2-operator-ingestion-rollout.ts";
 export * from "./runtime/phase2-planner-readiness.ts";
