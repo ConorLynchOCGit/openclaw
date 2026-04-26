@@ -9,3 +9,4 @@ export * from "./phase2-controlled-retrieval-packs.ts";
 export * from "./phase2-rollout-config.ts";
 export * from "./phase2-scoped-production-rollout.ts";
 export * from "./phase2-default-promotion.ts";
+export * from "./phase2-hierarchical-controlled-promotion.ts";

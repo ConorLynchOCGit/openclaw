@@ -2628,3 +2628,27 @@ Reasoning:
   decision with rollback and ordinary-path observation
 - keeping the hierarchical retrieval work as a next-build readiness substrate
   prevents fan-out from becoming default behavior before its own proof gate
+
+## 2026-04-26 - controlled hierarchical retrieval requires live proof
+
+Decision:
+
+- `hierarchical_retrieval` may move from shadow-only to live controlled
+  operator/eval scope only after a typed controlled-promotion proof validates the
+  default-promoted graph/capsule/context inputs
+- outside the approved scope, hierarchical retrieval remains shadow-only
+- controlled hierarchical retrieval must emit bounded subquery plan, merge and
+  dedupe reasons, selected/excluded ids, authority tiers, source profile ids,
+  source memory ids, lane usage, rollback status, and no-dark-data status
+- `MODEL_MEMORY_PHASE2_HIERARCHICAL_CONTROLLED_DISABLED` is the rollback switch
+  for controlled hierarchical retrieval
+- default promotion remains a separate decision after controlled live behavior
+  is observed
+
+Reasoning:
+
+- hierarchical fan-out changes retrieval behavior materially, so live proof must
+  demonstrate bounded planning and deterministic merge behavior before default
+  promotion
+- keeping the controlled proof separate from default promotion makes rollback
+  and partial approval explicit

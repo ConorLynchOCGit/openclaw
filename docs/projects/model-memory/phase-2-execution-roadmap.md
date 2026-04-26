@@ -295,6 +295,10 @@ Validation gate:
   default-promotion decision that validates the go-live and scoped rollout
   artifacts by id/hash, emits rollback controls, proves ordinary-path behavior
   through the UI/operator harness, and leaves hierarchical retrieval shadow-only
+- controlled hierarchical retrieval may become live only for explicit
+  operator/eval scope after a Tailscale-safe proof shows bounded fan-out,
+  deterministic merge/dedupe, provenance preservation, rollback, and
+  outside-scope shadow-only behavior
 - no planner/proactive surfacing starts until the comprehensive eval/no-dark-data
   proof is green
 
