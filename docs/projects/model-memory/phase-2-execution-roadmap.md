@@ -447,6 +447,11 @@ For each implementation wave:
 - staged action approval may review, approve, reject, and audit
   `approval_required_action` proposals, but approved proposals remain
   non-executing until a separate controlled execution proof is green
+- controlled action execution may run only the bounded
+  `write_bounded_proof_artifact` action kind inside explicit operator/eval
+  scope after staged approval and explicit execution approval; unsafe action
+  kinds, user-facing proactive messages, and broad autonomous execution remain
+  blocked
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

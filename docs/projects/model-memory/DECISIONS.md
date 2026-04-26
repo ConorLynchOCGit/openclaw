@@ -2913,3 +2913,29 @@ Reasoning:
   execution proof is meaningful
 - keeping approval separate from execution prevents approval artifacts from
   becoming an implicit automation channel
+
+## 2026-04-26 - controlled action execution is limited to harmless proof artifacts
+
+Decision:
+
+- a narrow controlled execution path may execute only the
+  `write_bounded_proof_artifact` action kind in explicit operator/eval scope
+- execution requires an `approved_not_executed` staged proposal, explicit
+  execution approval, provenance, no-dark-data pass, and inactive rollback
+- unsafe action kinds such as external commands, network calls, DB mutations,
+  and user-facing messages are blocked with deterministic reason codes
+- controlled execution writes bounded proof/audit artifacts only and preserves
+  proposal ids, approval report ids, operator ids, evidence hashes, source
+  refs, source profiles, and authority tiers
+- `MODEL_MEMORY_PHASE2_CONTROLLED_ACTION_EXECUTION_DISABLED` rolls execution
+  back to the staged approval workflow
+- proactive user-facing messages and broad autonomous action execution remain
+  disabled
+
+Reasoning:
+
+- proving one harmless approved action class validates the approval/execution
+  boundary without creating a general automation channel
+- keeping execution proof-only and rollbackable provides evidence for future
+  controlled action expansion while preserving the non-user-facing proactivity
+  posture
