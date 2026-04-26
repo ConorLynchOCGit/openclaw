@@ -81,6 +81,7 @@ const METHOD_SCOPE_GROUPS: Record<OperatorScope, readonly string[]> = {
     "models.authStatus",
     "modelMemory.proactivity.queue",
     "modelMemory.proactivity.personalAutosendUx",
+    "modelMemory.proactivity.inbox",
     "tools.catalog",
     "tools.effective",
     "agents.list",

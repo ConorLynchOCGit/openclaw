@@ -1,4 +1,5 @@
 import { buildPhase2PersonalAutoSendProductUxReport } from "../../../extensions/model-memory/src/runtime/phase2-personal-autosend-product-ux.js";
+import { buildPhase2ProactivityInboxReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-inbox.js";
 import { buildPhase2ProductProactivitySurfacingReport } from "../../../extensions/model-memory/src/runtime/phase2-product-proactivity-surfacing.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
@@ -74,6 +75,30 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         errorShape(
           ErrorCodes.UNAVAILABLE,
           `model-memory personal autosend UX unavailable: ${message}`,
+        ),
+      );
+    }
+  },
+  "modelMemory.proactivity.inbox": async ({ respond }) => {
+    try {
+      const report = await buildPhase2ProactivityInboxReport({ env: process.env });
+      respond(true, {
+        ok: true,
+        reportId: report.reportId,
+        decision: report.decision,
+        state: report.state,
+        digest: report.digest,
+        telemetry: report.telemetry,
+        rollbackPlan: report.rollbackPlan,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.UNAVAILABLE,
+          `model-memory proactivity inbox unavailable: ${message}`,
         ),
       );
     }

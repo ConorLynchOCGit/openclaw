@@ -66,4 +66,45 @@ describe("model-memory proactivity gateway handlers", () => {
     });
     expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
   });
+
+  it("returns bounded proactivity inbox digest data", async () => {
+    const respond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.inbox"]({
+      req: {
+        type: "req",
+        id: "req-3",
+        method: "modelMemory.proactivity.inbox",
+        params: {},
+      },
+      params: {},
+      client: null,
+      isWebchatConnect: () => true,
+      respond,
+      context: {} as never,
+    });
+
+    expect(respond).toHaveBeenCalledTimes(1);
+    const [ok, payload] = respond.mock.calls[0];
+    expect(ok).toBe(true);
+    expect(payload).toMatchObject({
+      ok: true,
+      decision: "inbox_visible",
+      digest: {
+        counts: {
+          pending: expect.any(Number),
+          sent: expect.any(Number),
+          snoozed: expect.any(Number),
+          dismissed: expect.any(Number),
+          blocked: expect.any(Number),
+          autosend_trial: expect.any(Number),
+        },
+      },
+    });
+    expect(payload.digest.items.length).toBeGreaterThan(0);
+    expect(payload.digest.items[0]).toMatchObject({
+      noDarkDataStatus: "pass",
+      whyThisAppearedSummary: expect.any(String),
+    });
+    expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
+  });
 });

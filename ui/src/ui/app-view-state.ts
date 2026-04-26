@@ -42,6 +42,7 @@ import type {
   StatusSummary,
   ToolsCatalogResult,
   PersonalAutoSendUxSettings,
+  ProactivityInboxDigest,
   ProductProactivityQueueItem,
 } from "./types.ts";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
@@ -96,6 +97,9 @@ export type AppViewState = {
   productProactivityLoading: boolean;
   productProactivityError: string | null;
   productProactivityQueue: ProductProactivityQueueItem[];
+  proactivityInboxDigest: ProactivityInboxDigest | null;
+  proactivityInboxLoading: boolean;
+  proactivityInboxError: string | null;
   personalAutoSendUx: PersonalAutoSendUxSettings | null;
   personalAutoSendUxLoading: boolean;
   personalAutoSendUxError: string | null;

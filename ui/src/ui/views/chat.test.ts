@@ -812,6 +812,98 @@ describe("chat view", () => {
     expect(onDisable).toHaveBeenCalledTimes(1);
   });
 
+  it("renders proactivity inbox digest with filters and provenance details", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          proactivityInboxDigest: {
+            digestId: "digest-1",
+            generatedAt: "2026-04-26T22:00:00.000Z",
+            filters: ["pending", "sent", "snoozed", "dismissed", "blocked", "autosend_trial"],
+            counts: {
+              pending: 1,
+              sent: 1,
+              snoozed: 1,
+              dismissed: 1,
+              blocked: 1,
+              autosend_trial: 1,
+            },
+            items: [
+              {
+                itemId: "inbox-item-1",
+                sourceArtifactReportId: "report-1",
+                candidateId: "candidate-1",
+                queueItemId: "queue-item-1",
+                messageClass: "operator_approved_suggestion_available",
+                boundedDisplayText: "An approved operator suggestion is available.",
+                status: "pending_review",
+                filterTags: ["pending"],
+                sourceRefs: ["docs/projects/model-memory/phase-2-execution-roadmap.md"],
+                sourceProfileIds: ["curated_repo_doc"],
+                authorityTiers: ["curated_authoritative"],
+                contentHashes: ["content-hash-1"],
+                proofHashes: ["proof-hash-1"],
+                noDarkDataStatus: "pass",
+                feedbackSummary: {
+                  usefulCount: 1,
+                  notUsefulCount: 0,
+                  tooRepetitiveCount: 0,
+                  wrongContextCount: 0,
+                  unsafePrivateCount: 0,
+                },
+                whyThisAppearedSummary:
+                  "Generated from approved Model Memory proactivity queue evidence.",
+                blockedReasonCodes: [],
+              },
+              {
+                itemId: "inbox-item-2",
+                sourceArtifactReportId: "report-2",
+                candidateId: "candidate-2",
+                messageClass: "autosend_simulation",
+                boundedDisplayText:
+                  "Auto-send simulation compared would-have-sent behavior to manual decisions.",
+                status: "autosend_trial",
+                filterTags: ["autosend_trial"],
+                sourceRefs: ["phase2-autosend-simulation"],
+                sourceProfileIds: ["manual_note"],
+                authorityTiers: ["operator_evaluation"],
+                contentHashes: ["content-hash-2"],
+                proofHashes: ["proof-hash-2"],
+                noDarkDataStatus: "pass",
+                feedbackSummary: {
+                  usefulCount: 1,
+                  notUsefulCount: 1,
+                  tooRepetitiveCount: 1,
+                  wrongContextCount: 1,
+                  unsafePrivateCount: 0,
+                },
+                whyThisAppearedSummary:
+                  "Generated from report-only auto-send simulation telemetry.",
+                blockedReasonCodes: ["manual_override_required"],
+              },
+            ],
+          },
+        }),
+      ),
+      container,
+    );
+
+    expect(container.querySelector(".proactivity-inbox")).not.toBeNull();
+    expect(container.textContent).toContain("Proactivity Inbox");
+    expect(container.textContent).toContain("pending 1");
+    expect(container.textContent).toContain("sent 1");
+    expect(container.textContent).toContain("snoozed 1");
+    expect(container.textContent).toContain("dismissed 1");
+    expect(container.textContent).toContain("blocked 1");
+    expect(container.textContent).toContain("autosend trial 1");
+    expect(container.textContent).toContain("Auto-send simulation");
+    expect(container.textContent).toContain("Why this appeared");
+    expect(container.textContent).toContain("curated_repo_doc");
+    expect(container.textContent).toContain("Feedback");
+    expect(container.textContent).not.toContain("raw-prompt-marker");
+  });
+
   it("dismisses BTW side results from the dismiss button", () => {
     const container = document.createElement("div");
     const onDismissSideResult = vi.fn();

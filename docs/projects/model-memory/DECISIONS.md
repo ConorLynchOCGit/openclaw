@@ -3656,3 +3656,32 @@ Reasoning:
 - follow-up nudges are higher interruption risk than suggestion-available
   messages, so they need separate evidence and abuse regression before any
   future auto-send decision
+
+## 2026-04-26 - proactive memory needs a normal review inbox
+
+Decision:
+
+- Slice 54 adds a product Proactivity Inbox / digest view that groups pending
+  suggestions, sent items, snoozed/dismissed items, blocked items, auto-send
+  simulations, feedback summaries, and why-this-appeared details
+- inbox items preserve only bounded display text, report/candidate/queue ids,
+  source refs, source profile ids, authority tiers, content/proof hashes,
+  no-dark-data status, feedback counts, and deterministic blocked reason codes
+- the inbox is surfaced through a read-only
+  `modelMemory.proactivity.inbox` gateway method and normal chat/operator UX;
+  it does not execute actions and does not create delivery by itself
+- rollback via `MODEL_MEMORY_PHASE2_PROACTIVITY_INBOX_DISABLED` hides/disables
+  the inbox while preserving the underlying queue and notification surfaces
+- proof artifact:
+  `.artifacts/model-memory/phase2-proactivity-inbox-proof/20260426T225516284Z/2981e633-f6c7-5070-b335-4f6edcf27d23.phase2-proactivity-inbox.json`
+  with content hash
+  `7228ad08ac38bcb62632eac6e3b27b48c0eb646739b83dbc80c9e4a7f0dbaa86`
+- broad autonomous sending remains disabled, personal auto-send remains subject
+  to the Slice 52 continuation decision, and follow-up auto-send remains
+  manual-only/preflight-only
+
+Reasoning:
+
+- proactive memory is not useful if evidence is scattered across banners and
+  proof reports; a bounded inbox gives the user one normal place to inspect,
+  filter, and manage proactive memory without weakening safety boundaries

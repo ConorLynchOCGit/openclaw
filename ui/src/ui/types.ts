@@ -111,6 +111,64 @@ export type PersonalAutoSendUxResult = {
   };
 };
 
+export type ProactivityInboxFilter =
+  | "pending"
+  | "sent"
+  | "snoozed"
+  | "dismissed"
+  | "blocked"
+  | "autosend_trial";
+
+export type ProactivityInboxItem = {
+  itemId: string;
+  sourceArtifactReportId: string;
+  candidateId: string;
+  queueItemId?: string;
+  messageClass:
+    | "operator_approved_suggestion_available"
+    | "operator_approved_follow_up_available"
+    | "autosend_simulation";
+  boundedDisplayText: string;
+  status: "pending_review" | "sent" | "snoozed" | "dismissed" | "blocked" | "autosend_trial";
+  filterTags: ProactivityInboxFilter[];
+  sourceRefs: string[];
+  sourceProfileIds: string[];
+  authorityTiers: string[];
+  contentHashes: string[];
+  proofHashes: string[];
+  noDarkDataStatus: "pass" | "fail";
+  feedbackSummary: {
+    usefulCount: number;
+    notUsefulCount: number;
+    tooRepetitiveCount: number;
+    wrongContextCount: number;
+    unsafePrivateCount: number;
+  };
+  whyThisAppearedSummary: string;
+  blockedReasonCodes: string[];
+};
+
+export type ProactivityInboxDigest = {
+  digestId: string;
+  filters: ProactivityInboxFilter[];
+  items: ProactivityInboxItem[];
+  counts: Record<ProactivityInboxFilter, number>;
+  generatedAt: string;
+};
+
+export type ProactivityInboxResult = {
+  ok: boolean;
+  reportId: string;
+  decision: string;
+  digest: ProactivityInboxDigest;
+  state?: {
+    visibleInNormalUx: boolean;
+    rollbackDisabled: boolean;
+    sourceReportIds: string[];
+    sourceReportHashes: string[];
+  };
+};
+
 export const CRON_CHANNEL_LAST = "last";
 
 export type ChannelAccountSnapshot = {

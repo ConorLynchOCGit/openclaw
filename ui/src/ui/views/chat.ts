@@ -43,6 +43,8 @@ import { detectTextDirection } from "../text-direction.ts";
 import type {
   GatewaySessionRow,
   PersonalAutoSendUxSettings,
+  ProactivityInboxDigest,
+  ProactivityInboxItem,
   ProductProactivityQueueItem,
   SessionsListResult,
 } from "../types.ts";
@@ -78,6 +80,9 @@ export type ChatProps = {
   productProactivityLoading?: boolean;
   productProactivityError?: string | null;
   productProactivityQueue?: ProductProactivityQueueItem[];
+  proactivityInboxDigest?: ProactivityInboxDigest | null;
+  proactivityInboxLoading?: boolean;
+  proactivityInboxError?: string | null;
   personalAutoSendUx?: PersonalAutoSendUxSettings | null;
   personalAutoSendUxLoading?: boolean;
   personalAutoSendUxError?: string | null;
@@ -1133,6 +1138,13 @@ function formatProactivityClass(messageClass: ProductProactivityQueueItem["messa
     : "Suggestion available";
 }
 
+function formatInboxMessageClass(messageClass: ProactivityInboxItem["messageClass"]): string {
+  if (messageClass === "autosend_simulation") {
+    return "Auto-send simulation";
+  }
+  return formatProactivityClass(messageClass);
+}
+
 function renderPersonalAutoSendProductUx(props: ChatProps): TemplateResult | typeof nothing {
   const settings = props.personalAutoSendUx;
   if (!settings && !props.personalAutoSendUxLoading && !props.personalAutoSendUxError) {
@@ -1360,6 +1372,109 @@ function renderProductProactivityNotifications(props: ChatProps): TemplateResult
           </article>
         `,
       )}
+    </section>
+  `;
+}
+
+function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothing {
+  const digest = props.proactivityInboxDigest;
+  const items = digest?.items ?? [];
+  if (!digest && !props.proactivityInboxLoading && !props.proactivityInboxError) {
+    return nothing;
+  }
+  return html`
+    <section class="proactivity-inbox product-proactivity-panel" aria-label="Proactivity Inbox">
+      <div class="product-proactivity-panel__header">
+        <div>
+          <div class="product-proactivity-panel__eyebrow">Model Memory</div>
+          <h3>Proactivity Inbox</h3>
+        </div>
+        <span class="product-proactivity-panel__count"
+          >${items.length} item${items.length === 1 ? "" : "s"}</span
+        >
+      </div>
+      ${props.proactivityInboxLoading
+        ? html`<div class="product-proactivity-panel__empty">Loading proactivity inbox...</div>`
+        : nothing}
+      ${props.proactivityInboxError
+        ? html`<div class="callout danger">${props.proactivityInboxError}</div>`
+        : nothing}
+      ${digest
+        ? html`
+            <div class="proactivity-inbox__filters" aria-label="Proactivity inbox filters">
+              ${digest.filters.map(
+                (filter) => html`
+                  <span class="pill proactivity-inbox__filter" data-filter=${filter}>
+                    ${filter.replace(/_/g, " ")} ${digest.counts[filter] ?? 0}
+                  </span>
+                `,
+              )}
+            </div>
+            <div class="product-proactivity-panel__list">
+              ${items.map(
+                (item) => html`
+                  <article
+                    class="product-proactivity-item proactivity-inbox__item proactivity-inbox__item--${item.status}"
+                  >
+                    <div class="product-proactivity-item__main">
+                      <div class="product-proactivity-item__meta">
+                        <span>${formatInboxMessageClass(item.messageClass)}</span>
+                        <span>${item.status.replace(/_/g, " ")}</span>
+                        <span
+                          >${item.filterTags.map((tag) => tag.replace(/_/g, " ")).join(", ")}</span
+                        >
+                      </div>
+                      <div class="product-proactivity-item__text">${item.boundedDisplayText}</div>
+                      <details class="product-proactivity-item__details">
+                        <summary>Why this appeared</summary>
+                        <p>${item.whyThisAppearedSummary}</p>
+                        <div class="operator-row">
+                          <span>Sources</span>
+                          <span>${item.sourceRefs.slice(0, 4).join(", ") || "missing"}</span>
+                        </div>
+                        <div class="operator-row">
+                          <span>Profiles</span>
+                          <span>${item.sourceProfileIds.slice(0, 4).join(", ") || "missing"}</span>
+                        </div>
+                        <div class="operator-row">
+                          <span>Authority</span>
+                          <span>${item.authorityTiers.slice(0, 4).join(", ") || "missing"}</span>
+                        </div>
+                        <div class="operator-row">
+                          <span>Hashes</span>
+                          <span
+                            >${item.contentHashes.slice(0, 2).join(", ") ||
+                            item.proofHashes.slice(0, 2).join(", ")}</span
+                          >
+                        </div>
+                        <div class="operator-row">
+                          <span>Feedback</span>
+                          <span
+                            >useful ${item.feedbackSummary.usefulCount}, not useful
+                            ${item.feedbackSummary.notUsefulCount}, repetitive
+                            ${item.feedbackSummary.tooRepetitiveCount}, wrong context
+                            ${item.feedbackSummary.wrongContextCount}, unsafe/private
+                            ${item.feedbackSummary.unsafePrivateCount}</span
+                          >
+                        </div>
+                        ${item.blockedReasonCodes.length
+                          ? html`<div class="operator-row">
+                              <span>Blocked</span>
+                              <span>${item.blockedReasonCodes.join(", ")}</span>
+                            </div>`
+                          : nothing}
+                        <div class="operator-row">
+                          <span>Artifact</span>
+                          <span>${item.sourceArtifactReportId}</span>
+                        </div>
+                      </details>
+                    </div>
+                  </article>
+                `,
+              )}
+            </div>
+          `
+        : nothing}
     </section>
   `;
 }
@@ -2098,7 +2213,7 @@ export function renderChat(props: ChatProps) {
           requestUpdate,
         })}
         ${renderProductProactivityNotifications(props)} ${renderPersonalAutoSendProductUx(props)}
-        ${renderProductProactivityQueue(props)}
+        ${renderProductProactivityQueue(props)} ${renderProactivityInbox(props)}
         ${props.loading
           ? html`
               <div class="chat-loading-skeleton" aria-label="Loading chat">

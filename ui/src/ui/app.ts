@@ -106,6 +106,8 @@ import type {
   ToolsEffectiveResult,
   ProductProactivityQueueItem,
   ProductProactivityQueueResult,
+  ProactivityInboxDigest,
+  ProactivityInboxResult,
   PersonalAutoSendUxResult,
   PersonalAutoSendUxSettings,
 } from "./types.ts";
@@ -196,6 +198,9 @@ export class OpenClawApp extends LitElement {
   @state() productProactivityLoading = false;
   @state() productProactivityError: string | null = null;
   @state() productProactivityQueue: ProductProactivityQueueItem[] = [];
+  @state() proactivityInboxDigest: ProactivityInboxDigest | null = null;
+  @state() proactivityInboxLoading = false;
+  @state() proactivityInboxError: string | null = null;
   @state() personalAutoSendUx: PersonalAutoSendUxSettings | null = null;
   @state() personalAutoSendUxLoading = false;
   @state() personalAutoSendUxError: string | null = null;
@@ -583,6 +588,7 @@ export class OpenClawApp extends LitElement {
     ) {
       void this.loadProductProactivityQueue();
       void this.loadPersonalAutoSendUx();
+      void this.loadProactivityInbox();
     }
     if (!changed.has("sessionKey") || this.agentsPanel !== "tools") {
       return;
@@ -751,6 +757,26 @@ export class OpenClawApp extends LitElement {
       this.personalAutoSendUx = null;
     } finally {
       this.personalAutoSendUxLoading = false;
+    }
+  }
+
+  async loadProactivityInbox() {
+    if (!this.client || !this.connected || this.proactivityInboxLoading) {
+      return;
+    }
+    this.proactivityInboxLoading = true;
+    this.proactivityInboxError = null;
+    try {
+      const res = await this.client.request<ProactivityInboxResult>(
+        "modelMemory.proactivity.inbox",
+        {},
+      );
+      this.proactivityInboxDigest = res.digest ?? null;
+    } catch (err) {
+      this.proactivityInboxError = String(err);
+      this.proactivityInboxDigest = null;
+    } finally {
+      this.proactivityInboxLoading = false;
     }
   }
 

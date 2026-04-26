@@ -599,6 +599,14 @@ For each implementation wave:
   provenance/source profile, no-dark-data failure, urgency manipulation,
   external instruction escalation, rollback, semantic-truth writes, or any
   attempted follow-up auto-send
+- proactive memory review is consolidated in Slice 54 with a normal product
+  Proactivity Inbox: pending, sent, snoozed, dismissed, blocked, auto-send
+  simulation, and feedback-backed items are grouped behind status filters with
+  bounded why-this-appeared/provenance detail; rollback via
+  `MODEL_MEMORY_PHASE2_PROACTIVITY_INBOX_DISABLED` disables only the inbox and
+  preserves queue/notification surfaces, while broad autonomous sending and
+  follow-up auto-send remain off. Proof artifact:
+  `.artifacts/model-memory/phase2-proactivity-inbox-proof/20260426T225516284Z/2981e633-f6c7-5070-b335-4f6edcf27d23.phase2-proactivity-inbox.json`
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
