@@ -889,7 +889,11 @@ describe("chat view", () => {
       container,
     );
 
-    expect(container.querySelector(".proactivity-inbox")).not.toBeNull();
+    const inbox = container.querySelector(".proactivity-inbox");
+    const thread = container.querySelector(".chat-thread");
+    expect(inbox).not.toBeNull();
+    expect(container.querySelector(".chat-proactivity-rail .proactivity-inbox")).toBe(inbox);
+    expect(thread?.contains(inbox)).toBe(false);
     expect(container.textContent).toContain("Proactivity Inbox");
     expect(container.textContent).toContain("pending 1");
     expect(container.textContent).toContain("sent 1");

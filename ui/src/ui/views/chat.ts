@@ -2213,7 +2213,7 @@ export function renderChat(props: ChatProps) {
           requestUpdate,
         })}
         ${renderProductProactivityNotifications(props)} ${renderPersonalAutoSendProductUx(props)}
-        ${renderProductProactivityQueue(props)} ${renderProactivityInbox(props)}
+        ${renderProductProactivityQueue(props)}
         ${props.loading
           ? html`
               <div class="chat-loading-skeleton" aria-label="Loading chat">
@@ -2489,6 +2489,7 @@ export function renderChat(props: ChatProps) {
           class="chat-main"
           style="flex: ${sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}"
         >
+          <div class="chat-proactivity-rail">${renderProactivityInbox(props)}</div>
           ${thread}
         </div>
 

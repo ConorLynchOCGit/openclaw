@@ -63,6 +63,21 @@
   background: transparent;
 }
 
+.chat-proactivity-rail {
+  flex: 0 0 auto;
+  padding: 0 6px 8px;
+}
+
+.chat-proactivity-rail:empty {
+  display: none;
+}
+
+.chat-proactivity-rail .proactivity-inbox {
+  margin: 0;
+  max-height: min(360px, 36vh);
+  overflow: auto;
+}
+
 .chat-thread-inner > :first-child {
   margin-top: 0 !important;
 }
